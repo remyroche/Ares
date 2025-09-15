@@ -161,6 +161,7 @@ class MarketAnalysisSubPipeline:
         # Initialize pipeline state for component communication
         self._current_data = None
         self._current_pipeline_state = {}
+        self._accumulated_artifacts = {}
     
     def _validate_sub_pipeline_result(self, result: SubPipelineResult, stage_name: str) -> Tuple[bool, Optional[Dict[str, Any]]]:
         """
@@ -565,8 +566,17 @@ class MarketAnalysisSubPipeline:
             if component is None:
                 raise ValueError(f"Component '{sub_pipeline_name}' not found in factory")
             
+            # Prepare pipeline state with accumulated artifacts
+            pipeline_state_with_artifacts = self._current_pipeline_state.copy()
+            pipeline_state_with_artifacts['artifacts'] = self._accumulated_artifacts.copy()
+            
             # Execute component
-            component_result = await component.execute(self._current_data, self._current_pipeline_state)
+            component_result = await component.execute(self._current_data, pipeline_state_with_artifacts)
+            
+            # Accumulate artifacts from this execution
+            if component_result.success and component_result.artifacts:
+                self._accumulated_artifacts.update(component_result.artifacts)
+                self.logger.info(f'📦 Accumulated {len(component_result.artifacts)} artifacts from {sub_pipeline_name}')
             
             # Convert component result to sub-pipeline result
             end_time = datetime.now()
@@ -613,6 +623,75 @@ class MarketAnalysisSubPipeline:
             self.logger.error(f"❌ {sub_pipeline_name} sub-pipeline failed: {e}")
             return result
     
+    async def execute_sub_pipeline_with_next(
+        self, 
+        sub_pipeline_name: str, 
+        config: SubPipelineConfig
+    ) -> SubPipelineResult:
+        """
+        Execute a specific sub-pipeline and then automatically execute the next sub-pipeline in sequence.
+        
+        Args:
+            sub_pipeline_name: Name of the sub-pipeline to execute
+            config: Configuration for the sub-pipeline
+            
+        Returns:
+            SubPipelineResult with execution details
+        """
+        # Execute the requested sub-pipeline
+        result = await self.execute_sub_pipeline(sub_pipeline_name, config)
+        
+        # If successful, determine and execute the next sub-pipeline
+        if result.success:
+            next_sub_pipeline = self._get_next_sub_pipeline(sub_pipeline_name)
+            if next_sub_pipeline:
+                self.logger.info(f"🔄 Auto-executing next sub-pipeline: {next_sub_pipeline}")
+                next_result = await self.execute_sub_pipeline(next_sub_pipeline, config)
+                
+                # Update the result to include next pipeline execution
+                result.metadata = result.metadata or {}
+                result.metadata['next_pipeline_executed'] = next_sub_pipeline
+                result.metadata['next_pipeline_success'] = next_result.success
+                if not next_result.success:
+                    result.metadata['next_pipeline_error'] = next_result.error_message
+        
+        return result
+    
+    def _get_next_sub_pipeline(self, current_sub_pipeline: str) -> Optional[str]:
+        """
+        Determine the next sub-pipeline to execute based on the current one.
+        
+        Args:
+            current_sub_pipeline: Name of the current sub-pipeline
+            
+        Returns:
+            Name of the next sub-pipeline, or None if no next pipeline
+        """
+        # Define the execution sequence for market analysis sub-pipelines
+        sequence = [
+            'sr_parameter_optimization',
+            'sr_detection', 
+            'sr_clustering',
+            'hmm_regime_discovery',
+            'hmm_clustering',
+            'regime_data_splitting',
+            'triple_barrier_labeling',
+            'feature_lookback_optimization',
+            'pid_based_feature_generation',
+            'temporal_feature_integration',
+            'cross_timeframe_analysis'
+        ]
+        
+        try:
+            current_index = sequence.index(current_sub_pipeline)
+            if current_index < len(sequence) - 1:
+                return sequence[current_index + 1]
+        except ValueError:
+            # Current sub-pipeline not in sequence, no next pipeline
+            pass
+        
+        return None
+    
     def get_available_sub_pipelines(self) -> List[str]:
         """Get list of available sub-pipelines."""
         return list(self.component_factory.get_available_components())
@@ -624,6 +703,147 @@ class MarketAnalysisSubPipeline:
                 return result.status
         return None
     
+    async def execute_sub_pipeline_with_next(
+        self, 
+        sub_pipeline_name: str, 
+        config: SubPipelineConfig
+    ) -> SubPipelineResult:
+        """
+        Execute a specific sub-pipeline and automatically trigger subsequent sub-pipelines.
+        
+        This method provides the interface expected by the main training pipeline for
+        automatic sequential execution of sub-pipelines.
+        
+        Args:
+            sub_pipeline_name: Name of the sub-pipeline to execute
+            config: Configuration for the sub-pipeline
+            
+        Returns:
+            SubPipelineResult with execution details
+        """
+        self.logger.info(f'🚀 Starting {sub_pipeline_name} sub-pipeline with automatic next triggering')
+        
+        # Reset accumulated artifacts for new sequence
+        self._accumulated_artifacts = {}
+        self.logger.info('🔄 Reset accumulated artifacts for new execution sequence')
+        
+        # Load market data if not already available
+        if self._current_data is None:
+            self.logger.info('📊 Loading market data for sub-pipeline execution...')
+            await self._load_market_data(config)
+        
+        # Define the execution sequence for market analysis sub-pipelines
+        execution_sequence = [
+            'sr_parameter_optimization',
+            'sr_detection', 
+            'sr_clustering',
+            'hmm_regime_discovery',
+            'hmm_clustering',
+            'hmm_models_training',
+            'hmm_ensemble_training',
+            'regime_data_splitting',
+            'triple_barrier_labeling',
+            'feature_lookback_optimization',
+            'pid_based_feature_generation',
+            'cross_timeframe_analysis'
+        ]
+        
+        # Find the starting index
+        try:
+            start_index = execution_sequence.index(sub_pipeline_name)
+        except ValueError:
+            self.logger.error(f"❌ Unknown sub-pipeline: {sub_pipeline_name}")
+            raise ValueError(f"Unknown sub-pipeline: {sub_pipeline_name}")
+        
+        # Execute sub-pipelines starting from the specified one
+        results = []
+        for i in range(start_index, len(execution_sequence)):
+            pipeline_name = execution_sequence[i]
+            
+            try:
+                self.logger.info(f'🔄 Executing {pipeline_name} ({i+1-start_index}/{len(execution_sequence)-start_index})')
+                result = await self.execute_sub_pipeline(pipeline_name, config)
+                results.append(result)
+                
+                # If this sub-pipeline failed, stop the sequence
+                if not result.success:
+                    self.logger.error(f"❌ {pipeline_name} failed, stopping execution sequence")
+                    break
+                    
+            except Exception as e:
+                self.logger.error(f"❌ Error executing {pipeline_name}: {e}")
+                # Create a failed result
+                failed_result = SubPipelineResult(
+                    sub_pipeline_name=pipeline_name,
+                    status=SubPipelineStatus.FAILED,
+                    start_time=datetime.now(),
+                    end_time=datetime.now(),
+                    duration_seconds=0.0,
+                    error_message=str(e)
+                )
+                results.append(failed_result)
+                break
+        
+        # Return the first result (the one that was requested)
+        if results:
+            return results[0]
+        else:
+            # Return a failed result if no execution occurred
+            return SubPipelineResult(
+                sub_pipeline_name=sub_pipeline_name,
+                status=SubPipelineStatus.FAILED,
+                start_time=datetime.now(),
+                end_time=datetime.now(),
+                duration_seconds=0.0,
+                error_message="No execution occurred"
+            )
+
+    async def _load_market_data(self, config: SubPipelineConfig) -> None:
+        """
+        Load market data for sub-pipeline execution.
+        
+        Args:
+            config: Sub-pipeline configuration containing symbol, exchange, timeframe, etc.
+        """
+        try:
+            # Import the unified data loader
+            from ..data_collection.unified_data_loader import UnifiedDataLoader
+            
+            self.logger.info(f'📊 Loading market data for {config.symbol} on {config.exchange} ({config.timeframe})')
+            
+            # Create data loader
+            data_loader = UnifiedDataLoader()
+            
+            # Load the data
+            market_data = await data_loader.load_unified_data(
+                symbol=config.symbol,
+                exchange=config.exchange,
+                timeframe=config.timeframe,
+                data_dir=config.data_dir
+            )
+            
+            if market_data is None or market_data.empty:
+                raise ValueError(f"No market data found for {config.symbol} on {config.exchange} ({config.timeframe})")
+            
+            self.logger.info(f'✅ Loaded market data: {market_data.shape[0]} rows, {market_data.shape[1]} columns')
+            self.logger.info(f'📊 Data columns: {list(market_data.columns)}')
+            self.logger.info(f'📅 Date range: {market_data.index.min()} to {market_data.index.max()}')
+            
+            # Store the data for component communication
+            self._current_data = market_data
+            self._current_pipeline_state = {
+                'dataframe': market_data,
+                'validated_data': market_data,
+                'symbol': config.symbol,
+                'exchange': config.exchange,
+                'timeframe': config.timeframe,
+                'data_dir': config.data_dir
+            }
+            
+        except Exception as e:
+            self.logger.error(f'❌ Failed to load market data: {e}')
+            raise
+
     def get_execution_summary(self) -> Dict[str, Any]:
         """Get execution summary with all results."""
         return {

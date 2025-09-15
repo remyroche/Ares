@@ -326,11 +326,7 @@ if COMPUTATION_TOOLBOX_AVAILABLE:
     ])
 
 # Initialize default custom operations
-try:
-    from .enhanced_operations import register_default_custom_operations
-    register_default_custom_operations()
-except ImportError:
-    pass  # Custom operations are optional
+# Note: Default operations are automatically registered when enhanced_operations module is imported
 
 # Log initialization
 import logging

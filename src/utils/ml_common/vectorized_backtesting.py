@@ -22,7 +22,7 @@ except ImportError:
 
 # Import matrix operations if available
 try:
-    from .matrix_operations import get_unified_matrix_operations
+    from ..matrix_operations import get_unified_matrix_operations
     MATRIX_OPS_AVAILABLE = True
 except ImportError:
     MATRIX_OPS_AVAILABLE = False

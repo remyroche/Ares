@@ -367,6 +367,79 @@ class HardwareOptimizedMatrixProcessor:
         
         return report
     
+    def optimized_standard_scaling(self, data: Union['np.ndarray', 'pd.DataFrame']) -> 'np.ndarray':
+        """
+        Perform hardware-optimized standard scaling (z-score normalization).
+        
+        Args:
+            data: Input data as numpy array or pandas DataFrame
+            
+        Returns:
+            Standardized data as numpy array
+        """
+        with self.performance_context("optimized_standard_scaling"):
+            # Convert to numpy array if needed
+            if isinstance(data, pd.DataFrame):
+                data_array = data.values.astype(np.float32)
+            else:
+                data_array = np.array(data, dtype=np.float32)
+            
+            # Check for invalid values
+            if np.any(np.isnan(data_array)) or np.any(np.isinf(data_array)):
+                self.logger.warning("⚠️ Input data contains NaN or infinite values, cleaning...")
+                data_array = np.nan_to_num(data_array, nan=0.0, posinf=0.0, neginf=0.0)
+            
+            # Use hardware-optimized operations if available
+            if self.gpu_manager and self.gpu_manager.is_m1 and TORCH_AVAILABLE:
+                # GPU-accelerated scaling using PyTorch
+                try:
+                    import torch
+                    # Convert to tensor
+                    tensor_data = torch.from_numpy(data_array)
+                    
+                    # Move to GPU if available
+                    if torch.backends.mps.is_available():
+                        tensor_data = tensor_data.to('mps')
+                    
+                    # Compute mean and std
+                    mean = torch.mean(tensor_data, dim=0, keepdim=True)
+                    std = torch.std(tensor_data, dim=0, keepdim=True)
+                    
+                    # Avoid division by zero
+                    std = torch.where(std == 0, torch.ones_like(std), std)
+                    
+                    # Standardize
+                    scaled_tensor = (tensor_data - mean) / std
+                    
+                    # Convert back to numpy
+                    scaled_data = scaled_tensor.cpu().numpy()
+                    
+                    self.logger.info("✅ GPU-accelerated standard scaling completed")
+                    return scaled_data
+                    
+                except Exception as e:
+                    self.logger.warning(f"⚠️ GPU scaling failed, falling back to CPU: {e}")
+            
+            # CPU-based scaling (fallback or primary)
+            try:
+                # Compute mean and standard deviation
+                mean = np.mean(data_array, axis=0, keepdims=True)
+                std = np.std(data_array, axis=0, keepdims=True)
+                
+                # Avoid division by zero
+                std = np.where(std == 0, 1.0, std)
+                
+                # Standardize
+                scaled_data = (data_array - mean) / std
+                
+                self.logger.info("✅ CPU-based standard scaling completed")
+                return scaled_data
+                
+            except Exception as e:
+                self.logger.error(f"❌ Standard scaling failed: {e}")
+                # Return original data as fallback
+                return data_array
+    
     def cleanup(self):
         """Cleanup resources and stop monitoring."""
         if self.memory_optimizer:

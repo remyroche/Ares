@@ -77,14 +77,22 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             self.logger.info(f'🔧 HMM Regime Discovery mode: {optimization_mode} (range: 2-150 regimes)')
             
             # Perform regime discovery
-            regime_result = await self._perform_regime_discovery(
+            regime_dataframe = await self._perform_regime_discovery(
                 regime_detector, market_data, hmm_config, optimization_mode
             )
             
-            # Extract results
-            regime_models = regime_result.get('regime_models', [])
-            regime_assignments = regime_result.get('regime_assignments', [])
-            regime_metrics = regime_result.get('regime_metrics', {})
+            # Extract results from DataFrame
+            if regime_dataframe is None or regime_dataframe.empty:
+                raise ValueError("HMM regime discovery completed but no regimes were discovered")
+            
+            # Extract regime information from the DataFrame
+            regime_assignments = regime_dataframe['regime'].tolist() if 'regime' in regime_dataframe.columns else []
+            regime_models = [f"regime_{i}" for i in range(len(set(regime_assignments)))]
+            regime_metrics = {
+                'total_regimes': len(set(regime_assignments)),
+                'total_samples': len(regime_dataframe),
+                'regime_distribution': regime_dataframe['regime'].value_counts().to_dict() if 'regime' in regime_dataframe.columns else {}
+            }
             
             # Validate that we have regime models and assignments
             if not regime_models or not regime_assignments:
@@ -100,7 +108,7 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
                         'total_regimes': len(regime_models),
                         'total_assignments': len(regime_assignments),
                         'regime_distribution': self._calculate_regime_distribution(regime_assignments),
-                        'discovery_time': regime_result.get('discovery_time', 0.0)
+                        'discovery_time': 0.0  # Discovery time not available from DataFrame
                     },
                     'metadata': {
                         'symbol': self.config.symbol,
@@ -144,15 +152,48 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             )
     
     async def _load_market_data(self, data: Any) -> Optional[pd.DataFrame]:
-        """Load and prepare market data for regime discovery."""
-        if data is None:
+        """Load and prepare market data for regime discovery using klines_parquet manager."""
+        try:
+            if data is None or (isinstance(data, pd.DataFrame) and data.empty):
+                self.logger.warning("⚠️ No market data provided, attempting to load from klines_parquet")
+                
+                # Try to load data using klines_parquet manager
+                from src.utils.data.klines_parquet import get_klines_manager
+                
+                manager = get_klines_manager()
+                
+                # Try to get symbol and timeframe from pipeline state or use defaults
+                symbol = "ETHUSDT"  # Default symbol
+                timeframe = "1h"    # Default timeframe for HMM regime discovery
+                
+                self.logger.info(f"📊 Loading {symbol} {timeframe} data using klines_parquet manager")
+                
+                # Try processed data first (better for HMM analysis)
+                market_data = manager.read_data(symbol, timeframe, data_type="processed")
+                
+                if market_data is None or market_data.empty:
+                    # Fallback to raw data
+                    self.logger.info(f"📊 No processed data found, trying raw {symbol} {timeframe} data")
+                    market_data = manager.read_data(symbol, timeframe, data_type="raw")
+                
+                if market_data is None or market_data.empty:
+                    self.logger.error(f"❌ No data available for {symbol} {timeframe}")
+                    return None
+                
+                self.logger.info(f"✅ Loaded {len(market_data)} rows of {symbol} {timeframe} data")
+                return market_data
+            
+            # If data is already a DataFrame, use it
+            if isinstance(data, pd.DataFrame):
+                self.logger.info(f"📊 Using provided DataFrame with {len(data)} rows")
+                return data.copy()
+            
+            # Handle other data types if needed
             return None
-        
-        if isinstance(data, pd.DataFrame):
-            return data.copy()
-        
-        # Handle other data types if needed
-        return None
+            
+        except Exception as e:
+            self.logger.exception(f"❌ Error loading market data: {e}")
+            return None
     
     async def _perform_regime_discovery(
         self, 
@@ -160,29 +201,21 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
         market_data: pd.DataFrame, 
         config: Any,
         mode: str = 'blank'
-    ) -> Dict[str, Any]:
+    ) -> Optional[pd.DataFrame]:
         """Perform the actual regime discovery process."""
         try:
             # Prepare data for regime detection
             prepared_data = self._prepare_data_for_regime_detection(market_data)
             
             # Perform regime detection with mode
-            regime_result = await regime_detector.detect_regimes(prepared_data, config=config, mode=mode)
+            regime_dataframe = regime_detector.detect_regimes(prepared_data, config=config, mode=mode)
             
-            return regime_result
+            return regime_dataframe
             
         except Exception as e:
             self.logger.error(f"Regime discovery process failed: {e}")
-            # Return fallback regime result
-            return {
-                'regime_models': [],
-                'regime_assignments': [],
-                'regime_metrics': {
-                    'detection_method': 'fallback',
-                    'error': str(e)
-                },
-                'discovery_time': 0.0
-            }
+            # Return None to indicate failure
+            return None
     
     def _prepare_data_for_regime_detection(self, data: pd.DataFrame) -> pd.DataFrame:
         """Prepare market data for regime detection."""

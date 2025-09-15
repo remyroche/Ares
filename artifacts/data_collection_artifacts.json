@@ -1,0 +1,45 @@
+{
+  "stage_config": {
+    "stage": "data_collection",
+    "mode": "light",
+    "symbol": "ETHUSDT",
+    "exchange": "binance",
+    "timeframe": "1m",
+    "enabled_sub_pipelines": [
+      "data_download",
+      "data_conversion",
+      "data_validation",
+      "data_preparation",
+      "feature_engineering",
+      "data_resampling",
+      "gap_filling",
+      "data_quality_check",
+      "data_integration",
+      "data_storage",
+      "data_monitoring",
+      "data_export"
+    ]
+  },
+  "execution_metadata": {
+    "start_time": "2025-09-15T22:26:48.898438",
+    "pipeline_id": "stage_data_collection_20250915_222648",
+    "execution_mode": "stage_execution"
+  },
+  "stage_info": {
+    "available_sub_pipelines": [
+      "data_download",
+      "data_conversion",
+      "data_validation",
+      "data_preparation",
+      "feature_engineering",
+      "data_resampling",
+      "gap_filling",
+      "data_quality_check",
+      "data_integration",
+      "data_storage",
+      "data_monitoring",
+      "data_export"
+    ],
+    "stage_description": "Data collection and preparation stage"
+  }
+}

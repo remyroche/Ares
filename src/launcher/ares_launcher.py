@@ -434,35 +434,36 @@ class AresLauncher:
         tprint(f"🎭 [STAGE_CONFIG] Creating stage configuration for: {stage.value}")
         tprint(f"🎭 [STAGE_CONFIG] Execution mode: {execution_mode.value}")
         
-        # Set the execution mode in base config
-        tprint("🎭 [STAGE_CONFIG] Setting execution mode in base config...")
-        base_config['mode'] = ExecutionMode(execution_mode.value)
-        tprint("✅ [STAGE_CONFIG] Execution mode set")
+        # Filter base_config to only include supported parameters for each config function
+        tprint("🎭 [STAGE_CONFIG] Filtering configuration parameters...")
+        supported_params = ['symbol', 'exchange', 'timeframe', 'data_dir']
+        filtered_config = {k: v for k, v in base_config.items() if k in supported_params}
+        tprint(f"✅ [STAGE_CONFIG] Filtered config: {list(filtered_config.keys())}")
         
         # OVERRIDE TIMEFRAME FOR MARKET ANALYSIS STAGE (WHICH INCLUDES HMM SUB-PIPELINES)
         if stage == PipelineStage.MARKET_ANALYSIS:
-            original_timeframe = base_config.get('timeframe', '1m')
-            base_config['timeframe'] = '1h'
+            original_timeframe = filtered_config.get('timeframe', '1m')
+            filtered_config['timeframe'] = '1h'
             tprint(f"🎯 [STAGE_CONFIG] Market Analysis stage detected")
             tprint(f"🎯 [STAGE_CONFIG] Overriding timeframe: {original_timeframe} → 1h")
             tprint("🎯 [STAGE_CONFIG] Using 1h data for HMM sub-pipelines in market analysis stage")
         else:
-            tprint(f"📊 [STAGE_CONFIG] Using standard timeframe for {stage.value}: {base_config.get('timeframe', '1m')}")
+            tprint(f"📊 [STAGE_CONFIG] Using standard timeframe for {stage.value}: {filtered_config.get('timeframe', '1m')}")
 
         # Get configuration based on execution mode
         tprint("🎭 [STAGE_CONFIG] Getting base configuration...")
         if execution_mode == ExecutionModeType.FULL:
             tprint("🎭 [STAGE_CONFIG] Using FULL execution mode configuration")
-            config = get_full_pipeline_config(**base_config)
+            config = get_full_pipeline_config(**filtered_config)
         elif execution_mode == ExecutionModeType.LIGHT:
             tprint("🎭 [STAGE_CONFIG] Using LIGHT execution mode configuration")
-            config = get_light_pipeline_config(**base_config)
+            config = get_light_pipeline_config(**filtered_config)
         elif execution_mode == ExecutionModeType.BLANK:
             tprint("🎭 [STAGE_CONFIG] Using BLANK execution mode configuration")
-            config = get_blank_pipeline_config(**base_config)
+            config = get_blank_pipeline_config(**filtered_config)
         else:
             tprint("🎭 [STAGE_CONFIG] Using DEFAULT (FULL) execution mode configuration")
-            config = get_full_pipeline_config(**base_config)
+            config = get_full_pipeline_config(**filtered_config)
         
         # Enable only the specified stage
         tprint(f"🎭 [STAGE_CONFIG] Enabling stage: {stage.value}")

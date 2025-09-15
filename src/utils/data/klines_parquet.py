@@ -243,6 +243,20 @@ class KlinesParquetManager:
             
             # Combine all dataframes
             combined_df = pd.concat(dataframes, ignore_index=False)
+            
+            # Normalize index types before sorting to prevent Timestamp vs int comparison errors
+            if not combined_df.empty and len(combined_df.index) > 0:
+                # Convert all index values to pandas Timestamp if they aren't already
+                try:
+                    combined_df.index = pd.to_datetime(combined_df.index)
+                except Exception as e:
+                    self.logger.warning(f"Could not convert index to datetime: {e}")
+                    # If conversion fails, try to sort by converting to numeric
+                    try:
+                        combined_df.index = pd.to_numeric(combined_df.index, errors='coerce')
+                    except Exception as e2:
+                        self.logger.warning(f"Could not convert index to numeric either: {e2}")
+            
             combined_df = combined_df.sort_index()
             
             # Remove duplicates
@@ -319,6 +333,18 @@ class KlinesParquetManager:
                         existing_df = self.parquet_utils.safe_read_parquet(str(filepath))
                         if existing_df is not None:
                             combined_df = pd.concat([existing_df, month_data], ignore_index=False)
+                            
+                            # Normalize index types before sorting to prevent Timestamp vs int comparison errors
+                            if not combined_df.empty and len(combined_df.index) > 0:
+                                try:
+                                    combined_df.index = pd.to_datetime(combined_df.index)
+                                except Exception as e:
+                                    self.logger.warning(f"Could not convert index to datetime: {e}")
+                                    try:
+                                        combined_df.index = pd.to_numeric(combined_df.index, errors='coerce')
+                                    except Exception as e2:
+                                        self.logger.warning(f"Could not convert index to numeric either: {e2}")
+                            
                             combined_df = combined_df.sort_index()
                             combined_df = combined_df[~combined_df.index.duplicated(keep='last')]
                         else:

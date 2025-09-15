@@ -110,7 +110,7 @@ try:
     from .confidence_metrics import calculate_confidence_metrics, calculate_calibration_metrics
     # Defer matrix operations to avoid circular import at init
     try:
-        from .matrix_operations import M1EnhancedMatrixOperations, get_enhanced_matrix_operations
+        from ..matrix_operations import M1EnhancedMatrixOperations, get_enhanced_matrix_operations
     except Exception:
         M1EnhancedMatrixOperations = None  # type: ignore
         get_enhanced_matrix_operations = None  # type: ignore

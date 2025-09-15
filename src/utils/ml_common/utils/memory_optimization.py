@@ -34,6 +34,7 @@ import tempfile
 
 from ..math_validation import safe_divide
 from ..common_operations import create_fallback_logger
+from src.utils.logger import system_logger
 from src.utils.hardware.m1_gpu_utils import M1GPUManager
 from src.utils.hardware.m1_memory_optimizer import M1MemoryOptimizer
 from src.utils.common_utilities import safe_dataframe_operation
@@ -606,6 +607,35 @@ class MemoryEfficientTraining:
         except Exception as e:
             self.logger.warning(f"GPU memory pool initialization failed: {e}")
             return None
+
+
+class MemoryEfficientProcessor:
+    """Memory efficient processor for feature selection operations."""
+    
+    def __init__(self):
+        """Initialize memory efficient processor."""
+        self.logger = system_logger.getChild('MemoryEfficientProcessor')
+        self.memory_optimizer = M1MemoryOptimizer()
+    
+    def process_dataframe(self, df: pd.DataFrame, operation: str = "optimize") -> pd.DataFrame:
+        """Process dataframe with memory optimization."""
+        try:
+            if operation == "optimize":
+                return self.memory_optimizer.optimize_dataframe_memory(df)
+            else:
+                return df
+        except Exception as e:
+            self.logger.warning(f"Memory optimization failed: {e}")
+            return df
+    
+    def batch_process(self, data: List[pd.DataFrame], batch_size: int = 1000) -> List[pd.DataFrame]:
+        """Process data in batches for memory efficiency."""
+        results = []
+        for i in range(0, len(data), batch_size):
+            batch = data[i:i + batch_size]
+            processed_batch = [self.process_dataframe(df) for df in batch]
+            results.extend(processed_batch)
+        return results
 
 
 class GPUMemoryPool:

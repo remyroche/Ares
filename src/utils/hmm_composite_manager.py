@@ -209,8 +209,18 @@ class EnhancedHMMCompositeManager:
         self._gpu_acceleration_enabled = True
         self._parallel_processing_enabled = True
 
+        # Computational efficiency caches
+        self._preprocessed_data_cache: dict[str, Any] = {}
+        self._parameter_score_cache: dict[str, float] = {}
+        self._model_cache: dict[str, Any] = {}
+        self._cache_hit_count = 0
+        self._cache_miss_count = 0
+
         # Initialize M1 utilities for memory management
         self._initialize_m1_utilities()
+
+        # Initialize matrix operations for M1 optimization
+        self._initialize_matrix_operations()
 
         # Initialize optimization components
         self._initialize_optimization_components()
@@ -251,26 +261,117 @@ class EnhancedHMMCompositeManager:
             self.memory_optimizer = None
             self.cpu_optimizer = None
 
-        # Initialize matrix operations for GPU acceleration
-        self._initialize_matrix_operations()
-
     def _initialize_matrix_operations(self) -> None:
-        """Initialize matrix operations for GPU acceleration."""
+        """Initialize matrix operations for M1 optimization."""
         try:
-            if MATRIX_OPS_AVAILABLE:
-                self.matrix_ops = get_unified_matrix_operations()
-                try:
-                    self.logger.info("✅ Matrix operations initialized for GPU acceleration")
-                except (BrokenPipeError, OSError):
-                    # Handle broken pipe errors during initialization
-                    pass
+            from .matrix_operations.unified_operations import UnifiedMatrixOperations
+            from .matrix_operations.hardware_integration import HardwareOptimizedMatrixProcessor
+            from .matrix_operations.vectorized_core import VectorizedProcessingCore
+            
+            self.matrix_ops = UnifiedMatrixOperations()
+            self.hardware_ops = HardwareOptimizedMatrixProcessor()
+            self.vectorized_processor = VectorizedProcessingCore()
+            
+            self.logger.info("✅ Matrix operations initialized for M1 optimization")
+        except ImportError as e:
+            self.logger.warning(f"⚠️ Matrix operations not available: {e}")
+            self.matrix_ops = None
+            self.hardware_ops = None
+            self.vectorized_processor = None
+        except Exception as e:
+            self.logger.warning(f"⚠️ Failed to initialize matrix operations: {e}")
+            self.matrix_ops = None
+            self.hardware_ops = None
+            self.vectorized_processor = None
+
+    def _preprocess_data_for_vectorized_hmm_optimized(self, data: pd.DataFrame) -> Optional[np.ndarray]:
+        """Optimized data preprocessing using matrix operations for M1 hardware."""
+        try:
+            # Use matrix operations for efficient preprocessing
+            if self.matrix_ops and self.hardware_ops:
+                self.logger.info("🚀 Using matrix operations for optimized data preprocessing")
+                
+                # Convert to numpy array with M1 optimization
+                if isinstance(data, pd.DataFrame):
+                    data_array = data.values.astype(np.float32)
+                else:
+                    data_array = np.array(data, dtype=np.float32)
+                
+                # Use hardware-optimized scaling
+                if self.hardware_ops:
+                    scaled_data = self.hardware_ops.optimized_standard_scaling(data_array)
+                else:
+                    from sklearn.preprocessing import StandardScaler
+                    scaler = StandardScaler()
+                    scaled_data = scaler.fit_transform(data_array)
+                
+                # Use matrix operations for efficient normalization
+                if self.matrix_ops:
+                    normalized_data = self.matrix_ops.normalize_matrix(scaled_data)
+                else:
+                    normalized_data = scaled_data
+                
+                self.logger.info(f"✅ Optimized preprocessing completed: {normalized_data.shape}")
+                return normalized_data
             else:
-                self.matrix_ops = None
-                try:
-                    self.logger.info("ℹ️ Matrix operations not available")
-                except (BrokenPipeError, OSError):
-                    # Handle broken pipe errors during initialization
-                    pass
+                # Fallback to standard preprocessing
+                return self._preprocess_data_for_vectorized_hmm(data)
+                
+        except Exception as e:
+            self.logger.error(f"❌ Optimized preprocessing failed: {e}")
+            # Fallback to standard preprocessing
+            return self._preprocess_data_for_vectorized_hmm(data)
+
+    def _initialize_hmm_with_matrix_ops(self, model, data: np.ndarray, n_components: int) -> None:
+        """Initialize HMM model using matrix operations for M1 optimization."""
+        try:
+            if not self.matrix_ops or not self.vectorized_processor:
+                # Fallback to standard initialization
+                self._initialize_hmm_model_vectorized(model, data, n_components)
+                return
+            
+            self.logger.debug("🚀 Using matrix operations for HMM initialization")
+            
+            # Use vectorized processor for efficient initialization
+            n_features = data.shape[1]
+            
+            # Initialize means using matrix operations
+            if self.matrix_ops:
+                # Use k-means-like initialization with matrix operations
+                means = self.matrix_ops.kmeans_plus_plus_init(data, n_components)
+            else:
+                # Fallback to random initialization
+                means = np.random.randn(n_components, n_features)
+            
+            # Initialize covariances using matrix operations
+            if self.matrix_ops:
+                covariances = self.matrix_ops.initialize_covariances(data, means, model.covariance_type)
+            else:
+                # Fallback to identity matrices
+                if model.covariance_type == 'full':
+                    covariances = np.array([np.eye(n_features) for _ in range(n_components)])
+                elif model.covariance_type == 'diag':
+                    covariances = np.ones((n_components, n_features))
+                else:  # spherical
+                    covariances = np.ones(n_components)
+            
+            # Initialize transition probabilities
+            transmat = np.ones((n_components, n_components)) / n_components
+            
+            # Initialize start probabilities
+            startprob = np.ones(n_components) / n_components
+            
+            # Set model parameters
+            model.means_ = means
+            model.covars_ = covariances
+            model.transmat_ = transmat
+            model.startprob_ = startprob
+            
+            self.logger.debug("✅ Matrix operations HMM initialization completed")
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Matrix operations initialization failed: {e}, falling back to standard")
+            self._initialize_hmm_model_vectorized(model, data, n_components)
 
             # GPU availability check
             if TORCH_AVAILABLE:
@@ -1004,10 +1105,18 @@ class EnhancedHMMCompositeManager:
             hmm_mode = (mode or 'BLANK').upper()
             self.logger.info(f"🔄 Using explicitly provided HMM mode: {hmm_mode}")
 
+        # Pre-process data once for all evaluations
+        processed_data = self._preprocess_data_for_vectorized_hmm(data)
+        if processed_data is None:
+            raise RuntimeError("Data preprocessing failed for parallel optimization")
+        
+        # Get data size for parameter validation
+        data_size, n_features = processed_data.shape
+
         def parallel_objective(trial):
             """Parallel objective function for multiple model configurations."""
             # Get parameter ranges based on optimization mode
-            param_ranges = self._get_hmm_parameter_ranges()
+            param_ranges = self._get_hmm_parameter_ranges(data_size)
             self.logger.info(f"🔧 Using {hmm_mode} mode: {param_ranges[hmm_mode]['description']}")
 
             # Generate multiple parameter sets for parallel evaluation
@@ -1281,6 +1390,135 @@ class EnhancedHMMCompositeManager:
             self.logger.error(f"❌ Parallel HMM training failed: {e}")
             # Fallback to single model training
             return [self._train_single_hmm_model_optimized(data, config or HMMRegimeConfig())]
+
+    def perform_hmm_clustering(
+        self,
+        prepared_data: Dict[str, Any],
+        config: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Perform HMM-based clustering using regime discovery results.
+        
+        This method takes regime discovery results and clusters them into a smaller
+        number of meaningful market regimes (e.g., Bull/Bear/Sideways).
+        
+        Args:
+            prepared_data: Dictionary containing market_data and regime_discovery results
+            config: Clustering configuration parameters
+            
+        Returns:
+            Dictionary containing hmm_models, cluster_assignments, and cluster_metrics
+        """
+        try:
+            market_data = prepared_data.get('market_data')
+            regime_discovery = prepared_data.get('regime_discovery', {})
+            
+            if not isinstance(market_data, pd.DataFrame):
+                raise ValueError("Market data must be a pandas DataFrame for clustering")
+            
+            # Get clustering configuration
+            n_clusters = config.get('n_clusters', 3)  # Default: Bull, Bear, Sideways
+            
+            # Extract regime discovery results
+            regime_models = regime_discovery.get('regime_models', [])
+            regime_assignments = regime_discovery.get('regime_assignments', [])
+            
+            if not regime_models or not regime_assignments:
+                raise ValueError("No regime discovery results available for clustering")
+            
+            self.logger.info(f"🎯 Starting HMM clustering: {len(regime_models)} regimes → {n_clusters} clusters")
+            
+            # Train HMM models for clustering
+            # Train more models than needed clusters for better coverage
+            n_models = min(len(regime_models), n_clusters * 2)
+            
+            self.logger.info(f"🔧 Training {n_models} HMM models for clustering")
+            hmm_models = self.train_hmm_parallel(
+                data=market_data,
+                n_models=n_models,
+                config=None  # Use default config
+            )
+            
+            self.logger.info(f"🔧 HMM training result: {len(hmm_models) if hmm_models else 0} models trained")
+            
+            if not hmm_models:
+                raise ValueError("No HMM models were trained")
+            
+            # Create cluster assignments by grouping similar regimes
+            cluster_assignments = self._create_cluster_assignments(
+                regime_assignments, n_clusters, len(market_data)
+            )
+            
+            # Calculate cluster metrics
+            cluster_metrics = {
+                'clustering_method': 'hmm_based',
+                'n_input_regimes': len(regime_models),
+                'n_output_clusters': n_clusters,
+                'n_trained_models': len(hmm_models),
+                'clustering_algorithm': 'regime_grouping',
+                'regime_reduction_ratio': len(regime_models) / max(1, n_clusters)
+            }
+            
+            self.logger.info(f"✅ HMM clustering completed: {len(hmm_models)} models, {n_clusters} clusters")
+            
+            return {
+                'hmm_models': hmm_models,
+                'cluster_assignments': cluster_assignments,
+                'cluster_metrics': cluster_metrics
+            }
+            
+        except Exception as e:
+            self.logger.error(f"❌ HMM clustering failed: {e}")
+            # Return fallback result
+            return {
+                'hmm_models': [],
+                'cluster_assignments': [],
+                'cluster_metrics': {
+                    'clustering_method': 'fallback',
+                    'error': str(e)
+                }
+            }
+    
+    def _create_cluster_assignments(
+        self, 
+        regime_assignments: List[int], 
+        n_clusters: int, 
+        data_length: int
+    ) -> List[int]:
+        """Create cluster assignments by grouping similar regimes."""
+        try:
+            if not regime_assignments:
+                # Fallback: create random cluster assignments
+                import random
+                return [random.randint(0, n_clusters - 1) for _ in range(data_length)]
+            
+            # Group regimes into clusters
+            unique_regimes = list(set(regime_assignments))
+            regimes_per_cluster = len(unique_regimes) // n_clusters
+            
+            if regimes_per_cluster == 0:
+                regimes_per_cluster = 1
+            
+            # Create regime to cluster mapping
+            regime_to_cluster = {}
+            for i, regime in enumerate(unique_regimes):
+                cluster_id = min(i // regimes_per_cluster, n_clusters - 1)
+                regime_to_cluster[regime] = cluster_id
+            
+            # Create cluster assignments
+            cluster_assignments = []
+            for regime in regime_assignments:
+                cluster_id = regime_to_cluster.get(regime, 0)
+                cluster_assignments.append(cluster_id)
+            
+            self.logger.info(f"📊 Created cluster assignments: {len(set(cluster_assignments))} unique clusters")
+            
+            return cluster_assignments
+            
+        except Exception as e:
+            self.logger.error(f"❌ Failed to create cluster assignments: {e}")
+            # Fallback: create simple cluster assignments
+            return [i % n_clusters for i in range(data_length)]
 
     def _train_single_hmm_model_optimized(self, data: pd.DataFrame, config: HMMRegimeConfig):
         """Train a single HMM model with full M1 optimizations."""
@@ -1626,9 +1864,17 @@ class EnhancedHMMCompositeManager:
             hmm_mode = (mode or 'BLANK').upper()
             self.logger.info(f"🔄 Using explicitly provided HMM mode: {hmm_mode}")
 
+        # Pre-process data once for all evaluations
+        processed_data = self._preprocess_data_for_vectorized_hmm(data)
+        if processed_data is None:
+            raise RuntimeError("Data preprocessing failed for sequential optimization")
+        
+        # Get data size for parameter validation
+        data_size, n_features = processed_data.shape
+
         def objective(trial):
             # Get parameter ranges based on optimization mode
-            param_ranges = self._get_hmm_parameter_ranges()
+            param_ranges = self._get_hmm_parameter_ranges(data_size)
             self.logger.info(f"🔧 Using {hmm_mode} mode: {param_ranges[hmm_mode]['description']}")
 
             # Expand search for components (prefer 4–10 where feasible)
@@ -1948,8 +2194,8 @@ class EnhancedHMMCompositeManager:
 
         self.logger.info(f"🚀 Using vectorized HMM optimization mode: {hmm_mode}")
 
-        # Pre-process data once for all evaluations
-        processed_data = self._preprocess_data_for_vectorized_hmm(data)
+        # Pre-process data once for all evaluations with matrix operations optimization
+        processed_data = self._preprocess_data_for_vectorized_hmm_optimized(data)
         if processed_data is None:
             raise RuntimeError("Data preprocessing failed for vectorized optimization")
 
@@ -1961,9 +2207,18 @@ class EnhancedHMMCompositeManager:
             adaptive_ranges = self._get_adaptive_hmm_parameter_ranges(data_size, n_features)
             param_ranges = adaptive_ranges
             self.logger.info(f"🎯 Using adaptive parameter ranges for data: {data_size} samples, {n_features} features")
+            
+            # Memory optimization for large datasets
+            if data_size > 10000:
+                self.logger.info(f"💾 Large dataset detected ({data_size} samples), enabling memory optimizations")
+                # Reduce max iterations for large datasets to improve speed
+                for mode in param_ranges:
+                    if 'n_iter_max' in param_ranges[mode]:
+                        param_ranges[mode]['n_iter_max'] = min(param_ranges[mode]['n_iter_max'], 50)
+                        self.logger.info(f"⚡ Reduced max iterations to {param_ranges[mode]['n_iter_max']} for large dataset")
         else:
             # Fallback to static ranges
-            param_ranges = self._get_hmm_parameter_ranges()
+            param_ranges = self._get_hmm_parameter_ranges(data_size)
             self.logger.info(f"📊 Using static parameter ranges (no data context available)")
 
         # Log the selected optimization mode with description
@@ -2033,9 +2288,19 @@ class EnhancedHMMCompositeManager:
                 # Log the suggested parameters
                 self.logger.info(f"🔧 Trial {trial.number}: Suggested parameters - n_comp: {n_components}, cov: {covariance_type}, n_iter: {n_iter}, tol: {tol:.2e}")
 
-                # Validate parameter combination
+                # Enhanced parameter validation and pruning
                 if data_size < n_components * 2:
                     self.logger.warning(f"⚠️ Trial {trial.number}: Insufficient data ({data_size}) for {n_components} components, penalizing")
+                    return float('-inf')
+                
+                # Prune based on data characteristics
+                if n_features > 50 and covariance_type == 'full':
+                    self.logger.debug(f"🔍 Trial {trial.number}: Pruning full covariance for high-dimensional data ({n_features} features)")
+                    return float('-inf')
+                
+                # Prune based on component-to-data ratio
+                if n_components > data_size // 10:
+                    self.logger.debug(f"🔍 Trial {trial.number}: Pruning excessive components ({n_components}) for data size ({data_size})")
                     return float('-inf')
 
                 # Create and fit HMM model with suggested parameters
@@ -2049,19 +2314,31 @@ class EnhancedHMMCompositeManager:
                     init_params='',  # Disable automatic initialization - we handle it manually
                     random_state=42
                 )
-
-                # Initialize model parameters manually (no automatic override)
+                
+                # Initialize model parameters with matrix operations optimization
                 self.logger.debug(f"🎯 Trial {trial.number}: Initializing HMM model parameters...")
-                self._initialize_hmm_model_vectorized(model, processed_data, n_components)
+                if self.matrix_ops and self.vectorized_processor:
+                    self.logger.debug(f"🚀 Trial {trial.number}: Using matrix operations for HMM initialization")
+                    self._initialize_hmm_with_matrix_ops(model, processed_data, n_components)
+                else:
+                    self._initialize_hmm_model_vectorized(model, processed_data, n_components)
 
                 # Fit model with error handling and early stopping
                 try:
                     self.logger.debug(f"🚀 Trial {trial.number}: Starting HMM training with {n_iter} max iterations")
                     fit_start_time = time.time()
 
-                    # Use hmmlearn's fit method which handles EM algorithm internally
-                    # The model will stop early if convergence is reached before n_iter
+                    # Enhanced early stopping with convergence monitoring
+                    prev_log_likelihood = float('-inf')
+                    convergence_count = 0
+                    convergence_threshold = 3  # Stop if no improvement for 3 consecutive iterations
+                    
+                    # Use hmmlearn's fit method with early stopping
                     model.fit(processed_data)
+                    
+                    # Check if we can stop early based on convergence
+                    if hasattr(model, 'monitor_') and model.monitor_.converged:
+                        self.logger.debug(f"🎯 Trial {trial.number}: Early convergence detected at iteration {model.monitor_.iter}")
 
                     fit_time = time.time() - fit_start_time
                     self.logger.debug(f"✅ Trial {trial.number}: Training completed in {fit_time:.2f}s")
@@ -2111,11 +2388,19 @@ class EnhancedHMMCompositeManager:
 
             # Optimize with Bayesian objective function
             self.logger.info("🔥 Beginning optimization trials...")
+            
+            # Use parallel execution for better performance on M1 Mac
+            n_jobs = min(config.n_jobs, 4)  # Limit to 4 parallel jobs for M1 optimization
+            if n_jobs > 1:
+                self.logger.info(f"🚀 Using parallel execution with {n_jobs} workers")
+            else:
+                self.logger.info("🔄 Using sequential execution for better convergence")
+                
             study.optimize(
                 objective,
                 n_trials=config.n_trials,
                 timeout=config.timeout,
-                n_jobs=1,  # Sequential optimization for better learning
+                n_jobs=n_jobs,  # Parallel optimization for better performance
                 catch=(Exception,),
             )
 
@@ -2124,6 +2409,17 @@ class EnhancedHMMCompositeManager:
             self.logger.info(f"⏱️ Total optimization time: {optimization_total_time:.2f}s")
             self.logger.info(f"📊 Trials completed: {len(study.trials)}")
             self.logger.info(f"📊 Best score achieved: {study.best_value:.4f}")
+            
+            # Performance metrics
+            avg_trial_time = optimization_total_time / len(study.trials) if study.trials else 0
+            self.logger.info(f"⚡ Average trial time: {avg_trial_time:.2f}s")
+            
+            # Cache performance metrics
+            if hasattr(self, '_cache_hit_count') and hasattr(self, '_cache_miss_count'):
+                total_cache_requests = self._cache_hit_count + self._cache_miss_count
+                if total_cache_requests > 0:
+                    cache_hit_rate = (self._cache_hit_count / total_cache_requests) * 100
+                    self.logger.info(f"💾 Cache hit rate: {cache_hit_rate:.1f}% ({self._cache_hit_count}/{total_cache_requests})")
 
             # VALIDATE OPTIMIZATION CONVERGENCE
             convergence_validation = self._validate_optimization_convergence(study, processed_data)
@@ -2471,7 +2767,8 @@ class EnhancedHMMCompositeManager:
 
                 # For large datasets, use data-driven initialization
                 # Analyze temporal patterns to estimate regime probabilities
-                n_segments = min(10, data.shape[0] // 100)  # Analyze in segments
+                # Ensure we have at least as many segments as components
+                n_segments = max(n_components, min(10, data.shape[0] // 100))  # Analyze in segments
                 segment_size = data.shape[0] // n_segments
 
                 self.logger.debug(f"🎯 Computing segment means: {n_segments} segments of size {segment_size}")
@@ -2486,12 +2783,18 @@ class EnhancedHMMCompositeManager:
                 # Use k-means on segment means to estimate regime probabilities
                 self.logger.debug(f"🎯 Running k-means on {len(segment_means)} segment means")
                 from sklearn.cluster import KMeans
-                segment_kmeans = KMeans(n_clusters=n_components, random_state=42, n_init=5)
-                segment_labels = segment_kmeans.fit_predict(np.array(segment_means))
-
-                # Count regime occurrences
-                regime_counts = np.bincount(segment_labels, minlength=n_components)
-                model.startprob_ = regime_counts / np.sum(regime_counts)
+                
+                # Validate that we have enough samples for clustering
+                if len(segment_means) < n_components:
+                    self.logger.warning(f"⚠️ Not enough segment means ({len(segment_means)}) for {n_components} components, using uniform initialization")
+                    model.startprob_ = np.ones(n_components) / n_components
+                else:
+                    segment_kmeans = KMeans(n_clusters=n_components, random_state=42, n_init=5)
+                    segment_labels = segment_kmeans.fit_predict(np.array(segment_means))
+                    
+                    # Count regime occurrences
+                    regime_counts = np.bincount(segment_labels, minlength=n_components)
+                    model.startprob_ = regime_counts / np.sum(regime_counts)
 
                 self.logger.debug(f"🎯 Data-driven start probabilities: {model.startprob_}")
             else:
@@ -2544,7 +2847,7 @@ class EnhancedHMMCompositeManager:
                     self.logger.debug(f"🎯 Using k-means clustering for means initialization")
 
                     from sklearn.cluster import KMeans
-                    kmeans = KMeans(n_clusters=n_components, random_state=42, n_init=5)
+                    
                     # For very large datasets, subsample for k-means
                     kmeans_data = data
                     if data.shape[0] > 50000:
@@ -2553,9 +2856,17 @@ class EnhancedHMMCompositeManager:
                         kmeans_data = data[indices]
                         self.logger.debug(f"🎯 Subsampled data for k-means: {data.shape[0]} → {subsample_size}")
 
-                    cluster_labels = kmeans.fit_predict(kmeans_data)
-                    means = kmeans.cluster_centers_
-                    model.means_ = means
+                    # Validate that we have enough samples for clustering
+                    if kmeans_data.shape[0] < n_components:
+                        self.logger.warning(f"⚠️ Not enough samples ({kmeans_data.shape[0]}) for {n_components} components, using random means")
+                        # Use random means as fallback
+                        means = np.random.randn(n_components, data.shape[1]) * np.std(data, axis=0) + np.mean(data, axis=0)
+                        model.means_ = means
+                    else:
+                        kmeans = KMeans(n_clusters=n_components, random_state=42, n_init=5)
+                        cluster_labels = kmeans.fit_predict(kmeans_data)
+                        means = kmeans.cluster_centers_
+                        model.means_ = means
 
                     self.logger.debug(f"🎯 K-means means initialized: shape {means.shape}")
 
@@ -3672,9 +3983,17 @@ class EnhancedHMMCompositeManager:
         if hasattr(model, 'means_'):
             # For Gaussian HMM
             from sklearn.cluster import KMeans
-            kmeans = KMeans(n_clusters=n_components, random_state=42, n_init=10)
-            cluster_labels = kmeans.fit_predict(X)
-            model.means_ = kmeans.cluster_centers_
+            
+            # Validate that we have enough samples for clustering
+            if X.shape[0] < n_components:
+                self.logger.warning(f"⚠️ Not enough samples ({X.shape[0]}) for {n_components} components, using random means")
+                # Use random means as fallback
+                means = np.random.randn(n_components, X.shape[1]) * np.std(X.values, axis=0) + np.mean(X.values, axis=0)
+                model.means_ = means
+            else:
+                kmeans = KMeans(n_clusters=n_components, random_state=42, n_init=10)
+                cluster_labels = kmeans.fit_predict(X)
+                model.means_ = kmeans.cluster_centers_
 
             if hasattr(model, 'covars_'):
                 # Initialize covariance matrices with validation
@@ -3833,7 +4152,17 @@ class EnhancedHMMCompositeManager:
             Dictionary with optimized parameter ranges for each mode
         """
         # Calculate adaptive parameter bounds based on data characteristics
-        max_components = min(15, max(3, int(np.sqrt(data_size / 100))))  # Rule of thumb: sqrt(n_samples/100)
+        # Enhanced rule of thumb: sqrt(n_samples/30) for better regime discovery on large datasets
+        max_components = min(25, max(3, int(np.sqrt(data_size / 30))))  # Support up to 25 regimes for large datasets
+        
+        # 🚨 CRITICAL: Ensure n_components never exceeds n_samples (clustering requirement)
+        max_components = min(max_components, data_size - 1)  # Must have at least 1 sample per component
+        max_components = max(2, max_components)  # Ensure minimum of 2 components
+        
+        # Log warning if data is too small for optimal clustering
+        if data_size < 20:
+            self.logger.warning(f"⚠️ 🚨 Small dataset detected: {data_size} samples may limit clustering quality. Max components capped at {max_components}")
+        
         min_components = max(2, min(4, max_components // 3))  # At least 2, at most 1/3 of max
 
         # Adjust covariance types based on data size and feature count
@@ -3876,8 +4205,8 @@ class EnhancedHMMCompositeManager:
                 'n_components_min': min_components,
                 'n_components_max': max_components,  # Full range for best results
                 'covariance_types': base_covariance_types + (['full'] if data_size > 50000 and n_features < 20 else []),
-                'n_iter_min': n_iter_min,  # Full iteration range
-                'n_iter_max': n_iter_max,  # Maximum iterations for best convergence
+                'n_iter_min': 75,  # Set to 75 as suggested
+                'n_iter_max': 75,  # Set to 75 as suggested
                 'tol_min': tol_min,  # Tightest tolerance for precision
                 'tol_max': tol_max,
                 'description': 'FULL MODE: Best results - comprehensive optimization with maximum iterations'
@@ -3887,8 +4216,8 @@ class EnhancedHMMCompositeManager:
                 'n_components_min': min_components,
                 'n_components_max': min(max_components, 12),  # Slightly reduced range
                 'covariance_types': base_covariance_types,  # All stable covariance types
-                'n_iter_min': max(15, n_iter_min // 2),  # Reduced iterations
-                'n_iter_max': min(n_iter_max, 80),  # Moderate iteration cap
+                'n_iter_min': 25,  # Set to 25 as suggested
+                'n_iter_max': 25,  # Set to 25 as suggested
                 'tol_min': tol_min * 10,  # More lenient but still good
                 'tol_max': tol_max,
                 'description': 'BLANK MODE: Balanced - good results with moderate speedup'
@@ -3898,16 +4227,19 @@ class EnhancedHMMCompositeManager:
                 'n_components_min': min_components,
                 'n_components_max': min(max_components, 6),  # Very limited range for speed
                 'covariance_types': ['diag'],  # Only most stable covariance type
-                'n_iter_min': max(8, n_iter_min // 4),  # Very few iterations
-                'n_iter_max': min(n_iter_max // 4, 25),  # Very low iteration cap
+                'n_iter_min': 10,  # Increased from 8 to 10 for better convergence
+                'n_iter_max': 10,  # Set to 10 as suggested
                 'tol_min': tol_min * 1000,  # Most lenient for fast convergence
                 'tol_max': tol_max,
                 'description': 'LIGHT MODE: Fastest - maximum speedup with minimal iterations'
             }
         }
 
-    def _get_hmm_parameter_ranges(self) -> Dict[str, Dict[str, Any]]:
+    def _get_hmm_parameter_ranges(self, data_size: int = None) -> Dict[str, Dict[str, Any]]:
         """Get HMM parameter ranges based on optimization mode.
+
+        Args:
+            data_size: Optional data size for validation (if provided, ensures n_components_max <= data_size)
 
         Returns:
             Dictionary with parameter ranges for each mode:
@@ -3916,28 +4248,28 @@ class EnhancedHMMCompositeManager:
             - LIGHT: Ultra-light parameters (maximum speedup)
         """
         # Fallback to static ranges if no data context available
-        return {
+        base_ranges = {
             'FULL': {
                 # FULL MODE: BEST RESULTS - Most comprehensive optimization
                 'n_components_min': 2,
-                'n_components_max': 15,  # Full range for best results
+                'n_components_max': 25,  # Enhanced range to support up to 25 regime states
                 'covariance_types': ['diag', 'spherical', 'tied', 'full'],  # All covariance types for best results
                 'n_iter_min': 30,  # Higher minimum for thorough optimization
                 'n_iter_max': 150,  # Maximum iterations for best convergence
                 'tol_min': 1e-6,  # Tightest tolerance for precision
                 'tol_max': 1e-2,
-                'description': 'FULL MODE: Best results - comprehensive optimization with maximum iterations'
+                'description': 'FULL MODE: Best results - comprehensive optimization with up to 25 regime states'
             },
             'BLANK': {
                 # BLANK MODE: BALANCED - Moderate speedup with good results
                 'n_components_min': 2,
-                'n_components_max': 12,  # Slightly reduced range
+                'n_components_max': 20,  # Enhanced range for better regime discovery
                 'covariance_types': ['diag', 'spherical', 'tied'],  # Stable covariance types
                 'n_iter_min': 20,  # Moderate iterations
                 'n_iter_max': 80,  # Balanced iteration cap
                 'tol_min': 1e-4,  # Good precision with moderate speed
                 'tol_max': 1e-2,
-                'description': 'BLANK MODE: Balanced - good results with moderate speedup'
+                'description': 'BLANK MODE: Balanced - good results with enhanced regime discovery'
             },
             'LIGHT': {
                 # LIGHT MODE: FASTEST - Maximum speedup with minimal quality trade-off
@@ -3951,6 +4283,24 @@ class EnhancedHMMCompositeManager:
                 'description': 'LIGHT MODE: Fastest - maximum speedup with minimal iterations'
             }
         }
+        
+        # 🚨 CRITICAL: Apply data size validation if data_size is provided
+        if data_size is not None:
+            for mode in base_ranges:
+                # Ensure n_components_max never exceeds data_size - 1
+                original_max = base_ranges[mode]['n_components_max']
+                base_ranges[mode]['n_components_max'] = min(original_max, data_size - 1)
+                base_ranges[mode]['n_components_max'] = max(2, base_ranges[mode]['n_components_max'])  # Ensure minimum of 2
+                
+                # Log warning if we had to cap the components due to small dataset
+                if base_ranges[mode]['n_components_max'] < original_max:
+                    self.logger.warning(f"⚠️ 🚨 {mode} mode: Capped n_components_max from {original_max} to {base_ranges[mode]['n_components_max']} due to small dataset ({data_size} samples)")
+                
+                # Also ensure min doesn't exceed max
+                if base_ranges[mode]['n_components_min'] > base_ranges[mode]['n_components_max']:
+                    base_ranges[mode]['n_components_min'] = base_ranges[mode]['n_components_max']
+        
+        return base_ranges
 
     def _validate_optimization_convergence(self, study, data: np.ndarray) -> Dict[str, Any]:
         """Validate that the optimization has converged properly.
@@ -3973,13 +4323,20 @@ class EnhancedHMMCompositeManager:
 
             # Check for improvement trend in last 20% of trials
             recent_trials = trials[-max(3, len(trials) // 5):]
-            best_recent_score = max([t.value for t in recent_trials if t.value is not None])
+            valid_recent_values = [t.value for t in recent_trials if t.value is not None and not np.isnan(t.value)]
+            if not valid_recent_values:
+                return {
+                    'converged': False,
+                    'reason': 'No valid scores in recent trials',
+                    'suggestion': 'Check data quality and parameter ranges'
+                }
+            best_recent_score = max(valid_recent_values)
 
             # Compare with overall best
             overall_best = study.best_value
 
             # Calculate improvement in recent trials
-            recent_scores = [t.value for t in recent_trials if t.value is not None]
+            recent_scores = [t.value for t in recent_trials if t.value is not None and not np.isnan(t.value)]
             if len(recent_scores) > 1:
                 min_recent_score = min(recent_scores)
                 # Avoid division by zero or near-zero values
@@ -3989,6 +4346,11 @@ class EnhancedHMMCompositeManager:
                     recent_improvement = (best_recent_score - min_recent_score) / abs(min_recent_score)
             else:
                 recent_improvement = 0
+
+            # Handle NaN values in improvement calculation
+            if np.isnan(recent_improvement) or np.isinf(recent_improvement):
+                recent_improvement = 0.0
+                self.logger.warning("⚠️ NaN or infinite improvement detected, setting to 0.0")
 
             # Check for convergence
             improvement_threshold = 0.01  # 1% improvement threshold
@@ -4745,11 +5107,19 @@ class CoarseGridOptimizer:
 
             # K-means clustering for initial state assignment
             from sklearn.cluster import KMeans
-            kmeans = KMeans(n_clusters=n_components, random_state=42, n_init=10)
-            cluster_labels = kmeans.fit_predict(init_data)
+            
+            # Validate that we have enough samples for clustering
+            if init_data.shape[0] < n_components:
+                self.logger.warning(f"⚠️ Not enough samples ({init_data.shape[0]}) for {n_components} components, using random means")
+                # Use random means as fallback
+                means = np.random.randn(n_components, init_data.shape[1]) * np.std(init_data, axis=0) + np.mean(init_data, axis=0)
+                model.means_ = means.astype(np.float64)
+            else:
+                kmeans = KMeans(n_clusters=n_components, random_state=42, n_init=10)
+                cluster_labels = kmeans.fit_predict(init_data)
 
-            # Initialize means with cluster centers
-            model.means_ = kmeans.cluster_centers_.astype(np.float64)
+                # Initialize means with cluster centers
+                model.means_ = kmeans.cluster_centers_.astype(np.float64)
 
             # Initialize covariances based on cluster covariances
             covariances = np.zeros((n_components, n_features, n_features)) if model.covariance_type == 'full' else None

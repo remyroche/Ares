@@ -94,6 +94,7 @@ class RegimeDetectionMethod(Enum):
     MULTI_TIMEFRAME_HMM = "multi_timeframe_hmm"
     STREAMING_HMM = "streaming_hmm"
     REGIME_AWARE_HMM = "regime_aware_hmm"
+    ENHANCED_HMM = "enhanced_hmm"
 
 class TimeframeType(Enum):
     """Available timeframe types."""

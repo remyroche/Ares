@@ -20,7 +20,7 @@ from .hmm_clustering import HMMClusteringComponent
 # HMM training components moved to hmm_models_training module
 # from .hmm_models_training import HMMModelsTrainingComponent
 # from .hmm_ensemble_training import HMMEnsembleTrainingComponent
-from .regime_data_splitting import RegimeDataSplittingComponent
+# RegimeDataSplittingComponent imported lazily to avoid circular imports
 # TripleBarrierLabelingComponent moved to triple_barrier_labeling package
 from .feature_lookback_optimization import FeatureLookbackOptimizationComponent
 from .cross_timeframe_analysis import CrossTimeframeAnalysisComponent
@@ -38,7 +38,7 @@ __all__ = [
     'HMMClusteringComponent',
     # 'HMMModelsTrainingComponent',  # Moved to hmm_models_training module
     # 'HMMEnsembleTrainingComponent',  # Removed
-    'RegimeDataSplittingComponent',
+    # 'RegimeDataSplittingComponent',  # Imported lazily to avoid circular imports
     # 'TripleBarrierLabelingComponent',  # Moved to triple_barrier_labeling package
     'FeatureLookbackOptimizationComponent',
     'CrossTimeframeAnalysisComponent'

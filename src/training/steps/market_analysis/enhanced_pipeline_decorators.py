@@ -4,7 +4,6 @@ from src.utils.tprint import tprint
 import pandas as pd
 from datetime import datetime
 from src.core.decorators import (
-from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
     handles_errors,
     traced,
     validates,
@@ -13,6 +12,7 @@ from src.training.steps.standardized_parquet_handler import standardized_parquet
     timeout,
     retry,
 )
+from src.utils.data.klines_parquet import get_klines_manager
 
 """
 Enhanced Pipeline Decorators
@@ -26,12 +26,7 @@ import functools
 import time
 from pathlib import Path
 
-# Utility imports
-from src.utils.file_utils import (
-    ensure_directory,
-    safe_json_dump,
-    safe_json_load,
-)
+# Utility imports - removed unused file_utils import
 # Temporarily commented out - functions not available
 # from src.utils.validation import (
 #     validate_dataframe,

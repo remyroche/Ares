@@ -50,7 +50,7 @@ from src.core.errors import (
 )
 
 from src.utils.logger import system_logger
-from ...standardized_parquet_handler import standardized_parquet_handler
+from src.utils.data.klines_parquet import get_klines_manager
 
 logger = system_logger.getChild('RegimeDataSplittingEnhanced')
 
@@ -238,8 +238,6 @@ class RegimeDataSplittingEnhanced:
             self.hmm_tagger = HMMRegimeTagger(config)
     
     @handles_errors
-    @traced
-    @log_execution_time
     async def execute(self, training_input: Dict[str, Any], 
                     pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -479,7 +477,21 @@ class RegimeDataSplittingEnhanced:
                 self.logger.warning(f"⚠️ Market data file not found: {data_path}")
                 return None
             
-            market_data = pd.read_parquet(data_path)
+            # For market data, try to use klines manager first, fallback to direct reading
+            try:
+                # Extract symbol and timeframe from file path
+                file_name = data_path.name
+                parts = file_name.replace('.parquet', '').split('_')
+                if len(parts) >= 3:
+                    symbol = parts[1]  # Assuming format: exchange_symbol_timeframe.parquet
+                    timeframe = parts[2]
+                    klines_manager = get_klines_manager()
+                    market_data = klines_manager.read_data(symbol, timeframe, data_type="raw")
+                else:
+                    market_data = pd.read_parquet(data_path)
+            except Exception as e:
+                logger.warning(f"Failed to use klines manager, falling back to direct reading: {e}")
+                market_data = pd.read_parquet(data_path)
             
             # Validate data quality
             if market_data.empty:

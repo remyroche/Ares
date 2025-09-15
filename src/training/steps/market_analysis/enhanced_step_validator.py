@@ -1,7 +1,7 @@
 from src.utils.tprint import tprint
 
 from src.core.decorators import handles_errors
-from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
+from src.utils.data.klines_parquet import get_klines_manager
 #!/usr/bin/env python3
 """
 Enhanced Step Validator
@@ -163,7 +163,7 @@ class EnhancedStepValidator:
         }
 
     @handles_errors(Exception, fallback = False)
-    @traced(operation_name="validate_step_input")
+    @traced()
     @log_execution_time
     async def validate_step_input(
         self,
@@ -249,7 +249,7 @@ class EnhancedStepValidator:
             return validation_result
 
     @handles_errors(Exception, fallback = False)
-    @traced(operation_name="validate_step_output")
+    @traced()
     @log_execution_time
     async def validate_step_output(
         self,
@@ -353,7 +353,25 @@ class EnhancedStepValidator:
             
             # Read the file
             if file_path.endswith('.parquet'):
-                df = standardized_parquet_handler.read_parquet_standardized(file_path)
+                # Try to determine if this is raw klines data or processed data
+                file_name = Path(file_path).name
+                parts = file_name.replace('.parquet', '').split('_')
+                
+                if len(parts) >= 3:
+                    # Check if this looks like raw klines data (exchange_symbol_timeframe format)
+                    try:
+                        symbol = parts[1]
+                        timeframe = parts[2]
+                        klines_manager = get_klines_manager()
+                        df = klines_manager.read_data(symbol, timeframe, data_type="raw")
+                    except Exception as e:
+                        # Fallback to direct parquet reading for processed data
+                        from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
+                        df = standardized_parquet_handler.read_parquet_standardized(file_path)
+                else:
+                    # For files that don't match expected format, use direct reading
+                    from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
+                    df = standardized_parquet_handler.read_parquet_standardized(file_path)
             else:
                 # Skip non-parquet files for now
                 return quality_result
@@ -534,7 +552,7 @@ class EnhancedStepValidator:
             )
 
     @handles_errors(Exception, fallback = False)
-    @traced(operation_name="validate_step_transition")
+    @traced()
     @log_execution_time
     async def validate_step_transition(
         self,

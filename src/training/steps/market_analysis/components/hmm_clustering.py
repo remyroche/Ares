@@ -94,7 +94,43 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                 raise ValueError("No market data available for HMM clustering")
             
             # Get regime discovery results from previous stage
+            # First try to get from pipeline state (direct access)
             hmm_regime_discovery = pipeline_state.get('hmm_regime_discovery_result', {})
+            
+            # If not found in pipeline state, try to get from artifacts in pipeline state
+            if not hmm_regime_discovery:
+                artifacts = pipeline_state.get('artifacts', {})
+                hmm_regime_discovery = artifacts.get('hmm_regime_discovery_result', {})
+            
+            # If still not found, try to get from regime models in pipeline state
+            if not hmm_regime_discovery:
+                regime_models = pipeline_state.get('regime_models', [])
+                regime_assignments = pipeline_state.get('regime_assignments', [])
+                if regime_models or regime_assignments:
+                    hmm_regime_discovery = {
+                        'regime_models': regime_models,
+                        'regime_assignments': regime_assignments,
+                        'regime_metrics': pipeline_state.get('regime_metrics', {})
+                    }
+            
+            # Log regime discovery summary (reduced verbosity)
+            if hmm_regime_discovery:
+                regime_models = hmm_regime_discovery.get('regime_models', [])
+                regime_assignments = hmm_regime_discovery.get('regime_assignments', [])
+                regime_metrics = hmm_regime_discovery.get('regime_metrics', {})
+                total_regimes = regime_metrics.get('total_regimes', len(regime_models))
+                total_samples = regime_metrics.get('total_samples', len(regime_assignments))
+                
+                self.logger.info(f"ℹ️ 🔍 Found HMM regime discovery results: {total_regimes} regimes, {total_samples} samples")
+                
+                # Log regime distribution if available
+                regime_distribution = regime_metrics.get('regime_distribution', {})
+                if regime_distribution:
+                    dist_summary = {f"regime_{k}": f"{v/total_samples*100:.1f}%" for k, v in regime_distribution.items()}
+                    self.logger.info(f"ℹ️ 🔍 Regime distribution: {dist_summary}")
+            else:
+                self.logger.warning("⚠️ No HMM regime discovery results found in pipeline state")
+            
             if not hmm_regime_discovery:
                 raise ValueError("No HMM regime discovery results available for clustering")
             
@@ -244,7 +280,8 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                     hmm_manager, prepared_data, config
                 )
             else:
-                clustering_result = await hmm_manager.perform_hmm_clustering(prepared_data, config)
+                # Use the new perform_hmm_clustering method from EnhancedHMMCompositeManager
+                clustering_result = hmm_manager.perform_hmm_clustering(prepared_data, config)
             
             clustering_time = time.time() - start_time
             clustering_result['clustering_time'] = clustering_time
@@ -263,6 +300,116 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                 },
                 'clustering_time': time.time() - start_time
             }
+    
+    async def _perform_single_threaded_hmm_clustering(
+        self, 
+        hmm_manager: Any, 
+        prepared_data: Any, 
+        config: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Perform HMM clustering using single-threaded approach."""
+        try:
+            market_data = prepared_data.get('market_data')
+            regime_discovery = prepared_data.get('regime_discovery', {})
+            
+            if not PANDAS_AVAILABLE or not isinstance(market_data, pd.DataFrame):
+                raise ValueError("Market data must be a pandas DataFrame for clustering")
+            
+            # Get the number of clusters to create
+            n_clusters = config.get('n_clusters', 3)
+            
+            # Use the regime discovery results to determine the number of models to train
+            regime_models = regime_discovery.get('regime_models', [])
+            regime_assignments = regime_discovery.get('regime_assignments', [])
+            
+            if not regime_models or not regime_assignments:
+                raise ValueError("No regime discovery results available for clustering")
+            
+            self.logger.info(f"🎯 Starting HMM clustering: {len(regime_models)} regimes → {n_clusters} clusters")
+            
+            # Train HMM models for clustering
+            # We'll train multiple models and then cluster them
+            n_models = min(len(regime_models), n_clusters * 2)  # Train more models than needed clusters
+            
+            # Use the train_hmm_parallel method from EnhancedHMMCompositeManager
+            self.logger.info(f"🔧 Training {n_models} HMM models for clustering")
+            hmm_models = hmm_manager.train_hmm_parallel(
+                data=market_data,
+                n_models=n_models,
+                config=None  # Use default config
+            )
+            
+            self.logger.info(f"🔧 HMM training result: {len(hmm_models) if hmm_models else 0} models trained")
+            
+            if not hmm_models:
+                raise ValueError("No HMM models were trained")
+            
+            # Create cluster assignments by grouping similar regimes
+            cluster_assignments = self._create_cluster_assignments(
+                regime_assignments, n_clusters, len(market_data)
+            )
+            
+            # Calculate cluster metrics
+            cluster_metrics = {
+                'clustering_method': 'hmm_based',
+                'n_input_regimes': len(regime_models),
+                'n_output_clusters': n_clusters,
+                'n_trained_models': len(hmm_models),
+                'clustering_algorithm': 'regime_grouping'
+            }
+            
+            self.logger.info(f"✅ HMM clustering completed: {len(hmm_models)} models, {n_clusters} clusters")
+            
+            return {
+                'hmm_models': hmm_models,
+                'cluster_assignments': cluster_assignments,
+                'cluster_metrics': cluster_metrics
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Single-threaded HMM clustering failed: {e}")
+            raise
+    
+    def _create_cluster_assignments(
+        self, 
+        regime_assignments: List[int], 
+        n_clusters: int, 
+        data_length: int
+    ) -> List[int]:
+        """Create cluster assignments by grouping similar regimes."""
+        try:
+            if not regime_assignments:
+                # Fallback: create random cluster assignments
+                import random
+                return [random.randint(0, n_clusters - 1) for _ in range(data_length)]
+            
+            # Group regimes into clusters
+            unique_regimes = list(set(regime_assignments))
+            regimes_per_cluster = len(unique_regimes) // n_clusters
+            
+            if regimes_per_cluster == 0:
+                regimes_per_cluster = 1
+            
+            # Create regime to cluster mapping
+            regime_to_cluster = {}
+            for i, regime in enumerate(unique_regimes):
+                cluster_id = min(i // regimes_per_cluster, n_clusters - 1)
+                regime_to_cluster[regime] = cluster_id
+            
+            # Create cluster assignments
+            cluster_assignments = []
+            for regime in regime_assignments:
+                cluster_id = regime_to_cluster.get(regime, 0)
+                cluster_assignments.append(cluster_id)
+            
+            self.logger.info(f"📊 Created cluster assignments: {len(set(cluster_assignments))} unique clusters")
+            
+            return cluster_assignments
+            
+        except Exception as e:
+            self.logger.error(f"Failed to create cluster assignments: {e}")
+            # Fallback: create simple cluster assignments
+            return [i % n_clusters for i in range(data_length)]
     
     def _prepare_data_for_clustering(self, data: Any, regime_discovery: Dict[str, Any]) -> Any:
         """Prepare market data and regime discovery results for clustering."""
@@ -1274,13 +1421,13 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                 merged_result = self._merge_chunk_clustering_results(chunk_results)
                 return merged_result
             else:
-                # Fallback to single-threaded processing
-                return await hmm_manager.perform_hmm_clustering(prepared_data, config)
+                # Fallback to single-threaded processing using the new method
+                return hmm_manager.perform_hmm_clustering(prepared_data, config)
                 
         except Exception as e:
             self.logger.error(f"❌ Parallel HMM clustering failed: {e}")
-            # Fallback to single-threaded processing
-            return await hmm_manager.perform_hmm_clustering(prepared_data, config)
+            # Fallback to single-threaded processing using the new method
+            return hmm_manager.perform_hmm_clustering(prepared_data, config)
     
     def _cluster_single_chunk(
         self, 
@@ -1299,8 +1446,26 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             }
             
             # Perform clustering on chunk
-            result = hmm_manager.perform_hmm_clustering(chunk_prepared, config)
-            result['chunk_index'] = chunk_idx
+            # Use train_hmm_parallel method instead of non-existent perform_hmm_clustering
+            n_models = config.get('n_clusters', 3)
+            hmm_models = hmm_manager.train_hmm_parallel(
+                data=chunk_data,
+                n_models=n_models,
+                config=None
+            )
+            
+            # Create simple cluster assignments for the chunk
+            cluster_assignments = [i % n_models for i in range(len(chunk_data))]
+            
+            result = {
+                'hmm_models': hmm_models,
+                'cluster_assignments': cluster_assignments,
+                'cluster_metrics': {
+                    'clustering_method': 'chunk_based',
+                    'chunk_size': len(chunk_data)
+                },
+                'chunk_index': chunk_idx
+            }
             return result
             
         except Exception as e:

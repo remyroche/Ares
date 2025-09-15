@@ -208,14 +208,32 @@ class PolynomialFeatureGenerator:
         try:
             # Convert data to numpy array if needed
             if isinstance(data, pd.DataFrame):
-                X = data.values
+                # Ensure we only work with numeric columns
+                numeric_data = data.select_dtypes(include=[np.number])
+                if numeric_data.empty:
+                    self.logger.warning("⚠️ No numeric columns found in DataFrame")
+                    return result
+                
+                X = numeric_data.values
                 if feature_names is None:
-                    feature_names = list(data.columns)
+                    feature_names = list(numeric_data.columns)
+                else:
+                    # Filter feature_names to match numeric columns
+                    feature_names = [name for name in feature_names if name in numeric_data.columns]
             else:
                 X = data
+                # Ensure numeric data
+                if X.dtype == object:
+                    self.logger.warning("⚠️ Input data contains non-numeric types, attempting conversion")
+                    try:
+                        X = pd.DataFrame(X).select_dtypes(include=[np.number]).values
+                    except:
+                        self.logger.error("❌ Cannot convert input data to numeric format")
+                        return result
             
             self.logger.info(f"📊 Input data shape: {X.shape}")
             self.logger.info(f"📊 Feature count: {len(feature_names)}")
+            self.logger.info(f"📊 Data type: {X.dtype}")
             
             # Apply optimized lookback periods if available
             if optimized_lookback_periods:
@@ -336,8 +354,32 @@ class PolynomialFeatureGenerator:
     ) -> List[str]:
         """Fallback variance-based feature selection."""
         try:
+            # Ensure we have numeric data only
+            if not NUMPY_AVAILABLE or X.dtype == object:
+                # Handle mixed data types
+                numeric_features = []
+                for i in range(X.shape[1]):
+                    try:
+                        # Try to convert to numeric
+                        numeric_col = pd.to_numeric(X[:, i], errors='coerce')
+                        if not numeric_col.isna().all():
+                            numeric_features.append(i)
+                    except:
+                        continue
+                
+                if not numeric_features:
+                    self.logger.warning("⚠️ No numeric features found, using first few features")
+                    return feature_names[:min(len(feature_names), self.config.max_feature_combinations)]
+                
+                # Use only numeric features
+                X_numeric = X[:, numeric_features]
+                feature_names_numeric = [feature_names[i] for i in numeric_features]
+            else:
+                X_numeric = X
+                feature_names_numeric = feature_names
+            
             # Calculate variance for each feature
-            variances = np.var(X, axis=0)
+            variances = np.var(X_numeric, axis=0)
             
             # Select features with highest variance
             variance_indices = np.argsort(variances)[::-1]
@@ -345,7 +387,7 @@ class PolynomialFeatureGenerator:
             
             for idx in variance_indices:
                 if variances[idx] > self.config.min_variance_threshold:
-                    selected_features.append(feature_names[idx])
+                    selected_features.append(feature_names_numeric[idx])
                     if len(selected_features) >= self.config.max_feature_combinations:
                         break
             
@@ -378,8 +420,22 @@ class PolynomialFeatureGenerator:
                     )
                     
                     if poly_feat is not None:
-                        polynomial_features.append(poly_feat)
-                        polynomial_names.append(poly_name)
+                        # Handle both single features and multiple features (like powers)
+                        if isinstance(poly_name, list):
+                            # Multiple features (e.g., powers)
+                            for i, name in enumerate(poly_name):
+                                if poly_feat.ndim == 2:
+                                    polynomial_features.append(poly_feat[:, i])
+                                else:
+                                    polynomial_features.append(poly_feat)
+                                polynomial_names.append(name)
+                                
+                                if len(polynomial_names) >= self.config.max_polynomial_features:
+                                    break
+                        else:
+                            # Single feature
+                            polynomial_features.append(poly_feat)
+                            polynomial_names.append(poly_name)
                         
                         if len(polynomial_names) >= self.config.max_polynomial_features:
                             break
@@ -404,106 +460,109 @@ class PolynomialFeatureGenerator:
     ) -> Tuple[Optional[np.ndarray], str]:
         """Create a specific type of polynomial feature."""
         try:
+            # Ensure x is numeric and convert to float if needed
+            if not NUMPY_AVAILABLE:
+                return None, ""
+            
+            # Convert to numeric if needed
+            try:
+                x_numeric = pd.to_numeric(x, errors='coerce')
+                if x_numeric.isna().all():
+                    self.logger.warning(f"⚠️ Feature {feature_name} has no numeric values")
+                    return None, ""
+                x = x_numeric.values
+            except:
+                # If conversion fails, try direct conversion
+                try:
+                    x = x.astype(float)
+                except:
+                    self.logger.warning(f"⚠️ Cannot convert feature {feature_name} to numeric")
+                    return None, ""
+            
+            # Check for valid numeric data
+            if np.all(np.isnan(x)) or np.all(np.isinf(x)):
+                self.logger.warning(f"⚠️ Feature {feature_name} has no valid numeric values")
+                return None, ""
+            
             if polynomial_type == PolynomialType.POWER:
                 # Generate powers up to max degree
                 features = []
                 names = []
                 for degree in range(2, self.config.max_polynomial_degree + 1):
-                    if self.matrix_ops:
-                        feature = self.matrix_ops.batch_process(
-                            x.reshape(-1, 1), 'power', power=degree
-                        ).flatten()
-                    else:
+                    try:
                         feature = np.power(x, degree)
-                    features.append(feature)
-                    names.append(f"{feature_name}_pow_{degree}")
+                        # Check for valid results
+                        if not (np.any(np.isnan(feature)) or np.any(np.isinf(feature))):
+                            features.append(feature)
+                            names.append(f"{feature_name}_pow_{degree}")
+                    except:
+                        continue
                 
-                return np.column_stack(features), names
-                
-            elif polynomial_type == PolynomialType.SQUARE_ROOT:
-                if self.matrix_ops:
-                    feature = self.matrix_ops.batch_process(
-                        x.reshape(-1, 1), 'sqrt'
-                    ).flatten()
-                else:
-                    feature = np.sqrt(np.maximum(x, 0))
-                name = f"sqrt_{feature_name}"
-                
-            elif polynomial_type == PolynomialType.CUBIC_ROOT:
-                if self.matrix_ops:
-                    feature = self.matrix_ops.batch_process(
-                        x.reshape(-1, 1), 'cbrt'
-                    ).flatten()
-                else:
-                    feature = np.cbrt(x)
-                name = f"cbrt_{feature_name}"
-                
-            elif polynomial_type == PolynomialType.LOGARITHMIC:
-                if self.matrix_ops:
-                    feature = self.matrix_ops.batch_process(
-                        x.reshape(-1, 1), 'log', default_value=0.0
-                    ).flatten()
-                else:
-                    feature = np.log(np.maximum(x, 1e-10))
-                name = f"log_{feature_name}"
-                
-            elif polynomial_type == PolynomialType.EXPONENTIAL:
-                if self.matrix_ops:
-                    feature = self.matrix_ops.batch_process(
-                        x.reshape(-1, 1), 'exp'
-                    ).flatten()
-                else:
-                    feature = np.exp(np.clip(x, -10, 10))  # Clip to prevent overflow
-                name = f"exp_{feature_name}"
-                
-            elif polynomial_type == PolynomialType.RECIPROCAL:
-                if self.matrix_ops:
-                    feature = self.matrix_ops.batch_process(
-                        np.column_stack([np.ones_like(x), x]), 
-                        'safe_divide', 
-                        numerator=1.0, 
-                        denominator=x, 
-                        default_value=0.0
-                    ).flatten()
-                else:
-                    feature = np.divide(1.0, x, out=np.zeros_like(x), where=(x != 0))
-                name = f"recip_{feature_name}"
-                
-            elif polynomial_type == PolynomialType.CROSS_PRODUCT:
-                # Create cross products with other significant features
-                # This is a simplified version - in practice, you'd use other features
-                feature = x * x  # Self cross product
-                name = f"{feature_name}_cross_self"
-                
-            elif polynomial_type == PolynomialType.INTERACTION:
-                # Create interaction with transformed versions
-                x_squared = np.power(x, 2)
-                feature = x * x_squared
-                name = f"{feature_name}_interaction"
-                
-            else:
-                return None, ""
-            
-            # Validate feature
-            if isinstance(feature, np.ndarray) and feature.ndim == 1:
-                if np.any(np.isnan(feature)) or np.any(np.isinf(feature)):
-                    self.logger.warning(f"⚠️ Invalid values in {name}, skipping")
-                    return None, ""
-                return feature, name
-            elif isinstance(feature, np.ndarray) and feature.ndim == 2:
-                # Handle multiple features (like powers)
-                valid_features = []
-                valid_names = []
-                for i, (feat, name) in enumerate(zip(feature.T, names)):
-                    if not (np.any(np.isnan(feat)) or np.any(np.isinf(feat))):
-                        valid_features.append(feat)
-                        valid_names.append(name)
-                
-                if valid_features:
-                    return np.column_stack(valid_features), valid_names
+                if features:
+                    return np.column_stack(features), names
                 else:
                     return None, []
-            
+                
+            elif polynomial_type == PolynomialType.SQUARE_ROOT:
+                try:
+                    feature = np.sqrt(np.maximum(x, 0))
+                    if not (np.any(np.isnan(feature)) or np.any(np.isinf(feature))):
+                        return feature, f"sqrt_{feature_name}"
+                except:
+                    pass
+                
+            elif polynomial_type == PolynomialType.CUBIC_ROOT:
+                try:
+                    feature = np.cbrt(x)
+                    if not (np.any(np.isnan(feature)) or np.any(np.isinf(feature))):
+                        return feature, f"cbrt_{feature_name}"
+                except:
+                    pass
+                
+            elif polynomial_type == PolynomialType.LOGARITHMIC:
+                try:
+                    feature = np.log(np.maximum(x, 1e-10))
+                    if not (np.any(np.isnan(feature)) or np.any(np.isinf(feature))):
+                        return feature, f"log_{feature_name}"
+                except:
+                    pass
+                
+            elif polynomial_type == PolynomialType.EXPONENTIAL:
+                try:
+                    feature = np.exp(np.clip(x, -10, 10))  # Clip to prevent overflow
+                    if not (np.any(np.isnan(feature)) or np.any(np.isinf(feature))):
+                        return feature, f"exp_{feature_name}"
+                except:
+                    pass
+                
+            elif polynomial_type == PolynomialType.RECIPROCAL:
+                try:
+                    feature = np.divide(1.0, x, out=np.zeros_like(x), where=(x != 0))
+                    if not (np.any(np.isnan(feature)) or np.any(np.isinf(feature))):
+                        return feature, f"recip_{feature_name}"
+                except:
+                    pass
+                
+            elif polynomial_type == PolynomialType.CROSS_PRODUCT:
+                try:
+                    # Create cross products with other significant features
+                    # This is a simplified version - in practice, you'd use other features
+                    feature = x * x  # Self cross product
+                    if not (np.any(np.isnan(feature)) or np.any(np.isinf(feature))):
+                        return feature, f"{feature_name}_cross_self"
+                except:
+                    pass
+                
+            elif polynomial_type == PolynomialType.INTERACTION:
+                try:
+                    # Create interaction with transformed versions
+                    x_squared = np.power(x, 2)
+                    feature = x * x_squared
+                    if not (np.any(np.isnan(feature)) or np.any(np.isinf(feature))):
+                        return feature, f"{feature_name}_interaction"
+                except:
+                    pass
+                
             return None, ""
             
         except Exception as e:

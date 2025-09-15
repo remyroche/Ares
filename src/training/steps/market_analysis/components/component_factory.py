@@ -14,7 +14,7 @@ from .hmm_clustering import HMMClusteringComponent
 # HMM training components moved to hmm_models_training module
 # from .hmm_models_training import HMMModelsTrainingComponent
 # from .hmm_ensemble_training import HMMEnsembleTrainingComponent
-from .regime_data_splitting import RegimeDataSplittingComponent
+# RegimeDataSplittingComponent imported lazily to avoid circular imports
 # TripleBarrierLabelingComponent moved to triple_barrier_labeling package
 from .feature_lookback_optimization import FeatureLookbackOptimizationComponent
 from .cross_timeframe_analysis import CrossTimeframeAnalysisComponent  # Now uses PID-based feature generation
@@ -41,7 +41,7 @@ class ComponentFactory:
         'hmm_clustering': HMMClusteringComponent,
         # 'hmm_models_training': HMMModelsTrainingComponent,  # Moved to hmm_models_training module
         # 'hmm_ensemble_training': HMMEnsembleTrainingComponent,  # Removed
-        'regime_data_splitting': RegimeDataSplittingComponent,
+        # 'regime_data_splitting': RegimeDataSplittingComponent,  # Imported lazily to avoid circular imports
         # 'triple_barrier_labeling': TripleBarrierLabelingComponent,  # Moved to triple_barrier_labeling package
         'feature_lookback_optimization': FeatureLookbackOptimizationComponent,
         'cross_timeframe_analysis': CrossTimeframeAnalysisComponent,  # Now uses PID-based feature generation
@@ -67,8 +67,16 @@ class ComponentFactory:
         Raises:
             ValueError: If component name is not registered
         """
+        # Handle lazy imports for components that might cause circular imports
+        if component_name == 'regime_data_splitting':
+            try:
+                from .regime_data_splitting import RegimeDataSplittingComponent
+                return RegimeDataSplittingComponent(config)
+            except ImportError as e:
+                raise ValueError(f"Failed to import RegimeDataSplittingComponent: {e}")
+        
         if component_name not in self._components:
-            available_components = list(self._components.keys())
+            available_components = list(self._components.keys()) + ['regime_data_splitting']
             raise ValueError(
                 f"Unknown component: {component_name}. "
                 f"Available components: {available_components}"

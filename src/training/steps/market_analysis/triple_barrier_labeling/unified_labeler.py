@@ -551,6 +551,7 @@ class UnifiedTripleBarrierLabeler:
         """Main entry point for triple barrier labeling."""
         start_time = datetime.now()
         result = TripleBarrierResult(
+            success=False,  # Will be set to True if successful
             start_time=start_time,
             input_data_shape=data.shape if data is not None else (0, 0)
         )

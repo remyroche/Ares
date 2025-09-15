@@ -1078,7 +1078,12 @@ class EnhancedSRDetector:
                     # Ensure last_touch_time is also a timestamp
                     last_touch_time = pd.Timestamp(level.last_touch_time)
                     time_diff = current_time - last_touch_time
-                    level.time_since_last_touch = int(time_diff.total_seconds() / 60)  # Convert to minutes
+                    # Handle NaN values in time calculation
+                    total_seconds = time_diff.total_seconds()
+                    if pd.isna(total_seconds):
+                        level.time_since_last_touch = 0
+                    else:
+                        level.time_since_last_touch = int(total_seconds / 60)  # Convert to minutes
                 
                 # Set formation time if not set
                 if not level.formation_time:

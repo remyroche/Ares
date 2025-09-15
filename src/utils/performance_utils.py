@@ -528,6 +528,38 @@ def performance_timer(func: Callable) -> Callable:
 
     return wrapper
 
+def memory_monitor(func: Callable) -> Callable:
+    """
+    Decorator to monitor memory usage of function execution.
+
+    Args:
+        func: Function to monitor
+
+    Returns:
+        Wrapped function with memory monitoring
+    """
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        start_memory = get_memory_usage()
+        
+        try:
+            result = func(*args, **kwargs)
+            end_memory = get_memory_usage()
+            memory_delta = end_memory - start_memory
+            
+            logger.debug(f"Function {func.__name__} memory usage: {memory_delta:.2f}MB (start: {start_memory:.2f}MB, end: {end_memory:.2f}MB)")
+            
+            return result
+            
+        except Exception as e:
+            end_memory = get_memory_usage()
+            memory_delta = end_memory - start_memory
+            
+            logger.error(f"Function {func.__name__} failed with memory usage: {memory_delta:.2f}MB: {e}")
+            raise
+
+    return wrapper
+
 __all__ = [
     'PerformanceMetrics',
     'PerformanceMonitor',
@@ -541,5 +573,6 @@ __all__ = [
     'time_function',
     'benchmark_function',
     'get_system_info',
-    'performance_timer'
+    'performance_timer',
+    'memory_monitor'
 ]

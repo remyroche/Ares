@@ -4,10 +4,11 @@ from typing import Dict, List, Optional, Union, Any, Tuple
 
 from src.utils.logger import system_logger
 from src.core.decorators import handles_errors
-from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
+from src.utils.data.klines_parquet import get_klines_manager
 from src.utils.enhanced_artifact_manager import get_artifact_manager
 from src.utils.artifact_pickup_utils import get_artifact_pickup_utils
 from src.utils.version_manager import get_version_manager
+from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 import numpy as np
 import pandas as pd
 

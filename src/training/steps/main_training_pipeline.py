@@ -17,6 +17,7 @@ Key Features:
 
 import asyncio
 import logging
+import pandas as pd
 from typing import Any, Dict, List, Optional, Union, Callable
 from datetime import datetime
 from pathlib import Path
@@ -319,7 +320,7 @@ class MainTrainingPipeline:
             if not MARKET_ANALYSIS_AVAILABLE:
                 self.logger.warning("⚠️ Market analysis sub-pipeline not available")
                 return None
-            return await self.market_analysis_pipeline.execute_sub_pipeline_with_next(starting_sub_pipeline, stage_config)
+            return await self.market_analysis_pipeline.execute_sub_pipeline(starting_sub_pipeline, stage_config)
         else:
             self.logger.warning(f"⚠️ Auto-chaining not implemented for stage: {stage.value}")
             return None
@@ -524,8 +525,46 @@ class MainTrainingPipeline:
         self.logger.info(f"📊 Executing market analysis stage with {len(sub_pipeline_names)} sub-pipelines")
         self.logger.info("🔄 MARKET_ANALYSIS stage configured for automatic sequential execution")
 
+        # Load market data for analysis using existing klines parquet utility
+        from src.utils.data.klines_parquet import get_klines_manager
+        
+        self.logger.info("📂 Loading market data for analysis...")
+        klines_manager = get_klines_manager(data_dir=config.data_dir)
+        market_data = klines_manager.read_data(
+            symbol=config.symbol,
+            interval=config.timeframe,
+            data_type="processed"  # Use processed data
+        )
+        
+        if market_data is None or market_data.empty:
+            self.logger.error(f"❌ Failed to load market data for {config.symbol} {config.timeframe}")
+            return []
+        
+        self.logger.info(f"✅ Loaded market data: {market_data.shape[0]} rows, {market_data.shape[1]} columns")
+        self.logger.info(f"📊 Data columns: {list(market_data.columns)}")
+        self.logger.info(f"📅 Date range: {market_data.index.min()} to {market_data.index.max()}")
+        
+        # Prepare pipeline state with data
+        # Ensure timestamp column exists for data quality framework
+        if 'timestamp' not in market_data.columns and isinstance(market_data.index, pd.DatetimeIndex):
+            market_data = market_data.copy()
+            market_data['timestamp'] = market_data.index
+            self.logger.info("✅ Added timestamp column from DatetimeIndex for data quality framework")
+        
+        pipeline_state = {
+            'dataframe': market_data,
+            'symbol': config.symbol,
+            'exchange': config.exchange,
+            'timeframe': config.timeframe,
+            'data_points': len(market_data)
+        }
+
         # Update pipeline configuration
         self.market_analysis_pipeline.config = config
+        
+        # Pass the loaded data to the sub-pipeline
+        self.market_analysis_pipeline._current_data = pipeline_state['dataframe']
+        self.market_analysis_pipeline._current_pipeline_state = pipeline_state
 
         # For MARKET_ANALYSIS, use sequential execution with automatic progression
         # Start with the first sub-pipeline and let it trigger the next ones

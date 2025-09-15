@@ -39,7 +39,7 @@ except ImportError:
     pd = None
 
 # Import base component
-from ...components.base_component import BaseMarketAnalysisComponent, ComponentConfig, ComponentResult
+from ...market_analysis.components.base_component import BaseMarketAnalysisComponent, ComponentConfig, ComponentResult
 
 # Import PID-based feature generation components
 from .pid_based_feature_orchestrator import PIDBasedFeatureOrchestrator, OrchestratorConfig, OrchestratorResult
@@ -224,7 +224,7 @@ class PIDBasedFeatureGenerationComponent(BaseMarketAnalysisComponent):
                     'total_features_generated': orchestrator_result.total_features_generated,
                     'generation_status': self.generation_status.value,
                     'data_quality_score': validation_result['quality_score'],
-                    'optimization_used': lookback_integration_result.optimization_used,
+                    'optimization_source': lookback_integration_result.optimization_source,
                     'final_report': final_report,
                     'execution_time': time.time() - self.start_time
                 }

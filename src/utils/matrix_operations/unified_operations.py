@@ -610,6 +610,145 @@ class UnifiedMatrixOperations:
         """Get comprehensive performance statistics."""
         return self.performance_stats.copy()
 
+    def kmeans_plus_plus_init(self, data: 'np.ndarray', n_components: int, random_state: Optional[int] = None) -> 'np.ndarray':
+        """
+        K-means++ initialization for cluster centers.
+        
+        Args:
+            data: Input data matrix (n_samples, n_features)
+            n_components: Number of cluster centers to initialize
+            random_state: Random seed for reproducibility
+            
+        Returns:
+            Initial cluster centers (n_components, n_features)
+        """
+        if random_state is not None:
+            np.random.seed(random_state)
+            
+        n_samples, n_features = data.shape
+        
+        if n_components >= n_samples:
+            # If we have more components than samples, use all samples as centers
+            return data[np.random.choice(n_samples, n_components, replace=True)]
+        
+        # Initialize first center randomly
+        centers = np.zeros((n_components, n_features))
+        centers[0] = data[np.random.randint(n_samples)]
+        
+        # Initialize remaining centers using k-means++ algorithm
+        for i in range(1, n_components):
+            # Calculate distances to nearest center for each point
+            distances = np.full(n_samples, np.inf)
+            for j in range(i):
+                dist_to_center = np.sum((data - centers[j])**2, axis=1)
+                distances = np.minimum(distances, dist_to_center)
+            
+            # Choose next center with probability proportional to squared distance
+            probabilities = distances / np.sum(distances)
+            centers[i] = data[np.random.choice(n_samples, p=probabilities)]
+        
+        return centers
+
+    def normalize_matrix(self, data: 'np.ndarray', method: str = 'zscore') -> 'np.ndarray':
+        """
+        Normalize matrix data using specified method.
+        
+        Args:
+            data: Input data matrix (n_samples, n_features)
+            method: Normalization method ('zscore', 'minmax', 'robust')
+            
+        Returns:
+            Normalized data matrix
+        """
+        if data.ndim != 2:
+            raise ValueError("Data must be 2-dimensional")
+        
+        if method == 'zscore':
+            # Z-score normalization: (x - mean) / std
+            mean = np.mean(data, axis=0)
+            std = np.std(data, axis=0)
+            # Avoid division by zero
+            std = np.where(std == 0, 1.0, std)
+            return (data - mean) / std
+            
+        elif method == 'minmax':
+            # Min-max normalization: (x - min) / (max - min)
+            data_min = np.min(data, axis=0)
+            data_max = np.max(data, axis=0)
+            # Avoid division by zero
+            data_range = np.where(data_max == data_min, 1.0, data_max - data_min)
+            return (data - data_min) / data_range
+            
+        elif method == 'robust':
+            # Robust normalization using median and IQR
+            median = np.median(data, axis=0)
+            q75, q25 = np.percentile(data, [75, 25], axis=0)
+            iqr = q75 - q25
+            # Avoid division by zero
+            iqr = np.where(iqr == 0, 1.0, iqr)
+            return (data - median) / iqr
+            
+        else:
+            raise ValueError(f"Unknown normalization method: {method}")
+
+    def initialize_covariances(self, data: 'np.ndarray', means: 'np.ndarray', covariance_type: str = 'full') -> 'np.ndarray':
+        """
+        Initialize covariance matrices for HMM components.
+        
+        Args:
+            data: Input data matrix (n_samples, n_features)
+            means: Component means (n_components, n_features)
+            covariance_type: Type of covariance ('full', 'diag', 'spherical', 'tied')
+            
+        Returns:
+            Initialized covariance matrices
+        """
+        n_samples, n_features = data.shape
+        n_components = means.shape[0]
+        
+        if covariance_type == 'full':
+            # Full covariance matrices
+            covariances = np.zeros((n_components, n_features, n_features))
+            for i in range(n_components):
+                # Calculate covariance for this component
+                centered_data = data - means[i]
+                covariances[i] = np.cov(centered_data.T)
+                # Add regularization to ensure positive definiteness
+                covariances[i] += np.eye(n_features) * 1e-6
+                
+        elif covariance_type == 'diag':
+            # Diagonal covariance matrices
+            covariances = np.zeros((n_components, n_features))
+            for i in range(n_components):
+                centered_data = data - means[i]
+                covariances[i] = np.var(centered_data, axis=0)
+                # Add regularization
+                covariances[i] += 1e-6
+                
+        elif covariance_type == 'spherical':
+            # Spherical covariance (same variance for all features)
+            covariances = np.zeros(n_components)
+            for i in range(n_components):
+                centered_data = data - means[i]
+                # Use average variance across features
+                covariances[i] = np.mean(np.var(centered_data, axis=0)) + 1e-6
+                
+        elif covariance_type == 'tied':
+            # Tied covariance (same for all components)
+            # Calculate global covariance
+            global_mean = np.mean(data, axis=0)
+            centered_data = data - global_mean
+            covariances = np.cov(centered_data.T)
+            # Add regularization
+            covariances += np.eye(n_features) * 1e-6
+            # Return as single matrix for tied case
+            return covariances
+            
+        else:
+            raise ValueError(f"Unknown covariance type: {covariance_type}")
+        
+        return covariances
+
     def get_hardware_info(self) -> Dict[str, Any]:
         """Get hardware capability information."""
         info = {

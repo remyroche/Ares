@@ -26,7 +26,7 @@ if np_fallback or pd_fallback:
     import logging
     logging.warning("Using fallback implementations for core dependencies")
 
-from ...components.base_component import BaseMarketAnalysisComponent, ComponentConfig, ComponentResult
+from ...market_analysis.components.base_component import BaseMarketAnalysisComponent, ComponentConfig, ComponentResult
 from .optimization_reporter import OptimizationReporter
 from .validation_framework import ValidationFramework, ValidationLevel, ValidationStatus
 from .monitoring_metrics import MonitoringMetrics, MetricType, MetricLevel

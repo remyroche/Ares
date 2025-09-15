@@ -1,4 +1,4 @@
-from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
+from src.utils.data.klines_parquet import get_klines_manager
 #!/usr/bin/env python3
 """Step 3: Market Analysis Pipeline.
 
@@ -24,7 +24,6 @@ project_root = Path(__file__).resolve().parent.parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 # Import utility modules with dependency injection
-from src.utils.common_operations import CommonOperations
 from src.utils.common_utilities import CommonUtilities
 from src.utils.math_validation import MathValidation
 from src.utils.parquet_utils import ParquetUtils
@@ -134,7 +133,7 @@ async def analyze_hmm_clustering_results(symbol: str, exchange: str, timeframe: 
     """Analyze HMM clustering results and return comprehensive summary with utility integration."""
     try:
         # Initialize utility modules
-        common_ops = CommonOperations()
+        common_ops = CommonUtilities()
         parquet_utils = ParquetUtils()
         serialization_utils = SerializationUtils()
         data_processing_utils = DataProcessingUtils()
@@ -233,6 +232,8 @@ async def analyze_hmm_clustering_results(symbol: str, exchange: str, timeframe: 
         # Load HMM block states and clusters in parallel (optimization) with standardized handler
         import concurrent.futures
         with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+            # For processed HMM data, we'll use direct parquet reading
+            from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
             block_states_future = executor.submit(
                 standardized_parquet_handler.read_parquet_standardized,
                 base_path / f"BINANCE_{symbol}_hmm_block_states_{timeframe}.parquet"
@@ -320,7 +321,7 @@ def analyze_regime_discovery_statistics(symbol: str, exchange: str, timeframe: s
     """Analyze regime discovery statistics with utility integration."""
     try:
         # Initialize utility modules
-        common_ops = CommonOperations()
+        common_ops = CommonUtilities()
         parquet_utils = ParquetUtils()
         serialization_utils = SerializationUtils()
         data_processing_utils = DataProcessingUtils()
@@ -353,7 +354,8 @@ def analyze_regime_discovery_statistics(symbol: str, exchange: str, timeframe: s
         with m1_memory_optimizer.memory_checkpoint('regime_analysis'):
             for file_path in labeled_files:
                 try:
-                    # Use standardized parquet handler for safe data loading
+                    # For processed data files, we'll use direct parquet reading
+                    from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
                     df = standardized_parquet_handler.read_parquet_standardized(file_path)
                     
                     # Use data processing utils for validation
@@ -439,7 +441,7 @@ def analyze_feature_engineering_metrics(symbol: str, exchange: str, timeframe: s
     """Analyze feature engineering metrics with utility integration."""
     try:
         # Initialize utility modules
-        common_ops = CommonOperations()
+        common_ops = CommonUtilities()
         serialization_utils = SerializationUtils()
         data_processing_utils = DataProcessingUtils()
         m1_memory_optimizer = M1MemoryOptimizer()
@@ -547,7 +549,7 @@ def analyze_matrix_operations_performance(symbol: str, exchange: str, timeframe:
     """Analyze matrix operations performance with utility integration."""
     try:
         # Initialize utility modules
-        common_ops = CommonOperations()
+        common_ops = CommonUtilities()
         m1_memory_optimizer = M1MemoryOptimizer()
         m1_gpu_manager = M1GPUManager()
         
@@ -634,7 +636,7 @@ def generate_comprehensive_report(symbol: str, exchange: str, timeframe: str, ex
     """Generate comprehensive market analysis report with utility integration."""
     try:
         # Initialize utility modules
-        common_ops = CommonOperations()
+        common_ops = CommonUtilities()
         m1_cpu_optimizer = M1CPUOptimizer()
         m1_memory_optimizer = M1MemoryOptimizer()
         serialization_utils = SerializationUtils()

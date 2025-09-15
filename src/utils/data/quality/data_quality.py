@@ -820,7 +820,7 @@ class DataQualityFramework:
             # Add comprehensive metrics
             result.add_metric('duplicate_analysis_available', True)
             result.add_metric('total_duplicate_records', analysis_result.total_duplicates)
-            result.add_metric('duplicate_groups', len(analysis_result.duplicate_groups))
+            result.add_metric('duplicate_groups', analysis_result.duplicate_groups)
             result.add_metric('true_duplicates', analysis_result.true_duplicate_groups)
             result.add_metric('false_duplicates', analysis_result.false_duplicate_groups)
             result.add_metric('mixed_duplicates', analysis_result.mixed_duplicate_groups)
@@ -859,7 +859,7 @@ class DataQualityFramework:
                 for recommendation in analysis_result.recommendations:
                     result.add_info('duplicate_recommendation', recommendation)
 
-            self.logger.info(f'✅ Duplicate analysis completed: {analysis_result.total_duplicates} duplicates in {len(analysis_result.duplicate_groups)} groups')
+            self.logger.info(f'✅ Duplicate analysis completed: {analysis_result.total_duplicates} duplicates in {analysis_result.duplicate_groups} groups')
 
         except Exception as e:
             self.logger.warning(f'⚠️ Duplicate analysis failed: {e}')

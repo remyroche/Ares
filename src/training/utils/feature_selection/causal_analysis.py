@@ -45,12 +45,10 @@ try:
     from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer
     from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer
     from src.utils.matrix_operations import get_unified_matrix_operations
-    from src.utils.common_operations import COMMON_OPERATIONS_AVAILABLE
-    from src.utils.matrix_operations import MATRIX_OPERATIONS_AVAILABLE
     OPTIMIZATION_AVAILABLE = True
 except ImportError:
     OPTIMIZATION_AVAILABLE = False
-    logger.warning("Optimization utilities not available - using standard operations")
+    logger.warning("⚠️ Optimization utilities not available - using standard operations")
 
 
 class CausalAnalyzer:

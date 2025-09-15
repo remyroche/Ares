@@ -102,7 +102,7 @@ class UnifiedVectorizationManager:
         # Import and initialize optimization modules
         try:
             # Matrix operations
-            from .matrix_operations import get_unified_matrix_operations
+            from ..matrix_operations import get_unified_matrix_operations
             self.matrix_ops = get_unified_matrix_operations()
             self.matrix_ops_available = True
         except ImportError:

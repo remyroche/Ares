@@ -565,13 +565,16 @@ class CustomMatrixOperationsRegistry:
     def __init__(self):
         self.operations: Dict[str, CustomMatrixOperation] = {}
         self.logger = logging.getLogger(f"{__name__}.CustomMatrixOperationsRegistry")
+        self._registration_guard = set()  # Track registered operations to prevent duplicates
 
     def register_operation(self, name: str, operation_func: Callable, **kwargs) -> None:
         """Register a custom matrix operation."""
         if name in self.operations:
-            self.logger.warning(f"Operation '{name}' already registered, overwriting")
+            self.logger.debug(f"Operation '{name}' already registered, skipping duplicate registration")
+            return
 
         self.operations[name] = CustomMatrixOperation(name, operation_func, **kwargs)
+        self._registration_guard.add(name)
         self.logger.info(f"📝 Registered custom matrix operation: {name}")
 
     def get_operation(self, name: str) -> Optional[CustomMatrixOperation]:
@@ -634,8 +637,16 @@ def list_custom_matrix_operations() -> List[str]:
     return registry.list_operations()
 
 # Example custom operations
+_default_operations_registered = False
+
 def register_default_custom_operations():
     """Register some useful default custom matrix operations."""
+    global _default_operations_registered
+    
+    if _default_operations_registered:
+        return  # Already registered, skip
+    
+    _default_operations_registered = True
 
     # Matrix condition number with GPU support
     def gpu_condition_number(matrix: 'np.ndarray') -> float:

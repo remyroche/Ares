@@ -173,11 +173,6 @@ class UnifiedDataLoader:
 
             # Load the most recent file
             latest_file = max(parquet_files, key=lambda x: x.stat().st_mtime)
-            
-            # Validate file size
-            if not validate_file_size(latest_file, max_size_mb = 100):
-                self.logger.error(f"File too large: {latest_file}")
-                return None
 
             # Load data
             data = await self._load_data_file(latest_file, columns)
@@ -221,6 +216,16 @@ class UnifiedDataLoader:
             if data is None or len(data) == 0:
                 self.logger.error(f"No data loaded from {file_path}")
                 return None
+            
+            # Convert timestamp index to column if it exists
+            if data.index.name == 'timestamp' or (hasattr(data.index, 'name') and data.index.name == 'timestamp'):
+                data = data.reset_index()
+                self.logger.info("Converted timestamp index to column")
+            elif 'timestamp' not in data.columns and hasattr(data.index, 'dtype') and 'datetime' in str(data.index.dtype):
+                # If the index is datetime but not named 'timestamp', rename it
+                data = data.reset_index()
+                data = data.rename(columns={'index': 'timestamp'})
+                self.logger.info("Converted datetime index to timestamp column")
             
             if len(data) > self.max_rows:
                 self.logger.warning(f"Data has {len(data)} rows, exceeding limit of {self.max_rows}")

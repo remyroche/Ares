@@ -127,16 +127,39 @@ def quick_start_example():
     print("🚀 MARKET_ANALYSIS Quick Start Example")
     print("=" * 50)
     
-    # Create sample data
+    # Create sample data with valid OHLC relationships
     dates = pd.date_range('2024-01-01', periods=1000, freq='1min')
-    data = pd.DataFrame({
-        'open': np.random.uniform(100, 110, 1000),
-        'high': np.random.uniform(105, 115, 1000),
-        'low': np.random.uniform(95, 105, 1000),
-        'close': np.random.uniform(100, 110, 1000),
-        'volume': np.random.uniform(1000, 10000, 1000),
-        'hmm_regime': np.random.choice([0, 1, 2], 1000, p=[0.4, 0.4, 0.2])
-    }, index=dates)
+    
+    # Generate realistic OHLC data
+    base_price = 100
+    prices = []
+    current_price = base_price
+    
+    for i in range(1000):
+        # Random walk with some trend
+        change = np.random.normal(0, 0.001)  # 0.1% volatility
+        current_price *= (1 + change)
+        
+        # Generate OHLC with proper relationships
+        open_price = current_price
+        close_price = open_price * (1 + np.random.normal(0, 0.0005))
+        
+        # High is always >= max(open, close)
+        high_price = max(open_price, close_price) * (1 + abs(np.random.uniform(0, 0.002)))
+        
+        # Low is always <= min(open, close)
+        low_price = min(open_price, close_price) * (1 - abs(np.random.uniform(0, 0.002)))
+        
+        prices.append({
+            'open': open_price,
+            'high': high_price,
+            'low': low_price,
+            'close': close_price,
+            'volume': np.random.uniform(1000, 10000),
+            'hmm_regime': np.random.choice([0, 1, 2], p=[0.4, 0.4, 0.2])
+        })
+    
+    data = pd.DataFrame(prices, index=dates)
     
     print(f"📊 Created sample data with {len(data)} samples")
     print(f"   → Time range: {data.index[0]} to {data.index[-1]}")

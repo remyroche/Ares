@@ -4,31 +4,15 @@ from pathlib import Path
 from typing import Dict, List, Optional, Union, Any, Tuple, Callable
 import pandas as pd  # noqa: F401
 from src.utils.logger import system_logger
-from ...standardized_parquet_handler import standardized_parquet_handler
+from src.utils.data.klines_parquet import get_klines_manager
 
 # Standardized imports from utils
 from src.utils.core.common import (
     safe_read_parquet,
-    safe_file_exists,
-    get_logger,
-    safe_dict_get,
-    safe_float,
-    safe_int,
     safe_json_dump,
     safe_json_load,
-    optimize_dataframe_dtypes,
-    validate_dataframe_schema,
-    validate_data_quality
 )
-from src.utils.core.math_utilities import (
-    safe_divide,
-    safe_log,
-    safe_sqrt,
-    safe_kelly_calculation,
-    validate_positive,
-    validate_range,
-    MathValidationError
-)
+from src.utils.common_operations import get_logger, safe_dict_get, safe_float, safe_int, optimize_dataframe_dtypes, safe_divide, safe_log, safe_sqrt, safe_kelly_calculation, validate_positive, validate_range, MathValidationError
 from src.utils.parquet_utils import get_parquet_utils
 # Core decorators imports
 from src.core.decorators import (
@@ -203,6 +187,8 @@ class Step4RegimeDataSplittingValidator(BaseValidator):
             file_exists, file_metrics = self.validate_file_exists(str(regime_file), 'regime file')
             if not file_exists:
                 return False
+            # For regime data validation, use direct parquet reading as it's processed data
+            from ...standardized_parquet_handler import standardized_parquet_handler
             df = standardized_parquet_handler.read_parquet_standardized(regime_file)
             df_valid, df_metrics = self.validate_dataframe_quality(df = df, min_rows = 100, required_columns=['timestamp', 'composite_cluster_id'], check_data_types = True, check_value_ranges = True, check_duplicates = True, check_temporal_consistency = True)
             if not df_valid:
@@ -313,6 +299,8 @@ class Step4RegimeDataSplittingValidator(BaseValidator):
                 for file_path in existing_files:
                     if file_path.endswith('.parquet'):
                         try:
+                            # For processed data validation, use direct parquet reading
+                            from ...standardized_parquet_handler import standardized_parquet_handler
                             df = standardized_parquet_handler.read_parquet_standardized(file_path)
                             try:
                                 df_valid, df_metrics = self.validate_dataframe_quality(df, min_rows = 100, check_data_types = True)

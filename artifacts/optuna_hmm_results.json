@@ -1161,5 +1161,89 @@
     "success": true,
     "n_trials_completed": 5,
     "optimization_duration": 3.4018502235412598
+  },
+  {
+    "best_params": {
+      "n_components": 4,
+      "covariance_type": "diag",
+      "n_iter": 100,
+      "tol": 0.001
+    },
+    "best_score": -Infinity,
+    "optimization_method": "vectorized",
+    "batch_processing": true,
+    "success": true,
+    "n_trials_completed": 5,
+    "optimization_duration": 5.114668846130371
+  },
+  {
+    "best_params": {
+      "n_components": 4,
+      "covariance_type": "diag",
+      "n_iter": 100,
+      "tol": 0.001
+    },
+    "best_score": -Infinity,
+    "optimization_method": "vectorized",
+    "batch_processing": true,
+    "success": true,
+    "n_trials_completed": 5,
+    "optimization_duration": 4.0949530601501465
+  },
+  {
+    "best_params": {
+      "n_components": 4,
+      "covariance_type": "diag",
+      "n_iter": 100,
+      "tol": 0.001
+    },
+    "best_score": 284837.04300935357,
+    "optimization_method": "vectorized",
+    "batch_processing": true,
+    "success": true,
+    "n_trials_completed": 5,
+    "optimization_duration": 36.5930278301239
+  },
+  {
+    "best_params": {
+      "n_components": 4,
+      "covariance_type": "diag",
+      "n_iter": 100,
+      "tol": 0.001
+    },
+    "best_score": 220984.455584354,
+    "optimization_method": "vectorized",
+    "batch_processing": true,
+    "success": true,
+    "n_trials_completed": 5,
+    "optimization_duration": 39.13389992713928
+  },
+  {
+    "best_params": {
+      "n_components": 4,
+      "covariance_type": "diag",
+      "n_iter": 100,
+      "tol": 0.001
+    },
+    "best_score": 222143.26189679632,
+    "optimization_method": "vectorized",
+    "batch_processing": true,
+    "success": true,
+    "n_trials_completed": 5,
+    "optimization_duration": 32.94937014579773
+  },
+  {
+    "best_params": {
+      "n_components": 4,
+      "covariance_type": "diag",
+      "n_iter": 100,
+      "tol": 0.001
+    },
+    "best_score": 231734.60798954626,
+    "optimization_method": "vectorized",
+    "batch_processing": true,
+    "success": true,
+    "n_trials_completed": 5,
+    "optimization_duration": 64.48314309120178
   }
 ]

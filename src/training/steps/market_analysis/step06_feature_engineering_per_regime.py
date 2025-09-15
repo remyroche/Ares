@@ -4,10 +4,11 @@ from typing import Dict, List, Optional, Union, Any, Tuple, Callable
 import numpy as np
 import pandas as pd
 import time
-from src.core.decorators import traced, validates, handles_errors, handle_errors_enhanced, ErrorContext, ErrorSeverity, ErrorCategory
-from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
+from src.core.decorators import traced, validates, handles_errors
+from src.utils.data.klines_parquet import get_klines_manager
 from src.training.steps.market_analysis.enhanced_validation_framework import EnhancedValidator, ValidationLevel
 from src.utils.enhanced_error_handler import ErrorRecord, ErrorContext
+from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 
 """Enhanced Step 6: Per-Regime Feature Engineering.
 
@@ -109,11 +110,10 @@ class PerRegimeFeatureEngineeringStep(FeatureInteractionEngine):
         
         self.logger.info('🎯 Per-regime feature engineering initialized with regime-specific optimization enabled')
 
-    @handle_errors_enhanced(
-        error_severity=ErrorSeverity.CRITICAL,
-        error_category=ErrorCategory.BUSINESS_LOGIC,
-        should_fail_fast=True,
-        step_name='feature_generation'
+    @handles_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="per-regime feature engineering"
     )
     @traced(span_name='execute_per_regime_feature_engineering')
     async def execute_per_regime_feature_engineering(self, symbol: str, exchange: str, timeframe: str, data_dir: str, force_rerun: bool = False) -> bool:

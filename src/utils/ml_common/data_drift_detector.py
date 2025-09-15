@@ -32,7 +32,7 @@ import joblib
 
 # Import system utilities
 from ..logger import get_logger
-from .matrix_operations import get_unified_matrix_operations
+from ..matrix_operations import get_unified_matrix_operations
 
 class DriftType(Enum):
     """Types of data drift."""

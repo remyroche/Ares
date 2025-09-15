@@ -1,9 +1,10 @@
 
-from typing import Dict, Any, Optional, Callable
+from typing import Dict, Any, Optional, Callable, List
 import pandas as pd
-from ...core.decorators import handles_errors
+from ...core.decorators import handles_errors, traced, cached
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
+from src.utils.logger import get_logger
 
 'Unified Regime Handler for Tagged Regime Data Processing.\n\nThis module provides a centralized way to handle TAGGED regime data across all training steps,\nensuring that steps 4-21 perform tasks on a per-HMM regime basis using the unified dataset\nwith regime tags (composite_cluster_id column) rather than split files.\n\nKEY BENEFITS:\n- Uses unified dataset with regime tags (not split files)\n- Preserves temporal continuity and lookback periods\n- Maintains context around regime transitions\n- 100% data retention (no boundary rows lost)\n'
 import asyncio

@@ -90,7 +90,7 @@ def standardize_result(result: Any) -> StepResult:
             status=StepResultStatus.COMPLETED,
             data=result
         )
-from ...standardized_parquet_handler import standardized_parquet_handler
+from src.utils.data.klines_parquet import get_klines_manager
 from src.utils.logger import system_logger
 # Core decorators imports
 from src.core.decorators import (
@@ -118,7 +118,7 @@ from src.utils.math_validation import (
 from src.utils.lookahead_bias_detector import (
     get_global_detector, validate_no_future_data, LookaheadBiasError
 )
-from src.utils.enhanced_mlflow_integration import enhanced_mlflow
+from src.utils.enhanced_mlflow_integration import EnhancedMLflowManager
 from src.utils.enhanced_artifact_manager import get_artifact_manager
 from src.utils.artifact_pickup_utils import get_artifact_pickup_utils
 from src.utils.version_manager import get_version_manager
@@ -215,8 +215,7 @@ from src.utils.common_operations import (
     safe_float,
     safe_int,
     optimize_dataframe_dtypes,
-    validate_dataframe_schema,
-    validate_data_quality
+    validate_dataframe_schema
 )
 from src.utils.math_validation import (
     safe_divide,
@@ -230,7 +229,6 @@ from src.utils.math_validation import (
 from src.utils.parquet_utils import get_parquet_utils
 
 # Direct utility imports (replacing dependency injection)
-from src.utils.common_operations import CommonOperations
 from src.utils.common_utilities import CommonUtilities
 from src.utils.math_validation import MathValidation
 from src.utils.parquet_utils import ParquetUtils
@@ -263,7 +261,6 @@ def create_step04_config(**kwargs):
 def get_step04_container(config):
     """Get a simple container dict with utility instances."""
     return {
-        'common_ops': CommonOperations(),
         'common_utils': CommonUtilities(),
         'math_validation': MathValidation(),
         'parquet_utils': ParquetUtils(),
@@ -283,9 +280,6 @@ def get_step04_utilities():
     return get_step04_container(create_step04_config())
 
 # Simple getter functions
-def get_common_ops():
-    return CommonOperations()
-
 def get_common_utils():
     return CommonUtilities()
 
@@ -399,20 +393,15 @@ secure_data_processing = handles_errors
 validate_data_structure = create_fallback_validates()
 with_tracing_span = create_fallback_decorator()
 quality_gate = create_fallback_validates()
-if enhanced_mlflow is None:
-    with_enhanced_mlflow_logging = create_fallback_decorator()
-    log_step_report = lambda *args, **kwargs: 'fallback_report'
-    create_detailed_step_report = lambda *args, **kwargs: {}
-    log_step_metrics = lambda *args, **kwargs: None
-    log_step_dataframe_with_standardized_name = lambda *args, **kwargs: 'fallback_dataframe'
-    log_step_artifact_with_standardized_name = lambda *args, **kwargs: 'fallback_artifact'
-else:
-    with_enhanced_mlflow_logging = enhanced_mlflow.with_enhanced_mlflow_logging
-    log_step_report = enhanced_mlflow.log_step_report
-    create_detailed_step_report = enhanced_mlflow.create_detailed_step_report
-    log_step_metrics = enhanced_mlflow.log_step_metrics
-    log_step_dataframe_with_standardized_name = enhanced_mlflow.log_step_dataframe_with_standardized_name
-    log_step_artifact_with_standardized_name = enhanced_mlflow.log_step_artifact_with_standardized_name
+# Import the functions directly from the module
+from src.utils.enhanced_mlflow_integration import (
+    with_enhanced_mlflow_logging,
+    log_step_report,
+    create_detailed_step_report,
+    log_step_metrics,
+    log_step_dataframe_with_standardized_name,
+    log_step_artifact_with_standardized_name
+)
 
 # Ensure all decorators have fallbacks
 if 'traced' not in globals():
@@ -2055,6 +2044,8 @@ class RegimeDataSplittingStep:
                 'engine': 'auto'
             }
 
+            # For writing processed data, we'll use direct parquet writing
+            from ...standardized_parquet_handler import standardized_parquet_handler
             standardized_parquet_handler.write_parquet_standardized(data, unified_file, **parquet_options)
             file_size_mb = unified_file.stat().st_size / (1024 * 1024)
             self.logger.info(f'✅ Saved unified regime dataset: {len(data):,} rows -> {file_size_mb:.1f}MB file')
@@ -2243,9 +2234,12 @@ class RegimeDataSplittingStep:
                     table = pq.read_table(file_path, **kwargs)
                     df = table.to_pandas()
                 else:
+                    # For processed data files, we'll use direct parquet reading
+                    from ...standardized_parquet_handler import standardized_parquet_handler
                     df = standardized_parquet_handler.read_parquet_standardized(file_path, **kwargs)
             else:
-                # Standard read and cache metadata
+                # Standard read and cache metadata - for processed data files
+                from ...standardized_parquet_handler import standardized_parquet_handler
                 df = standardized_parquet_handler.read_parquet_standardized(file_path, **kwargs)
                 self._cache_parquet_metadata(file_path, df.shape)
             
@@ -2253,7 +2247,8 @@ class RegimeDataSplittingStep:
             
         except Exception as e:
             self.logger.warning(f"⚠️ Cached read failed for {file_path}: {e}")
-            # Fallback to standard read
+            # Fallback to standard read - for processed data files
+            from ...standardized_parquet_handler import standardized_parquet_handler
             return standardized_parquet_handler.read_parquet_standardized(file_path, **kwargs)
 
     @comprehensive_function_monitor
@@ -2820,6 +2815,8 @@ async def run_step(symbol: str, exchange: str, timeframe: str, data_dir: str = N
     bias_detector = get_global_detector()
     bias_detector.set_current_timestamp(current_time)
     if data_dir is None:
+        # Use standardized path for processed data
+        from ...standardized_parquet_handler import standardized_parquet_handler
         data_dir = standardized_parquet_handler.get_standardized_path('processed_data', exchange, symbol)
 
     step_start = time.time()

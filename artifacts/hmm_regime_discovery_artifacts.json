@@ -8,8 +8,8 @@
     "timeframe": "1h"
   },
   "execution_metadata": {
-    "start_time": "2025-09-14T17:39:53.412324",
-    "pipeline_id": "sub_pipeline_hmm_regime_discovery_20250914_173953",
+    "start_time": "2025-09-15T23:12:29.547043",
+    "pipeline_id": "sub_pipeline_hmm_regime_discovery_20250915_231229",
     "execution_mode": "sub_pipeline_execution"
   },
   "sub_pipeline_info": {

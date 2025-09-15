@@ -317,6 +317,9 @@ class VectorizedProcessingCore:
     def __init__(self, chunk_size: int = 50000, max_memory_gb: float = 8.0, enable_gpu: bool = True,
                  hardware_config: Optional[HardwareConfig] = None):
         """Initialize vectorized processing core."""
+        # Initialize logger first
+        self.logger = logger.getChild('VectorizedProcessingCore')
+        
         self.chunk_size = chunk_size
         self.max_memory_gb = max_memory_gb
         self.enable_gpu = enable_gpu
@@ -340,7 +343,6 @@ class VectorizedProcessingCore:
         # Initialize hardware integration
         self._initialize_hardware_integration(hardware_config)
 
-        self.logger = logger.getChild('VectorizedProcessingCore')
         self.logger.info("🔧 Vectorized Processing Core initialized")
     
     def _initialize_hardware_integration(self, hardware_config: Optional[HardwareConfig] = None):

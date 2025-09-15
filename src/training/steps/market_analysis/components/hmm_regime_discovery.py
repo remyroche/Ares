@@ -55,9 +55,12 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             if market_data is None or market_data.empty:
                 raise ValueError("No market data available for regime discovery")
             
+            # Determine optimal number of regimes statistically
+            optimal_n_regimes = self._determine_optimal_regimes(market_data)
+            
             # Configure HMM regime detection
             hmm_config = HMMRegimeConfig(
-                n_regimes=3,  # Bull, Bear, Sideways
+                n_regimes=optimal_n_regimes,  # Statistically determined
                 detection_method=RegimeDetectionMethod.ENHANCED_HMM,
                 min_regime_duration=4,  # Minimum 4h per regime (capped at 8h max with 1h timeframe)
                 transition_threshold=0.1,
@@ -149,6 +152,91 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
         # Handle other data types if needed
         return None
     
+    def _determine_optimal_regimes(self, market_data: pd.DataFrame) -> int:
+        """
+        Determine optimal number of regimes using statistical metrics.
+        
+        Args:
+            market_data: Market data for analysis
+            
+        Returns:
+            Optimal number of regimes
+        """
+        try:
+            # Use AIC/BIC for regime selection
+            from sklearn.mixture import GaussianMixture
+            import numpy as np
+            
+            # Prepare features for regime detection
+            features = self._prepare_features_for_regime_selection(market_data)
+            
+            if features is None or len(features) < 50:
+                self.logger.warning("Insufficient data for regime selection, using default 3")
+                return 3
+            
+            # Test different numbers of regimes (2-8, capped at 8h max)
+            n_regimes_candidates = range(2, min(9, len(features) // 20))  # Cap at 8, ensure min 20 samples per regime
+            aic_scores = []
+            bic_scores = []
+            
+            for n_regimes in n_regimes_candidates:
+                try:
+                    gmm = GaussianMixture(n_components=n_regimes, random_state=42)
+                    gmm.fit(features)
+                    aic_scores.append(gmm.aic(features))
+                    bic_scores.append(gmm.bic(features))
+                except Exception as e:
+                    self.logger.warning(f"Failed to fit {n_regimes} regimes: {e}")
+                    aic_scores.append(float('inf'))
+                    bic_scores.append(float('inf'))
+            
+            if not aic_scores or all(score == float('inf') for score in aic_scores):
+                self.logger.warning("All regime candidates failed, using default 3")
+                return 3
+            
+            # Choose based on BIC (more conservative than AIC)
+            optimal_n_regimes = n_regimes_candidates[np.argmin(bic_scores)]
+            
+            self.logger.info(f"📊 Optimal regimes determined: {optimal_n_regimes} (BIC-based)")
+            return optimal_n_regimes
+            
+        except Exception as e:
+            self.logger.error(f"Failed to determine optimal regimes: {e}")
+            return 3  # Fallback to default
+    
+    def _prepare_features_for_regime_selection(self, data: pd.DataFrame) -> Optional[np.ndarray]:
+        """Prepare features for regime selection analysis."""
+        try:
+            # Use basic price and volume features for regime selection
+            features = []
+            
+            if 'close' in data.columns:
+                # Price returns
+                returns = data['close'].pct_change().dropna()
+                features.append(returns.values)
+                
+                # Volatility (rolling standard deviation)
+                volatility = returns.rolling(window=min(8, len(returns))).std().dropna()
+                features.append(volatility.values)
+            
+            if 'volume' in data.columns:
+                # Volume features
+                volume_returns = data['volume'].pct_change().dropna()
+                features.append(volume_returns.values)
+            
+            if not features:
+                return None
+            
+            # Align all features to same length
+            min_length = min(len(f) for f in features)
+            aligned_features = [f[-min_length:] for f in features]
+            
+            return np.column_stack(aligned_features)
+            
+        except Exception as e:
+            self.logger.error(f"Failed to prepare features: {e}")
+            return None
+
     async def _perform_regime_discovery(
         self, 
         regime_detector: Any, 

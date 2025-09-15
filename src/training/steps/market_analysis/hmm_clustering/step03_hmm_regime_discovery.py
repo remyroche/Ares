@@ -49,7 +49,7 @@ from src.utils.math_validation import (
 
 # Import enhanced matrix operations
 try:
-    from src.utils.ml_common.matrix_operations import (
+    from src.utils.matrix_operations import (
         get_unified_matrix_operations,
         m1_matrix_cholesky,
         m1_matrix_eigendecomposition,
@@ -201,7 +201,7 @@ def compute_moving_averages_numba(data, window):
     return ma
 
 try:
-    from src.utils.ml_common.matrix_operations import get_unified_matrix_operations as get_vectorized_operations_manager
+    from src.utils.matrix_operations import get_unified_matrix_operations as get_vectorized_operations_manager
     def create_vectorized_config(*args, **kwargs):
         return {}
     OPTIMIZED_VECTORIZED_AVAILABLE = True

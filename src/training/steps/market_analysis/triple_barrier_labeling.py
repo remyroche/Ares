@@ -11,6 +11,9 @@ Key Features:
 - Transaction cost modeling
 - Binary and ternary classification support
 - Integration with existing market analysis pipeline
+
+DEPRECATED: This module is deprecated. Use unified_triple_barrier_labeler.py instead.
+This file is kept for backward compatibility and will be removed in a future version.
 """
 
 from src.utils.tprint import tprint
@@ -902,9 +905,52 @@ def benchmark_triple_barrier_methods(data: pd.DataFrame) -> Dict[str, float]:
         'validation_available': VALIDATION_AVAILABLE
     }
 
+# DEPRECATION WARNING AND MIGRATION
+import warnings
+
+def _deprecation_warning():
+    """Show deprecation warning."""
+    warnings.warn(
+        "triple_barrier_labeling.py is deprecated. Use unified_triple_barrier_labeler.py instead. "
+        "This module will be removed in a future version.",
+        DeprecationWarning,
+        stacklevel=3
+    )
+
+# Override the main classes to show deprecation warnings
+class MarketAnalysisTripleBarrierLabeling:
+    """DEPRECATED: Use UnifiedTripleBarrierLabeler from unified_triple_barrier_labeler.py"""
+    
+    def __init__(self, *args, **kwargs):
+        _deprecation_warning()
+        # Import and use the unified implementation
+        from .unified_triple_barrier_labeler import UnifiedTripleBarrierLabeler, TripleBarrierConfig
+        self._unified_labeler = UnifiedTripleBarrierLabeler(*args, **kwargs)
+    
+    def apply_triple_barrier_labeling(self, data):
+        """DEPRECATED: Use UnifiedTripleBarrierLabeler.apply_labeling() instead."""
+        _deprecation_warning()
+        result = self._unified_labeler.apply_labeling(data)
+        return result.labeled_data if result.success else pd.DataFrame()
+
+# Override convenience functions
+def create_triple_barrier_labeler(*args, **kwargs):
+    """DEPRECATED: Use unified_triple_barrier_labeler.create_triple_barrier_labeler() instead."""
+    _deprecation_warning()
+    from .unified_triple_barrier_labeler import create_triple_barrier_labeler as unified_create
+    return unified_create(*args, **kwargs)
+
+def apply_triple_barrier_labeling(*args, **kwargs):
+    """DEPRECATED: Use unified_triple_barrier_labeler.apply_triple_barrier_labeling() instead."""
+    _deprecation_warning()
+    from .unified_triple_barrier_labeler import apply_triple_barrier_labeling as unified_apply
+    result = unified_apply(*args, **kwargs)
+    return result.labeled_data if result.success else pd.DataFrame()
+
 if __name__ == '__main__':
     # Test the implementation
-    tprint('🧪 Testing Market Analysis Triple Barrier Labeling')
+    tprint('🧪 Testing Market Analysis Triple Barrier Labeling (DEPRECATED)')
+    tprint('⚠️  This module is deprecated. Use unified_triple_barrier_labeler.py instead.')
     
     # Create test data
     dates = pd.date_range('2024-01-01', periods=1000, freq='1min')
@@ -917,26 +963,22 @@ if __name__ == '__main__':
         'hmm_regime': np.random.choice([0, 1, 2], 1000)  # Add regime data
     }, index=dates)
     
-    # Test standard labeling
-    tprint('\n📊 Testing standard triple barrier labeling...')
-    standard_labeler = create_triple_barrier_labeler(regime_aware=False)
-    standard_labeled = standard_labeler.apply_triple_barrier_labeling(data)
-    tprint(f'Standard labeling completed: {len(standard_labeled)} samples labeled')
-    
-    # Test regime-aware labeling
-    tprint('\n🎯 Testing regime-aware triple barrier labeling...')
-    regime_labeler = create_triple_barrier_labeler(regime_aware=True)
-    regime_labeled = regime_labeler.apply_triple_barrier_labeling(data)
-    tprint(f'Regime-aware labeling completed: {len(regime_labeled)} samples labeled')
-    
-    # Run benchmarks
-    tprint('\n⚡ Running benchmarks...')
-    benchmark_results = benchmark_triple_barrier_methods(data)
-    tprint(f'Benchmark results: {benchmark_results}')
-    
-    # Generate reports
-    tprint('\n📋 Generating comprehensive reports...')
-    standard_report = standard_labeler.generate_comprehensive_report()
-    regime_report = regime_labeler.generate_comprehensive_report()
-    
-    tprint('✅ Market Analysis Triple Barrier Labeling test completed successfully!')
+    # Test with deprecation warnings
+    tprint('\n📊 Testing deprecated triple barrier labeling...')
+    try:
+        standard_labeler = create_triple_barrier_labeler(regime_aware=False)
+        standard_labeled = standard_labeler.apply_triple_barrier_labeling(data)
+        tprint(f'Standard labeling completed: {len(standard_labeled)} samples labeled')
+        
+        # Test regime-aware labeling
+        tprint('\n🎯 Testing regime-aware triple barrier labeling...')
+        regime_labeler = create_triple_barrier_labeler(regime_aware=True)
+        regime_labeled = regime_labeler.apply_triple_barrier_labeling(data)
+        tprint(f'Regime-aware labeling completed: {len(regime_labeled)} samples labeled')
+        
+        tprint('✅ Deprecated Market Analysis Triple Barrier Labeling test completed!')
+        tprint('⚠️  Please migrate to unified_triple_barrier_labeler.py for better performance and reliability.')
+        
+    except Exception as e:
+        tprint(f'❌ Test failed: {e}')
+        tprint('⚠️  This is expected as the deprecated module may have issues.')

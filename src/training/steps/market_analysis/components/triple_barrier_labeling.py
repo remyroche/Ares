@@ -2,6 +2,9 @@
 Triple Barrier Labeling Component.
 
 This component applies the triple barrier method for data labeling.
+
+DEPRECATED: This component is deprecated. Use unified_triple_barrier_labeler.py instead.
+This file is kept for backward compatibility and will be removed in a future version.
 """
 
 import asyncio
@@ -35,10 +38,18 @@ class TripleBarrierLabelingComponent(BaseMarketAnalysisComponent):
     Triple Barrier Labeling Component.
     
     Applies the triple barrier method for data labeling.
+    
+    DEPRECATED: Use UnifiedTripleBarrierLabeler from unified_triple_barrier_labeler.py instead.
     """
     
     def __init__(self, config: Optional[ComponentConfig] = None):
         """Initialize the triple barrier labeling component."""
+        import warnings
+        warnings.warn(
+            "TripleBarrierLabelingComponent is deprecated. Use UnifiedTripleBarrierLabeler from unified_triple_barrier_labeler.py instead.",
+            DeprecationWarning,
+            stacklevel=2
+        )
         super().__init__(config)
         self.logger = system_logger.getChild('TripleBarrierLabeling')
     

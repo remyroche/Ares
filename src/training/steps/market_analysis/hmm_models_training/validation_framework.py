@@ -52,23 +52,25 @@ class ValidationReport:
 
 class HMMTrainingValidator:
     """
-    Comprehensive validator for HMM training inputs and processes.
+    Enhanced comprehensive validator for HMM training inputs and processes.
     """
     
-    def __init__(self, validation_level: ValidationLevel = ValidationLevel.STANDARD):
+    def __init__(self, validation_level: ValidationLevel = ValidationLevel.STANDARD, early_exit: bool = True):
         """
-        Initialize validator.
+        Initialize enhanced validator.
         
         Args:
             validation_level: Level of validation strictness
+            early_exit: Whether to exit early on critical failures
         """
         self.validation_level = validation_level
+        self.early_exit = early_exit
         self.logger = logger.getChild('HMMTrainingValidator')
         
         # Validation thresholds based on level
         self.thresholds = self._get_thresholds()
         
-        self.logger.info(f"✅ HMM Training Validator initialized (level: {validation_level.value})")
+        self.logger.info(f"✅ Enhanced HMM Training Validator initialized (level: {validation_level.value}, early_exit: {early_exit})")
     
     def _get_thresholds(self) -> Dict[str, Any]:
         """Get validation thresholds based on validation level."""
@@ -141,10 +143,23 @@ class HMMTrainingValidator:
         # Feature-specific checks
         checks.extend(self._validate_feature_properties(X, feature_names))
         
+        # Early exit on critical failures if enabled
+        if self.early_exit:
+            critical_failures = [check for check in checks if check.result == ValidationResult.FAIL and check.severity == "critical"]
+            if critical_failures:
+                self.logger.error(f"❌ Early exit due to critical failures: {[f.name for f in critical_failures]}")
+                return ValidationReport(
+                    overall_result=ValidationResult.FAIL,
+                    checks=critical_failures,
+                    summary={"early_exit": True, "critical_failures": len(critical_failures)},
+                    recommendations=[f"CRITICAL: {f.message}" for f in critical_failures],
+                    timestamp=pd.Timestamp.now().isoformat()
+                )
+        
         # Generate report
         report = self._generate_validation_report(checks)
         
-        self.logger.info(f"✅ Input validation completed: {report.overall_result.value}")
+        self.logger.info(f"✅ Enhanced input validation completed: {report.overall_result.value}")
         return report
     
     def _validate_data_types(

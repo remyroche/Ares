@@ -6,7 +6,7 @@ Streamlined, robust, and well-reported HMM models training with comprehensive er
 
 import numpy as np
 import pandas as pd
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union, Callable
 import time
 import warnings
 from dataclasses import dataclass
@@ -25,7 +25,7 @@ logger = system_logger.getChild('HMMModelsTrainingEnhanced')
 
 @dataclass
 class TrainingMetrics:
-    """Structured training metrics container."""
+    """Enhanced training metrics container with additional monitoring."""
     accuracy: float = 0.0
     f1_score: float = 0.0
     precision: float = 0.0
@@ -33,17 +33,177 @@ class TrainingMetrics:
     training_time: float = 0.0
     convergence_epochs: int = 0
     memory_usage_mb: float = 0.0
+    validation_loss: Optional[float] = None
+    test_accuracy: Optional[float] = None
     error_message: Optional[str] = None
+    warnings: List[str] = None
+    
+    def __post_init__(self):
+        if self.warnings is None:
+            self.warnings = []
 
 
 @dataclass
 class ModelResult:
-    """Structured model result container."""
+    """Enhanced model result container with additional metadata."""
     model: Any
     metrics: TrainingMetrics
     feature_importance: Optional[Dict[str, float]] = None
     predictions: Optional[np.ndarray] = None
     probabilities: Optional[np.ndarray] = None
+    hyperparameters: Optional[Dict[str, Any]] = None
+    training_history: Optional[Dict[str, List[float]]] = None
+
+
+class CircuitBreaker:
+    """Circuit breaker to prevent cascading failures in model training."""
+    
+    def __init__(self, failure_threshold: int = 3, timeout: int = 300):
+        self.failure_threshold = failure_threshold
+        self.timeout = timeout
+        self.failure_count = 0
+        self.last_failure_time = None
+        self.state = "CLOSED"  # CLOSED, OPEN, HALF_OPEN
+    
+    def call(self, func: Callable, *args, **kwargs):
+        """Execute function with circuit breaker protection."""
+        if self.state == "OPEN":
+            if time.time() - self.last_failure_time > self.timeout:
+                self.state = "HALF_OPEN"
+                logger.info("🔄 Circuit breaker transitioning to HALF_OPEN")
+            else:
+                raise Exception("Circuit breaker is OPEN - too many failures detected")
+        
+        try:
+            result = func(*args, **kwargs)
+            if self.state == "HALF_OPEN":
+                self.state = "CLOSED"
+                self.failure_count = 0
+                logger.info("✅ Circuit breaker reset to CLOSED")
+            return result
+        except Exception as e:
+            self.failure_count += 1
+            self.last_failure_time = time.time()
+            
+            if self.failure_count >= self.failure_threshold:
+                self.state = "OPEN"
+                logger.error(f"🚨 Circuit breaker opened after {self.failure_count} failures")
+            
+            raise e
+
+
+class TrainingErrorHandler:
+    """Centralized error handling for training operations."""
+    
+    @staticmethod
+    def handle_model_creation_error(model_type: str, error: Exception) -> ModelResult:
+        """Standardized model creation error handling."""
+        return ModelResult(
+            model=None,
+            metrics=TrainingMetrics(
+                error_message=f"Failed to create {model_type}: {str(error)}",
+                training_time=0.0
+            )
+        )
+    
+    @staticmethod
+    def handle_training_error(model_type: str, error: Exception, training_time: float) -> ModelResult:
+        """Standardized training error handling."""
+        return ModelResult(
+            model=None,
+            metrics=TrainingMetrics(
+                error_message=f"Failed to train {model_type}: {str(error)}",
+                training_time=training_time
+            )
+        )
+
+
+class ModelFactory:
+    """Factory for creating model instances with standardized configuration."""
+    
+    _model_configs = {
+        'logistic_regression': {
+            'class': 'sklearn.linear_model.LogisticRegression',
+            'default_params': {
+                'C': 1.0, 'max_iter': 1000, 'random_state': 42,
+                'class_weight': 'balanced'
+            }
+        },
+        'lightgbm': {
+            'class': 'lightgbm.LGBMClassifier',
+            'default_params': {
+                'n_estimators': 100, 'learning_rate': 0.1,
+                'max_depth': 6, 'random_state': 42, 'verbose': -1
+            }
+        },
+        'tcn': {
+            'class': 'sklearn.ensemble.RandomForestClassifier',
+            'default_params': {
+                'n_estimators': 100, 'max_depth': 10,
+                'random_state': 42, 'n_jobs': -1
+            }
+        }
+    }
+    
+    @classmethod
+    def create_model(cls, model_type: str, **custom_params) -> Any:
+        """Create model instance with standardized configuration."""
+        if model_type not in cls._model_configs:
+            raise ValueError(f"Unknown model type: {model_type}")
+        
+        config = cls._model_configs[model_type]
+        
+        # Import the class dynamically
+        class_path = config['class']
+        module_name, class_name = class_path.rsplit('.', 1)
+        module = __import__(module_name, fromlist=[class_name])
+        model_class = getattr(module, class_name)
+        
+        # Merge default and custom parameters
+        params = {**config['default_params'], **custom_params}
+        return model_class(**params)
+
+
+class RealTimeProgressReporter:
+    """Real-time progress reporting during training."""
+    
+    def __init__(self, total_models: int):
+        self.total_models = total_models
+        self.completed_models = 0
+        self.start_time = time.time()
+        self.model_times = []
+        self.successful_models = 0
+        self.failed_models = 0
+    
+    def update_progress(self, model_name: str, success: bool, training_time: float):
+        """Update progress after each model training."""
+        self.completed_models += 1
+        self.model_times.append(training_time)
+        
+        if success:
+            self.successful_models += 1
+        else:
+            self.failed_models += 1
+        
+        progress_percent = (self.completed_models / self.total_models) * 100
+        avg_time = np.mean(self.model_times) if self.model_times else 0
+        eta = avg_time * (self.total_models - self.completed_models)
+        
+        status = "✅" if success else "❌"
+        
+        print(f"\r{status} {model_name} | Progress: {progress_percent:.1f}% | "
+              f"Success: {self.successful_models}/{self.completed_models} | "
+              f"ETA: {eta:.1f}s", end="", flush=True)
+    
+    def finish_report(self):
+        """Generate final progress report."""
+        total_time = time.time() - self.start_time
+        print(f"\n\n🎯 Training Summary:")
+        print(f"   Total time: {total_time:.2f}s")
+        if self.model_times:
+            print(f"   Average time per model: {np.mean(self.model_times):.2f}s")
+        print(f"   Successful models: {self.successful_models}/{self.total_models}")
+        print(f"   Success rate: {(self.successful_models/self.total_models)*100:.1f}%")
 
 
 class HMMModelsTrainingEnhanced(BaseTrainingStep):
@@ -78,6 +238,10 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
         super().__init__(config)
         self.logger = logger.getChild('HMMModelsTrainingEnhanced')
         
+        # Initialize enhanced components
+        self.circuit_breaker = CircuitBreaker(failure_threshold=2, timeout=60)
+        self.progress_reporter = None
+        
         # Initialize components with error handling
         self._initialize_components()
         
@@ -85,7 +249,7 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
         self.training_start_time = None
         self.training_results = {}
         
-        self.logger.info("✅ Enhanced HMM Models Training initialized")
+        self.logger.info("✅ Enhanced HMM Models Training initialized with circuit breaker protection")
     
     def _initialize_components(self):
         """Initialize training components with comprehensive error handling."""
@@ -160,7 +324,7 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
     
     def _validate_inputs(self, X: np.ndarray, y: np.ndarray, regime_labels: np.ndarray) -> bool:
         """
-        Validate input data with comprehensive checks.
+        Enhanced input validation with early exit on critical failures.
         
         Args:
             X: Input features
@@ -170,69 +334,79 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
         Returns:
             True if validation passes, False otherwise
         """
+        critical_failures = []
+        warnings = []
+        
         try:
+            # Critical checks (cause early exit)
+            if len(X) == 0:
+                critical_failures.append("Input data is empty")
+            
             # Check data types
             if not isinstance(X, (np.ndarray, pd.DataFrame)):
-                raise ValueError(f"X must be numpy array or DataFrame, got {type(X)}")
+                critical_failures.append(f"X must be numpy array or DataFrame, got {type(X)}")
             
             if not isinstance(y, np.ndarray):
-                raise ValueError(f"y must be numpy array, got {type(y)}")
+                critical_failures.append(f"y must be numpy array, got {type(y)}")
             
             if not isinstance(regime_labels, np.ndarray):
-                raise ValueError(f"regime_labels must be numpy array, got {type(regime_labels)}")
+                critical_failures.append(f"regime_labels must be numpy array, got {type(regime_labels)}")
             
             # Check shapes
             if len(X) != len(y):
-                raise ValueError(f"X length ({len(X)}) != y length ({len(y)})")
+                critical_failures.append(f"X length ({len(X)}) != y length ({len(y)})")
             
             if len(X) != len(regime_labels):
-                raise ValueError(f"X length ({len(X)}) != regime_labels length ({len(regime_labels)})")
+                critical_failures.append(f"X length ({len(X)}) != regime_labels length ({len(regime_labels)})")
             
-            # Check for empty data
-            if len(X) == 0:
-                raise ValueError("Input data is empty")
-            
-            # Check for NaN values
+            # Check for NaN values (critical)
             if isinstance(X, np.ndarray):
                 if np.any(np.isnan(X)):
-                    raise ValueError("X contains NaN values")
+                    critical_failures.append("X contains NaN values")
+                if np.any(np.isinf(X)):
+                    critical_failures.append("X contains infinite values")
             else:  # DataFrame
                 if X.isnull().any().any():
-                    raise ValueError("X contains NaN values")
+                    critical_failures.append("X contains NaN values")
+                if np.isinf(X.select_dtypes(include=[np.number])).any().any():
+                    critical_failures.append("X contains infinite values")
             
             if np.any(np.isnan(y)):
-                raise ValueError("y contains NaN values")
+                critical_failures.append("y contains NaN values")
             
             if np.any(np.isnan(regime_labels)):
-                raise ValueError("regime_labels contains NaN values")
-            
-            # Check for infinite values
-            if isinstance(X, np.ndarray):
-                if np.any(np.isinf(X)):
-                    raise ValueError("X contains infinite values")
-            else:  # DataFrame
-                if np.isinf(X.select_dtypes(include=[np.number])).any().any():
-                    raise ValueError("X contains infinite values")
-            
-            if np.any(np.isinf(y)):
-                raise ValueError("y contains infinite values")
+                critical_failures.append("regime_labels contains NaN values")
             
             # Check regime distribution
             unique_regimes = np.unique(regime_labels)
             if len(unique_regimes) < 2:
-                raise ValueError(f"Need at least 2 regimes, found {len(unique_regimes)}")
+                critical_failures.append(f"Need at least 2 regimes, found {len(unique_regimes)}")
+            
+            # Early exit on critical failures
+            if critical_failures:
+                self.logger.error(f"❌ Critical validation failures: {critical_failures}")
+                return False
+            
+            # Warning checks (don't cause early exit)
+            if len(X) < 1000:
+                warnings.append(f"Small dataset: {len(X)} samples (recommended: >1000)")
             
             # Check minimum samples per regime
             for regime in unique_regimes:
                 regime_count = np.sum(regime_labels == regime)
                 if regime_count < 10:  # Minimum samples per regime
-                    raise ValueError(f"Regime {regime} has only {regime_count} samples (minimum: 10)")
+                    warnings.append(f"Regime {regime} has only {regime_count} samples (minimum: 10)")
             
-            self.logger.info(f"✅ Input validation passed: {len(X)} samples, {len(unique_regimes)} regimes")
+            # Log warnings
+            if warnings:
+                for warning in warnings:
+                    self.logger.warning(f"⚠️ {warning}")
+            
+            self.logger.info(f"✅ Enhanced validation passed: {len(X)} samples, {len(unique_regimes)} regimes")
             return True
             
         except Exception as e:
-            self.logger.error(f"❌ Input validation failed: {e}")
+            self.logger.error(f"❌ Validation error: {e}")
             return False
     
     def _prepare_features(self, X: Union[np.ndarray, pd.DataFrame], feature_names: Optional[List[str]] = None) -> Tuple[pd.DataFrame, List[str]]:
@@ -327,7 +501,7 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
     
     def _create_model(self, model_type: str, **kwargs) -> Any:
         """
-        Create model instance with error handling.
+        Create model instance using factory pattern with error handling.
         
         Args:
             model_type: Type of model to create
@@ -337,36 +511,8 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
             Model instance
         """
         try:
-            if model_type not in self.model_registry:
-                raise ValueError(f"Unknown model type: {model_type}")
-            
-            model_config = self.model_registry[model_type]
-            
-            # Handle special cases
-            if model_type == 'tcn':
-                # Create a simple TCN-like model using available libraries
-                from sklearn.ensemble import RandomForestClassifier
-                return RandomForestClassifier(
-                    n_estimators=100,
-                    max_depth=10,
-                    random_state=42,
-                    n_jobs=-1
-                )
-            
-            # Handle sklearn models
-            elif model_type == 'logistic_regression':
-                from sklearn.linear_model import LogisticRegression
-                params = {**model_config['params'], **kwargs}
-                return LogisticRegression(**params)
-            
-            # Handle LightGBM
-            elif model_type == 'lightgbm':
-                import lightgbm as lgb
-                params = {**model_config['params'], **kwargs}
-                return lgb.LGBMClassifier(**params)
-            
-            else:
-                raise ValueError(f"Model type {model_type} not implemented")
+            # Use factory pattern for model creation
+            return ModelFactory.create_model(model_type, **kwargs)
                 
         except Exception as e:
             self.logger.error(f"❌ Failed to create model {model_type}: {e}")
@@ -374,7 +520,7 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
     
     def _train_single_model(self, model_type: str, X: np.ndarray, y: np.ndarray) -> ModelResult:
         """
-        Train a single model with comprehensive error handling and metrics collection.
+        Train a single model with circuit breaker protection and enhanced error handling.
         
         Args:
             model_type: Type of model to train
@@ -390,60 +536,61 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
         try:
             self.logger.info(f"🔄 Training {model_type}...")
             
-            # Create model
-            model = self._create_model(model_type)
+            # Create model with circuit breaker protection
+            def create_and_train_model():
+                model = self._create_model(model_type)
+                
+                # Train model
+                model.fit(X, y)
+                
+                # Evaluate model
+                predictions = model.predict(X)
+                accuracy = np.mean(predictions == y)
+                
+                # Calculate additional metrics
+                try:
+                    from sklearn.metrics import f1_score, precision_score, recall_score
+                    metrics.f1_score = f1_score(y, predictions, average='weighted')
+                    metrics.precision = precision_score(y, predictions, average='weighted')
+                    metrics.recall = recall_score(y, predictions, average='weighted')
+                except Exception as e:
+                    metrics.warnings.append(f"Advanced metrics calculation failed: {e}")
+                
+                metrics.accuracy = accuracy
+                
+                # Get feature importance
+                feature_importance = None
+                try:
+                    if hasattr(model, 'feature_importances_'):
+                        feature_importance = dict(zip(range(len(model.feature_importances_)), model.feature_importances_))
+                    elif hasattr(model, 'coef_'):
+                        feature_importance = dict(zip(range(len(model.coef_[0])), np.abs(model.coef_[0])))
+                except Exception as e:
+                    self.logger.debug(f"Feature importance not available for {model_type}: {e}")
+                
+                # Get hyperparameters
+                hyperparameters = None
+                try:
+                    if hasattr(model, 'get_params'):
+                        hyperparameters = model.get_params()
+                except Exception as e:
+                    self.logger.debug(f"Could not get hyperparameters: {e}")
+                
+                return model, predictions, feature_importance, hyperparameters
             
-            # Train model
-            model.fit(X, y)
+            # Execute with circuit breaker protection
+            model, predictions, feature_importance, hyperparameters = self.circuit_breaker.call(create_and_train_model)
+            
             training_time = time.time() - start_time
-            
-            # Evaluate model
-            if self.evaluation_utils is not None:
-                try:
-                    eval_metrics = self.evaluation_utils.evaluate_model_performance(
-                        model, X, y,
-                        metrics=['accuracy', 'f1_score', 'precision', 'recall'],
-                        is_classification=True
-                    )
-                    metrics.accuracy = eval_metrics.get('accuracy', 0.0)
-                    metrics.f1_score = eval_metrics.get('f1_score', 0.0)
-                    metrics.precision = eval_metrics.get('precision', 0.0)
-                    metrics.recall = eval_metrics.get('recall', 0.0)
-                except Exception as e:
-                    self.logger.warning(f"⚠️ Evaluation failed for {model_type}: {e}")
-                    metrics.error_message = f"Evaluation failed: {e}"
-            else:
-                # Fallback evaluation
-                try:
-                    predictions = model.predict(X)
-                    accuracy = np.mean(predictions == y)
-                    metrics.accuracy = accuracy
-                    metrics.f1_score = accuracy  # Simple fallback
-                except Exception as e:
-                    self.logger.warning(f"⚠️ Fallback evaluation failed for {model_type}: {e}")
-                    metrics.error_message = f"Fallback evaluation failed: {e}"
-            
             metrics.training_time = training_time
             
-            # Get predictions and probabilities
-            predictions = None
+            # Get probabilities if available
             probabilities = None
             try:
-                predictions = model.predict(X)
                 if hasattr(model, 'predict_proba'):
                     probabilities = model.predict_proba(X)
             except Exception as e:
-                self.logger.warning(f"⚠️ Failed to get predictions for {model_type}: {e}")
-            
-            # Get feature importance if available
-            feature_importance = None
-            try:
-                if hasattr(model, 'feature_importances_'):
-                    feature_importance = dict(zip(range(len(model.feature_importances_)), model.feature_importances_))
-                elif hasattr(model, 'coef_'):
-                    feature_importance = dict(zip(range(len(model.coef_[0])), np.abs(model.coef_[0])))
-            except Exception as e:
-                self.logger.debug(f"Feature importance not available for {model_type}: {e}")
+                metrics.warnings.append(f"Could not get probabilities: {e}")
             
             self.logger.info(f"✅ {model_type} trained successfully (accuracy: {metrics.accuracy:.4f}, time: {training_time:.2f}s)")
             
@@ -452,7 +599,8 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
                 metrics=metrics,
                 feature_importance=feature_importance,
                 predictions=predictions,
-                probabilities=probabilities
+                probabilities=probabilities,
+                hyperparameters=hyperparameters
             )
             
         except Exception as e:
@@ -462,13 +610,8 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
             
             self.logger.error(f"❌ Failed to train {model_type}: {e}")
             
-            return ModelResult(
-                model=None,
-                metrics=metrics,
-                feature_importance=None,
-                predictions=None,
-                probabilities=None
-            )
+            # Use centralized error handler
+            return TrainingErrorHandler.handle_training_error(model_type, e, training_time)
     
     def _generate_comprehensive_report(self, results: Dict[str, Any], execution_time: float) -> Dict[str, Any]:
         """
@@ -491,7 +634,9 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
                     "successful_models": sum(1 for r in results.get('model_results', {}).values() 
                                            if r.metrics.error_message is None),
                     "failed_models": sum(1 for r in results.get('model_results', {}).values() 
-                                        if r.metrics.error_message is not None)
+                                        if r.metrics.error_message is not None),
+                    "circuit_breaker_state": self.circuit_breaker.state,
+                    "circuit_breaker_failures": self.circuit_breaker.failure_count
                 },
                 "model_performance": {},
                 "feature_analysis": {
@@ -511,8 +656,10 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
                 "recommendations": []
             }
             
-            # Analyze model performance
+            # Analyze model performance and collect warnings
             model_results = results.get('model_results', {})
+            all_warnings = []
+            
             if model_results:
                 best_accuracy = -1
                 best_model = None
@@ -521,6 +668,10 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
                 for model_name, model_result in model_results.items():
                     metrics = model_result.metrics
                     
+                    # Collect warnings
+                    if metrics.warnings:
+                        all_warnings.extend([f"{model_name}: {w}" for w in metrics.warnings])
+                    
                     report["model_performance"][model_name] = {
                         "accuracy": metrics.accuracy,
                         "f1_score": metrics.f1_score,
@@ -528,7 +679,8 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
                         "recall": metrics.recall,
                         "training_time": metrics.training_time,
                         "status": "success" if metrics.error_message is None else "failed",
-                        "error": metrics.error_message
+                        "error": metrics.error_message,
+                        "warnings": metrics.warnings
                     }
                     
                     if metrics.error_message is None:
@@ -547,11 +699,20 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
                         "performance_variance": np.var(accuracies)
                     }
             
-            # Generate recommendations
+            # Add warnings to report
+            report["warnings"] = list(set(all_warnings))  # Remove duplicates
+            
+            # Generate enhanced recommendations
             recommendations = []
             
             if report["execution_summary"]["failed_models"] > 0:
                 recommendations.append(f"Address {report['execution_summary']['failed_models']} failed model(s)")
+            
+            if report["execution_summary"]["circuit_breaker_state"] == "OPEN":
+                recommendations.append("Circuit breaker is OPEN - investigate systematic failures")
+            
+            if len(all_warnings) > 0:
+                recommendations.append(f"Address {len(all_warnings)} warnings for better performance")
             
             if report["performance_summary"]["average_accuracy"] < 0.7:
                 recommendations.append("Consider feature engineering or data preprocessing improvements")
@@ -619,8 +780,9 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
                 is_classification=kwargs.get('is_classification', True)
             )
             
-            # Step 4: Train models
-            self.logger.info("🔄 Step 4: Training models...")
+            # Step 4: Initialize progress reporter and train models
+            self.logger.info("🔄 Step 4: Training models with real-time progress...")
+            self.progress_reporter = RealTimeProgressReporter(len(self.config.model_types))
             model_results = {}
             
             for model_type in self.config.model_types:
@@ -632,18 +794,20 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
                     model_result = self._train_single_model(model_type, X_train, y)
                     model_results[model_type] = model_result
                     
+                    # Update progress
+                    success = model_result.metrics.error_message is None
+                    self.progress_reporter.update_progress(model_type, success, model_result.metrics.training_time)
+                    
                 except Exception as e:
                     self.logger.error(f"❌ Failed to train {model_type}: {e}")
-                    # Create failed result
-                    model_results[model_type] = ModelResult(
-                        model=None,
-                        metrics=TrainingMetrics(error_message=str(e)),
-                        feature_importance=None,
-                        predictions=None,
-                        probabilities=None
-                    )
+                    # Create failed result using centralized error handler
+                    model_results[model_type] = TrainingErrorHandler.handle_training_error(model_type, e, 0.0)
+                    self.progress_reporter.update_progress(model_type, False, 0.0)
             
-            # Step 5: Analyze regimes
+            # Step 5: Finish progress reporting
+            self.progress_reporter.finish_report()
+            
+            # Step 6: Analyze regimes
             unique_regimes, regime_counts = np.unique(regime_labels, return_counts=True)
             regime_distribution = {
                 f"regime_{regime}": {
@@ -653,7 +817,7 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
                 for regime, count in zip(unique_regimes, regime_counts)
             }
             
-            # Step 6: Create final results
+            # Step 7: Create final results
             execution_time = time.time() - self.training_start_time
             
             results = {
@@ -665,19 +829,21 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
                     'n_regimes': len(unique_regimes),
                     'regime_distribution': regime_distribution,
                     'execution_time': execution_time,
-                    'config': self.config
+                    'config': self.config,
+                    'circuit_breaker_state': self.circuit_breaker.state,
+                    'circuit_breaker_failures': self.circuit_breaker.failure_count
                 },
                 'training_time': execution_time
             }
             
-            # Step 7: Generate comprehensive report
-            self.logger.info("🔄 Step 7: Generating comprehensive report...")
+            # Step 8: Generate comprehensive report
+            self.logger.info("🔄 Step 8: Generating comprehensive report...")
             comprehensive_report = self._generate_comprehensive_report(results, execution_time)
             results['comprehensive_report'] = comprehensive_report
             
-            # Step 8: Save results if configured
+            # Step 9: Save results if configured
             if self.config.save_models:
-                self.logger.info("🔄 Step 8: Saving models...")
+                self.logger.info("🔄 Step 9: Saving models...")
                 try:
                     symbol = kwargs.get('symbol', 'UNKNOWN')
                     exchange = kwargs.get('exchange', 'UNKNOWN')
@@ -706,10 +872,13 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
                     self.logger.error(f"❌ Failed to save models: {e}")
                     results['save_error'] = str(e)
             
-            # Log final summary
+            # Log enhanced final summary
             successful_count = sum(1 for r in model_results.values() if r.metrics.error_message is None)
             self.logger.info(f"✅ Enhanced HMM Models Training completed: {successful_count}/{len(model_results)} models successful")
             self.logger.info(f"📊 Total execution time: {execution_time:.2f}s")
+            self.logger.info(f"🔧 Circuit breaker state: {self.circuit_breaker.state}")
+            if self.circuit_breaker.failure_count > 0:
+                self.logger.info(f"⚠️ Circuit breaker failures: {self.circuit_breaker.failure_count}")
             
             return results
             
@@ -780,10 +949,12 @@ if __name__ == "__main__":
     print(f"📊 Sequence length: {config.sequence_length}")
     print(f"📊 HPO trials: {config.hpo_trials}")
     
-    print("\n🎯 Key improvements:")
-    print("- Comprehensive input validation")
-    print("- Robust error handling with detailed error messages")
-    print("- Real metrics instead of placeholders")
-    print("- Structured data containers")
-    print("- Streamlined code with reduced duplication")
-    print("- Enhanced reporting with actionable recommendations")
+    print("\n🎯 Key enhancements:")
+    print("- ✅ Circuit breaker pattern prevents cascading failures")
+    print("- ✅ Model factory pattern reduces code duplication")
+    print("- ✅ Real-time progress reporting with ETA")
+    print("- ✅ Enhanced input validation with early exit")
+    print("- ✅ Centralized error handling")
+    print("- ✅ Warning collection and reporting")
+    print("- ✅ Comprehensive reporting with actionable insights")
+    print("- ✅ Silent failure prevention")

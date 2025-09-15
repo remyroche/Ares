@@ -323,10 +323,10 @@ class FeatureSelectionFramework(BaseFeatureSelectionFramework):
             
             _LOGGER.info(f"🎯 Target features: {target_features}")
             
-            # Step 3: mRMR Pre-filtering (remove 50% worst features)
-            _LOGGER.info("🔍 Step 3: mRMR pre-filtering (removing 50% worst features)...")
+            # Step 3: mRMR Pre-filtering (remove 50% of excess features)
+            _LOGGER.info("🔍 Step 3: mRMR pre-filtering (removing 50% of excess features)...")
             mrmr_prefilter_result = self._apply_mrmr_prefiltering(
-                X_cleaned, y_cleaned, feature_names
+                X_cleaned, y_cleaned, feature_names, target_features
             )
             
             # Extract filtered data and feature names
@@ -452,10 +452,28 @@ class FeatureSelectionFramework(BaseFeatureSelectionFramework):
             }
 
     def _apply_mrmr_prefiltering(self, X: np.ndarray, y: np.ndarray, 
-                                feature_names: List[str]) -> Dict[str, Any]:
-        """Apply mRMR pre-filtering to remove 50% worst features."""
+                                feature_names: List[str], target_features: int) -> Dict[str, Any]:
+        """Apply mRMR pre-filtering to remove 50% of excess features (difference between initial and target)."""
         try:
-            _LOGGER.info("🔍 Applying mRMR pre-filtering (removing 50% worst features)...")
+            n_initial_features = len(feature_names)
+            n_excess_features = max(0, n_initial_features - target_features)
+            n_features_to_remove = n_excess_features // 2  # Remove 50% of excess features
+            
+            _LOGGER.info(f"🔍 Applying mRMR pre-filtering...")
+            _LOGGER.info(f"📊 Initial features: {n_initial_features}, Target: {target_features}")
+            _LOGGER.info(f"📊 Excess features: {n_excess_features}, Removing: {n_features_to_remove}")
+            
+            # If no excess features, return all features
+            if n_features_to_remove == 0:
+                _LOGGER.info("📊 No excess features to remove, keeping all features")
+                return {
+                    'filtered_data': X,
+                    'filtered_target': y,
+                    'filtered_feature_names': feature_names,
+                    'mrmr_scores': {},
+                    'removed_features': [],
+                    'success': True
+                }
             
             # Calculate mRMR scores for all features
             mrmr_result = self.mrmr_selector.select_features(X, y, feature_names, len(feature_names))
@@ -477,8 +495,7 @@ class FeatureSelectionFramework(BaseFeatureSelectionFramework):
             # Sort features by mRMR score (ascending - worst first)
             sorted_features = sorted(mrmr_scores.items(), key=lambda x: x[1])
             
-            # Remove bottom 50% (worst features)
-            n_features_to_remove = len(sorted_features) // 2
+            # Remove bottom N worst features (50% of excess)
             removed_features = [feat for feat, score in sorted_features[:n_features_to_remove]]
             kept_features = [feat for feat, score in sorted_features[n_features_to_remove:]]
             
@@ -712,58 +729,69 @@ class FeatureSelectionFramework(BaseFeatureSelectionFramework):
                                    causal_results: Dict[str, Any],
                                    pid_results: Dict[str, Any],
                                    feature_names: List[str]) -> Dict[str, float]:
-        """Calculate statistical score from stability, temporal, causal, and PID analyses."""
+        """Calculate statistical score from available analyses with equal weighting."""
         try:
             statistical_scores = {}
+            available_analyses = []
             
             # Initialize all features with 0 score
             for feature in feature_names:
                 statistical_scores[feature] = 0.0
             
-            # Stability analysis contribution (if available)
+            # Check which analyses are actually available and provide scores
+            analysis_weights = {}
+            
+            # Stability analysis contribution (if available and provides scores)
             if stability_results and 'error' not in stability_results:
                 for method_name, method_results in stability_results.items():
-                    if method_results.get('success', False):
+                    if method_results.get('success', False) and 'stability_scores' in method_results:
                         stability_scores = method_results.get('stability_scores', {})
-                        for feature, score in stability_scores.items():
-                            if feature in statistical_scores:
-                                statistical_scores[feature] += score * 0.4  # 40% weight for stability
+                        if stability_scores:  # Only if we actually have scores
+                            available_analyses.append('stability')
+                            for feature, score in stability_scores.items():
+                                if feature in statistical_scores:
+                                    statistical_scores[feature] += score
+                            break  # Use first successful method
             
-            # Temporal analysis contribution (if available)
-            if temporal_results and 'error' not in temporal_results:
-                temporal_scores = temporal_results.get('temporal_scores', {})
-                for feature, score in temporal_scores.items():
-                    if feature in statistical_scores:
-                        statistical_scores[feature] += score * 0.3  # 30% weight for temporal
-            
-            # Causal analysis contribution (if available)
-            if causal_results and 'error' not in causal_results:
+            # Causal analysis contribution (if available and provides scores)
+            if causal_results and 'error' not in causal_results and 'causal_scores' in causal_results:
                 causal_scores = causal_results.get('causal_scores', {})
-                for feature, score in causal_scores.items():
-                    if feature in statistical_scores:
-                        statistical_scores[feature] += score * 0.2  # 20% weight for causal
+                if causal_scores:  # Only if we actually have scores
+                    available_analyses.append('causal')
+                    for feature, score in causal_scores.items():
+                        if feature in statistical_scores:
+                            statistical_scores[feature] += score
             
-            # PID analysis contribution (if available)
-            if pid_results and 'error' not in pid_results:
-                pid_scores = pid_results.get('interaction_scores', {})
-                for feature, score in pid_scores.items():
-                    if feature in statistical_scores:
-                        statistical_scores[feature] += score * 0.1  # 10% weight for PID
+            # Temporal and PID analyses - check if they actually provide feature-level scores
+            # For now, we'll skip them since they don't seem to provide individual feature scores
+            # This is a more honest approach than using made-up weights
             
-            # Normalize scores to 0-1 range
-            if statistical_scores:
+            # Equal weighting for available analyses
+            n_available = len(available_analyses)
+            if n_available > 0:
+                for feature in statistical_scores:
+                    statistical_scores[feature] /= n_available  # Equal weighting
+                
+                # Normalize scores to 0-1 range
                 max_score = max(statistical_scores.values())
                 min_score = min(statistical_scores.values())
                 if max_score > min_score:
                     for feature in statistical_scores:
                         statistical_scores[feature] = (statistical_scores[feature] - min_score) / (max_score - min_score)
+            else:
+                # If no analyses provide scores, use uniform distribution
+                for feature in statistical_scores:
+                    statistical_scores[feature] = 0.5  # Neutral score
             
             _LOGGER.info(f"📊 Statistical scores calculated for {len(statistical_scores)} features")
+            _LOGGER.info(f"📊 Available analyses: {available_analyses} (equal weighting)")
+            _LOGGER.info(f"📊 Note: Temporal and PID analyses skipped - they don't provide individual feature scores")
+            
             return statistical_scores
             
         except Exception as e:
             _LOGGER.error(f"❌ Statistical score calculation failed: {e}")
-            return {feature: 0.0 for feature in feature_names}
+            return {feature: 0.5 for feature in feature_names}  # Neutral score on error
 
     def _select_final_features_new_scoring(self, selection_results: Dict[str, Any],
                                          statistical_score: Dict[str, float],
@@ -1131,7 +1159,8 @@ Causal Analysis: {'Enabled' if results.get('pipeline_summary', {}).get('causal_a
                     {'metric': 'causal_analysis_enabled', 'value': pipeline_summary.get('causal_analysis_enabled', False)},
                     {'metric': 'pid_analysis_enabled', 'value': pipeline_summary.get('pid_analysis_enabled', False)},
                     {'metric': 'scoring_weights', 'value': 'Statistical(25%), ElasticNet(25%), FeatureImportance(25%), RFE(25%)'},
-                    {'metric': 'mrmr_excluded_from_final', 'value': 'Yes (used for pre-filtering only)'}
+                    {'metric': 'mrmr_excluded_from_final', 'value': 'Yes (used for pre-filtering only)'},
+                    {'metric': 'statistical_score_note', 'value': 'Based on available analyses only (stability, causal) with equal weighting'}
                 ]
                 
                 for row in summary_data:

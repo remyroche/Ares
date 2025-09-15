@@ -57,31 +57,27 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             
             # Configure HMM regime detection
             hmm_config = HMMRegimeConfig(
-                n_regimes=20, 
-                detection_method=RegimeDetectionMethod.ENHANCED_HMM,
-                min_regime_duration=4,  # Minimum bars per regime
-                transition_threshold=0.1,
-                convergence_tolerance=1e-6,
-                max_iterations=100,
+                n_components=20,  # Will be limited by mode
+                method=RegimeDetectionMethod.ENHANCED_HMM,
+                min_regime_samples=100,  # Minimum samples per regime
+                max_regime_imbalance=0.8,
+                economic_significance_threshold=0.05,
                 
-                # Feature engineering
-                use_price_features=True,
-                use_volume_features=True,
-                use_volatility_features=True,
-                use_technical_indicators=True,
-                
-                # Hardware optimization
-                enable_parallel_processing=True,
-                enable_gpu_acceleration=True,
-                memory_limit_gb=8.0
+                # Mode-based regime limits
+                light_mode_max_regimes=3,
+                blank_mode_max_regimes=5,
+                full_mode_max_regimes=50
             )
             
             # Create HMM regime detector
             regime_detector = EnhancedHMMRegimeDetector()
             
+            # Determine optimization mode from config or default to 'blank'
+            optimization_mode = getattr(self.config, 'optimization_mode', 'blank')
+            
             # Perform regime discovery
             regime_result = await self._perform_regime_discovery(
-                regime_detector, market_data, hmm_config
+                regime_detector, market_data, hmm_config, optimization_mode
             )
             
             # Extract results
@@ -153,15 +149,16 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
         self, 
         regime_detector: Any, 
         market_data: pd.DataFrame, 
-        config: Any
+        config: Any,
+        mode: str = 'blank'
     ) -> Dict[str, Any]:
         """Perform the actual regime discovery process."""
         try:
             # Prepare data for regime detection
             prepared_data = self._prepare_data_for_regime_detection(market_data)
             
-            # Perform regime detection
-            regime_result = await regime_detector.detect_regimes(prepared_data, config)
+            # Perform regime detection with mode
+            regime_result = await regime_detector.detect_regimes(prepared_data, config=config, mode=mode)
             
             return regime_result
             

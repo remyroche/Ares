@@ -81,6 +81,10 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                 'convergence_tolerance': 1e-6,
                 'max_iterations': 100,
                 
+                # Regime constraints
+                'max_regimes': 25,  # Maximum 25 regimes allowed
+                'min_regime_sample_percentage': 0.01,  # 1% minimum sample threshold
+                
                 # Hardware optimization
                 'enable_parallel_processing': True,
                 'enable_gpu_acceleration': True,
@@ -103,6 +107,13 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             # Validate that we have clustering results
             if not hmm_models or not cluster_assignments:
                 raise ValueError("HMM clustering completed but no clusters were created")
+            
+            # Apply regime constraints
+            validated_result = self._apply_regime_constraints(
+                hmm_models, cluster_assignments, clustering_config
+            )
+            hmm_models = validated_result['hmm_models']
+            cluster_assignments = validated_result['cluster_assignments']
             
             # Create single consolidated artifact
             artifacts = {
@@ -233,3 +244,64 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             cluster_distribution[f'cluster_{cluster}'] = (count / total_assignments) * 100
         
         return cluster_distribution
+    
+    def _apply_regime_constraints(
+        self, 
+        hmm_models: List[Any], 
+        cluster_assignments: List[int], 
+        config: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Apply regime constraints: max 25 regimes and 1% sample threshold."""
+        max_regimes = config.get('max_regimes', 25)
+        min_sample_percentage = config.get('min_regime_sample_percentage', 0.01)
+        
+        if not cluster_assignments:
+            return {'hmm_models': hmm_models, 'cluster_assignments': cluster_assignments}
+        
+        total_samples = len(cluster_assignments)
+        min_samples = int(total_samples * min_sample_percentage)
+        
+        # Count samples per regime
+        regime_counts = {}
+        for assignment in cluster_assignments:
+            regime_counts[assignment] = regime_counts.get(assignment, 0) + 1
+        
+        # Filter regimes that meet the minimum sample threshold
+        valid_regimes = []
+        for regime, count in regime_counts.items():
+            if count >= min_samples:
+                valid_regimes.append(regime)
+            else:
+                self.logger.warning(f"⚠️ Regime {regime} has {count} samples ({count/total_samples:.2%}), below 1% threshold - removing")
+        
+        # Limit to max_regimes
+        if len(valid_regimes) > max_regimes:
+            # Keep the regimes with the most samples
+            regime_counts_sorted = sorted(regime_counts.items(), key=lambda x: x[1], reverse=True)
+            valid_regimes = [regime for regime, _ in regime_counts_sorted[:max_regimes]]
+            self.logger.warning(f"⚠️ Limiting to {max_regimes} regimes (had {len(regime_counts)} regimes)")
+        
+        # Filter cluster assignments to only include valid regimes
+        filtered_assignments = []
+        for assignment in cluster_assignments:
+            if assignment in valid_regimes:
+                filtered_assignments.append(assignment)
+            else:
+                # Assign to the most common valid regime as fallback
+                if valid_regimes:
+                    filtered_assignments.append(valid_regimes[0])
+                else:
+                    filtered_assignments.append(0)  # Fallback to regime 0
+        
+        # Filter HMM models to match valid regimes
+        filtered_models = []
+        for i, regime in enumerate(valid_regimes):
+            if i < len(hmm_models):
+                filtered_models.append(hmm_models[i])
+        
+        self.logger.info(f"✅ Applied regime constraints: {len(valid_regimes)} valid regimes (min {min_samples} samples each, max {max_regimes} regimes)")
+        
+        return {
+            'hmm_models': filtered_models,
+            'cluster_assignments': filtered_assignments
+        }

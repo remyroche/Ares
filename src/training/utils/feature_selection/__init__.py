@@ -32,12 +32,11 @@ from .data_validation import DataValidator
 from .selection_methods import (
     MRMRSelector,
     StabilityWeightedSelector,
-    CorrelationBasedFilter,
     RecursiveFeatureEliminator,
     FeatureImportanceRanker,
     CompositeFeatureScorer,
     CrossValidatedSelector,
-    LassoStabilitySelector,
+    ElasticNetStabilitySelector,
     TreeBasedEnsembleSelector
 )
 from .stability_analysis import StabilityAnalyzer
@@ -57,12 +56,11 @@ __all__ = [
     'DataValidator',
     'MRMRSelector',
     'StabilityWeightedSelector',
-    'CorrelationBasedFilter',
     'RecursiveFeatureEliminator',
     'FeatureImportanceRanker',
     'CompositeFeatureScorer',
     'CrossValidatedSelector',
-    'LassoStabilitySelector',
+    'ElasticNetStabilitySelector',
     'TreeBasedEnsembleSelector',
     'StabilityAnalyzer',
     'PerformanceMonitor',

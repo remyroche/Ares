@@ -1234,3 +1234,93 @@ class PartialInformationDecompositor:
                 _LOGGER.warning(f"⚠️ Failed to get GPU status: {e}")
         
         return metrics
+
+    def calculate_interaction_scores(self, pid_result: PIDResult, feature_names: List[str]) -> Dict[str, float]:
+        """Calculate interaction scores for each feature based on PID analysis."""
+        try:
+            interaction_scores = {}
+            
+            # Initialize all features with 0 score
+            for feature in feature_names:
+                interaction_scores[feature] = 0.0
+            
+            # Calculate scores based on redundancy, synergy, and unique information
+            feature_redundancy_scores = {}
+            feature_synergy_scores = {}
+            feature_unique_scores = {}
+            
+            # Process redundancy scores (lower is better - less redundant)
+            for (feat1, feat2), redundancy in pid_result.redundancy.items():
+                if feat1 in feature_names:
+                    if feat1 not in feature_redundancy_scores:
+                        feature_redundancy_scores[feat1] = []
+                    feature_redundancy_scores[feat1].append(redundancy)
+                
+                if feat2 in feature_names:
+                    if feat2 not in feature_redundancy_scores:
+                        feature_redundancy_scores[feat2] = []
+                    feature_redundancy_scores[feat2].append(redundancy)
+            
+            # Process synergy scores (higher is better - more synergistic)
+            for (feat1, feat2), synergy in pid_result.synergy.items():
+                if feat1 in feature_names:
+                    if feat1 not in feature_synergy_scores:
+                        feature_synergy_scores[feat1] = []
+                    feature_synergy_scores[feat1].append(synergy)
+                
+                if feat2 in feature_names:
+                    if feat2 not in feature_synergy_scores:
+                        feature_synergy_scores[feat2] = []
+                    feature_synergy_scores[feat2].append(synergy)
+            
+            # Process unique information scores (higher is better - more unique)
+            for feature, unique_info in pid_result.unique_info.items():
+                if feature in feature_names:
+                    feature_unique_scores[feature] = unique_info
+            
+            # Calculate final interaction scores for each feature
+            for feature in feature_names:
+                # Redundancy component (inverted - lower redundancy is better)
+                if feature in feature_redundancy_scores:
+                    avg_redundancy = np.mean(feature_redundancy_scores[feature])
+                    redundancy_score = 1.0 - min(1.0, avg_redundancy)  # Invert so lower redundancy = higher score
+                else:
+                    redundancy_score = 1.0  # No redundancy data = perfect score
+                
+                # Synergy component (higher synergy is better)
+                if feature in feature_synergy_scores:
+                    avg_synergy = np.mean(feature_synergy_scores[feature])
+                    synergy_score = min(1.0, avg_synergy)
+                else:
+                    synergy_score = 0.0  # No synergy data = neutral score
+                
+                # Unique information component (higher unique info is better)
+                if feature in feature_unique_scores:
+                    unique_score = min(1.0, feature_unique_scores[feature])
+                else:
+                    unique_score = 0.0  # No unique info data = neutral score
+                
+                # Combine components with weights
+                # Weight: redundancy (40%), synergy (35%), unique info (25%)
+                interaction_score = (
+                    redundancy_score * 0.4 +
+                    synergy_score * 0.35 +
+                    unique_score * 0.25
+                )
+                
+                interaction_scores[feature] = interaction_score
+            
+            # Normalize scores to 0-1 range
+            if interaction_scores:
+                max_score = max(interaction_scores.values())
+                min_score = min(interaction_scores.values())
+                if max_score > min_score:
+                    for feature in interaction_scores:
+                        interaction_scores[feature] = (interaction_scores[feature] - min_score) / (max_score - min_score)
+            
+            _LOGGER.info(f"📊 Calculated interaction scores for {len(interaction_scores)} features")
+            return interaction_scores
+            
+        except Exception as e:
+            _LOGGER.error(f"❌ Interaction score calculation failed: {e}")
+            return {feature: 0.0 for feature in feature_names}

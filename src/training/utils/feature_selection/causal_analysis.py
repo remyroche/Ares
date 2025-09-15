@@ -39,6 +39,19 @@ except ImportError:
     SCIPY_AVAILABLE = False
     logger.warning("Scikit-learn/Scipy not available - limited causal analysis functionality")
 
+# Import optimization utilities
+try:
+    from src.utils.hardware.m1_gpu_utils import get_m1_gpu_manager
+    from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer
+    from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer
+    from src.utils.matrix_operations import get_unified_matrix_operations
+    from src.utils.common_operations import COMMON_OPERATIONS_AVAILABLE
+    from src.utils.matrix_operations import MATRIX_OPERATIONS_AVAILABLE
+    OPTIMIZATION_AVAILABLE = True
+except ImportError:
+    OPTIMIZATION_AVAILABLE = False
+    logger.warning("Optimization utilities not available - using standard operations")
+
 
 class CausalAnalyzer:
     """Causal analysis for feature selection."""
@@ -57,9 +70,46 @@ class CausalAnalyzer:
         # Domain knowledge patterns
         self.domain_patterns = self.config.get('domain_patterns', {})
         
+        # Initialize optimization tools
+        self._initialize_optimization_tools()
+        
         _LOGGER.info("🔗 CausalAnalyzer initialized")
         _LOGGER.info(f"⚙️ Correlation threshold: {self.correlation_threshold}")
         _LOGGER.info(f"⚙️ Significance level: {self.causal_significance_level}")
+    
+    def _initialize_optimization_tools(self):
+        """Initialize hardware optimization utilities."""
+        try:
+            if OPTIMIZATION_AVAILABLE and COMMON_OPERATIONS_AVAILABLE:
+                self.gpu_manager = get_m1_gpu_manager()
+                self.memory_optimizer = get_m1_memory_optimizer()
+                self.cpu_optimizer = get_m1_cpu_optimizer()
+                
+                if self.gpu_manager:
+                    _LOGGER.info("✅ M1 GPU manager initialized for causal analysis")
+                if self.memory_optimizer:
+                    _LOGGER.info("✅ M1 memory optimizer initialized for causal analysis")
+                if self.cpu_optimizer:
+                    _LOGGER.info("✅ M1 CPU optimizer initialized for causal analysis")
+            else:
+                self.gpu_manager = None
+                self.memory_optimizer = None
+                self.cpu_optimizer = None
+        except Exception as e:
+            _LOGGER.warning(f"⚠️ Hardware optimization initialization failed: {e}")
+            self.gpu_manager = None
+            self.memory_optimizer = None
+            self.cpu_optimizer = None
+        
+        try:
+            if OPTIMIZATION_AVAILABLE and MATRIX_OPERATIONS_AVAILABLE:
+                self.matrix_ops = get_unified_matrix_operations()
+                _LOGGER.info("✅ Unified matrix operations initialized for causal analysis")
+            else:
+                self.matrix_ops = None
+        except Exception as e:
+            _LOGGER.warning(f"⚠️ Matrix operations initialization failed: {e}")
+            self.matrix_ops = None
 
     def perform_causal_pre_filtering(self, X: np.ndarray, y: np.ndarray, 
                                    feature_names: List[str]) -> Dict[str, Any]:

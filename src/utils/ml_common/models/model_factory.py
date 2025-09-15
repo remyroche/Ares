@@ -1013,24 +1013,26 @@ class EnhancedModelFactory:
         return NODE(**params)
     
     def _create_ridge_model(self, model_config: ModelConfig) -> Any:
-        """Create Ridge model."""
+        """Create ElasticNet model (replacing Ridge)."""
         
-        from sklearn.linear_model import Ridge, RidgeClassifier
+        from sklearn.linear_model import ElasticNet, ElasticNetClassifier
         
-        # Default parameters
+        # Default parameters for ElasticNet (replacing Ridge)
         default_params = {
             'alpha': 1.0,
+            'l1_ratio': 0.5,  # Equal L1 and L2 regularization
+            'max_iter': 1000,
             'random_state': model_config.random_state
         }
         
         # Merge with user parameters
         params = {**default_params, **model_config.model_params}
         
-        # Create model
+        # Create model (using ElasticNet instead of Ridge)
         if model_config.model_type == ModelType.RIDGE:
-            model = Ridge(**params)
+            model = ElasticNet(**params)
         else:
-            model = RidgeClassifier(**params)
+            model = ElasticNetClassifier(**params)
         
         return model
     

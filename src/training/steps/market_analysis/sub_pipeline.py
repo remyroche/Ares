@@ -451,8 +451,34 @@ class MarketAnalysisSubPipeline:
             
             # Extract data from consolidated artifact
             pid_feature_data = pid_based_feature_generation_result.artifacts.get('pid_based_feature_generation_result', {})
-            results['pid_based_features'] = pid_feature_data.get('combined_features', {})
-            results['pid_feature_metrics'] = pid_feature_data.get('generation_summary', {})
+            
+            # Extract comprehensive PID-based feature generation results
+            results['pid_based_features'] = {
+                'combined_features': pid_feature_data.get('combined_features', {}),
+                'combined_feature_names': pid_feature_data.get('combined_feature_names', []),
+                'feature_importance_scores': pid_feature_data.get('feature_importance_scores', {}),
+                'interaction_features': pid_feature_data.get('interaction_result', {}),
+                'polynomial_features': pid_feature_data.get('polynomial_result', {}),
+                'cross_timeframe_features': pid_feature_data.get('cross_timeframe_result', {})
+            }
+            
+            results['pid_feature_metrics'] = {
+                'generation_summary': pid_feature_data.get('generation_summary', {}),
+                'quality_metrics': {
+                    'overall_quality_score': pid_feature_data.get('overall_quality_score', 0.0),
+                    'feature_diversity_score': pid_feature_data.get('feature_diversity_score', 0.0),
+                    'redundancy_score': pid_feature_data.get('redundancy_score', 0.0),
+                    'stability_score': pid_feature_data.get('stability_score', 0.0)
+                },
+                'optimization_metrics': {
+                    'optimization_used': pid_feature_data.get('optimization_used', False),
+                    'matrix_ops_used': pid_feature_data.get('matrix_ops_used', False),
+                    'lookback_integration': pid_feature_data.get('lookback_integration', {})
+                },
+                'validation_result': pid_feature_data.get('validation_result', {}),
+                'total_features_generated': pid_feature_data.get('total_features_generated', 0),
+                'generation_status': pid_feature_data.get('generation_status', 'unknown')
+            }
             
             # Final success
             self.logger.info('🎉 Market Analysis Sub-Pipeline completed successfully')

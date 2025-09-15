@@ -18,6 +18,12 @@ from .regime_data_splitting import RegimeDataSplittingComponent
 # TripleBarrierLabelingComponent moved to triple_barrier_labeling package
 from .feature_lookback_optimization import FeatureLookbackOptimizationComponent
 from .cross_timeframe_analysis import CrossTimeframeAnalysisComponent  # Now uses PID-based feature generation
+# Import the actual PID-based component for direct use
+try:
+    from ..pid_based_feature_generation.pid_based_feature_generation_component import PIDBasedFeatureGenerationComponent
+    PID_COMPONENT_AVAILABLE = True
+except ImportError:
+    PID_COMPONENT_AVAILABLE = False
 
 
 class ComponentFactory:
@@ -39,7 +45,7 @@ class ComponentFactory:
         # 'triple_barrier_labeling': TripleBarrierLabelingComponent,  # Moved to triple_barrier_labeling package
         'feature_lookback_optimization': FeatureLookbackOptimizationComponent,
         'cross_timeframe_analysis': CrossTimeframeAnalysisComponent,  # Now uses PID-based feature generation
-        'pid_based_feature_generation': CrossTimeframeAnalysisComponent  # Alias for backward compatibility
+        'pid_based_feature_generation': PIDBasedFeatureGenerationComponent if PID_COMPONENT_AVAILABLE else CrossTimeframeAnalysisComponent  # Direct PID component or fallback
     }
     
     @classmethod

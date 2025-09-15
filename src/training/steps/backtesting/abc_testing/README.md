@@ -44,6 +44,7 @@ src/training/steps/backtesting/abc_testing/
 ├── abc_testing_integration_example.py # Complete integration example
 ├── multi_model_tpsl_example.py       # Multi-model TPSL testing example
 ├── tpsl_optimization_example.py      # TPSL parameter optimization example
+├── dynamic_confidence_tpsl_example.py # Dynamic confidence TPSL updates example
 └── README.md                         # This file
 ```
 
@@ -258,14 +259,32 @@ The framework supports a wide range of machine learning models:
 4. **Scaling**: Scale out positions at multiple levels
 5. **Momentum-Based**: Based on momentum indicators
 6. **Support/Resistance**: Based on support/resistance levels
-7. **Confidence-Based**: Based on analyst/tactician confidence score
+7. **Confidence-Based**: Based on analyst/tactician confidence score with real-time updates
+
+### Dynamic Confidence Updates
+
+The confidence-based TPSL strategy supports **real-time updates** when new confidence scores are released by analysts and tacticians:
+
+#### Key Features:
+- **Real-time TPSL Adjustment**: TPSL levels are automatically updated when confidence scores change
+- **Confidence Level Thresholds**: Define high (≥0.8), medium (≥0.6), and low (<0.6) confidence levels
+- **Dynamic Multipliers**: Different TP/SL multipliers for each confidence level
+- **Change Threshold**: Only update TPSL when confidence changes by a minimum amount (default: 5%)
+- **Update Frequency**: Control update frequency (realtime, hourly, daily)
+- **Position Tracking**: Track confidence history and TPSL update history for each position
+- **Callback System**: Register callbacks for confidence update events
+
+#### Confidence Level Behavior:
+- **High Confidence (≥0.8)**: More aggressive take profit (1.5x), tighter stop loss (0.8x)
+- **Medium Confidence (≥0.6)**: Standard TPSL levels (1.0x)
+- **Low Confidence (<0.6)**: Conservative take profit (0.8x), wider stop loss (1.2x)
 
 ### TPSL Configuration Example
 
 ```python
 from src.training.steps.backtesting.abc_testing.enhanced_abc_testing_framework import TPSLConfig, TPSLStrategy
 
-# Confidence-based TPSL strategy
+# Confidence-based TPSL strategy with dynamic updates
 confidence_tpsl = TPSLConfig(
     strategy=TPSLStrategy.CONFIDENCE_BASED,
     take_profit_pct=0.02,      # 2% take profit
@@ -273,8 +292,17 @@ confidence_tpsl = TPSLConfig(
     confidence_threshold_high=0.8,    # High confidence threshold
     confidence_threshold_medium=0.6,  # Medium confidence threshold
     confidence_threshold_low=0.4,     # Low confidence threshold
+    high_confidence_tp_multiplier=1.5,    # 1.5x TP for high confidence
+    high_confidence_sl_multiplier=0.8,    # 0.8x SL for high confidence
+    medium_confidence_tp_multiplier=1.0,  # 1.0x TP for medium confidence
+    medium_confidence_sl_multiplier=1.0,  # 1.0x SL for medium confidence
+    low_confidence_tp_multiplier=0.8,     # 0.8x TP for low confidence
+    low_confidence_sl_multiplier=1.2,     # 1.2x SL for low confidence
     analyst_confidence_weight=0.6,    # Weight for analyst confidence
-    tactician_confidence_weight=0.4   # Weight for tactician confidence
+    tactician_confidence_weight=0.4,  # Weight for tactician confidence
+    enable_dynamic_confidence_updates=True,  # Enable real-time updates
+    confidence_update_frequency="realtime",  # Update frequency
+    min_confidence_change_threshold=0.05     # 5% minimum change to trigger update
 )
 
 # ATR-based TPSL strategy
@@ -550,6 +578,30 @@ python tests/performance/backtesting_benchmarks.py
 ```
 
 ## 📚 Examples
+
+### Example 0: Dynamic Confidence TPSL Updates
+
+```python
+from src.training.steps.backtesting.abc_testing.dynamic_confidence_tpsl_example import DynamicConfidenceTPSLExample
+import asyncio
+
+async def run_dynamic_confidence_example():
+    # Initialize dynamic confidence TPSL example
+    example = DynamicConfidenceTPSLExample()
+    
+    # Run simulation with real-time confidence updates
+    results = await example.run_dynamic_confidence_simulation(duration_hours=2.0)
+    
+    # Analyze results
+    analysis = example.analyze_simulation_results(results)
+    
+    print(f"Confidence updates: {analysis['simulation_summary']['confidence_updates']}")
+    print(f"TPSL updates: {analysis['tpsl_analysis']['avg_tp_change']:.2f}")
+    print(f"Final P&L: {results['final_result'].profit_loss_pct:.2%}")
+
+# Run the example
+asyncio.run(run_dynamic_confidence_example())
+```
 
 ### Example 1: Multi-Model TPSL Testing (6 Models)
 

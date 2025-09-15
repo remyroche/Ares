@@ -123,6 +123,9 @@ class TPSLConfig:
     enable_partial_tp: bool = False   # Enable partial take profits
     enable_trailing_sl: bool = False  # Enable trailing stop loss
     enable_confidence_tracking: bool = True  # Enable confidence score tracking
+    enable_dynamic_confidence_updates: bool = True  # Enable real-time confidence updates
+    confidence_update_frequency: str = "realtime"  # "realtime", "hourly", "daily"
+    min_confidence_change_threshold: float = 0.05  # Minimum change to trigger TPSL update
     
     # Risk management
     max_risk_per_trade: float = 0.02  # Maximum risk per trade (2%)
@@ -132,6 +135,25 @@ class TPSLConfig:
     volatile_market_multiplier: float = 1.5  # Adjust for volatile markets
     trending_market_multiplier: float = 0.8  # Adjust for trending markets
     sideways_market_multiplier: float = 1.2  # Adjust for sideways markets
+
+
+@dataclass
+class ActivePosition:
+    """Active position with dynamic TPSL tracking."""
+    symbol: str
+    position_id: str
+    entry_price: float
+    entry_time: datetime
+    position_side: OrderSide
+    quantity: float
+    current_tp_price: float
+    current_sl_price: float
+    tpsl_config: TPSLConfig
+    last_confidence_update: datetime
+    last_analyst_confidence: float
+    last_tactician_confidence: float
+    confidence_history: List[Tuple[datetime, float, float]] = field(default_factory=list)  # (timestamp, analyst_conf, tactician_conf)
+    tpsl_update_history: List[Tuple[datetime, float, float]] = field(default_factory=list)  # (timestamp, tp_price, sl_price)
 
 
 @dataclass
@@ -151,6 +173,8 @@ class TPSLResult:
     max_drawdown_pct: float
     risk_reward_ratio: float
     tpsl_performance_score: float
+    confidence_updates_count: int = 0
+    tpsl_updates_count: int = 0
 
 
 @dataclass
@@ -175,12 +199,18 @@ class TPSLManager:
         # Active TPSL orders
         self.active_tpsl_orders: Dict[str, Dict[str, Any]] = {}
         
+        # Active positions with dynamic TPSL tracking
+        self.active_positions: Dict[str, ActivePosition] = {}
+        
         # TPSL performance tracking
         self.tpsl_results: List[TPSLResult] = []
         self.tpsl_performance_metrics: Dict[str, float] = {}
         
         # Market condition tracking
         self.market_conditions: Dict[str, str] = {}  # "volatile", "trending", "sideways"
+        
+        # Confidence update tracking
+        self.confidence_update_callbacks: List[Callable] = []
         
         self.logger.info("🚀 TPSLManager initialized")
         self.logger.info(f"📊 TPSL Strategy: {base_config.strategy.value}")
@@ -598,6 +628,197 @@ class TPSLManager:
             self.logger.error(f"❌ Error calculating parameter importance: {e}")
             return {param_name: 0.0 for param_name in param_names}
     
+    def create_position(self, symbol: str, entry_price: float, position_side: OrderSide,
+                       quantity: float, market_data: MarketData) -> str:
+        """Create a new position with initial TPSL levels."""
+        try:
+            position_id = str(uuid.uuid4())
+            
+            # Calculate initial TPSL levels
+            take_profit, stop_loss = self.calculate_tpsl_levels(symbol, entry_price, market_data, position_side)
+            
+            # Get current confidence scores
+            analyst_confidence = getattr(market_data, 'analyst_confidence', 0.5)
+            tactician_confidence = getattr(market_data, 'tactician_confidence', 0.5)
+            
+            # Create active position
+            position = ActivePosition(
+                symbol=symbol,
+                position_id=position_id,
+                entry_price=entry_price,
+                entry_time=datetime.now(),
+                position_side=position_side,
+                quantity=quantity,
+                current_tp_price=take_profit,
+                current_sl_price=stop_loss,
+                tpsl_config=copy.deepcopy(self.base_config),
+                last_confidence_update=datetime.now(),
+                last_analyst_confidence=analyst_confidence,
+                last_tactician_confidence=tactician_confidence
+            )
+            
+            # Store position
+            self.active_positions[position_id] = position
+            
+            self.logger.info(f"✅ Position created: {symbol} {position_side.value} @ {entry_price:.4f}")
+            self.logger.info(f"📊 Initial TP: {take_profit:.4f}, SL: {stop_loss:.4f}")
+            self.logger.info(f"📊 Confidence: Analyst={analyst_confidence:.2f}, Tactician={tactician_confidence:.2f}")
+            
+            return position_id
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error creating position: {e}")
+            return ""
+    
+    def update_confidence_scores(self, symbol: str, analyst_confidence: float, 
+                               tactician_confidence: float, market_data: MarketData) -> None:
+        """Update confidence scores and adjust TPSL levels for all positions of this symbol."""
+        try:
+            if not self.base_config.enable_dynamic_confidence_updates:
+                return
+            
+            updated_positions = []
+            
+            for position_id, position in self.active_positions.items():
+                if position.symbol != symbol:
+                    continue
+                
+                # Check if confidence has changed significantly
+                confidence_change = abs(analyst_confidence - position.last_analyst_confidence) + \
+                                  abs(tactician_confidence - position.last_tactician_confidence)
+                
+                if confidence_change < self.base_config.min_confidence_change_threshold:
+                    continue
+                
+                # Update confidence history
+                position.confidence_history.append((
+                    datetime.now(),
+                    analyst_confidence,
+                    tactician_confidence
+                ))
+                
+                # Update last confidence scores
+                position.last_analyst_confidence = analyst_confidence
+                position.last_tactician_confidence = tactician_confidence
+                position.last_confidence_update = datetime.now()
+                
+                # Recalculate TPSL levels with new confidence
+                new_tp, new_sl = self.calculate_tpsl_levels(
+                    symbol, position.entry_price, market_data, position.position_side
+                )
+                
+                # Update TPSL levels
+                old_tp = position.current_tp_price
+                old_sl = position.current_sl_price
+                
+                position.current_tp_price = new_tp
+                position.current_sl_price = new_sl
+                
+                # Update TPSL history
+                position.tpsl_update_history.append((
+                    datetime.now(),
+                    new_tp,
+                    new_sl
+                ))
+                
+                updated_positions.append(position_id)
+                
+                self.logger.info(f"🔄 TPSL updated for {symbol} position {position_id[:8]}...")
+                self.logger.info(f"📊 Confidence: Analyst={analyst_confidence:.2f}, Tactician={tactician_confidence:.2f}")
+                self.logger.info(f"📊 TP: {old_tp:.4f} → {new_tp:.4f}")
+                self.logger.info(f"📊 SL: {old_sl:.4f} → {new_sl:.4f}")
+            
+            # Notify callbacks
+            for callback in self.confidence_update_callbacks:
+                try:
+                    callback(symbol, analyst_confidence, tactician_confidence, updated_positions)
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Error in confidence update callback: {e}")
+            
+            if updated_positions:
+                self.logger.info(f"✅ Updated TPSL for {len(updated_positions)} positions of {symbol}")
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error updating confidence scores: {e}")
+    
+    def close_position(self, position_id: str, exit_price: float, exit_reason: str) -> Optional[TPSLResult]:
+        """Close a position and create TPSL result."""
+        try:
+            if position_id not in self.active_positions:
+                self.logger.warning(f"⚠️ Position {position_id} not found")
+                return None
+            
+            position = self.active_positions[position_id]
+            
+            # Calculate final metrics
+            if position.position_side == OrderSide.BUY:
+                profit_loss = exit_price - position.entry_price
+                profit_loss_pct = profit_loss / position.entry_price
+            else:
+                profit_loss = position.entry_price - exit_price
+                profit_loss_pct = profit_loss / position.entry_price
+            
+            hold_time = (datetime.now() - position.entry_time).total_seconds() / 3600  # hours
+            
+            # Calculate risk-reward ratio
+            if position.position_side == OrderSide.BUY:
+                risk = position.entry_price - position.current_sl_price
+                reward = position.current_tp_price - position.entry_price
+            else:
+                risk = position.current_sl_price - position.entry_price
+                reward = position.entry_price - position.current_tp_price
+            
+            risk_reward_ratio = reward / risk if risk > 0 else 0.0
+            
+            # Create TPSL result
+            result = TPSLResult(
+                symbol=position.symbol,
+                entry_price=position.entry_price,
+                entry_time=position.entry_time,
+                exit_price=exit_price,
+                exit_time=datetime.now(),
+                exit_reason=exit_reason,
+                tpsl_config=position.tpsl_config,
+                profit_loss=profit_loss,
+                profit_loss_pct=profit_loss_pct,
+                hold_time_hours=hold_time,
+                max_profit_pct=0.0,  # Would need price history to calculate
+                max_drawdown_pct=0.0,  # Would need price history to calculate
+                risk_reward_ratio=risk_reward_ratio,
+                tpsl_performance_score=0.0,  # Would need to calculate based on performance
+                confidence_updates_count=len(position.confidence_history),
+                tpsl_updates_count=len(position.tpsl_update_history)
+            )
+            
+            # Store result
+            self.tpsl_results.append(result)
+            
+            # Remove from active positions
+            del self.active_positions[position_id]
+            
+            self.logger.info(f"✅ Position closed: {position.symbol} {position.position_side.value}")
+            self.logger.info(f"📊 Exit: {exit_price:.4f} ({exit_reason})")
+            self.logger.info(f"📊 P&L: {profit_loss:.4f} ({profit_loss_pct:.2%})")
+            self.logger.info(f"📊 Confidence updates: {result.confidence_updates_count}")
+            self.logger.info(f"📊 TPSL updates: {result.tpsl_updates_count}")
+            
+            return result
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error closing position: {e}")
+            return None
+    
+    def register_confidence_update_callback(self, callback: Callable) -> None:
+        """Register a callback for confidence updates."""
+        self.confidence_update_callbacks.append(callback)
+    
+    def get_active_positions(self, symbol: Optional[str] = None) -> Dict[str, ActivePosition]:
+        """Get active positions, optionally filtered by symbol."""
+        if symbol is None:
+            return self.active_positions.copy()
+        else:
+            return {pos_id: pos for pos_id, pos in self.active_positions.items() if pos.symbol == symbol}
+    
     def get_tpsl_performance_metrics(self) -> Dict[str, float]:
         """Get TPSL performance metrics."""
         try:
@@ -624,6 +845,10 @@ class TPSLManager:
             tp_effectiveness = tp_hits / total_trades if total_trades > 0 else 0.0
             sl_effectiveness = sl_hits / total_trades if total_trades > 0 else 0.0
             
+            # Dynamic update metrics
+            avg_confidence_updates = np.mean([r.confidence_updates_count for r in self.tpsl_results])
+            avg_tpsl_updates = np.mean([r.tpsl_updates_count for r in self.tpsl_results])
+            
             return {
                 "total_trades": total_trades,
                 "win_rate": win_rate,
@@ -633,7 +858,9 @@ class TPSLManager:
                 "avg_hold_time_hours": avg_hold_time,
                 "tp_effectiveness": tp_effectiveness,
                 "sl_effectiveness": sl_effectiveness,
-                "avg_tpsl_performance_score": np.mean([r.tpsl_performance_score for r in self.tpsl_results])
+                "avg_tpsl_performance_score": np.mean([r.tpsl_performance_score for r in self.tpsl_results]),
+                "avg_confidence_updates_per_trade": avg_confidence_updates,
+                "avg_tpsl_updates_per_trade": avg_tpsl_updates
             }
             
         except Exception as e:

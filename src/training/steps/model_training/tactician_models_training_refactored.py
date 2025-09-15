@@ -362,6 +362,85 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
         except ImportError:
             return 0.0
     
+    def _validate_data_quality(self, data: np.ndarray, data_name: str, 
+                              max_nan_percentage: float = 10.0, 
+                              max_inf_percentage: float = 1.0) -> Dict[str, Any]:
+        """Validate data quality with configurable thresholds."""
+        quality_metrics = {
+            'nan_count': 0,
+            'inf_count': 0,
+            'nan_percentage': 0.0,
+            'inf_percentage': 0.0,
+            'is_valid': True,
+            'warnings': [],
+            'errors': []
+        }
+        
+        try:
+            # Check for NaN values
+            nan_count = np.sum(np.isnan(data))
+            if nan_count > 0:
+                nan_percentage = (nan_count / data.size) * 100
+                quality_metrics['nan_count'] = nan_count
+                quality_metrics['nan_percentage'] = nan_percentage
+                
+                if nan_percentage > max_nan_percentage:
+                    error_msg = f"{data_name} contains {nan_percentage:.2f}% NaN values (threshold: {max_nan_percentage}%)"
+                    quality_metrics['errors'].append(error_msg)
+                    quality_metrics['is_valid'] = False
+                else:
+                    warning_msg = f"{data_name} contains {nan_count} NaN values ({nan_percentage:.2f}%)"
+                    quality_metrics['warnings'].append(warning_msg)
+            
+            # Check for infinite values
+            inf_count = np.sum(np.isinf(data))
+            if inf_count > 0:
+                inf_percentage = (inf_count / data.size) * 100
+                quality_metrics['inf_count'] = inf_count
+                quality_metrics['inf_percentage'] = inf_percentage
+                
+                if inf_percentage > max_inf_percentage:
+                    error_msg = f"{data_name} contains {inf_percentage:.2f}% infinite values (threshold: {max_inf_percentage}%)"
+                    quality_metrics['errors'].append(error_msg)
+                    quality_metrics['is_valid'] = False
+                else:
+                    warning_msg = f"{data_name} contains {inf_count} infinite values ({inf_percentage:.2f}%)"
+                    quality_metrics['warnings'].append(warning_msg)
+            
+            return quality_metrics
+            
+        except Exception as e:
+            quality_metrics['is_valid'] = False
+            quality_metrics['errors'].append(f"Failed to validate {data_name}: {e}")
+            return quality_metrics
+    
+    def _validate_array_shapes(self, arrays: Dict[str, np.ndarray], expected_samples: int) -> Dict[str, Any]:
+        """Validate that all arrays have consistent sample counts."""
+        validation_results = {
+            'is_valid': True,
+            'errors': [],
+            'shape_info': {}
+        }
+        
+        try:
+            for name, array in arrays.items():
+                if array.shape[0] != expected_samples:
+                    error_msg = f"{name} shape mismatch: expected {expected_samples}, got {array.shape[0]}"
+                    validation_results['errors'].append(error_msg)
+                    validation_results['is_valid'] = False
+                else:
+                    validation_results['shape_info'][name] = array.shape
+            
+            if not validation_results['is_valid']:
+                raise ValueError(f"Shape validation failed: {'; '.join(validation_results['errors'])}")
+            
+            return validation_results
+            
+        except Exception as e:
+            validation_results['is_valid'] = False
+            validation_results['errors'].append(str(e))
+            return validation_results
+    
     def execute(
         self,
         X: np.ndarray,
@@ -926,33 +1005,133 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
         }
     
     def _generate_training_report(self, total_time: float) -> None:
-        """Generate comprehensive training report."""
+        """Generate comprehensive training report with actionable insights."""
         try:
-            self.logger.info("📊 " + "="*60)
+            self.logger.info("📊 " + "="*80)
             self.logger.info("📊 ENHANCED TACTICIAN TRAINING REPORT")
-            self.logger.info("📊 " + "="*60)
+            self.logger.info("📊 " + "="*80)
             
             # Overall statistics
             self.logger.info(f"📊 Total training time: {total_time:.2f}s")
             self.logger.info(f"📊 Vectorization enabled: {self.enable_vectorization}")
             self.logger.info(f"📊 Vectorization fallback used: {self.vectorization_fallback_used}")
             
-            # Phase-by-phase breakdown
-            self.logger.info("📊 Phase breakdown:")
+            # Calculate efficiency metrics
+            total_warnings = sum(len(metrics.warnings_issued) for metrics in self.training_metrics.values())
+            total_errors = sum(len(metrics.errors_encountered) for metrics in self.training_metrics.values())
+            total_samples = sum(metrics.samples_processed for metrics in self.training_metrics.values())
+            total_features = sum(metrics.features_count for metrics in self.training_metrics.values())
+            
+            self.logger.info(f"📊 Total samples processed: {total_samples:,}")
+            self.logger.info(f"📊 Total features: {total_features}")
+            self.logger.info(f"📊 Total warnings: {total_warnings}")
+            self.logger.info(f"📊 Total errors: {total_errors}")
+            
+            # Performance efficiency
+            if total_samples > 0:
+                samples_per_second = total_samples / total_time
+                self.logger.info(f"📊 Processing rate: {samples_per_second:,.0f} samples/second")
+            
+            # Phase-by-phase breakdown with detailed metrics
+            self.logger.info("📊 " + "-"*60)
+            self.logger.info("📊 PHASE BREAKDOWN:")
+            self.logger.info("📊 " + "-"*60)
+            
             for phase, metrics in self.training_metrics.items():
                 status = "✅" if metrics.success else "❌"
-                self.logger.info(f"📊   {status} {phase.value}: {metrics.duration:.2f}s")
+                efficiency = f"({metrics.samples_processed/1000:.1f}k samples)" if metrics.samples_processed > 0 else ""
+                
+                self.logger.info(f"📊   {status} {phase.value.upper()}: {metrics.duration:.2f}s {efficiency}")
+                
+                # Detailed phase metrics
+                if metrics.samples_processed > 0:
+                    self.logger.info(f"📊     └─ Samples: {metrics.samples_processed:,}")
+                if metrics.features_count > 0:
+                    self.logger.info(f"📊     └─ Features: {metrics.features_count}")
+                if metrics.models_trained > 0:
+                    self.logger.info(f"📊     └─ Models trained: {metrics.models_trained}")
+                if metrics.warnings_issued > 0:
+                    self.logger.info(f"📊     └─ Warnings: {metrics.warnings_issued}")
+                if metrics.errors_encountered > 0:
+                    self.logger.info(f"📊     └─ Errors: {metrics.errors_encountered}")
+                if metrics.memory_usage_mb > 0:
+                    self.logger.info(f"📊     └─ Memory: {metrics.memory_usage_mb:.1f} MB")
+                
                 if not metrics.success and metrics.error_message:
-                    self.logger.info(f"📊     Error: {metrics.error_message}")
+                    self.logger.info(f"📊     └─ ❌ Error: {metrics.error_message}")
             
-            # Memory usage
+            # Data quality summary
+            self.logger.info("📊 " + "-"*60)
+            self.logger.info("📊 DATA QUALITY SUMMARY:")
+            self.logger.info("📊 " + "-"*60)
+            
+            # Analyze data validation results if available
+            if TrainingPhase.DATA_VALIDATION in self.training_metrics:
+                data_phase = self.training_metrics[TrainingPhase.DATA_VALIDATION]
+                if data_phase.success:
+                    self.logger.info("📊   ✅ Data validation passed")
+                else:
+                    self.logger.info("📊   ❌ Data validation failed")
+            
+            # Analyze feature preparation results if available
+            if TrainingPhase.FEATURE_PREPARATION in self.training_metrics:
+                feature_phase = self.training_metrics[TrainingPhase.FEATURE_PREPARATION]
+                if feature_phase.success:
+                    self.logger.info("📊   ✅ Feature preparation completed")
+                else:
+                    self.logger.info("📊   ❌ Feature preparation failed")
+            
+            # Training method analysis
+            self.logger.info("📊 " + "-"*60)
+            self.logger.info("📊 TRAINING METHOD ANALYSIS:")
+            self.logger.info("📊 " + "-"*60)
+            
+            if self.enable_vectorization:
+                if self.vectorization_fallback_used:
+                    self.logger.info("📊   ⚠️ Vectorization attempted but fallback used")
+                    self.logger.info("📊   💡 Consider investigating vectorization issues")
+                else:
+                    self.logger.info("📊   ✅ Vectorization used successfully")
+                    self.logger.info("📊   🚀 Optimal performance achieved")
+            else:
+                self.logger.info("📊   ℹ️ Standard training used (vectorization disabled)")
+            
+            # Memory usage analysis
             current_memory = self._get_memory_usage()
+            self.logger.info("📊 " + "-"*60)
+            self.logger.info("📊 MEMORY USAGE:")
+            self.logger.info("📊 " + "-"*60)
             self.logger.info(f"📊 Current memory usage: {current_memory:.1f} MB")
             
-            self.logger.info("📊 " + "="*60)
+            if current_memory > 1000:  # More than 1GB
+                self.logger.info("📊   ⚠️ High memory usage detected")
+                self.logger.info("📊   💡 Consider reducing batch size or using data streaming")
+            elif current_memory < 100:  # Less than 100MB
+                self.logger.info("📊   ✅ Low memory usage - efficient processing")
+            
+            # Recommendations
+            self.logger.info("📊 " + "-"*60)
+            self.logger.info("📊 RECOMMENDATIONS:")
+            self.logger.info("📊 " + "-"*60)
+            
+            if total_warnings > 5:
+                self.logger.info("📊   ⚠️ High warning count - review data quality")
+            if total_errors > 0:
+                self.logger.info("📊   ❌ Errors detected - review error logs")
+            if self.vectorization_fallback_used:
+                self.logger.info("📊   🔧 Vectorization fallback used - investigate vectorization issues")
+            if total_time > 3600:  # More than 1 hour
+                self.logger.info("📊   ⏱️ Long training time - consider optimizing hyperparameters")
+            
+            # Success indicators
+            if total_errors == 0 and total_warnings < 3:
+                self.logger.info("📊   ✅ Training completed successfully with minimal issues")
+            
+            self.logger.info("📊 " + "="*80)
             
         except Exception as e:
             self.logger.error(f"❌ Failed to generate training report: {e}")
+            self.logger.error(f"❌ Traceback: {traceback.format_exc()}")
     
     def _add_tactician_specific_metadata(self, results: Dict[str, Any], analyst_signals: Optional[np.ndarray] = None) -> Dict[str, Any]:
         """

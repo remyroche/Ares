@@ -328,20 +328,10 @@ class TPSLOptimizationExample:
     def _create_optimization_parameters(self, strategy: str) -> Dict[str, List[float]]:
         """Create optimization parameters based on strategy."""
         try:
-            if strategy == "fixed":
-                return {
-                    "take_profit_pct": [0.005, 0.01, 0.015, 0.02, 0.025, 0.03, 0.04, 0.05],
-                    "stop_loss_pct": [0.005, 0.008, 0.01, 0.012, 0.015, 0.02, 0.025, 0.03]
-                }
-            elif strategy == "atr_based":
+            if strategy == "atr_based":
                 return {
                     "atr_multiplier_tp": [1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0],
                     "atr_multiplier_sl": [0.5, 0.8, 1.0, 1.2, 1.5, 2.0, 2.5]
-                }
-            elif strategy == "volatility_based":
-                return {
-                    "volatility_multiplier_tp": [1.0, 1.2, 1.5, 1.8, 2.0, 2.5, 3.0],
-                    "volatility_multiplier_sl": [0.5, 0.8, 1.0, 1.2, 1.5, 2.0, 2.5]
                 }
             elif strategy == "dynamic":
                 return {
@@ -362,11 +352,35 @@ class TPSLOptimizationExample:
                     "stop_loss_pct": [0.008, 0.01, 0.012, 0.015, 0.018],
                     "scale_out_levels": [[0.4, 0.6], [0.5, 0.5], [0.6, 0.4], [0.3, 0.4, 0.3], [0.4, 0.3, 0.3]]
                 }
-            else:
-                # Default to fixed strategy
+            elif strategy == "momentum_based":
                 return {
-                    "take_profit_pct": [0.01, 0.015, 0.02, 0.025, 0.03],
-                    "stop_loss_pct": [0.008, 0.01, 0.012, 0.015, 0.02]
+                    "take_profit_pct": [0.015, 0.02, 0.025, 0.03],
+                    "stop_loss_pct": [0.01, 0.012, 0.015, 0.018],
+                    "momentum_period": [5, 10, 15, 20],
+                    "momentum_threshold": [0.3, 0.5, 0.7, 0.9]
+                }
+            elif strategy == "support_resistance":
+                return {
+                    "take_profit_pct": [0.015, 0.02, 0.025, 0.03],
+                    "stop_loss_pct": [0.01, 0.012, 0.015, 0.018],
+                    "sr_lookback": [10, 15, 20, 25],
+                    "sr_buffer_pct": [0.001, 0.002, 0.003, 0.005]
+                }
+            elif strategy == "confidence_based":
+                return {
+                    "take_profit_pct": [0.015, 0.02, 0.025, 0.03],
+                    "stop_loss_pct": [0.01, 0.012, 0.015, 0.018],
+                    "confidence_threshold_high": [0.7, 0.8, 0.9],
+                    "confidence_threshold_medium": [0.5, 0.6, 0.7],
+                    "confidence_threshold_low": [0.3, 0.4, 0.5],
+                    "analyst_confidence_weight": [0.4, 0.5, 0.6, 0.7],
+                    "tactician_confidence_weight": [0.3, 0.4, 0.5, 0.6]
+                }
+            else:
+                # Default to ATR-based strategy
+                return {
+                    "atr_multiplier_tp": [1.5, 2.0, 2.5, 3.0],
+                    "atr_multiplier_sl": [0.8, 1.0, 1.2, 1.5]
                 }
                 
         except Exception as e:
@@ -574,10 +588,10 @@ async def run_tpsl_optimization_example():
                 }
             ],
             "optimization_strategies": {
-                "model_a": "fixed",
-                "model_b": "atr_based",
-                "model_c": "volatility_based",
-                "model_d": "dynamic"
+                "model_a": "atr_based",
+                "model_b": "dynamic",
+                "model_c": "confidence_based",
+                "model_d": "trailing"
             }
         }
         

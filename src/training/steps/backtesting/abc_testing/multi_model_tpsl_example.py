@@ -621,51 +621,51 @@ async def run_multi_model_tpsl_example():
             ],
             "tpsl_configs": {
                 "model_a": {
-                    "strategy": "fixed",
-                    "take_profit_pct": 0.015,
-                    "stop_loss_pct": 0.008,
-                    "enable_breakeven": True,
-                    "breakeven_trigger_pct": 0.008,
+                    "strategy": "atr_based",
+                    "atr_multiplier_tp": 2.0,
+                    "atr_multiplier_sl": 1.0,
                     "max_risk_per_trade": 0.02
                 },
                 "model_b": {
-                    "strategy": "atr_based",
-                    "atr_multiplier_tp": 2.5,
-                    "atr_multiplier_sl": 1.5,
-                    "enable_trailing_sl": True,
-                    "trailing_start_pct": 0.012,
-                    "max_risk_per_trade": 0.03
-                },
-                "model_c": {
-                    "strategy": "volatility_based",
-                    "volatility_multiplier_tp": 1.8,
-                    "volatility_multiplier_sl": 1.2,
-                    "enable_partial_tp": True,
-                    "scale_out_levels": [0.6, 0.4],
-                    "max_risk_per_trade": 0.025
-                },
-                "model_d": {
                     "strategy": "dynamic",
                     "take_profit_pct": 0.02,
                     "stop_loss_pct": 0.01,
                     "dynamic_adjustment_factor": 0.6,
-                    "enable_breakeven": True,
+                    "max_risk_per_trade": 0.03
+                },
+                "model_c": {
+                    "strategy": "confidence_based",
+                    "take_profit_pct": 0.02,
+                    "stop_loss_pct": 0.01,
+                    "confidence_threshold_high": 0.8,
+                    "confidence_threshold_medium": 0.6,
+                    "confidence_threshold_low": 0.4,
+                    "analyst_confidence_weight": 0.6,
+                    "tactician_confidence_weight": 0.4,
                     "max_risk_per_trade": 0.025
                 },
-                "model_e": {
+                "model_d": {
                     "strategy": "trailing",
                     "take_profit_pct": 0.025,
                     "stop_loss_pct": 0.012,
                     "trailing_start_pct": 0.015,
                     "trailing_step_pct": 0.006,
-                    "max_risk_per_trade": 0.02
+                    "max_risk_per_trade": 0.025
                 },
-                "model_f": {
+                "model_e": {
                     "strategy": "scaling",
                     "take_profit_pct": 0.018,
                     "stop_loss_pct": 0.009,
                     "scale_out_levels": [0.5, 0.3, 0.2],
                     "scale_out_sizes": [0.3, 0.3, 0.4],
+                    "max_risk_per_trade": 0.02
+                },
+                "model_f": {
+                    "strategy": "momentum_based",
+                    "take_profit_pct": 0.02,
+                    "stop_loss_pct": 0.01,
+                    "momentum_period": 10,
+                    "momentum_threshold": 0.5,
                     "max_risk_per_trade": 0.03
                 }
             },

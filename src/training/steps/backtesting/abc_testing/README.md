@@ -252,29 +252,29 @@ The framework supports a wide range of machine learning models:
 
 ### Available TPSL Strategies
 
-1. **Fixed**: Fixed percentage TPSL levels
-2. **ATR-Based**: Based on Average True Range
-3. **Volatility-Based**: Based on asset volatility
-4. **Dynamic**: Dynamic adjustment based on market conditions
-5. **Trailing**: Trailing stop loss with profit protection
-6. **Scaling**: Scale out positions at multiple levels
-7. **Time-Based**: Time-based TPSL with decay
-8. **Momentum-Based**: Based on momentum indicators
-9. **Support/Resistance**: Based on support/resistance levels
-10. **Breakeven**: Move to breakeven after profit target
+1. **ATR-Based**: Based on Average True Range
+2. **Dynamic**: Dynamic adjustment based on market conditions
+3. **Trailing**: Trailing stop loss with profit protection
+4. **Scaling**: Scale out positions at multiple levels
+5. **Momentum-Based**: Based on momentum indicators
+6. **Support/Resistance**: Based on support/resistance levels
+7. **Confidence-Based**: Based on analyst/tactician confidence score
 
 ### TPSL Configuration Example
 
 ```python
 from src.training.steps.backtesting.abc_testing.enhanced_abc_testing_framework import TPSLConfig, TPSLStrategy
 
-# Fixed TPSL strategy
-fixed_tpsl = TPSLConfig(
-    strategy=TPSLStrategy.FIXED,
+# Confidence-based TPSL strategy
+confidence_tpsl = TPSLConfig(
+    strategy=TPSLStrategy.CONFIDENCE_BASED,
     take_profit_pct=0.02,      # 2% take profit
     stop_loss_pct=0.01,        # 1% stop loss
-    enable_breakeven=True,     # Enable breakeven functionality
-    breakeven_trigger_pct=0.01 # Trigger breakeven after 1% profit
+    confidence_threshold_high=0.8,    # High confidence threshold
+    confidence_threshold_medium=0.6,  # Medium confidence threshold
+    confidence_threshold_low=0.4,     # Low confidence threshold
+    analyst_confidence_weight=0.6,    # Weight for analyst confidence
+    tactician_confidence_weight=0.4   # Weight for tactician confidence
 )
 
 # ATR-based TPSL strategy
@@ -573,12 +573,12 @@ async def run_6_model_test():
             {"model_id": "model_f", "model_name": "ExtraTrees_Fast", "model_type": "extra_trees"}
         ],
         "tpsl_configs": {
-            "model_a": {"strategy": "fixed", "take_profit_pct": 0.015, "stop_loss_pct": 0.008},
-            "model_b": {"strategy": "atr_based", "atr_multiplier_tp": 2.5, "atr_multiplier_sl": 1.5},
-            "model_c": {"strategy": "volatility_based", "volatility_multiplier_tp": 1.8},
-            "model_d": {"strategy": "dynamic", "dynamic_adjustment_factor": 0.6},
-            "model_e": {"strategy": "trailing", "trailing_start_pct": 0.015},
-            "model_f": {"strategy": "scaling", "scale_out_levels": [0.5, 0.3, 0.2]}
+            "model_a": {"strategy": "atr_based", "atr_multiplier_tp": 2.0, "atr_multiplier_sl": 1.0},
+            "model_b": {"strategy": "dynamic", "dynamic_adjustment_factor": 0.6},
+            "model_c": {"strategy": "confidence_based", "confidence_threshold_high": 0.8},
+            "model_d": {"strategy": "trailing", "trailing_start_pct": 0.015},
+            "model_e": {"strategy": "scaling", "scale_out_levels": [0.5, 0.3, 0.2]},
+            "model_f": {"strategy": "momentum_based", "momentum_period": 10}
         }
     }
     
@@ -608,10 +608,10 @@ async def run_tpsl_optimization():
             {"model_id": "model_d", "model_name": "TabNet", "model_type": "tabnet"}
         ],
         "optimization_strategies": {
-            "model_a": "fixed",        # Optimize fixed TPSL parameters
-            "model_b": "atr_based",    # Optimize ATR-based parameters
-            "model_c": "volatility_based", # Optimize volatility-based parameters
-            "model_d": "dynamic"       # Optimize dynamic parameters
+            "model_a": "atr_based",    # Optimize ATR-based parameters
+            "model_b": "dynamic",      # Optimize dynamic parameters
+            "model_c": "confidence_based", # Optimize confidence-based parameters
+            "model_d": "trailing"      # Optimize trailing parameters
         }
     }
     
@@ -633,9 +633,9 @@ from src.training.steps.backtesting.abc_testing.enhanced_abc_testing_framework i
 async def run_enhanced_abc_test():
     # Create TPSL configurations for each model
     tpsl_configs = {
-        "model_a": TPSLConfig(strategy=TPSLStrategy.FIXED, take_profit_pct=0.02, stop_loss_pct=0.01),
-        "model_b": TPSLConfig(strategy=TPSLStrategy.ATR_BASED, atr_multiplier_tp=2.0, atr_multiplier_sl=1.0),
-        "model_c": TPSLConfig(strategy=TPSLStrategy.DYNAMIC, dynamic_adjustment_factor=0.5),
+        "model_a": TPSLConfig(strategy=TPSLStrategy.ATR_BASED, atr_multiplier_tp=2.0, atr_multiplier_sl=1.0),
+        "model_b": TPSLConfig(strategy=TPSLStrategy.DYNAMIC, dynamic_adjustment_factor=0.5),
+        "model_c": TPSLConfig(strategy=TPSLStrategy.CONFIDENCE_BASED, confidence_threshold_high=0.8),
         "model_d": TPSLConfig(strategy=TPSLStrategy.TRAILING, trailing_start_pct=0.01),
         "model_e": TPSLConfig(strategy=TPSLStrategy.SCALING, scale_out_levels=[0.5, 0.3, 0.2])
     }
@@ -648,7 +648,7 @@ async def run_enhanced_abc_test():
         "model_id": "model_f",
         "model_name": "New_Model",
         "model_type": "random_forest"
-    }, TPSLConfig(strategy=TPSLStrategy.VOLATILITY_BASED))
+    }, TPSLConfig(strategy=TPSLStrategy.MOMENTUM_BASED))
     
     # Run the test
     results = await framework.execute(orchestrator)
@@ -665,8 +665,8 @@ multi_asset_tpsl_config = {
     "models": [...],
     "tpsl_configs": {
         "BTCUSDT": {"strategy": "atr_based", "atr_multiplier_tp": 2.0},
-        "ETHUSDT": {"strategy": "volatility_based", "volatility_multiplier_tp": 1.5},
-        "ADAUSDT": {"strategy": "fixed", "take_profit_pct": 0.03}
+        "ETHUSDT": {"strategy": "confidence_based", "confidence_threshold_high": 0.8},
+        "ADAUSDT": {"strategy": "dynamic", "take_profit_pct": 0.03}
     }
 }
 ```

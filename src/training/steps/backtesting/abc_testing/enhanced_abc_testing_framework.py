@@ -47,16 +47,13 @@ logger = logging.getLogger(__name__)
 
 class TPSLStrategy(Enum):
     """Take Profit/Stop Loss strategies."""
-    FIXED = "fixed"                    # Fixed percentage TPSL
     ATR_BASED = "atr_based"           # Based on Average True Range
-    VOLATILITY_BASED = "volatility_based"  # Based on asset volatility
     DYNAMIC = "dynamic"               # Dynamic adjustment based on market conditions
     TRAILING = "trailing"             # Trailing stop loss
-    BREAKEVEN = "breakeven"           # Move to breakeven after profit target
     SCALING = "scaling"               # Scale out positions
-    TIME_BASED = "time_based"         # Time-based TPSL
     MOMENTUM_BASED = "momentum_based" # Based on momentum indicators
     SUPPORT_RESISTANCE = "support_resistance"  # Based on support/resistance levels
+    CONFIDENCE_BASED = "confidence_based"  # Based on analyst/tactician confidence score
 
 
 class TPSLMode(Enum):
@@ -70,10 +67,10 @@ class TPSLMode(Enum):
 @dataclass
 class TPSLConfig:
     """Take Profit/Stop Loss configuration."""
-    strategy: TPSLStrategy = TPSLStrategy.FIXED
+    strategy: TPSLStrategy = TPSLStrategy.ATR_BASED
     mode: TPSLMode = TPSLMode.IMMEDIATE
     
-    # Fixed TPSL parameters
+    # Base TPSL parameters (used as fallback)
     take_profit_pct: float = 0.02     # 2% take profit
     stop_loss_pct: float = 0.01       # 1% stop loss
     
@@ -82,10 +79,18 @@ class TPSLConfig:
     atr_multiplier_sl: float = 1.0    # 1x ATR for stop loss
     atr_period: int = 14              # ATR calculation period
     
-    # Volatility-based parameters
-    volatility_multiplier_tp: float = 1.5  # 1.5x volatility for take profit
-    volatility_multiplier_sl: float = 1.0  # 1x volatility for stop loss
-    volatility_period: int = 20       # Volatility calculation period
+    # Confidence-based parameters
+    confidence_threshold_high: float = 0.8    # High confidence threshold
+    confidence_threshold_medium: float = 0.6  # Medium confidence threshold
+    confidence_threshold_low: float = 0.4     # Low confidence threshold
+    high_confidence_tp_multiplier: float = 1.5  # TP multiplier for high confidence
+    high_confidence_sl_multiplier: float = 0.8  # SL multiplier for high confidence
+    medium_confidence_tp_multiplier: float = 1.0  # TP multiplier for medium confidence
+    medium_confidence_sl_multiplier: float = 1.0  # SL multiplier for medium confidence
+    low_confidence_tp_multiplier: float = 0.8   # TP multiplier for low confidence
+    low_confidence_sl_multiplier: float = 1.2   # SL multiplier for low confidence
+    analyst_confidence_weight: float = 0.6     # Weight for analyst confidence
+    tactician_confidence_weight: float = 0.4   # Weight for tactician confidence
     
     # Dynamic parameters
     dynamic_adjustment_factor: float = 0.5  # Adjustment sensitivity
@@ -102,9 +107,9 @@ class TPSLConfig:
     scale_out_levels: List[float] = field(default_factory=lambda: [0.5, 0.3, 0.2])  # Scale out at 50%, 30%, 20%
     scale_out_sizes: List[float] = field(default_factory=lambda: [0.25, 0.25, 0.5])  # Scale out sizes
     
-    # Time-based parameters
-    max_hold_time_hours: int = 24     # Maximum hold time in hours
-    time_decay_factor: float = 0.1    # Time decay adjustment factor
+    # Confidence score parameters
+    confidence_lookback_period: int = 20  # Period for confidence score calculation
+    confidence_smoothing_factor: float = 0.3  # Smoothing factor for confidence scores
     
     # Momentum parameters
     momentum_period: int = 10         # Momentum calculation period
@@ -115,11 +120,9 @@ class TPSLConfig:
     sr_buffer_pct: float = 0.002      # Buffer around S/R levels (0.2%)
     
     # Advanced features
-    enable_breakeven: bool = True     # Enable breakeven functionality
-    breakeven_trigger_pct: float = 0.01  # Trigger breakeven after 1% profit
     enable_partial_tp: bool = False   # Enable partial take profits
     enable_trailing_sl: bool = False  # Enable trailing stop loss
-    enable_time_stop: bool = False    # Enable time-based stop
+    enable_confidence_tracking: bool = True  # Enable confidence score tracking
     
     # Risk management
     max_risk_per_trade: float = 0.02  # Maximum risk per trade (2%)
@@ -190,30 +193,26 @@ class TPSLManager:
         try:
             config = self._get_dynamic_config(symbol, market_data)
             
-            if config.strategy == TPSLStrategy.FIXED:
-                return self._calculate_fixed_tpsl(entry_price, config, position_side)
-            elif config.strategy == TPSLStrategy.ATR_BASED:
+            if config.strategy == TPSLStrategy.ATR_BASED:
                 return self._calculate_atr_tpsl(entry_price, market_data, config, position_side)
-            elif config.strategy == TPSLStrategy.VOLATILITY_BASED:
-                return self._calculate_volatility_tpsl(entry_price, market_data, config, position_side)
             elif config.strategy == TPSLStrategy.DYNAMIC:
                 return self._calculate_dynamic_tpsl(entry_price, market_data, config, position_side)
             elif config.strategy == TPSLStrategy.TRAILING:
                 return self._calculate_trailing_tpsl(entry_price, market_data, config, position_side)
             elif config.strategy == TPSLStrategy.SCALING:
                 return self._calculate_scaling_tpsl(entry_price, market_data, config, position_side)
-            elif config.strategy == TPSLStrategy.TIME_BASED:
-                return self._calculate_time_tpsl(entry_price, market_data, config, position_side)
             elif config.strategy == TPSLStrategy.MOMENTUM_BASED:
                 return self._calculate_momentum_tpsl(entry_price, market_data, config, position_side)
             elif config.strategy == TPSLStrategy.SUPPORT_RESISTANCE:
                 return self._calculate_sr_tpsl(entry_price, market_data, config, position_side)
+            elif config.strategy == TPSLStrategy.CONFIDENCE_BASED:
+                return self._calculate_confidence_tpsl(entry_price, market_data, config, position_side)
             else:
-                return self._calculate_fixed_tpsl(entry_price, config, position_side)
+                return self._calculate_atr_tpsl(entry_price, market_data, config, position_side)
                 
         except Exception as e:
             self.logger.error(f"❌ Error calculating TPSL levels: {e}")
-            return self._calculate_fixed_tpsl(entry_price, self.base_config, position_side)
+            return self._calculate_atr_tpsl(entry_price, market_data, self.base_config, position_side)
     
     def _get_dynamic_config(self, symbol: str, market_data: MarketData) -> TPSLConfig:
         """Get dynamic TPSL configuration based on market conditions."""
@@ -252,8 +251,8 @@ class TPSLManager:
         except:
             return "normal"
     
-    def _calculate_fixed_tpsl(self, entry_price: float, config: TPSLConfig, position_side: OrderSide) -> Tuple[float, float]:
-        """Calculate fixed percentage TPSL levels."""
+    def _calculate_base_tpsl(self, entry_price: float, config: TPSLConfig, position_side: OrderSide) -> Tuple[float, float]:
+        """Calculate base percentage TPSL levels."""
         if position_side == OrderSide.BUY:
             take_profit = entry_price * (1 + config.take_profit_pct)
             stop_loss = entry_price * (1 - config.stop_loss_pct)
@@ -281,26 +280,54 @@ class TPSLManager:
             
         except Exception as e:
             self.logger.error(f"❌ Error calculating ATR TPSL: {e}")
-            return self._calculate_fixed_tpsl(entry_price, config, position_side)
+            return self._calculate_base_tpsl(entry_price, config, position_side)
     
-    def _calculate_volatility_tpsl(self, entry_price: float, market_data: MarketData,
+    def _calculate_confidence_tpsl(self, entry_price: float, market_data: MarketData,
                                  config: TPSLConfig, position_side: OrderSide) -> Tuple[float, float]:
-        """Calculate volatility-based TPSL levels."""
+        """Calculate confidence-based TPSL levels."""
         try:
-            volatility = market_data.volatility
+            # Get confidence scores (would be provided by analyst/tactician in real implementation)
+            analyst_confidence = getattr(market_data, 'analyst_confidence', 0.5)  # Default to 0.5
+            tactician_confidence = getattr(market_data, 'tactician_confidence', 0.5)  # Default to 0.5
             
-            if position_side == OrderSide.BUY:
-                take_profit = entry_price * (1 + volatility * config.volatility_multiplier_tp)
-                stop_loss = entry_price * (1 - volatility * config.volatility_multiplier_sl)
+            # Calculate weighted confidence score
+            weighted_confidence = (
+                analyst_confidence * config.analyst_confidence_weight +
+                tactician_confidence * config.tactician_confidence_weight
+            )
+            
+            # Determine confidence level and apply multipliers
+            if weighted_confidence >= config.confidence_threshold_high:
+                tp_multiplier = config.high_confidence_tp_multiplier
+                sl_multiplier = config.high_confidence_sl_multiplier
+            elif weighted_confidence >= config.confidence_threshold_medium:
+                tp_multiplier = config.medium_confidence_tp_multiplier
+                sl_multiplier = config.medium_confidence_sl_multiplier
             else:
-                take_profit = entry_price * (1 - volatility * config.volatility_multiplier_tp)
-                stop_loss = entry_price * (1 + volatility * config.volatility_multiplier_sl)
+                tp_multiplier = config.low_confidence_tp_multiplier
+                sl_multiplier = config.low_confidence_sl_multiplier
+            
+            # Calculate adjusted TPSL levels
+            adjusted_tp_pct = config.take_profit_pct * tp_multiplier
+            adjusted_sl_pct = config.stop_loss_pct * sl_multiplier
+            
+            # Apply limits
+            adjusted_tp_pct = max(config.min_tp_pct, min(adjusted_tp_pct, config.max_tp_pct))
+            adjusted_sl_pct = max(config.min_sl_pct, min(adjusted_sl_pct, config.max_sl_pct))
+            
+            # Calculate final TPSL levels
+            if position_side == OrderSide.BUY:
+                take_profit = entry_price * (1 + adjusted_tp_pct)
+                stop_loss = entry_price * (1 - adjusted_sl_pct)
+            else:
+                take_profit = entry_price * (1 - adjusted_tp_pct)
+                stop_loss = entry_price * (1 + adjusted_sl_pct)
             
             return take_profit, stop_loss
             
         except Exception as e:
-            self.logger.error(f"❌ Error calculating volatility TPSL: {e}")
-            return self._calculate_fixed_tpsl(entry_price, config, position_side)
+            self.logger.error(f"❌ Error calculating confidence TPSL: {e}")
+            return self._calculate_base_tpsl(entry_price, config, position_side)
     
     def _calculate_dynamic_tpsl(self, entry_price: float, market_data: MarketData,
                               config: TPSLConfig, position_side: OrderSide) -> Tuple[float, float]:
@@ -324,13 +351,13 @@ class TPSLManager:
             adjusted_tp = max(config.min_tp_pct, min(adjusted_tp, config.max_tp_pct))
             adjusted_sl = max(config.min_sl_pct, min(adjusted_sl, config.max_sl_pct))
             
-            return self._calculate_fixed_tpsl(entry_price, 
+            return self._calculate_base_tpsl(entry_price, 
                                             TPSLConfig(take_profit_pct=adjusted_tp, stop_loss_pct=adjusted_sl), 
                                             position_side)
             
         except Exception as e:
             self.logger.error(f"❌ Error calculating dynamic TPSL: {e}")
-            return self._calculate_fixed_tpsl(entry_price, config, position_side)
+            return self._calculate_base_tpsl(entry_price, config, position_side)
     
     def _calculate_trailing_tpsl(self, entry_price: float, market_data: MarketData,
                                config: TPSLConfig, position_side: OrderSide) -> Tuple[float, float]:
@@ -349,7 +376,7 @@ class TPSLManager:
             
         except Exception as e:
             self.logger.error(f"❌ Error calculating trailing TPSL: {e}")
-            return self._calculate_fixed_tpsl(entry_price, config, position_side)
+            return self._calculate_base_tpsl(entry_price, config, position_side)
     
     def _calculate_scaling_tpsl(self, entry_price: float, market_data: MarketData,
                               config: TPSLConfig, position_side: OrderSide) -> Tuple[float, float]:
@@ -372,27 +399,8 @@ class TPSLManager:
             
         except Exception as e:
             self.logger.error(f"❌ Error calculating scaling TPSL: {e}")
-            return self._calculate_fixed_tpsl(entry_price, config, position_side)
+            return self._calculate_base_tpsl(entry_price, config, position_side)
     
-    def _calculate_time_tpsl(self, entry_price: float, market_data: MarketData,
-                           config: TPSLConfig, position_side: OrderSide) -> Tuple[float, float]:
-        """Calculate time-based TPSL levels."""
-        try:
-            # Adjust TPSL based on time decay
-            # This is a simplified version - in reality, we'd track entry time
-            
-            time_factor = 1.0 - config.time_decay_factor  # Reduce TPSL over time
-            
-            adjusted_tp = config.take_profit_pct * time_factor
-            adjusted_sl = config.stop_loss_pct * (1.0 + config.time_decay_factor)  # Tighten stop loss over time
-            
-            return self._calculate_fixed_tpsl(entry_price,
-                                            TPSLConfig(take_profit_pct=adjusted_tp, stop_loss_pct=adjusted_sl),
-                                            position_side)
-            
-        except Exception as e:
-            self.logger.error(f"❌ Error calculating time TPSL: {e}")
-            return self._calculate_fixed_tpsl(entry_price, config, position_side)
     
     def _calculate_momentum_tpsl(self, entry_price: float, market_data: MarketData,
                                config: TPSLConfig, position_side: OrderSide) -> Tuple[float, float]:
@@ -411,13 +419,13 @@ class TPSLManager:
             adjusted_tp = config.take_profit_pct * momentum_factor
             adjusted_sl = config.stop_loss_pct * momentum_factor
             
-            return self._calculate_fixed_tpsl(entry_price,
+            return self._calculate_base_tpsl(entry_price,
                                             TPSLConfig(take_profit_pct=adjusted_tp, stop_loss_pct=adjusted_sl),
                                             position_side)
             
         except Exception as e:
             self.logger.error(f"❌ Error calculating momentum TPSL: {e}")
-            return self._calculate_fixed_tpsl(entry_price, config, position_side)
+            return self._calculate_base_tpsl(entry_price, config, position_side)
     
     def _calculate_sr_tpsl(self, entry_price: float, market_data: MarketData,
                          config: TPSLConfig, position_side: OrderSide) -> Tuple[float, float]:
@@ -438,7 +446,7 @@ class TPSLManager:
             
         except Exception as e:
             self.logger.error(f"❌ Error calculating S/R TPSL: {e}")
-            return self._calculate_fixed_tpsl(entry_price, config, position_side)
+            return self._calculate_base_tpsl(entry_price, config, position_side)
     
     def optimize_tpsl_parameters(self, historical_data: pd.DataFrame, 
                                symbol: str, position_side: OrderSide,

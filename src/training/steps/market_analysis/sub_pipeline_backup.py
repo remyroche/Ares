@@ -1708,7 +1708,7 @@ class MarketAnalysisSubPipeline:
         
         # Import and execute HMM models training
         try:
-            from .hmm_training.hmm_models_training_refactored import HMMModelsTrainingRefactored as HMMModelsTraining
+            from .hmm_models_training.hmm_models_training_enhanced import HMMModelsTrainingEnhanced as HMMModelsTraining
             
             # Load market data for training
             market_data = await self._load_market_data(config)

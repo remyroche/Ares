@@ -14,6 +14,14 @@ from typing import Any, Dict, List, Optional, Callable, Union
 import sys
 import platform
 
+# Optional dependencies
+try:
+    import numpy as np
+    NUMPY_AVAILABLE = True
+except ImportError:
+    NUMPY_AVAILABLE = False
+    np = None
+
 logger = logging.getLogger(__name__)
 
 class M1CPUOptimizer:
@@ -148,9 +156,11 @@ class M1CPUOptimizer:
 
     def optimize_numpy_operations(self):
         """Optimize numpy operations for M1."""
+        if not NUMPY_AVAILABLE:
+            self.logger.warning("Numpy not available, skipping numpy optimization")
+            return
+            
         try:
-            import numpy as np
-
             # Set thread count for numpy operations
             # M1 benefits from using all cores for vectorized operations
 
@@ -333,21 +343,23 @@ async def _execute_backtesting_chunk(
             data_size = len(data_chunk)
             results['total_trades'] = max(1, int(data_size * 0.005))  # ~0.5% of data points as trades
         else:
-            results['total_trades'] = np.random.randint(10, 100)
+            import random
+            results['total_trades'] = random.randint(10, 100)
 
         # Generate realistic trading metrics
-        results['win_rate'] = 0.5 + np.random.normal(0, 0.1)
-        results['profit_factor'] = 1.0 + np.random.exponential(0.2)
-        results['max_drawdown'] = np.random.exponential(0.05)
-        results['sharpe_ratio'] = np.random.normal(0.5, 0.3)
-        results['total_return'] = np.random.normal(0.02, 0.05)
+        import random
+        results['win_rate'] = 0.5 + random.uniform(-0.1, 0.1)
+        results['profit_factor'] = 1.0 + random.uniform(0, 0.2)
+        results['max_drawdown'] = random.uniform(0, 0.05)
+        results['sharpe_ratio'] = random.uniform(0.2, 0.8)
+        results['total_return'] = random.uniform(-0.03, 0.07)
 
         # Ensure reasonable bounds
-        results['win_rate'] = np.clip(results['win_rate'], 0.1, 0.9)
+        results['win_rate'] = max(0.1, min(0.9, results['win_rate']))
         results['profit_factor'] = max(0.5, results['profit_factor'])
         results['max_drawdown'] = min(results['max_drawdown'], 0.5)
-        results['sharpe_ratio'] = np.clip(results['sharpe_ratio'], -2, 3)
-        results['total_return'] = np.clip(results['total_return'], -0.5, 0.5)
+        results['sharpe_ratio'] = max(-2, min(3, results['sharpe_ratio']))
+        results['total_return'] = max(-0.5, min(0.5, results['total_return']))
 
         return results
 

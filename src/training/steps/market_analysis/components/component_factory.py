@@ -11,11 +11,12 @@ from .sr_detection import SRDetectionComponent
 from .sr_clustering import SRClusteringComponent
 from .hmm_regime_discovery import HMMRegimeDiscoveryComponent
 from .hmm_clustering import HMMClusteringComponent
-from .hmm_models_training import HMMModelsTrainingComponent
-from .hmm_ensemble_training import HMMEnsembleTrainingComponent
+# HMM training components moved to hmm_models_training module
+# from .hmm_models_training import HMMModelsTrainingComponent
+# from .hmm_ensemble_training import HMMEnsembleTrainingComponent
 from .regime_data_splitting import RegimeDataSplittingComponent
 from .triple_barrier_labeling import TripleBarrierLabelingComponent
-from .feature_lookback_optimization import FeatureLookbackOptimizationComponent
+from ..feature_lookback_optimization import FeatureLookbackOptimizationComponent
 from .cross_timeframe_analysis import CrossTimeframeAnalysisComponent
 
 
@@ -32,8 +33,8 @@ class ComponentFactory:
         'sr_clustering': SRClusteringComponent,
         'hmm_regime_discovery': HMMRegimeDiscoveryComponent,
         'hmm_clustering': HMMClusteringComponent,
-        'hmm_models_training': HMMModelsTrainingComponent,
-        'hmm_ensemble_training': HMMEnsembleTrainingComponent,
+        # 'hmm_models_training': HMMModelsTrainingComponent,  # Moved to hmm_models_training module
+        # 'hmm_ensemble_training': HMMEnsembleTrainingComponent,  # Removed
         'regime_data_splitting': RegimeDataSplittingComponent,
         'triple_barrier_labeling': TripleBarrierLabelingComponent,
         'feature_lookback_optimization': FeatureLookbackOptimizationComponent,

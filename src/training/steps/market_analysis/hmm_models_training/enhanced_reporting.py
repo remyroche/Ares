@@ -155,7 +155,14 @@ class HMMTrainingReporter:
                     "exchange": kwargs.get('exchange', getattr(config, 'exchange', 'UNKNOWN')),
                     "timeframe": kwargs.get('timeframe', getattr(config, 'timeframe', '1h')),
                     "model_name": getattr(config, 'model_name', 'hmm_models'),
-                    "config": asdict(config) if hasattr(config, '__dataclass_fields__') else str(config)
+                    "config": asdict(config) if hasattr(config, '__dataclass_fields__') else str(config),
+                    "circuit_breaker_state": kwargs.get('circuit_breaker_state', 'UNKNOWN'),
+                    "enhanced_features": {
+                        "real_time_progress": True,
+                        "circuit_breaker": True,
+                        "early_exit_validation": True,
+                        "centralized_error_handling": True
+                    }
                 },
                 "training_summary": asdict(training_summary),
                 "model_performance": {

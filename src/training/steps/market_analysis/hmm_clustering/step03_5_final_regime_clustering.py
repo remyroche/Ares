@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
-from src.utils.tprint import tprint
-
-from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
-"""Step 3.5: Final Regime Clustering with Advanced Reporting."
+"""
+Step 3.5: Final Regime Clustering with Advanced Reporting.
 
 This module performs final regime clustering using optimized parameters from step03,
 with comprehensive reporting and analysis of regime characteristics.
 """
+
+from src.utils.tprint import tprint
+from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 import asyncio
 import sys
 from pathlib import Path

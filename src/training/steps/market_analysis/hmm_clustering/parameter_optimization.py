@@ -118,9 +118,29 @@ class ParameterOptimizer:
         
         # Find best result
         for result in all_results:
-            if result['score'] > best_score:
-                best_score = result['score']
-                best_n_states = result['n_states']
+            if result['mean_score'] > best_score:
+                best_score = result['mean_score']
+                best_n_states = result['n_components']
+        
+        optimization_time = time.time() - start_time
+        
+        best_params = {
+            'n_components': best_n_states,
+            'covariance_type': covariance_type
+        }
+        
+        result = OptimizationResult(
+            best_params=best_params,
+            best_score=best_score,
+            all_results=all_results,
+            optimization_time=optimization_time,
+            method='hmm_states_optimization'
+        )
+        
+        self.optimization_history.append(result)
+        self.logger.info(f"✅ Best number of states: {best_n_states} (score: {best_score:.4f})")
+        
+        return result
     
     def _optimize_hmm_states_parallel(self, features: np.ndarray, state_range: Tuple[int, int], 
                                     cv_folds: int, covariance_type: str) -> List[Dict[str, Any]]:

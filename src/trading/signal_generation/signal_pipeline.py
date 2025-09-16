@@ -165,27 +165,15 @@ class SignalGenerationPipeline:
     async def _initialize_analyst_models(self):
         """Initialize analyst base and meta models."""
         try:
-            # Import analyst components
-            from src.analyst.market_health_analyzer import MarketHealthAnalyzer
-            from src.analyst.ml_confidence_predictor import MLConfidencePredictor
-            from src.analyst.liquidation_risk_model import LiquidationRiskModel
-            
-            # Initialize base models
-            self.analyst_base_models = [
-                MarketHealthAnalyzer(self.config),
-                MLConfidencePredictor(self.config),
-                LiquidationRiskModel(self.config)
-            ]
-            
-            # Initialize base models
-            for model in self.analyst_base_models:
-                if hasattr(model, 'initialize'):
-                    await model.initialize()
-            
             # Initialize meta model (analyst orchestrator)
             from src.analyst.analyst import Analyst
             self.analyst_meta_model = Analyst(self.config)
             await self.analyst_meta_model.initialize()
+            
+            # The analyst already contains the base models internally
+            # (market_health_analyzer, ml_confidence_predictor, liquidation_risk_model)
+            # So we don't need to initialize them separately
+            self.analyst_base_models = []  # Placeholder since base models are internal to analyst
             
             self.logger.info("✅ Analyst models initialized")
             
@@ -196,29 +184,15 @@ class SignalGenerationPipeline:
     async def _initialize_tactician_models(self):
         """Initialize tactician base and meta models."""
         try:
-            # Import tactician components
-            from src.tactician.scenario_based_predictor import ScenarioBasedPredictor
-            from src.tactician.enhanced_scenario_based_predictor import EnhancedScenarioBasedPredictor
-            from src.tactician.position_sizer import PositionSizer
-            from src.tactician.leverage_sizer import LeverageSizer
-            
-            # Initialize base models
-            self.tactician_base_models = [
-                ScenarioBasedPredictor(self.config),
-                EnhancedScenarioBasedPredictor(self.config),
-                PositionSizer(self.config),
-                LeverageSizer(self.config)
-            ]
-            
-            # Initialize base models
-            for model in self.tactician_base_models:
-                if hasattr(model, 'initialize'):
-                    await model.initialize()
-            
             # Initialize meta model (tactician orchestrator)
             from src.tactician.tactician import Tactician
             self.tactician_meta_model = Tactician(self.config)
             await self.tactician_meta_model.initialize()
+            
+            # The tactician already contains the base models internally
+            # (scenario_predictor, position_sizer, leverage_sizer, etc.)
+            # So we don't need to initialize them separately
+            self.tactician_base_models = []  # Placeholder since base models are internal to tactician
             
             self.logger.info("✅ Tactician models initialized")
             
@@ -358,42 +332,21 @@ class SignalGenerationPipeline:
         try:
             base_outputs = []
             
-            for model in self.analyst_base_models:
-                try:
-                    # Run each base model
-                    if hasattr(model, 'analyze'):
-                        result = await model.analyze(market_data, hmm_output.regime_probabilities)
-                    elif hasattr(model, 'predict'):
-                        result = await model.predict(market_data)
-                    else:
-                        # Fallback for models without standard interface
-                        result = {'confidence': 0.5, 'features': {}}
-                    
-                    # Create base output
-                    base_output = AnalystBaseOutput(
-                        timestamp=timestamp,
-                        market_health=result.get('market_health', {}),
-                        volatility_analysis=result.get('volatility_analysis', {}),
-                        liquidity_analysis=result.get('liquidity_analysis', {}),
-                        stress_analysis=result.get('stress_analysis', {}),
-                        base_confidence=result.get('confidence', 0.5),
-                        features=result.get('features', {})
-                    )
-                    
-                    base_outputs.append(base_output)
-                    
-                except Exception as e:
-                    self.logger.warning(f"⚠️ Analyst base model failed: {e}")
-                    # Create fallback output
-                    base_outputs.append(AnalystBaseOutput(
-                        timestamp=timestamp,
-                        market_health={},
-                        volatility_analysis={},
-                        liquidity_analysis={},
-                        stress_analysis={},
-                        base_confidence=0.5,
-                        features={}
-                    ))
+            # Use the existing analyst's internal methods
+            # The analyst already has market_health_analyzer, ml_confidence_predictor, etc.
+            # We'll extract their outputs from the main analyst.analyze_regime call
+            
+            # For now, create placeholder outputs since the analyst doesn't expose base model outputs directly
+            # The actual base model processing happens inside analyst.analyze_regime()
+            base_outputs.append(AnalystBaseOutput(
+                timestamp=timestamp,
+                market_health={},
+                volatility_analysis={},
+                liquidity_analysis={},
+                stress_analysis={},
+                base_confidence=0.5,
+                features={}
+            ))
             
             return base_outputs
             
@@ -410,22 +363,15 @@ class SignalGenerationPipeline:
     ) -> AnalystMetaOutput:
         """Step 3: Run analyst meta model."""
         try:
-            # Combine base model outputs
-            combined_features = {}
-            total_confidence = 0.0
-            
-            for base_output in base_outputs:
-                combined_features.update(base_output.features)
-                total_confidence += base_output.base_confidence
-            
-            avg_base_confidence = total_confidence / len(base_outputs) if base_outputs else 0.5
-            
-            # Run meta model
+            # Use the existing analyst.analyze_regime method
             meta_result = await self.analyst_meta_model.analyze_regime(market_data)
+            
+            # Extract confidence from the result
+            analyst_confidence = meta_result.get('confidence', 0.5)
             
             # Apply regime adjustment
             regime_adjusted_confidence = self._apply_regime_adjustment(
-                meta_result.get('confidence', avg_base_confidence),
+                analyst_confidence,
                 hmm_output.regime_probabilities
             )
             
@@ -434,7 +380,7 @@ class SignalGenerationPipeline:
                 analyst_confidence=regime_adjusted_confidence,
                 market_health_score=meta_result.get('market_health_score', 0.5),
                 regime_adjusted_confidence=regime_adjusted_confidence,
-                meta_features=combined_features,
+                meta_features=meta_result,
                 base_outputs=base_outputs
             )
             
@@ -453,48 +399,20 @@ class SignalGenerationPipeline:
         try:
             base_outputs = []
             
-            for model in self.tactician_base_models:
-                try:
-                    # Run each base model with analyst output
-                    if hasattr(model, 'generate_enhanced_predictions'):
-                        result = await model.generate_enhanced_predictions(
-                            market_data, {}, market_data.columns[0] if len(market_data.columns) > 0 else "ETHUSDT",
-                            "1m", analyst_output.analyst_confidence
-                        )
-                    elif hasattr(model, 'predict'):
-                        result = await model.predict(market_data)
-                    else:
-                        # Fallback for models without standard interface
-                        result = {
-                            'confidence': 0.5,
-                            'scenario_predictions': {},
-                            'price_targets': {},
-                            'adversarial_risks': {}
-                        }
-                    
-                    # Create base output
-                    base_output = TacticianBaseOutput(
-                        timestamp=timestamp,
-                        scenario_predictions=result.get('scenario_predictions', {}),
-                        price_targets=result.get('price_targets', {}),
-                        adversarial_risks=result.get('adversarial_risks', {}),
-                        base_confidence=result.get('confidence', 0.5),
-                        position_recommendations=result.get('position_recommendations', {})
-                    )
-                    
-                    base_outputs.append(base_output)
-                    
-                except Exception as e:
-                    self.logger.warning(f"⚠️ Tactician base model failed: {e}")
-                    # Create fallback output
-                    base_outputs.append(TacticianBaseOutput(
-                        timestamp=timestamp,
-                        scenario_predictions={},
-                        price_targets={},
-                        adversarial_risks={},
-                        base_confidence=0.5,
-                        position_recommendations={}
-                    ))
+            # Use the existing tactician's internal methods
+            # The tactician already has scenario_predictor, position_sizer, leverage_sizer, etc.
+            # We'll extract their outputs from the main tactician.generate_enhanced_predictions call
+            
+            # For now, create placeholder outputs since the tactician doesn't expose base model outputs directly
+            # The actual base model processing happens inside tactician.generate_enhanced_predictions()
+            base_outputs.append(TacticianBaseOutput(
+                timestamp=timestamp,
+                scenario_predictions={},
+                price_targets={},
+                adversarial_risks={},
+                base_confidence=0.5,
+                position_recommendations={}
+            ))
             
             return base_outputs
             
@@ -512,43 +430,36 @@ class SignalGenerationPipeline:
     ) -> TacticianMetaOutput:
         """Step 5: Run tactician meta model."""
         try:
-            # Combine base model outputs
-            combined_scenario_predictions = {}
-            combined_price_targets = {}
-            combined_adversarial_risks = {}
-            total_confidence = 0.0
+            # Use the existing tactician.generate_enhanced_predictions method
+            symbol = "ETHUSDT"  # Default symbol
+            if hasattr(market_data, 'columns') and len(market_data.columns) > 0:
+                symbol = market_data.columns[0]
             
-            for base_output in base_outputs:
-                combined_scenario_predictions.update(base_output.scenario_predictions)
-                combined_price_targets.update(base_output.price_targets)
-                combined_adversarial_risks.update(base_output.adversarial_risks)
-                total_confidence += base_output.base_confidence
-            
-            avg_base_confidence = total_confidence / len(base_outputs) if base_outputs else 0.5
-            
-            # Run meta model
             meta_result = await self.tactician_meta_model.generate_enhanced_predictions(
-                market_data, {}, market_data.columns[0] if len(market_data.columns) > 0 else "ETHUSDT",
-                "1m", analyst_output.analyst_confidence
+                market_data, {}, symbol, "1m", analyst_output.analyst_confidence
             )
             
+            # Extract confidence from the result
+            tactician_confidence = meta_result.get('confidence', 0.5)
+            
             # Calculate combined confidence
-            tactician_confidence = meta_result.get('confidence', avg_base_confidence)
             combined_confidence = self._calculate_combined_confidence(
                 analyst_output.analyst_confidence, tactician_confidence
             )
+            
+            # Extract final signal from trading decisions
+            trading_decisions = meta_result.get('trading_decisions', {})
+            final_signal = 'hold'
+            if trading_decisions.get('entry_signal', False):
+                final_signal = 'buy' if trading_decisions.get('direction', '') == 'long' else 'sell'
             
             return TacticianMetaOutput(
                 timestamp=timestamp,
                 tactician_confidence=tactician_confidence,
                 combined_confidence=combined_confidence,
-                final_signal=meta_result.get('final_signal', 'hold'),
+                final_signal=final_signal,
                 signal_strength=meta_result.get('signal_strength', 0.5),
-                meta_features={
-                    'scenario_predictions': combined_scenario_predictions,
-                    'price_targets': combined_price_targets,
-                    'adversarial_risks': combined_adversarial_risks
-                },
+                meta_features=meta_result,
                 base_outputs=base_outputs
             )
             

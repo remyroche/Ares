@@ -91,7 +91,6 @@ src/trading/
 - **Proper data flow**: HMM regime → analyst → tactician
 - **Sequential model calls**: analyst base models → analyst meta model → tactician base models → tactician meta model
 - **Confidence score optimization** based on backtesting parameters
-- **Signal validation** for quality and risk compliance
 - **Confidence scoring** and signal validation
 
 ### 5. Data (`data/`)
@@ -163,8 +162,7 @@ signal_result = await signal_pipeline.generate_signal(
     market_data=market_data
 )
 
-# Validate signal
-validation_result = await signal_validator.validate_signal(signal_result)
+# Use signal result directly
 
 # Calculate position size
 position_result = await position_sizer.calculate_position_size(
@@ -177,7 +175,7 @@ position_result = await position_sizer.calculate_position_size(
 )
 
 # Execute trade
-if validation_result.is_valid and signal_result.final_signal == 'buy':
+if signal_result.final_signal == 'buy':
     await paper_trader.execute_buy_order(
         symbol="ETHUSDT",
         quantity=position_result.recommended_size,

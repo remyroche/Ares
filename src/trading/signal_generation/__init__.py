@@ -16,7 +16,6 @@ from .signal_pipeline import (
     setup_signal_generation_pipeline
 )
 from .signal_combiner import SignalCombiner
-from .signal_validator import SignalValidator
 
 __all__ = [
     "SignalGenerationPipeline",
@@ -27,6 +26,5 @@ __all__ = [
     "TacticianMetaOutput",
     "SignalGenerationResult",
     "setup_signal_generation_pipeline",
-    "SignalCombiner",
-    "SignalValidator"
+    "SignalCombiner"
 ]

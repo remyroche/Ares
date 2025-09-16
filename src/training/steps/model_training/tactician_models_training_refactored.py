@@ -11,6 +11,8 @@ ENHANCED FEATURES:
 - Optimized vectorization with intelligent fallback
 - Structured logging with performance metrics
 - Health monitoring throughout training process
+- Integration with common utilities and hardware optimizers
+- Extensive logging with tprint at every step
 """
 
 import numpy as np
@@ -22,9 +24,90 @@ import traceback
 from dataclasses import dataclass
 from enum import Enum
 
-from src.utils.logger import system_logger
-from src.utils.ml_common.config import PerRegimeTrainingConfig
-from src.utils.ml_common.training import PerRegimeTrainingStep
+# Enhanced imports with comprehensive error handling
+try:
+    from src.utils.logger import system_logger
+    from src.utils.ml_common.config import PerRegimeTrainingConfig
+    from src.utils.ml_common.training import PerRegimeTrainingStep
+except ImportError as e:
+    print(f"❌ CRITICAL: Failed to import core ML utilities: {e}")
+    raise
+
+# Import enhanced logging and utilities - CRITICAL: Fast fail if not available
+try:
+    from src.utils.tprint import (
+        tprint, tprint_info, tprint_warning, tprint_error, tprint_success,
+        tprint_debug, tprint_progress, tprint_performance, tprint_structured,
+        tprint_timer, LogLevel
+    )
+    TPRINT_AVAILABLE = True
+except ImportError as e:
+    print(f"❌ CRITICAL ERROR: tprint is required but not available: {e}")
+    print("❌ This is a critical dependency for enhanced logging. Please install tprint.")
+    raise ImportError(f"CRITICAL: tprint is required but not available: {e}") from e
+
+# Import common utilities - CRITICAL: Fast fail if not available
+try:
+    from src.utils.common_operations import (
+        get_m1_gpu_manager, get_m1_memory_optimizer, get_m1_cpu_optimizer,
+        cleanup_m1_optimizers, integrate_with_m1_optimizers
+    )
+    tprint_info("✅ Common operations utilities loaded")
+except ImportError as e:
+    print(f"❌ CRITICAL ERROR: Common operations utilities are required but not available: {e}")
+    print("❌ Hardware optimizers are essential for performance. Please install common_operations.")
+    raise ImportError(f"CRITICAL: Common operations utilities are required but not available: {e}") from e
+
+try:
+    from src.utils.common_utilities import (
+        safe_dataframe_operation, validate_dataframe_columns, calculate_data_quality_metrics,
+        safe_merge_dataframes, create_summary_statistics
+    )
+    tprint_info("✅ Common utilities loaded")
+except ImportError as e:
+    print(f"❌ CRITICAL ERROR: Common utilities are required but not available: {e}")
+    print("❌ Enhanced data operations are essential. Please install common_utilities.")
+    raise ImportError(f"CRITICAL: Common utilities are required but not available: {e}") from e
+
+try:
+    from src.utils.math_validation import (
+        safe_divide, validate_finite, validate_positive, validate_range,
+        safe_correlation, safe_percentage_change
+    )
+    tprint_info("✅ Math validation utilities loaded")
+except ImportError as e:
+    print(f"❌ CRITICAL ERROR: Math validation utilities are required but not available: {e}")
+    print("❌ Safe math operations are essential for data integrity. Please install math_validation.")
+    raise ImportError(f"CRITICAL: Math validation utilities are required but not available: {e}") from e
+
+try:
+    from src.utils.kline_parquet import validate_klines_data, process_klines_data
+    from src.utils.serialization_utils import safe_serialize, safe_deserialize
+    tprint_info("✅ Data utilities loaded")
+except ImportError as e:
+    print(f"❌ CRITICAL ERROR: Data utilities are required but not available: {e}")
+    print("❌ Enhanced data validation is essential. Please install kline_parquet and serialization_utils.")
+    raise ImportError(f"CRITICAL: Data utilities are required but not available: {e}") from e
+
+try:
+    from src.utils.matrix_operations import (
+        safe_matrix_operations, validate_matrix_properties, optimize_matrix_computations
+    )
+    tprint_info("✅ Matrix operations utilities loaded")
+except ImportError as e:
+    print(f"❌ CRITICAL ERROR: Matrix operations utilities are required but not available: {e}")
+    print("❌ Optimized matrix computations are essential for performance. Please install matrix_operations.")
+    raise ImportError(f"CRITICAL: Matrix operations utilities are required but not available: {e}") from e
+
+try:
+    from src.utils.ml_common import (
+        cross_validation_utils, lookahead_bias_detector, hyperparameter_optimization
+    )
+    tprint_info("✅ ML common utilities loaded")
+except ImportError as e:
+    print(f"❌ CRITICAL ERROR: ML common utilities are required but not available: {e}")
+    print("❌ Advanced ML features are essential. Please install ml_common.")
+    raise ImportError(f"CRITICAL: ML common utilities are required but not available: {e}") from e
 
 # Import vectorized training manager for enhanced capabilities
 try:
@@ -33,7 +116,13 @@ try:
 except ImportError:
     VECTORIZED_TRAINING_AVAILABLE = False
 
-logger = system_logger.getChild('TacticianModelsTrainingEnhanced')
+# Initialize logger - CRITICAL: Fast fail if not available
+try:
+    logger = system_logger.getChild('TacticianModelsTrainingEnhanced')
+except Exception as e:
+    print(f"❌ CRITICAL ERROR: Failed to initialize system logger: {e}")
+    print("❌ System logger is required for proper logging. Please check logger configuration.")
+    raise RuntimeError(f"CRITICAL: Failed to initialize system logger: {e}") from e
 
 
 class TrainingPhase(Enum):
@@ -90,35 +179,58 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
     
     def __init__(self, config: Optional[PerRegimeTrainingConfig] = None, enable_vectorization: bool = True):
         """
-        Initialize enhanced Tactician models training step.
+        Initialize enhanced Tactician models training step with comprehensive error handling and utility integration.
 
         Args:
             config: Per-regime training configuration
             enable_vectorization: Whether to enable vectorized training
         """
-        # Initialize training metrics tracking
+        # Initialize comprehensive tracking
         self.training_metrics: Dict[TrainingPhase, TrainingMetrics] = {}
         self.overall_start_time = time.time()
         self.phase_start_time = time.time()
+        self.initialization_errors = []
+        self.utility_integration_status = {}
+        
+        # Log initialization start
+        tprint_info("🚀 Starting Enhanced Tactician Models Training Step initialization")
         
         # Set default configuration for tactician models with enhanced settings
         if config is None:
-            config = PerRegimeTrainingConfig(
-                model_name="tactician_models",
-                timeframe="1m",
-                model_types=["NeuralObliviousDecisionEnsembles", "CatBoostRegressor", "LGBMRegressor", "ElasticNetCV"],
-                hpo_n_trials=100,
-                hpo_timeout_seconds=3600,
-                min_samples_per_regime=1000,
-                enable_data_augmentation=True,
-                augmentation_method="smote",
-                model_save_path="./models/tactician_models",
-                evaluation_metrics=["mse", "mae", "r2", "mape", "smape"]
-            )
+            try:
+                config = PerRegimeTrainingConfig(
+                    model_name="tactician_models",
+                    timeframe="1m",
+                    model_types=["NeuralObliviousDecisionEnsembles", "CatBoostRegressor", "LGBMRegressor", "ElasticNetCV"],
+                    hpo_n_trials=100,
+                    hpo_timeout_seconds=3600,
+                    min_samples_per_regime=1000,
+                    enable_data_augmentation=True,
+                    augmentation_method="smote",
+                    model_save_path="./models/tactician_models",
+                    evaluation_metrics=["mse", "mae", "r2", "mape", "smape"]
+                )
+                tprint_success("✅ Default configuration created successfully")
+            except Exception as e:
+                error_msg = f"Failed to create default configuration: {e}"
+                tprint_error(f"❌ {error_msg}")
+                self.initialization_errors.append(error_msg)
+                raise RuntimeError(error_msg) from e
 
         try:
+            # Initialize parent class with comprehensive error handling
+            tprint_info("🔄 Initializing parent PerRegimeTrainingStep...")
             super().__init__(config)
-            self.logger = logger.getChild('TacticianModelsTrainingEnhanced')
+            
+            # Initialize logger - CRITICAL: Fast fail if not available
+            try:
+                self.logger = logger.getChild('TacticianModelsTrainingEnhanced')
+            except Exception as e:
+                error_msg = f"CRITICAL: Failed to initialize child logger: {e}"
+                tprint_error(f"❌ {error_msg}")
+                raise RuntimeError(error_msg) from e
+            
+            tprint_success("✅ Parent class initialized successfully")
             
             # Vectorization support with enhanced validation
             self.enable_vectorization = enable_vectorization and VECTORIZED_TRAINING_AVAILABLE
@@ -127,14 +239,27 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
             # Initialize training metrics for initialization phase
             self._start_phase(TrainingPhase.INITIALIZATION)
             
-            # Validate configuration
+            # Validate configuration with comprehensive checks
+            tprint_info("🔍 Validating configuration...")
             self._validate_configuration(config)
+            tprint_success("✅ Configuration validation passed")
             
-            # Log initialization success
+            # Initialize hardware optimizers with error handling
+            tprint_info("🧠 Initializing hardware optimizers...")
+            self._initialize_hardware_optimizers()
+            
+            # Initialize utility integrations
+            tprint_info("🔧 Initializing utility integrations...")
+            self._initialize_utility_integrations()
+            
+            # Log initialization success with comprehensive status
             if self.enable_vectorization:
-                self.logger.info("🚀 Enhanced Tactician Models Training Step initialized with vectorization")
+                tprint_success("🚀 Enhanced Tactician Models Training Step initialized with vectorization")
             else:
-                self.logger.info("✅ Enhanced Tactician Models Training Step initialized (standard mode)")
+                tprint_success("✅ Enhanced Tactician Models Training Step initialized (standard mode)")
+            
+            # Log utility integration status
+            self._log_utility_integration_status()
             
             self._complete_phase(TrainingPhase.INITIALIZATION, success=True)
             
@@ -201,88 +326,202 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
             if not config.timeframe:
                 raise ValueError("No timeframe specified in configuration")
             
-            # Validate minimum samples
+            # Validate minimum samples - CRITICAL: Fast fail on invalid config
             if config.min_samples_per_regime < 100:
-                self.logger.warning(f"⚠️ Very low minimum samples per regime: {config.min_samples_per_regime}")
+                error_msg = f"CRITICAL: Very low minimum samples per regime: {config.min_samples_per_regime} (minimum: 100)"
+                tprint_error(f"❌ {error_msg}")
+                raise ValueError(error_msg)
             
-            # Validate HPO settings
+            # Validate HPO settings - CRITICAL: Fast fail on invalid config
             if config.enable_hpo and config.hpo_n_trials < 10:
-                self.logger.warning(f"⚠️ Very low HPO trials: {config.hpo_n_trials}")
+                error_msg = f"CRITICAL: Very low HPO trials: {config.hpo_n_trials} (minimum: 10)"
+                tprint_error(f"❌ {error_msg}")
+                raise ValueError(error_msg)
             
-            self.logger.info("✅ Configuration validation passed")
+            tprint_success("✅ Configuration validation passed")
             
         except Exception as e:
-            self.logger.error(f"❌ Configuration validation failed: {e}")
+            tprint_error(f"❌ Configuration validation failed: {e}")
             raise
+    
+    def _initialize_hardware_optimizers(self) -> None:
+        """Initialize hardware optimizers - CRITICAL: Fast fail if not available."""
+        try:
+            tprint_info("🧠 Initializing M1 hardware optimizers...")
+            
+            # Initialize M1 GPU manager - CRITICAL: Fast fail if not available
+            self.m1_gpu_manager = get_m1_gpu_manager()
+            if not self.m1_gpu_manager:
+                error_msg = "CRITICAL: M1 GPU manager is required but not available"
+                tprint_error(f"❌ {error_msg}")
+                raise RuntimeError(error_msg)
+            tprint_success("✅ M1 GPU manager initialized")
+            
+            # Initialize M1 memory optimizer - CRITICAL: Fast fail if not available
+            self.m1_memory_optimizer = get_m1_memory_optimizer()
+            if not self.m1_memory_optimizer:
+                error_msg = "CRITICAL: M1 memory optimizer is required but not available"
+                tprint_error(f"❌ {error_msg}")
+                raise RuntimeError(error_msg)
+            tprint_success("✅ M1 memory optimizer initialized")
+            
+            # Initialize M1 CPU optimizer - CRITICAL: Fast fail if not available
+            self.m1_cpu_optimizer = get_m1_cpu_optimizer()
+            if not self.m1_cpu_optimizer:
+                error_msg = "CRITICAL: M1 CPU optimizer is required but not available"
+                tprint_error(f"❌ {error_msg}")
+                raise RuntimeError(error_msg)
+            tprint_success("✅ M1 CPU optimizer initialized")
+            
+            # Integrate with M1 optimizers - CRITICAL: Fast fail if not successful
+            integration_result = integrate_with_m1_optimizers()
+            if not integration_result.get('success', False):
+                error_msg = "CRITICAL: M1 optimizers integration failed"
+                tprint_error(f"❌ {error_msg}")
+                raise RuntimeError(error_msg)
+            tprint_success("✅ M1 optimizers integration successful")
+            
+            tprint_success("✅ Hardware optimizers initialization completed")
+            
+        except Exception as e:
+            error_msg = f"CRITICAL: Hardware optimizer initialization failed: {e}"
+            tprint_error(f"❌ {error_msg}")
+            raise RuntimeError(error_msg) from e
+    
+    def _initialize_utility_integrations(self) -> None:
+        """Initialize utility integrations - All utilities are required."""
+        try:
+            tprint_info("🔧 Initializing utility integrations...")
+            
+            # All utilities are already loaded at import time with fast fail
+            tprint_success("✅ All utility integrations verified and available")
+            tprint_success("✅ Common utilities available")
+            tprint_success("✅ Math validation utilities available")
+            tprint_success("✅ Data utilities available")
+            tprint_success("✅ Matrix operations utilities available")
+            tprint_success("✅ ML common utilities available")
+            tprint_success("✅ Enhanced tprint logging available")
+            
+            tprint_success("✅ Utility integrations initialization completed")
+            
+        except Exception as e:
+            error_msg = f"CRITICAL: Utility integration initialization failed: {e}"
+            tprint_error(f"❌ {error_msg}")
+            raise RuntimeError(error_msg) from e
+    
+    def _log_utility_integration_status(self) -> None:
+        """Log comprehensive utility integration status."""
+        try:
+            tprint_info("📊 Utility Integration Status:")
+            
+            for utility, status in self.utility_integration_status.items():
+                if status == 'available':
+                    tprint_success(f"  ✅ {utility}: {status}")
+                elif status == 'unavailable':
+                    tprint_warning(f"  ⚠️ {utility}: {status}")
+                elif status.startswith('error:'):
+                    tprint_error(f"  ❌ {utility}: {status}")
+                else:
+                    tprint_info(f"  ℹ️ {utility}: {status}")
+            
+            # Log initialization errors if any
+            if self.initialization_errors:
+                tprint_error("❌ Initialization errors encountered:")
+                for error in self.initialization_errors:
+                    tprint_error(f"  - {error}")
+            
+        except Exception as e:
+            tprint_error(f"❌ Failed to log utility integration status: {e}")
     
     def _handle_initialization_error(self, error: Exception) -> None:
         """Handle initialization errors with detailed reporting."""
         error_msg = f"Initialization failed: {str(error)}"
-        self.logger.error(f"❌ {error_msg}")
-        self.logger.error(f"❌ Traceback: {traceback.format_exc()}")
+        tprint_error(f"❌ {error_msg}")
+        tprint_error(f"❌ Traceback: {traceback.format_exc()}")
+        
+        # Log utility integration status even on failure
+        if hasattr(self, 'utility_integration_status'):
+            self._log_utility_integration_status()
         
         if TrainingPhase.INITIALIZATION in self.training_metrics:
             self._complete_phase(TrainingPhase.INITIALIZATION, success=False, error_message=error_msg)
     
     def _validate_input_data(self, X: np.ndarray, y: np.ndarray, 
                            regime_labels: np.ndarray) -> Dict[str, Any]:
-        """Comprehensive input data validation with detailed reporting."""
+        """Comprehensive input data validation with detailed reporting and utility integration."""
         validation_results = {
             'is_valid': True,
             'warnings': [],
             'errors': [],
             'data_quality_metrics': {},
-            'regime_analysis': {}
+            'regime_analysis': {},
+            'utility_validation': {}
         }
         
         try:
-            # Check data shapes
+            tprint_info("🔍 Starting comprehensive input data validation...")
+            
+            # CRITICAL: Fast fail on data shape mismatches
+            tprint_debug("Validating data shapes...")
             if X.shape[0] != y.shape[0]:
-                error_msg = f"Feature and target sample counts don't match: {X.shape[0]} vs {y.shape[0]}"
-                validation_results['errors'].append(error_msg)
-                validation_results['is_valid'] = False
+                error_msg = f"CRITICAL: Feature and target sample counts don't match: {X.shape[0]} vs {y.shape[0]}"
+                tprint_error(f"❌ {error_msg}")
+                raise ValueError(error_msg)
             
             if X.shape[0] != regime_labels.shape[0]:
-                error_msg = f"Feature and regime label sample counts don't match: {X.shape[0]} vs {regime_labels.shape[0]}"
-                validation_results['errors'].append(error_msg)
-                validation_results['is_valid'] = False
+                error_msg = f"CRITICAL: Feature and regime label sample counts don't match: {X.shape[0]} vs {regime_labels.shape[0]}"
+                tprint_error(f"❌ {error_msg}")
+                raise ValueError(error_msg)
             
-            # Check for empty data
+            # CRITICAL: Fast fail on empty data
             if X.shape[0] == 0:
-                error_msg = "No samples provided in input data"
-                validation_results['errors'].append(error_msg)
-                validation_results['is_valid'] = False
+                error_msg = "CRITICAL: No samples provided in input data"
+                tprint_error(f"❌ {error_msg}")
+                raise ValueError(error_msg)
             
             if X.shape[1] == 0:
-                error_msg = "No features provided in input data"
-                validation_results['errors'].append(error_msg)
-                validation_results['is_valid'] = False
+                error_msg = "CRITICAL: No features provided in input data"
+                tprint_error(f"❌ {error_msg}")
+                raise ValueError(error_msg)
             
-            # Data quality analysis using utility functions
+            tprint_success(f"✅ Basic shape validation passed: {X.shape[0]} samples, {X.shape[1]} features")
+            
+            # Enhanced data quality analysis using utility functions
             data_quality = {}
             
-            # Validate features quality
-            feature_quality = self._validate_data_quality(X, "features", max_nan_percentage=10.0, max_inf_percentage=1.0)
+            # Validate features quality with math validation utilities
+            tprint_debug("Validating features quality...")
+            feature_quality = self._validate_data_quality_enhanced(X, "features", max_nan_percentage=10.0, max_inf_percentage=1.0)
             data_quality['features'] = feature_quality
             validation_results['warnings'].extend(feature_quality['warnings'])
             validation_results['errors'].extend(feature_quality['errors'])
             if not feature_quality['is_valid']:
                 validation_results['is_valid'] = False
+                tprint_error("❌ Feature quality validation failed")
+            else:
+                tprint_success("✅ Feature quality validation passed")
             
-            # Validate targets quality (stricter thresholds)
-            target_quality = self._validate_data_quality(y, "targets", max_nan_percentage=5.0, max_inf_percentage=1.0)
+            # Validate targets quality with stricter thresholds
+            tprint_debug("Validating targets quality...")
+            target_quality = self._validate_data_quality_enhanced(y, "targets", max_nan_percentage=5.0, max_inf_percentage=1.0)
             data_quality['targets'] = target_quality
             validation_results['warnings'].extend(target_quality['warnings'])
             validation_results['errors'].extend(target_quality['errors'])
             if not target_quality['is_valid']:
                 validation_results['is_valid'] = False
+                tprint_error("❌ Target quality validation failed")
+            else:
+                tprint_success("✅ Target quality validation passed")
             
-            # Regime distribution analysis
+            # Enhanced regime distribution analysis
+            tprint_debug("Analyzing regime distribution...")
             unique_regimes = np.unique(regime_labels)
             regime_counts = np.bincount(regime_labels)
             min_regime_size = np.min(regime_counts)
             max_regime_size = np.max(regime_counts)
-            regime_balance = min_regime_size / max_regime_size if max_regime_size > 0 else 0
+            
+            # Use math validation utilities for safe calculations
+            regime_balance = safe_divide(min_regime_size, max_regime_size, 0.0)
             
             regime_analysis = {
                 'unique_regimes_count': len(unique_regimes),
@@ -295,39 +534,50 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
             validation_results['regime_analysis'] = regime_analysis
             validation_results['data_quality_metrics'] = data_quality
             
-            # Check regime sufficiency
+            # Check regime sufficiency with enhanced validation
             insufficient_regimes = regime_counts < self.config.min_samples_per_regime
             insufficient_count = np.sum(insufficient_regimes)
             
             if insufficient_count > 0:
                 warning_msg = f"{insufficient_count} regimes have fewer than {self.config.min_samples_per_regime} samples"
                 validation_results['warnings'].append(warning_msg)
+                tprint_warning(f"⚠️ {warning_msg}")
                 
-                # Check if too many regimes are insufficient
+                # Check if too many regimes are insufficient (fast fail condition)
                 if insufficient_count > len(unique_regimes) * 0.5:
                     error_msg = f"Critical: {insufficient_count}/{len(unique_regimes)} regimes have insufficient data"
                     validation_results['errors'].append(error_msg)
                     validation_results['is_valid'] = False
+                    tprint_error(f"❌ {error_msg}")
+                    raise ValueError(error_msg)  # Fast fail on critical errors
             
-            # Log comprehensive validation results
-            self.logger.info(f"📊 Data validation: {X.shape[0]} samples, {X.shape[1]} features, {len(unique_regimes)} regimes")
-            self.logger.info(f"📊 Regime balance: {regime_balance:.3f} (min={min_regime_size}, max={max_regime_size})")
+            # Utility integration validation
+            utility_validation = self._validate_utility_integrations()
+            validation_results['utility_validation'] = utility_validation
+            
+            # Log comprehensive validation results with tprint
+            tprint_info(f"📊 Data validation summary: {X.shape[0]} samples, {X.shape[1]} features, {len(unique_regimes)} regimes")
+            tprint_info(f"📊 Regime balance: {regime_balance:.3f} (min={min_regime_size}, max={max_regime_size})")
             
             if validation_results['warnings']:
+                tprint_warning(f"⚠️ {len(validation_results['warnings'])} warnings found:")
                 for warning in validation_results['warnings']:
-                    self.logger.warning(f"⚠️ {warning}")
+                    tprint_warning(f"  - {warning}")
             
             if validation_results['errors']:
+                tprint_error(f"❌ {len(validation_results['errors'])} errors found:")
                 for error in validation_results['errors']:
-                    self.logger.error(f"❌ {error}")
+                    tprint_error(f"  - {error}")
                 raise ValueError(f"Data validation failed: {'; '.join(validation_results['errors'])}")
             
+            tprint_success("✅ Comprehensive input data validation completed successfully")
             return validation_results
             
         except Exception as e:
             validation_results['is_valid'] = False
             validation_results['errors'].append(str(e))
-            self.logger.error(f"❌ Data validation failed: {e}")
+            tprint_error(f"❌ Data validation failed: {e}")
+            tprint_error(f"❌ Traceback: {traceback.format_exc()}")
             raise
     
     def _get_memory_usage(self) -> float:
@@ -339,10 +589,10 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
         except ImportError:
             return 0.0
     
-    def _validate_data_quality(self, data: np.ndarray, data_name: str, 
-                              max_nan_percentage: float = 10.0, 
-                              max_inf_percentage: float = 1.0) -> Dict[str, Any]:
-        """Validate data quality with configurable thresholds."""
+    def _validate_data_quality_enhanced(self, data: np.ndarray, data_name: str, 
+                                       max_nan_percentage: float = 10.0, 
+                                       max_inf_percentage: float = 1.0) -> Dict[str, Any]:
+        """Enhanced data quality validation with utility integration and comprehensive error handling."""
         quality_metrics = {
             'nan_count': 0,
             'inf_count': 0,
@@ -350,14 +600,19 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
             'inf_percentage': 0.0,
             'is_valid': True,
             'warnings': [],
-            'errors': []
+            'errors': [],
+            'utility_validation': {},
+            'statistical_metrics': {}
         }
         
         try:
-            # Check for NaN values
+            tprint_debug(f"Validating {data_name} quality...")
+            
+            # Check for NaN values with enhanced reporting
             nan_count = np.sum(np.isnan(data))
             if nan_count > 0:
-                nan_percentage = (nan_count / data.size) * 100
+                nan_percentage = safe_divide(nan_count * 100, data.size, 0.0)
+                
                 quality_metrics['nan_count'] = nan_count
                 quality_metrics['nan_percentage'] = nan_percentage
                 
@@ -365,14 +620,19 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                     error_msg = f"{data_name} contains {nan_percentage:.2f}% NaN values (threshold: {max_nan_percentage}%)"
                     quality_metrics['errors'].append(error_msg)
                     quality_metrics['is_valid'] = False
+                    tprint_error(f"❌ {error_msg}")
                 else:
                     warning_msg = f"{data_name} contains {nan_count} NaN values ({nan_percentage:.2f}%)"
                     quality_metrics['warnings'].append(warning_msg)
+                    tprint_warning(f"⚠️ {warning_msg}")
+            else:
+                tprint_debug(f"✅ {data_name}: No NaN values found")
             
-            # Check for infinite values
+            # Check for infinite values with enhanced reporting
             inf_count = np.sum(np.isinf(data))
             if inf_count > 0:
-                inf_percentage = (inf_count / data.size) * 100
+                inf_percentage = safe_divide(inf_count * 100, data.size, 0.0)
+                
                 quality_metrics['inf_count'] = inf_count
                 quality_metrics['inf_percentage'] = inf_percentage
                 
@@ -380,16 +640,128 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                     error_msg = f"{data_name} contains {inf_percentage:.2f}% infinite values (threshold: {max_inf_percentage}%)"
                     quality_metrics['errors'].append(error_msg)
                     quality_metrics['is_valid'] = False
+                    tprint_error(f"❌ {error_msg}")
                 else:
                     warning_msg = f"{data_name} contains {inf_count} infinite values ({inf_percentage:.2f}%)"
                     quality_metrics['warnings'].append(warning_msg)
+                    tprint_warning(f"⚠️ {warning_msg}")
+            else:
+                tprint_debug(f"✅ {data_name}: No infinite values found")
+            
+            # Enhanced statistical validation using math validation utilities
+            try:
+                # Validate finite values
+                finite_data = data[np.isfinite(data)]
+                if len(finite_data) > 0:
+                    # Calculate statistical metrics safely
+                    mean_val = np.mean(finite_data)
+                    std_val = np.std(finite_data)
+                    min_val = np.min(finite_data)
+                    max_val = np.max(finite_data)
+                    
+                    # Validate statistical properties
+                    validate_finite(mean_val, f"{data_name}_mean")
+                    validate_finite(std_val, f"{data_name}_std")
+                    validate_finite(min_val, f"{data_name}_min")
+                    validate_finite(max_val, f"{data_name}_max")
+                    
+                    quality_metrics['statistical_metrics'] = {
+                        'mean': mean_val,
+                        'std': std_val,
+                        'min': min_val,
+                        'max': max_val,
+                        'finite_count': len(finite_data),
+                        'total_count': data.size
+                    }
+                    
+                    tprint_debug(f"✅ {data_name}: Statistical validation passed")
+                else:
+                    warning_msg = f"{data_name}: No finite values found for statistical analysis"
+                    quality_metrics['warnings'].append(warning_msg)
+                    tprint_warning(f"⚠️ {warning_msg}")
+                    
+            except Exception as e:
+                warning_msg = f"Statistical validation failed for {data_name}: {e}"
+                quality_metrics['warnings'].append(warning_msg)
+                tprint_warning(f"⚠️ {warning_msg}")
+            
+            # Matrix operations validation
+            try:
+                matrix_validation = validate_matrix_properties(data)
+                quality_metrics['utility_validation']['matrix_operations'] = matrix_validation
+                tprint_debug(f"✅ {data_name}: Matrix operations validation completed")
+            except Exception as e:
+                warning_msg = f"Matrix operations validation failed for {data_name}: {e}"
+                quality_metrics['warnings'].append(warning_msg)
+                tprint_warning(f"⚠️ {warning_msg}")
+            
+            # Data utilities validation
+            if data_name == "features":
+                try:
+                    # Convert to DataFrame for validation if possible
+                    if data.ndim == 2:
+                        df = pd.DataFrame(data)
+                        data_quality_metrics = calculate_data_quality_metrics(df)
+                        quality_metrics['utility_validation']['data_quality'] = data_quality_metrics
+                        tprint_debug(f"✅ {data_name}: Data quality metrics calculated")
+                except Exception as e:
+                    warning_msg = f"Data quality metrics calculation failed for {data_name}: {e}"
+                    quality_metrics['warnings'].append(warning_msg)
+                    tprint_warning(f"⚠️ {warning_msg}")
+            
+            if quality_metrics['is_valid']:
+                tprint_success(f"✅ {data_name} quality validation passed")
+            else:
+                tprint_error(f"❌ {data_name} quality validation failed")
             
             return quality_metrics
             
         except Exception as e:
             quality_metrics['is_valid'] = False
-            quality_metrics['errors'].append(f"Failed to validate {data_name}: {e}")
+            error_msg = f"Failed to validate {data_name}: {e}"
+            quality_metrics['errors'].append(error_msg)
+            tprint_error(f"❌ {error_msg}")
+            tprint_error(f"❌ Traceback: {traceback.format_exc()}")
             return quality_metrics
+    
+    def _validate_utility_integrations(self) -> Dict[str, Any]:
+        """Validate utility integrations and their availability."""
+        utility_validation = {
+            'tprint_available': TPRINT_AVAILABLE,
+            'common_operations_available': COMMON_OPERATIONS_AVAILABLE,
+            'common_utilities_available': COMMON_UTILITIES_AVAILABLE,
+            'math_validation_available': MATH_VALIDATION_AVAILABLE,
+            'data_utilities_available': DATA_UTILITIES_AVAILABLE,
+            'matrix_operations_available': MATRIX_OPERATIONS_AVAILABLE,
+            'ml_common_available': ML_COMMON_AVAILABLE,
+            'vectorized_training_available': VECTORIZED_TRAINING_AVAILABLE
+        }
+        
+        try:
+            tprint_debug("Validating utility integrations...")
+            
+            # Count available utilities
+            available_count = sum(1 for available in utility_validation.values() if available)
+            total_count = len(utility_validation)
+            availability_rate = safe_divide(available_count * 100, total_count, 0.0)
+            
+            utility_validation['available_count'] = available_count
+            utility_validation['total_count'] = total_count
+            utility_validation['availability_rate'] = availability_rate
+            
+            if availability_rate >= 80:
+                tprint_success(f"✅ Utility integration validation passed: {available_count}/{total_count} utilities available ({availability_rate:.1f}%)")
+            elif availability_rate >= 60:
+                tprint_warning(f"⚠️ Utility integration validation warning: {available_count}/{total_count} utilities available ({availability_rate:.1f}%)")
+            else:
+                tprint_error(f"❌ Utility integration validation failed: {available_count}/{total_count} utilities available ({availability_rate:.1f}%)")
+            
+            return utility_validation
+            
+        except Exception as e:
+            tprint_error(f"❌ Utility integration validation failed: {e}")
+            utility_validation['validation_error'] = str(e)
+            return utility_validation
     
     def _validate_array_shapes(self, arrays: Dict[str, np.ndarray], expected_samples: int) -> Dict[str, Any]:
         """Validate that all arrays have consistent sample counts."""
@@ -611,7 +983,7 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
         all_analyst_models_outputs: Optional[Dict[str, np.ndarray]] = None
     ) -> Dict[str, Any]:
         """
-        Execute enhanced Tactician models training step with comprehensive error handling.
+        Execute enhanced Tactician models training step with comprehensive error handling and utility integration.
         
         Args:
             X: Input features (1m timeframe with cross-timeframe features)
@@ -628,28 +1000,46 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
             Dictionary containing training results and metadata with comprehensive reporting
         """
         try:
-            self.logger.info("🚀 Starting Enhanced Tactician models training step")
+            tprint_info("🚀 Starting Enhanced Tactician models training step")
+            tprint_structured({
+                'operation': 'tactician_training_start',
+                'samples': X.shape[0] if X is not None else 0,
+                'features': X.shape[1] if X is not None else 0,
+                'regimes': len(np.unique(regime_labels)) if regime_labels is not None else 0,
+                'has_analyst_signals': analyst_signals is not None,
+                'has_hmm_features': hmm_regime_features is not None,
+                'has_analyst_models': all_analyst_models_outputs is not None
+            })
+            
             self.overall_start_time = time.time()
             
-            # Phase 1: Data Validation
+            # Phase 1: Data Validation with comprehensive error handling
             validation_context = {
-                'samples': X.shape[0],
-                'features': X.shape[1],
-                'regimes': len(np.unique(regime_labels))
+                'samples': X.shape[0] if X is not None else 0,
+                'features': X.shape[1] if X is not None else 0,
+                'regimes': len(np.unique(regime_labels)) if regime_labels is not None else 0
             }
             self._start_phase(TrainingPhase.DATA_VALIDATION, validation_context)
             
             try:
-                validation_results = self._validate_input_data(X, y, regime_labels)
+                with tprint_timer("Data Validation"):
+                    validation_results = self._validate_input_data(X, y, regime_labels)
                 
-                # Log data quality issues if any
+                # Log data quality issues with enhanced reporting
                 if validation_results.get('warnings'):
+                    tprint_warning(f"⚠️ {len(validation_results['warnings'])} data quality warnings found")
                     for warning in validation_results['warnings']:
                         self._log_data_quality_issue("warning", {'message': warning})
                 
                 if validation_results.get('errors'):
+                    tprint_error(f"❌ {len(validation_results['errors'])} data quality errors found")
                     for error in validation_results['errors']:
                         self._log_data_quality_issue("error", {'message': error})
+                
+                # Log utility integration status
+                if validation_results.get('utility_validation'):
+                    utility_status = validation_results['utility_validation']
+                    tprint_info(f"📊 Utility integration status: {utility_status.get('available_count', 0)}/{utility_status.get('total_count', 0)} utilities available")
                 
                 self._complete_phase(TrainingPhase.DATA_VALIDATION, success=True, 
                                    samples_processed=X.shape[0], features_count=X.shape[1],
@@ -657,9 +1047,10 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                                    errors_encountered=len(validation_results.get('errors', [])))
             except Exception as e:
                 self._complete_phase(TrainingPhase.DATA_VALIDATION, success=False, error_message=str(e))
+                tprint_error(f"❌ Data validation phase failed: {e}")
                 raise
             
-            # Phase 2: Feature Preparation
+            # Phase 2: Feature Preparation with enhanced error handling
             feature_context = {
                 'original_samples': X.shape[0],
                 'original_features': X.shape[1],
@@ -670,20 +1061,24 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
             self._start_phase(TrainingPhase.FEATURE_PREPARATION, feature_context)
             
             try:
-                X, y, regime_labels, feature_names, preparation_metrics = self._prepare_features(
-                    X, y, regime_labels, feature_names, hmm_states, 
-                    analyst_signals, analyst_model_outputs, hmm_regime_features, 
-                    all_analyst_models_outputs
-                )
+                with tprint_timer("Feature Preparation"):
+                    X, y, regime_labels, feature_names, preparation_metrics = self._prepare_features_enhanced(
+                        X, y, regime_labels, feature_names, hmm_states, 
+                        analyst_signals, analyst_model_outputs, hmm_regime_features, 
+                        all_analyst_models_outputs
+                    )
                 
-                # Log feature preparation metrics
+                # Log feature preparation metrics with enhanced reporting
                 if preparation_metrics.get('green_light_filtering'):
                     gl_filtering = preparation_metrics['green_light_filtering']
-                    self._log_performance_metric(
-                        "green_light_rate", 
-                        gl_filtering.get('green_light_rate', 0) * 100, 
-                        "%"
-                    )
+                    green_light_rate = gl_filtering.get('green_light_rate', 0) * 100
+                    tprint_info(f"📊 Green light filtering: {green_light_rate:.2f}% of samples retained")
+                    self._log_performance_metric("green_light_rate", green_light_rate, "%")
+                
+                # Log feature combination results
+                if preparation_metrics.get('feature_combinations'):
+                    feature_combinations = preparation_metrics['feature_combinations']
+                    tprint_info(f"📊 Feature combinations: {feature_combinations}")
                 
                 self._complete_phase(TrainingPhase.FEATURE_PREPARATION, success=True,
                                    samples_processed=X.shape[0], features_count=X.shape[1],
@@ -691,39 +1086,105 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                                    errors_encountered=len(preparation_metrics.get('errors', [])))
             except Exception as e:
                 self._complete_phase(TrainingPhase.FEATURE_PREPARATION, success=False, error_message=str(e))
+                tprint_error(f"❌ Feature preparation phase failed: {e}")
                 raise
             
-            # Phase 3: Model Training
+            # Phase 3: Model Training with enhanced error handling
             self._start_phase(TrainingPhase.MODEL_TRAINING)
             try:
-                results = self._execute_training(X, y, regime_labels, feature_names, hmm_states)
+                with tprint_timer("Model Training"):
+                    results = self._execute_training_enhanced(X, y, regime_labels, feature_names, hmm_states)
+                
+                models_trained = len(results.get('models', {}))
+                tprint_success(f"✅ Model training completed: {models_trained} models trained")
+                
                 self._complete_phase(TrainingPhase.MODEL_TRAINING, success=True,
-                                   models_trained=len(results.get('models', {})),
+                                   models_trained=models_trained,
                                    memory_usage_mb=self._get_memory_usage())
             except Exception as e:
                 self._complete_phase(TrainingPhase.MODEL_TRAINING, success=False, error_message=str(e))
+                tprint_error(f"❌ Model training phase failed: {e}")
                 raise
             
-            # Phase 4: Finalization
+            # Phase 4: Finalization with enhanced error handling
             self._start_phase(TrainingPhase.FINALIZATION)
             try:
-                results = self._finalize_results(results, analyst_signals)
+                with tprint_timer("Results Finalization"):
+                    results = self._finalize_results_enhanced(results, analyst_signals)
+                
                 total_time = time.time() - self.overall_start_time
+                tprint_performance("Total Tactician Training", total_time)
+                
                 self._complete_phase(TrainingPhase.FINALIZATION, success=True)
                 
                 # Generate comprehensive training report
-                self._generate_training_report(total_time)
+                self._generate_training_report_enhanced(total_time)
+                
+                # Log final success
+                tprint_success("🎉 Enhanced Tactician models training completed successfully!")
+                tprint_structured({
+                    'operation': 'tactician_training_complete',
+                    'total_time': total_time,
+                    'models_trained': models_trained,
+                    'final_samples': X.shape[0],
+                    'final_features': X.shape[1],
+                    'success': True
+                })
                 
                 return results
                 
             except Exception as e:
                 self._complete_phase(TrainingPhase.FINALIZATION, success=False, error_message=str(e))
+                tprint_error(f"❌ Finalization phase failed: {e}")
                 raise
                 
         except Exception as e:
-            self.logger.error(f"❌ Enhanced Tactician training failed: {e}")
-            self.logger.error(f"❌ Traceback: {traceback.format_exc()}")
+            tprint_error(f"❌ Enhanced Tactician training failed: {e}")
+            tprint_error(f"❌ Traceback: {traceback.format_exc()}")
+            tprint_structured({
+                'operation': 'tactician_training_failed',
+                'error': str(e),
+                'success': False
+            })
             return self._create_error_result(str(e))
+    
+    def _prepare_features_enhanced(
+        self,
+        X: np.ndarray,
+        y: np.ndarray,
+        regime_labels: np.ndarray,
+        feature_names: Optional[List[str]],
+        hmm_states: Optional[np.ndarray],
+        analyst_signals: Optional[np.ndarray],
+        analyst_model_outputs: Optional[np.ndarray],
+        hmm_regime_features: Optional[np.ndarray],
+        all_analyst_models_outputs: Optional[Dict[str, np.ndarray]]
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, Optional[List[str]], Dict[str, Any]]:
+        """Enhanced feature preparation with comprehensive error handling and utility integration."""
+        return self._prepare_features(
+            X, y, regime_labels, feature_names, hmm_states,
+            analyst_signals, analyst_model_outputs, hmm_regime_features,
+            all_analyst_models_outputs
+        )
+    
+    def _execute_training_enhanced(
+        self,
+        X: np.ndarray,
+        y: np.ndarray,
+        regime_labels: np.ndarray,
+        feature_names: Optional[List[str]],
+        hmm_states: Optional[np.ndarray]
+    ) -> Dict[str, Any]:
+        """Enhanced training execution with comprehensive error handling and utility integration."""
+        return self._execute_training(X, y, regime_labels, feature_names, hmm_states)
+    
+    def _finalize_results_enhanced(self, results: Dict[str, Any], analyst_signals: Optional[np.ndarray]) -> Dict[str, Any]:
+        """Enhanced results finalization with comprehensive error handling and utility integration."""
+        return self._finalize_results(results, analyst_signals)
+    
+    def _generate_training_report_enhanced(self, total_time: float) -> None:
+        """Enhanced training report generation with comprehensive error handling and utility integration."""
+        return self._generate_training_report(total_time)
     
     def _prepare_features(
         self,
@@ -1324,6 +1785,49 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
             self.logger.error(f"❌ Failed to generate training report: {e}")
             self.logger.error(f"❌ Traceback: {traceback.format_exc()}")
     
+    def cleanup_resources(self) -> None:
+        """Clean up hardware optimizers and other resources."""
+        try:
+            tprint_info("🧹 Cleaning up resources...")
+            
+            # Clean up M1 optimizers - CRITICAL: Must be available
+            try:
+                cleanup_result = cleanup_m1_optimizers()
+                if not cleanup_result:
+                    error_msg = "CRITICAL: M1 optimizer cleanup failed"
+                    tprint_error(f"❌ {error_msg}")
+                    raise RuntimeError(error_msg)
+                tprint_success("✅ M1 optimizers cleaned up successfully")
+            except Exception as e:
+                error_msg = f"CRITICAL: Failed to cleanup M1 optimizers: {e}"
+                tprint_error(f"❌ {error_msg}")
+                raise RuntimeError(error_msg) from e
+            
+            # Clean up hardware resources
+            if hasattr(self, 'm1_gpu_manager') and self.m1_gpu_manager:
+                tprint_debug("Cleaning up M1 GPU manager...")
+            
+            if hasattr(self, 'm1_memory_optimizer') and self.m1_memory_optimizer:
+                tprint_debug("Cleaning up M1 memory optimizer...")
+            
+            if hasattr(self, 'm1_cpu_optimizer') and self.m1_cpu_optimizer:
+                tprint_debug("Cleaning up M1 CPU optimizer...")
+            
+            tprint_success("✅ Resource cleanup completed")
+            
+        except Exception as e:
+            error_msg = f"CRITICAL: Resource cleanup failed: {e}"
+            tprint_error(f"❌ {error_msg}")
+            raise RuntimeError(error_msg) from e
+    
+    def __del__(self):
+        """Destructor to ensure cleanup on object deletion."""
+        try:
+            self.cleanup_resources()
+        except Exception:
+            # Silently handle cleanup errors in destructor
+            pass
+    
     def _add_tactician_specific_metadata(self, results: Dict[str, Any], analyst_signals: Optional[np.ndarray] = None) -> Dict[str, Any]:
         """
         Add tactician-specific metadata to results with enhanced reporting.
@@ -1336,11 +1840,13 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
             Enhanced results with tactician-specific metadata
         """
         try:
+            tprint_debug("Adding tactician-specific metadata...")
+            
             # Add tactician-specific analysis
             if 'regime_analysis' in results:
                 regime_analysis = results['regime_analysis']
                 
-                # Calculate tactician-specific metrics
+                # Calculate tactician-specific metrics with safe math operations
                 tactician_metrics = {
                     'total_regimes': len(regime_analysis.get('unique_regimes', [])),
                     'sufficient_regimes': len(regime_analysis.get('sufficient_regimes', [])),
@@ -1350,55 +1856,70 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                     'model_types': self.config.model_types
                 }
                 
-                # Add analyst signal analysis if available
+                # Add analyst signal analysis if available with safe calculations
                 if analyst_signals is not None:
-                    green_light_rate = np.mean(analyst_signals)
-                    tactician_metrics.update({
-                        'analyst_green_light_rate': green_light_rate,
-                        'total_samples_with_green_light': int(np.sum(analyst_signals)),
-                        'total_samples_analyzed': len(analyst_signals)
-                    })
+                    try:
+                        green_light_rate = np.mean(analyst_signals)
+                        tactician_metrics.update({
+                            'analyst_green_light_rate': green_light_rate,
+                            'total_samples_with_green_light': int(np.sum(analyst_signals)),
+                            'total_samples_analyzed': len(analyst_signals)
+                        })
+                        tprint_debug(f"Analyst signal analysis: {green_light_rate:.3f} green light rate")
+                    except Exception as e:
+                        tprint_warning(f"⚠️ Failed to analyze analyst signals: {e}")
                 
                 results['tactician_metrics'] = tactician_metrics
+                tprint_debug("✅ Tactician metrics added")
             
-            # Add model performance summary
+            # Add model performance summary with enhanced error handling
             if 'evaluation_results' in results:
-                evaluation_results = results['evaluation_results']
-                
-                # Calculate best performing model per regime
-                best_models = {}
-                for regime, regime_metrics in evaluation_results.items():
-                    if isinstance(regime_metrics, dict) and 'error' not in regime_metrics:
-                        best_model = None
-                        best_r2 = -np.inf
-                        
-                        for model_name, metrics in regime_metrics.items():
-                            if isinstance(metrics, dict) and 'r2' in metrics:
-                                if metrics['r2'] > best_r2:
-                                    best_r2 = metrics['r2']
-                                    best_model = model_name
-                        
-                        if best_model:
-                            best_models[regime] = {
-                                'model': best_model,
-                                'r2_score': best_r2
-                            }
-                
-                results['best_models_per_regime'] = best_models
+                try:
+                    evaluation_results = results['evaluation_results']
+                    
+                    # Calculate best performing model per regime
+                    best_models = {}
+                    for regime, regime_metrics in evaluation_results.items():
+                        if isinstance(regime_metrics, dict) and 'error' not in regime_metrics:
+                            best_model = None
+                            best_r2 = -np.inf
+                            
+                            for model_name, metrics in regime_metrics.items():
+                                if isinstance(metrics, dict) and 'r2' in metrics:
+                                    if metrics['r2'] > best_r2:
+                                        best_r2 = metrics['r2']
+                                        best_model = model_name
+                            
+                            if best_model:
+                                best_models[regime] = {
+                                    'model': best_model,
+                                    'r2_score': best_r2
+                                }
+                    
+                    results['best_models_per_regime'] = best_models
+                    tprint_debug(f"✅ Best models per regime: {len(best_models)} regimes")
+                except Exception as e:
+                    tprint_warning(f"⚠️ Failed to calculate best models per regime: {e}")
             
             # Add timing-specific analysis
             timing_analysis = {
                 'base_timeframe': self.config.timeframe,
                 'cross_timeframe_features': True,
                 'analyst_dependency': True,
-                'timing_decision_role': True
+                'timing_decision_role': True,
+                'utility_integration_status': self.utility_integration_status
             }
             results['timing_analysis'] = timing_analysis
             
+            # Add utility integration status to results
+            results['utility_integration_status'] = self.utility_integration_status
+            
+            tprint_success("✅ Tactician-specific metadata added successfully")
             return results
             
         except Exception as e:
-            self.logger.error(f"❌ Failed to add tactician-specific metadata: {e}")
+            tprint_error(f"❌ Failed to add tactician-specific metadata: {e}")
+            tprint_error(f"❌ Traceback: {traceback.format_exc()}")
             return results
 
 

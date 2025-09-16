@@ -20,12 +20,17 @@ A comprehensive triple barrier labeling system for market analysis, providing mu
 5. **Profit-Based Labels**: Transaction cost-aware labeling
 
 ### Advanced Optimizations
-- **Coarse Grid Search**: Pre-optimization to find promising parameter regions
+- **Three-Stage Optimization**: Coarse Grid → Fine Grid → Bayesian Optimization
 - **Matrix Operations**: Vectorized computations using `src/utils/matrix_operations/`
 - **Hardware Acceleration**: M1 GPU, CPU, and memory optimizations
 - **Math Validation**: Safe mathematical operations using `src/utils/math_validation`
 - **Parallel Processing**: Multi-threaded parameter evaluation
 - **Memory Optimization**: Efficient memory usage for large datasets
+
+### Three-Stage Optimization Process
+1. **Coarse Grid Search**: Explores wide parameter space to find promising regions
+2. **Fine Grid Search**: Refines around best coarse candidates with narrower ranges
+3. **Bayesian Optimization**: Uses Optuna to fine-tune parameters in optimal regions
 
 ### Regime Detection
 - **HMM-Based Only**: Uses existing HMM regime states from the pipeline (step03_hmm_regime_discovery)

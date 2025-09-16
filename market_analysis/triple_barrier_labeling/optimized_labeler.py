@@ -79,13 +79,31 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class CoarseGridConfig:
-    """Configuration for coarse grid search before Bayesian optimization."""
+    """Configuration for coarse grid search (first stage)."""
     pt_mult_range: Tuple[float, float] = (0.0005, 0.02)
     sl_mult_range: Tuple[float, float] = (0.0005, 0.01)
     time_barrier_range: Tuple[int, int] = (15, 120)
     lookahead_range: Tuple[int, int] = (50, 300)
-    grid_size: int = 20  # Number of points per dimension
-    top_k_candidates: int = 5  # Top candidates to pass to Bayesian optimization
+    grid_size: int = 15  # Number of points per dimension (coarse)
+    top_k_candidates: int = 8  # Top candidates to pass to fine grid
+
+@dataclass
+class FineGridConfig:
+    """Configuration for fine grid search (second stage)."""
+    refinement_factor: float = 0.3  # How much to narrow the search space around coarse results
+    grid_size: int = 10  # Number of points per dimension (fine)
+    top_k_candidates: int = 3  # Top candidates to pass to Bayesian optimization
+    min_range_size: float = 0.001  # Minimum range size to prevent over-narrowing
+
+@dataclass
+class BayesianConfig:
+    """Configuration for Bayesian optimization (third stage)."""
+    n_trials: int = 100
+    timeout: Optional[int] = None  # Timeout in seconds
+    early_stopping_patience: int = 20
+    objective_function: str = "sharpe_ratio"  # or "profit_factor", "win_rate", "combined"
+    acquisition_function: str = "EI"  # Expected Improvement
+    random_state: Optional[int] = None
     
 @dataclass
 class HardwareOptimizationConfig:
@@ -185,6 +203,8 @@ class EnhancedOptimizedTripleBarrierLabeler:
         
         # Initialize configuration
         self.coarse_grid_config = CoarseGridConfig()
+        self.fine_grid_config = FineGridConfig()
+        self.bayesian_config = BayesianConfig()
         self.hardware_config = HardwareOptimizationConfig()
         
         # Initialize components
@@ -355,6 +375,129 @@ class EnhancedOptimizedTripleBarrierLabeler:
         
         return top_candidates
     
+    def _fine_grid_search(self, regime_data: pd.DataFrame, regime_name: str, coarse_candidates: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Perform fine grid search around promising coarse grid results.
+        
+        Args:
+            regime_data: Market data for the specific regime
+            regime_name: Name of the regime
+            coarse_candidates: Top candidates from coarse grid search
+            
+        Returns:
+            List of top parameter combinations from fine grid
+        """
+        self.logger.info(f"🔍 Starting fine grid search for regime: {regime_name}")
+        
+        if not coarse_candidates:
+            self.logger.warning(f"⚠️ No coarse candidates for regime {regime_name}")
+            return []
+        
+        # Find the best coarse candidate to center the fine grid around
+        best_coarse = max(coarse_candidates, key=lambda x: x['score'])
+        
+        # Create refined ranges around the best candidate
+        pt_center = best_coarse['pt_mult']
+        sl_center = best_coarse['sl_mult']
+        time_center = best_coarse['time_barrier']
+        lookahead_center = best_coarse['lookahead']
+        
+        # Calculate refined ranges
+        pt_range = self._calculate_refined_range(
+            pt_center, 
+            self.coarse_grid_config.pt_mult_range,
+            self.fine_grid_config.refinement_factor,
+            self.fine_grid_config.min_range_size
+        )
+        
+        sl_range = self._calculate_refined_range(
+            sl_center,
+            self.coarse_grid_config.sl_mult_range,
+            self.fine_grid_config.refinement_factor,
+            self.fine_grid_config.min_range_size
+        )
+        
+        time_range = self._calculate_refined_range(
+            time_center,
+            self.coarse_grid_config.time_barrier_range,
+            self.fine_grid_config.refinement_factor,
+            max(1, self.fine_grid_config.min_range_size * 100)  # Minimum 1 for integers
+        )
+        
+        lookahead_range = self._calculate_refined_range(
+            lookahead_center,
+            self.coarse_grid_config.lookahead_range,
+            self.fine_grid_config.refinement_factor,
+            max(1, self.fine_grid_config.min_range_size * 100)  # Minimum 1 for integers
+        )
+        
+        self.logger.info(f"📊 Fine grid ranges:")
+        self.logger.info(f"   PT: {pt_range[0]:.6f} - {pt_range[1]:.6f}")
+        self.logger.info(f"   SL: {sl_range[0]:.6f} - {sl_range[1]:.6f}")
+        self.logger.info(f"   Time: {time_range[0]} - {time_range[1]}")
+        self.logger.info(f"   Lookahead: {lookahead_range[0]} - {lookahead_range[1]}")
+        
+        # Create fine parameter grids
+        pt_mults = np.linspace(pt_range[0], pt_range[1], self.fine_grid_config.grid_size)
+        sl_mults = np.linspace(sl_range[0], sl_range[1], self.fine_grid_config.grid_size)
+        time_barriers = np.linspace(time_range[0], time_range[1], self.fine_grid_config.grid_size, dtype=int)
+        lookaheads = np.linspace(lookahead_range[0], lookahead_range[1], self.fine_grid_config.grid_size, dtype=int)
+        
+        # Generate all combinations
+        param_combinations = []
+        for pt_mult in pt_mults:
+            for sl_mult in sl_mults:
+                for time_barrier in time_barriers:
+                    for lookahead in lookaheads:
+                        # Validate parameters
+                        if MATH_VALIDATION_AVAILABLE:
+                            if not (validate_positive(pt_mult) and validate_positive(sl_mult) and 
+                                   validate_range(pt_mult, 0.0001, 0.1) and 
+                                   validate_range(sl_mult, 0.0001, 0.1)):
+                                continue
+                        
+                        param_combinations.append({
+                            'pt_mult': pt_mult,
+                            'sl_mult': sl_mult,
+                            'time_barrier': int(time_barrier),
+                            'lookahead': int(lookahead)
+                        })
+        
+        self.logger.info(f"📊 Testing {len(param_combinations)} fine parameter combinations")
+        
+        # Evaluate combinations in parallel
+        if self.hardware_config.parallel_workers > 1:
+            candidates = self._evaluate_combinations_parallel(regime_data, param_combinations)
+        else:
+            candidates = self._evaluate_combinations_sequential(regime_data, param_combinations)
+        
+        # Sort by score and return top candidates
+        candidates.sort(key=lambda x: x['score'], reverse=True)
+        top_candidates = candidates[:self.fine_grid_config.top_k_candidates]
+        
+        if top_candidates:
+            self.logger.info(f"✅ Fine grid search completed. Top score: {top_candidates[0]['score']:.4f}")
+        else:
+            self.logger.warning(f"⚠️ No valid candidates found in fine grid search for {regime_name}")
+        
+        return top_candidates
+    
+    def _calculate_refined_range(self, center: float, original_range: Tuple[float, float], 
+                                refinement_factor: float, min_range_size: float) -> Tuple[float, float]:
+        """Calculate refined range around a center point."""
+        original_size = original_range[1] - original_range[0]
+        refined_size = max(original_size * refinement_factor, min_range_size)
+        
+        new_min = max(center - refined_size / 2, original_range[0])
+        new_max = min(center + refined_size / 2, original_range[1])
+        
+        # Ensure we don't exceed original bounds
+        if new_max - new_min < min_range_size:
+            # If range is too small, expand around center
+            new_min = max(center - min_range_size / 2, original_range[0])
+            new_max = min(center + min_range_size / 2, original_range[1])
+        
+        return (new_min, new_max)
+    
     def _evaluate_combinations_parallel(self, regime_data: pd.DataFrame, param_combinations: List[Dict]) -> List[Dict]:
         """Evaluate parameter combinations in parallel."""
         candidates = []
@@ -374,6 +517,162 @@ class EnhancedOptimizedTripleBarrierLabeler:
                     self.logger.warning(f"⚠️ Parameter evaluation failed: {e}")
         
         return candidates
+    
+    def _bayesian_optimization(self, regime_data: pd.DataFrame, regime_name: str, fine_candidates: List[Dict[str, Any]]) -> Optional[OptimizedBarrierParams]:
+        """Perform Bayesian optimization using Optuna on fine grid candidates.
+        
+        Args:
+            regime_data: Market data for the specific regime
+            regime_name: Name of the regime
+            fine_candidates: Top candidates from fine grid search
+            
+        Returns:
+            Optimized barrier parameters or None if optimization fails
+        """
+        self.logger.info(f"🔍 Starting Bayesian optimization for regime: {regime_name}")
+        
+        if not OPTIMIZATION_AVAILABLE:
+            self.logger.warning("⚠️ Optuna not available - using best fine grid candidate")
+            if fine_candidates:
+                best_candidate = max(fine_candidates, key=lambda x: x['score'])
+                return OptimizedBarrierParams(
+                    regime_id=regime_name,
+                    regime_name=regime_name,
+                    pt_mult=best_candidate['pt_mult'],
+                    sl_mult=best_candidate['sl_mult'],
+                    time_barrier_minutes=best_candidate['time_barrier'],
+                    max_lookahead=best_candidate['lookahead'],
+                    transaction_cost=0.0008,
+                    optimization_score=best_candidate['score']
+                )
+            return None
+        
+        if not fine_candidates:
+            self.logger.warning(f"⚠️ No fine candidates for regime {regime_name}")
+            return None
+        
+        try:
+            import optuna
+            
+            # Create study
+            study_name = f"triple_barrier_{regime_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            study = optuna.create_study(
+                direction='maximize',
+                study_name=study_name,
+                sampler=optuna.samplers.TPESampler(
+                    n_startup_trials=10,
+                    n_ei_candidates=24,
+                    seed=self.bayesian_config.random_state
+                )
+            )
+            
+            # Define objective function
+            def objective(trial):
+                # Get parameter ranges from fine candidates
+                best_fine = max(fine_candidates, key=lambda x: x['score'])
+                
+                # Create refined ranges around best fine candidate
+                pt_range = self._calculate_refined_range(
+                    best_fine['pt_mult'],
+                    self.coarse_grid_config.pt_mult_range,
+                    self.fine_grid_config.refinement_factor * 0.5,  # Even more refined
+                    self.fine_grid_config.min_range_size * 0.5
+                )
+                
+                sl_range = self._calculate_refined_range(
+                    best_fine['sl_mult'],
+                    self.coarse_grid_config.sl_mult_range,
+                    self.fine_grid_config.refinement_factor * 0.5,
+                    self.fine_grid_config.min_range_size * 0.5
+                )
+                
+                time_range = self._calculate_refined_range(
+                    best_fine['time_barrier'],
+                    self.coarse_grid_config.time_barrier_range,
+                    self.fine_grid_config.refinement_factor * 0.5,
+                    max(1, self.fine_grid_config.min_range_size * 50)
+                )
+                
+                lookahead_range = self._calculate_refined_range(
+                    best_fine['lookahead'],
+                    self.coarse_grid_config.lookahead_range,
+                    self.fine_grid_config.refinement_factor * 0.5,
+                    max(1, self.fine_grid_config.min_range_size * 50)
+                )
+                
+                # Suggest parameters
+                pt_mult = trial.suggest_float('pt_mult', pt_range[0], pt_range[1])
+                sl_mult = trial.suggest_float('sl_mult', sl_range[0], sl_range[1])
+                time_barrier = trial.suggest_int('time_barrier', int(time_range[0]), int(time_range[1]))
+                lookahead = trial.suggest_int('lookahead', int(lookahead_range[0]), int(lookahead_range[1]))
+                
+                # Create config
+                config = TripleBarrierConfig(
+                    pt_mult=pt_mult,
+                    sl_mult=sl_mult,
+                    min_holding_period=1,
+                    max_holding_period=lookahead,
+                    transaction_cost=0.0008
+                )
+                
+                # Evaluate parameters
+                score = self._evaluate_parameters_enhanced(regime_data, config)
+                
+                # Add intermediate values for pruning
+                trial.set_user_attr('pt_mult', pt_mult)
+                trial.set_user_attr('sl_mult', sl_mult)
+                trial.set_user_attr('time_barrier', time_barrier)
+                trial.set_user_attr('lookahead', lookahead)
+                
+                return score
+            
+            # Optimize
+            study.optimize(
+                objective,
+                n_trials=self.bayesian_config.n_trials,
+                timeout=self.bayesian_config.timeout,
+                show_progress_bar=False
+            )
+            
+            # Get best parameters
+            best_trial = study.best_trial
+            best_params = best_trial.params
+            
+            # Create optimized parameters object
+            optimized_params = OptimizedBarrierParams(
+                regime_id=regime_name,
+                regime_name=regime_name,
+                pt_mult=best_params['pt_mult'],
+                sl_mult=best_params['sl_mult'],
+                time_barrier_minutes=best_params['time_barrier'],
+                max_lookahead=best_params['lookahead'],
+                transaction_cost=0.0008,
+                optimization_score=best_trial.value
+            )
+            
+            self.logger.info(f"✅ Bayesian optimization completed for {regime_name}")
+            self.logger.info(f"   Best score: {best_trial.value:.4f}")
+            self.logger.info(f"   Best params: PT={best_params['pt_mult']:.6f}, SL={best_params['sl_mult']:.6f}")
+            self.logger.info(f"   Trials: {len(study.trials)}")
+            
+            return optimized_params
+            
+        except Exception as e:
+            self.logger.error(f"❌ Bayesian optimization failed for {regime_name}: {e}")
+            # Fallback to best fine candidate
+            if fine_candidates:
+                best_candidate = max(fine_candidates, key=lambda x: x['score'])
+                return OptimizedBarrierParams(
+                    regime_id=regime_name,
+                    regime_name=regime_name,
+                    pt_mult=best_candidate['pt_mult'],
+                    sl_mult=best_candidate['sl_mult'],
+                    time_barrier_minutes=best_candidate['time_barrier'],
+                    max_lookahead=best_candidate['lookahead'],
+                    transaction_cost=0.0008,
+                    optimization_score=best_candidate['score']
+                )
+            return None
     
     def _evaluate_combinations_sequential(self, regime_data: pd.DataFrame, param_combinations: List[Dict]) -> List[Dict]:
         """Evaluate parameter combinations sequentially."""
@@ -561,14 +860,14 @@ class EnhancedOptimizedTripleBarrierLabeler:
         self, 
         data: pd.DataFrame, 
         regime_data: Optional[pd.DataFrame] = None,
-        n_trials: int = 100
+        n_trials: int = None
     ) -> Dict[str, Any]:
-        """Optimize triple barrier parameters for each regime.
+        """Optimize triple barrier parameters using three-stage optimization.
         
         Args:
             data: Market data with OHLC columns
             regime_data: HMM regime data (if None, will be detected)
-            n_trials: Number of Optuna trials for optimization
+            n_trials: Number of Bayesian trials (overrides bayesian_config.n_trials)
             
         Returns:
             Dictionary with optimization results
@@ -577,7 +876,15 @@ class EnhancedOptimizedTripleBarrierLabeler:
             self.logger.warning("⚠️ Optimization not available - using default parameters")
             return self._create_default_parameters(data, regime_data)
         
-        self.logger.info(f"🔧 Starting regime parameter optimization with {n_trials} trials")
+        # Override Bayesian trials if provided
+        if n_trials is not None:
+            self.bayesian_config.n_trials = n_trials
+        
+        self.logger.info(f"🔧 Starting three-stage regime parameter optimization")
+        self.logger.info(f"   Coarse grid: {self.coarse_grid_config.grid_size}³ combinations")
+        self.logger.info(f"   Fine grid: {self.fine_grid_config.grid_size}³ combinations")
+        self.logger.info(f"   Bayesian: {self.bayesian_config.n_trials} trials")
+        
         start_time = time.time()
         
         try:
@@ -589,10 +896,14 @@ class EnhancedOptimizedTripleBarrierLabeler:
             unique_regimes = regime_data['regime'].unique()
             self.logger.info(f"📊 Found {len(unique_regimes)} regimes: {unique_regimes}")
             
-            # Optimize parameters for each regime
+            # Storage for results from each stage
+            coarse_results = {}
+            fine_results = {}
             optimization_results = {}
+            
+            # Optimize parameters for each regime using three-stage process
             for regime in unique_regimes:
-                self.logger.info(f"🎯 Optimizing parameters for regime: {regime}")
+                self.logger.info(f"\n🎯 Optimizing parameters for regime: {regime}")
                 
                 # Get regime-specific data
                 regime_mask = regime_data['regime'] == regime
@@ -602,35 +913,106 @@ class EnhancedOptimizedTripleBarrierLabeler:
                     self.logger.warning(f"⚠️ Insufficient data for regime {regime} ({len(regime_data_subset)} samples)")
                     continue
                 
-                # Optimize parameters for this regime
-                regime_params = self._optimize_single_regime(
-                    regime_data_subset, 
-                    regime, 
-                    n_trials
-                )
+                # Stage 1: Coarse Grid Search
+                self.logger.info(f"📊 Stage 1: Coarse Grid Search")
+                coarse_start = time.time()
+                coarse_candidates = self._coarse_grid_search(regime_data_subset, regime)
+                coarse_time = time.time() - coarse_start
+                coarse_results[regime] = {
+                    'candidates': coarse_candidates,
+                    'time': coarse_time
+                }
+                
+                if not coarse_candidates:
+                    self.logger.warning(f"⚠️ No coarse candidates for regime {regime}")
+                    continue
+                
+                # Stage 2: Fine Grid Search
+                self.logger.info(f"📊 Stage 2: Fine Grid Search")
+                fine_start = time.time()
+                fine_candidates = self._fine_grid_search(regime_data_subset, regime, coarse_candidates)
+                fine_time = time.time() - fine_start
+                fine_results[regime] = {
+                    'candidates': fine_candidates,
+                    'time': fine_time
+                }
+                
+                if not fine_candidates:
+                    self.logger.warning(f"⚠️ No fine candidates for regime {regime}")
+                    # Use best coarse candidate
+                    best_coarse = max(coarse_candidates, key=lambda x: x['score'])
+                    regime_params = OptimizedBarrierParams(
+                        regime_id=regime,
+                        regime_name=regime,
+                        pt_mult=best_coarse['pt_mult'],
+                        sl_mult=best_coarse['sl_mult'],
+                        time_barrier_minutes=best_coarse['time_barrier'],
+                        max_lookahead=best_coarse['lookahead'],
+                        transaction_cost=0.0008,
+                        optimization_score=best_coarse['score']
+                    )
+                else:
+                    # Stage 3: Bayesian Optimization
+                    self.logger.info(f"📊 Stage 3: Bayesian Optimization")
+                    bayesian_start = time.time()
+                    regime_params = self._bayesian_optimization(regime_data_subset, regime, fine_candidates)
+                    bayesian_time = time.time() - bayesian_start
+                    
+                    if regime_params is None:
+                        # Fallback to best fine candidate
+                        best_fine = max(fine_candidates, key=lambda x: x['score'])
+                        regime_params = OptimizedBarrierParams(
+                            regime_id=regime,
+                            regime_name=regime,
+                            pt_mult=best_fine['pt_mult'],
+                            sl_mult=best_fine['sl_mult'],
+                            time_barrier_minutes=best_fine['time_barrier'],
+                            max_lookahead=best_fine['lookahead'],
+                            transaction_cost=0.0008,
+                            optimization_score=best_fine['score']
+                        )
+                    
+                    fine_results[regime]['bayesian_time'] = bayesian_time
                 
                 if regime_params:
                     self.optimized_params[regime] = regime_params
                     optimization_results[regime] = regime_params.to_dict()
+                    
+                    # Log timing for this regime
+                    total_regime_time = coarse_time + fine_time + fine_results[regime].get('bayesian_time', 0)
+                    self.logger.info(f"✅ Regime {regime} completed in {total_regime_time:.2f}s")
+                    self.logger.info(f"   Coarse: {coarse_time:.2f}s, Fine: {fine_time:.2f}s, Bayesian: {fine_results[regime].get('bayesian_time', 0):.2f}s")
             
             # Calculate regime metrics
             self._calculate_regime_metrics(data, regime_data)
             
             total_time = time.time() - start_time
-            self.logger.info(f"✅ Optimization completed in {total_time:.2f}s")
+            self.logger.info(f"\n✅ Three-stage optimization completed in {total_time:.2f}s")
+            
+            # Calculate timing breakdown
+            total_coarse_time = sum(r['time'] for r in coarse_results.values())
+            total_fine_time = sum(r['time'] for r in fine_results.values())
+            total_bayesian_time = sum(r.get('bayesian_time', 0) for r in fine_results.values())
             
             self.optimization_results = {
                 'optimization_time': total_time,
-                'n_trials': n_trials,
+                'coarse_time': total_coarse_time,
+                'fine_time': total_fine_time,
+                'bayesian_time': total_bayesian_time,
+                'n_trials': self.bayesian_config.n_trials,
                 'regimes_optimized': len(optimization_results),
                 'regime_parameters': optimization_results,
-                'regime_metrics': {k: v.to_dict() for k, v in self.regime_metrics.items()}
+                'regime_metrics': {k: v.to_dict() for k, v in self.regime_metrics.items()},
+                'stage_results': {
+                    'coarse': coarse_results,
+                    'fine': fine_results
+                }
             }
             
             return self.optimization_results
             
         except Exception as e:
-            self.logger.error(f"❌ Optimization failed: {e}")
+            self.logger.error(f"❌ Three-stage optimization failed: {e}")
             return self._create_default_parameters(data, regime_data)
     
     def _optimize_single_regime(
@@ -935,10 +1317,13 @@ class EnhancedOptimizedTripleBarrierLabeler:
             print("⚠️ No optimization results available")
             return
         
-        print(f"\n📊 OPTIMIZATION SUMMARY")
+        print(f"\n📊 THREE-STAGE OPTIMIZATION SUMMARY")
         print(f"   Regimes optimized: {len(self.optimized_params)}")
-        print(f"   Total trials: {self.optimization_results.get('n_trials', 0)}")
-        print(f"   Optimization time: {self.optimization_results.get('optimization_time', 0):.2f}s")
+        print(f"   Total time: {self.optimization_results.get('optimization_time', 0):.2f}s")
+        print(f"   Coarse grid time: {self.optimization_results.get('coarse_time', 0):.2f}s")
+        print(f"   Fine grid time: {self.optimization_results.get('fine_time', 0):.2f}s")
+        print(f"   Bayesian time: {self.optimization_results.get('bayesian_time', 0):.2f}s")
+        print(f"   Bayesian trials: {self.optimization_results.get('n_trials', 0)}")
         
         print(f"\n🎯 REGIME PARAMETERS")
         for regime, params in self.optimized_params.items():

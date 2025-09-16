@@ -11,11 +11,11 @@ The enhanced triple barrier labeling system now implements a sophisticated three
 - **Method**: Systematic grid search across all parameter combinations
 - **Configuration**: `CoarseGridConfig`
 - **Parameters**:
-  - `pt_mult_range`: (0.0005, 0.02) - Profit target multiplier range
-  - `sl_mult_range`: (0.0005, 0.01) - Stop loss multiplier range
-  - `time_barrier_range`: (15, 120) - Time barrier range in minutes
-  - `lookahead_range`: (50, 300) - Maximum lookahead range in bars
-  - `grid_size`: 15 - Number of points per dimension (15³ = 3,375 combinations)
+  - `pt_mult_range`: (0.005, 0.02) - Profit target multiplier range (0.5% to 2.0%)
+  - `sl_mult_range`: (0.002, 0.01) - Stop loss multiplier range (0.2% to 1.0%)
+  - `time_barrier_range`: (20, 90) - Time barrier range in minutes (20 to 90 min)
+  - `lookahead_range`: (50, 300) - Maximum lookahead range in bars (prevents data leakage)
+  - `grid_size`: 10 - Number of points per dimension (10³ = 1,000 combinations)
   - `top_k_candidates`: 8 - Top candidates to pass to fine grid
 
 ### Stage 2: Fine Grid Search

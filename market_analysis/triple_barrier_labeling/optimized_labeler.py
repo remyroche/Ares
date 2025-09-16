@@ -80,11 +80,11 @@ logger = logging.getLogger(__name__)
 @dataclass
 class CoarseGridConfig:
     """Configuration for coarse grid search (first stage)."""
-    pt_mult_range: Tuple[float, float] = (0.0005, 0.02)
-    sl_mult_range: Tuple[float, float] = (0.0005, 0.01)
-    time_barrier_range: Tuple[int, int] = (15, 120)
-    lookahead_range: Tuple[int, int] = (50, 300)
-    grid_size: int = 15  # Number of points per dimension (coarse)
+    pt_mult_range: Tuple[float, float] = (0.005, 0.02)  # 0.5% to 2.0%
+    sl_mult_range: Tuple[float, float] = (0.002, 0.01)  # 0.2% to 1.0%
+    time_barrier_range: Tuple[int, int] = (20, 90)      # 20 to 90 minutes
+    lookahead_range: Tuple[int, int] = (50, 300)        # 50 to 300 bars
+    grid_size: int = 10  # Number of points per dimension (10³ = 1,000 combinations)
     top_k_candidates: int = 8  # Top candidates to pass to fine grid
 
 @dataclass

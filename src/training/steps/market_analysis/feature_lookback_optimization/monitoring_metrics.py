@@ -15,8 +15,17 @@ import json
 from pathlib import Path
 
 from .dependency_manager import get_dependency
+from src.utils.logger import system_logger
+from src.utils.tprint import tprint
 
-logger = logging.getLogger(__name__)
+# Hardware optimization imports
+try:
+    from src.utils.hardware import get_advanced_memory_optimizer, get_unified_hardware_manager
+    HARDWARE_OPTIMIZATION_AVAILABLE = True
+except ImportError:
+    HARDWARE_OPTIMIZATION_AVAILABLE = False
+
+logger = system_logger.getChild('MonitoringMetrics')
 
 class MetricType(Enum):
     """Types of metrics."""
@@ -120,6 +129,24 @@ class MonitoringMetrics:
         
         # Initialize system monitoring
         self._initialize_system_monitoring()
+        
+        # Initialize hardware optimization if available
+        if HARDWARE_OPTIMIZATION_AVAILABLE:
+            try:
+                self.memory_optimizer = get_advanced_memory_optimizer()
+                self.hardware_manager = get_unified_hardware_manager()
+                tprint("✅ Hardware optimization initialized for monitoring")
+            except Exception as e:
+                tprint(f"⚠️ Hardware optimization initialization failed: {e}")
+                self.memory_optimizer = None
+                self.hardware_manager = None
+        else:
+            self.memory_optimizer = None
+            self.hardware_manager = None
+        
+        # Memory cleanup settings
+        self.max_metrics_memory = 10000  # Maximum number of metrics to keep in memory
+        self.cleanup_interval = 1000  # Cleanup every 1000 metrics
     
     def _initialize_system_monitoring(self) -> None:
         """Initialize system resource monitoring."""
@@ -131,19 +158,32 @@ class MonitoringMetrics:
                 self.psutil_fallback = is_fallback
                 
                 if is_fallback:
-                    self.logger.info("Using fallback psutil for system monitoring")
+                    tprint("Using fallback psutil for system monitoring")
             else:
                 self.psutil_available = False
-                self.logger.warning("psutil not available - limited system monitoring")
+                tprint("⚠️ psutil not available - limited system monitoring")
                 
         except Exception as e:
             self.psutil_available = False
-            self.logger.warning(f"Failed to initialize system monitoring: {e}")
+            tprint(f"⚠️ Failed to initialize system monitoring: {e}")
+    
+    def _cleanup_old_metrics(self) -> None:
+        """Clean up old metrics to prevent memory leaks."""
+        if len(self.metrics) > self.max_metrics_memory:
+            # Keep only the most recent metrics
+            self.metrics = self.metrics[-self.max_metrics_memory:]
+            tprint(f"🧹 Cleaned up old metrics, keeping {len(self.metrics)} most recent")
+            
+            # Also cleanup performance metrics
+            if len(self.performance_metrics['memory_usage']) > 1000:
+                self.performance_metrics['memory_usage'] = self.performance_metrics['memory_usage'][-1000:]
+            if len(self.performance_metrics['cpu_usage']) > 1000:
+                self.performance_metrics['cpu_usage'] = self.performance_metrics['cpu_usage'][-1000:]
     
     def start_monitoring(self) -> None:
         """Start monitoring session."""
         self.start_time = datetime.now()
-        self.logger.info(f"🔍 Starting monitoring for {self.component_name}")
+        tprint(f"🔍 Starting monitoring for {self.component_name}")
         
         # Record start metrics
         self.record_metric(
@@ -162,7 +202,7 @@ class MonitoringMetrics:
         self.end_time = datetime.now()
         duration = (self.end_time - self.start_time).total_seconds() if self.start_time else 0.0
         
-        self.logger.info(f"🔍 Stopping monitoring for {self.component_name} (duration: {duration:.2f}s)")
+        tprint(f"🔍 Stopping monitoring for {self.component_name} (duration: {duration:.2f}s)")
         
         # Record end metrics
         self.record_metric(
@@ -178,6 +218,9 @@ class MonitoringMetrics:
         
         # Generate summary
         self._generate_monitoring_summary()
+        
+        # Final cleanup
+        self._cleanup_old_metrics()
     
     def record_metric(
         self,
@@ -209,10 +252,11 @@ class MonitoringMetrics:
         
         # Log significant metrics
         if level in [MetricLevel.WARNING, MetricLevel.ERROR, MetricLevel.CRITICAL]:
-            self.logger.log(
-                getattr(logging, level.value.upper()),
-                f"📊 {name}: {value} ({metric_type.value})"
-            )
+            tprint(f"📊 {name}: {value} ({metric_type.value})")
+        
+        # Periodic cleanup
+        if len(self.metrics) % self.cleanup_interval == 0:
+            self._cleanup_old_metrics()
     
     def record_performance_metric(self, operation_name: str, duration: float) -> None:
         """Record performance metric for an operation."""
@@ -348,7 +392,7 @@ class MonitoringMetrics:
             self.performance_metrics['cpu_usage'].append(cpu_percent)
             
         except Exception as e:
-            self.logger.warning(f"Failed to record system metrics: {e}")
+            tprint(f"⚠️ Failed to record system metrics: {e}")
     
     def _update_aggregated_metrics(self, metric_point: MetricPoint) -> None:
         """Update aggregated metrics based on new metric point."""
@@ -401,7 +445,7 @@ class MonitoringMetrics:
         
         # Log alerts
         for alert in alerts:
-            self.logger.warning(f"🚨 ALERT: {alert}")
+            tprint(f"🚨 ALERT: {alert}")
     
     def _generate_monitoring_summary(self) -> None:
         """Generate comprehensive monitoring summary."""
@@ -441,7 +485,7 @@ class MonitoringMetrics:
             metadata=summary
         )
         
-        self.logger.info("📊 Monitoring summary generated")
+        tprint("📊 Monitoring summary generated")
     
     def _get_metric_distribution(self) -> Dict[str, int]:
         """Get distribution of metrics by type and level."""
@@ -562,11 +606,15 @@ class MonitoringMetrics:
             'summary': self.get_metrics_summary()
         }
         
-        with open(file_path, 'w') as f:
-            json.dump(export_data, f, indent=2, default=str)
-        
-        self.logger.info(f"📊 Metrics exported to: {file_path}")
-        return file_path
+        try:
+            with open(file_path, 'w') as f:
+                json.dump(export_data, f, indent=2, default=str)
+            
+            tprint(f"📊 Metrics exported to: {file_path}")
+            return file_path
+        except Exception as e:
+            tprint(f"❌ Failed to export metrics: {e}")
+            return ""
     
     def get_performance_report(self) -> Dict[str, Any]:
         """Get detailed performance report."""

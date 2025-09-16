@@ -6,11 +6,15 @@ and optional dependency handling to prevent import failures.
 """
 
 import logging
+import importlib
 from typing import Any, Dict, List, Optional, Tuple, Union
 from dataclasses import dataclass
 from enum import Enum
 
-logger = logging.getLogger(__name__)
+from src.utils.logger import system_logger
+from src.utils.tprint import tprint
+
+logger = system_logger.getChild('DependencyManager')
 
 class DependencyStatus(Enum):
     """Status of dependency availability."""
@@ -67,9 +71,10 @@ class DependencyManager:
         for dep_name, import_name in core_deps:
             try:
                 if import_name:
-                    exec(f"import {dep_name} as {import_name}")
+                    module = importlib.import_module(dep_name)
+                    globals()[import_name] = module
                 else:
-                    exec(f"import {dep_name}")
+                    importlib.import_module(dep_name)
                 
                 version = self._get_version(dep_name)
                 self.dependencies[dep_name] = DependencyInfo(
@@ -77,7 +82,7 @@ class DependencyManager:
                     status=DependencyStatus.AVAILABLE,
                     version=version
                 )
-                self.logger.debug(f"✅ Core dependency {dep_name} available (v{version})")
+                tprint(f"✅ Core dependency {dep_name} available (v{version})")
                 
             except ImportError as e:
                 self.dependencies[dep_name] = DependencyInfo(
@@ -85,7 +90,7 @@ class DependencyManager:
                     status=DependencyStatus.UNAVAILABLE,
                     error_message=str(e)
                 )
-                self.logger.error(f"❌ Core dependency {dep_name} unavailable: {e}")
+                tprint(f"❌ Core dependency {dep_name} unavailable: {e}")
     
     def _check_optional_dependencies(self) -> None:
         """Check optional dependencies with fallbacks."""
@@ -98,9 +103,10 @@ class DependencyManager:
         for dep_name, import_name, has_fallback in optional_deps:
             try:
                 if import_name:
-                    exec(f"import {dep_name} as {import_name}")
+                    module = importlib.import_module(dep_name)
+                    globals()[import_name] = module
                 else:
-                    exec(f"import {dep_name}")
+                    importlib.import_module(dep_name)
                 
                 version = self._get_version(dep_name)
                 self.dependencies[dep_name] = DependencyInfo(
@@ -109,7 +115,7 @@ class DependencyManager:
                     version=version,
                     fallback_available=has_fallback
                 )
-                self.logger.debug(f"✅ Optional dependency {dep_name} available (v{version})")
+                tprint(f"✅ Optional dependency {dep_name} available (v{version})")
                 
             except ImportError as e:
                 self.dependencies[dep_name] = DependencyInfo(
@@ -118,7 +124,7 @@ class DependencyManager:
                     error_message=str(e),
                     fallback_available=has_fallback
                 )
-                self.logger.warning(f"⚠️ Optional dependency {dep_name} unavailable: {e}")
+                tprint(f"⚠️ Optional dependency {dep_name} unavailable: {e}")
                 
                 # Create fallback if available
                 if has_fallback:
@@ -135,14 +141,15 @@ class DependencyManager:
         
         for module_name, class_name in ml_deps:
             try:
-                exec(f"from {module_name} import {class_name}")
+                module = importlib.import_module(module_name)
+                class_obj = getattr(module, class_name)
                 
                 self.dependencies[f"{module_name}.{class_name}"] = DependencyInfo(
                     name=f"{module_name}.{class_name}",
                     status=DependencyStatus.AVAILABLE,
                     fallback_available=True
                 )
-                self.logger.debug(f"✅ ML dependency {module_name}.{class_name} available")
+                tprint(f"✅ ML dependency {module_name}.{class_name} available")
                 
             except ImportError as e:
                 self.dependencies[f"{module_name}.{class_name}"] = DependencyInfo(
@@ -151,7 +158,7 @@ class DependencyManager:
                     error_message=str(e),
                     fallback_available=True
                 )
-                self.logger.warning(f"⚠️ ML dependency {module_name}.{class_name} unavailable: {e}")
+                tprint(f"⚠️ ML dependency {module_name}.{class_name} unavailable: {e}")
                 
                 # Create fallback
                 self._create_ml_fallback(module_name, class_name)
@@ -167,9 +174,10 @@ class DependencyManager:
         for dep_name, submodule in viz_deps:
             try:
                 if submodule:
-                    exec(f"import {dep_name}.{submodule} as {submodule}")
+                    module = importlib.import_module(f"{dep_name}.{submodule}")
+                    globals()[submodule] = module
                 else:
-                    exec(f"import {dep_name}")
+                    importlib.import_module(dep_name)
                 
                 version = self._get_version(dep_name)
                 self.dependencies[dep_name] = DependencyInfo(
@@ -178,7 +186,7 @@ class DependencyManager:
                     version=version,
                     fallback_available=True
                 )
-                self.logger.debug(f"✅ Visualization dependency {dep_name} available (v{version})")
+                tprint(f"✅ Visualization dependency {dep_name} available (v{version})")
                 
             except ImportError as e:
                 self.dependencies[dep_name] = DependencyInfo(
@@ -187,7 +195,7 @@ class DependencyManager:
                     error_message=str(e),
                     fallback_available=True
                 )
-                self.logger.warning(f"⚠️ Visualization dependency {dep_name} unavailable: {e}")
+                tprint(f"⚠️ Visualization dependency {dep_name} unavailable: {e}")
                 
                 # Create fallback
                 self._create_viz_fallback(dep_name)
@@ -294,7 +302,7 @@ class DependencyManager:
     def _create_ml_fallback(self, module_name: str, class_name: str) -> None:
         """Create fallback for ML dependency."""
         if 'sklearn' in module_name:
-            if not hasattr(self.fallback_modules, 'sklearn'):
+            if 'sklearn' not in self.fallback_modules:
                 self.fallback_modules['sklearn'] = self._create_sklearn_fallback()
     
     def _create_viz_fallback(self, dep_name: str) -> None:
@@ -305,7 +313,7 @@ class DependencyManager:
             
             def __getattr__(self, name):
                 def fallback_func(*args, **kwargs):
-                    self.logger.warning(f"Visualization function {name} not available (fallback)")
+                    tprint(f"Visualization function {name} not available (fallback)")
                     return None
                 return fallback_func
         
@@ -329,11 +337,11 @@ class DependencyManager:
                     # Try to import the actual dependency
                     if '.' in name:
                         module_name, class_name = name.rsplit('.', 1)
-                        exec(f"from {module_name} import {class_name}")
-                        return eval(class_name), False
+                        module = importlib.import_module(module_name)
+                        return getattr(module, class_name), False
                     else:
-                        exec(f"import {name}")
-                        return eval(name), False
+                        module = importlib.import_module(name)
+                        return module, False
                 except ImportError:
                     pass
             
@@ -346,7 +354,7 @@ class DependencyManager:
                 if fallback_name in name:
                     return fallback_obj, True
         
-        self.logger.error(f"Dependency {name} not available and no fallback found")
+        tprint(f"❌ Dependency {name} not available and no fallback found")
         return None, False
     
     def is_available(self, name: str) -> bool:
@@ -392,11 +400,11 @@ class DependencyManager:
         """Log comprehensive dependency status."""
         report = self.get_status_report()
         
-        self.logger.info("📦 Dependency Status Report:")
-        self.logger.info(f"  Total dependencies: {report['total_dependencies']}")
-        self.logger.info(f"  Available: {report['available']}")
-        self.logger.info(f"  Unavailable: {report['unavailable']}")
-        self.logger.info(f"  With fallbacks: {report['with_fallbacks']}")
+        tprint("📦 Dependency Status Report:")
+        tprint(f"  Total dependencies: {report['total_dependencies']}")
+        tprint(f"  Available: {report['available']}")
+        tprint(f"  Unavailable: {report['unavailable']}")
+        tprint(f"  With fallbacks: {report['with_fallbacks']}")
         
         # Log critical missing dependencies
         critical_missing = [
@@ -407,9 +415,9 @@ class DependencyManager:
         ]
         
         if critical_missing:
-            self.logger.error(f"❌ Critical dependencies missing: {critical_missing}")
+            tprint(f"❌ Critical dependencies missing: {critical_missing}")
         else:
-            self.logger.info("✅ All critical dependencies available")
+            tprint("✅ All critical dependencies available")
 
 # Global dependency manager instance
 dependency_manager = DependencyManager()

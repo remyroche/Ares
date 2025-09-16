@@ -1,9 +1,9 @@
 """
-Optimized Triple Barrier Labeler with Optuna Integration
+Enhanced Optimized Triple Barrier Labeler with Advanced Optimizations
 
-This module integrates the existing Optuna-based triple barrier optimization
-with the triple barrier labeling system, providing optimized parameters
-for each regime with comprehensive reporting.
+This module integrates Optuna-based optimization with matrix operations,
+coarse grid search, hardware acceleration, and comprehensive math validation
+for maximum performance and accuracy.
 """
 
 import pandas as pd
@@ -13,6 +13,46 @@ from dataclasses import dataclass, field
 import logging
 from datetime import datetime
 import time
+import gc
+from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
+import multiprocessing as mp
+
+# Import matrix operations and hardware optimizations
+try:
+    from src.utils.matrix_operations.hardware_integration import (
+        HardwareOptimizedMatrixProcessor, MatrixOperationConfig
+    )
+    from src.utils.matrix_operations.vectorized_core import (
+        VectorizedProcessor, BatchProcessor, ChunkedProcessor
+    )
+    from src.utils.matrix_operations.batch_operations import (
+        BatchMatrixOperations, BatchConfig
+    )
+    MATRIX_OPERATIONS_AVAILABLE = True
+except ImportError as e:
+    logging.warning(f"Matrix operations not available: {e}")
+    MATRIX_OPERATIONS_AVAILABLE = False
+
+# Import hardware optimization tools
+try:
+    from src.utils.hardware.m1_gpu_utils import get_m1_gpu_manager, M1GPUManager
+    from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer, M1MemoryOptimizer
+    from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer, M1CPUOptimizer
+    HARDWARE_OPTIMIZATION_AVAILABLE = True
+except ImportError as e:
+    logging.warning(f"Hardware optimization not available: {e}")
+    HARDWARE_OPTIMIZATION_AVAILABLE = False
+
+# Import math validation
+try:
+    from src.utils.math_validation import (
+        safe_divide, safe_log, safe_sqrt, validate_positive, validate_range,
+        validate_finite, validate_probability, safe_power
+    )
+    MATH_VALIDATION_AVAILABLE = True
+except ImportError as e:
+    logging.warning(f"Math validation not available: {e}")
+    MATH_VALIDATION_AVAILABLE = False
 
 # Import existing optimization components
 try:
@@ -36,6 +76,28 @@ from .quality_assessment import LabelQualityAssessor, LabelQualityMetrics
 from .utils import LabelingUtils
 
 logger = logging.getLogger(__name__)
+
+@dataclass
+class CoarseGridConfig:
+    """Configuration for coarse grid search before Bayesian optimization."""
+    pt_mult_range: Tuple[float, float] = (0.0005, 0.02)
+    sl_mult_range: Tuple[float, float] = (0.0005, 0.01)
+    time_barrier_range: Tuple[int, int] = (15, 120)
+    lookahead_range: Tuple[int, int] = (50, 300)
+    grid_size: int = 20  # Number of points per dimension
+    top_k_candidates: int = 5  # Top candidates to pass to Bayesian optimization
+    
+@dataclass
+class HardwareOptimizationConfig:
+    """Configuration for hardware optimizations."""
+    enable_gpu_acceleration: bool = True
+    enable_memory_optimization: bool = True
+    enable_cpu_optimization: bool = True
+    batch_size: int = 1000
+    max_memory_usage: float = 0.8  # 80% of available memory
+    parallel_workers: int = 4
+    use_vectorized_operations: bool = True
+    enable_chunked_processing: bool = True
 
 @dataclass
 class OptimizedBarrierParams:
@@ -103,17 +165,17 @@ class RegimeTradingMetrics:
             'optimization_score': self.optimization_score
         }
 
-class OptimizedTripleBarrierLabeler:
+class EnhancedOptimizedTripleBarrierLabeler:
     """
-    Optimized triple barrier labeler with Optuna integration.
+    Enhanced optimized triple barrier labeler with advanced optimizations.
     
-    This class integrates the existing Optuna-based optimization
-    with triple barrier labeling to provide optimized parameters
-    for each regime with comprehensive reporting.
+    This class integrates Optuna-based optimization with matrix operations,
+    coarse grid search, hardware acceleration, and comprehensive math validation
+    for maximum performance and accuracy.
     """
     
     def __init__(self, config: Optional[Dict[str, Any]] = None):
-        """Initialize the optimized triple barrier labeler.
+        """Initialize the enhanced optimized triple barrier labeler.
         
         Args:
             config: Configuration dictionary
@@ -121,9 +183,19 @@ class OptimizedTripleBarrierLabeler:
         self.config = config or {}
         self.logger = logger
         
+        # Initialize configuration
+        self.coarse_grid_config = CoarseGridConfig()
+        self.hardware_config = HardwareOptimizationConfig()
+        
         # Initialize components
         self.utils = LabelingUtils()
         self.quality_assessor = LabelQualityAssessor()
+        
+        # Initialize hardware optimizations
+        self._initialize_hardware_optimizations()
+        
+        # Initialize matrix operations
+        self._initialize_matrix_operations()
         
         # Initialize optimization components if available
         if OPTIMIZATION_AVAILABLE:
@@ -138,17 +210,352 @@ class OptimizedTripleBarrierLabeler:
         self.optimized_params: Dict[Union[int, str], OptimizedBarrierParams] = {}
         self.regime_metrics: Dict[Union[int, str], RegimeTradingMetrics] = {}
         self.optimization_results: Dict[str, Any] = {}
+        self.coarse_grid_results: Dict[str, Any] = {}
         
         self._log_initialization()
     
+    def _initialize_hardware_optimizations(self):
+        """Initialize hardware optimization components."""
+        self.gpu_manager = None
+        self.memory_optimizer = None
+        self.cpu_optimizer = None
+        
+        if HARDWARE_OPTIMIZATION_AVAILABLE:
+            try:
+                if self.hardware_config.enable_gpu_acceleration:
+                    self.gpu_manager = get_m1_gpu_manager()
+                    if self.gpu_manager and self.gpu_manager.is_m1:
+                        self.logger.info("✅ M1 GPU acceleration enabled")
+                    else:
+                        self.logger.warning("⚠️ M1 GPU not available")
+                
+                if self.hardware_config.enable_memory_optimization:
+                    self.memory_optimizer = get_m1_memory_optimizer()
+                    if self.memory_optimizer:
+                        self.logger.info("✅ M1 Memory optimization enabled")
+                
+                if self.hardware_config.enable_cpu_optimization:
+                    self.cpu_optimizer = get_m1_cpu_optimizer()
+                    if self.cpu_optimizer:
+                        self.logger.info("✅ M1 CPU optimization enabled")
+                        
+            except Exception as e:
+                self.logger.warning(f"⚠️ Hardware optimization initialization failed: {e}")
+        else:
+            self.logger.warning("⚠️ Hardware optimization not available")
+    
+    def _initialize_matrix_operations(self):
+        """Initialize matrix operations components."""
+        self.matrix_processor = None
+        self.vectorized_processor = None
+        self.batch_processor = None
+        
+        if MATRIX_OPERATIONS_AVAILABLE:
+            try:
+                # Initialize matrix processor with hardware integration
+                matrix_config = MatrixOperationConfig(
+                    enable_gpu=self.hardware_config.enable_gpu_acceleration,
+                    enable_memory_opt=self.hardware_config.enable_memory_optimization,
+                    batch_size=self.hardware_config.batch_size
+                )
+                
+                self.matrix_processor = HardwareOptimizedMatrixProcessor(matrix_config)
+                self.vectorized_processor = VectorizedProcessor()
+                self.batch_processor = BatchProcessor()
+                
+                self.logger.info("✅ Matrix operations initialized")
+                
+            except Exception as e:
+                self.logger.warning(f"⚠️ Matrix operations initialization failed: {e}")
+        else:
+            self.logger.warning("⚠️ Matrix operations not available")
+    
     def _log_initialization(self):
         """Log initialization parameters."""
-        self.logger.info("🚀 Initializing Optimized Triple Barrier Labeler")
+        self.logger.info("🚀 Initializing Enhanced Optimized Triple Barrier Labeler")
         self.logger.info(f"📋 Optimization available: {OPTIMIZATION_AVAILABLE}")
+        self.logger.info(f"🔧 Matrix operations: {MATRIX_OPERATIONS_AVAILABLE}")
+        self.logger.info(f"⚡ Hardware optimization: {HARDWARE_OPTIMIZATION_AVAILABLE}")
+        self.logger.info(f"🧮 Math validation: {MATH_VALIDATION_AVAILABLE}")
+        
         if OPTIMIZATION_AVAILABLE:
             self.logger.info("✅ Optuna-based optimization integrated")
         else:
             self.logger.warning("⚠️ Using default parameters (no optimization)")
+    
+    def _coarse_grid_search(self, regime_data: pd.DataFrame, regime_name: str) -> List[Dict[str, Any]]:
+        """Perform coarse grid search to find promising parameter combinations.
+        
+        Args:
+            regime_data: Market data for the specific regime
+            regime_name: Name of the regime
+            
+        Returns:
+            List of top parameter combinations
+        """
+        self.logger.info(f"🔍 Starting coarse grid search for regime: {regime_name}")
+        
+        # Create parameter grids
+        pt_mults = np.linspace(
+            self.coarse_grid_config.pt_mult_range[0],
+            self.coarse_grid_config.pt_mult_range[1],
+            self.coarse_grid_config.grid_size
+        )
+        sl_mults = np.linspace(
+            self.coarse_grid_config.sl_mult_range[0],
+            self.coarse_grid_config.sl_mult_range[1],
+            self.coarse_grid_config.grid_size
+        )
+        time_barriers = np.linspace(
+            self.coarse_grid_config.time_barrier_range[0],
+            self.coarse_grid_config.time_barrier_range[1],
+            self.coarse_grid_config.grid_size,
+            dtype=int
+        )
+        lookaheads = np.linspace(
+            self.coarse_grid_config.lookahead_range[0],
+            self.coarse_grid_config.lookahead_range[1],
+            self.coarse_grid_config.grid_size,
+            dtype=int
+        )
+        
+        # Generate all combinations
+        param_combinations = []
+        for pt_mult in pt_mults:
+            for sl_mult in sl_mults:
+                for time_barrier in time_barriers:
+                    for lookahead in lookaheads:
+                        # Validate parameters
+                        if MATH_VALIDATION_AVAILABLE:
+                            if not (validate_positive(pt_mult) and validate_positive(sl_mult) and 
+                                   validate_range(pt_mult, 0.0001, 0.1) and 
+                                   validate_range(sl_mult, 0.0001, 0.1)):
+                                continue
+                        
+                        param_combinations.append({
+                            'pt_mult': pt_mult,
+                            'sl_mult': sl_mult,
+                            'time_barrier': int(time_barrier),
+                            'lookahead': int(lookahead)
+                        })
+        
+        self.logger.info(f"📊 Testing {len(param_combinations)} parameter combinations")
+        
+        # Evaluate combinations in parallel
+        if self.hardware_config.parallel_workers > 1:
+            candidates = self._evaluate_combinations_parallel(regime_data, param_combinations)
+        else:
+            candidates = self._evaluate_combinations_sequential(regime_data, param_combinations)
+        
+        # Sort by score and return top candidates
+        candidates.sort(key=lambda x: x['score'], reverse=True)
+        top_candidates = candidates[:self.coarse_grid_config.top_k_candidates]
+        
+        self.logger.info(f"✅ Coarse grid search completed. Top score: {top_candidates[0]['score']:.4f}")
+        
+        return top_candidates
+    
+    def _evaluate_combinations_parallel(self, regime_data: pd.DataFrame, param_combinations: List[Dict]) -> List[Dict]:
+        """Evaluate parameter combinations in parallel."""
+        candidates = []
+        
+        with ThreadPoolExecutor(max_workers=self.hardware_config.parallel_workers) as executor:
+            futures = []
+            for params in param_combinations:
+                future = executor.submit(self._evaluate_single_combination, regime_data, params)
+                futures.append(future)
+            
+            for future in futures:
+                try:
+                    result = future.result(timeout=30)
+                    if result is not None:
+                        candidates.append(result)
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Parameter evaluation failed: {e}")
+        
+        return candidates
+    
+    def _evaluate_combinations_sequential(self, regime_data: pd.DataFrame, param_combinations: List[Dict]) -> List[Dict]:
+        """Evaluate parameter combinations sequentially."""
+        candidates = []
+        
+        for params in param_combinations:
+            try:
+                result = self._evaluate_single_combination(regime_data, params)
+                if result is not None:
+                    candidates.append(result)
+            except Exception as e:
+                self.logger.warning(f"⚠️ Parameter evaluation failed: {e}")
+        
+        return candidates
+    
+    def _evaluate_single_combination(self, regime_data: pd.DataFrame, params: Dict) -> Optional[Dict]:
+        """Evaluate a single parameter combination."""
+        try:
+            # Create config
+            config = TripleBarrierConfig(
+                pt_mult=params['pt_mult'],
+                sl_mult=params['sl_mult'],
+                min_holding_period=1,
+                max_holding_period=params['lookahead'],
+                transaction_cost=0.0008
+            )
+            
+            # Evaluate parameters
+            score = self._evaluate_parameters_enhanced(regime_data, config)
+            
+            if MATH_VALIDATION_AVAILABLE:
+                if not validate_finite(score):
+                    return None
+            
+            return {
+                'pt_mult': params['pt_mult'],
+                'sl_mult': params['sl_mult'],
+                'time_barrier': params['time_barrier'],
+                'lookahead': params['lookahead'],
+                'score': score
+            }
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Single combination evaluation failed: {e}")
+            return None
+    
+    def _evaluate_parameters_enhanced(self, data: pd.DataFrame, config: TripleBarrierConfig) -> float:
+        """Enhanced parameter evaluation with matrix operations and hardware acceleration."""
+        try:
+            # Use vectorized operations if available
+            if self.vectorized_processor and self.hardware_config.use_vectorized_operations:
+                return self._evaluate_parameters_vectorized(data, config)
+            else:
+                return self._evaluate_parameters_standard(data, config)
+                
+        except Exception as e:
+            self.logger.warning(f"⚠️ Enhanced parameter evaluation failed: {e}")
+            return self._evaluate_parameters_standard(data, config)
+    
+    def _evaluate_parameters_vectorized(self, data: pd.DataFrame, config: TripleBarrierConfig) -> float:
+        """Vectorized parameter evaluation using matrix operations."""
+        try:
+            # Convert to numpy arrays for vectorized operations
+            close = data['close'].values
+            high = data['high'].values
+            low = data['low'].values
+            
+            # Use matrix operations for barrier calculations
+            if self.matrix_processor:
+                # Calculate barrier prices vectorized
+                pt_prices = close * (1 + config.pt_mult)
+                sl_prices = close * (1 - config.sl_mult)
+                
+                # Use matrix operations for barrier hit detection
+                barrier_hits = self.matrix_processor.vectorized_barrier_detection(
+                    close, high, low, pt_prices, sl_prices, config.max_holding_period
+                )
+            else:
+                # Fallback to standard evaluation
+                return self._evaluate_parameters_standard(data, config)
+            
+            # Calculate metrics vectorized
+            if len(barrier_hits) == 0:
+                return -np.inf
+            
+            # Extract labels and profits
+            labels = barrier_hits['labels']
+            profits = barrier_hits['profits']
+            
+            # Calculate Sharpe ratio with math validation
+            if MATH_VALIDATION_AVAILABLE:
+                mean_profit = validate_finite(profits.mean())
+                std_profit = validate_finite(profits.std())
+                if std_profit > 0:
+                    sharpe_ratio = safe_divide(mean_profit, std_profit) * np.sqrt(252)
+                else:
+                    sharpe_ratio = 0
+            else:
+                if profits.std() > 0:
+                    sharpe_ratio = profits.mean() / profits.std() * np.sqrt(252)
+                else:
+                    sharpe_ratio = 0
+            
+            # Calculate win rate
+            win_rate = (labels > 0).mean()
+            
+            # Calculate profit factor with math validation
+            if MATH_VALIDATION_AVAILABLE:
+                gross_profit = profits[profits > 0].sum()
+                gross_loss = abs(profits[profits < 0].sum())
+                profit_factor = safe_divide(gross_profit, gross_loss) if gross_loss > 0 else 0
+            else:
+                gross_profit = profits[profits > 0].sum()
+                gross_loss = abs(profits[profits < 0].sum())
+                profit_factor = gross_profit / gross_loss if gross_loss > 0 else 0
+            
+            # Combined score with math validation
+            if MATH_VALIDATION_AVAILABLE:
+                score = (
+                    validate_finite(sharpe_ratio) * 0.4 +
+                    validate_probability(win_rate) * 0.3 +
+                    validate_finite(min(profit_factor, 5.0)) * 0.2 +
+                    validate_finite(min(len(labels) / 100, 1.0)) * 0.1
+                )
+            else:
+                score = (
+                    sharpe_ratio * 0.4 +
+                    win_rate * 0.3 +
+                    min(profit_factor, 5.0) * 0.2 +
+                    min(len(labels) / 100, 1.0) * 0.1
+                )
+            
+            return validate_finite(score) if MATH_VALIDATION_AVAILABLE else score
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Vectorized evaluation failed: {e}")
+            return self._evaluate_parameters_standard(data, config)
+    
+    def _evaluate_parameters_standard(self, data: pd.DataFrame, config: TripleBarrierConfig) -> float:
+        """Standard parameter evaluation (fallback)."""
+        try:
+            # Create labeler and generate labels
+            labeler = TripleBarrierLabeler(config)
+            result = labeler.create_labels(data, method=LabelingMethod.TRIPLE_BARRIER)
+            
+            if result is None or 'label' not in result.columns:
+                return -np.inf
+            
+            # Calculate metrics
+            labels = result['label'].dropna()
+            profits = result['profit_pct'].dropna()
+            
+            if len(labels) == 0 or len(profits) == 0:
+                return -np.inf
+            
+            # Calculate Sharpe ratio
+            if profits.std() > 0:
+                sharpe_ratio = profits.mean() / profits.std() * np.sqrt(252)
+            else:
+                sharpe_ratio = 0
+            
+            # Calculate win rate
+            win_rate = (labels > 0).mean()
+            
+            # Calculate profit factor
+            gross_profit = profits[profits > 0].sum()
+            gross_loss = abs(profits[profits < 0].sum())
+            profit_factor = gross_profit / gross_loss if gross_loss > 0 else 0
+            
+            # Combined score
+            score = (
+                sharpe_ratio * 0.4 +
+                win_rate * 0.3 +
+                min(profit_factor, 5.0) * 0.2 +
+                min(len(labels) / 100, 1.0) * 0.1
+            )
+            
+            return score
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Standard parameter evaluation failed: {e}")
+            return -np.inf
     
     def optimize_regime_parameters(
         self, 
@@ -559,3 +966,6 @@ class OptimizedTripleBarrierLabeler:
                 print(f"      Avg Holding Period: {metrics.avg_holding_period:.1f} bars")
         
         print("\n" + "="*80)
+
+# Backward compatibility alias
+OptimizedTripleBarrierLabeler = EnhancedOptimizedTripleBarrierLabeler

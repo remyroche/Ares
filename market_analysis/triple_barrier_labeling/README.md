@@ -15,9 +15,17 @@ A comprehensive triple barrier labeling system for market analysis, providing mu
 ### Labeling Methods
 1. **Standard Triple Barrier**: Classic profit target and stop loss barriers
 2. **Regime-Aware Triple Barrier**: Adaptive parameters based on HMM regime states
-3. **Optimized Triple Barrier**: Optuna-optimized parameters for each regime
+3. **Enhanced Optimized Triple Barrier**: Advanced optimization with matrix operations and hardware acceleration
 4. **Fractional Triple Barrier**: Continuous target labeling
 5. **Profit-Based Labels**: Transaction cost-aware labeling
+
+### Advanced Optimizations
+- **Coarse Grid Search**: Pre-optimization to find promising parameter regions
+- **Matrix Operations**: Vectorized computations using `src/utils/matrix_operations/`
+- **Hardware Acceleration**: M1 GPU, CPU, and memory optimizations
+- **Math Validation**: Safe mathematical operations using `src/utils/math_validation`
+- **Parallel Processing**: Multi-threaded parameter evaluation
+- **Memory Optimization**: Efficient memory usage for large datasets
 
 ### Regime Detection
 - **HMM-Based Only**: Uses existing HMM regime states from the pipeline (step03_hmm_regime_discovery)

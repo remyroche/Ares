@@ -177,6 +177,30 @@ class DataCleaner:
                 GapType.LARGE: 1800,   # 30 minutes - triggers download
                 GapType.CRITICAL: 3600 # 1 hour - triggers UnifiedGapFiller
             },
+            'klines_1m': {  # Special thresholds for 1m timeframe data
+                GapType.SMALL: 60,     # 1 minute (60s) - minimum meaningful gap for 1m data
+                GapType.MEDIUM: 300,   # 5 minutes - triggers download
+                GapType.LARGE: 1800,   # 30 minutes - triggers download
+                GapType.CRITICAL: 3600 # 1 hour - triggers UnifiedGapFiller
+            },
+            'klines_5m': {  # Special thresholds for 5m timeframe data
+                GapType.SMALL: 300,    # 5 minutes (300s) - minimum meaningful gap for 5m data
+                GapType.MEDIUM: 900,   # 15 minutes - triggers download
+                GapType.LARGE: 3600,   # 1 hour - triggers download
+                GapType.CRITICAL: 7200 # 2 hours - triggers UnifiedGapFiller
+            },
+            'klines_15m': {  # Special thresholds for 15m timeframe data
+                GapType.SMALL: 900,    # 15 minutes (900s) - minimum meaningful gap for 15m data
+                GapType.MEDIUM: 1800,  # 30 minutes - triggers download
+                GapType.LARGE: 7200,   # 2 hours - triggers download
+                GapType.CRITICAL: 14400 # 4 hours - triggers UnifiedGapFiller
+            },
+            'klines_30m': {  # Special thresholds for 30m timeframe data
+                GapType.SMALL: 1800,   # 30 minutes (1800s) - minimum meaningful gap for 30m data
+                GapType.MEDIUM: 3600,  # 1 hour - triggers download
+                GapType.LARGE: 14400,  # 4 hours - triggers download
+                GapType.CRITICAL: 28800 # 8 hours - triggers UnifiedGapFiller
+            },
             'klines_1h': {  # Special thresholds for 1h timeframe data
                 GapType.SMALL: 3600,   # 1 hour (3600s) - minimum meaningful gap for 1h data
                 GapType.MEDIUM: 7200,  # 2 hours - triggers download

@@ -1,17 +1,37 @@
 #!/usr/bin/env python3
 """
 Utility functions and decorators for HMM regime discovery.
+Enhanced with common utilities integration for optimal performance.
 """
 
 import logging
 import json
 from pathlib import Path
-from typing import Any, Callable, Dict, Optional, List
+from typing import Any, Callable, Dict, Optional, List, Tuple
 import numpy as np
 import pandas as pd
+import time
+from datetime import datetime
 
 from ....core.decorators import handles_errors
 from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
+
+# Import common utilities for enhanced functionality
+from src.utils.common_operations import (
+    get_m1_gpu_manager, get_m1_memory_optimizer, get_m1_cpu_optimizer,
+    safe_dataframe_operation, validate_dataframe_columns, calculate_data_quality_metrics
+)
+from src.utils.common_utilities import (
+    safe_dataframe_operation, validate_dataframe_columns, 
+    calculate_data_quality_metrics, optimize_memory_usage
+)
+from src.utils.math_validation import (
+    safe_divide, safe_log, safe_sqrt, safe_power, validate_finite,
+    validate_positive, validate_range, safe_nan_to_num
+)
+from src.utils.data.klines_parquet import KlinesParquetManager
+from src.utils.serialization_utils import UniversalSerializer
+from src.utils.matrix_operations.unified_operations import UnifiedMatrixOperations
 
 # Import decorators
 
@@ -87,22 +107,26 @@ class TechnicalIndicators:
     @staticmethod
     @handles_errors(fallback=pd.Series())
     def calculate_rsi(prices: pd.Series, window: int = 14) -> pd.Series:
-        """Calculate Relative Strength Index."""
+        """Calculate Relative Strength Index with enhanced common utilities integration."""
         try:
+            # Enhanced validation using common utilities
             if prices is None or prices.empty:
                 raise ValueError("Prices series cannot be None or empty")
-            if window < 1:
-                raise ValueError("Window must be >= 1")
+            window = validate_positive(window, "window")
             if len(prices) < window:
                 raise ValueError(f"Prices length ({len(prices)}) must be >= window ({window})")
             
+            # Calculate RSI with safe operations
             delta = prices.diff()
             gain = delta.where(delta > 0, 0).rolling(window=window).mean()
             loss = (-delta.where(delta < 0, 0)).rolling(window=window).mean()
             
-            # Avoid division by zero
-            rs = gain / (loss + 1e-10)
-            rsi = 100 - 100 / (1 + rs)
+            # Use safe division to avoid division by zero
+            rs = safe_divide(gain, loss, default=1.0)
+            rsi = 100 - safe_divide(100, (1 + rs), default=50.0)
+            
+            # Apply safe conversion for any remaining issues
+            rsi = safe_nan_to_num(rsi)
             return rsi
         except Exception as e:
             logger = create_fallback_logger()
@@ -681,3 +705,230 @@ class RegimeAnalyzer:
         except Exception as e:
             self.logger.exception(f"Error calculating regime transitions: {e}")
             return {}
+
+
+# Enhanced utility functions with common utilities integration
+
+class EnhancedHMMUtils:
+    """Enhanced HMM utilities with common utilities integration."""
+    
+    def __init__(self, logger: Optional[Any] = None):
+        """Initialize enhanced HMM utilities."""
+        self.logger = logger or create_fallback_logger()
+        self.klines_manager = KlinesParquetManager()
+        self.serializer = UniversalSerializer()
+        self.matrix_ops = UnifiedMatrixOperations()
+        
+        # Initialize hardware optimizers
+        self.gpu_manager = get_m1_gpu_manager()
+        self.memory_optimizer = get_m1_memory_optimizer()
+        self.cpu_optimizer = get_m1_cpu_optimizer()
+    
+    def load_market_data_enhanced(
+        self, 
+        symbol: str, 
+        interval: str = "1h",
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None
+    ) -> Optional[pd.DataFrame]:
+        """Load market data with enhanced common utilities integration."""
+        try:
+            self.logger.info(f"Loading market data for {symbol} {interval}")
+            
+            # Get data info
+            data_info = self.klines_manager.get_data_info(symbol, interval)
+            if not data_info['available']:
+                self.logger.warning(f"No data available for {symbol} {interval}")
+                return None
+            
+            # Load data
+            data = self.klines_manager.load_data(
+                symbol=symbol,
+                interval=interval,
+                start_date=start_date,
+                end_date=end_date
+            )
+            
+            if data is None or data.empty:
+                self.logger.warning("No data loaded")
+                return None
+            
+            # Validate data quality using common utilities
+            quality_metrics = calculate_data_quality_metrics(data)
+            self.logger.info(f"Data quality metrics: {quality_metrics}")
+            
+            # Apply memory optimization if available
+            if self.memory_optimizer:
+                data = optimize_memory_usage(data)
+                self.logger.info("Applied memory optimization to data")
+            
+            return data
+            
+        except Exception as e:
+            self.logger.error(f"Failed to load market data: {e}")
+            return None
+    
+    def engineer_features_enhanced(
+        self, 
+        data: pd.DataFrame, 
+        lookback_windows: List[int] = [5, 10, 20, 50],
+        technical_indicators: List[str] = ["rsi", "macd", "bollinger_bands", "atr"]
+    ) -> pd.DataFrame:
+        """Engineer features with enhanced common utilities integration."""
+        try:
+            self.logger.info("Engineering features with enhanced utilities")
+            
+            features = data.copy()
+            
+            # Calculate technical indicators with enhanced validation
+            for window in lookback_windows:
+                window = validate_positive(window, f"window_{window}")
+                
+                if "rsi" in technical_indicators:
+                    features[f"rsi_{window}"] = TechnicalIndicators.calculate_rsi(
+                        features['close'], window
+                    )
+                
+                if "macd" in technical_indicators:
+                    macd_line, macd_signal, macd_hist = TechnicalIndicators.calculate_macd(
+                        features['close'], window, window*2, window*3
+                    )
+                    features[f"macd_{window}"] = macd_line
+                    features[f"macd_signal_{window}"] = macd_signal
+                    features[f"macd_hist_{window}"] = macd_hist
+                
+                if "bollinger_bands" in technical_indicators:
+                    bb_upper, bb_middle, bb_lower = TechnicalIndicators.calculate_bollinger_bands(
+                        features['close'], window
+                    )
+                    features[f"bb_upper_{window}"] = bb_upper
+                    features[f"bb_middle_{window}"] = bb_middle
+                    features[f"bb_lower_{window}"] = bb_lower
+                    features[f"bb_width_{window}"] = safe_divide(
+                        bb_upper - bb_lower, bb_middle, default=0.0
+                    )
+                
+                if "atr" in technical_indicators:
+                    features[f"atr_{window}"] = TechnicalIndicators.calculate_atr(
+                        features, window
+                    )
+            
+            # Price-based features with safe operations
+            features['returns'] = features['close'].pct_change()
+            features['log_returns'] = safe_log(features['close'] / features['close'].shift(1))
+            features['volatility'] = features['returns'].rolling(window=20).std()
+            features['price_momentum'] = safe_divide(
+                features['close'], features['close'].shift(20), default=1.0
+            ) - 1
+            
+            # Volume features
+            if 'volume' in features.columns:
+                features['volume_ma'] = features['volume'].rolling(window=20).mean()
+                features['volume_ratio'] = safe_divide(
+                    features['volume'], features['volume_ma'], default=1.0
+                )
+            
+            # Remove rows with NaN values
+            features = features.dropna()
+            
+            # Apply safe conversion to handle any remaining issues
+            for col in features.select_dtypes(include=[np.number]).columns:
+                features[col] = safe_nan_to_num(features[col])
+            
+            self.logger.info(f"Engineered {len(features.columns)} features")
+            return features
+            
+        except Exception as e:
+            self.logger.error(f"Failed to engineer features: {e}")
+            return pd.DataFrame()
+    
+    def calculate_regime_metrics_enhanced(
+        self,
+        features: pd.DataFrame,
+        state_sequence: np.ndarray,
+        state_probs: np.ndarray
+    ) -> Dict[str, Any]:
+        """Calculate enhanced regime metrics using common utilities."""
+        try:
+            metrics = {}
+            
+            # Regime stability
+            regime_changes = np.sum(np.diff(state_sequence) != 0)
+            metrics['regime_stability'] = safe_divide(
+                len(state_sequence) - regime_changes, len(state_sequence), default=0.0
+            )
+            
+            # Regime balance
+            unique_regimes, counts = np.unique(state_sequence, return_counts=True)
+            if len(counts) > 1:
+                regime_balance = safe_divide(
+                    np.mean(counts), np.std(counts) + 1e-10, default=1.0
+                )
+            else:
+                regime_balance = 1.0
+            metrics['regime_balance'] = regime_balance
+            
+            # Probability confidence
+            max_probs = np.max(state_probs, axis=1)
+            metrics['avg_confidence'] = np.mean(max_probs)
+            metrics['min_confidence'] = np.min(max_probs)
+            
+            # Regime duration statistics
+            regime_durations = []
+            current_regime = state_sequence[0]
+            current_duration = 1
+            
+            for i in range(1, len(state_sequence)):
+                if state_sequence[i] == current_regime:
+                    current_duration += 1
+                else:
+                    regime_durations.append(current_duration)
+                    current_regime = state_sequence[i]
+                    current_duration = 1
+            
+            regime_durations.append(current_duration)
+            
+            if regime_durations:
+                metrics['avg_regime_duration'] = np.mean(regime_durations)
+                metrics['min_regime_duration'] = np.min(regime_durations)
+                metrics['max_regime_duration'] = np.max(regime_durations)
+            
+            return metrics
+            
+        except Exception as e:
+            self.logger.error(f"Failed to calculate regime metrics: {e}")
+            return {}
+    
+    def save_results_enhanced(
+        self,
+        results: Dict[str, Any],
+        filepath: str,
+        include_metadata: bool = True
+    ) -> bool:
+        """Save results with enhanced serialization."""
+        try:
+            if include_metadata:
+                results['metadata'] = {
+                    'timestamp': datetime.now().isoformat(),
+                    'version': '1.0.0',
+                    'common_utilities_integration': True
+                }
+            
+            return self.serializer.save(results, filepath)
+            
+        except Exception as e:
+            self.logger.error(f"Failed to save results: {e}")
+            return False
+    
+    def load_results_enhanced(self, filepath: str) -> Optional[Dict[str, Any]]:
+        """Load results with enhanced deserialization."""
+        try:
+            return self.serializer.load(filepath)
+        except Exception as e:
+            self.logger.error(f"Failed to load results: {e}")
+            return None
+
+
+def create_enhanced_hmm_utils(logger: Optional[Any] = None) -> EnhancedHMMUtils:
+    """Create enhanced HMM utils instance with common utilities integration."""
+    return EnhancedHMMUtils(logger)

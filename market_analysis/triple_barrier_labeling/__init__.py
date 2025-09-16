@@ -18,6 +18,7 @@ from .regime_aware import RegimeAwareLabeler, RegimeAwareConfig
 from .quality_assessment import LabelQualityAssessment
 from .cross_validation import LabelCrossValidator
 from .utils import MarketAnalysisUtils
+from .optimized_labeler import OptimizedTripleBarrierLabeler, OptimizedBarrierParams, RegimeTradingMetrics
 
 __version__ = "1.0.0"
 __author__ = "Market Analysis Team"
@@ -29,5 +30,8 @@ __all__ = [
     "RegimeAwareConfig",
     "LabelQualityAssessment",
     "LabelCrossValidator",
-    "MarketAnalysisUtils"
+    "MarketAnalysisUtils",
+    "OptimizedTripleBarrierLabeler",
+    "OptimizedBarrierParams",
+    "RegimeTradingMetrics"
 ]

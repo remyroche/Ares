@@ -15,9 +15,9 @@ A comprehensive triple barrier labeling system for market analysis, providing mu
 ### Labeling Methods
 1. **Standard Triple Barrier**: Classic profit target and stop loss barriers
 2. **Regime-Aware Triple Barrier**: Adaptive parameters based on HMM regime states
-3. **Fractional Triple Barrier**: Continuous target labeling
-4. **Profit-Based Labels**: Transaction cost-aware labeling
-5. **Volatility-Based Labels**: Volatility-adjusted barriers
+3. **Optimized Triple Barrier**: Optuna-optimized parameters for each regime
+4. **Fractional Triple Barrier**: Continuous target labeling
+5. **Profit-Based Labels**: Transaction cost-aware labeling
 
 ### Regime Detection
 - **HMM-Based Only**: Uses existing HMM regime states from the pipeline (step03_hmm_regime_discovery)
@@ -37,6 +37,13 @@ Where:
 Example: If entry price is $100, pt_mult=0.02, sl_mult=0.01:
 - Profit target = $100 * (1 + 0.02) = $102
 - Stop loss = $100 * (1 - 0.01) = $99
+
+### Parameter Optimization
+- **Optuna Integration**: Uses existing Optuna-based optimization system
+- **Regime-Specific**: Optimizes parameters separately for each HMM regime
+- **Transaction Costs**: Includes 0.08% fee per trade in optimization
+- **Comprehensive Metrics**: Reports pt_mult, sl_mult, trading frequency, win rates, etc.
+- **Long/Short Support**: Works with both long and short positions
 
 ### Quality Assessment
 - Label distribution analysis

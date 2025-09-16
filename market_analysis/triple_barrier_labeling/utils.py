@@ -197,76 +197,8 @@ class MarketAnalysisUtils:
                 'data_quality': {}
             }
 
-    def calculate_technical_indicators(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Calculate technical indicators using feature_engineering module.
-        
-        Args:
-            data: Market data with OHLC columns
-            
-        Returns:
-            DataFrame with technical indicators
-        """
-        try:
-            # Import feature engineering generators
-            from src.feature_engineering.feature_generators import (
-                rsi_generator, macd_generator, bollinger_bands_generator,
-                sma_generator, ema_generator
-            )
-            
-            result = data.copy()
-            
-            # Use feature_engineering generators for technical indicators
-            # RSI
-            result['rsi_14'] = rsi_generator(data, lookback=14, price_column='close')
-            
-            # MACD
-            result['macd'] = macd_generator(data, lookback=26, price_column='close')
-            
-            # Bollinger Bands
-            result['bb_position'] = bollinger_bands_generator(data, lookback=20, price_column='close')
-            
-            # Moving averages
-            result['sma_10'] = sma_generator(data, lookback=10, price_column='close')
-            result['sma_20'] = sma_generator(data, lookback=20, price_column='close')
-            result['sma_50'] = sma_generator(data, lookback=50, price_column='close')
-            
-            # EMAs
-            result['ema_12'] = ema_generator(data, lookback=12, price_column='close')
-            result['ema_26'] = ema_generator(data, lookback=26, price_column='close')
-            
-            # Basic price indicators
-            result['returns'] = data['close'].pct_change()
-            result['log_returns'] = np.log(data['close'] / data['close'].shift(1))
-            result['volatility'] = result['returns'].rolling(window=20).std()
-            
-            # Volume indicators (if available)
-            if 'volume' in data.columns:
-                result['volume_ma'] = data['volume'].rolling(window=20).mean()
-                result['volume_ratio'] = data['volume'] / result['volume_ma']
-                result['price_volume'] = data['close'] * data['volume']
-            
-            # Fill NaN values
-            result = result.fillna(method='ffill').fillna(0)
-            
-            self.logger.info(f"✅ Calculated technical indicators using feature_engineering for {len(result)} records")
-            return result
-            
-        except ImportError as e:
-            self.logger.warning(f"⚠️ Feature engineering not available: {e}")
-            self.logger.info("💡 Falling back to basic price indicators only")
-            
-            # Fallback to basic indicators
-            result = data.copy()
-            result['returns'] = data['close'].pct_change()
-            result['log_returns'] = np.log(data['close'] / data['close'].shift(1))
-            result['volatility'] = result['returns'].rolling(window=20).std()
-            result = result.fillna(method='ffill').fillna(0)
-            
-            return result
-            
-        except Exception as e:
-            self.logger.error(f"❌ Failed to calculate technical indicators: {e}")
-            return data
+    # Note: Technical indicators removed as they are not needed for triple barrier labeling
+    # Triple barrier labeling only requires OHLC data and barrier parameters
 
     # Note: RSI calculation now uses feature_engineering module
 

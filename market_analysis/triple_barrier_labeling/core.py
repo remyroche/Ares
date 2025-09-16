@@ -55,7 +55,7 @@ class BarrierType(Enum):
     DYNAMIC = "dynamic"
     REGIME_AWARE = "regime_aware"
     FRACTIONAL = "fractional"
-    VOLATILITY_ADJUSTED = "volatility_adjusted"
+    # Note: Volatility-based methods removed as per requirements
 
 class LabelingMethod(Enum):
     """Available labeling methods."""
@@ -63,7 +63,7 @@ class LabelingMethod(Enum):
     REGIME_AWARE_TRIPLE_BARRIER = "regime_aware_triple_barrier"
     FRACTIONAL_TRIPLE_BARRIER = "fractional_triple_barrier"
     PROFIT_BASED = "profit_based"
-    VOLATILITY_BASED = "volatility_based"
+    # Note: Volatility-based methods removed as per requirements
     CUSTOM = "custom"
 
 @dataclass
@@ -93,7 +93,7 @@ class TripleBarrierConfig:
     barrier_type: BarrierType = BarrierType.FIXED
     regime_aware: bool = False
     fractional_support: bool = False
-    volatility_adjusted: bool = False
+    # Note: Volatility adjustment removed as per requirements
     
     # Quality and validation
     quality_threshold: float = 0.7
@@ -242,8 +242,7 @@ class TripleBarrierLabeler:
                 labels_df = self._create_fractional_triple_barrier(data, config)
             elif method == LabelingMethod.PROFIT_BASED:
                 labels_df = self._create_profit_based_labels(data, config)
-            elif method == LabelingMethod.VOLATILITY_BASED:
-                labels_df = self._create_volatility_based_labels(data, config)
+            # Note: Volatility-based labeling removed as per requirements
             else:
                 raise ValueError(f"Unsupported labeling method: {method}")
             
@@ -471,59 +470,7 @@ class TripleBarrierLabeler:
         
         return result
 
-    def _create_volatility_based_labels(
-        self, 
-        data: pd.DataFrame, 
-        config: TripleBarrierConfig
-    ) -> pd.DataFrame:
-        """Create volatility-adjusted triple barrier labels."""
-        self.logger.debug("🔄 Creating volatility-based labels")
-        
-        # Calculate rolling volatility
-        returns = data['close'].pct_change().dropna()
-        volatility = returns.rolling(window=20).std()
-        
-        result = data.copy()
-        labels = []
-        profit_pcts = []
-        
-        for i, (_, row) in enumerate(data.iterrows()):
-            if i < 20:  # Skip first 20 periods for volatility calculation
-                labels.append(0)
-                profit_pcts.append(0.0)
-                continue
-                
-            entry_price = row['close']
-            current_volatility = volatility.iloc[i]
-            
-            # Adjust barriers based on volatility
-            vol_multiplier = 1 + current_volatility
-            pt_mult = config.pt_mult * vol_multiplier
-            sl_mult = config.sl_mult * vol_multiplier
-            
-            pt_price = entry_price * (1 + pt_mult)
-            sl_price = entry_price * (1 - sl_mult)
-            
-            # Find barrier hit
-            label, profit_pct, _ = self._find_barrier_hit(
-                data.iloc[i:], 
-                entry_price, 
-                pt_price, 
-                sl_price, 
-                config
-            )
-            
-            labels.append(label)
-            profit_pcts.append(profit_pct)
-        
-        result['label'] = labels
-        result['profit_pct'] = profit_pcts
-        result['barrier_type'] = 'volatility_based'
-        result['config_pt'] = config.pt_mult
-        result['config_sl'] = config.sl_mult
-        result['volatility'] = volatility
-        
-        return result
+    # Note: Volatility-based labeling method removed as per requirements
 
     def _find_barrier_hit(
         self, 

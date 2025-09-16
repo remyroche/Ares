@@ -120,8 +120,8 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                 ensemble_method="stacking",
                 meta_model="ElasticNetCV",
                 ensemble_name="tactician_ensemble",
-                enable_entry_timing_optimization=True,
-                entry_timing_range=0.005,
+                enable_directional_consistency_optimization=True,
+                price_levels=[0.001, 0.002, 0.003, 0.004, 0.005],
                 expected_movement=0.01
             )
 
@@ -1184,11 +1184,11 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
             # Add training metrics to results
             results['training_execution_metrics'] = training_metrics
             
-            # Add entry timing optimization if enabled
-            if hasattr(self.config, 'enable_entry_timing_optimization') and self.config.enable_entry_timing_optimization:
-                self.logger.info("🔄 Applying entry timing optimization for 0-0.5% range...")
-                entry_timing_results = self._apply_entry_timing_optimization(X, y, feature_names, results)
-                results.update(entry_timing_results)
+            # Add directional consistency optimization if enabled
+            if hasattr(self.config, 'enable_directional_consistency_optimization') and self.config.enable_directional_consistency_optimization:
+                self.logger.info("🔄 Applying directional consistency optimization for 0.1%-0.5% levels...")
+                directional_consistency_results = self._apply_directional_consistency_optimization(X, y, feature_names, results)
+                results.update(directional_consistency_results)
             
             # Always add ensemble training for Tactician (core requirement)
             self.logger.info("🔄 Training ensemble model (always enabled for Tactician)...")
@@ -1254,71 +1254,71 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
             self.logger.error(f"❌ Training input validation failed: {e}")
             raise
     
-    def _apply_entry_timing_optimization(self,
+    def _apply_directional_consistency_optimization(self,
                                       X: np.ndarray,
                                       y: np.ndarray,
                                       feature_names: Optional[List[str]],
                                       base_results: Dict[str, Any]) -> Dict[str, Any]:
-        """Apply entry timing optimization for 0-0.5% range."""
+        """Apply directional consistency optimization for 0.1%-0.5% levels."""
         try:
-            from .tactician_directional_optimization import EntryTimingTacticianOptimizer
+            from .tactician_directional_optimization import DirectionalConsistencyTacticianOptimizer
             
-            # Initialize entry timing optimizer
-            entry_timing_optimizer = EntryTimingTacticianOptimizer(self.config)
+            # Initialize directional consistency optimizer
+            directional_consistency_optimizer = DirectionalConsistencyTacticianOptimizer(self.config)
             
-            # Get entry timing range from config
-            entry_timing_range = getattr(self.config, 'entry_timing_range', 0.005)  # 0-0.5% range
+            # Get price levels from config
+            price_levels = getattr(self.config, 'price_levels', [0.001, 0.002, 0.003, 0.004, 0.005])
             
-            # Filter targets for entry timing range (0-0.5%)
-            entry_timing_mask = np.abs(y) <= entry_timing_range
-            X_entry_timing = X[entry_timing_mask]
-            y_entry_timing = y[entry_timing_mask]
+            # Filter targets for directional consistency (all levels should be in same direction)
+            # For now, we'll use all samples and let the optimizer handle multi-level targets
+            X_directional_consistency = X
+            y_directional_consistency = y
             
-            self.logger.info(f"📊 Entry timing filtering: {len(y_entry_timing)}/{len(y)} samples (≤{entry_timing_range:.1%} range)")
+            self.logger.info(f"📊 Directional consistency optimization: {len(y_directional_consistency)} samples across {len(price_levels)} levels")
+            self.logger.info(f"   Price levels: {[f'{level:.1%}' for level in price_levels]}")
             
-            if len(y_entry_timing) < 100:  # Need minimum samples for optimization
-                self.logger.warning("⚠️ Insufficient entry timing samples for optimization")
+            if len(y_directional_consistency) < 100:  # Need minimum samples for optimization
+                self.logger.warning("⚠️ Insufficient samples for directional consistency optimization")
                 return {}
             
-            # Apply entry timing optimization
-            entry_timing_result = entry_timing_optimizer.optimize_tactician_entry_timing(
-                X=X_entry_timing, y=y_entry_timing, regime_labels=np.zeros(len(y_entry_timing)),
+            # Apply directional consistency optimization
+            directional_consistency_result = directional_consistency_optimizer.optimize_tactician_directional_consistency(
+                X=X_directional_consistency, y=y_directional_consistency, regime_labels=np.zeros(len(y_directional_consistency)),
                 feature_names=feature_names, hmm_states=None,
-                max_trials=getattr(self.config, 'hpo_n_trials', 100) // 2  # Half trials for entry timing
+                max_trials=getattr(self.config, 'hpo_n_trials', 100) // 2  # Half trials for directional consistency
             )
             
-            # Create entry timing optimization results
-            entry_timing_results = {
-                'entry_timing_optimization': {
+            # Create directional consistency optimization results
+            directional_consistency_results = {
+                'directional_consistency_optimization': {
                     'enabled': True,
-                    'entry_timing_range': entry_timing_range,
-                    'entry_timing_samples': len(y_entry_timing),
-                    'total_samples': len(y),
-                    'objectives': getattr(self.config, 'entry_timing_objectives', {}),
-                    'optimization_time': entry_timing_result.optimization_time,
-                    'n_trials': entry_timing_result.n_trials
+                    'price_levels': price_levels,
+                    'total_samples': len(y_directional_consistency),
+                    'objectives': getattr(self.config, 'directional_consistency_objectives', {}),
+                    'optimization_time': directional_consistency_result.optimization_time,
+                    'n_trials': directional_consistency_result.n_trials
                 },
-                'entry_timing_model': entry_timing_result.model,
-                'entry_timing_metrics': {
-                    'early_entry_penalty': entry_timing_result.directional_accuracy,
-                    'late_entry_penalty': entry_timing_result.adverse_movement_minimization,
-                    'optimal_entry_reward': entry_timing_result.directional_profit_efficiency,
-                    'entry_timing_efficiency': entry_timing_result.risk_adjusted_performance,
-                    'composite_score': entry_timing_result.composite_score
+                'directional_consistency_model': directional_consistency_result.model,
+                'directional_consistency_metrics': {
+                    'directional_consistency_loss': directional_consistency_result.directional_accuracy,
+                    'directional_accuracy_loss': directional_consistency_result.adverse_movement_minimization,
+                    'magnitude_consistency_loss': directional_consistency_result.directional_profit_efficiency,
+                    'reversal_penalty_loss': directional_consistency_result.risk_adjusted_performance,
+                    'composite_score': directional_consistency_result.composite_score
                 }
             }
             
-            self.logger.info(f"✅ Entry timing optimization completed for 0-0.5% range")
-            self.logger.info(f"   Early entry penalty: {entry_timing_result.directional_accuracy:.4f}")
-            self.logger.info(f"   Late entry penalty: {entry_timing_result.adverse_movement_minimization:.4f}")
-            self.logger.info(f"   Optimal entry reward: {entry_timing_result.directional_profit_efficiency:.4f}")
-            self.logger.info(f"   Entry timing efficiency: {entry_timing_result.risk_adjusted_performance:.4f}")
-            self.logger.info(f"   Composite score: {entry_timing_result.composite_score:.4f}")
+            self.logger.info(f"✅ Directional consistency optimization completed for {len(price_levels)} levels")
+            self.logger.info(f"   Directional consistency loss: {directional_consistency_result.directional_accuracy:.4f}")
+            self.logger.info(f"   Directional accuracy loss: {directional_consistency_result.adverse_movement_minimization:.4f}")
+            self.logger.info(f"   Magnitude consistency loss: {directional_consistency_result.directional_profit_efficiency:.4f}")
+            self.logger.info(f"   Reversal penalty loss: {directional_consistency_result.risk_adjusted_performance:.4f}")
+            self.logger.info(f"   Composite score: {directional_consistency_result.composite_score:.4f}")
             
-            return entry_timing_results
+            return directional_consistency_results
             
         except Exception as e:
-            self.logger.error(f"❌ Entry timing optimization failed: {e}")
+            self.logger.error(f"❌ Directional consistency optimization failed: {e}")
             return {}
     
     def _train_ensemble_model(

@@ -280,8 +280,10 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                     hmm_manager, prepared_data, config
                 )
             else:
-                # Use the new perform_hmm_clustering method from EnhancedHMMCompositeManager
-                clustering_result = hmm_manager.perform_hmm_clustering(prepared_data, config)
+                # Use the train_hmm_parallel method from EnhancedHMMCompositeManager
+                clustering_result = await self._perform_single_threaded_hmm_clustering(
+                    hmm_manager, prepared_data, config
+                )
             
             clustering_time = time.time() - start_time
             clustering_result['clustering_time'] = clustering_time
@@ -602,9 +604,17 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             return {'error': 'No cluster durations calculated'}
         
         # Calculate persistence metrics
-        avg_duration = np.mean(cluster_durations) if NUMPY_AVAILABLE else sum(cluster_durations) / len(cluster_durations)
-        median_duration = np.median(cluster_durations) if NUMPY_AVAILABLE else sorted(cluster_durations)[len(cluster_durations)//2]
-        std_duration = np.std(cluster_durations) if NUMPY_AVAILABLE else 0
+        if NUMPY_AVAILABLE:
+            avg_duration = np.mean(cluster_durations)
+            median_duration = np.median(cluster_durations)
+            std_duration = np.std(cluster_durations)
+        else:
+            avg_duration = sum(cluster_durations) / len(cluster_durations)
+            sorted_durations = sorted(cluster_durations)
+            median_duration = sorted_durations[len(sorted_durations)//2]
+            # Calculate standard deviation manually
+            variance = sum((x - avg_duration) ** 2 for x in cluster_durations) / len(cluster_durations)
+            std_duration = variance ** 0.5
         
         # Calculate cluster stability (lower std = more stable)
         stability_score = max(0, 1 - (std_duration / avg_duration)) if avg_duration > 0 else 0
@@ -698,8 +708,13 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                     test_values = [test_dist.get(cluster, 0) for cluster in common_clusters]
                     
                     if NUMPY_AVAILABLE and len(train_values) > 1:
-                        correlation = np.corrcoef(train_values, test_values)[0, 1]
-                        stability_score = max(0, correlation) if not np.isnan(correlation) else 0
+                        try:
+                            correlation = np.corrcoef(train_values, test_values)[0, 1]
+                            stability_score = max(0, correlation) if not np.isnan(correlation) else 0
+                        except (ValueError, np.linalg.LinAlgError):
+                            # Fallback to simple similarity measure
+                            diff = sum(abs(t - s) for t, s in zip(train_values, test_values))
+                            stability_score = max(0, 1 - diff / len(common_clusters))
                     else:
                         # Simple similarity measure
                         diff = sum(abs(t - s) for t, s in zip(train_values, test_values))
@@ -748,7 +763,11 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                 for count in transitions.values():
                     prob = count / total_transitions
                     if prob > 0:
-                        entropy -= prob * np.log2(prob) if NUMPY_AVAILABLE else prob * np.log(prob) / np.log(2)
+                        if NUMPY_AVAILABLE:
+                            entropy -= prob * np.log2(prob)
+                        else:
+                            import math
+                            entropy -= prob * math.log2(prob)
             
             return {
                 'transitions': transitions,
@@ -1231,7 +1250,12 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
         
         counts = list(cluster_counts.values())
         mean_count = sum(counts) / len(counts)
-        std_count = np.std(counts) if NUMPY_AVAILABLE else 0
+        if NUMPY_AVAILABLE:
+            std_count = np.std(counts)
+        else:
+            # Calculate standard deviation manually
+            variance = sum((x - mean_count) ** 2 for x in counts) / len(counts)
+            std_count = variance ** 0.5
         
         balance_score = max(0, 1 - (std_count / mean_count)) if mean_count > 0 else 0
         is_balanced = balance_score > 0.7
@@ -1488,11 +1512,9 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                 assignments = result.get('cluster_assignments', [])
                 metrics = result.get('cluster_metrics', {})
                 
-                # Adjust assignment indices to be globally unique
+                # Keep original assignment indices (clusters should be consistent across chunks)
                 if assignments:
-                    max_assignment = max(all_assignments) if all_assignments else -1
-                    adjusted_assignments = [a + max_assignment + 1 for a in assignments]
-                    all_assignments.extend(adjusted_assignments)
+                    all_assignments.extend(assignments)
                 
                 all_models.extend(models)
                 all_metrics.append(metrics)

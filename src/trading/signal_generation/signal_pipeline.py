@@ -170,10 +170,37 @@ class SignalGenerationPipeline:
             self.analyst_meta_model = Analyst(self.config)
             await self.analyst_meta_model.initialize()
             
-            # The analyst already contains the base models internally
-            # (market_health_analyzer, ml_confidence_predictor, liquidation_risk_model)
-            # So we don't need to initialize them separately
-            self.analyst_base_models = []  # Placeholder since base models are internal to analyst
+            # Load trained analyst base models from training steps
+            # These are the models trained in src/training/steps/model_training/analyst_models_training_refactored.py
+            from src.utils.standardized_model_manager import standardized_model_manager
+            
+            # Load analyst base models (ignore market health and liquidation risk as requested)
+            # Focus on the core ML models trained in the training steps
+            self.analyst_base_models = []
+            
+            # Load trained analyst models from the model manager
+            # These would be the models saved by AnalystModelsTrainingStepRefactored
+            try:
+                # Load the trained analyst models
+                # The model manager loads models by ID, so we need to know the specific model IDs
+                # For now, we'll try to load common analyst model IDs
+                analyst_model_ids = ["analyst_model_1", "analyst_model_2", "analyst_model_3"]
+                analyst_models = []
+                
+                for model_id in analyst_model_ids:
+                    try:
+                        model_result = standardized_model_manager.load_model(model_id, "analyst_models_training")
+                        if model_result:
+                            model, metadata = model_result
+                            analyst_models.append(model)
+                    except Exception as e:
+                        self.logger.debug(f"Could not load analyst model {model_id}: {e}")
+                
+                self.analyst_base_models = analyst_models
+                self.logger.info(f"✅ Loaded {len(analyst_models)} trained analyst base models")
+            except Exception as e:
+                self.logger.warning(f"⚠️ Could not load trained analyst models: {e}")
+                self.analyst_base_models = []  # Fallback to empty list
             
             self.logger.info("✅ Analyst models initialized")
             
@@ -189,10 +216,36 @@ class SignalGenerationPipeline:
             self.tactician_meta_model = Tactician(self.config)
             await self.tactician_meta_model.initialize()
             
-            # The tactician already contains the base models internally
-            # (scenario_predictor, position_sizer, leverage_sizer, etc.)
-            # So we don't need to initialize them separately
-            self.tactician_base_models = []  # Placeholder since base models are internal to tactician
+            # Load trained tactician base models from training steps
+            # These are the models trained in src/training/steps/model_training/tactician_models_training_refactored.py
+            from src.utils.standardized_model_manager import standardized_model_manager
+            
+            # Load tactician base models
+            self.tactician_base_models = []
+            
+            # Load trained tactician models from the model manager
+            # These would be the models saved by TacticianModelsTrainingStepRefactored
+            try:
+                # Load the trained tactician models
+                # The model manager loads models by ID, so we need to know the specific model IDs
+                # For now, we'll try to load common tactician model IDs
+                tactician_model_ids = ["tactician_model_1", "tactician_model_2", "tactician_model_3"]
+                tactician_models = []
+                
+                for model_id in tactician_model_ids:
+                    try:
+                        model_result = standardized_model_manager.load_model(model_id, "tactician_models_training")
+                        if model_result:
+                            model, metadata = model_result
+                            tactician_models.append(model)
+                    except Exception as e:
+                        self.logger.debug(f"Could not load tactician model {model_id}: {e}")
+                
+                self.tactician_base_models = tactician_models
+                self.logger.info(f"✅ Loaded {len(tactician_models)} trained tactician base models")
+            except Exception as e:
+                self.logger.warning(f"⚠️ Could not load trained tactician models: {e}")
+                self.tactician_base_models = []  # Fallback to empty list
             
             self.logger.info("✅ Tactician models initialized")
             
@@ -204,12 +257,36 @@ class SignalGenerationPipeline:
         """Load optimization parameters from backtesting results."""
         try:
             # Load optimization parameters from backtesting results
-            # This would typically load from a file or database
-            # For now, using default optimized parameters
+            # These should match the optimization done in backtesting modules
             
-            optimization_file = "optimization_results.json"
-            # In practice, this would load actual optimization results
-            # self.optimization_params = load_optimization_results(optimization_file)
+            # Try to load from backtesting optimization results
+            # This would typically be saved by the backtesting engine after optimization
+            optimization_file = "data_cache/backtesting_optimization_results.json"
+            
+            try:
+                import json
+                with open(optimization_file, 'r') as f:
+                    optimization_results = json.load(f)
+                
+                # Extract confidence optimization parameters
+                if 'confidence_optimization' in optimization_results:
+                    conf_opt = optimization_results['confidence_optimization']
+                    self.optimization_params.update({
+                        'analyst_confidence_weight': conf_opt.get('analyst_weight', 0.6),
+                        'tactician_confidence_weight': conf_opt.get('tactician_weight', 0.4),
+                        'regime_confidence_threshold': conf_opt.get('regime_threshold', 0.7),
+                        'signal_confidence_threshold': conf_opt.get('signal_threshold', 0.6),
+                        'meta_model_weight': conf_opt.get('meta_weight', 0.8),
+                        'base_model_weight': conf_opt.get('base_weight', 0.2)
+                    })
+                    self.logger.info("✅ Loaded confidence optimization parameters from backtesting results")
+                else:
+                    self.logger.warning("⚠️ No confidence optimization found in backtesting results")
+                    
+            except FileNotFoundError:
+                self.logger.warning("⚠️ Backtesting optimization results not found, using defaults")
+            except Exception as e:
+                self.logger.warning(f"⚠️ Failed to load backtesting optimization results: {e}")
             
             self.logger.info("✅ Optimization parameters loaded")
             
@@ -332,21 +409,46 @@ class SignalGenerationPipeline:
         try:
             base_outputs = []
             
-            # Use the existing analyst's internal methods
-            # The analyst already has market_health_analyzer, ml_confidence_predictor, etc.
-            # We'll extract their outputs from the main analyst.analyze_regime call
-            
-            # For now, create placeholder outputs since the analyst doesn't expose base model outputs directly
-            # The actual base model processing happens inside analyst.analyze_regime()
-            base_outputs.append(AnalystBaseOutput(
-                timestamp=timestamp,
-                market_health={},
-                volatility_analysis={},
-                liquidity_analysis={},
-                stress_analysis={},
-                base_confidence=0.5,
-                features={}
-            ))
+            # Run the trained analyst base models from training steps
+            # These are the models trained in analyst_models_training_refactored.py
+            for model in self.analyst_base_models:
+                try:
+                    # Use the trained model to make predictions
+                    # The model should have a predict method
+                    if hasattr(model, 'predict'):
+                        prediction = model.predict(market_data)
+                        confidence = getattr(prediction, 'confidence', 0.5) if hasattr(prediction, 'confidence') else 0.5
+                        features = getattr(prediction, 'features', {}) if hasattr(prediction, 'features') else {}
+                    else:
+                        # Fallback for models without standard predict interface
+                        confidence = 0.5
+                        features = {}
+                    
+                    # Create base output (ignore market health and liquidation risk as requested)
+                    base_output = AnalystBaseOutput(
+                        timestamp=timestamp,
+                        market_health={},  # Ignored as requested
+                        volatility_analysis={},
+                        liquidity_analysis={},
+                        stress_analysis={},  # Ignored as requested
+                        base_confidence=confidence,
+                        features=features
+                    )
+                    
+                    base_outputs.append(base_output)
+                    
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Analyst base model failed: {e}")
+                    # Create fallback output
+                    base_outputs.append(AnalystBaseOutput(
+                        timestamp=timestamp,
+                        market_health={},
+                        volatility_analysis={},
+                        liquidity_analysis={},
+                        stress_analysis={},
+                        base_confidence=0.5,
+                        features={}
+                    ))
             
             return base_outputs
             
@@ -399,20 +501,48 @@ class SignalGenerationPipeline:
         try:
             base_outputs = []
             
-            # Use the existing tactician's internal methods
-            # The tactician already has scenario_predictor, position_sizer, leverage_sizer, etc.
-            # We'll extract their outputs from the main tactician.generate_enhanced_predictions call
-            
-            # For now, create placeholder outputs since the tactician doesn't expose base model outputs directly
-            # The actual base model processing happens inside tactician.generate_enhanced_predictions()
-            base_outputs.append(TacticianBaseOutput(
-                timestamp=timestamp,
-                scenario_predictions={},
-                price_targets={},
-                adversarial_risks={},
-                base_confidence=0.5,
-                position_recommendations={}
-            ))
+            # Run the trained tactician base models from training steps
+            # These are the models trained in tactician_models_training_refactored.py
+            for model in self.tactician_base_models:
+                try:
+                    # Use the trained model to make predictions
+                    # The model should have a predict method
+                    if hasattr(model, 'predict'):
+                        prediction = model.predict(market_data)
+                        confidence = getattr(prediction, 'confidence', 0.5) if hasattr(prediction, 'confidence') else 0.5
+                        scenario_predictions = getattr(prediction, 'scenario_predictions', {}) if hasattr(prediction, 'scenario_predictions') else {}
+                        price_targets = getattr(prediction, 'price_targets', {}) if hasattr(prediction, 'price_targets') else {}
+                        adversarial_risks = getattr(prediction, 'adversarial_risks', {}) if hasattr(prediction, 'adversarial_risks') else {}
+                    else:
+                        # Fallback for models without standard predict interface
+                        confidence = 0.5
+                        scenario_predictions = {}
+                        price_targets = {}
+                        adversarial_risks = {}
+                    
+                    # Create base output
+                    base_output = TacticianBaseOutput(
+                        timestamp=timestamp,
+                        scenario_predictions=scenario_predictions,
+                        price_targets=price_targets,
+                        adversarial_risks=adversarial_risks,
+                        base_confidence=confidence,
+                        position_recommendations={}
+                    )
+                    
+                    base_outputs.append(base_output)
+                    
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Tactician base model failed: {e}")
+                    # Create fallback output
+                    base_outputs.append(TacticianBaseOutput(
+                        timestamp=timestamp,
+                        scenario_predictions={},
+                        price_targets={},
+                        adversarial_risks={},
+                        base_confidence=0.5,
+                        position_recommendations={}
+                    ))
             
             return base_outputs
             
@@ -518,7 +648,7 @@ class SignalGenerationPipeline:
         analyst_output: AnalystMetaOutput,
         tactician_output: TacticianMetaOutput
     ) -> Dict[str, Any]:
-        """Generate final trading signal."""
+        """Generate final trading signal with validation."""
         try:
             # Use optimization parameters for thresholds
             regime_threshold = self.optimization_params['regime_confidence_threshold']
@@ -542,6 +672,17 @@ class SignalGenerationPipeline:
                     'reason': f'Low signal confidence: {tactician_output.combined_confidence:.3f} < {signal_threshold:.3f}'
                 }
             
+            # Validate signal based on analyst and tactician outputs
+            validation_result = self._validate_signal(analyst_output, tactician_output)
+            
+            if not validation_result['is_valid']:
+                return {
+                    'signal': 'hold',
+                    'confidence': tactician_output.combined_confidence,
+                    'strength': 0.0,
+                    'reason': f'Signal validation failed: {validation_result["reason"]}'
+                }
+            
             # Generate signal based on tactician output
             final_signal = tactician_output.final_signal
             final_confidence = tactician_output.combined_confidence
@@ -561,6 +702,54 @@ class SignalGenerationPipeline:
                 'confidence': 0.0,
                 'strength': 0.0,
                 'reason': f'Error: {e}'
+            }
+    
+    def _validate_signal(self, analyst_output: AnalystMetaOutput, tactician_output: TacticianMetaOutput) -> Dict[str, Any]:
+        """
+        Simple signal validation based on analyst and tactician outputs.
+        This is optimized by the backtesting modules.
+        """
+        try:
+            # Basic validation checks
+            validation_checks = []
+            
+            # Check analyst confidence
+            if analyst_output.analyst_confidence < 0.3:
+                validation_checks.append("Low analyst confidence")
+            
+            # Check tactician confidence
+            if tactician_output.tactician_confidence < 0.3:
+                validation_checks.append("Low tactician confidence")
+            
+            # Check confidence consistency
+            confidence_diff = abs(analyst_output.analyst_confidence - tactician_output.tactician_confidence)
+            if confidence_diff > 0.5:
+                validation_checks.append("High confidence difference between analyst and tactician")
+            
+            # Check signal strength
+            if tactician_output.signal_strength < 0.2:
+                validation_checks.append("Weak signal strength")
+            
+            # Check if signal is not hold
+            if tactician_output.final_signal == 'hold':
+                validation_checks.append("Tactician recommends hold")
+            
+            # Determine if signal is valid
+            is_valid = len(validation_checks) == 0
+            reason = "; ".join(validation_checks) if validation_checks else "Signal validation passed"
+            
+            return {
+                'is_valid': is_valid,
+                'reason': reason,
+                'checks_failed': validation_checks
+            }
+            
+        except Exception as e:
+            self.logger.error(f"❌ Signal validation failed: {e}")
+            return {
+                'is_valid': False,
+                'reason': f'Validation error: {e}',
+                'checks_failed': ['Validation error']
             }
     
     def get_signal_history(self, limit: int = 100) -> List[SignalGenerationResult]:

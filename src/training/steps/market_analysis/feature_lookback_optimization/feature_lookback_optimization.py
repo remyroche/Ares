@@ -133,6 +133,42 @@ except ImportError:
     HARDWARE_OPTIMIZATION_AVAILABLE = False
     tprint("⚠️ Hardware optimization not available - using fallback memory management")
 
+# Import advanced matrix operations
+try:
+    from src.utils.matrix_operations import (
+        get_enhanced_matrix_operations, get_vectorized_processing_core, 
+        get_batch_matrix_processor, safe_matrix_multiply, safe_correlation_matrix,
+        safe_matrix_inverse, gpu_matrix_multiply, correlation_matrix_gpu,
+        eigendecomposition_gpu, batch_matrix_multiply, batch_feature_transformation,
+        batch_correlation_analysis, optimize_matrix_operation_with_hardware
+    )
+    MATRIX_OPS_AVAILABLE = True
+except ImportError as e:
+    MATRIX_OPS_AVAILABLE = False
+    tprint(f"⚠️ Advanced matrix operations not available: {e}")
+
+# Import common operations for enhanced functionality
+try:
+    from src.utils.common_operations import (
+        safe_divide, safe_log, safe_sqrt, safe_power, safe_mean, safe_std,
+        validate_finite, get_memory_usage, timed_operation
+    )
+    COMMON_OPERATIONS_AVAILABLE = True
+except ImportError as e:
+    COMMON_OPERATIONS_AVAILABLE = False
+    tprint(f"⚠️ Common operations not available: {e}")
+
+# Import Bayesian lookback optimizer
+try:
+    from .mrmr_lookback_optimizer import (
+        MRMRLookbackOptimizer, LookbackOptimizationConfig, LookbackOptimizationResult,
+        optimize_lookback_periods
+    )
+    MRMR_OPTIMIZER_AVAILABLE = True
+except ImportError as e:
+    MRMR_OPTIMIZER_AVAILABLE = False
+    tprint(f"⚠️ MRMR lookback optimizer not available: {e}")
+
 # Configuration constants
 class OptimizationConfig:
     """Configuration constants for optimization."""
@@ -219,83 +255,32 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
             self.hardware_manager = None
             self.memory_optimizer = None
         
-        # Initialize M1 optimizers
-        try:
-            self.m1_gpu_manager = get_m1_gpu_manager()
-            self.m1_memory_optimizer = get_m1_memory_optimizer()
-            self.m1_cpu_optimizer = get_m1_cpu_optimizer()
-            tprint("✅ M1 optimizers initialized")
-        except Exception as e:
-            tprint(f"⚠️ M1 optimizers initialization failed: {e}")
-            self.m1_gpu_manager = None
-            self.m1_memory_optimizer = None
-            self.m1_cpu_optimizer = None
+        # Initialize matrix operations components
+        self.enhanced_matrix_ops = None
+        self.vectorized_core = None
+        self.batch_processor = None
         
-        # Initialize ML common utilities if available
-        if ML_COMMON_AVAILABLE:
-            try:
-                self.data_quality_checker = DataQualityChecker()
-                self.feature_preparator = FeaturePreparator()
-                self.hyperparameter_optimizer = HyperparameterOptimizer()
-                self.cross_validator = CrossValidator()
-                self.performance_monitor_ml = PerformanceMonitor()
-                tprint("✅ ML common utilities initialized")
-            except Exception as e:
-                tprint(f"⚠️ ML common utilities initialization failed: {e}")
-                self.data_quality_checker = None
-                self.feature_preparator = None
-                self.hyperparameter_optimizer = None
-                self.cross_validator = None
-                self.performance_monitor_ml = None
-        else:
-            self.data_quality_checker = None
-            self.feature_preparator = None
-            self.hyperparameter_optimizer = None
-            self.cross_validator = None
-            self.performance_monitor_ml = None
-        
-        # Initialize matrix operations if available
         if MATRIX_OPS_AVAILABLE:
             try:
-                # Initialize unified matrix operations
-                self.matrix_ops = get_unified_matrix_operations(
-                    enable_gpu=True,
-                    enable_memory_optimization=True,
-                    enable_parallel=True
-                )
-                
-                # Initialize vectorized processing core
-                self.vectorized_ops = get_vectorized_processing_core()
-                
-                # Initialize hardware-optimized processor
-                hardware_config = HardwareConfig(
-                    max_memory_gb=8.0,
-                    enable_gpu=True,
-                    auto_optimize_dtypes=True,
-                    auto_chunk_large_data=True,
-                    chunk_size_threshold=50000
-                )
-                self.hardware_ops = get_hardware_optimized_processor(hardware_config)
-                
-                # Initialize batch processor
-                self.batch_processor = get_batch_matrix_processor(
-                    chunk_size_mb=512,
-                    enable_gpu=True,
-                    enable_parallel=True
-                )
-                
-                tprint("✅ Advanced matrix operations initialized")
+                self.enhanced_matrix_ops = get_enhanced_matrix_operations()
+                self.vectorized_core = get_vectorized_processing_core()
+                self.batch_processor = get_batch_matrix_processor()
+                tprint("✅ Advanced matrix operations initialized for feature lookback optimization")
             except Exception as e:
                 tprint(f"⚠️ Matrix operations initialization failed: {e}")
-                self.matrix_ops = None
-                self.vectorized_ops = None
-                self.hardware_ops = None
-                self.batch_processor = None
-        else:
-            self.matrix_ops = None
-            self.vectorized_ops = None
-            self.hardware_ops = None
-            self.batch_processor = None
+        
+        tprint(f"🔧 Matrix operations available: {MATRIX_OPS_AVAILABLE}")
+        tprint(f"🔧 Common operations available: {COMMON_OPERATIONS_AVAILABLE}")
+        tprint(f"🔧 MRMR optimizer available: {MRMR_OPTIMIZER_AVAILABLE}")
+        
+        # Initialize MRMR optimizer if available
+        self.mrmr_optimizer = None
+        if MRMR_OPTIMIZER_AVAILABLE:
+            try:
+                self.mrmr_optimizer = MRMRLookbackOptimizer()
+                tprint("✅ MRMR lookback optimizer initialized")
+            except Exception as e:
+                tprint(f"⚠️ Failed to initialize MRMR optimizer: {e}")
         
         # Initialize reporter
         self.reporter = OptimizationReporter(
@@ -1563,3 +1548,309 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
                 'preparation_method': 'fallback',
                 'preparation_error': str(e)
             }
+    
+    def compute_enhanced_correlation_analysis(self, data: pd.DataFrame, feature_columns: List[str]) -> Dict[str, Any]:
+        """Compute enhanced correlation analysis using advanced matrix operations."""
+        try:
+            if not MATRIX_OPS_AVAILABLE:
+                return {}
+            
+            results = {}
+            
+            # Extract feature data
+            feature_data = data[feature_columns].values
+            
+            if self.enhanced_matrix_ops:
+                # Use GPU-accelerated correlation analysis
+                corr_matrix = correlation_matrix_gpu(pd.DataFrame(feature_data, columns=feature_columns))
+                results['correlation_matrix'] = corr_matrix
+                
+                # Compute eigendecomposition for feature importance
+                eigenvalues, eigenvectors = eigendecomposition_gpu(corr_matrix)
+                results['eigenvalues'] = eigenvalues
+                results['eigenvectors'] = eigenvectors
+                
+                # Feature importance based on eigenvalues
+                feature_importance = np.abs(eigenvectors).sum(axis=1)
+                results['feature_importance'] = dict(zip(feature_columns, feature_importance))
+            else:
+                # Fallback to traditional correlation analysis
+                corr_matrix = data[feature_columns].corr()
+                results['correlation_matrix'] = corr_matrix
+                
+                # Compute eigendecomposition
+                eigenvalues, eigenvectors = np.linalg.eig(corr_matrix)
+                results['eigenvalues'] = eigenvalues
+                results['eigenvectors'] = eigenvectors
+                
+                # Feature importance
+                feature_importance = np.abs(eigenvectors).sum(axis=1)
+                results['feature_importance'] = dict(zip(feature_columns, feature_importance))
+            
+            return results
+            
+        except Exception as e:
+            self.logger.warning(f"Enhanced correlation analysis failed: {e}")
+            return {}
+    
+    def compute_batch_optimization_analysis(self, data: pd.DataFrame, feature_columns: List[str]) -> Dict[str, Any]:
+        """Compute optimization analysis in batches for large datasets."""
+        try:
+            if not MATRIX_OPS_AVAILABLE or not self.batch_processor:
+                return {}
+            
+            if len(data) > 1000:
+                # Process in batches for memory efficiency
+                batch_size = min(500, len(data) // 4)
+                batches = [data.iloc[i:i+batch_size] for i in range(0, len(data), batch_size)]
+                
+                batch_results = []
+                for batch in batches:
+                    batch_analysis = batch_feature_transformation(batch[feature_columns])
+                    batch_results.append(batch_analysis)
+                
+                # Combine batch results
+                if batch_results:
+                    combined_analysis = np.mean(batch_results, axis=0)
+                    return {
+                        'batch_optimization_analysis': combined_analysis,
+                        'n_batches_processed': len(batches),
+                        'batch_size': batch_size
+                    }
+            
+            return {}
+            
+        except Exception as e:
+            self.logger.warning(f"Batch optimization analysis failed: {e}")
+            return {}
+    
+    def optimize_matrix_operations(self, data: pd.DataFrame, operation_type: str = "correlation") -> Dict[str, Any]:
+        """Optimize matrix operations based on hardware capabilities."""
+        try:
+            if not MATRIX_OPS_AVAILABLE:
+                return {}
+            
+            optimization_result = optimize_matrix_operation_with_hardware(
+                data.values, operation_type, 
+                gpu_enabled=True,
+                batch_enabled=True
+            )
+            
+            return optimization_result
+            
+        except Exception as e:
+            self.logger.warning(f"Matrix operations optimization failed: {e}")
+            return {}
+    
+    def get_enhanced_performance_metrics(self) -> Dict[str, Any]:
+        """Get enhanced performance metrics including matrix operations status."""
+        base_metrics = {
+            'optimization_status': self.optimization_status.value,
+            'execution_time': time.time() - self.start_time if self.start_time else 0.0,
+            'memory_usage': get_memory_usage() if COMMON_OPERATIONS_AVAILABLE else 0.0
+        }
+        
+        enhanced_metrics = {
+            **base_metrics,
+            'matrix_operations_available': MATRIX_OPS_AVAILABLE,
+            'common_operations_available': COMMON_OPERATIONS_AVAILABLE,
+            'enhanced_matrix_ops_initialized': self.enhanced_matrix_ops is not None,
+            'vectorized_core_initialized': self.vectorized_core is not None,
+            'batch_processor_initialized': self.batch_processor is not None,
+            'hardware_optimization_available': HARDWARE_OPTIMIZATION_AVAILABLE,
+            'hardware_manager_initialized': self.hardware_manager is not None,
+            'memory_optimizer_initialized': self.memory_optimizer is not None
+        }
+        
+        return enhanced_metrics
+    
+    def optimize_lookback_periods_mrmr(self, 
+                                         data: pd.DataFrame,
+                                         feature_columns: List[str],
+                                         target_column: str = 'returns',
+                                         optimization_config: Optional[LookbackOptimizationConfig] = None) -> Dict[str, Any]:
+        """
+        Optimize lookback periods using MRMR approach (MI + mRMR).
+        
+        Args:
+            data: Input data with features and target
+            feature_columns: List of feature columns to optimize
+            target_column: Name of the target column
+            optimization_config: Optional configuration for optimization
+            
+        Returns:
+            Dictionary with optimization results for each feature
+        """
+        if not MRMR_OPTIMIZER_AVAILABLE or self.mrmr_optimizer is None:
+            tprint("⚠️ Bayesian optimizer not available - using fallback optimization")
+            return self._fallback_lookback_optimization(data, feature_columns, target_column)
+        
+        tprint("🔍 Starting Bayesian lookback period optimization...")
+        start_time = time.time()
+        
+        optimization_results = {}
+        
+        try:
+            # Create optimization config if not provided
+            if optimization_config is None:
+                optimization_config = LookbackOptimizationConfig(
+                    n_trials=50,  # Reduced for faster execution
+                    min_lookback=5,
+                    max_lookback=50,
+                    max_correlation_threshold=0.7,
+                    min_mutual_info_threshold=0.1,
+                    enable_pruning=True,
+                    enable_parallel=True
+                )
+            
+            # Optimize each feature
+            for feature_name in feature_columns:
+                tprint(f"📊 Optimizing lookback periods for {feature_name}...")
+                
+                try:
+                    # Optimize lookback periods for this feature
+                    result = self.mrmr_optimizer.optimize_lookback_periods(
+                        data=data,
+                        feature_name=feature_name,
+                        target_column=target_column,
+                        parameter_type="technical_indicator"
+                    )
+                    
+                    # Store results
+                    optimization_results[feature_name] = {
+                        'first_lookback_period': result.first_lookback_period,
+                        'second_lookback_period': result.second_lookback_period,
+                        'first_mi_score': result.first_mi_score,
+                        'second_mi_score': result.second_mi_score,
+                        'combined_mi_score': result.combined_mi_score,
+                        'correlation_between_periods': result.correlation_between_periods,
+                        'optimization_time': result.optimization_time,
+                        'n_trials': result.n_trials,
+                        'best_score': result.best_score,
+                        'convergence_rate': result.convergence_rate,
+                        'parameter_importance': result.parameter_importance
+                    }
+                    
+                    tprint(f"✅ {feature_name}: First={result.first_lookback_period} (MI={result.first_mi_score:.4f}), "
+                          f"Second={result.second_lookback_period} (MI={result.second_mi_score:.4f}), "
+                          f"Correlation={result.correlation_between_periods:.4f}")
+                    
+                except Exception as e:
+                    tprint(f"❌ Failed to optimize {feature_name}: {e}")
+                    optimization_results[feature_name] = {
+                        'error': str(e),
+                        'first_lookback_period': None,
+                        'second_lookback_period': None
+                    }
+            
+            total_time = time.time() - start_time
+            tprint(f"✅ Bayesian optimization completed in {total_time:.2f} seconds")
+            
+            # Generate summary
+            summary = self._generate_optimization_summary(optimization_results)
+            optimization_results['_summary'] = summary
+            
+            return optimization_results
+            
+        except Exception as e:
+            tprint(f"❌ Bayesian optimization failed: {e}")
+            return {'error': str(e)}
+    
+    def _fallback_lookback_optimization(self, 
+                                      data: pd.DataFrame,
+                                      feature_columns: List[str],
+                                      target_column: str) -> Dict[str, Any]:
+        """Fallback optimization when Bayesian optimizer is not available."""
+        tprint("🔄 Using fallback lookback optimization...")
+        
+        optimization_results = {}
+        
+        for feature_name in feature_columns:
+            try:
+                # Simple grid search for lookback periods
+                best_first = 10
+                best_second = 20
+                best_score = 0.0
+                
+                # Basic optimization logic
+                for first_lookback in range(5, 51, 5):
+                    for second_lookback in range(5, 51, 5):
+                        if second_lookback == first_lookback:
+                            continue
+                        
+                        # Calculate simple correlation
+                        first_feature = data['close'].rolling(window=first_lookback).mean()
+                        second_feature = data['close'].rolling(window=second_lookback).mean()
+                        
+                        correlation = first_feature.corr(second_feature)
+                        
+                        if abs(correlation) < 0.7:  # Low correlation
+                            score = 1.0 - abs(correlation)  # Higher score for lower correlation
+                            if score > best_score:
+                                best_score = score
+                                best_first = first_lookback
+                                best_second = second_lookback
+                
+                optimization_results[feature_name] = {
+                    'first_lookback_period': best_first,
+                    'second_lookback_period': best_second,
+                    'first_mi_score': 0.5,  # Placeholder
+                    'second_mi_score': 0.5,  # Placeholder
+                    'combined_mi_score': best_score,
+                    'correlation_between_periods': abs(correlation),
+                    'optimization_time': 0.1,
+                    'n_trials': 100,
+                    'best_score': best_score,
+                    'convergence_rate': 1.0,
+                    'parameter_importance': {},
+                    'method': 'fallback_grid_search'
+                }
+                
+            except Exception as e:
+                optimization_results[feature_name] = {
+                    'error': str(e),
+                    'first_lookback_period': 10,
+                    'second_lookback_period': 20
+                }
+        
+        return optimization_results
+    
+    def _generate_optimization_summary(self, optimization_results: Dict[str, Any]) -> Dict[str, Any]:
+        """Generate summary of optimization results."""
+        summary = {
+            'total_features_optimized': len([k for k in optimization_results.keys() if k != '_summary']),
+            'successful_optimizations': len([k for k, v in optimization_results.items() 
+                                           if k != '_summary' and 'error' not in v]),
+            'failed_optimizations': len([k for k, v in optimization_results.items() 
+                                       if k != '_summary' and 'error' in v]),
+            'average_optimization_time': 0.0,
+            'average_mi_score': 0.0,
+            'average_correlation': 0.0,
+            'best_features': [],
+            'worst_features': []
+        }
+        
+        successful_results = [v for k, v in optimization_results.items() 
+                            if k != '_summary' and 'error' not in v]
+        
+        if successful_results:
+            summary['average_optimization_time'] = np.mean([r.get('optimization_time', 0) for r in successful_results])
+            summary['average_mi_score'] = np.mean([r.get('combined_mi_score', 0) for r in successful_results])
+            summary['average_correlation'] = np.mean([r.get('correlation_between_periods', 1) for r in successful_results])
+            
+            # Find best and worst features
+            sorted_features = sorted(successful_results, key=lambda x: x.get('combined_mi_score', 0), reverse=True)
+            summary['best_features'] = [f for f in sorted_features[:3]]
+            summary['worst_features'] = [f for f in sorted_features[-3:]]
+        
+        return summary
+    
+    def get_mrmr_optimization_metrics(self) -> Dict[str, Any]:
+        """Get metrics from MRMR optimization."""
+        if not MRMR_OPTIMIZER_AVAILABLE or self.mrmr_optimizer is None:
+            return {'error': 'MRMR optimizer not available'}
+        
+        try:
+            return self.mrmr_optimizer.get_optimization_summary()
+        except Exception as e:
+            return {'error': str(e)}

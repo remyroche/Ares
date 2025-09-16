@@ -46,13 +46,63 @@ except ImportError as e:
     logging.warning(f"PID utilities not available: {e}")
     PID_AVAILABLE = False
 
-# Import matrix operations
+# Import matrix operations with advanced capabilities
 try:
-    from src.utils.matrix_operations import get_unified_matrix_operations
+    from src.utils.matrix_operations import (
+        get_unified_matrix_operations, get_enhanced_matrix_operations,
+        get_vectorized_processing_core, get_batch_matrix_processor,
+        compute_trading_indicators, optimize_matrix_operation_with_hardware,
+        safe_matrix_multiply, safe_correlation_matrix, safe_matrix_inverse,
+        gpu_matrix_multiply, correlation_matrix_gpu, eigendecomposition_gpu,
+        batch_matrix_multiply, batch_feature_transformation, batch_correlation_analysis,
+        create_ml_pipeline, execute_ml_pipeline, optimize_pipeline_config
+    )
     MATRIX_OPS_AVAILABLE = True
 except ImportError as e:
     logging.warning(f"Matrix operations not available: {e}")
     MATRIX_OPS_AVAILABLE = False
+
+# Import base feature generator
+from .base_feature_generator import BaseFeatureGenerator, BaseFeatureConfig, BaseFeatureResult
+
+# Import common operations for comprehensive utility integration
+try:
+    from src.utils.common_operations import (
+        safe_divide, safe_log, safe_sqrt, safe_power, safe_mean, safe_std,
+        validate_finite, get_memory_usage
+    )
+    COMMON_OPERATIONS_AVAILABLE = True
+except ImportError as e:
+    COMMON_OPERATIONS_AVAILABLE = False
+    logging.warning(f"Common operations not available: {e}")
+    # Fallback functions
+    def safe_divide(a, b, default=0.0): return a / b if b != 0 else default
+    def safe_log(x, default=0.0): return np.log(x) if x > 0 else default
+    def safe_sqrt(x, default=0.0): return np.sqrt(x) if x >= 0 else default
+    def safe_power(x, y, default=0.0): return x ** y if np.isfinite(x) and np.isfinite(y) else default
+    def validate_finite(value, name="value"): return float(value) if np.isfinite(value) else 0.0
+
+# Import math validation for additional math operations
+try:
+    from src.utils.math_validation import MathValidation, safe_correlation, safe_covariance, safe_percentile
+    MATH_VALIDATION_AVAILABLE = True
+except ImportError:
+    MATH_VALIDATION_AVAILABLE = False
+
+# Import tprint for extensive logging
+try:
+    from src.utils.tprint import tprint, tprint_info, tprint_error, tprint_warning, tprint_success, tprint_debug, tprint_performance
+    TPRINT_AVAILABLE = True
+except ImportError:
+    TPRINT_AVAILABLE = False
+    # Fallback to basic print
+    def tprint(*args, **kwargs): print(*args, **kwargs)
+    def tprint_info(*args, **kwargs): print("INFO:", *args, **kwargs)
+    def tprint_error(*args, **kwargs): print("ERROR:", *args, **kwargs)
+    def tprint_warning(*args, **kwargs): print("WARNING:", *args, **kwargs)
+    def tprint_success(*args, **kwargs): print("SUCCESS:", *args, **kwargs)
+    def tprint_debug(*args, **kwargs): print("DEBUG:", *args, **kwargs)
+    def tprint_performance(*args, **kwargs): print("PERFORMANCE:", *args, **kwargs)
 
 # Import logger
 try:
@@ -77,8 +127,8 @@ class InteractionType(Enum):
 
 
 @dataclass
-class InteractionConfig:
-    """Configuration for interaction feature generation."""
+class InteractionConfig(BaseFeatureConfig):
+    """Configuration for interaction feature generation with common utilities integration."""
     # PID Configuration
     synergy_threshold: float = 0.1
     redundancy_threshold: float = 0.15
@@ -113,8 +163,8 @@ class InteractionConfig:
 
 
 @dataclass
-class InteractionResult:
-    """Result of interaction feature generation."""
+class InteractionResult(BaseFeatureResult):
+    """Result of interaction feature generation with common utilities integration."""
     interaction_features: Dict[str, np.ndarray] = field(default_factory=dict)
     feature_names: List[str] = field(default_factory=list)
     interaction_scores: Dict[str, float] = field(default_factory=dict)
@@ -132,7 +182,7 @@ class InteractionResult:
     redundancy_score: float = 0.0
 
 
-class InteractionFeatureGenerator:
+class InteractionFeatureGenerator(BaseFeatureGenerator):
     """
     Interaction Feature Generator using Partial Information Decomposition.
     
@@ -141,14 +191,9 @@ class InteractionFeatureGenerator:
     """
     
     def __init__(self, config: Optional[InteractionConfig] = None):
-        """Initialize the interaction feature generator."""
-        self.config = config or InteractionConfig()
-        self.logger = logger.getChild('InteractionFeatureGenerator')
+        """Initialize the interaction feature generator with common utilities integration."""
+        super().__init__(config or InteractionConfig(), "InteractionFeatureGenerator")
         
-        # Initialize components
-        self._initialize_components()
-        
-        self.logger.info("🔧 InteractionFeatureGenerator initialized")
         self.logger.info(f"📊 Max interaction features: {self.config.max_interaction_features}")
         self.logger.info(f"📊 Interaction types: {[t.value for t in self.config.interaction_types]}")
     
@@ -168,16 +213,32 @@ class InteractionFeatureGenerator:
             self.pid_decompositor = None
             self.logger.warning("⚠️ PID Decompositor not available")
         
-        # Initialize matrix operations
+        # Initialize matrix operations with advanced capabilities
         if MATRIX_OPS_AVAILABLE:
             self.matrix_ops = get_unified_matrix_operations(
                 enable_gpu=self.config.enable_gpu_acceleration,
                 enable_memory_optimization=True,
                 enable_parallel=self.config.enable_parallel_processing
             )
-            self.logger.info("✅ Matrix Operations initialized")
+            
+            # Initialize enhanced matrix operations
+            self.enhanced_matrix_ops = get_enhanced_matrix_operations()
+            
+            # Initialize vectorized processing core
+            self.vectorized_core = get_vectorized_processing_core()
+            
+            # Initialize batch processor
+            self.batch_processor = get_batch_matrix_processor()
+            
+            self.logger.info("✅ Advanced Matrix Operations initialized")
+            self.logger.info("✅ Enhanced Matrix Operations initialized")
+            self.logger.info("✅ Vectorized Processing Core initialized")
+            self.logger.info("✅ Batch Matrix Processor initialized")
         else:
             self.matrix_ops = None
+            self.enhanced_matrix_ops = None
+            self.vectorized_core = None
+            self.batch_processor = None
             self.logger.warning("⚠️ Matrix Operations not available")
     
     async def generate_interaction_features(
@@ -205,6 +266,17 @@ class InteractionFeatureGenerator:
         result = InteractionResult()
         
         try:
+            # Enhanced input validation with common utilities
+            validation_result = await self._validate_input_data(data, feature_names, target)
+            if not validation_result['is_valid']:
+                raise ValueError(f"Data validation failed: {validation_result['issues']}")
+            
+            # Apply data optimization if enabled
+            if self.config.enable_data_optimization:
+                data, feature_names, optimization_info = await self._optimize_input_data(data, feature_names)
+                result.optimization_results = optimization_info
+                result.optimization_used = True
+            
             # Convert data to numpy array if needed
             if isinstance(data, pd.DataFrame):
                 X = data.values
@@ -212,6 +284,12 @@ class InteractionFeatureGenerator:
                     feature_names = list(data.columns)
             else:
                 X = data
+            
+            # Enhanced data quality assessment
+            if self.config.enable_quality_reporting:
+                quality_report = await self._assess_data_quality(X, feature_names)
+                result.data_quality_report = quality_report
+                self.logger.info(f"📊 Data quality score: {quality_report.get('overall_score', 0.0):.3f}")
             
             self.logger.info(f"📊 Input data shape: {X.shape}")
             self.logger.info(f"📊 Feature count: {len(feature_names)}")
@@ -245,18 +323,24 @@ class InteractionFeatureGenerator:
                 X, feature_names, significant_pairs
             )
             
+            # Generate enhanced features using advanced matrix operations
+            self.logger.info("🔧 Generating enhanced features using advanced matrix operations...")
+            enhanced_features = self._generate_enhanced_interaction_features(X, feature_names, target)
+            
             # Calculate interaction scores
             interaction_scores = self._calculate_interaction_scores(
                 interaction_features, interaction_names, target
             )
             
+            # Combine traditional and enhanced features
+            all_features = {name: feature for name, feature in zip(interaction_names, interaction_features.T)}
+            all_features.update(enhanced_features)
+            
             # Store results
-            result.interaction_features = {
-                name: feature for name, feature in zip(interaction_names, interaction_features.T)
-            }
-            result.feature_names = interaction_names
+            result.interaction_features = all_features
+            result.feature_names = list(all_features.keys())
             result.interaction_scores = interaction_scores
-            result.total_features_generated = len(interaction_names)
+            result.total_features_generated = len(all_features)
             result.matrix_ops_used = self.matrix_ops is not None
             
             # Calculate quality metrics
@@ -267,10 +351,14 @@ class InteractionFeatureGenerator:
             execution_time = time.time() - start_time
             result.execution_time = execution_time
             
+            # Set utility integration status using base class method
+            self._set_utility_integration_status(result)
+            
             self.logger.info(f"✅ Interaction feature generation completed in {execution_time:.3f}s")
             self.logger.info(f"📊 Generated {result.total_features_generated} interaction features")
             self.logger.info(f"📊 Average correlation: {result.average_correlation:.3f}")
             self.logger.info(f"📊 Stability score: {result.feature_stability_score:.3f}")
+            self.logger.info(f"🔧 Utility integrations: {sum(result.utility_integration_status.values())}/{len(result.utility_integration_status)}")
             
             return result
             
@@ -569,17 +657,108 @@ class InteractionFeatureGenerator:
         except Exception:
             return 0.0
     
+    def _generate_enhanced_interaction_features(
+        self, 
+        X: np.ndarray, 
+        feature_names: List[str],
+        target: Optional[np.ndarray] = None
+    ) -> Dict[str, np.ndarray]:
+        """Generate enhanced interaction features using advanced matrix operations."""
+        enhanced_features = {}
+        
+        try:
+            if not MATRIX_OPS_AVAILABLE:
+                return enhanced_features
+            
+            # Convert to DataFrame for vectorized processing
+            df = pd.DataFrame(X, columns=feature_names)
+            
+            # Use vectorized processing core for advanced feature engineering
+            if self.vectorized_core:
+                # Compute trading indicators as additional features
+                trading_indicators = compute_trading_indicators(df)
+                
+                # Add trading indicator features
+                for col in trading_indicators.columns:
+                    if col not in feature_names:
+                        enhanced_features[f"trading_{col}"] = trading_indicators[col].values
+                
+                # Use batch processing for large datasets
+                if X.shape[0] > 1000 and self.batch_processor:
+                    # Process in batches for memory efficiency
+                    batch_size = min(500, X.shape[0] // 4)
+                    batches = [X[i:i+batch_size] for i in range(0, X.shape[0], batch_size)]
+                    
+                    # Process each batch
+                    batch_results = []
+                    for batch in batches:
+                        batch_df = pd.DataFrame(batch, columns=feature_names)
+                        batch_features = self.vectorized_core.optimize_dataframe_for_processing(batch_df)
+                        batch_results.append(batch_features.values)
+                    
+                    # Combine batch results
+                    if batch_results:
+                        combined_features = np.vstack(batch_results)
+                        # Add each column as a separate feature
+                        for i, col in enumerate(feature_names):
+                            enhanced_features[f"batch_optimized_{col}"] = combined_features[:, i]
+            
+            # Use enhanced matrix operations for advanced correlations
+            if self.enhanced_matrix_ops:
+                # Compute advanced correlation features
+                corr_matrix = correlation_matrix_gpu(df) if self.config.enable_gpu_acceleration else safe_correlation_matrix(df)
+                
+                # Extract upper triangle correlations as features
+                n = corr_matrix.shape[0]
+                upper_triangle = corr_matrix[np.triu_indices(n, k=1)]
+                # Add each correlation as a separate feature
+                for i, corr_value in enumerate(upper_triangle):
+                    enhanced_features[f"correlation_{i}"] = np.full(X.shape[0], corr_value)
+            
+            # Use ML pipeline for complex feature transformations
+            if self.config.enable_parallel_processing:
+                pipeline_config = [
+                    {"operation": "normalize", "params": {"method": "zscore"}},
+                    {"operation": "polynomial", "params": {"degree": 2}},
+                    {"operation": "interaction", "params": {"max_features": 10}}
+                ]
+                
+                try:
+                    pipeline = create_ml_pipeline(pipeline_config)
+                    pipeline_result = execute_ml_pipeline(df, pipeline)
+                    
+                    # Add pipeline features
+                    for i, col in enumerate(pipeline_result.columns):
+                        if col not in feature_names:
+                            enhanced_features[f"pipeline_{col}"] = pipeline_result[col].values
+                except Exception as e:
+                    self.logger.warning(f"ML pipeline execution failed: {e}")
+            
+            self.logger.info(f"✅ Generated {len(enhanced_features)} enhanced interaction features")
+            return enhanced_features
+            
+        except Exception as e:
+            self.logger.warning(f"Enhanced feature generation failed: {e}")
+            return enhanced_features
+    
     def get_performance_metrics(self) -> Dict[str, Any]:
-        """Get performance metrics."""
+        """Get performance metrics with common utilities integration."""
         metrics = {
             'pid_available': PID_AVAILABLE,
             'matrix_ops_available': MATRIX_OPS_AVAILABLE,
             'numpy_available': NUMPY_AVAILABLE,
-            'pandas_available': PANDAS_AVAILABLE
+            'pandas_available': PANDAS_AVAILABLE,
+            'common_operations_available': COMMON_OPERATIONS_AVAILABLE,
+            'serialization_available': SERIALIZATION_AVAILABLE,
+            'math_validation_available': MATH_VALIDATION_AVAILABLE
         }
         
         if self.matrix_ops:
             metrics['matrix_ops_stats'] = self.matrix_ops.get_performance_stats()
             metrics['hardware_info'] = self.matrix_ops.get_hardware_info()
+        
+        # Add common utilities metrics
+        metrics['utility_integration_status'] = getattr(self, 'utility_integration_status', {})
+        metrics['memory_usage'] = get_memory_usage() if COMMON_OPERATIONS_AVAILABLE else 0.0
         
         return metrics

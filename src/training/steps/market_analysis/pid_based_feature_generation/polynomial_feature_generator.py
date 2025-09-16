@@ -69,18 +69,42 @@ except ImportError:
     def tprint_debug(*args, **kwargs): print("DEBUG:", *args, **kwargs)
     def tprint_performance(*args, **kwargs): print("PERFORMANCE:", *args, **kwargs)
 
-# Import math validation for safe operations
+# Import base feature generator
+from .base_feature_generator import BaseFeatureGenerator, BaseFeatureConfig, BaseFeatureResult
+
+# Import common operations for comprehensive utility integration
 try:
-    from src.utils.math_validation import MathValidation, safe_divide, safe_log, safe_sqrt, safe_power, validate_finite
-    MATH_VALIDATION_AVAILABLE = True
-except ImportError:
-    MATH_VALIDATION_AVAILABLE = False
+    from src.utils.common_operations import (
+        safe_divide, safe_log, safe_sqrt, safe_power, safe_mean, safe_std,
+        validate_finite, get_memory_usage
+    )
+    COMMON_OPERATIONS_AVAILABLE = True
+except ImportError as e:
+    COMMON_OPERATIONS_AVAILABLE = False
+    logging.warning(f"Common operations not available: {e}")
     # Fallback functions
     def safe_divide(a, b, default=0.0): return a / b if b != 0 else default
     def safe_log(x, default=0.0): return np.log(x) if x > 0 else default
     def safe_sqrt(x, default=0.0): return np.sqrt(x) if x >= 0 else default
     def safe_power(x, y, default=0.0): return x ** y if np.isfinite(x) and np.isfinite(y) else default
     def validate_finite(value, name="value"): return float(value) if np.isfinite(value) else 0.0
+
+# Import serialization utilities
+try:
+    from src.utils.serialization_utils import (
+        JSONSerializer, PickleSerializer, ParquetSerializer, UniversalSerializer
+    )
+    SERIALIZATION_AVAILABLE = True
+except ImportError as e:
+    SERIALIZATION_AVAILABLE = False
+    logging.warning(f"Serialization utilities not available: {e}")
+
+# Import math validation for additional math operations
+try:
+    from src.utils.math_validation import MathValidation, safe_correlation, safe_covariance, safe_percentile
+    MATH_VALIDATION_AVAILABLE = True
+except ImportError:
+    MATH_VALIDATION_AVAILABLE = False
 
 # Import logger as fallback
 try:
@@ -104,8 +128,8 @@ class PolynomialType(Enum):
 
 
 @dataclass
-class PolynomialConfig:
-    """Configuration for polynomial feature generation."""
+class PolynomialConfig(BaseFeatureConfig):
+    """Configuration for polynomial feature generation with common utilities integration."""
     # PID Configuration
     synergy_threshold: float = 0.1
     redundancy_threshold: float = 0.15
@@ -140,8 +164,8 @@ class PolynomialConfig:
 
 
 @dataclass
-class PolynomialResult:
-    """Result of polynomial feature generation."""
+class PolynomialResult(BaseFeatureResult):
+    """Result of polynomial feature generation with common utilities integration."""
     polynomial_features: Dict[str, np.ndarray] = field(default_factory=dict)
     feature_names: List[str] = field(default_factory=list)
     polynomial_scores: Dict[str, float] = field(default_factory=dict)
@@ -159,7 +183,7 @@ class PolynomialResult:
     polynomial_degree_distribution: Dict[int, int] = field(default_factory=dict)
 
 
-class PolynomialFeatureGenerator:
+class PolynomialFeatureGenerator(BaseFeatureGenerator):
     """
     Polynomial Feature Generator using Partial Information Decomposition.
     
@@ -168,34 +192,12 @@ class PolynomialFeatureGenerator:
     """
     
     def __init__(self, config: Optional[PolynomialConfig] = None):
-        """Initialize the polynomial feature generator."""
-        try:
-            # Input validation
-            if config is not None and not isinstance(config, PolynomialConfig):
-                raise TypeError(f"Config must be PolynomialConfig or None, got {type(config)}")
-            
-            self.config = config or PolynomialConfig()
-            self.logger = logger.getChild('PolynomialFeatureGenerator')
-            
-            # Initialize math validation
-            if MATH_VALIDATION_AVAILABLE:
-                self.math_validator = MathValidation()
-            else:
-                self.math_validator = None
-            
-            # Initialize components
-            self._initialize_components()
-            
-            tprint_success("PolynomialFeatureGenerator initialized successfully")
-            tprint_info(f"Max polynomial features: {self.config.max_polynomial_features}")
-            tprint_info(f"Max polynomial degree: {self.config.max_polynomial_degree}")
-            tprint_info(f"Polynomial types: {[t.value for t in self.config.polynomial_types]}")
-            tprint_info(f"tprint available: {TPRINT_AVAILABLE}")
-            tprint_info(f"Math validation available: {MATH_VALIDATION_AVAILABLE}")
-            
-        except Exception as e:
-            tprint_error(f"Failed to initialize PolynomialFeatureGenerator: {e}")
-            raise
+        """Initialize the polynomial feature generator with common utilities integration."""
+        super().__init__(config or PolynomialConfig(), "PolynomialFeatureGenerator")
+        
+        tprint_info(f"📊 Max polynomial features: {self.config.max_polynomial_features}")
+        tprint_info(f"📊 Max polynomial degree: {self.config.max_polynomial_degree}")
+        tprint_info(f"📊 Polynomial types: {[t.value for t in self.config.polynomial_types]}")
     
     def _initialize_components(self):
         """Initialize required components."""
@@ -407,10 +409,14 @@ class PolynomialFeatureGenerator:
             execution_time = time.time() - start_time
             result.execution_time = execution_time
             
+            # Set utility integration status using base class method
+            self._set_utility_integration_status(result)
+            
             tprint_performance("Polynomial feature generation", execution_time)
             tprint_success(f"Generated {result.total_features_generated} polynomial features")
             tprint_info(f"Average variance: {result.average_variance:.3f}")
             tprint_info(f"Stability score: {result.feature_stability_score:.3f}")
+            tprint_info(f"🔧 Utility integrations: {sum(result.utility_integration_status.values())}/{len(result.utility_integration_status)}")
             
             return result
             

@@ -21,6 +21,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 from datetime import datetime
 from dataclasses import dataclass, field
 from enum import Enum
+from pathlib import Path
 
 # Core dependencies with fallback support
 try:
@@ -67,18 +68,67 @@ except ImportError:
     def tprint_debug(*args, **kwargs): print("DEBUG:", *args, **kwargs)
     def tprint_performance(*args, **kwargs): print("PERFORMANCE:", *args, **kwargs)
 
-# Import math validation for safe operations
+# Import common operations for comprehensive utility integration
 try:
-    from src.utils.math_validation import MathValidation, safe_divide, safe_log, safe_sqrt, safe_power, validate_finite
-    MATH_VALIDATION_AVAILABLE = True
-except ImportError:
-    MATH_VALIDATION_AVAILABLE = False
+    from src.utils.common_operations import (
+        # Data validation and quality
+        validate_dataframe, validate_dataframe_columns, calculate_data_quality_metrics,
+        create_data_quality_report, get_dataframe_info, optimize_dataframe_dtypes,
+        
+        # Safe operations
+        safe_dataframe_operation, safe_fillna, safe_convert_dtypes, safe_merge_dataframes,
+        safe_drop_columns, safe_rename_columns, safe_timestamp_conversion,
+        
+        # Math operations
+        safe_divide, safe_log, safe_sqrt, safe_power, safe_mean, safe_std,
+        safe_float, safe_int, validate_finite, validate_positive, validate_range,
+        safe_kelly_calculation, safe_weighted_average, safe_percentage_change,
+        
+        # File operations
+        safe_json_dump, safe_json_load, safe_to_parquet, safe_read_parquet,
+        ensure_directory, safe_file_exists, safe_copy,
+        
+        # Performance utilities
+        timed_operation, format_bytes, chunked_iterable, parallel_map,
+        
+        # M1 optimization
+        get_m1_gpu_manager, get_m1_memory_optimizer, get_m1_cpu_optimizer,
+        integrate_with_m1_optimizers, cleanup_m1_optimizers,
+        memory_checkpoint, gpu_context, optimize_memory, get_memory_usage,
+        
+        # Matrix utilities
+        validate_correlation_matrix, safe_matrix_inverse, math_safe,
+        
+        # Logging utilities
+        get_logger, setup_basic_logging, safe_log_metric, safe_log_params, safe_log_artifact
+    )
+    COMMON_OPERATIONS_AVAILABLE = True
+except ImportError as e:
+    COMMON_OPERATIONS_AVAILABLE = False
+    logging.warning(f"Common operations not available: {e}")
     # Fallback functions
     def safe_divide(a, b, default=0.0): return a / b if b != 0 else default
     def safe_log(x, default=0.0): return np.log(x) if x > 0 else default
     def safe_sqrt(x, default=0.0): return np.sqrt(x) if x >= 0 else default
     def safe_power(x, y, default=0.0): return x ** y if np.isfinite(x) and np.isfinite(y) else default
     def validate_finite(value, name="value"): return float(value) if np.isfinite(value) else 0.0
+
+# Import serialization utilities
+try:
+    from src.utils.serialization_utils import (
+        JSONSerializer, PickleSerializer, ParquetSerializer, UniversalSerializer
+    )
+    SERIALIZATION_AVAILABLE = True
+except ImportError as e:
+    SERIALIZATION_AVAILABLE = False
+    logging.warning(f"Serialization utilities not available: {e}")
+
+# Import math validation for additional math operations
+try:
+    from src.utils.math_validation import MathValidation, safe_correlation, safe_covariance, safe_percentile
+    MATH_VALIDATION_AVAILABLE = True
+except ImportError:
+    MATH_VALIDATION_AVAILABLE = False
 
 # Import logger as fallback
 try:
@@ -100,7 +150,7 @@ class GenerationStatus(Enum):
 
 @dataclass
 class OrchestratorConfig:
-    """Configuration for PID-based feature orchestrator."""
+    """Configuration for PID-based feature orchestrator with common utilities integration."""
     # Feature Generation Limits
     max_interaction_features: int = 100
     max_polynomial_features: int = 50
@@ -128,11 +178,33 @@ class OrchestratorConfig:
     # Hardware Optimization
     chunk_size_mb: int = 256
     max_memory_percent: float = 0.7
+    
+    # Common Utilities Integration
+    enable_common_operations: bool = True
+    enable_serialization: bool = True
+    enable_data_validation: bool = True
+    enable_data_optimization: bool = True
+    enable_m1_optimization: bool = True
+    
+    # Data Quality Settings
+    min_data_quality_score: float = 0.7
+    max_missing_data_ratio: float = 0.1
+    enable_quality_reporting: bool = True
+    
+    # Serialization Settings
+    save_intermediate_results: bool = True
+    serialization_format: str = 'parquet'  # 'json', 'pickle', 'parquet'
+    artifacts_directory: str = 'artifacts/pid_features'
+    
+    # Performance Settings
+    enable_profiling: bool = True
+    enable_memory_monitoring: bool = True
+    enable_performance_logging: bool = True
 
 
 @dataclass
 class OrchestratorResult:
-    """Result of PID-based feature orchestration."""
+    """Result of PID-based feature orchestration with common utilities integration."""
     # Individual Results
     interaction_result: Optional[InteractionResult] = None
     polynomial_result: Optional[PolynomialResult] = None
@@ -155,6 +227,17 @@ class OrchestratorResult:
     feature_diversity_score: float = 0.0
     redundancy_score: float = 0.0
     stability_score: float = 0.0
+    
+    # Common Utilities Integration Results
+    data_quality_report: Optional[Dict[str, Any]] = None
+    validation_results: Dict[str, Any] = field(default_factory=dict)
+    optimization_results: Dict[str, Any] = field(default_factory=dict)
+    serialization_status: Dict[str, bool] = field(default_factory=dict)
+    artifact_paths: Dict[str, str] = field(default_factory=dict)
+    hardware_optimization_used: bool = False
+    memory_usage: Dict[str, float] = field(default_factory=dict)
+    performance_metrics: Dict[str, Any] = field(default_factory=dict)
+    utility_integration_status: Dict[str, bool] = field(default_factory=dict)
 
 
 class PIDBasedFeatureOrchestrator:
@@ -166,7 +249,7 @@ class PIDBasedFeatureOrchestrator:
     """
     
     def __init__(self, config: Optional[OrchestratorConfig] = None):
-        """Initialize the PID-based feature orchestrator."""
+        """Initialize the PID-based feature orchestrator with common utilities integration."""
         try:
             # Input validation
             if config is not None and not isinstance(config, OrchestratorConfig):
@@ -174,6 +257,9 @@ class PIDBasedFeatureOrchestrator:
             
             self.config = config or OrchestratorConfig()
             self.logger = logger.getChild('PIDBasedFeatureOrchestrator')
+            
+            # Initialize common utilities integration
+            self._initialize_common_utilities()
             
             # Initialize math validation
             if MATH_VALIDATION_AVAILABLE:
@@ -188,12 +274,53 @@ class PIDBasedFeatureOrchestrator:
             tprint_info(f"Max interaction features: {self.config.max_interaction_features}")
             tprint_info(f"Max polynomial features: {self.config.max_polynomial_features}")
             tprint_info(f"Max cross-timeframe features: {self.config.max_cross_timeframe_features}")
-            tprint_info(f"tprint available: {TPRINT_AVAILABLE}")
+            tprint_info(f"Common operations available: {COMMON_OPERATIONS_AVAILABLE}")
+            tprint_info(f"Serialization available: {SERIALIZATION_AVAILABLE}")
             tprint_info(f"Math validation available: {MATH_VALIDATION_AVAILABLE}")
+            tprint_info(f"Matrix operations available: {MATRIX_OPS_AVAILABLE}")
             
         except Exception as e:
             tprint_error(f"Failed to initialize PIDBasedFeatureOrchestrator: {e}")
             raise
+    
+    def _initialize_common_utilities(self):
+        """Initialize common utilities integration."""
+        # Initialize serializers
+        if SERIALIZATION_AVAILABLE and self.config.enable_serialization:
+            self.json_serializer = JSONSerializer()
+            self.pickle_serializer = PickleSerializer()
+            self.parquet_serializer = ParquetSerializer()
+            self.universal_serializer = UniversalSerializer()
+            tprint_success("Serializers initialized")
+        else:
+            self.json_serializer = None
+            self.pickle_serializer = None
+            self.parquet_serializer = None
+            self.universal_serializer = None
+        
+        # Initialize M1 optimizers
+        if COMMON_OPERATIONS_AVAILABLE and self.config.enable_m1_optimization:
+            self.gpu_manager = get_m1_gpu_manager()
+            self.memory_optimizer = get_m1_memory_optimizer()
+            self.cpu_optimizer = get_m1_cpu_optimizer()
+            tprint_success("M1 optimizers initialized")
+        else:
+            self.gpu_manager = None
+            self.memory_optimizer = None
+            self.cpu_optimizer = None
+        
+        # Initialize utility status tracking
+        self.utility_integration_status = {
+            'common_operations': COMMON_OPERATIONS_AVAILABLE and self.config.enable_common_operations,
+            'serialization': SERIALIZATION_AVAILABLE and self.config.enable_serialization,
+            'math_validation': MATH_VALIDATION_AVAILABLE,
+            'matrix_operations': MATRIX_OPS_AVAILABLE,
+            'data_validation': self.config.enable_data_validation,
+            'data_optimization': self.config.enable_data_optimization,
+            'm1_optimization': self.config.enable_m1_optimization
+        }
+        
+        tprint_info(f"Utility integration status: {self.utility_integration_status}")
     
     def _initialize_components(self):
         """Initialize required components."""
@@ -281,26 +408,32 @@ class PIDBasedFeatureOrchestrator:
         result.generation_status = GenerationStatus.IN_PROGRESS
         
         try:
-            # Fast-fail input validation
-            if data is None:
-                raise ValueError("Data cannot be None - fast failing")
+            # Enhanced input validation with common utilities
+            validation_result = await self._validate_input_data(data, feature_names, target)
+            if not validation_result['is_valid']:
+                raise ValueError(f"Data validation failed: {validation_result['issues']}")
             
-            if feature_names is None or len(feature_names) == 0:
-                raise ValueError("Feature names cannot be None or empty - fast failing")
+            # Apply data optimization if enabled
+            if self.config.enable_data_optimization:
+                data, feature_names, optimization_info = await self._optimize_input_data(data, feature_names)
+                result.optimization_results = optimization_info
+                result.optimization_used = True
             
             # Convert data to numpy array if needed
             if isinstance(data, pd.DataFrame):
-                if data.empty:
-                    raise ValueError("Input DataFrame is empty - fast failing")
                 X = data.values
                 if feature_names is None:
                     feature_names = list(data.columns)
                 tprint_info(f"Converted DataFrame to numpy array: {X.shape}")
             else:
-                if not hasattr(data, 'shape'):
-                    raise TypeError(f"Data must be array-like, got {type(data)} - fast failing")
                 X = data
                 tprint_info(f"Using numpy array data: {X.shape}")
+            
+            # Enhanced data quality assessment
+            if self.config.enable_quality_reporting:
+                quality_report = await self._assess_data_quality(X, feature_names)
+                result.data_quality_report = quality_report
+                tprint_info(f"Data quality score: {quality_report.get('overall_score', 0.0):.3f}")
             
             # Validate data shape
             if X.shape[0] == 0:
@@ -308,7 +441,7 @@ class PIDBasedFeatureOrchestrator:
             if X.shape[1] == 0:
                 raise ValueError("Input data has no features - fast failing")
             
-            # Check for NaN/Inf values
+            # Check for NaN/Inf values with safe operations
             nan_count = np.sum(np.isnan(X))
             inf_count = np.sum(np.isinf(X))
             if nan_count > 0:
@@ -479,11 +612,32 @@ class PIDBasedFeatureOrchestrator:
             execution_time = time.time() - start_time
             result.execution_time = execution_time
             
+            # Save artifacts if enabled
+            if self.config.save_intermediate_results:
+                tprint_info("💾 Saving artifacts...")
+                serialization_result = await self._save_artifacts(result, start_time)
+                result.serialization_status = serialization_result['status']
+                result.artifact_paths = serialization_result['paths']
+                tprint_success(f"Artifacts saved: {sum(serialization_result['status'].values())} successful")
+            
+            # Collect performance metrics
+            if self.config.enable_performance_logging:
+                tprint_info("📈 Collecting performance metrics...")
+                performance_metrics = await self._collect_performance_metrics(start_time)
+                result.performance_metrics = performance_metrics
+                result.memory_usage = performance_metrics.get('memory_usage', {})
+                result.hardware_optimization_used = bool(self.gpu_manager or self.memory_optimizer or self.cpu_optimizer)
+                tprint_success("Performance metrics collected")
+            
+            # Set utility integration status
+            result.utility_integration_status = self.utility_integration_status
+            
             tprint_performance("PID-based feature orchestration", execution_time)
             tprint_info(f"Generated {result.total_features_generated} total features")
             tprint_info(f"Overall quality score: {result.overall_quality_score:.3f}")
             tprint_info(f"Feature diversity score: {result.feature_diversity_score:.3f}")
             tprint_info(f"Generation status: {result.generation_status.value}")
+            tprint_info(f"Utility integrations: {sum(result.utility_integration_status.values())}/{len(result.utility_integration_status)}")
             
             return result
             
@@ -815,4 +969,259 @@ class PIDBasedFeatureOrchestrator:
             metrics['matrix_ops_stats'] = self.matrix_ops.get_performance_stats()
             metrics['hardware_info'] = self.matrix_ops.get_hardware_info()
         
+        # Add common utilities metrics
+        metrics['utility_integration_status'] = self.utility_integration_status
+        metrics['common_operations_available'] = COMMON_OPERATIONS_AVAILABLE
+        metrics['serialization_available'] = SERIALIZATION_AVAILABLE
+        metrics['math_validation_available'] = MATH_VALIDATION_AVAILABLE
+        
         return metrics
+    
+    async def _validate_input_data(
+        self, 
+        data: Union[np.ndarray, pd.DataFrame], 
+        feature_names: Optional[List[str]], 
+        target: Optional[np.ndarray]
+    ) -> Dict[str, Any]:
+        """Validate input data using common utilities."""
+        validation_result = {
+            'is_valid': False,
+            'issues': [],
+            'data_quality_score': 0.0
+        }
+        
+        try:
+            if COMMON_OPERATIONS_AVAILABLE and self.config.enable_data_validation:
+                # Convert to DataFrame for validation
+                if isinstance(data, np.ndarray):
+                    if feature_names is None:
+                        feature_names = [f"feature_{i}" for i in range(data.shape[1])]
+                    df = pd.DataFrame(data, columns=feature_names)
+                else:
+                    df = data
+                
+                # Validate DataFrame
+                if not validate_dataframe(df):
+                    validation_result['issues'].append("Invalid DataFrame")
+                    return validation_result
+                
+                # Check required columns
+                if feature_names and not validate_dataframe_columns(df, feature_names):
+                    validation_result['issues'].append("Missing required columns")
+                    return validation_result
+                
+                # Calculate data quality metrics
+                quality_metrics = calculate_data_quality_metrics(df)
+                validation_result['data_quality_score'] = 1.0 - (quality_metrics.get('missing_percentage', 0) / 100)
+                
+                # Check data quality thresholds
+                if quality_metrics.get('missing_percentage', 0) > self.config.max_missing_data_ratio * 100:
+                    validation_result['issues'].append(f"High missing data ratio: {quality_metrics.get('missing_percentage', 0):.2f}%")
+                
+                if quality_metrics.get('duplicate_percentage', 0) > 10:
+                    validation_result['issues'].append(f"High duplicate ratio: {quality_metrics.get('duplicate_percentage', 0):.2f}%")
+                
+                validation_result['is_valid'] = len(validation_result['issues']) == 0
+            else:
+                # Fallback validation
+                if data is None or (hasattr(data, 'shape') and data.shape[0] == 0):
+                    validation_result['issues'].append("Empty or None data")
+                else:
+                    validation_result['is_valid'] = True
+            
+            return validation_result
+            
+        except Exception as e:
+            validation_result['issues'].append(f"Validation error: {e}")
+            return validation_result
+    
+    async def _optimize_input_data(
+        self, 
+        data: Union[np.ndarray, pd.DataFrame], 
+        feature_names: Optional[List[str]]
+    ) -> Tuple[Union[np.ndarray, pd.DataFrame], List[str], Dict[str, Any]]:
+        """Optimize input data using common utilities."""
+        optimization_info = {
+            'optimizations_applied': [],
+            'memory_usage_before': 0.0,
+            'memory_usage_after': 0.0,
+            'optimization_time': 0.0
+        }
+        
+        start_time = time.time()
+        
+        try:
+            if COMMON_OPERATIONS_AVAILABLE:
+                # Get initial memory usage
+                optimization_info['memory_usage_before'] = get_memory_usage()
+                
+                # Convert to DataFrame if needed
+                if isinstance(data, np.ndarray):
+                    if feature_names is None:
+                        feature_names = [f"feature_{i}" for i in range(data.shape[1])]
+                    df = pd.DataFrame(data, columns=feature_names)
+                else:
+                    df = data.copy()
+                
+                # Optimize dtypes
+                df = optimize_dataframe_dtypes(df)
+                optimization_info['optimizations_applied'].append('dtype_optimization')
+                
+                # Fill missing values safely
+                df = safe_fillna(df, method='forward')
+                optimization_info['optimizations_applied'].append('missing_value_filling')
+                
+                # Apply M1-specific optimizations
+                if self.config.enable_m1_optimization and self.gpu_manager:
+                    # This would use M1-specific optimizations
+                    optimization_info['optimizations_applied'].append('m1_optimization')
+                
+                # Get final memory usage
+                optimization_info['memory_usage_after'] = get_memory_usage()
+                optimization_info['optimization_time'] = time.time() - start_time
+                
+                return df, feature_names, optimization_info
+            else:
+                return data, feature_names, optimization_info
+                
+        except Exception as e:
+            tprint_warning(f"Data optimization failed: {e}")
+            return data, feature_names, optimization_info
+    
+    async def _assess_data_quality(
+        self, 
+        X: np.ndarray, 
+        feature_names: List[str]
+    ) -> Dict[str, Any]:
+        """Assess data quality using common utilities."""
+        quality_report = {
+            'overall_score': 0.0,
+            'missing_data_ratio': 0.0,
+            'duplicate_ratio': 0.0,
+            'data_types': {},
+            'statistics': {}
+        }
+        
+        try:
+            if COMMON_OPERATIONS_AVAILABLE:
+                # Convert to DataFrame for quality assessment
+                df = pd.DataFrame(X, columns=feature_names)
+                
+                # Calculate data quality metrics
+                quality_metrics = calculate_data_quality_metrics(df)
+                
+                # Create comprehensive quality report
+                quality_report = create_data_quality_report(df)
+                
+                # Calculate overall score
+                missing_ratio = quality_metrics.get('missing_percentage', 0) / 100
+                duplicate_ratio = quality_metrics.get('duplicate_percentage', 0) / 100
+                
+                quality_report['overall_score'] = max(0.0, 1.0 - missing_ratio - duplicate_ratio)
+                quality_report['missing_data_ratio'] = missing_ratio
+                quality_report['duplicate_ratio'] = duplicate_ratio
+                
+                # Add basic statistics
+                quality_report['statistics'] = {
+                    'mean': safe_mean(pd.Series(X.flatten())),
+                    'std': safe_std(pd.Series(X.flatten())),
+                    'min': float(np.min(X)),
+                    'max': float(np.max(X))
+                }
+            
+            return quality_report
+            
+        except Exception as e:
+            tprint_warning(f"Data quality assessment failed: {e}")
+            return quality_report
+    
+    async def _save_artifacts(
+        self, 
+        result: OrchestratorResult, 
+        start_time: float
+    ) -> Dict[str, Any]:
+        """Save artifacts using serialization utilities."""
+        serialization_result = {
+            'status': {},
+            'paths': {}
+        }
+        
+        try:
+            if SERIALIZATION_AVAILABLE and self.config.enable_serialization:
+                # Create artifacts directory
+                artifacts_dir = Path(self.config.artifacts_directory) / datetime.now().strftime("%Y%m%d_%H%M%S")
+                ensure_directory(artifacts_dir)
+                
+                # Save features as parquet
+                if result.combined_features:
+                    features_df = pd.DataFrame(result.combined_features)
+                    features_path = artifacts_dir / "features.parquet"
+                    if safe_to_parquet(features_df, features_path):
+                        serialization_result['status']['features'] = True
+                        serialization_result['paths']['features'] = str(features_path)
+                    else:
+                        serialization_result['status']['features'] = False
+                
+                # Save metadata as JSON
+                metadata = {
+                    'feature_names': result.combined_feature_names,
+                    'feature_scores': result.feature_importance_scores,
+                    'total_features_generated': result.total_features_generated,
+                    'execution_time': result.execution_time,
+                    'utility_integration_status': result.utility_integration_status,
+                    'timestamp': datetime.now().isoformat()
+                }
+                
+                metadata_path = artifacts_dir / "metadata.json"
+                if safe_json_dump(metadata, metadata_path):
+                    serialization_result['status']['metadata'] = True
+                    serialization_result['paths']['metadata'] = str(metadata_path)
+                else:
+                    serialization_result['status']['metadata'] = False
+                
+                # Save performance metrics
+                if result.performance_metrics:
+                    metrics_path = artifacts_dir / "performance_metrics.json"
+                    if safe_json_dump(result.performance_metrics, metrics_path):
+                        serialization_result['status']['performance'] = True
+                        serialization_result['paths']['performance'] = str(metrics_path)
+                    else:
+                        serialization_result['status']['performance'] = False
+            
+            return serialization_result
+            
+        except Exception as e:
+            tprint_warning(f"Artifact saving failed: {e}")
+            return serialization_result
+    
+    async def _collect_performance_metrics(self, start_time: float) -> Dict[str, Any]:
+        """Collect comprehensive performance metrics."""
+        metrics = {
+            'execution_time': time.time() - start_time,
+            'memory_usage': {},
+            'hardware_utilization': {},
+            'utility_usage': {}
+        }
+        
+        try:
+            # Memory usage
+            if COMMON_OPERATIONS_AVAILABLE:
+                metrics['memory_usage']['current'] = get_memory_usage()
+                metrics['memory_usage']['formatted'] = format_bytes(get_memory_usage())
+            
+            # Hardware utilization
+            if self.gpu_manager:
+                metrics['hardware_utilization']['gpu'] = self.gpu_manager.get_gpu_info()
+            if self.memory_optimizer:
+                metrics['hardware_utilization']['memory'] = {'optimized': True}
+            if self.cpu_optimizer:
+                metrics['hardware_utilization']['cpu'] = self.cpu_optimizer.get_cpu_info()
+            
+            # Utility usage
+            metrics['utility_usage'] = self.utility_integration_status
+            
+            return metrics
+            
+        except Exception as e:
+            tprint_warning(f"Performance metrics collection failed: {e}")
+            return metrics

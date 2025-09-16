@@ -100,7 +100,8 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
                 config = EnsembleTrainingConfig(
                     model_name="hmm_ensemble_models",
                     timeframe="1h",
-                    model_types=["catboost", "elastic_net", "ensemble_rf"],
+                    model_types=["catboost", "elastic_net"],  # Base models
+                    meta_learner="xgboost",  # XGBoost meta-learner
                     hpo_n_trials=100,
                     hpo_timeout_seconds=3600,
                     min_samples_per_regime=1000,

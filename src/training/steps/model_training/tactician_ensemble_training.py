@@ -185,7 +185,8 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
                     config = EnsembleTrainingConfig(
                         model_name="tactician_ensemble_models",
                         timeframe="1m",
-                        model_types=["node", "catboost", "elastic_net"],
+                        model_types=["xgboost", "randomforest", "catboost", "elastic_net"],  # Base models
+                        meta_learner="lightgbm",  # LightGBM meta-learner
                         hpo_n_trials=100,
                         hpo_timeout_seconds=3600,
                         min_samples_per_regime=1000,

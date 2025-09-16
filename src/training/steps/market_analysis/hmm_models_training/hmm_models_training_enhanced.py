@@ -2,6 +2,7 @@
 Enhanced HMM Models Training
 
 Streamlined, robust, and well-reported HMM models training with comprehensive error handling.
+Integrated with common utilities for better maintainability and performance.
 """
 
 import numpy as np
@@ -23,7 +24,46 @@ from src.utils.tprint import tprint
 from src.utils.ml_common.config.base_training_config import HMMTrainingConfig
 from src.utils.ml_common.training.base_training_step import BaseTrainingStep
 
-# Shared utilities
+# Common utilities integration
+from src.utils.common_operations import (
+    safe_dataframe_operation,
+    validate_dataframe_columns,
+    calculate_data_quality_metrics,
+    get_m1_gpu_manager,
+    get_m1_memory_optimizer,
+    get_m1_cpu_optimizer
+)
+from src.utils.common_utilities import (
+    safe_convert_dtypes,
+    calculate_data_quality_metrics as df_quality_metrics
+)
+from src.utils.math_validation import (
+    safe_divide,
+    validate_finite,
+    validate_numeric_array,
+    safe_log,
+    safe_sqrt
+)
+from src.utils.serialization_utils import (
+    JSONSerializer,
+    PickleSerializer
+)
+from src.utils.ml_common.evaluation.evaluation_utils import EvaluationUtils
+from src.utils.ml_common.validation.validation_utils import ValidationUtils as MLValidationUtils
+
+# Hardware optimization imports
+try:
+    from src.utils.hardware.m1_gpu_utils import M1GPUManager
+    from src.utils.hardware.m1_memory_optimizer import M1MemoryOptimizer
+    from src.utils.hardware.m1_cpu_optimizer import M1CPUOptimizer
+    HARDWARE_AVAILABLE = True
+except ImportError:
+    HARDWARE_AVAILABLE = False
+    M1GPUManager = None
+    M1MemoryOptimizer = None
+    M1CPUOptimizer = None
+
+# Shared utilities (keeping for backward compatibility)
 from .shared_utilities import (
     TrainingErrorHandler,
     UnifiedModelFactory,
@@ -32,7 +72,6 @@ from .shared_utilities import (
     ProgressReporter,
     MemoryTracker
 )
-# Using tprint for all logging - no logger needed
 
 
 @dataclass
@@ -139,6 +178,7 @@ from .shared_utilities.training_error_handler import TrainingMetrics, ModelResul
 class HMMModelsTrainingEnhanced(BaseTrainingStep):
     """
     Enhanced HMM Models Training with streamlined code, robust error handling, and comprehensive reporting.
+    Integrated with common utilities for better maintainability and performance.
     """
     
     def __init__(self, config: Optional[Union[HMMTrainingConfig, Dict[str, Any]]] = None):
@@ -175,6 +215,9 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
         self.progress_reporter = None
         self.memory_tracker = MemoryTracker()
         
+        # Initialize hardware optimizers
+        self._initialize_hardware_optimizers()
+        
         # Initialize components with error handling
         self._initialize_components()
         
@@ -182,7 +225,39 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
         self.training_start_time = None
         self.training_results = {}
         
-        tprint("✅ Enhanced HMM Models Training initialized with circuit breaker protection")
+        tprint("✅ Enhanced HMM Models Training initialized with common utilities integration")
+    
+    def _initialize_hardware_optimizers(self) -> None:
+        """Initialize hardware optimizers for M1 systems."""
+        self.gpu_manager = None
+        self.memory_optimizer = None
+        self.cpu_optimizer = None
+        
+        if HARDWARE_AVAILABLE:
+            try:
+                self.gpu_manager = get_m1_gpu_manager()
+                if self.gpu_manager and self.gpu_manager.is_m1:
+                    tprint("✅ M1 GPU manager initialized")
+                else:
+                    tprint("ℹ️ M1 GPU not available or not M1 system")
+            except Exception as e:
+                tprint(f"⚠️ Failed to initialize GPU manager: {e}")
+            
+            try:
+                self.memory_optimizer = get_m1_memory_optimizer()
+                if self.memory_optimizer:
+                    tprint("✅ M1 memory optimizer initialized")
+            except Exception as e:
+                tprint(f"⚠️ Failed to initialize memory optimizer: {e}")
+            
+            try:
+                self.cpu_optimizer = get_m1_cpu_optimizer()
+                if self.cpu_optimizer:
+                    tprint("✅ M1 CPU optimizer initialized")
+            except Exception as e:
+                tprint(f"⚠️ Failed to initialize CPU optimizer: {e}")
+        else:
+            tprint("ℹ️ Hardware optimizers not available")
     
     def _validate_config(self, config: HMMTrainingConfig) -> None:
         """
@@ -195,12 +270,21 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
             ValueError: If configuration is invalid
         """
         try:
-            # Use shared validation utility
+            # Use common validation utilities
             if not ValidationUtils.validate_config(config):
                 raise ValueError("Configuration validation failed")
             
-            # Additional HMM-specific validations
+            # Additional HMM-specific validations using math validation
             warnings = []
+            
+            # Validate numeric parameters using common math validation
+            try:
+                validate_finite(config.n_features, "n_features")
+                validate_finite(config.sequence_length, "sequence_length")
+                validate_finite(config.n_regimes, "n_regimes")
+                validate_finite(config.hpo_trials, "hpo_trials")
+            except ValueError as e:
+                raise ValueError(f"Invalid numeric parameter: {e}")
             
             # Warning validations (don't cause fast-fail)
             if config.n_features > 1000:
@@ -215,12 +299,12 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
             # Log warnings
             if warnings:
                 for warning in warnings:
-                    self.logger.warning(f"⚠️ {warning}")
+                    tprint(f"⚠️ {warning}")
             
-            self.logger.info("✅ Configuration validation passed")
+            tprint("✅ Configuration validation passed")
             
         except Exception as e:
-            self.logger.error(f"❌ Configuration validation error: {e}")
+            tprint(f"❌ Configuration validation error: {e}")
             raise ValueError(f"Configuration validation failed: {e}") from e
     
     def _initialize_components(self) -> None:
@@ -295,6 +379,7 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
     def _convert_to_numpy_array(self, data: Union[np.ndarray, pd.DataFrame]) -> np.ndarray:
         """
         Convert data to numpy array with proper validation and error handling.
+        Uses common utilities for better validation and error handling.
         
         Args:
             data: Input data (DataFrame or numpy array)
@@ -307,40 +392,37 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
         """
         try:
             if isinstance(data, np.ndarray):
-                # Already a numpy array, validate it
+                # Already a numpy array, validate it using common utilities
                 if data.size == 0:
                     raise ValueError("Input array is empty")
-                if np.any(np.isnan(data)):
-                    raise ValueError("Input array contains NaN values")
-                if np.any(np.isinf(data)):
-                    raise ValueError("Input array contains infinite values")
+                
+                # Use common math validation
+                validate_numeric_array(data, "input_array")
                 return data
             
             elif isinstance(data, pd.DataFrame):
-                # Convert DataFrame to numpy array
+                # Convert DataFrame to numpy array using common utilities
                 if data.empty:
                     raise ValueError("Input DataFrame is empty")
                 
-                # Check for non-numeric columns
-                numeric_data = data.select_dtypes(include=[np.number])
+                # Use common DataFrame operations
+                numeric_data = safe_dataframe_operation(
+                    data, 
+                    lambda df: df.select_dtypes(include=[np.number])
+                )
+                
                 if numeric_data.empty:
                     raise ValueError("DataFrame contains no numeric columns")
                 
                 if len(numeric_data.columns) != len(data.columns):
                     non_numeric_cols = set(data.columns) - set(numeric_data.columns)
-                    self.logger.warning(f"⚠️ Dropping non-numeric columns: {non_numeric_cols}")
+                    tprint(f"⚠️ Dropping non-numeric columns: {non_numeric_cols}")
                 
                 # Convert to numpy array
                 array_data = numeric_data.values
                 
-                # Validate the converted array
-                if np.any(np.isnan(array_data)):
-                    nan_count = np.isnan(array_data).sum()
-                    self.logger.warning(f"⚠️ Converted array contains {nan_count} NaN values")
-                
-                if np.any(np.isinf(array_data)):
-                    inf_count = np.isinf(array_data).sum()
-                    self.logger.warning(f"⚠️ Converted array contains {inf_count} infinite values")
+                # Validate the converted array using common utilities
+                validate_numeric_array(array_data, "converted_array")
                 
                 return array_data
             
@@ -348,7 +430,7 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
                 raise ValueError(f"Unsupported data type: {type(data)}. Expected numpy array or DataFrame.")
                 
         except Exception as e:
-            self.logger.error(f"❌ Failed to convert data to numpy array: {e}")
+            tprint(f"❌ Failed to convert data to numpy array: {e}")
             raise ValueError(f"Data conversion failed: {e}") from e
     
 # Model registration now handled by shared UnifiedModelFactory
@@ -356,6 +438,7 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
     def _validate_input_data(self, X: np.ndarray, y: np.ndarray, regime_labels: np.ndarray) -> bool:
         """
         Enhanced input validation with early exit on critical failures.
+        Uses common utilities for better validation and error handling.
         
         Args:
             X: Input features
@@ -366,7 +449,7 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
             True if validation passes, False otherwise
         """
         try:
-            # Use shared validation utilities
+            # Use common validation utilities
             if not ValidationUtils.validate_data_shapes(X, y, regime_labels):
                 return False
             
@@ -376,9 +459,11 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
             if not ValidationUtils.validate_regime_distribution(regime_labels, min_samples_per_regime=10):
                 return False
             
-            # Additional HMM-specific validations
+            # Additional HMM-specific validations using common math validation
+            critical_failures = []
             warnings = []
             unique_regimes = np.unique(regime_labels)
+            
             if len(unique_regimes) < 2:
                 critical_failures.append(f"Need at least 2 regimes, found {len(unique_regimes)}")
             
@@ -412,6 +497,7 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
     def _prepare_features(self, X: Union[np.ndarray, pd.DataFrame], feature_names: Optional[List[str]] = None) -> Tuple[pd.DataFrame, List[str]]:
         """
         Prepare and enhance features with comprehensive error handling.
+        Uses common utilities for better data processing and validation.
         
         Args:
             X: Input features
@@ -421,7 +507,7 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
             Tuple of (enhanced_features, feature_names)
         """
         try:
-            # Convert to DataFrame if needed
+            # Convert to DataFrame if needed using common utilities
             if isinstance(X, np.ndarray):
                 if feature_names is None:
                     feature_names = [f"feature_{i}" for i in range(X.shape[1])]
@@ -431,28 +517,37 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
                 if feature_names is None:
                     feature_names = list(X_df.columns)
             
-            # Ensure only numeric columns
-            numeric_columns = X_df.select_dtypes(include=[np.number]).columns
+            # Use common DataFrame operations for numeric column selection
+            numeric_columns = safe_dataframe_operation(
+                X_df, 
+                lambda df: df.select_dtypes(include=[np.number]).columns
+            )
+            
             if len(numeric_columns) == 0:
                 raise ValueError("No numeric columns found in input data")
             
             X_numeric = X_df[numeric_columns]
             tprint(f"📊 Using {len(numeric_columns)} numeric features")
             
+            # Calculate data quality metrics using common utilities
+            quality_metrics = calculate_data_quality_metrics(X_numeric)
+            if quality_metrics.get('null_percentage', 0) > 0.1:
+                tprint(f"⚠️ High null percentage: {quality_metrics.get('null_percentage', 0):.2%}")
+            
             # Enhance features if generator is available
             if self.feature_generator is not None:
                 try:
                     X_enhanced = self.feature_generator.generate_features_for_hmm(X_numeric)
-                    self.logger.info(f"✅ Enhanced features: {X_enhanced.shape[1]} total features")
+                    tprint(f"✅ Enhanced features: {X_enhanced.shape[1]} total features")
                     return X_enhanced, list(X_enhanced.columns)
                 except Exception as e:
-                    self.logger.warning(f"⚠️ Feature enhancement failed: {e}, using original features")
+                    tprint(f"⚠️ Feature enhancement failed: {e}, using original features")
                     return X_numeric, list(X_numeric.columns)
             else:
                 return X_numeric, list(X_numeric.columns)
                 
         except Exception as e:
-            self.logger.error(f"❌ Feature preparation failed: {e}")
+            tprint(f"❌ Feature preparation failed: {e}")
             raise
     
     def _select_features(self, X: pd.DataFrame, y: np.ndarray, is_classification: bool = True) -> Tuple[pd.DataFrame, List[str]]:
@@ -537,6 +632,7 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
     def _train_single_model(self, model_type: str, X: np.ndarray, y: np.ndarray) -> ModelResult:
         """
         Train a single model with circuit breaker protection and enhanced error handling.
+        Uses hardware optimizers and common utilities for better performance.
         
         Args:
             model_type: Type of model to train
@@ -552,8 +648,15 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
         memory_tracker = MemoryTracker()
         
         try:
-            self.logger.info(f"🔄 Training {model_type}...")
+            tprint(f"🔄 Training {model_type}...")
             memory_tracker.take_snapshot(f"{model_type}_start")
+            
+            # Apply hardware optimizations if available
+            if self.memory_optimizer:
+                self.memory_optimizer.optimize_memory_usage()
+            
+            if self.cpu_optimizer:
+                self.cpu_optimizer.optimize_cpu_usage()
             
             # Create model with circuit breaker protection
             def create_and_train_model():
@@ -564,9 +667,9 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
                 model.fit(X, y)
                 memory_tracker.take_snapshot(f"{model_type}_model_fitted")
                 
-                # Evaluate model
+                # Evaluate model using safe math operations
                 predictions = model.predict(X)
-                accuracy = np.mean(predictions == y)
+                accuracy = safe_divide(np.sum(predictions == y), len(y), 0.0)
                 
                 # Use evaluation utilities if available (preserving original functionality)
                 if self.evaluation_utils is not None:
@@ -576,42 +679,44 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
                             metrics=['accuracy', 'f1_score', 'precision', 'recall'],
                             is_classification=True
                         )
-                        metrics.accuracy = eval_metrics.get('accuracy', accuracy)
-                        metrics.f1_score = eval_metrics.get('f1_score', 0.0)
-                        metrics.precision = eval_metrics.get('precision', 0.0)
-                        metrics.recall = eval_metrics.get('recall', 0.0)
+                        metrics.accuracy = validate_finite(eval_metrics.get('accuracy', accuracy), "accuracy")
+                        metrics.f1_score = validate_finite(eval_metrics.get('f1_score', 0.0), "f1_score")
+                        metrics.precision = validate_finite(eval_metrics.get('precision', 0.0), "precision")
+                        metrics.recall = validate_finite(eval_metrics.get('recall', 0.0), "recall")
                     except Exception as e:
                         metrics.warnings.append(f"Evaluation utilities failed: {e}")
-                        # Fallback to basic metrics
-                        metrics.accuracy = accuracy
+                        # Fallback to basic metrics using safe operations
+                        metrics.accuracy = validate_finite(accuracy, "accuracy")
                         try:
                             from sklearn.metrics import f1_score, precision_score, recall_score
-                            metrics.f1_score = f1_score(y, predictions, average='weighted')
-                            metrics.precision = precision_score(y, predictions, average='weighted')
-                            metrics.recall = recall_score(y, predictions, average='weighted')
+                            metrics.f1_score = validate_finite(f1_score(y, predictions, average='weighted'), "f1_score")
+                            metrics.precision = validate_finite(precision_score(y, predictions, average='weighted'), "precision")
+                            metrics.recall = validate_finite(recall_score(y, predictions, average='weighted'), "recall")
                         except Exception as e2:
                             metrics.warnings.append(f"Fallback metrics calculation failed: {e2}")
                 else:
-                    # Fallback evaluation (preserving original functionality)
+                    # Fallback evaluation using safe operations
                     try:
                         from sklearn.metrics import f1_score, precision_score, recall_score
-                        metrics.accuracy = accuracy
-                        metrics.f1_score = f1_score(y, predictions, average='weighted')
-                        metrics.precision = precision_score(y, predictions, average='weighted')
-                        metrics.recall = recall_score(y, predictions, average='weighted')
+                        metrics.accuracy = validate_finite(accuracy, "accuracy")
+                        metrics.f1_score = validate_finite(f1_score(y, predictions, average='weighted'), "f1_score")
+                        metrics.precision = validate_finite(precision_score(y, predictions, average='weighted'), "precision")
+                        metrics.recall = validate_finite(recall_score(y, predictions, average='weighted'), "recall")
                     except Exception as e:
                         metrics.warnings.append(f"Fallback metrics calculation failed: {e}")
-                        metrics.accuracy = accuracy
+                        metrics.accuracy = validate_finite(accuracy, "accuracy")
                 
-                # Get feature importance
+                # Get feature importance using safe operations
                 feature_importance = None
                 try:
                     if hasattr(model, 'feature_importances_'):
-                        feature_importance = dict(zip(range(len(model.feature_importances_)), model.feature_importances_))
+                        importances = model.feature_importances_
+                        feature_importance = dict(zip(range(len(importances)), [validate_finite(x, f"importance_{i}") for i, x in enumerate(importances)]))
                     elif hasattr(model, 'coef_'):
-                        feature_importance = dict(zip(range(len(model.coef_[0])), np.abs(model.coef_[0])))
+                        coefs = np.abs(model.coef_[0])
+                        feature_importance = dict(zip(range(len(coefs)), [validate_finite(x, f"coef_{i}") for i, x in enumerate(coefs)]))
                 except Exception as e:
-                    self.logger.debug(f"Feature importance not available for {model_type}: {e}")
+                    tprint(f"Feature importance not available for {model_type}: {e}")
                 
                 # Get hyperparameters
                 hyperparameters = None
@@ -619,7 +724,7 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
                     if hasattr(model, 'get_params'):
                         hyperparameters = model.get_params()
                 except Exception as e:
-                    self.logger.debug(f"Could not get hyperparameters: {e}")
+                    tprint(f"Could not get hyperparameters: {e}")
                 
                 return model, predictions, feature_importance, hyperparameters
             
@@ -627,11 +732,11 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
             model, predictions, feature_importance, hyperparameters = self.circuit_breaker.call(create_and_train_model)
             
             training_time = time.time() - start_time
-            metrics.training_time = training_time
+            metrics.training_time = validate_finite(training_time, "training_time")
             
             # Calculate memory usage
             memory_tracker.take_snapshot(f"{model_type}_completed")
-            metrics.memory_usage_mb = memory_tracker.get_memory_increase()
+            metrics.memory_usage_mb = validate_finite(memory_tracker.get_memory_increase(), "memory_usage")
             
             # Get probabilities if available
             probabilities = None
@@ -641,7 +746,7 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
             except Exception as e:
                 metrics.warnings.append(f"Could not get probabilities: {e}")
             
-            self.logger.info(f"✅ {model_type} trained successfully (accuracy: {metrics.accuracy:.4f}, time: {training_time:.2f}s, memory: {metrics.memory_usage_mb:.1f}MB)")
+            tprint(f"✅ {model_type} trained successfully (accuracy: {metrics.accuracy:.4f}, time: {training_time:.2f}s, memory: {metrics.memory_usage_mb:.1f}MB)")
             
             # Cleanup memory
             memory_tracker.cleanup()
@@ -657,20 +762,77 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
             
         except Exception as e:
             training_time = time.time() - start_time
-            metrics.training_time = training_time
+            metrics.training_time = validate_finite(training_time, "training_time")
             metrics.error_message = str(e)
             
             # Calculate memory usage even on failure
             memory_tracker.take_snapshot(f"{model_type}_failed")
-            metrics.memory_usage_mb = memory_tracker.get_memory_increase()
+            metrics.memory_usage_mb = validate_finite(memory_tracker.get_memory_increase(), "memory_usage")
             
-            self.logger.error(f"❌ Failed to train {model_type}: {e}")
+            tprint(f"❌ Failed to train {model_type}: {e}")
             
             # Cleanup memory
             memory_tracker.cleanup()
             
             # Use centralized error handler
             return TrainingErrorHandler.handle_training_error(model_type, e, training_time)
+    
+    def _save_models_with_common_utils(self, models: Dict[str, Any], model_type: str, 
+                                     symbol: str, exchange: str, timeframe: str) -> List[str]:
+        """
+        Save models using common serialization utilities.
+        
+        Args:
+            models: Dictionary of model name to model object
+            model_type: Type of models being saved
+            symbol: Trading symbol
+            exchange: Exchange name
+            timeframe: Timeframe
+            
+        Returns:
+            List of saved file paths
+        """
+        saved_paths = []
+        
+        try:
+            # Create save directory
+            save_dir = Path("artifacts") / "models" / model_type / symbol / exchange / timeframe
+            save_dir.mkdir(parents=True, exist_ok=True)
+            
+            for model_name, model in models.items():
+                try:
+                    # Save model using PickleSerializer
+                    model_path = save_dir / f"{model_name}_model.pkl"
+                    if PickleSerializer.save(model, str(model_path)):
+                        saved_paths.append(str(model_path))
+                        tprint(f"✅ Saved {model_name} to {model_path}")
+                    else:
+                        tprint(f"❌ Failed to save {model_name}")
+                        
+                    # Save metadata using JSONSerializer
+                    metadata = {
+                        'model_name': model_name,
+                        'model_type': model_type,
+                        'symbol': symbol,
+                        'exchange': exchange,
+                        'timeframe': timeframe,
+                        'timestamp': pd.Timestamp.now().isoformat(),
+                        'model_class': str(type(model).__name__)
+                    }
+                    
+                    metadata_path = save_dir / f"{model_name}_metadata.json"
+                    if JSONSerializer.save(metadata, str(metadata_path)):
+                        tprint(f"✅ Saved {model_name} metadata to {metadata_path}")
+                    else:
+                        tprint(f"⚠️ Failed to save {model_name} metadata")
+                        
+                except Exception as e:
+                    tprint(f"❌ Error saving {model_name}: {e}")
+                    
+        except Exception as e:
+            tprint(f"❌ Error creating save directory: {e}")
+            
+        return saved_paths
     
     def _generate_comprehensive_report(self, results: Dict[str, Any], execution_time: float) -> Dict[str, Any]:
         """
@@ -708,9 +870,13 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
                     "regime_distribution": results.get('regime_distribution', {})
                 },
                 "computational_metrics": {
-                    "average_training_time": np.mean([r.metrics.training_time for r in results.get('model_results', {}).values()]),
+                    "average_training_time": safe_divide(
+                        sum([r.metrics.training_time for r in results.get('model_results', {}).values()]),
+                        len(results.get('model_results', {})),
+                        0.0
+                    ),
                     "total_memory_usage": sum([r.metrics.memory_usage_mb for r in results.get('model_results', {}).values()]),
-                    "training_efficiency": results.get('selected_features', 0) / max(execution_time, 0.001)
+                    "training_efficiency": safe_divide(results.get('selected_features', 0), max(execution_time, 0.001), 0.0)
                 },
                 "recommendations": []
             }
@@ -748,14 +914,14 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
                             best_accuracy = metrics.accuracy
                             best_model = model_name
                 
-                # Add performance summary
+                # Add performance summary using safe math operations
                 if accuracies:
                     report["performance_summary"] = {
                         "best_model": best_model,
-                        "best_accuracy": best_accuracy,
-                        "average_accuracy": np.mean(accuracies),
-                        "accuracy_std": np.std(accuracies),
-                        "performance_variance": np.var(accuracies)
+                        "best_accuracy": validate_finite(best_accuracy, "best_accuracy"),
+                        "average_accuracy": validate_finite(safe_divide(sum(accuracies), len(accuracies), 0.0), "average_accuracy"),
+                        "accuracy_std": validate_finite(safe_sqrt(safe_divide(sum([(x - safe_divide(sum(accuracies), len(accuracies), 0.0))**2 for x in accuracies]), len(accuracies), 0.0), 0.0), "accuracy_std"),
+                        "performance_variance": validate_finite(safe_divide(sum([(x - safe_divide(sum(accuracies), len(accuracies), 0.0))**2 for x in accuracies]), len(accuracies), 0.0), "performance_variance")
                     }
             
             # Add warnings to report
@@ -949,9 +1115,9 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
             comprehensive_report = self._generate_comprehensive_report(results, execution_time)
             results['comprehensive_report'] = comprehensive_report
             
-            # Step 9: Save results if configured
+            # Step 9: Save results if configured using common serialization utilities
             if self.config.save_models:
-                self.logger.info("🔄 Step 9: Saving models...")
+                tprint("🔄 Step 9: Saving models...")
                 try:
                     symbol = kwargs.get('symbol', 'UNKNOWN')
                     exchange = kwargs.get('exchange', 'UNKNOWN')
@@ -964,7 +1130,8 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
                     }
                     
                     if successful_models:
-                        saved_paths = self.save_models(
+                        # Use common serialization utilities
+                        saved_paths = self._save_models_with_common_utils(
                             models=successful_models,
                             model_type=self.config.model_name,
                             symbol=symbol,
@@ -972,27 +1139,27 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
                             timeframe=timeframe
                         )
                         results['saved_model_paths'] = saved_paths
-                        self.logger.info(f"✅ Models saved: {len(saved_paths)} files")
+                        tprint(f"✅ Models saved: {len(saved_paths)} files")
                     else:
-                        self.logger.warning("⚠️ No successful models to save")
+                        tprint("⚠️ No successful models to save")
                         
                 except Exception as e:
-                    self.logger.error(f"❌ Failed to save models: {e}")
+                    tprint(f"❌ Failed to save models: {e}")
                     results['save_error'] = str(e)
             
             # Log enhanced final summary
             successful_count = sum(1 for r in model_results.values() if r.metrics.error_message is None)
-            self.logger.info(f"✅ Enhanced HMM Models Training completed: {successful_count}/{len(model_results)} models successful")
-            self.logger.info(f"📊 Total execution time: {execution_time:.2f}s")
-            self.logger.info(f"🔧 Circuit breaker state: {self.circuit_breaker.state}")
+            tprint(f"✅ Enhanced HMM Models Training completed: {successful_count}/{len(model_results)} models successful")
+            tprint(f"📊 Total execution time: {execution_time:.2f}s")
+            tprint(f"🔧 Circuit breaker state: {self.circuit_breaker.state}")
             if self.circuit_breaker.failure_count > 0:
-                self.logger.info(f"⚠️ Circuit breaker failures: {self.circuit_breaker.failure_count}")
+                tprint(f"⚠️ Circuit breaker failures: {self.circuit_breaker.failure_count}")
             
             return results
             
         except Exception as e:
             execution_time = time.time() - self.training_start_time if self.training_start_time else 0
-            self.logger.error(f"❌ Enhanced HMM Models Training failed: {e}")
+            tprint(f"❌ Enhanced HMM Models Training failed: {e}")
             
             return {
                 'model_results': {},
@@ -1066,3 +1233,7 @@ if __name__ == "__main__":
     print("- ✅ Warning collection and reporting")
     print("- ✅ Comprehensive reporting with actionable insights")
     print("- ✅ Silent failure prevention")
+    print("- ✅ Common utilities integration for better maintainability")
+    print("- ✅ Hardware optimization for M1 systems")
+    print("- ✅ Safe math operations preventing numerical errors")
+    print("- ✅ Common serialization utilities for model persistence")

@@ -238,7 +238,7 @@ class FinalParametersOptimizer:
     async def _optimize_category(self, category: str, calibration_results: Dict[str, Any], 
                                previous_results: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
-        Enhanced optimization for a specific category with non-linear transformations.
+        Enhanced optimization for a specific category with coarse/fine grid + Optuna TPE.
         
         Args:
             category: Parameter category to optimize
@@ -271,71 +271,79 @@ class FinalParametersOptimizer:
                 else:
                     self.logger.debug(f"   • {param_name}: {param_config['type']} [{param_config.get('min', 'N/A')}-{param_config.get('max', 'N/A')}]")
             
-            study_name = f'{self.study_name}_{category}'
-            if self.use_nonlinear_optimization:
-                study_name += '_enhanced'
+            # Stage 1: Coarse Grid Search
+            self.logger.info(f"🎯 Stage 1: Coarse grid search for {category}")
+            coarse_start = time.time()
+            coarse_result = await self._coarse_grid_search(category, search_space, calibration_results)
+            coarse_time = time.time() - coarse_start
             
-            self.logger.info(f"📝 Creating Optuna study: {study_name}")
+            if not coarse_result or coarse_result.get('best_score', 0) <= 0:
+                self.logger.warning(f"⚠️ Coarse grid search failed for {category}, using default parameters")
+                return self._create_fallback_result(category)
             
-            # Use enhanced sampler for non-linear optimization
-            if self.use_nonlinear_optimization:
-                sampler = optuna.samplers.TPESampler(
-                    n_startup_trials=10,
-                    n_ei_candidates=24,
-                    gamma=lambda x: min(int(0.25 * x), 25),
-                    prior_weight=1.0,
-                    consider_magic_clip=True,
-                    consider_endpoints=True
-                )
-                study = optuna.create_study(
-                    study_name=study_name,
-                    direction='maximize',
-                    sampler=sampler,
-                    storage='sqlite:///optuna_studies_enhanced.db',
-                    load_if_exists=True
-                )
+            self.logger.info(f"✅ Coarse grid completed in {coarse_time:.2f}s - Best score: {coarse_result['best_score']:.4f}")
+            
+            # Stage 2: Fine Grid Search around best coarse parameters
+            self.logger.info(f"🎯 Stage 2: Fine grid search for {category}")
+            fine_start = time.time()
+            fine_result = await self._fine_grid_search(category, search_space, coarse_result['best_params'], calibration_results)
+            fine_time = time.time() - fine_start
+            
+            if not fine_result or fine_result.get('best_score', 0) <= coarse_result['best_score']:
+                self.logger.info(f"ℹ️ Fine grid search did not improve results, using coarse grid results")
+                best_params = coarse_result['best_params']
+                best_score = coarse_result['best_score']
+                grid_stage = 'coarse'
             else:
-                study = optuna.create_study(
-                    study_name=study_name,
-                    direction='maximize',
-                    storage='sqlite:///optuna_studies.db',
-                    load_if_exists=True
-                )
+                self.logger.info(f"✅ Fine grid completed in {fine_time:.2f}s - Best score: {fine_result['best_score']:.4f}")
+                best_params = fine_result['best_params']
+                best_score = fine_result['best_score']
+                grid_stage = 'fine'
             
-            self.logger.info(f"🎯 Starting optimization with {self.n_trials} trials (timeout: {self.timeout}s)")
+            # Stage 3: Optuna TPE Optimization around best grid parameters
+            self.logger.info(f"🎯 Stage 3: Optuna TPE optimization for {category}")
+            optuna_start = time.time()
+            optuna_result = await self._optuna_tpe_optimization(category, search_space, best_params, calibration_results)
+            optuna_time = time.time() - optuna_start
             
-            def objective(trial):
-                return self._objective_function(trial, category, search_space, calibration_results)
-            
-            start_time = time.time()
-            study.optimize(objective, n_trials=self.n_trials, timeout=self.timeout)
-            optimization_time = time.time() - start_time
-            
-            best_params = study.best_params
-            best_value = study.best_value
-            
-            # Convert parameters back to original space for reporting
-            if self.use_nonlinear_optimization:
-                converted_params = convert_parameters_to_original_space(best_params, search_space)
+            if optuna_result and optuna_result.get('best_score', 0) > best_score:
+                self.logger.info(f"✅ Optuna TPE completed in {optuna_time:.2f}s - Best score: {optuna_result['best_score']:.4f}")
+                final_params = optuna_result['best_params']
+                final_score = optuna_result['best_score']
+                final_stage = 'optuna'
             else:
-                converted_params = best_params
+                self.logger.info(f"ℹ️ Optuna TPE did not improve results, using grid search results")
+                final_params = best_params
+                final_score = best_score
+                final_stage = grid_stage
             
-            self.logger.info(f"🏆 Best parameters for {category}:")
-            for param, value in converted_params.items():
+            total_time = coarse_time + fine_time + optuna_time
+            
+            self.logger.info(f"🏆 Final parameters for {category}:")
+            for param, value in final_params.items():
                 self.logger.info(f"   • {param}: {value}")
-            self.logger.info(f"📈 Best objective value: {best_value:.4f}")
-            self.logger.info(f"⏱️ Optimization time: {optimization_time:.2f}s")
-            
-            # Enhanced convergence analysis
-            convergence_analysis = self._analyze_convergence(study)
+            self.logger.info(f"📈 Final objective value: {final_score:.4f}")
+            self.logger.info(f"⏱️ Total optimization time: {total_time:.2f}s")
+            self.logger.info(f"🎯 Best stage: {final_stage}")
             
             result = {
-                'best_params': converted_params,
-                'best_value': best_value,
-                'study_name': study_name,
-                'n_trials': self.n_trials,
-                'optimization_time': optimization_time,
-                'convergence_analysis': convergence_analysis
+                'best_params': final_params,
+                'best_value': final_score,
+                'optimization_method': 'coarse_fine_optuna',
+                'coarse_result': coarse_result,
+                'fine_result': fine_result,
+                'optuna_result': optuna_result,
+                'best_stage': final_stage,
+                'coarse_time': coarse_time,
+                'fine_time': fine_time,
+                'optuna_time': optuna_time,
+                'total_time': total_time,
+                'convergence_analysis': {
+                    'coarse_score': coarse_result.get('best_score', 0),
+                    'fine_score': fine_result.get('best_score', 0) if fine_result else 0,
+                    'optuna_score': optuna_result.get('best_score', 0) if optuna_result else 0,
+                    'final_score': final_score
+                }
             }
             
             if self.use_nonlinear_optimization:
@@ -1129,6 +1137,325 @@ class FinalParametersOptimizer:
                 if transform_type in ['log', 'power', 'sigmoid', 'adaptive']:
                     methods.add(transform_type)
         return list(methods)
+    
+    async def _coarse_grid_search(self, category: str, search_space: Dict[str, Dict[str, Any]], 
+                                calibration_results: Dict[str, Any]) -> Dict[str, Any]:
+        """Perform coarse grid search with fewer parameter combinations."""
+        try:
+            self.logger.info(f"🔍 Creating coarse grid for {category}")
+            
+            # Create coarse parameter grid
+            coarse_grid = self._create_coarse_parameter_grid(search_space)
+            self.logger.info(f"📊 Coarse grid size: {len(coarse_grid)} combinations")
+            
+            best_score = -np.inf
+            best_params = {}
+            parameter_scores = []
+            
+            # Evaluate each parameter combination
+            for i, params in enumerate(coarse_grid):
+                try:
+                    score = self._evaluate_configuration(category, params, calibration_results)
+                    parameter_scores.append((params, score))
+                    
+                    if score > best_score:
+                        best_score = score
+                        best_params = params.copy()
+                    
+                    if (i + 1) % 10 == 0:
+                        self.logger.debug(f"   Evaluated {i + 1}/{len(coarse_grid)} combinations")
+                        
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Failed to evaluate parameters {params}: {e}")
+                    continue
+            
+            if not parameter_scores:
+                self.logger.error(f"❌ No valid parameter combinations found for {category}")
+                return {}
+            
+            self.logger.info(f"✅ Coarse grid search completed - Best score: {best_score:.4f}")
+            
+            return {
+                'best_params': best_params,
+                'best_score': best_score,
+                'n_combinations': len(coarse_grid),
+                'valid_combinations': len(parameter_scores),
+                'parameter_scores': parameter_scores[:10]  # Keep top 10 for analysis
+            }
+            
+        except Exception as e:
+            self.logger.error(f"❌ Coarse grid search failed for {category}: {e}")
+            return {}
+    
+    async def _fine_grid_search(self, category: str, search_space: Dict[str, Dict[str, Any]], 
+                              best_coarse_params: Dict[str, Any], calibration_results: Dict[str, Any]) -> Dict[str, Any]:
+        """Perform fine grid search around best coarse parameters."""
+        try:
+            self.logger.info(f"🔍 Creating fine grid around best coarse parameters for {category}")
+            
+            # Create fine parameter grid around best coarse parameters
+            fine_grid = self._create_fine_parameter_grid(search_space, best_coarse_params)
+            self.logger.info(f"📊 Fine grid size: {len(fine_grid)} combinations")
+            
+            best_score = -np.inf
+            best_params = {}
+            parameter_scores = []
+            
+            # Evaluate each parameter combination
+            for i, params in enumerate(fine_grid):
+                try:
+                    score = self._evaluate_configuration(category, params, calibration_results)
+                    parameter_scores.append((params, score))
+                    
+                    if score > best_score:
+                        best_score = score
+                        best_params = params.copy()
+                    
+                    if (i + 1) % 10 == 0:
+                        self.logger.debug(f"   Evaluated {i + 1}/{len(fine_grid)} combinations")
+                        
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Failed to evaluate parameters {params}: {e}")
+                    continue
+            
+            if not parameter_scores:
+                self.logger.error(f"❌ No valid parameter combinations found for {category}")
+                return {}
+            
+            self.logger.info(f"✅ Fine grid search completed - Best score: {best_score:.4f}")
+            
+            return {
+                'best_params': best_params,
+                'best_score': best_score,
+                'n_combinations': len(fine_grid),
+                'valid_combinations': len(parameter_scores),
+                'parameter_scores': parameter_scores[:10]  # Keep top 10 for analysis
+            }
+            
+        except Exception as e:
+            self.logger.error(f"❌ Fine grid search failed for {category}: {e}")
+            return {}
+    
+    async def _optuna_tpe_optimization(self, category: str, search_space: Dict[str, Dict[str, Any]], 
+                                     best_grid_params: Dict[str, Any], calibration_results: Dict[str, Any]) -> Dict[str, Any]:
+        """Perform Optuna TPE optimization around best grid parameters."""
+        try:
+            self.logger.info(f"🎲 Starting Optuna TPE optimization for {category}")
+            
+            # Create narrowed search space around best grid parameters
+            narrowed_space = self._create_narrowed_search_space(search_space, best_grid_params)
+            
+            study_name = f'{self.study_name}_{category}_tpe'
+            if self.use_nonlinear_optimization:
+                study_name += '_enhanced'
+            
+            # Use TPE sampler with enhanced settings
+            sampler = optuna.samplers.TPESampler(
+                n_startup_trials=5,  # Fewer startup trials since we have good starting point
+                n_ei_candidates=24,
+                gamma=lambda x: min(int(0.25 * x), 25),
+                prior_weight=1.0,
+                consider_magic_clip=True,
+                consider_endpoints=True
+            )
+            
+            study = optuna.create_study(
+                study_name=study_name,
+                direction='maximize',
+                sampler=sampler,
+                storage='sqlite:///optuna_studies_coarse_fine.db',
+                load_if_exists=True
+            )
+            
+            # Use fewer trials since we're fine-tuning around good parameters
+            n_trials = min(self.n_trials // 3, 30)  # Use 1/3 of original trials or max 30
+            timeout = min(self.timeout // 3, 120)   # Use 1/3 of original timeout or max 2 minutes
+            
+            self.logger.info(f"🎯 Starting TPE optimization with {n_trials} trials (timeout: {timeout}s)")
+            
+            def objective(trial):
+                return self._objective_function(trial, category, narrowed_space, calibration_results)
+            
+            start_time = time.time()
+            study.optimize(objective, n_trials=n_trials, timeout=timeout)
+            optimization_time = time.time() - start_time
+            
+            best_params = study.best_params
+            best_value = study.best_value
+            
+            # Convert parameters back to original space for reporting
+            if self.use_nonlinear_optimization:
+                converted_params = convert_parameters_to_original_space(best_params, narrowed_space)
+            else:
+                converted_params = best_params
+            
+            self.logger.info(f"✅ Optuna TPE optimization completed in {optimization_time:.2f}s")
+            self.logger.info(f"📈 Best TPE score: {best_value:.4f}")
+            
+            # Enhanced convergence analysis
+            convergence_analysis = self._analyze_convergence(study)
+            
+            return {
+                'best_params': converted_params,
+                'best_score': best_value,
+                'study_name': study_name,
+                'n_trials': len(study.trials),
+                'optimization_time': optimization_time,
+                'convergence_analysis': convergence_analysis,
+                'narrowed_space': narrowed_space
+            }
+            
+        except Exception as e:
+            self.logger.error(f"❌ Optuna TPE optimization failed for {category}: {e}")
+            return {}
+    
+    def _create_coarse_parameter_grid(self, search_space: Dict[str, Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Create coarse parameter grid with fewer combinations."""
+        import itertools
+        
+        param_combinations = []
+        
+        for param_name, param_config in search_space.items():
+            if param_config['type'] == 'float':
+                # Use 3 points for coarse grid
+                min_val, max_val = param_config['min'], param_config['max']
+                if param_config.get('log', False) or (self.use_nonlinear_optimization and 
+                    param_config.get('transform_type') == 'log'):
+                    # Log-spaced values
+                    values = np.logspace(np.log10(min_val), np.log10(max_val), 3)
+                else:
+                    # Linear-spaced values
+                    values = np.linspace(min_val, max_val, 3)
+                param_combinations.append([(param_name, v) for v in values])
+                
+            elif param_config['type'] == 'int':
+                # Use 3 points for coarse grid
+                min_val, max_val = param_config['min'], param_config['max']
+                if max_val - min_val <= 2:
+                    values = list(range(min_val, max_val + 1))
+                else:
+                    values = np.linspace(min_val, max_val, 3, dtype=int)
+                param_combinations.append([(param_name, v) for v in values])
+                
+            elif param_config['type'] == 'bool':
+                param_combinations.append([(param_name, v) for v in [True, False]])
+        
+        # Generate all combinations
+        all_combinations = list(itertools.product(*param_combinations))
+        
+        # Convert to list of dictionaries
+        grid = []
+        for combination in all_combinations:
+            param_dict = dict(combination)
+            grid.append(param_dict)
+        
+        return grid
+    
+    def _create_fine_parameter_grid(self, search_space: Dict[str, Dict[str, Any]], 
+                                  best_params: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Create fine parameter grid around best parameters."""
+        import itertools
+        
+        param_combinations = []
+        
+        for param_name, param_config in search_space.items():
+            if param_name not in best_params:
+                continue
+                
+            best_value = best_params[param_name]
+            
+            if param_config['type'] == 'float':
+                min_val, max_val = param_config['min'], param_config['max']
+                # Create fine grid around best value (±20% of range)
+                range_size = max_val - min_val
+                fine_range = range_size * 0.2
+                fine_min = max(min_val, best_value - fine_range)
+                fine_max = min(max_val, best_value + fine_range)
+                
+                # Use 5 points for fine grid
+                if param_config.get('log', False) or (self.use_nonlinear_optimization and 
+                    param_config.get('transform_type') == 'log'):
+                    # Log-spaced values
+                    values = np.logspace(np.log10(fine_min), np.log10(fine_max), 5)
+                else:
+                    # Linear-spaced values
+                    values = np.linspace(fine_min, fine_max, 5)
+                param_combinations.append([(param_name, v) for v in values])
+                
+            elif param_config['type'] == 'int':
+                min_val, max_val = param_config['min'], param_config['max']
+                # Create fine grid around best value (±2 values)
+                fine_min = max(min_val, best_value - 2)
+                fine_max = min(max_val, best_value + 2)
+                values = list(range(fine_min, fine_max + 1))
+                param_combinations.append([(param_name, v) for v in values])
+                
+            elif param_config['type'] == 'bool':
+                param_combinations.append([(param_name, v) for v in [True, False]])
+        
+        # Generate all combinations
+        all_combinations = list(itertools.product(*param_combinations))
+        
+        # Convert to list of dictionaries
+        grid = []
+        for combination in all_combinations:
+            param_dict = dict(combination)
+            grid.append(param_dict)
+        
+        return grid
+    
+    def _create_narrowed_search_space(self, search_space: Dict[str, Dict[str, Any]], 
+                                    best_params: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+        """Create narrowed search space around best parameters for Optuna."""
+        narrowed_space = {}
+        
+        for param_name, param_config in search_space.items():
+            if param_name not in best_params:
+                narrowed_space[param_name] = param_config
+                continue
+            
+            best_value = best_params[param_name]
+            narrowed_config = param_config.copy()
+            
+            if param_config['type'] == 'float':
+                min_val, max_val = param_config['min'], param_config['max']
+                # Narrow range to ±10% of original range around best value
+                range_size = max_val - min_val
+                narrow_range = range_size * 0.1
+                narrowed_config['min'] = max(min_val, best_value - narrow_range)
+                narrowed_config['max'] = min(max_val, best_value + narrow_range)
+                
+            elif param_config['type'] == 'int':
+                min_val, max_val = param_config['min'], param_config['max']
+                # Narrow range to ±1 around best value
+                narrowed_config['min'] = max(min_val, best_value - 1)
+                narrowed_config['max'] = min(max_val, best_value + 1)
+            
+            narrowed_space[param_name] = narrowed_config
+        
+        return narrowed_space
+    
+    def _create_fallback_result(self, category: str) -> Dict[str, Any]:
+        """Create fallback result with default parameters."""
+        default_params = {}
+        search_space = self.default_search_spaces.get(category, {})
+        
+        for param_name, param_config in search_space.items():
+            if param_config['type'] == 'float':
+                # Use middle value
+                default_params[param_name] = (param_config['min'] + param_config['max']) / 2
+            elif param_config['type'] == 'int':
+                # Use middle value
+                default_params[param_name] = (param_config['min'] + param_config['max']) // 2
+            elif param_config['type'] == 'bool':
+                default_params[param_name] = True
+        
+        return {
+            'best_params': default_params,
+            'best_value': 0.0,
+            'optimization_method': 'fallback',
+            'error': 'Grid search failed, using default parameters'
+        }
 
 
 # Convenience functions for easy integration

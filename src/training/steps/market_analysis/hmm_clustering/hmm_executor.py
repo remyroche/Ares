@@ -1,6 +1,7 @@
 """HMM execution utilities extracted from Step 3.5.
 
 Provides reusable functions for HMM training and validation.
+Enhanced with common utilities integration.
 """
 
 from __future__ import annotations
@@ -12,12 +13,29 @@ import numpy as np
 from src.utils.sklearn_utils import StandardScaler
 from src.utils.logger import system_logger
 
+# Import common utilities
+from src.utils.common_operations import (
+    get_m1_gpu_manager,
+    get_m1_memory_optimizer,
+    get_m1_cpu_optimizer,
+    validate_dataframe_columns,
+    calculate_data_quality_metrics
+)
+from src.utils.common_utilities import safe_convert_dtypes
+from src.utils.math_validation import safe_divide, safe_log
+from src.utils.serialization_utils import JSONSerializer, PickleSerializer
+from src.utils.matrix_operations.unified_operations import UnifiedMatrixOperations
+
 
 @dataclass
 class HMMDependencies:
 	logger: Any
 	m1_gpu_manager: Any | None
 	m1_memory_optimizer: Any | None
+	m1_cpu_optimizer: Any | None
+	matrix_ops: Any | None
+	json_serializer: Any | None
+	pickle_serializer: Any | None
 
 
 def train_hmm_gpu_optimized(
@@ -38,14 +56,34 @@ def train_hmm_gpu_optimized(
 		if deps.m1_memory_optimizer is None or deps.m1_gpu_manager is None:
 			raise ValueError("GPU optimization dependencies not available")
 		
+		# Validate input data using common utilities
+		if hasattr(features, 'columns'):
+			# DataFrame input
+			if not validate_dataframe_columns(features, features.columns.tolist()):
+				logger.warning("DataFrame validation failed, proceeding with warnings")
+			
+			# Calculate data quality metrics
+			quality_metrics = calculate_data_quality_metrics(features)
+			logger.info(f"Data quality metrics: {quality_metrics}")
+			
+			# Convert dtypes for optimization
+			features = safe_convert_dtypes(features, {
+				col: 'float32' for col in features.select_dtypes(include=[np.number]).columns
+			})
+		
 		# Convert to numpy and optimize memory usage
 		features_array = deps.m1_memory_optimizer.create_memory_efficient_array(
-			features.values, dtype=np.float32
+			features.values if hasattr(features, 'values') else features, 
+			dtype=np.float32
 		)
 
-		# Scale features
-		scaler = StandardScaler()
-		features_scaled = scaler.fit_transform(features_array)
+		# Use matrix operations for efficient scaling if available
+		if deps.matrix_ops and hasattr(deps.matrix_ops, 'optimized_scaling'):
+			features_scaled, scaler = deps.matrix_ops.optimized_scaling(features_array)
+		else:
+			# Fallback to standard scaling
+			scaler = StandardScaler()
+			features_scaled = scaler.fit_transform(features_array)
 
 		# Use GPU acceleration
 		features_scaled_gpu = deps.m1_gpu_manager.to_device(features_scaled, "matrix_mult")
@@ -65,6 +103,15 @@ def train_hmm_gpu_optimized(
 			state_probs = hmm_model.predict_proba(features_scaled_cpu)
 			score = hmm_model.score(features_scaled_cpu)
 
+		# Calculate additional metrics using common utilities
+		validation_metrics = {
+			"converged": hmm_model.monitor_.converged if hasattr(hmm_model, 'monitor_') else False,
+			"n_iterations": hmm_model.monitor_.iter if hasattr(hmm_model, 'monitor_') else n_iter,
+			"log_likelihood": score,
+			"aic": 2 * features_scaled.shape[1] * n_components - 2 * score,
+			"bic": np.log(features_scaled.shape[0]) * features_scaled.shape[1] * n_components - 2 * score
+		}
+
 		return {
 			"model": hmm_model,
 			"scaler": scaler,
@@ -73,6 +120,8 @@ def train_hmm_gpu_optimized(
 			"n_components": n_components,
 			"score": score,
 			"used_gpu": True,
+			"validation_metrics": validation_metrics,
+			"data_quality": quality_metrics if 'quality_metrics' in locals() else {}
 		}
 	except Exception as e:
 		logger.exception(f"GPU HMM training failed: {e}")
@@ -94,11 +143,41 @@ def train_hmm_cpu_optimized(
 	
 	try:
 		# Validate input features
-		if features is None or features.empty:
+		if features is None or (hasattr(features, 'empty') and features.empty):
 			raise ValueError("Input features cannot be None or empty")
 		
-		scaler = StandardScaler()
-		features_scaled = scaler.fit_transform(features.values)
+		# Validate input data using common utilities
+		if hasattr(features, 'columns'):
+			# DataFrame input
+			if not validate_dataframe_columns(features, features.columns.tolist()):
+				logger.warning("DataFrame validation failed, proceeding with warnings")
+			
+			# Calculate data quality metrics
+			quality_metrics = calculate_data_quality_metrics(features)
+			logger.info(f"Data quality metrics: {quality_metrics}")
+			
+			# Convert dtypes for optimization
+			features = safe_convert_dtypes(features, {
+				col: 'float32' for col in features.select_dtypes(include=[np.number]).columns
+			})
+			
+			features_array = features.values
+		else:
+			features_array = np.array(features)
+		
+		# Use CPU optimization if available
+		if deps.m1_cpu_optimizer:
+			# Set optimal thread count
+			optimal_threads = deps.m1_cpu_optimizer.get_optimal_thread_count()
+			logger.info(f"Using {optimal_threads} CPU threads for HMM training")
+		
+		# Use matrix operations for efficient scaling if available
+		if deps.matrix_ops and hasattr(deps.matrix_ops, 'optimized_scaling'):
+			features_scaled, scaler = deps.matrix_ops.optimized_scaling(features_array)
+		else:
+			# Fallback to standard scaling
+			scaler = StandardScaler()
+			features_scaled = scaler.fit_transform(features_array)
 
 		hmm_model = hmm.GaussianHMM(
 			n_components=n_components,
@@ -112,6 +191,15 @@ def train_hmm_cpu_optimized(
 		state_probs = hmm_model.predict_proba(features_scaled)
 		score = hmm_model.score(features_scaled)
 
+		# Calculate additional metrics using common utilities
+		validation_metrics = {
+			"converged": hmm_model.monitor_.converged if hasattr(hmm_model, 'monitor_') else False,
+			"n_iterations": hmm_model.monitor_.iter if hasattr(hmm_model, 'monitor_') else n_iter,
+			"log_likelihood": score,
+			"aic": 2 * features_scaled.shape[1] * n_components - 2 * score,
+			"bic": np.log(features_scaled.shape[0]) * features_scaled.shape[1] * n_components - 2 * score
+		}
+
 		return {
 			"model": hmm_model,
 			"scaler": scaler,
@@ -120,6 +208,8 @@ def train_hmm_cpu_optimized(
 			"n_components": n_components,
 			"score": score,
 			"used_gpu": False,
+			"validation_metrics": validation_metrics,
+			"data_quality": quality_metrics if 'quality_metrics' in locals() else {}
 		}
 	except Exception as e:
 		logger.exception(f"CPU HMM training failed: {e}")
@@ -158,6 +248,65 @@ def train_hmm_optimized(
 	except Exception as e:
 		logger.exception(f"HMM training failed: {e}")
 		raise
+
+
+def create_hmm_dependencies(logger: Any = None) -> HMMDependencies:
+	"""Create HMM dependencies with all available common utilities."""
+	if logger is None:
+		logger = system_logger.getChild("HMMExecutor")
+	
+	# Initialize common utilities
+	gpu_manager = get_m1_gpu_manager()
+	memory_optimizer = get_m1_memory_optimizer()
+	cpu_optimizer = get_m1_cpu_optimizer()
+	matrix_ops = UnifiedMatrixOperations()
+	json_serializer = JSONSerializer()
+	pickle_serializer = PickleSerializer()
+	
+	logger.info("🔧 Initialized HMM dependencies with common utilities")
+	logger.info(f"   GPU Manager: {'Available' if gpu_manager else 'Not Available'}")
+	logger.info(f"   Memory Optimizer: {'Available' if memory_optimizer else 'Not Available'}")
+	logger.info(f"   CPU Optimizer: {'Available' if cpu_optimizer else 'Not Available'}")
+	logger.info(f"   Matrix Operations: {'Available' if matrix_ops else 'Not Available'}")
+	
+	return HMMDependencies(
+		logger=logger,
+		m1_gpu_manager=gpu_manager,
+		m1_memory_optimizer=memory_optimizer,
+		m1_cpu_optimizer=cpu_optimizer,
+		matrix_ops=matrix_ops,
+		json_serializer=json_serializer,
+		pickle_serializer=pickle_serializer
+	)
+
+
+def save_hmm_results(results: Dict[str, Any], filepath: str, deps: HMMDependencies) -> bool:
+	"""Save HMM results using common serialization utilities."""
+	try:
+		# Prepare results for serialization
+		serializable_results = {}
+		for key, value in results.items():
+			if key in ['model', 'scaler']:
+				# Skip non-serializable objects
+				continue
+			elif isinstance(value, np.ndarray):
+				serializable_results[key] = value.tolist()
+			else:
+				serializable_results[key] = value
+		
+		# Save using appropriate serializer
+		if filepath.endswith('.json'):
+			success = deps.json_serializer.save(serializable_results, filepath)
+		else:
+			success = deps.pickle_serializer.save(serializable_results, filepath)
+		
+		if success:
+			deps.logger.info(f"✅ HMM results saved to {filepath}")
+		return success
+		
+	except Exception as e:
+		deps.logger.error(f"❌ Failed to save HMM results: {e}")
+		return False
 
 
 def validate_hmm_model(hmm_model: Any, features: np.ndarray, n_components: int, logger: Any) -> Dict[str, Any]:

@@ -800,10 +800,11 @@ class HyperparameterOptimization:
     def staged_hpo(self, model_factory: Callable,
                    X: np.ndarray, y: np.ndarray,
                    search_space: Dict[str, Any],
-                   coarse_strategy: str = 'random',
+                   coarse_strategy: str = 'grid',  # Changed default to 'grid'
                    coarse_grid_points: int = 3,
+                   fine_grid_points: int = 5,  # Added fine grid points
                    coarse_n_samples: int = 50,
-                   bayes_n_trials: int = 50,
+                   bayes_n_trials: int = 30,  # Reduced since we have better starting point
                    scoring: Union[str, Callable] = 'balanced_accuracy',
                    cv: Optional[Any] = None,
                    pruner: str = 'hyperband',
@@ -812,12 +813,12 @@ class HyperparameterOptimization:
                    timeout: Optional[int] = None,
                    subsample_rate: float = 0.3,
                    finalize_refine: bool = True) -> Dict[str, Any]:
-        """Staged HPO: coarse grid/random → narrowed Bayesian → optional fine-tune.
+        """Enhanced Staged HPO: coarse grid → fine grid → Optuna TPE.
 
-        Returns dict with coarse_results, bayes_results, final_params, final_score.
+        Returns dict with coarse_results, fine_results, optuna_results, final_params, final_score.
         """
         try:
-            self.logger.info("🌀 Starting staged HPO: coarse → bayesian → refine")
+            self.logger.info("🌀 Starting enhanced staged HPO: coarse → fine → optuna TPE")
 
             # Optional subsampling for coarse stage (memmap-aware)
             X_train, y_train = X, y
@@ -833,40 +834,52 @@ class HyperparameterOptimization:
             # Precompute CV if not provided
             cv_obj = cv if cv is not None else self._create_time_series_split(len(X_train))
 
-            # Build coarse parameter grid from search_space
-            param_grid = self._coarse_grid_from_search_space(search_space, coarse_grid_points)
+            # Stage 1: Coarse Grid Search
+            self.logger.info("🎯 Stage 1: Coarse grid search")
+            coarse_start = time.time()
+            coarse_results = self._coarse_grid_search_staged(
+                model_factory, X_train, y_train, search_space, 
+                coarse_grid_points, cv_obj, scoring
+            )
+            coarse_time = time.time() - coarse_start
 
-            coarse_results = {}
-            if self.parallel_coordinator:
-                # Use enhanced parallel random/grid search
-                coarse_results = self.parallel_coordinator.parallel_hyperparameter_search(
-                    parameter_grid=param_grid,
-                    model_factory=model_factory,
-                    X=X_train,
-                    y=y_train,
-                    evaluation_function=self._build_default_eval(scoring, cv_obj),
-                    search_strategy='random' if coarse_strategy == 'random' else 'grid',
-                    # extended parameter accepted after coordinator update
-                    n_random_samples=coarse_n_samples,
+            if not coarse_results or coarse_results.get('best_score', 0) <= 0:
+                self.logger.warning("⚠️ Coarse grid search failed, using random sampling")
+                coarse_results = self._fallback_random_search(
+                    model_factory, X_train, y_train, search_space, coarse_n_samples, cv_obj, scoring
                 )
-            else:
-                # Fallback simple random sampling
-                sampled = self._generate_random_param_combinations(param_grid, coarse_n_samples)
-                best_score = -np.inf
-                best_params = {}
-                for p in sampled:
-                    model = model_factory(**p)
-                    score = self._evaluate_model_cv(model, X_train, y_train, cv_obj, scoring)
-                    if score > best_score:
-                        best_score, best_params = score, p
-                coarse_results = {'best_params': best_params, 'best_score': best_score, 'all_results': []}
 
-            # Narrow search space around coarse best
+            self.logger.info(f"✅ Coarse grid completed in {coarse_time:.2f}s - Best score: {coarse_results.get('best_score', 0):.4f}")
+
+            # Stage 2: Fine Grid Search around best coarse parameters
+            self.logger.info("🎯 Stage 2: Fine grid search")
+            fine_start = time.time()
             best_coarse = coarse_results.get('best_params', {})
-            narrowed = self._narrow_search_space(search_space, best_coarse)
+            fine_results = self._fine_grid_search_staged(
+                model_factory, X, y, search_space, best_coarse, 
+                fine_grid_points, cv_obj, scoring
+            )
+            fine_time = time.time() - fine_start
 
-            # Bayesian stage on full data if feasible
-            bayes_results = self.bayesian_optimization(
+            if not fine_results or fine_results.get('best_score', 0) <= coarse_results.get('best_score', 0):
+                self.logger.info("ℹ️ Fine grid search did not improve results, using coarse grid results")
+                best_params = best_coarse
+                best_score = coarse_results.get('best_score', 0)
+                grid_stage = 'coarse'
+            else:
+                self.logger.info(f"✅ Fine grid completed in {fine_time:.2f}s - Best score: {fine_results.get('best_score', 0):.4f}")
+                best_params = fine_results.get('best_params', {})
+                best_score = fine_results.get('best_score', 0)
+                grid_stage = 'fine'
+
+            # Stage 3: Optuna TPE Optimization around best grid parameters
+            self.logger.info("🎯 Stage 3: Optuna TPE optimization")
+            optuna_start = time.time()
+            
+            # Narrow search space around best grid parameters
+            narrowed = self._narrow_search_space(search_space, best_params)
+            
+            optuna_results = self.bayesian_optimization(
                 model_factory=model_factory,
                 X=X,
                 y=y,
@@ -877,30 +890,55 @@ class HyperparameterOptimization:
                 pruner=pruner,
                 storage=storage,
                 study_name=study_name,
-                timeout=timeout
+                timeout=timeout,
+                use_enhanced_search_space=self.use_nonlinear_optimization
             )
+            optuna_time = time.time() - optuna_start
 
-            final_params = dict(best_coarse)
-            final_score = coarse_results.get('best_score', 0.0)
-            if 'best_params' in bayes_results:
-                final_params = bayes_results['best_params']
-                final_score = bayes_results.get('best_score', final_score)
+            final_params = best_params
+            final_score = best_score
+            final_stage = grid_stage
+
+            if optuna_results and optuna_results.get('best_score', 0) > best_score:
+                self.logger.info(f"✅ Optuna TPE completed in {optuna_time:.2f}s - Best score: {optuna_results.get('best_score', 0):.4f}")
+                final_params = optuna_results.get('best_params', best_params)
+                final_score = optuna_results.get('best_score', best_score)
+                final_stage = 'optuna'
+            else:
+                self.logger.info("ℹ️ Optuna TPE did not improve results, using grid search results")
 
             # Optional local fine-tune around best (small random jitters)
             if finalize_refine:
-                fine_params, fine_score = self._local_refine(model_factory, X, y, final_params, scoring,
-                                                             cv if cv is not None else self._create_time_series_split(len(X)))
+                refine_start = time.time()
+                fine_params, fine_score = self._local_refine(
+                    model_factory, X, y, final_params, scoring,
+                    cv if cv is not None else self._create_time_series_split(len(X))
+                )
+                refine_time = time.time() - refine_start
+                
                 if fine_score > final_score:
                     final_params, final_score = fine_params, fine_score
+                    final_stage = 'refine'
+                    self.logger.info(f"✅ Local refinement completed in {refine_time:.2f}s - Best score: {fine_score:.4f}")
+
+            total_time = coarse_time + fine_time + optuna_time
+            self.logger.info(f"🏆 Final HPO completed in {total_time:.2f}s - Best stage: {final_stage}")
 
             return {
                 'coarse_results': coarse_results,
-                'bayes_results': bayes_results,
+                'fine_results': fine_results,
+                'optuna_results': optuna_results,
                 'final_params': final_params,
-                'final_score': final_score
+                'final_score': final_score,
+                'best_stage': final_stage,
+                'coarse_time': coarse_time,
+                'fine_time': fine_time,
+                'optuna_time': optuna_time,
+                'total_time': total_time,
+                'optimization_method': 'coarse_fine_optuna'
             }
         except Exception as e:
-            self.logger.error(f"❌ Staged HPO failed: {e}")
+            self.logger.error(f"❌ Enhanced staged HPO failed: {e}")
             return {'error': str(e)}
 
     def hyperparameter_importance_analysis(self, study_results: Dict[str, Any]) -> Dict[str, Any]:
@@ -1587,3 +1625,221 @@ class HyperparameterOptimization:
         except Exception as e:
             self.logger.warning(f"Fresh optimization failed: {e}")
             return {'error': str(e)}
+    
+    def _coarse_grid_search_staged(self, model_factory: Callable, X: np.ndarray, y: np.ndarray,
+                                  search_space: Dict[str, Any], grid_points: int, cv_obj: Any, 
+                                  scoring: Union[str, Callable]) -> Dict[str, Any]:
+        """Perform coarse grid search for staged HPO."""
+        try:
+            self.logger.info(f"🔍 Creating coarse grid with {grid_points} points per parameter")
+            
+            # Create coarse parameter grid
+            param_grid = self._coarse_grid_from_search_space(search_space, grid_points)
+            self.logger.info(f"📊 Coarse grid size: {len(param_grid)} combinations")
+            
+            best_score = -np.inf
+            best_params = {}
+            parameter_scores = []
+            
+            # Evaluate each parameter combination
+            for i, params in enumerate(param_grid):
+                try:
+                    model = model_factory(**params)
+                    score = self._evaluate_model_cv(model, X, y, cv_obj, scoring)
+                    parameter_scores.append((params, score))
+                    
+                    if score > best_score:
+                        best_score = score
+                        best_params = params.copy()
+                    
+                    if (i + 1) % 10 == 0:
+                        self.logger.debug(f"   Evaluated {i + 1}/{len(param_grid)} combinations")
+                        
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Failed to evaluate parameters {params}: {e}")
+                    continue
+            
+            if not parameter_scores:
+                self.logger.error("❌ No valid parameter combinations found in coarse grid")
+                return {}
+            
+            self.logger.info(f"✅ Coarse grid search completed - Best score: {best_score:.4f}")
+            
+            return {
+                'best_params': best_params,
+                'best_score': best_score,
+                'n_combinations': len(param_grid),
+                'valid_combinations': len(parameter_scores),
+                'parameter_scores': parameter_scores[:10]  # Keep top 10 for analysis
+            }
+            
+        except Exception as e:
+            self.logger.error(f"❌ Coarse grid search failed: {e}")
+            return {}
+    
+    def _fine_grid_search_staged(self, model_factory: Callable, X: np.ndarray, y: np.ndarray,
+                                search_space: Dict[str, Any], best_coarse_params: Dict[str, Any],
+                                grid_points: int, cv_obj: Any, scoring: Union[str, Callable]) -> Dict[str, Any]:
+        """Perform fine grid search around best coarse parameters for staged HPO."""
+        try:
+            self.logger.info(f"🔍 Creating fine grid with {grid_points} points around best coarse parameters")
+            
+            # Create fine parameter grid around best coarse parameters
+            fine_grid = self._create_fine_parameter_grid_staged(search_space, best_coarse_params, grid_points)
+            self.logger.info(f"📊 Fine grid size: {len(fine_grid)} combinations")
+            
+            best_score = -np.inf
+            best_params = {}
+            parameter_scores = []
+            
+            # Evaluate each parameter combination
+            for i, params in enumerate(fine_grid):
+                try:
+                    model = model_factory(**params)
+                    score = self._evaluate_model_cv(model, X, y, cv_obj, scoring)
+                    parameter_scores.append((params, score))
+                    
+                    if score > best_score:
+                        best_score = score
+                        best_params = params.copy()
+                    
+                    if (i + 1) % 10 == 0:
+                        self.logger.debug(f"   Evaluated {i + 1}/{len(fine_grid)} combinations")
+                        
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Failed to evaluate parameters {params}: {e}")
+                    continue
+            
+            if not parameter_scores:
+                self.logger.error("❌ No valid parameter combinations found in fine grid")
+                return {}
+            
+            self.logger.info(f"✅ Fine grid search completed - Best score: {best_score:.4f}")
+            
+            return {
+                'best_params': best_params,
+                'best_score': best_score,
+                'n_combinations': len(fine_grid),
+                'valid_combinations': len(parameter_scores),
+                'parameter_scores': parameter_scores[:10]  # Keep top 10 for analysis
+            }
+            
+        except Exception as e:
+            self.logger.error(f"❌ Fine grid search failed: {e}")
+            return {}
+    
+    def _create_fine_parameter_grid_staged(self, search_space: Dict[str, Any], best_params: Dict[str, Any], 
+                                         grid_points: int) -> List[Dict[str, Any]]:
+        """Create fine parameter grid around best parameters for staged HPO."""
+        import itertools
+        
+        param_combinations = []
+        
+        for param_name, param_config in search_space.items():
+            if param_name not in best_params:
+                continue
+                
+            best_value = best_params[param_name]
+            
+            if isinstance(param_config, dict):
+                typ = param_config.get('type', 'float')
+                if typ == 'float':
+                    low, high = param_config['low'], param_config['high']
+                    # Create fine grid around best value (±20% of range)
+                    range_size = high - low
+                    fine_range = range_size * 0.2
+                    fine_min = max(low, best_value - fine_range)
+                    fine_max = min(high, best_value + fine_range)
+                    
+                    # Use specified number of points for fine grid
+                    if param_config.get('log', False):
+                        # Log-spaced values
+                        values = np.logspace(np.log10(fine_min), np.log10(fine_max), grid_points)
+                    else:
+                        # Linear-spaced values
+                        values = np.linspace(fine_min, fine_max, grid_points)
+                    param_combinations.append([(param_name, v) for v in values])
+                    
+                elif typ == 'int':
+                    low, high = param_config['low'], param_config['high']
+                    # Create fine grid around best value (±2 values)
+                    fine_min = max(low, best_value - 2)
+                    fine_max = min(high, best_value + 2)
+                    values = list(range(fine_min, fine_max + 1))
+                    param_combinations.append([(param_name, v) for v in values])
+                    
+                elif typ == 'categorical':
+                    param_combinations.append([(param_name, v) for v in param_config.get('choices', [])])
+            else:
+                # Legacy tuple format
+                if isinstance(param_config, tuple) and len(param_config) == 2:
+                    low, high = param_config
+                    range_size = high - low
+                    fine_range = range_size * 0.2
+                    fine_min = max(low, best_value - fine_range)
+                    fine_max = min(high, best_value + fine_range)
+                    values = np.linspace(fine_min, fine_max, grid_points)
+                    param_combinations.append([(param_name, v) for v in values])
+        
+        # Generate all combinations
+        all_combinations = list(itertools.product(*param_combinations))
+        
+        # Convert to list of dictionaries
+        grid = []
+        for combination in all_combinations:
+            param_dict = dict(combination)
+            grid.append(param_dict)
+        
+        return grid
+    
+    def _fallback_random_search(self, model_factory: Callable, X: np.ndarray, y: np.ndarray,
+                               search_space: Dict[str, Any], n_samples: int, cv_obj: Any, 
+                               scoring: Union[str, Callable]) -> Dict[str, Any]:
+        """Fallback random search when grid search fails."""
+        try:
+            self.logger.info(f"🎲 Performing fallback random search with {n_samples} samples")
+            
+            # Generate random parameter combinations
+            sampled = self._generate_random_param_combinations(
+                self._coarse_grid_from_search_space(search_space, 3), n_samples
+            )
+            
+            best_score = -np.inf
+            best_params = {}
+            parameter_scores = []
+            
+            for i, params in enumerate(sampled):
+                try:
+                    model = model_factory(**params)
+                    score = self._evaluate_model_cv(model, X, y, cv_obj, scoring)
+                    parameter_scores.append((params, score))
+                    
+                    if score > best_score:
+                        best_score = score
+                        best_params = params.copy()
+                    
+                    if (i + 1) % 10 == 0:
+                        self.logger.debug(f"   Evaluated {i + 1}/{len(sampled)} combinations")
+                        
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Failed to evaluate parameters {params}: {e}")
+                    continue
+            
+            if not parameter_scores:
+                self.logger.error("❌ No valid parameter combinations found in random search")
+                return {}
+            
+            self.logger.info(f"✅ Random search completed - Best score: {best_score:.4f}")
+            
+            return {
+                'best_params': best_params,
+                'best_score': best_score,
+                'n_combinations': len(sampled),
+                'valid_combinations': len(parameter_scores),
+                'parameter_scores': parameter_scores[:10],
+                'method': 'random_fallback'
+            }
+            
+        except Exception as e:
+            self.logger.error(f"❌ Random search failed: {e}")
+            return {}

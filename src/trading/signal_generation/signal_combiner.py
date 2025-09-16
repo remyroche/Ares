@@ -1,8 +1,8 @@
 """
-Signal Combiner
+Signal Generation Pipeline
 
-Combines signals from analyst and tactician components with regime-aware weighting
-and confidence scoring.
+Implements proper data flow: HMM regime -> analyst -> tactician
+with sequential model calls and confidence score optimization.
 """
 
 import logging
@@ -17,7 +17,7 @@ from src.core.decorators import handles_errors, traced, log_execution_time
 from ..config.regime_config import RegimeType
 from ..config.trading_config import TradingConfig
 
-logger = system_logger.getChild('SignalCombiner')
+logger = system_logger.getChild('SignalGenerationPipeline')
 
 @dataclass
 class TradingSignal:

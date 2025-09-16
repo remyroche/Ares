@@ -1,18 +1,32 @@
 """
 Signal Generation Module
 
-Analyst and tactician signal integration for trading decisions.
-Combines signals from multiple sources with regime-aware weighting.
+Implements proper data flow: HMM regime -> analyst -> tactician
+with sequential model calls and confidence score optimization.
 """
 
-from .analyst_signals import AnalystSignalGenerator
-from .tactician_signals import TacticianSignalGenerator
+from .signal_pipeline import (
+    SignalGenerationPipeline,
+    HMMRegimeOutput,
+    AnalystBaseOutput,
+    AnalystMetaOutput,
+    TacticianBaseOutput,
+    TacticianMetaOutput,
+    SignalGenerationResult,
+    setup_signal_generation_pipeline
+)
 from .signal_combiner import SignalCombiner
 from .signal_validator import SignalValidator
 
 __all__ = [
-    "AnalystSignalGenerator",
-    "TacticianSignalGenerator",
+    "SignalGenerationPipeline",
+    "HMMRegimeOutput",
+    "AnalystBaseOutput", 
+    "AnalystMetaOutput",
+    "TacticianBaseOutput",
+    "TacticianMetaOutput",
+    "SignalGenerationResult",
+    "setup_signal_generation_pipeline",
     "SignalCombiner",
     "SignalValidator"
 ]

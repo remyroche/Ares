@@ -88,9 +88,10 @@ src/trading/
 - **Kelly criterion** for optimal position sizing
 
 ### 4. Signal Generation (`signal_generation/`)
-- **Analyst and tactician integration** with existing components
-- **Signal combination** using multiple methods (weighted average, regime-based, ensemble)
-- **Regime-aware weighting** for signal combination
+- **Proper data flow**: HMM regime → analyst → tactician
+- **Sequential model calls**: analyst base models → analyst meta model → tactician base models → tactician meta model
+- **Confidence score optimization** based on backtesting parameters
+- **Signal validation** for quality and risk compliance
 - **Confidence scoring** and signal validation
 
 ### 5. Data (`data/`)
@@ -156,20 +157,14 @@ await position_sizer.initialize()
 await signal_combiner.initialize()
 await paper_trader.initialize()
 
-# Detect regime
-regime_detection = await regime_detector.detect_regime(market_data)
-
-# Generate signals
-analyst_signal = await analyst.generate_signal(market_data)
-tactician_signal = await tactician.generate_signal(market_data)
-
-# Combine signals
-combined_result = await signal_combiner.combine_signals(
+# Generate signal with proper data flow
+signal_result = await signal_pipeline.generate_signal(
     symbol="ETHUSDT",
-    analyst_signal=analyst_signal,
-    tactician_signal=tactician_signal,
-    regime_probabilities=regime_detection.regime_probabilities
+    market_data=market_data
 )
+
+# Validate signal
+validation_result = await signal_validator.validate_signal(signal_result)
 
 # Calculate position size
 position_result = await position_sizer.calculate_position_size(
@@ -182,7 +177,7 @@ position_result = await position_sizer.calculate_position_size(
 )
 
 # Execute trade
-if combined_result.combined_signal.signal_type == 'buy':
+if validation_result.is_valid and signal_result.final_signal == 'buy':
     await paper_trader.execute_buy_order(
         symbol="ETHUSDT",
         quantity=position_result.recommended_size,

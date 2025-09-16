@@ -12,6 +12,9 @@ import warnings
 from dataclasses import dataclass
 from pathlib import Path
 import json
+import psutil
+import os
+import gc
 
 warnings.filterwarnings('ignore')
 
@@ -20,6 +23,15 @@ from src.utils.tprint import tprint
 from src.utils.ml_common.config.base_training_config import HMMTrainingConfig
 from src.utils.ml_common.training.base_training_step import BaseTrainingStep
 
+# Shared utilities
+from .shared_utilities import (
+    TrainingErrorHandler,
+    UnifiedModelFactory,
+    CircuitBreaker,
+    ValidationUtils,
+    ProgressReporter,
+    MemoryTracker
+)
 # Using tprint for all logging - no logger needed
 
 
@@ -118,107 +130,11 @@ class TrainingErrorHandler:
         )
 
 
-class ModelFactory:
-    """Factory for creating model instances with standardized configuration."""
-    
-    _model_configs = {
-
-        'elastic_net': {
-            'class': 'sklearn.linear_model.ElasticNetCV',
-            'default_params': {
-                'l1_ratio': [0.1, 0.5, 0.7, 0.9, 0.95, 0.99],
-                'cv': 5,
-                'random_state': 42,
-                'max_iter': 2000,
-                'n_jobs': -1
-            }
-        },
-        'lightgbm': {
-            'class': 'lightgbm.LGBMClassifier',
-            'default_params': {
-                'n_estimators': 100, 'learning_rate': 0.1,
-                'max_depth': 6, 'random_state': 42, 'verbosity': -1,
-                'objective': 'multiclass', 'num_class': 3
-            }
-        },
-        'elastic_net': {
-            'class': 'sklearn.linear_model.LogisticRegression',
-            'default_params': {
-                'C': 1.0, 'max_iter': 1000, 'random_state': 42,
-                'class_weight': 'balanced', 'penalty': 'elasticnet',
-                'l1_ratio': 0.5, 'solver': 'saga'
-            }
-        },
-        'xgboost': {
-            'class': 'xgboost.XGBClassifier',
-            'default_params': {
-                'n_estimators': 100, 'learning_rate': 0.1,
-                'max_depth': 6, 'random_state': 42, 'verbosity': 0,
-                'objective': 'multi:softprob', 'eval_metric': 'mlogloss'
-            }
-        }
-    }
-    
-    @classmethod
-    def create_model(cls, model_type: str, **custom_params) -> Any:
-        """Create model instance with standardized configuration."""
-        if model_type not in cls._model_configs:
-            raise ValueError(f"Unknown model type: {model_type}")
-        
-        config = cls._model_configs[model_type]
-        
-        # Import the class dynamically
-        class_path = config['class']
-        module_name, class_name = class_path.rsplit('.', 1)
-        module = __import__(module_name, fromlist=[class_name])
-        model_class = getattr(module, class_name)
-        
-        # Merge default and custom parameters
-        params = {**config['default_params'], **custom_params}
-        return model_class(**params)
+logger = system_logger.getChild('HMMModelsTrainingEnhanced')
 
 
-class RealTimeProgressReporter:
-    """Real-time progress reporting during training."""
-    
-    def __init__(self, total_models: int):
-        self.total_models = total_models
-        self.completed_models = 0
-        self.start_time = time.time()
-        self.model_times = []
-        self.successful_models = 0
-        self.failed_models = 0
-    
-    def update_progress(self, model_name: str, success: bool, training_time: float):
-        """Update progress after each model training."""
-        self.completed_models += 1
-        self.model_times.append(training_time)
-        
-        if success:
-            self.successful_models += 1
-        else:
-            self.failed_models += 1
-        
-        progress_percent = (self.completed_models / self.total_models) * 100
-        avg_time = np.mean(self.model_times) if self.model_times else 0
-        eta = avg_time * (self.total_models - self.completed_models)
-        
-        status = "✅" if success else "❌"
-        
-        tprint(f"\r{status} {model_name} | Progress: {progress_percent:.1f}% | "
-               f"Success: {self.successful_models}/{self.completed_models} | "
-               f"ETA: {eta:.1f}s", end="", flush=True)
-    
-    def finish_report(self):
-        """Generate final progress report."""
-        total_time = time.time() - self.start_time
-        tprint(f"\n\n🎯 Training Summary:")
-        tprint(f"   Total time: {total_time:.2f}s")
-        if self.model_times:
-            tprint(f"   Average time per model: {np.mean(self.model_times):.2f}s")
-        tprint(f"   Successful models: {self.successful_models}/{self.total_models}")
-        tprint(f"   Success rate: {(self.successful_models/self.total_models)*100:.1f}%")
-
+# Import shared data classes
+from .shared_utilities.training_error_handler import TrainingMetrics, ModelResult
 
 class HMMModelsTrainingEnhanced(BaseTrainingStep):
     """
@@ -239,7 +155,7 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
                 n_features=100,
                 sequence_length=20,
                 n_regimes=3,
-                model_types=["lightgbm", "elastic_net", "xgboost"],
+                model_types=["lightgbm", "elastic_net_lr", "xgboost"],
                 hpo_trials=50,
                 enable_multi_objective=True
             )
@@ -249,10 +165,15 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
             config_dict = {**default_config.__dict__, **config}
             config = HMMTrainingConfig(**config_dict)
 
+        # Validate configuration before proceeding
+        self._validate_config(config)
+
         super().__init__(config)
-        # Initialize enhanced components
+        self.logger = logger.getChild('HMMModelsTrainingEnhanced')
+
         self.circuit_breaker = CircuitBreaker(failure_threshold=2, timeout=60)
         self.progress_reporter = None
+        self.memory_tracker = MemoryTracker()
         
         # Initialize components with error handling
         self._initialize_components()
@@ -263,92 +184,176 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
         
         tprint("✅ Enhanced HMM Models Training initialized with circuit breaker protection")
     
-    def _initialize_components(self):
-        """Initialize training components with comprehensive error handling."""
+    def _validate_config(self, config: HMMTrainingConfig) -> None:
+        """
+        Validate configuration parameters with fast-fail on critical errors.
+        
+        Args:
+            config: Configuration to validate
+            
+        Raises:
+            ValueError: If configuration is invalid
+        """
         try:
-            # Initialize feature generator with fallback compatibility
+            # Use shared validation utility
+            if not ValidationUtils.validate_config(config):
+                raise ValueError("Configuration validation failed")
+            
+            # Additional HMM-specific validations
+            warnings = []
+            
+            # Warning validations (don't cause fast-fail)
+            if config.n_features > 1000:
+                warnings.append("WARNING: Large number of features may impact performance")
+            
+            if config.hpo_trials > 1000:
+                warnings.append("WARNING: Large number of HPO trials may take very long")
+            
+            if config.sequence_length > 100:
+                warnings.append("WARNING: Large sequence length may impact memory usage")
+            
+            # Log warnings
+            if warnings:
+                for warning in warnings:
+                    self.logger.warning(f"⚠️ {warning}")
+            
+            self.logger.info("✅ Configuration validation passed")
+            
+        except Exception as e:
+            self.logger.error(f"❌ Configuration validation error: {e}")
+            raise ValueError(f"Configuration validation failed: {e}") from e
+    
+    def _initialize_components(self) -> None:
+        """Initialize training components with comprehensive error handling."""
+        # Initialize feature generator with specific error handling
+        self.feature_generator = self._initialize_feature_generator()
+        
+        # Initialize feature selector with specific error handling
+        self.feature_selector = self._initialize_feature_selector()
+        
+        # Initialize evaluation utilities with specific error handling
+        self.evaluation_utils = self._initialize_evaluation_utils()
+
+        # Model creation now handled by shared UnifiedModelFactory
+    
+    def _initialize_feature_generator(self) -> Optional[Any]:
+        """Initialize feature generator with specific error handling."""
+        try:
+            # Try primary import
+            from src.feature_engineering.feature_generators import FeatureGenerators
+            generator = FeatureGenerators()
+            self.logger.info("✅ Feature generator initialized from feature_engineering")
+            return generator
+        except ImportError as primary_error:
+            self.logger.debug(f"Primary feature generator import failed: {primary_error}")
             try:
-                from src.feature_engineering.feature_generators import FeatureGenerators
-                self.feature_generator = FeatureGenerators()
-                tprint("✅ Feature generator initialized from feature_engineering")
-            except ImportError:
                 # Fallback to standalone compatibility
                 from src.hmm_feature_compatibility import FeatureGenerators
-                self.feature_generator = FeatureGenerators()
-                tprint("✅ Feature generator initialized from standalone compatibility")
-        except ImportError as e:
-            tprint(f"⚠️ Feature generator not available: {e}")
-            self.feature_generator = None
-
+                generator = FeatureGenerators()
+                self.logger.info("✅ Feature generator initialized from standalone compatibility")
+                return generator
+            except ImportError as fallback_error:
+                self.logger.warning(f"⚠️ Feature generator not available - primary: {primary_error}, fallback: {fallback_error}")
+                return None
+        except Exception as e:
+            self.logger.error(f"❌ Unexpected error initializing feature generator: {e}")
+            return None
+    
+    def _initialize_feature_selector(self) -> Optional[Any]:
+        """Initialize feature selector with specific error handling."""
         try:
-            # Initialize feature selector
             from src.training.utils.feature_selection.main_framework import FeatureSelectionFramework
             fs_config = {
                 'selection_methods': ['mrmr', 'lasso_stability'],
                 'max_features': self.config.n_features,
                 'enable_stability_analysis': True
             }
-            self.feature_selector = FeatureSelectionFramework(fs_config)
-            tprint("✅ Feature selector initialized")
+            selector = FeatureSelectionFramework(fs_config)
+            self.logger.info("✅ Feature selector initialized")
+            return selector
         except ImportError as e:
-            tprint(f"⚠️ Feature selector not available: {e}")
-            self.feature_selector = None
-
+            self.logger.warning(f"⚠️ Feature selector not available: {e}")
+            return None
+        except Exception as e:
+            self.logger.error(f"❌ Unexpected error initializing feature selector: {e}")
+            return None
+    
+    def _initialize_evaluation_utils(self) -> Optional[Any]:
+        """Initialize evaluation utilities with specific error handling."""
         try:
-            # Initialize evaluation utilities
             from src.utils.ml_common.evaluation.evaluation_utils import EvaluationUtils
-            self.evaluation_utils = EvaluationUtils()
-            tprint("✅ Evaluation utilities initialized")
+            utils = EvaluationUtils()
+            self.logger.info("✅ Evaluation utilities initialized")
+            return utils
         except ImportError as e:
-            tprint(f"⚠️ Evaluation utilities not available: {e}")
-            self.evaluation_utils = None
-
-        # Initialize model registry
-        self.model_registry = {}
-        self._register_models()
+            self.logger.warning(f"⚠️ Evaluation utilities not available: {e}")
+            return None
+        except Exception as e:
+            self.logger.error(f"❌ Unexpected error initializing evaluation utilities: {e}")
+            return None
     
-    def _register_models(self):
-        """Register available models with their configurations."""
-        self.model_registry = {
-            'lightgbm': {
-                'class': 'lightgbm.LGBMClassifier',
-                'params': {
-                    'n_estimators': 100,
-                    'learning_rate': 0.1,
-                    'max_depth': 6,
-                    'random_state': 42,
-                    'verbosity': -1,
-                    'objective': 'multiclass',
-                    'num_class': 3
-                }
-            },
-            'elastic_net': {
-                'class': 'sklearn.linear_model.LogisticRegression',
-                'params': {
-                    'C': 1.0,
-                    'max_iter': 1000,
-                    'random_state': 42,
-                    'class_weight': 'balanced',
-                    'penalty': 'elasticnet',
-                    'l1_ratio': 0.5,
-                    'solver': 'saga'
-                }
-            },
-            'xgboost': {
-                'class': 'xgboost.XGBClassifier',
-                'params': {
-                    'n_estimators': 100,
-                    'learning_rate': 0.1,
-                    'max_depth': 6,
-                    'random_state': 42,
-                    'verbosity': 0,
-                    'objective': 'multi:softprob',
-                    'eval_metric': 'mlogloss'
-                }
-            }
-        }
+    def _convert_to_numpy_array(self, data: Union[np.ndarray, pd.DataFrame]) -> np.ndarray:
+        """
+        Convert data to numpy array with proper validation and error handling.
+        
+        Args:
+            data: Input data (DataFrame or numpy array)
+            
+        Returns:
+            numpy array
+            
+        Raises:
+            ValueError: If conversion fails or data is invalid
+        """
+        try:
+            if isinstance(data, np.ndarray):
+                # Already a numpy array, validate it
+                if data.size == 0:
+                    raise ValueError("Input array is empty")
+                if np.any(np.isnan(data)):
+                    raise ValueError("Input array contains NaN values")
+                if np.any(np.isinf(data)):
+                    raise ValueError("Input array contains infinite values")
+                return data
+            
+            elif isinstance(data, pd.DataFrame):
+                # Convert DataFrame to numpy array
+                if data.empty:
+                    raise ValueError("Input DataFrame is empty")
+                
+                # Check for non-numeric columns
+                numeric_data = data.select_dtypes(include=[np.number])
+                if numeric_data.empty:
+                    raise ValueError("DataFrame contains no numeric columns")
+                
+                if len(numeric_data.columns) != len(data.columns):
+                    non_numeric_cols = set(data.columns) - set(numeric_data.columns)
+                    self.logger.warning(f"⚠️ Dropping non-numeric columns: {non_numeric_cols}")
+                
+                # Convert to numpy array
+                array_data = numeric_data.values
+                
+                # Validate the converted array
+                if np.any(np.isnan(array_data)):
+                    nan_count = np.isnan(array_data).sum()
+                    self.logger.warning(f"⚠️ Converted array contains {nan_count} NaN values")
+                
+                if np.any(np.isinf(array_data)):
+                    inf_count = np.isinf(array_data).sum()
+                    self.logger.warning(f"⚠️ Converted array contains {inf_count} infinite values")
+                
+                return array_data
+            
+            else:
+                raise ValueError(f"Unsupported data type: {type(data)}. Expected numpy array or DataFrame.")
+                
+        except Exception as e:
+            self.logger.error(f"❌ Failed to convert data to numpy array: {e}")
+            raise ValueError(f"Data conversion failed: {e}") from e
     
-    def _validate_inputs(self, X: np.ndarray, y: np.ndarray, regime_labels: np.ndarray) -> bool:
+# Model registration now handled by shared UnifiedModelFactory
+    
+    def _validate_input_data(self, X: np.ndarray, y: np.ndarray, regime_labels: np.ndarray) -> bool:
         """
         Enhanced input validation with early exit on critical failures.
         
@@ -360,50 +365,19 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
         Returns:
             True if validation passes, False otherwise
         """
-        critical_failures = []
-        warnings = []
-        
         try:
-            # Critical checks (cause early exit)
-            if len(X) == 0:
-                critical_failures.append("Input data is empty")
+            # Use shared validation utilities
+            if not ValidationUtils.validate_data_shapes(X, y, regime_labels):
+                return False
             
-            # Check data types
-            if not isinstance(X, (np.ndarray, pd.DataFrame)):
-                critical_failures.append(f"X must be numpy array or DataFrame, got {type(X)}")
+            if not ValidationUtils.validate_data_quality(X, y, regime_labels):
+                return False
             
-            if not isinstance(y, np.ndarray):
-                critical_failures.append(f"y must be numpy array, got {type(y)}")
+            if not ValidationUtils.validate_regime_distribution(regime_labels, min_samples_per_regime=10):
+                return False
             
-            if not isinstance(regime_labels, np.ndarray):
-                critical_failures.append(f"regime_labels must be numpy array, got {type(regime_labels)}")
-            
-            # Check shapes
-            if len(X) != len(y):
-                critical_failures.append(f"X length ({len(X)}) != y length ({len(y)})")
-            
-            if len(X) != len(regime_labels):
-                critical_failures.append(f"X length ({len(X)}) != regime_labels length ({len(regime_labels)})")
-            
-            # Check for NaN values (critical)
-            if isinstance(X, np.ndarray):
-                if np.any(np.isnan(X)):
-                    critical_failures.append("X contains NaN values")
-                if np.any(np.isinf(X)):
-                    critical_failures.append("X contains infinite values")
-            else:  # DataFrame
-                if X.isnull().any().any():
-                    critical_failures.append("X contains NaN values")
-                if np.isinf(X.select_dtypes(include=[np.number])).any().any():
-                    critical_failures.append("X contains infinite values")
-            
-            if np.any(np.isnan(y)):
-                critical_failures.append("y contains NaN values")
-            
-            if np.any(np.isnan(regime_labels)):
-                critical_failures.append("regime_labels contains NaN values")
-            
-            # Check regime distribution
+            # Additional HMM-specific validations
+            warnings = []
             unique_regimes = np.unique(regime_labels)
             if len(unique_regimes) < 2:
                 critical_failures.append(f"Need at least 2 regimes, found {len(unique_regimes)}")
@@ -498,22 +472,37 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
                 self.logger.warning("⚠️ Feature selector not available, using all features")
                 return X, list(X.columns)
             
-            # Ensure compatible shapes
+            # Validate shapes before proceeding - don't modify input data
             if len(X) != len(y):
-                min_len = min(len(X), len(y))
-                X = X.iloc[:min_len]
-                y = y[:min_len]
-                self.logger.warning(f"⚠️ Shape mismatch corrected: using {min_len} samples")
+                error_msg = f"Shape mismatch: X has {len(X)} samples, y has {len(y)} samples"
+                self.logger.error(f"❌ {error_msg}")
+                raise ValueError(error_msg)
+            
+            # Create copies to avoid modifying original data
+            X_copy = X.copy()
+            y_copy = y.copy()
             
             # Apply feature selection
             selection_result = self.feature_selector.select_features(
-                X, y,
+                X_copy, y_copy,
                 method='comprehensive',
                 max_features=self.config.n_features,
                 is_classification=is_classification
             )
             
             selected_features = selection_result.get('selected_features', list(X.columns)[:self.config.n_features])
+            
+            # Validate selected features exist in the DataFrame
+            missing_features = [f for f in selected_features if f not in X.columns]
+            if missing_features:
+                self.logger.warning(f"⚠️ Some selected features not found in DataFrame: {missing_features}")
+                # Filter out missing features
+                selected_features = [f for f in selected_features if f in X.columns]
+            
+            if not selected_features:
+                self.logger.warning("⚠️ No valid features selected, using first n_features")
+                selected_features = list(X.columns)[:self.config.n_features]
+            
             X_selected = X[selected_features]
             
             self.logger.info(f"✅ Feature selection completed: {len(selected_features)} features selected")
@@ -521,13 +510,15 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
             
         except Exception as e:
             self.logger.error(f"❌ Feature selection failed: {e}")
-            # Fallback to basic selection
+            # Fallback to basic selection with validation
             fallback_features = list(X.columns)[:self.config.n_features]
+            if not fallback_features:
+                raise ValueError("No features available for fallback selection")
             return X[fallback_features], fallback_features
     
     def _create_model(self, model_type: str, **kwargs) -> Any:
         """
-        Create model instance with enhanced factory pattern and fallback to original registry.
+        Create model instance using shared UnifiedModelFactory.
         
         Args:
             model_type: Type of model to create
@@ -537,38 +528,8 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
             Model instance
         """
         try:
-            # Try factory pattern first
-            return ModelFactory.create_model(model_type, **kwargs)
-        except Exception as factory_error:
-            self.logger.warning(f"⚠️ Factory pattern failed for {model_type}: {factory_error}, trying original registry")
-            
-            # Fallback to original model registry
-            if model_type not in self.model_registry:
-                raise ValueError(f"Unknown model type: {model_type}")
-            
-            model_config = self.model_registry[model_type]
-            
-            # Handle LightGBM
-            if model_type == 'lightgbm':
-                import lightgbm as lgb
-                params = {**model_config['params'], **kwargs}
-                return lgb.LGBMClassifier(**params)
-            
-            # Handle Elastic Net (Logistic Regression with elastic net penalty)
-            elif model_type == 'elastic_net':
-                from sklearn.linear_model import LogisticRegression
-                params = {**model_config['params'], **kwargs}
-                return LogisticRegression(**params)
-            
-            # Handle XGBoost
-            elif model_type == 'xgboost':
-                import xgboost as xgb
-                params = {**model_config['params'], **kwargs}
-                return xgb.XGBClassifier(**params)
-            
-            else:
-                raise ValueError(f"Model type {model_type} not implemented")
-                
+            # Use shared unified model factory
+            return UnifiedModelFactory.create_model(model_type, **kwargs)
         except Exception as e:
             self.logger.error(f"❌ Failed to create model {model_type}: {e}")
             raise
@@ -587,16 +548,21 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
         """
         start_time = time.time()
         metrics = TrainingMetrics()
+        # Use shared memory tracker
+        memory_tracker = MemoryTracker()
         
         try:
             self.logger.info(f"🔄 Training {model_type}...")
+            memory_tracker.take_snapshot(f"{model_type}_start")
             
             # Create model with circuit breaker protection
             def create_and_train_model():
                 model = self._create_model(model_type)
+                memory_tracker.take_snapshot(f"{model_type}_model_created")
                 
                 # Train model
                 model.fit(X, y)
+                memory_tracker.take_snapshot(f"{model_type}_model_fitted")
                 
                 # Evaluate model
                 predictions = model.predict(X)
@@ -663,6 +629,10 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
             training_time = time.time() - start_time
             metrics.training_time = training_time
             
+            # Calculate memory usage
+            memory_tracker.take_snapshot(f"{model_type}_completed")
+            metrics.memory_usage_mb = memory_tracker.get_memory_increase()
+            
             # Get probabilities if available
             probabilities = None
             try:
@@ -671,7 +641,10 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
             except Exception as e:
                 metrics.warnings.append(f"Could not get probabilities: {e}")
             
-            self.logger.info(f"✅ {model_type} trained successfully (accuracy: {metrics.accuracy:.4f}, time: {training_time:.2f}s)")
+            self.logger.info(f"✅ {model_type} trained successfully (accuracy: {metrics.accuracy:.4f}, time: {training_time:.2f}s, memory: {metrics.memory_usage_mb:.1f}MB)")
+            
+            # Cleanup memory
+            memory_tracker.cleanup()
             
             return ModelResult(
                 model=model,
@@ -687,7 +660,14 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
             metrics.training_time = training_time
             metrics.error_message = str(e)
             
+            # Calculate memory usage even on failure
+            memory_tracker.take_snapshot(f"{model_type}_failed")
+            metrics.memory_usage_mb = memory_tracker.get_memory_increase()
+            
             self.logger.error(f"❌ Failed to train {model_type}: {e}")
+            
+            # Cleanup memory
+            memory_tracker.cleanup()
             
             # Use centralized error handler
             return TrainingErrorHandler.handle_training_error(model_type, e, training_time)
@@ -845,7 +825,7 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
         try:
             # Step 1: Input validation
             self.logger.info("🔄 Step 1: Validating inputs...")
-            if not self._validate_inputs(X, y, regime_labels):
+            if not self._validate_input_data(X, y, regime_labels):
                 raise ValueError("Input validation failed")
             
             # Step 2: Feature preparation
@@ -861,13 +841,13 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
             
             # Step 4: Initialize progress reporter and train models
             self.logger.info("🔄 Step 4: Training models with real-time progress...")
-            self.progress_reporter = RealTimeProgressReporter(len(self.config.model_types))
+            self.progress_reporter = ProgressReporter(len(self.config.model_types))
             model_results = {}
             
             for model_type in self.config.model_types:
                 try:
-                    # Convert to numpy array for training
-                    X_train = X_selected.values if hasattr(X_selected, 'values') else X_selected
+                    # Convert to numpy array for training with proper validation
+                    X_train = self._convert_to_numpy_array(X_selected)
                     
                     # Train model
                     model_result = self._train_single_model(model_type, X_train, y)
@@ -875,13 +855,18 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
                     
                     # Update progress
                     success = model_result.metrics.error_message is None
-                    self.progress_reporter.update_progress(model_type, success, model_result.metrics.training_time)
+                    accuracy = model_result.metrics.accuracy if success else None
+                    error_message = model_result.metrics.error_message if not success else None
+                    self.progress_reporter.update_progress(
+                        model_type, success, model_result.metrics.training_time, 
+                        accuracy, error_message
+                    )
                     
                 except Exception as e:
                     self.logger.error(f"❌ Failed to train {model_type}: {e}")
                     # Create failed result using centralized error handler
                     model_results[model_type] = TrainingErrorHandler.handle_training_error(model_type, e, 0.0)
-                    self.progress_reporter.update_progress(model_type, False, 0.0)
+                    self.progress_reporter.update_progress(model_type, False, 0.0, None, str(e))
             
             # Step 5: Finish progress reporting
             self.progress_reporter.finish_report()

@@ -12,6 +12,9 @@ in the desired direction without going further in the opposite direction.
 This is about directional prediction accuracy and minimizing adverse price movement.
 
 Requires Optuna for optimal performance.
+
+Note: For enhanced optimization with Pareto front analysis and M1 hardware acceleration,
+use enhanced_barrier_optimization.py instead.
 """
 
 import numpy as np

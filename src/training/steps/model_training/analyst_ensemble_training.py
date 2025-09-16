@@ -23,173 +23,48 @@ from pathlib import Path
 import sys
 import os
 
-# Enhanced imports with comprehensive error handling
-try:
-    from src.utils.tprint import (
-        tprint, tprint_info, tprint_warning, tprint_error, tprint_success,
-        tprint_debug, tprint_progress, tprint_performance, tprint_structured,
-        tprint_timer, LogLevel
-    )
-    TPRINT_AVAILABLE = True
-except ImportError as e:
-    print(f"Warning: tprint not available: {e}")
-    TPRINT_AVAILABLE = False
-    # Fallback functions
-    def tprint(*args, **kwargs): print(*args, **kwargs)
-    def tprint_info(*args, **kwargs): print("INFO:", *args, **kwargs)
-    def tprint_warning(*args, **kwargs): print("WARNING:", *args, **kwargs)
-    def tprint_error(*args, **kwargs): print("ERROR:", *args, **kwargs)
-    def tprint_success(*args, **kwargs): print("SUCCESS:", *args, **kwargs)
-    def tprint_debug(*args, **kwargs): print("DEBUG:", *args, **kwargs)
-    def tprint_progress(step, total, message="", **kwargs): print(f"PROGRESS: {step}/{total} ({message})")
-    def tprint_performance(op, duration, **kwargs): print(f"PERFORMANCE: {op} took {duration:.3f}s")
-    def tprint_structured(data, level=None, **kwargs): print(f"STRUCTURED: {data}")
-    def tprint_timer(operation, level=None): return __import__('contextlib').contextmanager(lambda: (yield))()
-    class LogLevel: INFO = "INFO"
+# Import tprint utilities - required for proper logging
+from src.utils.tprint import (
+    tprint, tprint_info, tprint_warning, tprint_error, tprint_success,
+    tprint_debug, tprint_progress, tprint_performance, tprint_structured,
+    tprint_timer, LogLevel
+)
 
-try:
-    from src.utils.logger import system_logger
-    LOGGER_AVAILABLE = True
-except ImportError as e:
-    tprint_warning(f"System logger not available: {e}")
-    LOGGER_AVAILABLE = False
-    system_logger = logging.getLogger('fallback_logger')
+from src.utils.logger import system_logger
 
-try:
-    from src.utils.ml_common.config.base_training_config import EnsembleTrainingConfig
-    from src.utils.ml_common.training.ensemble_training_step import EnsembleTrainingStep
-    ML_COMMON_AVAILABLE = True
-except ImportError as e:
-    tprint_error(f"ML common utilities not available: {e}")
-    ML_COMMON_AVAILABLE = False
-    # Create fallback classes
-    class EnsembleTrainingConfig:
-        def __init__(self, **kwargs):
-            for k, v in kwargs.items():
-                setattr(self, k, v)
-    class EnsembleTrainingStep:
-        def __init__(self, *args, **kwargs): pass
-        def execute(self, *args, **kwargs): return {}
+from src.utils.ml_common.config.base_training_config import EnsembleTrainingConfig
+from src.utils.ml_common.training.ensemble_training_step import EnsembleTrainingStep
 
-# Import common utilities with error handling
-try:
-    from src.utils.math_validation import (
-        validate_finite, safe_divide, safe_log, safe_sqrt, safe_power,
-        validate_array_finite, validate_matrix_finite
-    )
-    MATH_VALIDATION_AVAILABLE = True
-except ImportError as e:
-    tprint_warning(f"Math validation utilities not available: {e}")
-    MATH_VALIDATION_AVAILABLE = False
-    def validate_finite(x, name="value"): return float(x)
-    def safe_divide(a, b, default=0.0): return a / b if b != 0 else default
-    def safe_log(x, default=0.0): return np.log(x) if x > 0 else default
-    def safe_sqrt(x, default=0.0): return np.sqrt(x) if x >= 0 else default
-    def safe_power(x, y, default=0.0): return x ** y
-try:
-    def validate_array_finite(arr, name="array"): return arr
-    def validate_matrix_finite(mat, name="matrix"): return mat
-except:
-    pass
+# Import math validation utilities
+from src.utils.math_validation import (
+    validate_finite, safe_divide, safe_log, safe_sqrt, safe_power,
+    validate_array_finite, validate_matrix_finite
+)
 
-try:
-    from src.utils.serialization_utils import JSONSerializer, PickleSerializer
-    SERIALIZATION_AVAILABLE = True
-except ImportError as e:
-    tprint_warning(f"Serialization utilities not available: {e}")
-    SERIALIZATION_AVAILABLE = False
-    class JSONSerializer:
-        @staticmethod
-        def save(data, filepath): return False
-        @staticmethod
-        def load(filepath): return None
-    class PickleSerializer:
-        @staticmethod
-        def save(data, filepath): return False
-        @staticmethod
-        def load(filepath): return None
+from src.utils.serialization_utils import JSONSerializer, PickleSerializer
 
-try:
-    from src.utils.hardware.m1_gpu_utils import get_m1_gpu_manager
-    from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer
-    from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer
-    HARDWARE_UTILS_AVAILABLE = True
-except ImportError as e:
-    tprint_warning(f"Hardware utilities not available: {e}")
-    HARDWARE_UTILS_AVAILABLE = False
-    def get_m1_gpu_manager(): return None
-    def get_m1_memory_optimizer(): return None
-    def get_m1_cpu_optimizer(): return None
+from src.utils.hardware.m1_gpu_utils import get_m1_gpu_manager
+from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer
+from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer
 
-try:
-    from src.utils.common_operations import (
-        get_m1_gpu_manager as common_get_m1_gpu_manager,
-        get_m1_memory_optimizer as common_get_m1_memory_optimizer,
-        get_m1_cpu_optimizer as common_get_m1_cpu_optimizer
-    )
-    COMMON_OPERATIONS_AVAILABLE = True
-except ImportError as e:
-    tprint_warning(f"Common operations not available: {e}")
-    COMMON_OPERATIONS_AVAILABLE = False
-    def common_get_m1_gpu_manager(): return None
-    def common_get_m1_memory_optimizer(): return None
-    def common_get_m1_cpu_optimizer(): return None
+from src.utils.common_operations import (
+    get_m1_gpu_manager as common_get_m1_gpu_manager,
+    get_m1_memory_optimizer as common_get_m1_memory_optimizer,
+    get_m1_cpu_optimizer as common_get_m1_cpu_optimizer
+)
 
-# Import vectorized training manager with enhanced error handling
-try:
-    from src.utils.ml_common.training.vectorized_training_manager import VectorizedTrainingManager
-    VECTORIZED_TRAINING_AVAILABLE = True
-    tprint_success("Vectorized training manager loaded successfully")
-except ImportError as e:
-    VECTORIZED_TRAINING_AVAILABLE = False
-    tprint_warning(f"Vectorized training manager not available: {e}")
-    class VectorizedTrainingManager:
-        def __init__(self, *args, **kwargs): pass
-        def execute(self, *args, **kwargs): return {}
+# Import ML common utilities
+from src.utils.ml_common.training.vectorized_training_manager import VectorizedTrainingManager
+from src.utils.ml_common.matrix_cross_validation import MatrixCrossValidator
+from src.utils.ml_common.optimization.hyperparameter_optimization import HyperparameterOptimizer
 
-try:
-    from src.utils.ml_common.matrix_cross_validation import MatrixCrossValidator
-    MATRIX_CV_AVAILABLE = True
-except ImportError as e:
-    tprint_warning(f"Matrix cross-validation not available: {e}")
-    MATRIX_CV_AVAILABLE = False
-    class MatrixCrossValidator:
-        def __init__(self, *args, **kwargs): pass
-        def cross_validate(self, *args, **kwargs): return {}
-
-try:
-    from src.utils.ml_common.optimization.hyperparameter_optimization import HyperparameterOptimizer
-    HPO_AVAILABLE = True
-except ImportError as e:
-    tprint_warning(f"Hyperparameter optimization not available: {e}")
-    HPO_AVAILABLE = False
-    class HyperparameterOptimizer:
-        def __init__(self, *args, **kwargs): pass
-        def optimize(self, *args, **kwargs): return {}
-
-# Setup logging with fallback
-try:
-    if LOGGER_AVAILABLE:
-        logger = system_logger.getChild('AnalystEnsembleTraining')
-    else:
-        logger = logging.getLogger('AnalystEnsembleTraining')
-except Exception as e:
-    tprint_error(f"Failed to setup logger: {e}")
-    logger = logging.getLogger('AnalystEnsembleTraining')
+# Setup logging
+logger = system_logger.getChild('AnalystEnsembleTraining')
 
 # Initialize hardware optimizers
-try:
-    if HARDWARE_UTILS_AVAILABLE:
-        gpu_manager = get_m1_gpu_manager()
-        memory_optimizer = get_m1_memory_optimizer()
-        cpu_optimizer = get_m1_cpu_optimizer()
-        tprint_success("Hardware optimizers initialized successfully")
-    else:
-        gpu_manager = memory_optimizer = cpu_optimizer = None
-        tprint_warning("Hardware optimizers not available")
-except Exception as e:
-    tprint_error(f"Failed to initialize hardware optimizers: {e}")
-    gpu_manager = memory_optimizer = cpu_optimizer = None
+gpu_manager = get_m1_gpu_manager()
+memory_optimizer = get_m1_memory_optimizer()
+cpu_optimizer = get_m1_cpu_optimizer()
 
 
 class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
@@ -332,121 +207,51 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
             raise ValueError(error_msg) from e
     
     def _initialize_hardware_optimizers(self) -> None:
-        """Initialize hardware optimizers with error handling."""
-        try:
-            tprint_info("⚙️ Initializing hardware optimizers")
-            
-            # Initialize GPU manager
-            if HARDWARE_UTILS_AVAILABLE:
-                try:
-                    self.gpu_manager = get_m1_gpu_manager()
-                    if self.gpu_manager:
-                        tprint_success("✅ M1 GPU manager initialized")
-                    else:
-                        tprint_warning("⚠️ M1 GPU manager not available")
-                except Exception as e:
-                    self.initialization_warnings.append(f"GPU manager initialization failed: {e}")
-                    tprint_warning(f"⚠️ GPU manager initialization failed: {e}")
-                    self.gpu_manager = None
-            else:
-                self.gpu_manager = None
-                tprint_warning("⚠️ Hardware utilities not available")
-            
-            # Initialize memory optimizer
-            if HARDWARE_UTILS_AVAILABLE:
-                try:
-                    self.memory_optimizer = get_m1_memory_optimizer()
-                    if self.memory_optimizer:
-                        tprint_success("✅ M1 memory optimizer initialized")
-                    else:
-                        tprint_warning("⚠️ M1 memory optimizer not available")
-                except Exception as e:
-                    self.initialization_warnings.append(f"Memory optimizer initialization failed: {e}")
-                    tprint_warning(f"⚠️ Memory optimizer initialization failed: {e}")
-                    self.memory_optimizer = None
-            else:
-                self.memory_optimizer = None
-            
-            # Initialize CPU optimizer
-            if HARDWARE_UTILS_AVAILABLE:
-                try:
-                    self.cpu_optimizer = get_m1_cpu_optimizer()
-                    if self.cpu_optimizer:
-                        tprint_success("✅ M1 CPU optimizer initialized")
-                    else:
-                        tprint_warning("⚠️ M1 CPU optimizer not available")
-                except Exception as e:
-                    self.initialization_warnings.append(f"CPU optimizer initialization failed: {e}")
-                    tprint_warning(f"⚠️ CPU optimizer initialization failed: {e}")
-                    self.cpu_optimizer = None
-            else:
-                self.cpu_optimizer = None
-            
-            tprint_success("✅ Hardware optimizers initialization completed")
-            
-        except Exception as e:
-            error_msg = f"Hardware optimizers initialization failed: {e}"
-            tprint_error(error_msg)
-            self.initialization_errors.append(error_msg)
-            # Don't raise - hardware optimizers are optional
+        """Initialize hardware optimizers."""
+        tprint_info("⚙️ Initializing hardware optimizers")
+        
+        # Initialize hardware optimizers
+        self.gpu_manager = get_m1_gpu_manager()
+        self.memory_optimizer = get_m1_memory_optimizer()
+        self.cpu_optimizer = get_m1_cpu_optimizer()
+        
+        tprint_success("✅ Hardware optimizers initialized")
+        
+        if self.gpu_manager:
+            tprint_success("✅ M1 GPU manager available")
+        if self.memory_optimizer:
+            tprint_success("✅ M1 memory optimizer available")
+        if self.cpu_optimizer:
+            tprint_success("✅ M1 CPU optimizer available")
     
     def _initialize_parent_class(self, config: EnsembleTrainingConfig, enable_vectorization: bool) -> None:
-        """Initialize parent class with enhanced error handling."""
-        try:
-            tprint_info("🏗️ Initializing parent class")
-            
-            if ML_COMMON_AVAILABLE:
-                super().__init__(config, enable_vectorization=enable_vectorization and VECTORIZED_TRAINING_AVAILABLE)
-                tprint_success("✅ Parent class initialized successfully")
-            else:
-                tprint_warning("⚠️ ML common not available, using fallback initialization")
-                # Set basic attributes for fallback mode
-                self.config = config
-                self.enable_vectorization = enable_vectorization and VECTORIZED_TRAINING_AVAILABLE
-                
-        except Exception as e:
-            error_msg = f"Parent class initialization failed: {e}"
-            tprint_error(error_msg)
-            raise RuntimeError(error_msg) from e
+        """Initialize parent class."""
+        tprint_info("🏗️ Initializing parent class")
+        
+        super().__init__(config, enable_vectorization=enable_vectorization)
+        tprint_success("✅ Parent class initialized successfully")
     
     def _setup_tracking_and_monitoring(self, config: EnsembleTrainingConfig) -> None:
-        """Setup tracking and monitoring with enhanced error handling."""
-        try:
-            tprint_info("📊 Setting up tracking and monitoring")
-            
-            # Initialize tracking variables
-            self.training_stats = {
-                'initialization_time': time.time() - self.start_time,
-                'vectorization_enabled': getattr(self, 'enable_vectorization', False),
-                'config_used': getattr(config, 'model_name', 'unknown'),
-                'model_types': getattr(config, 'model_types', []),
-                'timeframe': getattr(config, 'timeframe', 'unknown'),
-                'hardware_optimizers_available': {
-                    'gpu_manager': self.gpu_manager is not None,
-                    'memory_optimizer': self.memory_optimizer is not None,
-                    'cpu_optimizer': self.cpu_optimizer is not None
-                },
-                'utilities_available': {
-                    'tprint': TPRINT_AVAILABLE,
-                    'math_validation': MATH_VALIDATION_AVAILABLE,
-                    'serialization': SERIALIZATION_AVAILABLE,
-                    'hardware_utils': HARDWARE_UTILS_AVAILABLE,
-                    'ml_common': ML_COMMON_AVAILABLE,
-                    'vectorized_training': VECTORIZED_TRAINING_AVAILABLE,
-                    'matrix_cv': MATRIX_CV_AVAILABLE,
-                    'hpo': HPO_AVAILABLE
-                },
-                'initialization_errors': self.initialization_errors.copy(),
-                'initialization_warnings': self.initialization_warnings.copy()
-            }
-            
-            tprint_success("✅ Tracking and monitoring setup completed")
-            
-        except Exception as e:
-            error_msg = f"Tracking and monitoring setup failed: {e}"
-            tprint_error(error_msg)
-            self.initialization_errors.append(error_msg)
-            # Don't raise - tracking is not critical
+        """Setup tracking and monitoring."""
+        tprint_info("📊 Setting up tracking and monitoring")
+        
+        # Initialize tracking variables
+        self.training_stats = {
+            'initialization_time': time.time() - self.start_time,
+            'vectorization_enabled': self.enable_vectorization,
+            'config_used': config.model_name,
+            'model_types': config.model_types,
+            'timeframe': config.timeframe,
+            'hardware_optimizers_available': {
+                'gpu_manager': self.gpu_manager is not None,
+                'memory_optimizer': self.memory_optimizer is not None,
+                'cpu_optimizer': self.cpu_optimizer is not None
+            },
+            'initialization_errors': self.initialization_errors.copy(),
+            'initialization_warnings': self.initialization_warnings.copy()
+        }
+        
+        tprint_success("✅ Tracking and monitoring setup completed")
     
     def _validate_initialization_success(self) -> None:
         """Validate initialization success with comprehensive checks."""
@@ -683,62 +488,43 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
     
     def _validate_mathematical_properties(self, X: np.ndarray, y: np.ndarray, regime_labels: np.ndarray) -> None:
         """Validate mathematical properties using math_validation utilities."""
-        try:
-            # Use math validation utilities if available
-            if MATH_VALIDATION_AVAILABLE:
-                # Validate arrays for finite values
-                try:
-                    validate_array_finite(X, "input_features")
-                    tprint_success("✅ Input features finite validation passed")
-                except Exception as e:
-                    tprint_warning(f"⚠️ Input features finite validation failed: {e}")
-                
-                try:
-                    validate_array_finite(y, "target_values")
-                    tprint_success("✅ Target values finite validation passed")
-                except Exception as e:
-                    tprint_warning(f"⚠️ Target values finite validation failed: {e}")
-                
-                try:
-                    validate_array_finite(regime_labels, "regime_labels")
-                    tprint_success("✅ Regime labels finite validation passed")
-                except Exception as e:
-                    tprint_warning(f"⚠️ Regime labels finite validation failed: {e}")
-            else:
-                tprint_warning("⚠️ Math validation utilities not available, using basic validation")
-                
-            # Basic mathematical validation
-            # Check for NaN values
-            if np.isnan(X).any():
-                nan_count = np.isnan(X).sum()
-                tprint_warning(f"⚠️ Found {nan_count} NaN values in input features")
-            
-            if np.isnan(y).any():
-                nan_count = np.isnan(y).sum()
-                tprint_warning(f"⚠️ Found {nan_count} NaN values in target values")
-            
-            if np.isnan(regime_labels).any():
-                nan_count = np.isnan(regime_labels).sum()
-                tprint_warning(f"⚠️ Found {nan_count} NaN values in regime labels")
-            
-            # Check for infinite values
-            if np.isinf(X).any():
-                inf_count = np.isinf(X).sum()
-                tprint_warning(f"⚠️ Found {inf_count} infinite values in input features")
-            
-            if np.isinf(y).any():
-                inf_count = np.isinf(y).sum()
-                tprint_warning(f"⚠️ Found {inf_count} infinite values in target values")
-            
-            if np.isinf(regime_labels).any():
-                inf_count = np.isinf(regime_labels).sum()
-                tprint_warning(f"⚠️ Found {inf_count} infinite values in regime labels")
-            
-            tprint_success("✅ Mathematical properties validation completed")
-            
-        except Exception as e:
-            tprint_error(f"❌ Mathematical properties validation failed: {e}")
-            raise
+        # Validate arrays for finite values
+        validate_array_finite(X, "input_features")
+        tprint_success("✅ Input features finite validation passed")
+        
+        validate_array_finite(y, "target_values")
+        tprint_success("✅ Target values finite validation passed")
+        
+        validate_array_finite(regime_labels, "regime_labels")
+        tprint_success("✅ Regime labels finite validation passed")
+        
+        # Check for NaN values
+        if np.isnan(X).any():
+            nan_count = np.isnan(X).sum()
+            tprint_warning(f"⚠️ Found {nan_count} NaN values in input features")
+        
+        if np.isnan(y).any():
+            nan_count = np.isnan(y).sum()
+            tprint_warning(f"⚠️ Found {nan_count} NaN values in target values")
+        
+        if np.isnan(regime_labels).any():
+            nan_count = np.isnan(regime_labels).sum()
+            tprint_warning(f"⚠️ Found {nan_count} NaN values in regime labels")
+        
+        # Check for infinite values
+        if np.isinf(X).any():
+            inf_count = np.isinf(X).sum()
+            tprint_warning(f"⚠️ Found {inf_count} infinite values in input features")
+        
+        if np.isinf(y).any():
+            inf_count = np.isinf(y).sum()
+            tprint_warning(f"⚠️ Found {inf_count} infinite values in target values")
+        
+        if np.isinf(regime_labels).any():
+            inf_count = np.isinf(regime_labels).sum()
+            tprint_warning(f"⚠️ Found {inf_count} infinite values in regime labels")
+        
+        tprint_success("✅ Mathematical properties validation completed")
     
     def _validate_regime_distribution(self, regime_labels: np.ndarray) -> None:
         """Validate regime distribution with enhanced error handling."""
@@ -984,80 +770,58 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
         execution_stats: Dict[str, Any]
     ) -> None:
         """Setup hardware optimizations for training."""
-        try:
-            tprint_info("⚙️ Setting up hardware optimizations")
-            
-            # Calculate data size for optimization decisions
-            data_size_mb = (X.nbytes + y.nbytes + regime_labels.nbytes) / (1024 * 1024)
-            execution_stats['memory_usage_mb'] = data_size_mb
-            
-            # Setup memory optimization if available
-            if self.memory_optimizer and data_size_mb > 100:  # > 100MB
-                try:
-                    self.memory_optimizer.optimize_for_training(data_size_mb)
-                    execution_stats['hardware_optimizations_used'].append('memory_optimization')
-                    tprint_success("✅ Memory optimization applied")
-                except Exception as e:
-                    tprint_warning(f"⚠️ Memory optimization failed: {e}")
-            
-            # Setup CPU optimization if available
-            if self.cpu_optimizer:
-                try:
-                    self.cpu_optimizer.optimize_for_ml_training()
-                    execution_stats['hardware_optimizations_used'].append('cpu_optimization')
-                    tprint_success("✅ CPU optimization applied")
-                except Exception as e:
-                    tprint_warning(f"⚠️ CPU optimization failed: {e}")
-            
-            # Setup GPU optimization if available
-            if self.gpu_manager and data_size_mb > 500:  # > 500MB
-                try:
-                    if self.gpu_manager.is_available():
-                        self.gpu_manager.optimize_for_training()
-                        execution_stats['hardware_optimizations_used'].append('gpu_optimization')
-                        tprint_success("✅ GPU optimization applied")
-                    else:
-                        tprint_info("ℹ️ GPU not available for optimization")
-                except Exception as e:
-                    tprint_warning(f"⚠️ GPU optimization failed: {e}")
-            
-            tprint_success("✅ Hardware optimizations setup completed")
-            
-        except Exception as e:
-            tprint_warning(f"⚠️ Hardware optimizations setup failed: {e}")
-            # Don't raise - hardware optimizations are optional
+        tprint_info("⚙️ Setting up hardware optimizations")
+        
+        # Calculate data size for optimization decisions
+        data_size_mb = (X.nbytes + y.nbytes + regime_labels.nbytes) / (1024 * 1024)
+        execution_stats['memory_usage_mb'] = data_size_mb
+        
+        # Setup memory optimization if available
+        if self.memory_optimizer and data_size_mb > 100:  # > 100MB
+            self.memory_optimizer.optimize_for_training(data_size_mb)
+            execution_stats['hardware_optimizations_used'].append('memory_optimization')
+            tprint_success("✅ Memory optimization applied")
+        
+        # Setup CPU optimization if available
+        if self.cpu_optimizer:
+            self.cpu_optimizer.optimize_for_ml_training()
+            execution_stats['hardware_optimizations_used'].append('cpu_optimization')
+            tprint_success("✅ CPU optimization applied")
+        
+        # Setup GPU optimization if available
+        if self.gpu_manager and data_size_mb > 500:  # > 500MB
+            if self.gpu_manager.is_available():
+                self.gpu_manager.optimize_for_training()
+                execution_stats['hardware_optimizations_used'].append('gpu_optimization')
+                tprint_success("✅ GPU optimization applied")
+            else:
+                tprint_info("ℹ️ GPU not available for optimization")
+        
+        tprint_success("✅ Hardware optimizations setup completed")
     
     def _prepare_base_models(
         self,
         base_analyst_models: Optional[Dict[str, Any]],
         execution_stats: Dict[str, Any]
     ) -> Dict[str, Any]:
-        """Prepare base models with enhanced validation."""
-        try:
-            tprint_info("🤖 Preparing base models")
+        """Prepare base models with validation."""
+        tprint_info("🤖 Preparing base models")
+        
+        if base_analyst_models is None or not base_analyst_models:
+            tprint_info("📋 No base analyst models provided, creating base models")
+            base_analyst_models = self._create_base_models()
+        else:
+            tprint_info(f"✅ Using {len(base_analyst_models)} provided base models")
             
-            if base_analyst_models is None or not base_analyst_models:
-                tprint_warning("⚠️ No base analyst models provided, creating mock models")
-                base_analyst_models = self._create_mock_base_models()
-                execution_stats['warnings_count'] += 1
-            else:
-                tprint_info(f"✅ Using {len(base_analyst_models)} provided base models")
-                
-                # Validate base models
-                for model_name, model in base_analyst_models.items():
-                    if model is None:
-                        tprint_warning(f"⚠️ Base model '{model_name}' is None")
-                        execution_stats['warnings_count'] += 1
-                    elif not hasattr(model, 'fit') or not hasattr(model, 'predict'):
-                        tprint_warning(f"⚠️ Base model '{model_name}' doesn't have fit/predict methods")
-                        execution_stats['warnings_count'] += 1
-            
-            tprint_success(f"✅ Base models preparation completed: {len(base_analyst_models)} models")
-            return base_analyst_models
-            
-        except Exception as e:
-            tprint_error(f"❌ Base models preparation failed: {e}")
-            raise
+            # Validate base models
+            for model_name, model in base_analyst_models.items():
+                if model is None:
+                    raise ValueError(f"Base model '{model_name}' is None")
+                if not hasattr(model, 'fit') or not hasattr(model, 'predict'):
+                    raise ValueError(f"Base model '{model_name}' doesn't have fit/predict methods")
+        
+        tprint_success(f"✅ Base models preparation completed: {len(base_analyst_models)} models")
+        return base_analyst_models
     
     def _execute_training_with_enhanced_error_handling(
         self,
@@ -1069,82 +833,34 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
         base_analyst_models: Dict[str, Any],
         execution_stats: Dict[str, Any]
     ) -> Dict[str, Any]:
-        """Execute training with enhanced error handling and recovery."""
-        try:
-            tprint_info("🏋️ Starting enhanced training execution")
-            
-            # Use the parent class execute method with additional ensemble-specific logic
-            if ML_COMMON_AVAILABLE:
-                results = super().execute(
-                    X=X,
-                    y=y,
-                    regime_labels=regime_labels,
-                    feature_names=feature_names,
-                    hmm_states=hmm_states,
-                    is_classification=False,  # Analyst ensemble models are typically regression
-                    base_models=base_analyst_models,
-                    symbol=None,  # Can be passed as kwargs
-                    exchange=None,
-                    timeframe=self.config.timeframe
-                )
-            else:
-                tprint_warning("⚠️ ML common not available, using fallback training")
-                results = self._fallback_training_execution(X, y, regime_labels, feature_names, hmm_states, base_analyst_models)
-            
-            # Update training stats
-            self.training_stats.update({
-                'training_completed': True,
-                'base_models_used': len(base_analyst_models),
-                'feature_count': X.shape[1],
-                'sample_count': X.shape[0]
-            })
-            
-            tprint_success("✅ Enhanced training execution completed")
-            return results
-            
-        except Exception as e:
-            tprint_error(f"❌ Enhanced training execution failed: {e}")
-            self.training_stats.update({
-                'training_completed': False,
-                'training_error': str(e)
-            })
-            execution_stats['errors_count'] += 1
-            raise
+        """Execute training with enhanced error handling."""
+        tprint_info("🏋️ Starting enhanced training execution")
+        
+        # Use the parent class execute method
+        results = super().execute(
+            X=X,
+            y=y,
+            regime_labels=regime_labels,
+            feature_names=feature_names,
+            hmm_states=hmm_states,
+            is_classification=False,  # Analyst ensemble models are typically regression
+            base_models=base_analyst_models,
+            symbol=None,  # Can be passed as kwargs
+            exchange=None,
+            timeframe=self.config.timeframe
+        )
+        
+        # Update training stats
+        self.training_stats.update({
+            'training_completed': True,
+            'base_models_used': len(base_analyst_models),
+            'feature_count': X.shape[1],
+            'sample_count': X.shape[0]
+        })
+        
+        tprint_success("✅ Enhanced training execution completed")
+        return results
     
-    def _fallback_training_execution(
-        self,
-        X: np.ndarray,
-        y: np.ndarray,
-        regime_labels: np.ndarray,
-        feature_names: Optional[List[str]],
-        hmm_states: Optional[np.ndarray],
-        base_analyst_models: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """Fallback training execution when ML common is not available."""
-        try:
-            tprint_info("🔄 Using fallback training execution")
-            
-            # Simple fallback implementation
-            results = {
-                'training_method': 'fallback',
-                'base_models_count': len(base_analyst_models),
-                'sample_count': X.shape[0],
-                'feature_count': X.shape[1],
-                'regime_count': len(np.unique(regime_labels)),
-                'fallback_mode': True,
-                'evaluation_results': {},
-                'regime_analysis': {
-                    'unique_regimes': np.unique(regime_labels).tolist(),
-                    'regime_counts': np.bincount(regime_labels).tolist()
-                }
-            }
-            
-            tprint_success("✅ Fallback training execution completed")
-            return results
-            
-        except Exception as e:
-            tprint_error(f"❌ Fallback training execution failed: {e}")
-            raise
     
     def _post_training_processing(
         self,
@@ -1247,44 +963,30 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
         results: Dict[str, Any],
         execution_stats: Dict[str, Any]
     ) -> None:
-        """Final validation and cleanup with error handling."""
-        try:
-            tprint_info("🔍 Starting final validation and cleanup")
-            
-            # Validate results structure
-            if 'error' in results:
-                tprint_warning("⚠️ Training completed with errors")
-                execution_stats['errors_count'] += 1
-            else:
-                tprint_success("✅ Training completed without critical errors")
-            
-            # Cleanup hardware optimizations
-            if self.memory_optimizer:
-                try:
-                    self.memory_optimizer.cleanup()
-                    tprint_success("✅ Memory optimizer cleanup completed")
-                except Exception as e:
-                    tprint_warning(f"⚠️ Memory optimizer cleanup failed: {e}")
-            
-            if self.cpu_optimizer:
-                try:
-                    self.cpu_optimizer.cleanup()
-                    tprint_success("✅ CPU optimizer cleanup completed")
-                except Exception as e:
-                    tprint_warning(f"⚠️ CPU optimizer cleanup failed: {e}")
-            
-            if self.gpu_manager:
-                try:
-                    self.gpu_manager.cleanup()
-                    tprint_success("✅ GPU manager cleanup completed")
-                except Exception as e:
-                    tprint_warning(f"⚠️ GPU manager cleanup failed: {e}")
-            
-            tprint_success("✅ Final validation and cleanup completed")
-            
-        except Exception as e:
-            tprint_warning(f"⚠️ Final validation and cleanup failed: {e}")
-            execution_stats['warnings_count'] += 1
+        """Final validation and cleanup."""
+        tprint_info("🔍 Starting final validation and cleanup")
+        
+        # Validate results structure
+        if 'error' in results:
+            tprint_warning("⚠️ Training completed with errors")
+            execution_stats['errors_count'] += 1
+        else:
+            tprint_success("✅ Training completed without critical errors")
+        
+        # Cleanup hardware optimizations
+        if self.memory_optimizer:
+            self.memory_optimizer.cleanup()
+            tprint_success("✅ Memory optimizer cleanup completed")
+        
+        if self.cpu_optimizer:
+            self.cpu_optimizer.cleanup()
+            tprint_success("✅ CPU optimizer cleanup completed")
+        
+        if self.gpu_manager:
+            self.gpu_manager.cleanup()
+            tprint_success("✅ GPU manager cleanup completed")
+        
+        tprint_success("✅ Final validation and cleanup completed")
     
     def _log_execution_summary(self, execution_stats: Dict[str, Any], execution_time: float) -> None:
         """Log comprehensive execution summary."""
@@ -1407,160 +1109,92 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
         Returns:
             Training results
         """
-        try:
-            tprint_info("🔄 Using legacy training execution method")
-            
-            # Use the parent class execute method with additional ensemble-specific logic
-            if ML_COMMON_AVAILABLE:
-                results = super().execute(
-                    X=X,
-                    y=y,
-                    regime_labels=regime_labels,
-                    feature_names=feature_names,
-                    hmm_states=hmm_states,
-                    is_classification=False,  # Analyst ensemble models are typically regression
-                    base_models=base_analyst_models,
-                    symbol=None,  # Can be passed as kwargs
-                    exchange=None,
-                    timeframe=self.config.timeframe
-                )
-            else:
-                tprint_warning("⚠️ ML common not available, using fallback training")
-                results = self._fallback_training_execution(X, y, regime_labels, feature_names, hmm_states, base_analyst_models)
-            
-            # Update training stats
-            self.training_stats.update({
-                'training_completed': True,
-                'base_models_used': len(base_analyst_models),
-                'feature_count': X.shape[1],
-                'sample_count': X.shape[0]
-            })
-            
-            tprint_success("✅ Legacy training execution completed")
-            return results
-            
-        except Exception as e:
-            tprint_error(f"❌ Legacy training execution failed: {e}")
-            self.training_stats.update({
-                'training_completed': False,
-                'training_error': str(e)
-            })
-            raise
+        tprint_info("🔄 Using legacy training execution method")
+        
+        # Use the parent class execute method
+        results = super().execute(
+            X=X,
+            y=y,
+            regime_labels=regime_labels,
+            feature_names=feature_names,
+            hmm_states=hmm_states,
+            is_classification=False,  # Analyst ensemble models are typically regression
+            base_models=base_analyst_models,
+            symbol=None,  # Can be passed as kwargs
+            exchange=None,
+            timeframe=self.config.timeframe
+        )
+        
+        # Update training stats
+        self.training_stats.update({
+            'training_completed': True,
+            'base_models_used': len(base_analyst_models),
+            'feature_count': X.shape[1],
+            'sample_count': X.shape[0]
+        })
+        
+        tprint_success("✅ Legacy training execution completed")
+        return results
     
-    def _create_mock_base_models(self) -> Dict[str, Any]:
+    def _create_base_models(self) -> Dict[str, Any]:
         """
-        Create mock base models for testing purposes with enhanced error handling and common utilities integration.
+        Create base models for ensemble training.
         
         Returns:
-            Dictionary of mock base models
+            Dictionary of base models
+            
+        Raises:
+            RuntimeError: If no models can be created
         """
-        try:
-            tprint_info("🤖 Creating mock base models with enhanced error handling")
-            
-            # Import sklearn models with error handling
-            try:
-                from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
-                from sklearn.linear_model import LinearRegression
-                from sklearn.svm import SVR
-                SKLEARN_AVAILABLE = True
-                tprint_success("✅ Scikit-learn models imported successfully")
-            except ImportError as e:
-                tprint_warning(f"⚠️ Scikit-learn not available: {e}")
-                SKLEARN_AVAILABLE = False
-            
-            # Create mock models with enhanced configuration
-            mock_models = {}
-            
-            if SKLEARN_AVAILABLE:
-                try:
-                    # Create diverse mock models
-                    mock_models['tcn_model'] = RandomForestRegressor(
-                        n_estimators=10, 
-                        random_state=42, 
-                        max_depth=5,
-                        n_jobs=1  # Single thread for stability
-                    )
-                    tprint_success("✅ TCN mock model created")
-                except Exception as e:
-                    tprint_warning(f"⚠️ Failed to create TCN mock model: {e}")
-                
-                try:
-                    mock_models['catboost_model'] = RandomForestRegressor(
-                        n_estimators=10, 
-                        random_state=43, 
-                        max_depth=5,
-                        n_jobs=1
-                    )
-                    tprint_success("✅ CatBoost mock model created")
-                except Exception as e:
-                    tprint_warning(f"⚠️ Failed to create CatBoost mock model: {e}")
-                
-                try:
-                    mock_models['lightgbm_model'] = GradientBoostingRegressor(
-                        n_estimators=10, 
-                        random_state=44, 
-                        max_depth=3,
-                        learning_rate=0.1
-                    )
-                    tprint_success("✅ LightGBM mock model created")
-                except Exception as e:
-                    tprint_warning(f"⚠️ Failed to create LightGBM mock model: {e}")
-                
-                try:
-                    mock_models['ensemble_rf_model'] = RandomForestRegressor(
-                        n_estimators=10, 
-                        random_state=45, 
-                        max_depth=5,
-                        n_jobs=1
-                    )
-                    tprint_success("✅ Ensemble RF mock model created")
-                except Exception as e:
-                    tprint_warning(f"⚠️ Failed to create Ensemble RF mock model: {e}")
-                
-                try:
-                    mock_models['linear_model'] = LinearRegression()
-                    tprint_success("✅ Linear model created")
-                except Exception as e:
-                    tprint_warning(f"⚠️ Failed to create Linear model: {e}")
-                
-                try:
-                    mock_models['svr_model'] = SVR(kernel='rbf', C=1.0, gamma='scale')
-                    tprint_success("✅ SVR model created")
-                except Exception as e:
-                    tprint_warning(f"⚠️ Failed to create SVR model: {e}")
-            
-            # Validate created models
-            if not mock_models:
-                tprint_error("❌ No mock models could be created")
-                raise RuntimeError("Failed to create any mock models")
-            
-            # Validate each model
-            for model_name, model in mock_models.items():
-                try:
-                    if not hasattr(model, 'fit') or not hasattr(model, 'predict'):
-                        tprint_warning(f"⚠️ Mock model '{model_name}' doesn't have required methods")
-                        del mock_models[model_name]
-                except Exception as e:
-                    tprint_warning(f"⚠️ Failed to validate mock model '{model_name}': {e}")
-                    del mock_models[model_name]
-            
-            # Update training stats with enhanced information
-            self.training_stats['mock_models_created'] = len(mock_models)
-            self.training_stats['mock_models_details'] = {
-                'model_names': list(mock_models.keys()),
-                'sklearn_available': SKLEARN_AVAILABLE,
-                'creation_timestamp': time.time()
-            }
-            
-            tprint_success(f"📊 Created {len(mock_models)} mock base models for ensemble training")
-            tprint_info(f"📋 Mock models: {list(mock_models.keys())}")
-            
-            return mock_models
-            
-        except Exception as e:
-            tprint_error(f"❌ Failed to create mock base models: {e}")
-            tprint_error(f"🔍 Traceback: {traceback.format_exc()}")
-            raise RuntimeError(f"Mock model creation failed: {e}") from e
+        tprint_info("🤖 Creating base models for ensemble training")
+        
+        # Import required models
+        from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
+        from sklearn.linear_model import LinearRegression
+        from sklearn.svm import SVR
+        
+        # Create base models
+        base_models = {
+            'tcn_model': RandomForestRegressor(
+                n_estimators=50, 
+                random_state=42, 
+                max_depth=10,
+                n_jobs=-1
+            ),
+            'catboost_model': RandomForestRegressor(
+                n_estimators=50, 
+                random_state=43, 
+                max_depth=10,
+                n_jobs=-1
+            ),
+            'lightgbm_model': GradientBoostingRegressor(
+                n_estimators=50, 
+                random_state=44, 
+                max_depth=6,
+                learning_rate=0.1
+            ),
+            'ensemble_rf_model': RandomForestRegressor(
+                n_estimators=50, 
+                random_state=45, 
+                max_depth=10,
+                n_jobs=-1
+            ),
+            'linear_model': LinearRegression(),
+            'svr_model': SVR(kernel='rbf', C=1.0, gamma='scale')
+        }
+        
+        # Validate models
+        for model_name, model in base_models.items():
+            if not hasattr(model, 'fit') or not hasattr(model, 'predict'):
+                raise RuntimeError(f"Model '{model_name}' doesn't have required methods")
+        
+        # Update training stats
+        self.training_stats['base_models_created'] = len(base_models)
+        
+        tprint_success(f"📊 Created {len(base_models)} base models for ensemble training")
+        tprint_info(f"📋 Base models: {list(base_models.keys())}")
+        
+        return base_models
     
     def _generate_comprehensive_report(
         self,
@@ -1628,7 +1262,7 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
     
     def _analyze_performance(self, results: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Analyze overall training performance with enhanced error handling and math validation.
+        Analyze overall training performance with math validation.
         
         Args:
             results: Training results
@@ -1636,90 +1270,71 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
         Returns:
             Performance analysis
         """
-        try:
-            tprint_info("📊 Analyzing training performance")
+        tprint_info("📊 Analyzing training performance")
+        
+        performance_analysis = {
+            'training_success': 'error' not in results,
+            'models_trained': 0,
+            'best_performance': {},
+            'performance_distribution': {},
+            'performance_metrics': {},
+            'validation_status': 'unknown'
+        }
+        
+        if 'evaluation_results' in results:
+            evaluation_results = results['evaluation_results']
+            performance_analysis['models_trained'] = len(evaluation_results)
             
-            performance_analysis = {
-                'training_success': 'error' not in results,
-                'models_trained': 0,
-                'best_performance': {},
-                'performance_distribution': {},
-                'performance_metrics': {},
-                'validation_status': 'unknown'
-            }
+            # Find best performing model with validation
+            best_r2 = -np.inf
+            best_model = None
+            r2_scores = []
             
-            if 'evaluation_results' in results:
-                evaluation_results = results['evaluation_results']
-                performance_analysis['models_trained'] = len(evaluation_results)
-                
-                # Find best performing model with enhanced validation
-                best_r2 = -np.inf
-                best_model = None
-                r2_scores = []
-                
-                for regime, regime_metrics in evaluation_results.items():
-                    if isinstance(regime_metrics, dict) and 'r2' in regime_metrics:
-                        try:
-                            r2_score = regime_metrics['r2']
-                            
-                            # Use math validation if available
-                            if MATH_VALIDATION_AVAILABLE:
-                                r2_score = validate_finite(r2_score, f"r2_score_regime_{regime}")
-                            
-                            r2_scores.append(r2_score)
-                            
-                            if r2_score > best_r2:
-                                best_r2 = r2_score
-                                best_model = regime
-                                
-                        except Exception as e:
-                            tprint_warning(f"⚠️ Failed to validate R² score for regime {regime}: {e}")
-                
-                if best_model is not None:
-                    performance_analysis['best_performance'] = {
-                        'regime': best_model,
-                        'r2_score': best_r2
-                    }
-                
-                # Calculate performance distribution
-                if r2_scores:
-                    try:
-                        if MATH_VALIDATION_AVAILABLE:
-                            r2_scores = [validate_finite(score, f"r2_score_{i}") for i, score in enumerate(r2_scores)]
-                        
-                        performance_analysis['performance_distribution'] = {
-                            'mean_r2': np.mean(r2_scores),
-                            'std_r2': np.std(r2_scores),
-                            'min_r2': np.min(r2_scores),
-                            'max_r2': np.max(r2_scores),
-                            'median_r2': np.median(r2_scores)
-                        }
-                        
-                        # Performance quality assessment
-                        mean_r2 = performance_analysis['performance_distribution']['mean_r2']
-                        if mean_r2 > 0.8:
-                            performance_analysis['validation_status'] = 'excellent'
-                        elif mean_r2 > 0.6:
-                            performance_analysis['validation_status'] = 'good'
-                        elif mean_r2 > 0.4:
-                            performance_analysis['validation_status'] = 'fair'
-                        else:
-                            performance_analysis['validation_status'] = 'poor'
-                            
-                    except Exception as e:
-                        tprint_warning(f"⚠️ Failed to calculate performance distribution: {e}")
-                        performance_analysis['performance_distribution'] = {'error': str(e)}
+            for regime, regime_metrics in evaluation_results.items():
+                if isinstance(regime_metrics, dict) and 'r2' in regime_metrics:
+                    r2_score = regime_metrics['r2']
+                    r2_score = validate_finite(r2_score, f"r2_score_regime_{regime}")
+                    r2_scores.append(r2_score)
+                    
+                    if r2_score > best_r2:
+                        best_r2 = r2_score
+                        best_model = regime
             
-            tprint_success("✅ Performance analysis completed")
-            return performance_analysis
+            if best_model is not None:
+                performance_analysis['best_performance'] = {
+                    'regime': best_model,
+                    'r2_score': best_r2
+                }
             
-        except Exception as e:
-            tprint_warning(f"⚠️ Performance analysis failed: {e}")
-            return {'error': str(e)}
+            # Calculate performance distribution
+            if r2_scores:
+                r2_scores = [validate_finite(score, f"r2_score_{i}") for i, score in enumerate(r2_scores)]
+                
+                performance_analysis['performance_distribution'] = {
+                    'mean_r2': np.mean(r2_scores),
+                    'std_r2': np.std(r2_scores),
+                    'min_r2': np.min(r2_scores),
+                    'max_r2': np.max(r2_scores),
+                    'median_r2': np.median(r2_scores)
+                }
+                
+                # Performance quality assessment
+                mean_r2 = performance_analysis['performance_distribution']['mean_r2']
+                if mean_r2 > 0.8:
+                    performance_analysis['validation_status'] = 'excellent'
+                elif mean_r2 > 0.6:
+                    performance_analysis['validation_status'] = 'good'
+                elif mean_r2 > 0.4:
+                    performance_analysis['validation_status'] = 'fair'
+                else:
+                    performance_analysis['validation_status'] = 'poor'
+        
+        tprint_success("✅ Performance analysis completed")
+        return performance_analysis
     
     def _analyze_regime_performance(self, results: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Analyze regime-specific performance with enhanced error handling and math validation.
+        Analyze regime-specific performance with math validation.
         
         Args:
             results: Training results
@@ -1727,69 +1342,55 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
         Returns:
             Regime performance analysis
         """
-        try:
-            tprint_info("📈 Analyzing regime-specific performance")
+        tprint_info("📈 Analyzing regime-specific performance")
+        
+        regime_analysis = {
+            'total_regimes': 0,
+            'successful_regimes': 0,
+            'failed_regimes': 0,
+            'regime_details': {},
+            'regime_balance_score': 0.0,
+            'regime_quality_assessment': 'unknown'
+        }
+        
+        if 'regime_analysis' in results:
+            regime_data = results['regime_analysis']
             
-            regime_analysis = {
-                'total_regimes': 0,
-                'successful_regimes': 0,
-                'failed_regimes': 0,
-                'regime_details': {},
-                'regime_balance_score': 0.0,
-                'regime_quality_assessment': 'unknown'
+            # Extract regime information with validation
+            unique_regimes = regime_data.get('unique_regimes', [])
+            sufficient_regimes = regime_data.get('sufficient_regimes', [])
+            insufficient_regimes = regime_data.get('insufficient_regimes', [])
+            
+            regime_analysis['total_regimes'] = len(unique_regimes)
+            regime_analysis['successful_regimes'] = len(sufficient_regimes)
+            regime_analysis['failed_regimes'] = len(insufficient_regimes)
+            
+            # Calculate regime balance score
+            if regime_analysis['total_regimes'] > 0:
+                success_rate = regime_analysis['successful_regimes'] / regime_analysis['total_regimes']
+                success_rate = validate_finite(success_rate, "regime_success_rate")
+                regime_analysis['regime_balance_score'] = success_rate
+                
+                # Quality assessment
+                if success_rate > 0.9:
+                    regime_analysis['regime_quality_assessment'] = 'excellent'
+                elif success_rate > 0.7:
+                    regime_analysis['regime_quality_assessment'] = 'good'
+                elif success_rate > 0.5:
+                    regime_analysis['regime_quality_assessment'] = 'fair'
+                else:
+                    regime_analysis['regime_quality_assessment'] = 'poor'
+            
+            # Add detailed regime information
+            regime_analysis['regime_details'] = {
+                'unique_regimes': unique_regimes,
+                'sufficient_regimes': sufficient_regimes,
+                'insufficient_regimes': insufficient_regimes,
+                'regime_counts': regime_data.get('regime_counts', [])
             }
-            
-            if 'regime_analysis' in results:
-                regime_data = results['regime_analysis']
-                
-                # Extract regime information with validation
-                unique_regimes = regime_data.get('unique_regimes', [])
-                sufficient_regimes = regime_data.get('sufficient_regimes', [])
-                insufficient_regimes = regime_data.get('insufficient_regimes', [])
-                
-                regime_analysis['total_regimes'] = len(unique_regimes)
-                regime_analysis['successful_regimes'] = len(sufficient_regimes)
-                regime_analysis['failed_regimes'] = len(insufficient_regimes)
-                
-                # Calculate regime balance score
-                if regime_analysis['total_regimes'] > 0:
-                    try:
-                        success_rate = regime_analysis['successful_regimes'] / regime_analysis['total_regimes']
-                        
-                        # Use math validation if available
-                        if MATH_VALIDATION_AVAILABLE:
-                            success_rate = validate_finite(success_rate, "regime_success_rate")
-                        
-                        regime_analysis['regime_balance_score'] = success_rate
-                        
-                        # Quality assessment
-                        if success_rate > 0.9:
-                            regime_analysis['regime_quality_assessment'] = 'excellent'
-                        elif success_rate > 0.7:
-                            regime_analysis['regime_quality_assessment'] = 'good'
-                        elif success_rate > 0.5:
-                            regime_analysis['regime_quality_assessment'] = 'fair'
-                        else:
-                            regime_analysis['regime_quality_assessment'] = 'poor'
-                            
-                    except Exception as e:
-                        tprint_warning(f"⚠️ Failed to calculate regime balance score: {e}")
-                        regime_analysis['regime_balance_score'] = 0.0
-                
-                # Add detailed regime information
-                regime_analysis['regime_details'] = {
-                    'unique_regimes': unique_regimes,
-                    'sufficient_regimes': sufficient_regimes,
-                    'insufficient_regimes': insufficient_regimes,
-                    'regime_counts': regime_data.get('regime_counts', [])
-                }
-            
-            tprint_success("✅ Regime performance analysis completed")
-            return regime_analysis
-            
-        except Exception as e:
-            tprint_warning(f"⚠️ Regime analysis failed: {e}")
-            return {'error': str(e)}
+        
+        tprint_success("✅ Regime performance analysis completed")
+        return regime_analysis
     
     def _analyze_base_model_integration(
         self,
@@ -1797,7 +1398,7 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
         analyst_training_metrics: Optional[Dict[str, Any]]
     ) -> Dict[str, Any]:
         """
-        Analyze base model integration with enhanced error handling and validation.
+        Analyze base model integration with validation.
         
         Args:
             base_analyst_models: Base models used
@@ -1806,88 +1407,69 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
         Returns:
             Base model integration analysis
         """
-        try:
-            tprint_info("🤖 Analyzing base model integration")
-            
-            integration_analysis = {
-                'base_models_count': len(base_analyst_models) if base_analyst_models else 0,
-                'base_model_types': list(base_analyst_models.keys()) if base_analyst_models else [],
-                'metrics_available': analyst_training_metrics is not None,
-                'integration_quality': 'good' if base_analyst_models and len(base_analyst_models) >= 3 else 'limited',
-                'model_validation_status': {},
-                'integration_score': 0.0,
-                'recommendations': []
-            }
-            
-            # Validate base models
-            if base_analyst_models:
-                for model_name, model in base_analyst_models.items():
-                    try:
-                        validation_status = {
-                            'has_fit_method': hasattr(model, 'fit'),
-                            'has_predict_method': hasattr(model, 'predict'),
-                            'is_not_none': model is not None,
-                            'model_type': type(model).__name__
-                        }
-                        integration_analysis['model_validation_status'][model_name] = validation_status
-                        
-                        # Check if model is properly configured
-                        if not validation_status['has_fit_method'] or not validation_status['has_predict_method']:
-                            integration_analysis['recommendations'].append(f"Model '{model_name}' missing required methods")
-                        
-                    except Exception as e:
-                        tprint_warning(f"⚠️ Failed to validate model '{model_name}': {e}")
-                        integration_analysis['model_validation_status'][model_name] = {'error': str(e)}
-            
-            # Calculate integration score
-            try:
-                base_score = min(1.0, integration_analysis['base_models_count'] / 5.0)  # Max score at 5 models
-                metrics_score = 1.0 if integration_analysis['metrics_available'] else 0.5
-                validation_score = 1.0 if all(
-                    status.get('has_fit_method', False) and status.get('has_predict_method', False)
-                    for status in integration_analysis['model_validation_status'].values()
-                    if isinstance(status, dict) and 'error' not in status
-                ) else 0.5
+        tprint_info("🤖 Analyzing base model integration")
+        
+        integration_analysis = {
+            'base_models_count': len(base_analyst_models) if base_analyst_models else 0,
+            'base_model_types': list(base_analyst_models.keys()) if base_analyst_models else [],
+            'metrics_available': analyst_training_metrics is not None,
+            'integration_quality': 'good' if base_analyst_models and len(base_analyst_models) >= 3 else 'limited',
+            'model_validation_status': {},
+            'integration_score': 0.0,
+            'recommendations': []
+        }
+        
+        # Validate base models
+        if base_analyst_models:
+            for model_name, model in base_analyst_models.items():
+                validation_status = {
+                    'has_fit_method': hasattr(model, 'fit'),
+                    'has_predict_method': hasattr(model, 'predict'),
+                    'is_not_none': model is not None,
+                    'model_type': type(model).__name__
+                }
+                integration_analysis['model_validation_status'][model_name] = validation_status
                 
-                integration_score = (base_score + metrics_score + validation_score) / 3.0
-                
-                # Use math validation if available
-                if MATH_VALIDATION_AVAILABLE:
-                    integration_score = validate_finite(integration_score, "integration_score")
-                
-                integration_analysis['integration_score'] = integration_score
-                
-                # Update integration quality based on score
-                if integration_score > 0.8:
-                    integration_analysis['integration_quality'] = 'excellent'
-                elif integration_score > 0.6:
-                    integration_analysis['integration_quality'] = 'good'
-                elif integration_score > 0.4:
-                    integration_analysis['integration_quality'] = 'fair'
-                else:
-                    integration_analysis['integration_quality'] = 'poor'
-                    
-            except Exception as e:
-                tprint_warning(f"⚠️ Failed to calculate integration score: {e}")
-                integration_analysis['integration_score'] = 0.0
-            
-            # Add base model performance if available
-            if analyst_training_metrics:
-                integration_analysis['base_model_performance'] = analyst_training_metrics
-            
-            # Add recommendations
-            if integration_analysis['base_models_count'] < 3:
-                integration_analysis['recommendations'].append("Consider using more diverse base models for better ensemble performance")
-            
-            if not integration_analysis['metrics_available']:
-                integration_analysis['recommendations'].append("Base model performance metrics not available - consider providing them for better integration")
-            
-            tprint_success("✅ Base model integration analysis completed")
-            return integration_analysis
-            
-        except Exception as e:
-            tprint_warning(f"⚠️ Base model integration analysis failed: {e}")
-            return {'error': str(e)}
+                # Check if model is properly configured
+                if not validation_status['has_fit_method'] or not validation_status['has_predict_method']:
+                    integration_analysis['recommendations'].append(f"Model '{model_name}' missing required methods")
+        
+        # Calculate integration score
+        base_score = min(1.0, integration_analysis['base_models_count'] / 5.0)  # Max score at 5 models
+        metrics_score = 1.0 if integration_analysis['metrics_available'] else 0.5
+        validation_score = 1.0 if all(
+            status.get('has_fit_method', False) and status.get('has_predict_method', False)
+            for status in integration_analysis['model_validation_status'].values()
+            if isinstance(status, dict) and 'error' not in status
+        ) else 0.5
+        
+        integration_score = (base_score + metrics_score + validation_score) / 3.0
+        integration_score = validate_finite(integration_score, "integration_score")
+        integration_analysis['integration_score'] = integration_score
+        
+        # Update integration quality based on score
+        if integration_score > 0.8:
+            integration_analysis['integration_quality'] = 'excellent'
+        elif integration_score > 0.6:
+            integration_analysis['integration_quality'] = 'good'
+        elif integration_score > 0.4:
+            integration_analysis['integration_quality'] = 'fair'
+        else:
+            integration_analysis['integration_quality'] = 'poor'
+        
+        # Add base model performance if available
+        if analyst_training_metrics:
+            integration_analysis['base_model_performance'] = analyst_training_metrics
+        
+        # Add recommendations
+        if integration_analysis['base_models_count'] < 3:
+            integration_analysis['recommendations'].append("Consider using more diverse base models for better ensemble performance")
+        
+        if not integration_analysis['metrics_available']:
+            integration_analysis['recommendations'].append("Base model performance metrics not available - consider providing them for better integration")
+        
+        tprint_success("✅ Base model integration analysis completed")
+        return integration_analysis
     
     def _generate_recommendations(self, results: Dict[str, Any], execution_time: float) -> List[str]:
         """
@@ -2274,87 +1856,81 @@ def execute_analyst_ensemble_training(
     return step.execute(X, y, regime_labels, feature_names, hmm_states, base_analyst_models, analyst_training_metrics)
 
 
-# Example usage and validation
+# Example usage
 if __name__ == "__main__":
     # Example of how to use the enhanced ensemble training version
     tprint_info("🚀 Enhanced Analyst Ensemble Training Step Demo")
     tprint_info("=" * 60)
     
-    try:
-        # Create configuration with enhanced error handling
-        tprint_info("📋 Creating configuration")
-        config = EnsembleTrainingConfig(
-            model_name="analyst_ensemble_models_enhanced",
-            timeframe="5m",
-            model_types=["tcn", "catboost", "lightgbm", "ensemble_rf"],
-            hpo_n_trials=50,  # Reduced for demo
-            enable_hpo=True,
-            save_models=True,
-            model_save_path="./models/analyst_ensemble_models_enhanced"
-        )
-        tprint_success("✅ Configuration created successfully")
-        
-        # Create training step with enhanced error handling
-        tprint_info("🏗️ Creating enhanced training step")
-        training_step = create_analyst_ensemble_training_step(config)
-        tprint_success("✅ Enhanced training step created successfully")
-        
-        # Display configuration summary
-        tprint_info("📊 CONFIGURATION SUMMARY")
-        tprint_info(f"📋 Model name: {config.model_name}")
-        tprint_info(f"⏰ Timeframe: {config.timeframe}")
-        tprint_info(f"🤖 Ensemble types: {len(config.model_types)} types")
-        tprint_info(f"📊 HPO enabled: {config.enable_hpo}")
-        tprint_info(f"💾 Save models: {config.save_models}")
-        tprint_info(f"📁 Save path: {config.model_save_path}")
-        
-        # Display training statistics
-        tprint_info("📊 TRAINING STATISTICS")
-        training_stats = training_step.get_training_statistics()
-        tprint_structured(training_stats, LogLevel.INFO)
-        
-        # Display enhanced features
-        tprint_info("🎯 ENHANCED ANALYST ENSEMBLE MODULE FEATURES:")
-        tprint_info("- ✅ Extensive try/except blocks with fast failing for important errors")
-        tprint_info("- ✅ Comprehensive logging using tprint at every step")
-        tprint_info("- ✅ Integration with common utilities (math_validation, serialization, hardware optimization)")
-        tprint_info("- ✅ ML common utilities (CV, lookahead, HPO, etc.)")
-        tprint_info("- ✅ Operates on 5m timeframe with cross-timeframe features")
-        tprint_info("- ✅ Combines individual analyst models into robust ensembles")
-        tprint_info("- ✅ Per-regime ensemble training for regime-specific optimization")
-        tprint_info("- ✅ Enhanced trade decision accuracy through model combination")
-        tprint_info("- ✅ Models: TCN (Temporal Convolutional Network), CatBoost, LightGBM, RandomForest")
-        tprint_info("- ✅ Comprehensive context from multi-timeframe dynamics")
-        
-        tprint_info("🔄 INTEGRATION WITH INDIVIDUAL ANALYST MODELS:")
-        tprint_info("- ✅ Receives individual analyst model predictions")
-        tprint_info("- ✅ Uses base model performance metrics for weighting")
-        tprint_info("- ✅ Creates regime-specific ensemble combinations")
-        tprint_info("- ✅ Provides enhanced trade decision signals")
-        
-        tprint_info("⚙️ HARDWARE OPTIMIZATION FEATURES:")
-        tprint_info("- ✅ M1 GPU acceleration support")
-        tprint_info("- ✅ Memory optimization for large datasets")
-        tprint_info("- ✅ CPU optimization for better performance")
-        tprint_info("- ✅ Automatic hardware detection and configuration")
-        
-        tprint_info("🔧 UTILITY INTEGRATION FEATURES:")
-        tprint_info("- ✅ Math validation utilities for safe operations")
-        tprint_info("- ✅ Serialization utilities for model persistence")
-        tprint_info("- ✅ Common operations utilities")
-        tprint_info("- ✅ Enhanced error handling and recovery")
-        
-        # Example of how the actual training would be called:
-        tprint_info("💡 EXAMPLE USAGE:")
-        tprint_info("# results = training_step.execute(")
-        tprint_info("#     X, y, regime_labels, feature_names, hmm_states,")
-        tprint_info("#     base_analyst_models, analyst_training_metrics")
-        tprint_info("# )")
-        
-        tprint_success("🎉 Enhanced Analyst Ensemble Training Step demo completed successfully")
-        tprint_info("=" * 60)
-        
-    except Exception as e:
-        tprint_error(f"❌ Demo failed: {e}")
-        tprint_error(f"🔍 Traceback: {traceback.format_exc()}")
-        tprint_info("=" * 60)
+    # Create configuration
+    tprint_info("📋 Creating configuration")
+    config = EnsembleTrainingConfig(
+        model_name="analyst_ensemble_models_enhanced",
+        timeframe="5m",
+        model_types=["tcn", "catboost", "lightgbm", "ensemble_rf"],
+        hpo_n_trials=50,  # Reduced for demo
+        enable_hpo=True,
+        save_models=True,
+        model_save_path="./models/analyst_ensemble_models_enhanced"
+    )
+    tprint_success("✅ Configuration created successfully")
+    
+    # Create training step
+    tprint_info("🏗️ Creating enhanced training step")
+    training_step = create_analyst_ensemble_training_step(config)
+    tprint_success("✅ Enhanced training step created successfully")
+    
+    # Display configuration summary
+    tprint_info("📊 CONFIGURATION SUMMARY")
+    tprint_info(f"📋 Model name: {config.model_name}")
+    tprint_info(f"⏰ Timeframe: {config.timeframe}")
+    tprint_info(f"🤖 Ensemble types: {len(config.model_types)} types")
+    tprint_info(f"📊 HPO enabled: {config.enable_hpo}")
+    tprint_info(f"💾 Save models: {config.save_models}")
+    tprint_info(f"📁 Save path: {config.model_save_path}")
+    
+    # Display training statistics
+    tprint_info("📊 TRAINING STATISTICS")
+    training_stats = training_step.get_training_statistics()
+    tprint_structured(training_stats, LogLevel.INFO)
+    
+    # Display enhanced features
+    tprint_info("🎯 ENHANCED ANALYST ENSEMBLE MODULE FEATURES:")
+    tprint_info("- ✅ Extensive try/except blocks with fast failing for important errors")
+    tprint_info("- ✅ Comprehensive logging using tprint at every step")
+    tprint_info("- ✅ Integration with common utilities (math_validation, serialization, hardware optimization)")
+    tprint_info("- ✅ ML common utilities (CV, lookahead, HPO, etc.)")
+    tprint_info("- ✅ Operates on 5m timeframe with cross-timeframe features")
+    tprint_info("- ✅ Combines individual analyst models into robust ensembles")
+    tprint_info("- ✅ Per-regime ensemble training for regime-specific optimization")
+    tprint_info("- ✅ Enhanced trade decision accuracy through model combination")
+    tprint_info("- ✅ Models: TCN (Temporal Convolutional Network), CatBoost, LightGBM, RandomForest")
+    tprint_info("- ✅ Comprehensive context from multi-timeframe dynamics")
+    
+    tprint_info("🔄 INTEGRATION WITH INDIVIDUAL ANALYST MODELS:")
+    tprint_info("- ✅ Receives individual analyst model predictions")
+    tprint_info("- ✅ Uses base model performance metrics for weighting")
+    tprint_info("- ✅ Creates regime-specific ensemble combinations")
+    tprint_info("- ✅ Provides enhanced trade decision signals")
+    
+    tprint_info("⚙️ HARDWARE OPTIMIZATION FEATURES:")
+    tprint_info("- ✅ M1 GPU acceleration support")
+    tprint_info("- ✅ Memory optimization for large datasets")
+    tprint_info("- ✅ CPU optimization for better performance")
+    tprint_info("- ✅ Automatic hardware detection and configuration")
+    
+    tprint_info("🔧 UTILITY INTEGRATION FEATURES:")
+    tprint_info("- ✅ Math validation utilities for safe operations")
+    tprint_info("- ✅ Serialization utilities for model persistence")
+    tprint_info("- ✅ Common operations utilities")
+    tprint_info("- ✅ Enhanced error handling and recovery")
+    
+    # Example of how the actual training would be called:
+    tprint_info("💡 EXAMPLE USAGE:")
+    tprint_info("# results = training_step.execute(")
+    tprint_info("#     X, y, regime_labels, feature_names, hmm_states,")
+    tprint_info("#     base_analyst_models, analyst_training_metrics")
+    tprint_info("# )")
+    
+    tprint_success("🎉 Enhanced Analyst Ensemble Training Step demo completed successfully")
+    tprint_info("=" * 60)

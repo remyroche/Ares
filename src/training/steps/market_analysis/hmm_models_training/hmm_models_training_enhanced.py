@@ -19,7 +19,7 @@ import gc
 warnings.filterwarnings('ignore')
 
 # Core imports
-from src.utils.logger import system_logger
+from src.utils.tprint import tprint
 from src.utils.ml_common.config.base_training_config import HMMTrainingConfig
 from src.utils.ml_common.training.base_training_step import BaseTrainingStep
 
@@ -32,13 +32,109 @@ from .shared_utilities import (
     ProgressReporter,
     MemoryTracker
 )
+# Using tprint for all logging - no logger needed
+
+
+@dataclass
+class TrainingMetrics:
+    """Enhanced training metrics container with additional monitoring."""
+    accuracy: float = 0.0
+    f1_score: float = 0.0
+    precision: float = 0.0
+    recall: float = 0.0
+    training_time: float = 0.0
+    convergence_epochs: int = 0
+    memory_usage_mb: float = 0.0
+    validation_loss: Optional[float] = None
+    test_accuracy: Optional[float] = None
+    error_message: Optional[str] = None
+    warnings: List[str] = None
+    
+    def __post_init__(self):
+        if self.warnings is None:
+            self.warnings = []
+
+
+@dataclass
+class ModelResult:
+    """Enhanced model result container with additional metadata."""
+    model: Any
+    metrics: TrainingMetrics
+    feature_importance: Optional[Dict[str, float]] = None
+    predictions: Optional[np.ndarray] = None
+    probabilities: Optional[np.ndarray] = None
+    hyperparameters: Optional[Dict[str, Any]] = None
+    training_history: Optional[Dict[str, List[float]]] = None
+
+
+class CircuitBreaker:
+    """Circuit breaker to prevent cascading failures in model training."""
+    
+    def __init__(self, failure_threshold: int = 3, timeout: int = 300):
+        self.failure_threshold = failure_threshold
+        self.timeout = timeout
+        self.failure_count = 0
+        self.last_failure_time = None
+        self.state = "CLOSED"  # CLOSED, OPEN, HALF_OPEN
+    
+    def call(self, func: Callable, *args, **kwargs):
+        """Execute function with circuit breaker protection."""
+        if self.state == "OPEN":
+            if time.time() - self.last_failure_time > self.timeout:
+                self.state = "HALF_OPEN"
+                tprint("🔄 Circuit breaker transitioning to HALF_OPEN")
+            else:
+                raise Exception("Circuit breaker is OPEN - too many failures detected")
+        
+        try:
+            result = func(*args, **kwargs)
+            if self.state == "HALF_OPEN":
+                self.state = "CLOSED"
+                self.failure_count = 0
+                tprint("✅ Circuit breaker reset to CLOSED")
+            return result
+        except Exception as e:
+            self.failure_count += 1
+            self.last_failure_time = time.time()
+            
+            if self.failure_count >= self.failure_threshold:
+                self.state = "OPEN"
+                tprint(f"🚨 Circuit breaker opened after {self.failure_count} failures")
+            
+            raise e
+
+
+class TrainingErrorHandler:
+    """Centralized error handling for training operations."""
+    
+    @staticmethod
+    def handle_model_creation_error(model_type: str, error: Exception) -> ModelResult:
+        """Standardized model creation error handling."""
+        return ModelResult(
+            model=None,
+            metrics=TrainingMetrics(
+                error_message=f"Failed to create {model_type}: {str(error)}",
+                training_time=0.0
+            )
+        )
+    
+    @staticmethod
+    def handle_training_error(model_type: str, error: Exception, training_time: float) -> ModelResult:
+        """Standardized training error handling."""
+        return ModelResult(
+            model=None,
+            metrics=TrainingMetrics(
+                error_message=f"Failed to train {model_type}: {str(error)}",
+                training_time=training_time
+            )
+        )
+
 
 logger = system_logger.getChild('HMMModelsTrainingEnhanced')
 
 
 # Import shared data classes
 from .shared_utilities.training_error_handler import TrainingMetrics, ModelResult
-
 
 class HMMModelsTrainingEnhanced(BaseTrainingStep):
     """
@@ -74,8 +170,7 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
 
         super().__init__(config)
         self.logger = logger.getChild('HMMModelsTrainingEnhanced')
-        
-        # Initialize enhanced components using shared utilities
+
         self.circuit_breaker = CircuitBreaker(failure_threshold=2, timeout=60)
         self.progress_reporter = None
         self.memory_tracker = MemoryTracker()
@@ -87,7 +182,7 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
         self.training_start_time = None
         self.training_results = {}
         
-        self.logger.info("✅ Enhanced HMM Models Training initialized with circuit breaker protection")
+        tprint("✅ Enhanced HMM Models Training initialized with circuit breaker protection")
     
     def _validate_config(self, config: HMMTrainingConfig) -> None:
         """
@@ -284,6 +379,13 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
             # Additional HMM-specific validations
             warnings = []
             unique_regimes = np.unique(regime_labels)
+            if len(unique_regimes) < 2:
+                critical_failures.append(f"Need at least 2 regimes, found {len(unique_regimes)}")
+            
+            # Early exit on critical failures
+            if critical_failures:
+                tprint(f"❌ Critical validation failures: {critical_failures}")
+                return False
             
             # Warning checks (don't cause early exit)
             if len(X) < 1000:
@@ -298,13 +400,13 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
             # Log warnings
             if warnings:
                 for warning in warnings:
-                    self.logger.warning(f"⚠️ {warning}")
+                    tprint(f"⚠️ {warning}")
             
-            self.logger.info(f"✅ Enhanced validation passed: {len(X)} samples, {len(unique_regimes)} regimes")
+            tprint(f"✅ Enhanced validation passed: {len(X)} samples, {len(unique_regimes)} regimes")
             return True
             
         except Exception as e:
-            self.logger.error(f"❌ Validation error: {e}")
+            tprint(f"❌ Validation error: {e}")
             return False
     
     def _prepare_features(self, X: Union[np.ndarray, pd.DataFrame], feature_names: Optional[List[str]] = None) -> Tuple[pd.DataFrame, List[str]]:
@@ -335,7 +437,7 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
                 raise ValueError("No numeric columns found in input data")
             
             X_numeric = X_df[numeric_columns]
-            self.logger.info(f"📊 Using {len(numeric_columns)} numeric features")
+            tprint(f"📊 Using {len(numeric_columns)} numeric features")
             
             # Enhance features if generator is available
             if self.feature_generator is not None:

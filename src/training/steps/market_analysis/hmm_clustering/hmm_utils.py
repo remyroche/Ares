@@ -1,13 +1,17 @@
-from ....core.decorators import handles_errors
-from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
-"""Utility functions and decorators for HMM regime discovery."""
+#!/usr/bin/env python3
+"""
+Utility functions and decorators for HMM regime discovery.
+"""
 
 import logging
 import json
 from pathlib import Path
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, Optional, List
 import numpy as np
 import pandas as pd
+
+from ....core.decorators import handles_errors
+from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 
 # Import decorators
 
@@ -34,129 +38,273 @@ def secure_step_execution(*args, **kwargs):
 
 def create_fallback_logger() -> Any:
     """Create a fallback logger if system_logger is not available."""
-    logging.basicConfig(level = logging.INFO)
-    return logging.getLogger(__name__)
+    try:
+        logging.basicConfig(level=logging.INFO)
+        return logging.getLogger(__name__)
+    except Exception as e:
+        # If logging setup fails, create a minimal logger
+        import sys
+        class MinimalLogger:
+            def info(self, msg): print(f"INFO: {msg}", file=sys.stdout)
+            def warning(self, msg): print(f"WARNING: {msg}", file=sys.stderr)
+            def error(self, msg): print(f"ERROR: {msg}", file=sys.stderr)
+            def exception(self, msg): print(f"EXCEPTION: {msg}", file=sys.stderr)
+        return MinimalLogger()
 
 def ensure_directory(path: Path) -> Path:
     """Ensure directory exists and return the path."""
-    path.mkdir(parents = True, exist_ok = True)
-    return path
+    try:
+        if path is None:
+            raise ValueError("Path cannot be None")
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+    except Exception as e:
+        logger = create_fallback_logger()
+        logger.exception(f"Failed to create directory {path}: {e}")
+        raise
 
 def safe_json_dump(data: Any, file_path: Path, **kwargs) -> None:
     """Safely dump data to JSON file."""
-    with open(file_path, 'w') as f:
-        json.dump(data, f, **kwargs)
+    try:
+        if data is None:
+            raise ValueError("Data cannot be None")
+        if file_path is None:
+            raise ValueError("File path cannot be None")
+        
+        # Ensure parent directory exists
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        with open(file_path, 'w') as f:
+            json.dump(data, f, **kwargs)
+    except Exception as e:
+        logger = create_fallback_logger()
+        logger.exception(f"Failed to dump JSON to {file_path}: {e}")
+        raise
 
 class TechnicalIndicators:
     """Collection of technical indicator calculation methods."""
     
     @staticmethod
-    @handles_errors(fallback = pd.Series())
+    @handles_errors(fallback=pd.Series())
     def calculate_rsi(prices: pd.Series, window: int = 14) -> pd.Series:
         """Calculate Relative Strength Index."""
-        delta = prices.diff()
-        gain = delta.where(delta > 0, 0).rolling(window = window).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(window = window).mean()
-        rs = gain / loss
-        rsi = 100 - 100 / (1 + rs)
-        return rsi
+        try:
+            if prices is None or prices.empty:
+                raise ValueError("Prices series cannot be None or empty")
+            if window < 1:
+                raise ValueError("Window must be >= 1")
+            if len(prices) < window:
+                raise ValueError(f"Prices length ({len(prices)}) must be >= window ({window})")
+            
+            delta = prices.diff()
+            gain = delta.where(delta > 0, 0).rolling(window=window).mean()
+            loss = (-delta.where(delta < 0, 0)).rolling(window=window).mean()
+            
+            # Avoid division by zero
+            rs = gain / (loss + 1e-10)
+            rsi = 100 - 100 / (1 + rs)
+            return rsi
+        except Exception as e:
+            logger = create_fallback_logger()
+            logger.exception(f"RSI calculation failed: {e}")
+            return pd.Series()
 
     @staticmethod
-    @handles_errors(fallback = pd.Series())
+    @handles_errors(fallback=pd.Series())
     def calculate_macd(prices: pd.Series, fast: int = 12, slow: int = 26, signal: int = 9) -> pd.Series:
         """Calculate MACD (Moving Average Convergence Divergence)."""
-        ema_fast = prices.ewm(span = fast).mean()
-        ema_slow = prices.ewm(span = slow).mean()
-        macd = ema_fast - ema_slow
-        return macd
+        try:
+            if prices is None or prices.empty:
+                raise ValueError("Prices series cannot be None or empty")
+            if fast < 1 or slow < 1 or signal < 1:
+                raise ValueError("All parameters must be >= 1")
+            if fast >= slow:
+                raise ValueError("Fast period must be < slow period")
+            if len(prices) < slow:
+                raise ValueError(f"Prices length ({len(prices)}) must be >= slow period ({slow})")
+            
+            ema_fast = prices.ewm(span=fast).mean()
+            ema_slow = prices.ewm(span=slow).mean()
+            macd = ema_fast - ema_slow
+            return macd
+        except Exception as e:
+            logger = create_fallback_logger()
+            logger.exception(f"MACD calculation failed: {e}")
+            return pd.Series()
 
     @staticmethod
-    @handles_errors(fallback = pd.Series())
+    @handles_errors(fallback=pd.Series())
     def calculate_atr(df: pd.DataFrame, window: int = 14) -> pd.Series:
         """Calculate Average True Range (ATR)."""
-        high = df['high']
-        low = df['low']
-        close = df['close']
-        tr1 = high - low
-        tr2 = abs(high - close.shift(1))
-        tr3 = abs(low - close.shift(1))
-        tr = pd.concat([tr1, tr2, tr3], axis = 1).max(axis = 1)
-        atr = tr.rolling(window = window).mean()
-        return atr
+        try:
+            if df is None or df.empty:
+                raise ValueError("DataFrame cannot be None or empty")
+            if window < 1:
+                raise ValueError("Window must be >= 1")
+            
+            required_columns = ['high', 'low', 'close']
+            missing_columns = [col for col in required_columns if col not in df.columns]
+            if missing_columns:
+                raise ValueError(f"Missing required columns: {missing_columns}")
+            
+            if len(df) < window:
+                raise ValueError(f"DataFrame length ({len(df)}) must be >= window ({window})")
+            
+            high = df['high']
+            low = df['low']
+            close = df['close']
+            tr1 = high - low
+            tr2 = abs(high - close.shift(1))
+            tr3 = abs(low - close.shift(1))
+            tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+            atr = tr.rolling(window=window).mean()
+            return atr
+        except Exception as e:
+            logger = create_fallback_logger()
+            logger.exception(f"ATR calculation failed: {e}")
+            return pd.Series()
 
     @staticmethod
-    @handles_errors(fallback = pd.DataFrame())
+    @handles_errors(fallback=pd.DataFrame())
     def calculate_bollinger_bands(prices: pd.Series, window: int = 20, num_std: float = 2) -> pd.DataFrame:
         """Calculate Bollinger Bands."""
-        sma = prices.rolling(window = window).mean()
-        std = prices.rolling(window = window).std()
-        bb_upper = sma + std * num_std
-        bb_lower = sma - std * num_std
-        bb_width = (bb_upper - bb_lower) / sma
-        bb_position = (prices - bb_lower) / (bb_upper - bb_lower)
-        bb_features = pd.DataFrame({
-            'bb_upper': bb_upper, 
-            'bb_middle': sma, 
-            'bb_lower': bb_lower, 
-            'bb_width': bb_width, 
-            'bb_position': bb_position
-        })
-        return bb_features
+        try:
+            if prices is None or prices.empty:
+                raise ValueError("Prices series cannot be None or empty")
+            if window < 1:
+                raise ValueError("Window must be >= 1")
+            if num_std <= 0:
+                raise ValueError("num_std must be > 0")
+            if len(prices) < window:
+                raise ValueError(f"Prices length ({len(prices)}) must be >= window ({window})")
+            
+            sma = prices.rolling(window=window).mean()
+            std = prices.rolling(window=window).std()
+            bb_upper = sma + std * num_std
+            bb_lower = sma - std * num_std
+            
+            # Avoid division by zero
+            bb_width = (bb_upper - bb_lower) / (sma + 1e-10)
+            bb_position = (prices - bb_lower) / (bb_upper - bb_lower + 1e-10)
+            
+            bb_features = pd.DataFrame({
+                'bb_upper': bb_upper, 
+                'bb_middle': sma, 
+                'bb_lower': bb_lower, 
+                'bb_width': bb_width, 
+                'bb_position': bb_position
+            })
+            return bb_features
+        except Exception as e:
+            logger = create_fallback_logger()
+            logger.exception(f"Bollinger Bands calculation failed: {e}")
+            return pd.DataFrame()
 
     @staticmethod
-    @handles_errors(fallback = pd.Series())
+    @handles_errors(fallback=pd.Series())
     def calculate_adx(df: pd.DataFrame, window: int = 14) -> pd.Series:
         """Calculate Average Directional Index (ADX)."""
-        high = df['high']
-        low = df['low']
-        close = df['close']
-        tr1 = high - low
-        tr2 = abs(high - close.shift(1))
-        tr3 = abs(low - close.shift(1))
-        tr = pd.concat([tr1, tr2, tr3], axis = 1).max(axis = 1)
-        dm_plus = high - high.shift(1)
-        dm_minus = low.shift(1) - low
-        dm_plus = dm_plus.where((dm_plus > dm_minus) & (dm_plus > 0), 0)
-        dm_minus = dm_minus.where((dm_minus > dm_plus) & (dm_minus > 0), 0)
-        tr_smooth = tr.rolling(window = window).mean()
-        dm_plus_smooth = dm_plus.rolling(window = window).mean()
-        dm_minus_smooth = dm_minus.rolling(window = window).mean()
-        di_plus = 100 * (dm_plus_smooth / tr_smooth)
-        di_minus = 100 * (dm_minus_smooth / tr_smooth)
-        dx = 100 * abs(di_plus - di_minus) / (di_plus + di_minus)
-        adx = dx.rolling(window = window).mean()
-        return adx
+        try:
+            if df is None or df.empty:
+                raise ValueError("DataFrame cannot be None or empty")
+            if window < 1:
+                raise ValueError("Window must be >= 1")
+            
+            required_columns = ['high', 'low', 'close']
+            missing_columns = [col for col in required_columns if col not in df.columns]
+            if missing_columns:
+                raise ValueError(f"Missing required columns: {missing_columns}")
+            
+            if len(df) < window + 1:  # Need at least window + 1 for shift operations
+                raise ValueError(f"DataFrame length ({len(df)}) must be >= window + 1 ({window + 1})")
+            
+            high = df['high']
+            low = df['low']
+            close = df['close']
+            tr1 = high - low
+            tr2 = abs(high - close.shift(1))
+            tr3 = abs(low - close.shift(1))
+            tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+            dm_plus = high - high.shift(1)
+            dm_minus = low.shift(1) - low
+            dm_plus = dm_plus.where((dm_plus > dm_minus) & (dm_plus > 0), 0)
+            dm_minus = dm_minus.where((dm_minus > dm_plus) & (dm_minus > 0), 0)
+            tr_smooth = tr.rolling(window=window).mean()
+            dm_plus_smooth = dm_plus.rolling(window=window).mean()
+            dm_minus_smooth = dm_minus.rolling(window=window).mean()
+            
+            # Avoid division by zero
+            di_plus = 100 * (dm_plus_smooth / (tr_smooth + 1e-10))
+            di_minus = 100 * (dm_minus_smooth / (tr_smooth + 1e-10))
+            dx = 100 * abs(di_plus - di_minus) / (di_plus + di_minus + 1e-10)
+            adx = dx.rolling(window=window).mean()
+            return adx
+        except Exception as e:
+            logger = create_fallback_logger()
+            logger.exception(f"ADX calculation failed: {e}")
+            return pd.Series()
 
     @staticmethod
-    @handles_errors(fallback = pd.Series())
+    @handles_errors(fallback=pd.Series())
     def calculate_sr_strength(df: pd.DataFrame, window: int = 20) -> pd.Series:
         """Calculate support/resistance strength indicator."""
-        high_swing = df['high'].rolling(window = window, center = True).max()
-        low_swing = df['low'].rolling(window = window, center = True).min()
-        current_price = df['close']
-        high_strength = (high_swing - current_price) / high_swing
-        low_strength = (current_price - low_swing) / low_swing
-        sr_strength = (high_strength + low_strength) / 2
-        return sr_strength
+        try:
+            if df is None or df.empty:
+                raise ValueError("DataFrame cannot be None or empty")
+            if window < 1:
+                raise ValueError("Window must be >= 1")
+            
+            required_columns = ['high', 'low', 'close']
+            missing_columns = [col for col in required_columns if col not in df.columns]
+            if missing_columns:
+                raise ValueError(f"Missing required columns: {missing_columns}")
+            
+            if len(df) < window:
+                raise ValueError(f"DataFrame length ({len(df)}) must be >= window ({window})")
+            
+            high_swing = df['high'].rolling(window=window, center=True).max()
+            low_swing = df['low'].rolling(window=window, center=True).min()
+            current_price = df['close']
+            
+            # Avoid division by zero
+            high_strength = (high_swing - current_price) / (high_swing + 1e-10)
+            low_strength = (current_price - low_swing) / (low_swing + 1e-10)
+            sr_strength = (high_strength + low_strength) / 2
+            return sr_strength
+        except Exception as e:
+            logger = create_fallback_logger()
+            logger.exception(f"SR strength calculation failed: {e}")
+            return pd.Series()
 
 class FeatureCalculator:
     """Handles feature calculation and preparation for HMM analysis."""
     
     def __init__(self, logger: logging.Logger):
-        self.logger = logger
+        if logger is None:
+            self.logger = create_fallback_logger()
+        else:
+            self.logger = logger
         self.indicators = TechnicalIndicators()
 
-    @handles_errors(fallback = pd.DataFrame())
+    @handles_errors(fallback=pd.DataFrame())
     def prepare_hmm_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """Prepare comprehensive features for HMM regime discovery."""
         try:
+            if df is None or df.empty:
+                raise ValueError("Input DataFrame cannot be None or empty")
+            
+            required_columns = ['timestamp', 'open', 'high', 'low', 'close', 'volume']
+            missing_columns = [col for col in required_columns if col not in df.columns]
+            if missing_columns:
+                raise ValueError(f"Missing required columns: {missing_columns}")
+            
             self.logger.info('🔧 Starting comprehensive feature preparation for HMM...')
             df = df.copy()
             
             if not pd.api.types.is_datetime64_any_dtype(df['timestamp']):
                 df['timestamp'] = pd.to_datetime(df['timestamp'])
             
-            df = df.sort_values('timestamp').reset_index(drop = True)
+            df = df.sort_values('timestamp').reset_index(drop=True)
             
             features = pd.DataFrame()
             features['timestamp'] = df['timestamp']
@@ -191,99 +339,227 @@ class FeatureCalculator:
 
     def _add_momentum_features(self, features: pd.DataFrame, df: pd.DataFrame) -> None:
         """Add momentum features."""
-        self.logger.info('🚀 Calculating momentum features...')
-        features['price_momentum_5'] = df['close'].pct_change(5)
-        features['price_momentum_20'] = df['close'].pct_change(20)
-        features['volume_momentum_5'] = df['volume'].pct_change(5)
-        features['volume_momentum_20'] = df['volume'].pct_change(20)
-        features['rsi'] = self.indicators.calculate_rsi(df['close'])
-        features['rsi_momentum'] = features['rsi'].diff(5)
-        features['macd'] = self.indicators.calculate_macd(df['close'])
-        features['macd_momentum'] = features['macd'].diff(5)
+        try:
+            self.logger.info('🚀 Calculating momentum features...')
+            
+            if len(df) < 20:  # Need at least 20 periods for momentum calculations
+                self.logger.warning(f"Insufficient data for momentum features: {len(df)} periods")
+                return
+            
+            features['price_momentum_5'] = df['close'].pct_change(5)
+            features['price_momentum_20'] = df['close'].pct_change(20)
+            features['volume_momentum_5'] = df['volume'].pct_change(5)
+            features['volume_momentum_20'] = df['volume'].pct_change(20)
+            
+            # Calculate technical indicators with error handling
+            rsi = self.indicators.calculate_rsi(df['close'])
+            if not rsi.empty:
+                features['rsi'] = rsi
+                features['rsi_momentum'] = features['rsi'].diff(5)
+            
+            macd = self.indicators.calculate_macd(df['close'])
+            if not macd.empty:
+                features['macd'] = macd
+                features['macd_momentum'] = features['macd'].diff(5)
+                
+        except Exception as e:
+            self.logger.exception(f"Error calculating momentum features: {e}")
+            raise
 
     def _add_volatility_features(self, features: pd.DataFrame, df: pd.DataFrame) -> None:
         """Add volatility features."""
-        self.logger.info('📈 Calculating volatility features...')
-        features['volatility_5'] = df['close'].pct_change().rolling(window = 5).std()
-        features['volatility_10'] = df['close'].pct_change().rolling(window = 10).std()
-        features['volatility_20'] = df['close'].pct_change().rolling(window = 20).std()
-        features['ewma_volatility_20'] = df['close'].pct_change().ewm(span = 20).std()
-        features['volatility_acceleration'] = features['volatility_20'].diff()
-        features['volatility_momentum'] = features['volatility_20'] - features['volatility_20'].shift(5)
-        features['atr'] = self.indicators.calculate_atr(df)
-        features['atr_normalized'] = features['atr'] / df['close']
+        try:
+            self.logger.info('📈 Calculating volatility features...')
+            
+            if len(df) < 20:  # Need at least 20 periods for volatility calculations
+                self.logger.warning(f"Insufficient data for volatility features: {len(df)} periods")
+                return
+            
+            price_changes = df['close'].pct_change()
+            features['volatility_5'] = price_changes.rolling(window=5).std()
+            features['volatility_10'] = price_changes.rolling(window=10).std()
+            features['volatility_20'] = price_changes.rolling(window=20).std()
+            features['ewma_volatility_20'] = price_changes.ewm(span=20).std()
+            
+            # Calculate volatility derivatives only if we have enough data
+            if 'volatility_20' in features.columns:
+                features['volatility_acceleration'] = features['volatility_20'].diff()
+                features['volatility_momentum'] = features['volatility_20'] - features['volatility_20'].shift(5)
+            
+            # Calculate ATR with error handling
+            atr = self.indicators.calculate_atr(df)
+            if not atr.empty:
+                features['atr'] = atr
+                # Avoid division by zero
+                features['atr_normalized'] = features['atr'] / (df['close'] + 1e-10)
+                
+        except Exception as e:
+            self.logger.exception(f"Error calculating volatility features: {e}")
+            raise
 
     def _add_volume_features(self, features: pd.DataFrame, df: pd.DataFrame) -> None:
         """Add volume features."""
-        self.logger.info('📊 Calculating volume features...')
-        features['volume_ratio_5'] = df['volume'] / df['volume'].rolling(window = 5).mean()
-        features['volume_ratio_10'] = df['volume'] / df['volume'].rolling(window = 10).mean()
-        features['volume_ratio_20'] = df['volume'] / df['volume'].rolling(window = 20).mean()
-        features['volume_change'] = df['volume'].pct_change()
-        features['volume_price_trend'] = (df['close'] - df['close'].shift(1)) * df['volume']
-        features['volume_price_trend_ratio'] = features['volume_price_trend'] / features['volume_price_trend'].rolling(20).mean()
+        try:
+            self.logger.info('📊 Calculating volume features...')
+            
+            if len(df) < 20:  # Need at least 20 periods for volume calculations
+                self.logger.warning(f"Insufficient data for volume features: {len(df)} periods")
+                return
+            
+            # Calculate volume ratios with error handling
+            volume_ma_5 = df['volume'].rolling(window=5).mean()
+            volume_ma_10 = df['volume'].rolling(window=10).mean()
+            volume_ma_20 = df['volume'].rolling(window=20).mean()
+            
+            # Avoid division by zero
+            features['volume_ratio_5'] = df['volume'] / (volume_ma_5 + 1e-10)
+            features['volume_ratio_10'] = df['volume'] / (volume_ma_10 + 1e-10)
+            features['volume_ratio_20'] = df['volume'] / (volume_ma_20 + 1e-10)
+            
+            features['volume_change'] = df['volume'].pct_change()
+            features['volume_price_trend'] = (df['close'] - df['close'].shift(1)) * df['volume']
+            
+            # Calculate volume price trend ratio only if we have enough data
+            vpt_ma = features['volume_price_trend'].rolling(20).mean()
+            features['volume_price_trend_ratio'] = features['volume_price_trend'] / (vpt_ma + 1e-10)
+                
+        except Exception as e:
+            self.logger.exception(f"Error calculating volume features: {e}")
+            raise
 
     def _add_sr_features(self, features: pd.DataFrame, df: pd.DataFrame) -> None:
         """Add support/resistance features."""
-        self.logger.info('🎯 Calculating support/resistance features...')
-        features['pivot_point'] = (df['high'] + df['low'] + df['close']) / 3
-        features['support_1'] = 2 * features['pivot_point'] - df['high']
-        features['resistance_1'] = 2 * features['pivot_point'] - df['low']
-        features['distance_to_support'] = (df['close'] - features['support_1']) / df['close']
-        features['distance_to_resistance'] = (features['resistance_1'] - df['close']) / df['close']
-        features['sr_strength'] = self.indicators.calculate_sr_strength(df)
-        
-        # Bollinger Bands
-        bb_features = self.indicators.calculate_bollinger_bands(df['close'])
-        features = pd.concat([features, bb_features], axis = 1)
+        try:
+            self.logger.info('🎯 Calculating support/resistance features...')
+            
+            if len(df) < 20:  # Need at least 20 periods for SR calculations
+                self.logger.warning(f"Insufficient data for SR features: {len(df)} periods")
+                return
+            
+            features['pivot_point'] = (df['high'] + df['low'] + df['close']) / 3
+            features['support_1'] = 2 * features['pivot_point'] - df['high']
+            features['resistance_1'] = 2 * features['pivot_point'] - df['low']
+            
+            # Avoid division by zero
+            features['distance_to_support'] = (df['close'] - features['support_1']) / (df['close'] + 1e-10)
+            features['distance_to_resistance'] = (features['resistance_1'] - df['close']) / (df['close'] + 1e-10)
+            
+            # Calculate SR strength with error handling
+            sr_strength = self.indicators.calculate_sr_strength(df)
+            if not sr_strength.empty:
+                features['sr_strength'] = sr_strength
+            
+            # Bollinger Bands with error handling
+            bb_features = self.indicators.calculate_bollinger_bands(df['close'])
+            if not bb_features.empty:
+                features = pd.concat([features, bb_features], axis=1)
+                
+        except Exception as e:
+            self.logger.exception(f"Error calculating SR features: {e}")
+            raise
 
     def _add_technical_features(self, features: pd.DataFrame, df: pd.DataFrame) -> None:
         """Add technical features."""
-        self.logger.info('🔧 Calculating additional technical features...')
-        features['sma_20'] = df['close'].rolling(window = 20).mean()
-        features['sma_50'] = df['close'].rolling(window = 50).mean()
-        features['ema_12'] = df['close'].ewm(span = 12).mean()
-        features['ema_26'] = df['close'].ewm(span = 26).mean()
-        features['price_vs_sma20'] = (df['close'] - features['sma_20']) / features['sma_20']
-        features['price_vs_sma50'] = (df['close'] - features['sma_50']) / features['sma_50']
-        features['adx'] = self.indicators.calculate_adx(df)
+        try:
+            self.logger.info('🔧 Calculating additional technical features...')
+            
+            if len(df) < 50:  # Need at least 50 periods for technical features
+                self.logger.warning(f"Insufficient data for technical features: {len(df)} periods")
+                return
+            
+            features['sma_20'] = df['close'].rolling(window=20).mean()
+            features['sma_50'] = df['close'].rolling(window=50).mean()
+            features['ema_12'] = df['close'].ewm(span=12).mean()
+            features['ema_26'] = df['close'].ewm(span=26).mean()
+            
+            # Avoid division by zero
+            features['price_vs_sma20'] = (df['close'] - features['sma_20']) / (features['sma_20'] + 1e-10)
+            features['price_vs_sma50'] = (df['close'] - features['sma_50']) / (features['sma_50'] + 1e-10)
+            
+            # Calculate ADX with error handling
+            adx = self.indicators.calculate_adx(df)
+            if not adx.empty:
+                features['adx'] = adx
+                
+        except Exception as e:
+            self.logger.exception(f"Error calculating technical features: {e}")
+            raise
 
     def _add_feature_interactions(self, features: pd.DataFrame) -> None:
         """Add feature interactions."""
-        self.logger.info('🔄 Calculating feature interactions...')
-        features['momentum_volume_interaction'] = features['price_momentum_5'] * features['volume_ratio_10']
-        features['volatility_volume_interaction'] = features['volatility_20'] * features['volume_ratio_20']
-        features['rsi_momentum_interaction'] = features['rsi'] * features['price_momentum_5']
+        try:
+            self.logger.info('🔄 Calculating feature interactions...')
+            
+            # Only calculate interactions if the required features exist
+            if 'price_momentum_5' in features.columns and 'volume_ratio_10' in features.columns:
+                features['momentum_volume_interaction'] = features['price_momentum_5'] * features['volume_ratio_10']
+            
+            if 'volatility_20' in features.columns and 'volume_ratio_20' in features.columns:
+                features['volatility_volume_interaction'] = features['volatility_20'] * features['volume_ratio_20']
+            
+            if 'rsi' in features.columns and 'price_momentum_5' in features.columns:
+                features['rsi_momentum_interaction'] = features['rsi'] * features['price_momentum_5']
+                
+        except Exception as e:
+            self.logger.exception(f"Error calculating feature interactions: {e}")
+            raise
 
     def _clean_features(self, features: pd.DataFrame) -> pd.DataFrame:
         """Clean and validate features."""
-        self.logger.info('🧹 Cleaning and validating features...')
-        hmm_features = features.drop('timestamp', axis = 1)
-        initial_rows = len(hmm_features)
-        
-        # Forward fill technical indicators
-        technical_cols = ['rsi', 'macd', 'adx', 'bb_position', 'bb_width']
-        for col in technical_cols:
-            if col in hmm_features.columns:
-                hmm_features[col] = hmm_features[col].ffill()
-        
-        hmm_features = hmm_features.fillna(0)
-        final_rows = len(hmm_features)
-        removed_rows = initial_rows - final_rows
-        
-        self.logger.info(f'✅ Feature cleaning completed: {final_rows:,} rows, {len(hmm_features.columns)} features')
-        return hmm_features
+        try:
+            self.logger.info('🧹 Cleaning and validating features...')
+            
+            if features is None or features.empty:
+                raise ValueError("Features DataFrame cannot be None or empty")
+            
+            hmm_features = features.drop('timestamp', axis=1)
+            initial_rows = len(hmm_features)
+            
+            # Forward fill technical indicators
+            technical_cols = ['rsi', 'macd', 'adx', 'bb_position', 'bb_width']
+            for col in technical_cols:
+                if col in hmm_features.columns:
+                    hmm_features[col] = hmm_features[col].ffill()
+            
+            # Handle infinite values
+            hmm_features = hmm_features.replace([np.inf, -np.inf], np.nan)
+            
+            # Fill remaining NaN values
+            hmm_features = hmm_features.fillna(0)
+            
+            final_rows = len(hmm_features)
+            removed_rows = initial_rows - final_rows
+            
+            if removed_rows > 0:
+                self.logger.warning(f"Removed {removed_rows} rows during cleaning")
+            
+            self.logger.info(f'✅ Feature cleaning completed: {final_rows:,} rows, {len(hmm_features.columns)} features')
+            return hmm_features
+            
+        except Exception as e:
+            self.logger.exception(f"Error cleaning features: {e}")
+            raise
 
 class RegimeAnalyzer:
     """Handles regime analysis and interpretation."""
     
     def __init__(self, logger: logging.Logger):
-        self.logger = logger
+        if logger is None:
+            self.logger = create_fallback_logger()
+        else:
+            self.logger = logger
 
     @handles_errors(default_return={'state_to_regime_map': {}, 'state_analysis': {}})
     def interpret_hmm_states(self, features: pd.DataFrame, state_sequence: np.ndarray, state_probs: np.ndarray) -> Dict[str, Any]:
         """Interpret HMM states based on feature characteristics."""
         try:
+            if features is None or features.empty:
+                raise ValueError("Features DataFrame cannot be None or empty")
+            if state_sequence is None or len(state_sequence) == 0:
+                raise ValueError("State sequence cannot be None or empty")
+            if len(features) != len(state_sequence):
+                raise ValueError(f"Features length ({len(features)}) must match state sequence length ({len(state_sequence)})")
+            
             self.logger.info('🔍 Interpreting HMM states...')
             state_analysis = {}
             state_to_regime_map = {}
@@ -305,8 +581,8 @@ class RegimeAnalyzer:
                     if feature in state_data.columns:
                         feature_data = state_data[feature].dropna()
                         if len(feature_data) > 0:
-                            state_char[f'{feature}_mean'] = feature_data.mean()
-                            state_char[f'{feature}_std'] = feature_data.std()
+                            state_char[f'{feature}_mean'] = float(feature_data.mean())
+                            state_char[f'{feature}_std'] = float(feature_data.std())
                 
                 state_analysis[state] = state_char
                 regime_name = self._map_state_to_regime(state_char)
@@ -324,11 +600,24 @@ class RegimeAnalyzer:
     def _map_state_to_regime(self, state_char: Dict[str, Any]) -> str:
         """Map state characteristics to regime name."""
         try:
+            if state_char is None:
+                return 'unknown_regime'
+            
             momentum = state_char.get('price_momentum_5_mean', 0)
             volatility = state_char.get('volatility_20_mean', 0)
             volume_ratio = state_char.get('volume_ratio_10_mean', 1)
             rsi = state_char.get('rsi_mean', 50)
             adx = state_char.get('adx_mean', 25)
+            
+            # Ensure values are numeric
+            try:
+                momentum = float(momentum) if momentum is not None else 0
+                volatility = float(volatility) if volatility is not None else 0
+                volume_ratio = float(volume_ratio) if volume_ratio is not None else 1
+                rsi = float(rsi) if rsi is not None else 50
+                adx = float(adx) if adx is not None else 25
+            except (ValueError, TypeError):
+                return 'unknown_regime'
             
             if volatility > 0.02:
                 if momentum > 0.001:
@@ -358,24 +647,37 @@ class RegimeAnalyzer:
     @handles_errors
     def calculate_regime_transitions(self, regimes: List[str]) -> Dict[str, Any]:
         """Calculate regime transition probabilities."""
-        self.logger.info('🔄 Calculating regime transition probabilities...')
-        transitions = {}
-        
-        for i in range(len(regimes) - 1):
-            current_regime = regimes[i]
-            next_regime = regimes[i + 1]
+        try:
+            if regimes is None or len(regimes) < 2:
+                self.logger.warning("Insufficient regime data for transition calculation")
+                return {}
             
-            if current_regime not in transitions:
-                transitions[current_regime] = {}
-            if next_regime not in transitions[current_regime]:
-                transitions[current_regime][next_regime] = 0
-            transitions[current_regime][next_regime] += 1
-        
-        # Convert to probabilities
-        for current_regime in transitions:
-            total = sum(transitions[current_regime].values())
-            for next_regime in transitions[current_regime]:
-                transitions[current_regime][next_regime] /= total
-        
-        self.logger.info(f'✅ Transition matrix calculated for {len(transitions)} regimes')
-        return transitions
+            self.logger.info('🔄 Calculating regime transition probabilities...')
+            transitions = {}
+            
+            for i in range(len(regimes) - 1):
+                current_regime = regimes[i]
+                next_regime = regimes[i + 1]
+                
+                if current_regime is None or next_regime is None:
+                    continue
+                
+                if current_regime not in transitions:
+                    transitions[current_regime] = {}
+                if next_regime not in transitions[current_regime]:
+                    transitions[current_regime][next_regime] = 0
+                transitions[current_regime][next_regime] += 1
+            
+            # Convert to probabilities
+            for current_regime in transitions:
+                total = sum(transitions[current_regime].values())
+                if total > 0:
+                    for next_regime in transitions[current_regime]:
+                        transitions[current_regime][next_regime] /= total
+            
+            self.logger.info(f'✅ Transition matrix calculated for {len(transitions)} regimes')
+            return transitions
+            
+        except Exception as e:
+            self.logger.exception(f"Error calculating regime transitions: {e}")
+            return {}

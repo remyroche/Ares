@@ -2713,7 +2713,7 @@ class RegimeDataSplittingStep:
 
             # Print report path
             report_path = f"artifacts/regime_data_splitting_advanced_metrics_{training_input.get('symbol', 'unknown')}_{training_input.get('exchange', 'unknown')}_{training_input.get('timeframe', 'unknown')}.json"
-            print(f"📊 Regime Data Splitting Advanced Metrics Report saved to: {report_path}")
+            tprint(f"📊 Regime Data Splitting Advanced Metrics Report saved to: {report_path}")
 
             self.logger.info("✅ Advanced metrics report generated for regime data splitting")
             return report

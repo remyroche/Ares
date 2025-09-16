@@ -54,7 +54,35 @@ except ImportError as e:
     logging.warning(f"Matrix operations not available: {e}")
     MATRIX_OPS_AVAILABLE = False
 
-# Import logger
+# Import tprint for extensive logging
+try:
+    from src.utils.tprint import tprint, tprint_info, tprint_error, tprint_warning, tprint_success, tprint_debug, tprint_performance
+    TPRINT_AVAILABLE = True
+except ImportError:
+    TPRINT_AVAILABLE = False
+    # Fallback to basic print
+    def tprint(*args, **kwargs): print(*args, **kwargs)
+    def tprint_info(*args, **kwargs): print("INFO:", *args, **kwargs)
+    def tprint_error(*args, **kwargs): print("ERROR:", *args, **kwargs)
+    def tprint_warning(*args, **kwargs): print("WARNING:", *args, **kwargs)
+    def tprint_success(*args, **kwargs): print("SUCCESS:", *args, **kwargs)
+    def tprint_debug(*args, **kwargs): print("DEBUG:", *args, **kwargs)
+    def tprint_performance(*args, **kwargs): print("PERFORMANCE:", *args, **kwargs)
+
+# Import math validation for safe operations
+try:
+    from src.utils.math_validation import MathValidation, safe_divide, safe_log, safe_sqrt, safe_power, validate_finite
+    MATH_VALIDATION_AVAILABLE = True
+except ImportError:
+    MATH_VALIDATION_AVAILABLE = False
+    # Fallback functions
+    def safe_divide(a, b, default=0.0): return a / b if b != 0 else default
+    def safe_log(x, default=0.0): return np.log(x) if x > 0 else default
+    def safe_sqrt(x, default=0.0): return np.sqrt(x) if x >= 0 else default
+    def safe_power(x, y, default=0.0): return x ** y if np.isfinite(x) and np.isfinite(y) else default
+    def validate_finite(value, name="value"): return float(value) if np.isfinite(value) else 0.0
+
+# Import logger as fallback
 try:
     from src.utils.logger import system_logger
     logger = system_logger.getChild('PolynomialFeatureGenerator')
@@ -141,16 +169,33 @@ class PolynomialFeatureGenerator:
     
     def __init__(self, config: Optional[PolynomialConfig] = None):
         """Initialize the polynomial feature generator."""
-        self.config = config or PolynomialConfig()
-        self.logger = logger.getChild('PolynomialFeatureGenerator')
-        
-        # Initialize components
-        self._initialize_components()
-        
-        self.logger.info("🔧 PolynomialFeatureGenerator initialized")
-        self.logger.info(f"📊 Max polynomial features: {self.config.max_polynomial_features}")
-        self.logger.info(f"📊 Max polynomial degree: {self.config.max_polynomial_degree}")
-        self.logger.info(f"📊 Polynomial types: {[t.value for t in self.config.polynomial_types]}")
+        try:
+            # Input validation
+            if config is not None and not isinstance(config, PolynomialConfig):
+                raise TypeError(f"Config must be PolynomialConfig or None, got {type(config)}")
+            
+            self.config = config or PolynomialConfig()
+            self.logger = logger.getChild('PolynomialFeatureGenerator')
+            
+            # Initialize math validation
+            if MATH_VALIDATION_AVAILABLE:
+                self.math_validator = MathValidation()
+            else:
+                self.math_validator = None
+            
+            # Initialize components
+            self._initialize_components()
+            
+            tprint_success("PolynomialFeatureGenerator initialized successfully")
+            tprint_info(f"Max polynomial features: {self.config.max_polynomial_features}")
+            tprint_info(f"Max polynomial degree: {self.config.max_polynomial_degree}")
+            tprint_info(f"Polynomial types: {[t.value for t in self.config.polynomial_types]}")
+            tprint_info(f"tprint available: {TPRINT_AVAILABLE}")
+            tprint_info(f"Math validation available: {MATH_VALIDATION_AVAILABLE}")
+            
+        except Exception as e:
+            tprint_error(f"Failed to initialize PolynomialFeatureGenerator: {e}")
+            raise
     
     def _initialize_components(self):
         """Initialize required components."""
@@ -201,18 +246,27 @@ class PolynomialFeatureGenerator:
             PolynomialResult with generated polynomial features
         """
         start_time = time.time()
-        self.logger.info("🔧 Starting polynomial feature generation...")
+        tprint_info("Starting polynomial feature generation...")
         
         result = PolynomialResult()
         
         try:
+            # Fast-fail input validation
+            if data is None:
+                raise ValueError("Data cannot be None - fast failing")
+            
+            if feature_names is None or len(feature_names) == 0:
+                raise ValueError("Feature names cannot be None or empty - fast failing")
+            
             # Convert data to numpy array if needed
             if isinstance(data, pd.DataFrame):
+                if data.empty:
+                    raise ValueError("Input DataFrame is empty - fast failing")
+                
                 # Ensure we only work with numeric columns
                 numeric_data = data.select_dtypes(include=[np.number])
                 if numeric_data.empty:
-                    self.logger.warning("⚠️ No numeric columns found in DataFrame")
-                    return result
+                    raise ValueError("No numeric columns found in DataFrame - fast failing")
                 
                 X = numeric_data.values
                 if feature_names is None:
@@ -220,76 +274,161 @@ class PolynomialFeatureGenerator:
                 else:
                     # Filter feature_names to match numeric columns
                     feature_names = [name for name in feature_names if name in numeric_data.columns]
+                    if len(feature_names) == 0:
+                        raise ValueError("No matching feature names found in numeric columns - fast failing")
+                
+                tprint_info(f"Converted DataFrame to numpy array: {X.shape}")
             else:
+                if not hasattr(data, 'shape'):
+                    raise TypeError(f"Data must be array-like, got {type(data)} - fast failing")
                 X = data
+                
                 # Ensure numeric data
                 if X.dtype == object:
-                    self.logger.warning("⚠️ Input data contains non-numeric types, attempting conversion")
+                    tprint_warning("Input data contains non-numeric types, attempting conversion")
                     try:
                         X = pd.DataFrame(X).select_dtypes(include=[np.number]).values
-                    except:
-                        self.logger.error("❌ Cannot convert input data to numeric format")
-                        return result
+                        if X.shape[1] == 0:
+                            raise ValueError("No numeric columns found after conversion - fast failing")
+                    except Exception as e:
+                        raise ValueError(f"Cannot convert input data to numeric format: {e} - fast failing")
             
-            self.logger.info(f"📊 Input data shape: {X.shape}")
-            self.logger.info(f"📊 Feature count: {len(feature_names)}")
-            self.logger.info(f"📊 Data type: {X.dtype}")
+            # Validate data shape
+            if X.shape[0] == 0:
+                raise ValueError("Input data has no samples - fast failing")
+            if X.shape[1] == 0:
+                raise ValueError("Input data has no features - fast failing")
+            
+            # Check for NaN/Inf values
+            nan_count = np.sum(np.isnan(X))
+            inf_count = np.sum(np.isinf(X))
+            if nan_count > 0:
+                tprint_warning(f"Input data contains {nan_count} NaN values - this may cause issues")
+            if inf_count > 0:
+                tprint_warning(f"Input data contains {inf_count} Inf values - this may cause issues")
+            
+            # Validate feature names match data dimensions
+            if len(feature_names) != X.shape[1]:
+                raise ValueError(f"Feature names count ({len(feature_names)}) doesn't match data columns ({X.shape[1]}) - fast failing")
+            
+            # Validate target if provided
+            if target is not None:
+                if len(target) != X.shape[0]:
+                    raise ValueError(f"Target length ({len(target)}) doesn't match data length ({X.shape[0]}) - fast failing")
+                if np.any(np.isnan(target)) or np.any(np.isinf(target)):
+                    tprint_warning("Target contains NaN or Inf values - this may cause issues")
+            
+            tprint_info(f"Input data shape: {X.shape}")
+            tprint_info(f"Feature count: {len(feature_names)}")
+            tprint_info(f"Data type: {X.dtype}")
             
             # Apply optimized lookback periods if available
             if optimized_lookback_periods:
-                X, feature_names = self._apply_optimized_lookback_periods(
-                    X, feature_names, optimized_lookback_periods
-                )
-                result.optimization_used = True
-                self.logger.info("✅ Applied optimized lookback periods")
+                try:
+                    tprint_info("Applying optimized lookback periods...")
+                    X, feature_names = self._apply_optimized_lookback_periods(
+                        X, feature_names, optimized_lookback_periods
+                    )
+                    result.optimization_used = True
+                    tprint_success("Applied optimized lookback periods")
+                except Exception as e:
+                    tprint_warning(f"Failed to apply optimized lookback periods: {e}")
+                    # Continue without optimization
             
             # Perform PID analysis
             if self.pid_decompositor and target is not None:
-                self.logger.info("🔍 Performing PID analysis...")
-                pid_result = self.pid_decompositor.decompose_information(X, target, feature_names)
-                result.pid_analysis = pid_result
-                
-                # Extract significant features from PID
-                significant_features = self._extract_significant_features(pid_result, feature_names)
-                self.logger.info(f"📊 Found {len(significant_features)} significant features")
+                try:
+                    tprint_info("Performing PID analysis...")
+                    pid_result = self.pid_decompositor.decompose_information(X, target, feature_names)
+                    result.pid_analysis = pid_result
+                    
+                    # Extract significant features from PID
+                    significant_features = self._extract_significant_features(pid_result, feature_names)
+                    tprint_success(f"Found {len(significant_features)} significant features from PID analysis")
+                except Exception as e:
+                    tprint_warning(f"PID analysis failed: {e}, falling back to variance-based selection")
+                    significant_features = self._variance_based_feature_selection(X, feature_names)
             else:
                 # Fallback: use variance-based approach
-                self.logger.info("📊 Using variance-based feature selection")
+                tprint_info("Using variance-based feature selection")
                 significant_features = self._variance_based_feature_selection(X, feature_names)
-                self.logger.info(f"📊 Selected {len(significant_features)} features based on variance")
+                tprint_success(f"Selected {len(significant_features)} features based on variance")
             
             # Generate polynomial features
-            self.logger.info("🔧 Generating polynomial features...")
-            polynomial_features, polynomial_names = self._generate_polynomial_matrix(
-                X, feature_names, significant_features
-            )
+            try:
+                tprint_info("Generating polynomial features...")
+                polynomial_features, polynomial_names = self._generate_polynomial_matrix(
+                    X, feature_names, significant_features
+                )
+                tprint_success(f"Generated {len(polynomial_names)} polynomial features")
+            except Exception as e:
+                tprint_error(f"Failed to generate polynomial features: {e}")
+                raise
             
             # Calculate polynomial scores
-            polynomial_scores = self._calculate_polynomial_scores(
-                polynomial_features, polynomial_names, target
-            )
+            try:
+                tprint_info("Calculating polynomial scores...")
+                polynomial_scores = self._calculate_polynomial_scores(
+                    polynomial_features, polynomial_names, target
+                )
+                tprint_success("Polynomial scores calculated")
+            except Exception as e:
+                tprint_warning(f"Failed to calculate polynomial scores: {e}")
+                polynomial_scores = {}
             
             # Store results
-            result.polynomial_features = {
-                name: feature for name, feature in zip(polynomial_names, polynomial_features.T)
-            }
-            result.feature_names = polynomial_names
-            result.polynomial_scores = polynomial_scores
-            result.total_features_generated = len(polynomial_names)
-            result.matrix_ops_used = self.matrix_ops is not None
+            try:
+                result.polynomial_features = {
+                    name: feature for name, feature in zip(polynomial_names, polynomial_features.T)
+                }
+                result.feature_names = polynomial_names
+                result.polynomial_scores = polynomial_scores
+                result.total_features_generated = len(polynomial_names)
+                result.matrix_ops_used = self.matrix_ops is not None
+                tprint_success("Results stored successfully")
+            except Exception as e:
+                tprint_error(f"Failed to store results: {e}")
+                raise
             
             # Calculate quality metrics
-            result.average_variance = self._calculate_average_variance(polynomial_features)
-            result.feature_stability_score = self._calculate_stability_score(polynomial_features)
-            result.polynomial_degree_distribution = self._calculate_degree_distribution(polynomial_names)
+            try:
+                tprint_info("Calculating quality metrics...")
+                result.average_variance = self._calculate_average_variance(polynomial_features)
+                result.feature_stability_score = self._calculate_stability_score(polynomial_features)
+                result.polynomial_degree_distribution = self._calculate_degree_distribution(polynomial_names)
+                tprint_success("Quality metrics calculated")
+            except Exception as e:
+                tprint_warning(f"Failed to calculate quality metrics: {e}")
+                # Set default values
+                result.average_variance = 0.0
+                result.feature_stability_score = 0.0
+                result.polynomial_degree_distribution = {}
             
             execution_time = time.time() - start_time
             result.execution_time = execution_time
             
-            self.logger.info(f"✅ Polynomial feature generation completed in {execution_time:.3f}s")
-            self.logger.info(f"📊 Generated {result.total_features_generated} polynomial features")
-            self.logger.info(f"📊 Average variance: {result.average_variance:.3f}")
-            self.logger.info(f"📊 Stability score: {result.feature_stability_score:.3f}")
+            tprint_performance("Polynomial feature generation", execution_time)
+            tprint_success(f"Generated {result.total_features_generated} polynomial features")
+            tprint_info(f"Average variance: {result.average_variance:.3f}")
+            tprint_info(f"Stability score: {result.feature_stability_score:.3f}")
+            
+            return result
+            
+        except ValueError as e:
+            execution_time = time.time() - start_time
+            result.execution_time = execution_time
+            
+            tprint_error(f"Polynomial feature generation failed - validation error: {e}")
+            tprint_error(f"Error details: {traceback.format_exc()}")
+            
+            return result
+            
+        except TypeError as e:
+            execution_time = time.time() - start_time
+            result.execution_time = execution_time
+            
+            tprint_error(f"Polynomial feature generation failed - type error: {e}")
+            tprint_error(f"Error details: {traceback.format_exc()}")
             
             return result
             
@@ -297,8 +436,9 @@ class PolynomialFeatureGenerator:
             execution_time = time.time() - start_time
             result.execution_time = execution_time
             
-            self.logger.error(f"❌ Polynomial feature generation failed: {e}")
-            self.logger.error(f"❌ Error details: {traceback.format_exc()}")
+            tprint_error(f"Polynomial feature generation failed - unexpected error: {e}")
+            tprint_error(f"Error type: {type(e).__name__}")
+            tprint_error(f"Error details: {traceback.format_exc()}")
             
             return result
     
@@ -485,17 +625,19 @@ class PolynomialFeatureGenerator:
                 return None, ""
             
             if polynomial_type == PolynomialType.POWER:
-                # Generate powers up to max degree
+                # Generate powers up to max degree using safe operations
                 features = []
                 names = []
                 for degree in range(2, self.config.max_polynomial_degree + 1):
                     try:
-                        feature = np.power(x, degree)
+                        feature = safe_power(x, degree, 0.0)
                         # Check for valid results
                         if not (np.any(np.isnan(feature)) or np.any(np.isinf(feature))):
                             features.append(feature)
                             names.append(f"{feature_name}_pow_{degree}")
-                    except:
+                            tprint_debug(f"Created power feature: {feature_name}_pow_{degree}")
+                    except Exception as e:
+                        tprint_warning(f"Failed to create power feature {feature_name}_pow_{degree}: {e}")
                         continue
                 
                 if features:
@@ -505,42 +647,58 @@ class PolynomialFeatureGenerator:
                 
             elif polynomial_type == PolynomialType.SQUARE_ROOT:
                 try:
-                    feature = np.sqrt(np.maximum(x, 0))
+                    # Use safe sqrt with non-negative values
+                    feature = safe_sqrt(np.maximum(x, 0), 0.0)
                     if not (np.any(np.isnan(feature)) or np.any(np.isinf(feature))):
+                        tprint_debug(f"Created square root feature: sqrt_{feature_name}")
                         return feature, f"sqrt_{feature_name}"
-                except:
+                except Exception as e:
+                    tprint_warning(f"Failed to create square root feature: {e}")
                     pass
                 
             elif polynomial_type == PolynomialType.CUBIC_ROOT:
                 try:
-                    feature = np.cbrt(x)
+                    # Use safe power for cubic root
+                    feature = safe_power(x, 1.0/3.0, 0.0)
                     if not (np.any(np.isnan(feature)) or np.any(np.isinf(feature))):
+                        tprint_debug(f"Created cubic root feature: cbrt_{feature_name}")
                         return feature, f"cbrt_{feature_name}"
-                except:
+                except Exception as e:
+                    tprint_warning(f"Failed to create cubic root feature: {e}")
                     pass
                 
             elif polynomial_type == PolynomialType.LOGARITHMIC:
                 try:
-                    feature = np.log(np.maximum(x, 1e-10))
+                    # Use safe log with minimum value
+                    feature = safe_log(np.maximum(x, 1e-10), 0.0)
                     if not (np.any(np.isnan(feature)) or np.any(np.isinf(feature))):
+                        tprint_debug(f"Created logarithmic feature: log_{feature_name}")
                         return feature, f"log_{feature_name}"
-                except:
+                except Exception as e:
+                    tprint_warning(f"Failed to create logarithmic feature: {e}")
                     pass
                 
             elif polynomial_type == PolynomialType.EXPONENTIAL:
                 try:
-                    feature = np.exp(np.clip(x, -10, 10))  # Clip to prevent overflow
+                    # Use safe power with clipped values
+                    clipped_x = np.clip(x, -10, 10)
+                    feature = safe_power(np.e, clipped_x, 0.0)
                     if not (np.any(np.isnan(feature)) or np.any(np.isinf(feature))):
+                        tprint_debug(f"Created exponential feature: exp_{feature_name}")
                         return feature, f"exp_{feature_name}"
-                except:
+                except Exception as e:
+                    tprint_warning(f"Failed to create exponential feature: {e}")
                     pass
                 
             elif polynomial_type == PolynomialType.RECIPROCAL:
                 try:
-                    feature = np.divide(1.0, x, out=np.zeros_like(x), where=(x != 0))
+                    # Use safe divide for reciprocal
+                    feature = safe_divide(1.0, x, 0.0)
                     if not (np.any(np.isnan(feature)) or np.any(np.isinf(feature))):
+                        tprint_debug(f"Created reciprocal feature: recip_{feature_name}")
                         return feature, f"recip_{feature_name}"
-                except:
+                except Exception as e:
+                    tprint_warning(f"Failed to create reciprocal feature: {e}")
                     pass
                 
             elif polynomial_type == PolynomialType.CROSS_PRODUCT:

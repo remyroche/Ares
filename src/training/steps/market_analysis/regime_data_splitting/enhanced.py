@@ -31,7 +31,8 @@ try:
     from src.training.utils.feature_selection.main_framework import FeatureSelectionFramework
     HMM_TRAINING_AVAILABLE = True
 except ImportError as e:
-    print(f"Warning: HMM training modules not available: {e}")
+    from src.utils.tprint import tprint
+    tprint(f"⚠️ Warning: HMM training modules not available: {e}")
     HMM_TRAINING_AVAILABLE = False
 
 # Core decorators imports
@@ -51,6 +52,7 @@ from src.core.errors import (
 
 from src.utils.logger import system_logger
 from src.utils.data.klines_parquet import get_klines_manager
+from src.utils.tprint import tprint
 
 logger = system_logger.getChild('RegimeDataSplittingEnhanced')
 
@@ -121,18 +123,43 @@ class HMMRegimeTagger:
     
     def create_features_for_tagging(self, market_data: pd.DataFrame) -> pd.DataFrame:
         """Create features for HMM regime tagging."""
+        # Input validation
+        if market_data is None:
+            raise ValueError("VALIDATION_ERROR: market_data is None. Action required: Provide valid market data DataFrame.")
+        
+        if not isinstance(market_data, pd.DataFrame):
+            raise ValueError(f"VALIDATION_ERROR: market_data must be a DataFrame, got {type(market_data)}. Action required: Convert data to pandas DataFrame.")
+        
+        if market_data.empty:
+            raise ValueError("VALIDATION_ERROR: market_data is empty. Action required: Provide non-empty market data.")
+        
         if self.feature_generator is None:
-            raise ValueError("Feature generator not initialized")
+            raise ValueError("CONFIG_ERROR: Feature generator not initialized. Action required: Initialize HMMRegimeTagger with proper configuration.")
         
         # Use existing feature generator for 200+ features
         features = self.feature_generator.generate_all_features(market_data)
         self.logger.info(f"✅ Generated {features.shape[1]} features for regime tagging")
+        tprint(f"✅ Generated {features.shape[1]} features for regime tagging")
         return features
     
     def select_features_for_tagging(self, X: pd.DataFrame, is_classification: bool = True) -> pd.DataFrame:
         """Select features for HMM regime tagging."""
+        # Input validation
+        if X is None:
+            raise ValueError("VALIDATION_ERROR: X is None. Action required: Provide valid feature DataFrame.")
+        
+        if not isinstance(X, pd.DataFrame):
+            raise ValueError(f"VALIDATION_ERROR: X must be a DataFrame, got {type(X)}. Action required: Convert features to pandas DataFrame.")
+        
+        if X.empty:
+            raise ValueError("VALIDATION_ERROR: X is empty. Action required: Provide non-empty feature data.")
+        
+        if not isinstance(is_classification, bool):
+            raise ValueError(f"VALIDATION_ERROR: is_classification must be a boolean, got {type(is_classification)}. Action required: Set is_classification to True or False.")
+        
         if self.feature_selector is None:
             # Return all features if no feature selector
+            tprint("⚠️ No feature selector available, returning all features")
             return X
         
         try:
@@ -157,17 +184,41 @@ class HMMRegimeTagger:
     def tag_regimes_with_models(self, market_data: pd.DataFrame, 
                               use_ensemble: bool = True) -> Dict[str, Any]:
         """Tag regimes using trained HMM models."""
+        # Input validation
+        if market_data is None:
+            raise ValueError("VALIDATION_ERROR: market_data is None. Action required: Provide valid market data DataFrame.")
+        
+        if not isinstance(market_data, pd.DataFrame):
+            raise ValueError(f"VALIDATION_ERROR: market_data must be a DataFrame, got {type(market_data)}. Action required: Convert data to pandas DataFrame.")
+        
+        if market_data.empty:
+            raise ValueError("VALIDATION_ERROR: market_data is empty. Action required: Provide non-empty market data.")
+        
+        if not isinstance(use_ensemble, bool):
+            raise ValueError(f"VALIDATION_ERROR: use_ensemble must be a boolean, got {type(use_ensemble)}. Action required: Set use_ensemble to True or False.")
+        
         try:
-            # Create features
+            # Create features with memory optimization
             features = self.create_features_for_tagging(market_data)
+            tprint(f"📊 Generated {features.shape[1]} features for HMM tagging")
             
             # Select features
             features_selected = self.select_features_for_tagging(features)
+            tprint(f"📊 Selected {features_selected.shape[1]} features for HMM tagging")
+            
+            # Clean up original features to free memory
+            del features
+            import gc
+            gc.collect()
             
             # Scale features
             from sklearn.preprocessing import StandardScaler
             scaler = StandardScaler()
             features_scaled = scaler.fit_transform(features_selected)
+            
+            # Clean up selected features to free memory
+            del features_selected
+            gc.collect()
             
             # Get predictions from models
             regime_predictions = {}
@@ -259,14 +310,19 @@ class RegimeDataSplittingEnhanced:
             'validation_checks': {}
         }
         
+        tprint('🔄 Starting enhanced regime data splitting with HMM ML model integration')
+        
         try:
             # Step 1: Validate inputs
+            tprint('🔍 Step 1: Validating enhanced inputs...')
             validation_result = self._validate_enhanced_inputs(training_input, pipeline_state)
             execution_metrics['validation_checks']['input_validation'] = validation_result['valid']
             if not validation_result['valid']:
+                tprint(f'❌ Input validation failed: {validation_result["errors"]}')
                 execution_metrics['errors'].extend(validation_result['errors'])
                 raise ValueError(f"Input validation failed: {validation_result['errors']}")
             execution_metrics['warnings'].extend(validation_result['warnings'])
+            tprint('✅ Enhanced input validation passed')
             
             symbol = training_input.get('symbol', 'UNKNOWN')
             exchange = training_input.get('exchange', 'UNKNOWN')
@@ -274,16 +330,21 @@ class RegimeDataSplittingEnhanced:
             data_dir = training_input.get('data_dir', 'data/training')
             
             self.logger.info(f"🔄 Starting enhanced regime data splitting for {symbol}/{exchange}/{timeframe}")
+            tprint(f"🔄 Starting enhanced regime data splitting for {symbol}/{exchange}/{timeframe}")
             
             # Step 2: Load and validate market data
+            tprint('📊 Step 2: Loading and validating market data...')
             market_data = await self._load_and_validate_market_data(symbol, exchange, timeframe, data_dir)
             if market_data is None or len(market_data) == 0:
+                tprint('❌ No market data available for regime tagging')
                 raise ValueError("No market data available for regime tagging")
+            tprint(f'✅ Market data loaded: {market_data.shape}')
             
             execution_metrics['validation_checks']['market_data_loaded'] = True
             execution_metrics['data_points'] = len(market_data)
             
             # Step 3: Check HMM model availability with enhanced validation
+            tprint('🤖 Step 3: Checking HMM model availability...')
             hmm_models_available = False
             hmm_model_info = {}
             
@@ -295,24 +356,36 @@ class RegimeDataSplittingEnhanced:
                         'base_models_count': len(self.hmm_tagger.base_models) if hasattr(self.hmm_tagger, 'base_models') else 0,
                         'ensemble_models_count': len(self.hmm_tagger.ensemble_models) if hasattr(self.hmm_tagger, 'ensemble_models') else 0
                     }
+                    if hmm_models_available:
+                        tprint(f'✅ HMM models loaded: {hmm_model_info["base_models_count"]} base, {hmm_model_info["ensemble_models_count"]} ensemble')
+                    else:
+                        tprint('⚠️ HMM models not available')
                 except Exception as e:
                     self.logger.warning(f"⚠️ Error loading HMM models: {e}")
+                    tprint(f'⚠️ Error loading HMM models: {e}')
                     execution_metrics['warnings'].append(f"HMM model loading failed: {e}")
                     hmm_models_available = False
+            else:
+                tprint('⚠️ HMM tagger not initialized')
             
             execution_metrics['validation_checks']['hmm_models_available'] = hmm_models_available
             execution_metrics['hmm_model_info'] = hmm_model_info
             
             # Step 4: Perform regime tagging with enhanced error handling
+            tprint('✂️ Step 4: Performing regime tagging...')
             if hmm_models_available:
                 # Use HMM ML models for regime tagging
                 self.logger.info("🤖 Using HMM ML models for regime tagging")
+                tprint("🤖 Using HMM ML models for regime tagging")
                 try:
                     tagging_result = self.hmm_tagger.tag_regimes_with_models(market_data)
+                    tprint(f'✅ HMM tagging completed: {tagging_result["n_regimes"]} regimes detected')
                     
                     # Validate tagging results
                     if not self._validate_tagging_results(tagging_result, market_data):
+                        tprint('❌ HMM tagging results validation failed')
                         raise ValueError("HMM tagging results validation failed")
+                    tprint('✅ HMM tagging results validated')
                     
                     # Update market data with HMM regime tags
                     market_data['hmm_regime_states'] = tagging_result['regime_predictions']
@@ -342,6 +415,7 @@ class RegimeDataSplittingEnhanced:
             else:
                 # Fallback to original regime discovery results with enhanced validation
                 self.logger.info("⚠️ HMM models not available, using original regime discovery results")
+                tprint("⚠️ HMM models not available, using original regime discovery results")
                 
                 # Get regime data from pipeline state with multiple fallback options
                 regime_states = self._extract_regime_states_from_pipeline(pipeline_state)
@@ -354,43 +428,60 @@ class RegimeDataSplittingEnhanced:
                 min_len = min(len(market_data), len(regime_states))
                 if min_len < len(market_data) * 0.8:  # Warn if we lose more than 20% of data
                     execution_metrics['warnings'].append(f"Data alignment reduced dataset by {len(market_data) - min_len} rows")
+                    tprint(f"⚠️ Data alignment reduced dataset by {len(market_data) - min_len} rows")
                 
-                market_data = market_data.iloc[:min_len]
-                regime_states = regime_states[:min_len]
-                regime_probabilities = regime_probabilities[:min_len] if len(regime_probabilities) > 0 else []
+                # Create aligned copies to avoid modifying original data with memory optimization
+                market_data_aligned = market_data.iloc[:min_len].copy()
+                regime_states_aligned = regime_states[:min_len]
+                regime_probabilities_aligned = regime_probabilities[:min_len] if len(regime_probabilities) > 0 else []
                 
-                # Use original regime data
-                market_data['hmm_regime_states'] = regime_states
-                if len(regime_probabilities) > 0:
-                    market_data['hmm_regime_probabilities'] = regime_probabilities
-                market_data['hmm_regime_confidence'] = np.ones(len(market_data))  # Default confidence
+                # Clean up original references to free memory
+                del regime_states, regime_probabilities
+                import gc
+                gc.collect()
+                
+                # Use aligned regime data
+                market_data_aligned['hmm_regime_states'] = regime_states_aligned
+                if len(regime_probabilities_aligned) > 0:
+                    market_data_aligned['hmm_regime_probabilities'] = regime_probabilities_aligned
+                market_data_aligned['hmm_regime_confidence'] = np.ones(len(market_data_aligned))  # Default confidence
+                
+                # Update market_data reference to use aligned data
+                market_data = market_data_aligned
                 
                 hmm_tagging_info = {
                     'hmm_tagging_completed': False,
                     'hmm_model_used': 'original_regime_discovery',
-                    'hmm_n_regimes': len(np.unique(regime_states)),
-                    'hmm_regime_distribution': dict(zip(*np.unique(regime_states, return_counts=True))),
+                    'hmm_n_regimes': len(np.unique(regime_states_aligned)),
+                    'hmm_regime_distribution': dict(zip(*np.unique(regime_states_aligned, return_counts=True))),
                     'hmm_tagging_timestamp': pd.Timestamp.now().isoformat(),
                     'tagging_confidence_mean': 1.0,
                     'tagging_confidence_std': 0.0
                 }
                 
                 execution_metrics['validation_checks']['fallback_tagging_successful'] = True
-                execution_metrics['regime_count'] = len(np.unique(regime_states))
+                execution_metrics['regime_count'] = len(np.unique(regime_states_aligned))
             
             # Step 5: Validate final data quality
+            tprint('📊 Step 5: Validating final data quality...')
             data_quality_score = self._calculate_enhanced_data_quality_score(market_data)
             execution_metrics['data_quality_score'] = data_quality_score
             execution_metrics['validation_checks']['data_quality_acceptable'] = data_quality_score > 0.7
+            tprint(f'📊 Data quality score: {data_quality_score:.2f}')
             
             if data_quality_score < 0.7:
                 execution_metrics['warnings'].append(f"Data quality score is low: {data_quality_score:.2f}")
+                tprint(f'⚠️ Data quality score is low: {data_quality_score:.2f}')
             
             # Step 6: Save tagged data with enhanced error handling
+            tprint('💾 Step 6: Saving tagged data...')
             save_result = await self._save_tagged_data_with_validation(market_data, symbol, exchange, timeframe, data_dir)
             execution_metrics['validation_checks']['data_saved_successfully'] = save_result['success']
             if not save_result['success']:
                 execution_metrics['errors'].append(f"Data saving failed: {save_result['error']}")
+                tprint(f'❌ Data saving failed: {save_result["error"]}')
+            else:
+                tprint('✅ Tagged data saved successfully')
             
             # Step 7: Generate comprehensive execution report
             execution_time = (datetime.now() - start_time).total_seconds()
@@ -417,6 +508,8 @@ class RegimeDataSplittingEnhanced:
             
             self.logger.info(f"✅ Enhanced regime data splitting completed successfully in {execution_time:.2f}s")
             self.logger.info(f"📊 Final metrics: {execution_metrics['regime_count']} regimes, quality score: {data_quality_score:.2f}")
+            tprint(f"✅ Enhanced regime data splitting completed successfully in {execution_time:.2f}s")
+            tprint(f"📊 Final metrics: {execution_metrics['regime_count']} regimes, quality score: {data_quality_score:.2f}")
             
             return updated_pipeline_state
             
@@ -430,8 +523,10 @@ class RegimeDataSplittingEnhanced:
             })
             
             self.logger.error(f"❌ Enhanced regime data splitting failed after {execution_time:.2f}s: {e}")
+            tprint(f"❌ Enhanced regime data splitting failed after {execution_time:.2f}s: {e}")
             import traceback
             self.logger.error(f"❌ Error details: {traceback.format_exc()}")
+            tprint(f"❌ Error details: {traceback.format_exc()}")
             
             # Return failure state with comprehensive error information
             return {
@@ -450,21 +545,21 @@ class RegimeDataSplittingEnhanced:
             'warnings': []
         }
         
-        # Check training input
+        # Check training input with standardized error messages
         if not isinstance(training_input, dict):
             validation_result['valid'] = False
-            validation_result['errors'].append("Training input must be a dictionary")
+            validation_result['errors'].append("VALIDATION_ERROR: Training input must be a dictionary. Action required: Provide training_input as dict.")
         
         # Check required parameters
         required_params = ['symbol', 'exchange', 'timeframe']
         for param in required_params:
             if param not in training_input or not training_input[param]:
                 validation_result['valid'] = False
-                validation_result['errors'].append(f"Missing required parameter: {param}")
+                validation_result['errors'].append(f"CONFIG_ERROR: Missing required parameter '{param}'. Action required: Set training_input['{param}'].")
         
         # Check pipeline state
         if not isinstance(pipeline_state, dict):
-            validation_result['warnings'].append("Pipeline state is not a dictionary")
+            validation_result['warnings'].append("WARNING: Pipeline state is not a dictionary. Action suggested: Initialize pipeline_state as dict.")
         
         return validation_result
     
@@ -561,21 +656,46 @@ class RegimeDataSplittingEnhanced:
             for key in required_keys:
                 if key not in tagging_result:
                     self.logger.error(f"❌ Missing required key in tagging result: {key}")
+                    tprint(f"❌ Missing required key in tagging result: {key}")
                     return False
             
             # Check if predictions match data length
             predictions = tagging_result['regime_predictions']
             if len(predictions) != len(market_data):
                 self.logger.error(f"❌ Prediction length mismatch: {len(predictions)} vs {len(market_data)}")
+                tprint(f"❌ Prediction length mismatch: {len(predictions)} vs {len(market_data)}")
                 return False
             
             # Check if we have reasonable number of regimes
             n_regimes = tagging_result['n_regimes']
             if n_regimes < 2:
                 self.logger.warning(f"⚠️ Very few regimes detected: {n_regimes}")
+                tprint(f"⚠️ Very few regimes detected: {n_regimes}")
             elif n_regimes > 20:
                 self.logger.warning(f"⚠️ Many regimes detected: {n_regimes}")
+                tprint(f"⚠️ Many regimes detected: {n_regimes}")
             
+            # Additional data consistency checks
+            # Check for reasonable regime values
+            if len(predictions) > 0:
+                min_regime = np.min(predictions)
+                max_regime = np.max(predictions)
+                if min_regime < 0:
+                    self.logger.warning(f"⚠️ Negative regime values detected: min={min_regime}")
+                    tprint(f"⚠️ Negative regime values detected: min={min_regime}")
+                if max_regime > 100:
+                    self.logger.warning(f"⚠️ Unusually high regime values detected: max={max_regime}")
+                    tprint(f"⚠️ Unusually high regime values detected: max={max_regime}")
+            
+            # Check regime distribution
+            regime_distribution = tagging_result.get('regime_distribution', {})
+            if regime_distribution:
+                total_points = sum(regime_distribution.values())
+                if total_points != len(predictions):
+                    self.logger.warning(f"⚠️ Regime distribution total mismatch: {total_points} vs {len(predictions)}")
+                    tprint(f"⚠️ Regime distribution total mismatch: {total_points} vs {len(predictions)}")
+            
+            tprint("✅ HMM tagging results validation passed")
             return True
             
         except Exception as e:
@@ -597,7 +717,7 @@ class RegimeDataSplittingEnhanced:
             
             # Check for infinite values
             numeric_cols = market_data.select_dtypes(include=[np.number]).columns
-            if len(numeric_cols) > 0:
+            if len(numeric_cols) > 0 and len(market_data) > 0:
                 inf_count = np.isinf(market_data[numeric_cols]).sum().sum()
                 inf_ratio = inf_count / (len(market_data) * len(numeric_cols))
                 score -= inf_ratio * 0.3

@@ -14,6 +14,7 @@ import numpy as np
 import pandas as pd
 
 from src.utils.logger import system_logger
+from src.utils.tprint import tprint
 
 logger = system_logger.getChild('ValidationFramework')
 
@@ -245,7 +246,7 @@ class ValidationFramework:
         Returns:
             Tuple of (is_valid, validation_results, fixed_data)
         """
-        self.logger.info("🔍 Starting comprehensive data validation...")
+        tprint("🔍 Starting comprehensive data validation...")
         
         validation_results = []
         fixed_data = data
@@ -263,12 +264,12 @@ class ValidationFramework:
                         result.auto_fixed = True
                         result.fix_applied = f"Applied {rule.name} fix"
                         result.status = ValidationStatus.PASSED
-                        self.logger.info(f"✅ Auto-fixed: {rule.name}")
+                        tprint(f"✅ Auto-fixed: {rule.name}")
                     except Exception as e:
-                        self.logger.warning(f"⚠️ Auto-fix failed for {rule.name}: {e}")
+                        tprint(f"⚠️ Auto-fix failed for {rule.name}: {e}")
                 
             except Exception as e:
-                self.logger.error(f"❌ Validation rule {rule.name} failed: {e}")
+                tprint(f"❌ Validation rule {rule.name} failed: {e}")
                 validation_results.append(ValidationResult(
                     rule_name=rule.name,
                     status=ValidationStatus.FAILED,
@@ -281,7 +282,7 @@ class ValidationFramework:
                            if r.status == ValidationStatus.FAILED and r.level == ValidationLevel.CRITICAL]
         is_valid = len(critical_failures) == 0
         
-        self.logger.info(f"✅ Data validation completed: {'PASSED' if is_valid else 'FAILED'}")
+        tprint(f"✅ Data validation completed: {'PASSED' if is_valid else 'FAILED'}")
         return is_valid, validation_results, fixed_data
     
     def validate_optimization_results(self, optimization_result: Dict[str, Any]) -> Tuple[bool, List[ValidationResult]]:
@@ -294,7 +295,7 @@ class ValidationFramework:
         Returns:
             Tuple of (is_valid, validation_results)
         """
-        self.logger.info("🔍 Starting optimization results validation...")
+        tprint("🔍 Starting optimization results validation...")
         
         validation_results = []
         
@@ -304,7 +305,7 @@ class ValidationFramework:
                 validation_results.append(result)
                 
             except Exception as e:
-                self.logger.error(f"❌ Validation rule {rule.name} failed: {e}")
+                tprint(f"❌ Validation rule {rule.name} failed: {e}")
                 validation_results.append(ValidationResult(
                     rule_name=rule.name,
                     status=ValidationStatus.FAILED,
@@ -317,7 +318,7 @@ class ValidationFramework:
                            if r.status == ValidationStatus.FAILED and r.level == ValidationLevel.CRITICAL]
         is_valid = len(critical_failures) == 0
         
-        self.logger.info(f"✅ Optimization validation completed: {'PASSED' if is_valid else 'FAILED'}")
+        tprint(f"✅ Optimization validation completed: {'PASSED' if is_valid else 'FAILED'}")
         return is_valid, validation_results
     
     def validate_pipeline_state(self, pipeline_state: Dict[str, Any]) -> Tuple[bool, List[ValidationResult]]:
@@ -330,7 +331,7 @@ class ValidationFramework:
         Returns:
             Tuple of (is_valid, validation_results)
         """
-        self.logger.info("🔍 Starting pipeline state validation...")
+        tprint("🔍 Starting pipeline state validation...")
         
         validation_results = []
         
@@ -340,7 +341,7 @@ class ValidationFramework:
                 validation_results.append(result)
                 
             except Exception as e:
-                self.logger.error(f"❌ Validation rule {rule.name} failed: {e}")
+                tprint(f"❌ Validation rule {rule.name} failed: {e}")
                 validation_results.append(ValidationResult(
                     rule_name=rule.name,
                     status=ValidationStatus.FAILED,
@@ -353,7 +354,7 @@ class ValidationFramework:
                            if r.status == ValidationStatus.FAILED and r.level == ValidationLevel.CRITICAL]
         is_valid = len(critical_failures) == 0
         
-        self.logger.info(f"✅ Pipeline validation completed: {'PASSED' if is_valid else 'FAILED'}")
+        tprint(f"✅ Pipeline validation completed: {'PASSED' if is_valid else 'FAILED'}")
         return is_valid, validation_results
     
     def generate_validation_summary(self, validation_results: List[ValidationResult]) -> ValidationSummary:
@@ -583,9 +584,9 @@ class ValidationFramework:
         fixed_data = data.copy()
         numeric_data = fixed_data.select_dtypes(include=[np.number])
         
-        # Replace inf with NaN, then forward fill
+        # Replace inf with NaN, then forward fill and backward fill
         fixed_data[numeric_data.columns] = numeric_data.replace([np.inf, -np.inf], np.nan)
-        fixed_data = fixed_data.fillna(method='ffill').fillna(method='bfill')
+        fixed_data = fixed_data.ffill().bfill()
         
         return fixed_data
     

@@ -1,7 +1,24 @@
-from src.utils.tprint import tprint
+#!/usr/bin/env python3
+"""
+Step 3: HMM Regime Discovery with Standardized Data Quality Management.
 
-from typing import Optional, Any, Dict, List, Union, Tuple
+This module performs Hidden Markov Model (HMM) regime discovery with standardized
+data quality checks and automatic data preparation using step01/step1_5 components.
+"""
+
+from src.utils.tprint import tprint
+from typing import Optional, Any, Dict, List, Union, Tuple, Callable
+import asyncio
+import gc
+import json
+import logging
+import sys
+import time
+from datetime import datetime
+from pathlib import Path
 import numpy as np
+import pandas as pd
+
 from src.utils.logger import system_logger
 from src.core.decorators import handles_errors
 from src.config.environment import get_environment_settings
@@ -16,19 +33,6 @@ except ImportError:
 # Ensure enhanced_mlflow is defined
 if 'enhanced_mlflow' not in locals():
     enhanced_mlflow = None
-
-'Step 3: HMM Regime Discovery with Standardized Data Quality Management.\n\nThis module performs Hidden Markov Model (HMM) regime discovery with standardized\ndata quality checks and automatic data preparation using step01/step1_5 components.\n'
-import asyncio
-import gc
-import json
-import logging
-import sys
-import time
-from datetime import datetime
-from pathlib import Path
-from typing import Any, Callable, List
-import numpy as np
-import pandas as pd
 # Note: Removed silhouette_score, calinski_harabasz_score, davies_bouldin_score 
 # as these traditional clustering metrics are not relevant for HMMs
 from sklearn.preprocessing import StandardScaler

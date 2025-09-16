@@ -16,7 +16,7 @@ import time
 import traceback
 from pathlib import Path
 
-from src.utils.logger import system_logger
+from src.utils.tprint import tprint
 from src.utils.ml_common.config.base_training_config import EnsembleTrainingConfig
 from src.utils.ml_common.training.ensemble_training_step import EnsembleTrainingStep
 
@@ -38,7 +38,7 @@ try:
 except ImportError:
     VECTORIZED_TRAINING_AVAILABLE = False
 
-logger = system_logger.getChild('HMMEnsembleTraining')
+# Using tprint for all logging - no logger needed
 
 
 class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
@@ -57,7 +57,6 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
             config: Per-regime training configuration
             enable_vectorization: Whether to enable vectorized training
         """
-        self.logger = logger.getChild('HMMEnsembleTrainingComponent')
         self.start_time = time.time()
         
         try:
@@ -75,9 +74,9 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
                     model_save_path="./models/hmm_ensemble_models",
                     evaluation_metrics=["accuracy", "f1_score", "precision", "recall", "auc"]
                 )
-                self.logger.info("📋 Using default configuration for HMM ensemble training")
+                tprint("📋 Using default configuration for HMM ensemble training")
 
-            # Validate configuration
+            # Validate configuration with fast-fail
             self._validate_config(config)
             
             # Initialize parent class
@@ -94,20 +93,20 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
             
             # Log initialization success
             if self.enable_vectorization:
-                self.logger.info("🚀 HMM Ensemble Training Component initialized with vectorization")
+                tprint("🚀 HMM Ensemble Training Component initialized with vectorization")
             else:
-                self.logger.info("✅ HMM Ensemble Training Component initialized (standard mode)")
+                tprint("✅ HMM Ensemble Training Component initialized (standard mode)")
                 
-            self.logger.info(f"📊 Configuration: {len(config.model_types)} ensemble types, {config.timeframe} timeframe")
+            tprint(f"📊 Configuration: {len(config.model_types)} ensemble types, {config.timeframe} timeframe")
             
         except Exception as e:
-            self.logger.error(f"❌ Failed to initialize HMM Ensemble Training Component: {e}")
-            self.logger.error(f"🔍 Traceback: {traceback.format_exc()}")
+            tprint(f"❌ Failed to initialize HMM Ensemble Training Component: {e}")
+            tprint(f"🔍 Traceback: {traceback.format_exc()}")
             raise RuntimeError(f"HMM Ensemble Training Component initialization failed: {e}") from e
     
     def _validate_config(self, config: EnsembleTrainingConfig) -> None:
         """
-        Validate configuration parameters to prevent runtime failures.
+        Validate configuration parameters with fast-fail for critical issues.
         
         Args:
             config: Configuration to validate
@@ -116,40 +115,46 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
             ValueError: If configuration is invalid
         """
         try:
-            # Validate model types
+            # Validate model types - FAST FAIL
             if not config.model_types or len(config.model_types) == 0:
+                tprint("❌ CRITICAL: No model types specified - FAILING FAST")
                 raise ValueError("At least one model type must be specified")
             
-            # Validate timeframe
-            if not config.timeframe or config.timeframe not in ["1m", "5m", "15m", "30m", "1h", "4h", "1d"]:
-                self.logger.warning(f"⚠️ Unusual timeframe specified: {config.timeframe}")
+            # Validate timeframe - FAST FAIL
+            valid_timeframes = ["1m", "5m", "15m", "30m", "1h", "4h", "1d"]
+            if not config.timeframe or config.timeframe not in valid_timeframes:
+                tprint(f"❌ CRITICAL: Invalid timeframe '{config.timeframe}' - FAILING FAST")
+                raise ValueError(f"Invalid timeframe '{config.timeframe}' - must be one of: {valid_timeframes}")
             
-            # Validate HPO parameters
+            # Validate HPO parameters - FAST FAIL
             if config.enable_hpo:
                 if config.hpo_n_trials <= 0:
+                    tprint("❌ CRITICAL: HPO trials must be positive - FAILING FAST")
                     raise ValueError("HPO trials must be positive")
                 if config.hpo_timeout_seconds <= 0:
+                    tprint("❌ CRITICAL: HPO timeout must be positive - FAILING FAST")
                     raise ValueError("HPO timeout must be positive")
             
-            # Validate minimum samples
+            # Validate minimum samples - FAST FAIL
             if config.min_samples_per_regime <= 0:
+                tprint("❌ CRITICAL: Minimum samples per regime must be positive - FAILING FAST")
                 raise ValueError("Minimum samples per regime must be positive")
             
-            # Validate save path
+            # Validate save path - WARNING ONLY
             if config.save_models and config.model_save_path:
                 save_path = Path(config.model_save_path)
                 if not save_path.parent.exists():
-                    self.logger.warning(f"⚠️ Save path parent directory does not exist: {save_path.parent}")
+                    tprint(f"⚠️ WARNING: Save path parent directory does not exist: {save_path.parent}")
             
-            self.logger.info("✅ Configuration validation passed")
+            tprint("✅ Configuration validation passed")
             
         except Exception as e:
-            self.logger.error(f"❌ Configuration validation failed: {e}")
+            tprint(f"❌ Configuration validation failed: {e}")
             raise ValueError(f"Invalid configuration: {e}") from e
     
     def _validate_input_data(self, X: np.ndarray, y: np.ndarray, regime_labels: np.ndarray) -> None:
         """
-        Validate input data to prevent runtime failures.
+        Validate input data with fast-fail for critical issues.
         
         Args:
             X: Input features
@@ -160,44 +165,51 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
             ValueError: If input data is invalid
         """
         try:
-            # Check data shapes
+            # Check data shapes - FAST FAIL
             if X.shape[0] != y.shape[0] or X.shape[0] != regime_labels.shape[0]:
+                tprint(f"❌ CRITICAL: Data shape mismatch - FAILING FAST")
+                tprint(f"   X={X.shape}, y={y.shape}, regimes={regime_labels.shape}")
                 raise ValueError(f"Data shape mismatch: X={X.shape}, y={y.shape}, regimes={regime_labels.shape}")
             
-            # Check for empty data
+            # Check for empty data - FAST FAIL
             if X.shape[0] == 0:
+                tprint("❌ CRITICAL: Input data is empty - FAILING FAST")
                 raise ValueError("Input data is empty")
             
-            # Check for NaN values
+            # Check for NaN values - FAST FAIL
             if np.isnan(X).any():
                 nan_count = np.isnan(X).sum()
-                self.logger.warning(f"⚠️ Found {nan_count} NaN values in input features")
+                tprint(f"❌ CRITICAL: Found {nan_count} NaN values in input features - FAILING FAST")
+                raise ValueError(f"Input data contains {nan_count} NaN values - training cannot proceed")
             
             if np.isnan(y).any():
                 nan_count = np.isnan(y).sum()
-                self.logger.warning(f"⚠️ Found {nan_count} NaN values in target values")
+                tprint(f"❌ CRITICAL: Found {nan_count} NaN values in target values - FAILING FAST")
+                raise ValueError(f"Target data contains {nan_count} NaN values - training cannot proceed")
             
-            # Check for infinite values
+            # Check for infinite values - FAST FAIL
             if np.isinf(X).any():
                 inf_count = np.isinf(X).sum()
-                self.logger.warning(f"⚠️ Found {inf_count} infinite values in input features")
+                tprint(f"❌ CRITICAL: Found {inf_count} infinite values in input features - FAILING FAST")
+                raise ValueError(f"Input data contains {inf_count} infinite values - training cannot proceed")
             
             if np.isinf(y).any():
                 inf_count = np.isinf(y).sum()
-                self.logger.warning(f"⚠️ Found {inf_count} infinite values in target values")
+                tprint(f"❌ CRITICAL: Found {inf_count} infinite values in target values - FAILING FAST")
+                raise ValueError(f"Target data contains {inf_count} infinite values - training cannot proceed")
             
-            # Check regime distribution
+            # Check regime distribution - WARNING ONLY
             unique_regimes, regime_counts = np.unique(regime_labels, return_counts=True)
             min_regime_samples = regime_counts.min()
             
             if min_regime_samples < self.config.min_samples_per_regime:
                 insufficient_regimes = unique_regimes[regime_counts < self.config.min_samples_per_regime]
-                self.logger.warning(f"⚠️ {len(insufficient_regimes)} regimes have insufficient samples (< {self.config.min_samples_per_regime})")
+                tprint(f"⚠️ WARNING: {len(insufficient_regimes)} regimes have insufficient samples (< {self.config.min_samples_per_regime})")
             
-            self.logger.info(f"✅ Data validation passed: {X.shape[0]} samples, {X.shape[1]} features, {len(unique_regimes)} regimes")
+            tprint(f"✅ Data validation passed: {X.shape[0]} samples, {X.shape[1]} features, {len(unique_regimes)} regimes")
             
         except Exception as e:
-            self.logger.error(f"❌ Data validation failed: {e}")
+            tprint(f"❌ Data validation failed: {e}")
             raise ValueError(f"Invalid input data: {e}") from e
     
     def execute(
@@ -226,29 +238,29 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
             Dictionary containing training results and metadata
         """
         execution_start_time = time.time()
-        self.logger.info("🚀 Starting HMM ensemble training component")
+        tprint("🚀 Starting HMM ensemble training component")
         
         try:
             # Step 1: Validate inputs
-            self.logger.info("🔄 Step 1: Validating inputs...")
+            tprint("🔄 Step 1: Validating inputs...")
             self._validate_input_data(X, y, regime_labels)
             
             # Step 2: Validate and prepare base models
-            self.logger.info("🔄 Step 2: Validating base models...")
+            tprint("🔄 Step 2: Validating base models...")
             if base_hmm_models is None or not base_hmm_models:
-                self.logger.warning("⚠️ No base HMM models provided, using mock models")
-                base_hmm_models = self._create_mock_base_models()
+                tprint("⚠️ No base HMM models provided, creating proper ensemble models")
+                base_hmm_models = self._create_ensemble_models()
             else:
-                self.logger.info(f"✅ Using {len(base_hmm_models)} provided base models")
+                tprint(f"✅ Using {len(base_hmm_models)} provided base models")
             
             # Step 3: Execute training with enhanced error handling
-            self.logger.info("🔄 Step 3: Executing ensemble training...")
+            tprint("🔄 Step 3: Executing ensemble training...")
             results = self._execute_training_with_error_handling(
                 X, y, regime_labels, feature_names, hmm_states, base_hmm_models
             )
             
             # Step 4: Add ensemble-specific metadata
-            self.logger.info("🔄 Step 4: Adding ensemble-specific metadata...")
+            tprint("🔄 Step 4: Adding ensemble-specific metadata...")
             if 'error' not in results:
                 results = self._add_ensemble_specific_metadata(results, base_hmm_models, hmm_training_metrics)
             
@@ -256,14 +268,14 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
             execution_time = time.time() - execution_start_time
             results = self._generate_comprehensive_report(results, execution_time, base_hmm_models, hmm_training_metrics)
             
-            self.logger.info(f"✅ HMM ensemble training completed successfully in {execution_time:.2f}s")
+            tprint(f"✅ HMM ensemble training completed successfully in {execution_time:.2f}s")
             return results
             
         except Exception as e:
             execution_time = time.time() - execution_start_time
             error_msg = f"HMM ensemble training failed after {execution_time:.2f}s: {e}"
-            self.logger.error(f"❌ {error_msg}")
-            self.logger.error(f"🔍 Traceback: {traceback.format_exc()}")
+            tprint(f"❌ {error_msg}")
+            tprint(f"🔍 Traceback: {traceback.format_exc()}")
             
             return {
                 'error': error_msg,
@@ -321,35 +333,60 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
             return results
             
         except Exception as e:
-            self.logger.error(f"❌ Training execution failed: {e}")
+            tprint(f"❌ Training execution failed: {e}")
             self.training_stats.update({
                 'training_completed': False,
                 'training_error': str(e)
             })
             raise
     
-    def _create_mock_base_models(self) -> Dict[str, Any]:
+    def _create_ensemble_models(self) -> Dict[str, Any]:
         """
-        Create mock base models for testing purposes with enhanced error handling.
+        Create proper ensemble models for HMM training with enhanced error handling.
         
         Returns:
-            Dictionary of mock base models
+            Dictionary of ensemble models
         """
         try:
-            # Use shared unified model factory for consistent model creation
-            mock_models = {
-                'lightgbm_model': UnifiedModelFactory.create_model('lightgbm', n_estimators=10, max_depth=5, random_state=42),
-                'elastic_net_model': UnifiedModelFactory.create_model('elastic_net_lr', random_state=43, max_iter=1000),
-                'xgboost_model': UnifiedModelFactory.create_model('xgboost', n_estimators=10, max_depth=5, random_state=44)
+            from lightgbm import LGBMRegressor
+            from sklearn.linear_model import ElasticNet
+            from xgboost import XGBRegressor
+            
+            ensemble_models = {
+                'lightgbm': LGBMRegressor(
+                    n_estimators=100,
+                    random_state=42,
+                    max_depth=6,
+                    learning_rate=0.1,
+                    verbose=-1
+                ),
+                'elastic_net': ElasticNet(
+                    random_state=43,
+                    max_iter=1000,
+                    alpha=0.1,
+                    l1_ratio=0.5
+                ),
+                'xgboost': XGBRegressor(
+                    n_estimators=100,
+                    random_state=44,
+                    max_depth=6,
+                    learning_rate=0.1,
+                    verbosity=0
+                )
             }
             
-            self.logger.info(f"📊 Created {len(mock_models)} mock base models for ensemble training")
-            self.training_stats['mock_models_created'] = len(mock_models)
-            return mock_models
+            tprint(f"📊 Created {len(ensemble_models)} ensemble models for HMM training")
+            tprint(f"   Models: {list(ensemble_models.keys())}")
+            self.training_stats['ensemble_models_created'] = len(ensemble_models)
+            return ensemble_models
             
+        except ImportError as e:
+            tprint(f"❌ CRITICAL: Failed to import required model libraries - FAILING FAST")
+            tprint(f"   Error: {e}")
+            raise RuntimeError(f"Required model libraries not available: {e}") from e
         except Exception as e:
-            self.logger.error(f"❌ Failed to create mock base models: {e}")
-            raise RuntimeError(f"Mock model creation failed: {e}") from e
+            tprint(f"❌ Failed to create ensemble models: {e}")
+            raise RuntimeError(f"Ensemble model creation failed: {e}") from e
     
     def _generate_comprehensive_report(
         self,
@@ -408,7 +445,7 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
             return results
             
         except Exception as e:
-            self.logger.error(f"❌ Failed to generate comprehensive report: {e}")
+            tprint(f"❌ Failed to generate comprehensive report: {e}")
             results['comprehensive_report'] = {'error': f"Report generation failed: {e}"}
             return results
     
@@ -453,7 +490,7 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
             return performance_analysis
             
         except Exception as e:
-            self.logger.warning(f"⚠️ Performance analysis failed: {e}")
+            tprint(f"⚠️ Performance analysis failed: {e}")
             return {'error': str(e)}
     
     def _analyze_regime_performance(self, results: Dict[str, Any]) -> Dict[str, Any]:
@@ -483,7 +520,7 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
             return regime_analysis
             
         except Exception as e:
-            self.logger.warning(f"⚠️ Regime analysis failed: {e}")
+            tprint(f"⚠️ Regime analysis failed: {e}")
             return {'error': str(e)}
     
     def _analyze_base_model_integration(
@@ -515,7 +552,7 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
             return integration_analysis
             
         except Exception as e:
-            self.logger.warning(f"⚠️ Base model integration analysis failed: {e}")
+            tprint(f"⚠️ Base model integration analysis failed: {e}")
             return {'error': str(e)}
     
     def _generate_recommendations(self, results: Dict[str, Any], execution_time: float) -> List[str]:
@@ -559,49 +596,49 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
             return recommendations
             
         except Exception as e:
-            self.logger.warning(f"⚠️ Recommendation generation failed: {e}")
+            tprint(f"⚠️ Recommendation generation failed: {e}")
             return [f"⚠️ Could not generate recommendations: {e}"]
     
     def _log_comprehensive_summary(self, comprehensive_report: Dict[str, Any]) -> None:
         """
-        Log comprehensive training summary.
+        Log comprehensive training summary using tprint.
         
         Args:
             comprehensive_report: Comprehensive report data
         """
         try:
-            self.logger.info("📊 COMPREHENSIVE TRAINING SUMMARY")
-            self.logger.info("=" * 50)
+            tprint("📊 COMPREHENSIVE TRAINING SUMMARY")
+            tprint("=" * 50)
             
             # Execution summary
             exec_summary = comprehensive_report.get('execution_summary', {})
-            self.logger.info(f"⏱️ Total execution time: {exec_summary.get('total_execution_time', 0):.2f}s")
-            self.logger.info(f"🚀 Vectorization enabled: {exec_summary.get('vectorization_enabled', False)}")
-            self.logger.info(f"✅ Training success: {exec_summary.get('success', False)}")
+            tprint(f"⏱️ Total execution time: {exec_summary.get('total_execution_time', 0):.2f}s")
+            tprint(f"🚀 Vectorization enabled: {exec_summary.get('vectorization_enabled', False)}")
+            tprint(f"✅ Training success: {exec_summary.get('success', False)}")
             
             # Data summary
             data_summary = comprehensive_report.get('data_summary', {})
-            self.logger.info(f"📊 Samples processed: {data_summary.get('sample_count', 0):,}")
-            self.logger.info(f"🔢 Features used: {data_summary.get('feature_count', 0)}")
-            self.logger.info(f"🤖 Base models: {data_summary.get('base_models_used', 0)}")
+            tprint(f"📊 Samples processed: {data_summary.get('sample_count', 0):,}")
+            tprint(f"🔢 Features used: {data_summary.get('feature_count', 0)}")
+            tprint(f"🤖 Base models: {data_summary.get('base_models_used', 0)}")
             
             # Performance analysis
             perf_analysis = comprehensive_report.get('performance_analysis', {})
             if perf_analysis.get('best_performance'):
                 best_perf = perf_analysis['best_performance']
-                self.logger.info(f"🏆 Best performance: Accuracy = {best_perf.get('accuracy', 0):.4f} (Regime {best_perf.get('regime', 'N/A')})")
+                tprint(f"🏆 Best performance: Accuracy = {best_perf.get('accuracy', 0):.4f} (Regime {best_perf.get('regime', 'N/A')})")
             
             # Recommendations
             recommendations = comprehensive_report.get('recommendations', [])
             if recommendations:
-                self.logger.info("💡 RECOMMENDATIONS:")
+                tprint("💡 RECOMMENDATIONS:")
                 for rec in recommendations:
-                    self.logger.info(f"   {rec}")
+                    tprint(f"   {rec}")
             
-            self.logger.info("=" * 50)
+            tprint("=" * 50)
             
         except Exception as e:
-            self.logger.error(f"❌ Failed to log comprehensive summary: {e}")
+            tprint(f"❌ Failed to log comprehensive summary: {e}")
     
     def _add_ensemble_specific_metadata(self, results: Dict[str, Any], base_models: Dict[str, Any], base_metrics: Optional[Dict[str, Any]]) -> Dict[str, Any]:
         """
@@ -636,7 +673,7 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
                 # Add base model performance analysis if available
                 if base_metrics:
                     ensemble_metrics['base_model_performance'] = base_metrics
-                    self.logger.info("📊 Integrated base model performance metrics")
+                    tprint("📊 Integrated base model performance metrics")
                 
                 results['ensemble_metrics'] = ensemble_metrics
             
@@ -694,9 +731,9 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
                 results['best_ensembles_per_regime'] = best_ensembles
                 results['performance_summary'] = performance_summary
                 
-                self.logger.info(f"📊 Performance summary: {performance_summary['successful_evaluations']}/{performance_summary['total_regimes_evaluated']} regimes successful")
+                tprint(f"📊 Performance summary: {performance_summary['successful_evaluations']}/{performance_summary['total_regimes_evaluated']} regimes successful")
                 if performance_summary['average_accuracy'] > 0:
-                    self.logger.info(f"🏆 Average Accuracy: {performance_summary['average_accuracy']:.4f}, Best Accuracy: {performance_summary['best_overall_accuracy']:.4f}")
+                    tprint(f"🏆 Average Accuracy: {performance_summary['average_accuracy']:.4f}, Best Accuracy: {performance_summary['best_overall_accuracy']:.4f}")
             
             # Add enhanced ensemble-specific analysis
             ensemble_analysis = {
@@ -722,7 +759,7 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
             return results
             
         except Exception as e:
-            self.logger.error(f"❌ Failed to add ensemble-specific metadata: {e}")
+            tprint(f"❌ Failed to add ensemble-specific metadata: {e}")
             results['ensemble_metadata_error'] = str(e)
             return results
 

@@ -3,11 +3,15 @@ Barrier Optimization using Optuna and Grid Search
 
 This module implements comprehensive barrier optimization for the Tactician model
 using a multi-stage approach:
-1. Coarse grid search (5x5) for initial exploration
-2. Fine grid search (5x5) around promising regions
+1. Coarse grid search (5x5x5) for initial exploration
+2. Fine grid search (5x5x5) around promising regions
 3. Optuna/TPE optimization for final refinement
 
-The optimization focuses on entry point finding for the Tactician model.
+The optimization focuses on finding the best entry point where price will move
+in the desired direction without going further in the opposite direction.
+This is about directional prediction accuracy and minimizing adverse price movement.
+
+Requires Optuna for optimal performance.
 """
 
 import numpy as np
@@ -18,16 +22,9 @@ from dataclasses import dataclass
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-# Optuna imports with fallback
-try:
-    import optuna
-    from optuna.samplers import TPESampler
-    OPTUNA_AVAILABLE = True
-except ImportError:
-    optuna = None
-    TPESampler = None
-    OPTUNA_AVAILABLE = False
-    logging.warning("Optuna not available, using grid search only")
+# Optuna imports (required)
+import optuna
+from optuna.samplers import TPESampler
 
 from .tactician_barrier_config import TacticianBarrierConfig, TacticianBarrierLabeler
 from .unified_labeler import UnifiedTripleBarrierLabeler
@@ -62,7 +59,7 @@ class BarrierOptimizer:
     def __init__(self, 
                  data: pd.DataFrame,
                  analyst_signals: np.ndarray,
-                 optimization_metric: str = "sharpe_ratio",
+                 optimization_metric: str = "directional_entry_quality",
                  n_jobs: int = -1):
         """
         Initialize barrier optimizer.
@@ -70,7 +67,7 @@ class BarrierOptimizer:
         Args:
             data: OHLC data for optimization
             analyst_signals: Binary signals from Analyst
-            optimization_metric: Metric to optimize (sharpe_ratio, profit_factor, win_rate)
+            optimization_metric: Metric to optimize (directional_entry_quality, sharpe_ratio, profit_factor, win_rate)
             n_jobs: Number of parallel jobs (-1 for all cores)
         """
         self.data = data
@@ -131,14 +128,10 @@ class BarrierOptimizer:
         self.logger.info("📊 Stage 2: Fine grid search around best region")
         fine_result = self._fine_grid_search_around_best(coarse_result)
         
-        # Stage 3: Optuna optimization (if available)
-        if OPTUNA_AVAILABLE:
-            self.logger.info("📊 Stage 3: Optuna/TPE optimization")
-            optuna_result = self._optuna_optimization_around_best(fine_result, max_trials)
-            final_result = optuna_result
-        else:
-            self.logger.warning("⚠️ Optuna not available, using fine grid result")
-            final_result = fine_result
+        # Stage 3: Optuna optimization
+        self.logger.info("📊 Stage 3: Optuna/TPE optimization")
+        optuna_result = self._optuna_optimization_around_best(fine_result, max_trials)
+        final_result = optuna_result
         
         # Update final result with multi-stage info
         final_result.optimization_method = "multi_stage"
@@ -284,8 +277,6 @@ class BarrierOptimizer:
     
     def _optuna_optimization(self, max_trials: int) -> BarrierOptimizationResult:
         """Optuna optimization with TPE sampler."""
-        if not OPTUNA_AVAILABLE:
-            raise ImportError("Optuna not available for optimization")
         
         start_time = time.time()
         
@@ -346,8 +337,6 @@ class BarrierOptimizer:
                                        fine_result: BarrierOptimizationResult, 
                                        max_trials: int) -> BarrierOptimizationResult:
         """Optuna optimization around the best parameters from fine grid search."""
-        if not OPTUNA_AVAILABLE:
-            return fine_result
         
         start_time = time.time()
         
@@ -453,7 +442,9 @@ class BarrierOptimizer:
             return_std = np.std(returns)
             
             # Calculate optimization metric
-            if self.optimization_metric == "sharpe_ratio":
+            if self.optimization_metric == "directional_entry_quality":
+                return self._calculate_directional_entry_quality(valid_data, returns)
+            elif self.optimization_metric == "sharpe_ratio":
                 if return_std == 0:
                     return 0
                 return avg_return / return_std
@@ -466,12 +457,67 @@ class BarrierOptimizer:
             elif self.optimization_metric == "total_return":
                 return total_return
             else:
-                # Combined metric: weighted combination
-                sharpe = avg_return / return_std if return_std > 0 else 0
-                return 0.4 * sharpe + 0.3 * win_rate + 0.3 * (total_return / total_trades)
+                # Default to directional entry quality
+                return self._calculate_directional_entry_quality(valid_data, returns)
                 
         except Exception as e:
             self.logger.warning(f"⚠️ Failed to calculate metric: {e}")
+            return -np.inf
+    
+    def _calculate_directional_entry_quality(self, valid_data: pd.DataFrame, returns: np.ndarray) -> float:
+        """
+        Calculate directional entry quality for Tactician optimization.
+        
+        This metric focuses on finding the best entry point where price will move
+        in the desired direction without going further in the opposite direction.
+        
+        Components:
+        1. Directional Accuracy: How often the entry direction is correct
+        2. Adverse Movement Minimization: How well we avoid adverse price movement
+        3. Directional Profit Efficiency: Profit from correct directional moves
+        4. Risk-Adjusted Directional Performance: Return per unit of directional risk
+        """
+        try:
+            # Component 1: Directional Accuracy (40% weight)
+            # How often the entry leads to price movement in the desired direction
+            directional_accuracy = len(valid_data[valid_data['label'] == 1]) / len(valid_data)
+            
+            # Component 2: Adverse Movement Minimization (30% weight)
+            # How well we avoid adverse price movement (minimize stop-loss hits)
+            adverse_movements = len(valid_data[valid_data['label'] == -1])
+            adverse_movement_ratio = adverse_movements / len(valid_data)
+            adverse_movement_minimization = 1 - adverse_movement_ratio
+            
+            # Component 3: Directional Profit Efficiency (20% weight)
+            # How much profit we capture from correct directional moves
+            winning_returns = returns[returns > 0]
+            if len(winning_returns) > 0:
+                avg_winning_return = np.mean(winning_returns)
+                max_possible_return = np.max(returns)  # Best possible return in dataset
+                directional_profit_efficiency = avg_winning_return / max_possible_return if max_possible_return > 0 else 0
+            else:
+                directional_profit_efficiency = 0
+            
+            # Component 4: Risk-Adjusted Directional Performance (10% weight)
+            # Return per unit of directional risk (volatility of returns)
+            return_volatility = np.std(returns)
+            if return_volatility > 0:
+                risk_adjusted_directional_performance = np.mean(returns) / return_volatility
+            else:
+                risk_adjusted_directional_performance = 0
+            
+            # Composite directional entry quality score
+            directional_entry_quality = (
+                0.4 * directional_accuracy +
+                0.3 * adverse_movement_minimization +
+                0.2 * directional_profit_efficiency +
+                0.1 * risk_adjusted_directional_performance
+            )
+            
+            return directional_entry_quality
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Failed to calculate directional entry quality: {e}")
             return -np.inf
     
     def _create_config_from_params(self, params: Dict[str, Any]) -> TacticianBarrierConfig:
@@ -487,7 +533,7 @@ class BarrierOptimizer:
 def optimize_tactician_barriers(
     data: pd.DataFrame,
     analyst_signals: np.ndarray,
-    optimization_metric: str = "sharpe_ratio",
+    optimization_metric: str = "directional_entry_quality",
     method: str = "multi_stage",
     max_trials: int = 100,
     n_jobs: int = -1
@@ -519,7 +565,7 @@ def optimize_tactician_barriers(
 def create_optimized_tactician_barrier_labeler(
     data: pd.DataFrame,
     analyst_signals: np.ndarray,
-    optimization_metric: str = "sharpe_ratio",
+    optimization_metric: str = "directional_entry_quality",
     method: str = "multi_stage",
     max_trials: int = 100
 ) -> TacticianBarrierLabeler:
@@ -567,10 +613,11 @@ if __name__ == '__main__':
     analyst_signals = np.random.choice([0, 1], 1000, p=[0.8, 0.2])
     
     # Test optimization
-    print("\n📊 Testing multi-stage optimization...")
+    print("\n📊 Testing multi-stage optimization with directional entry quality...")
     result = optimize_tactician_barriers(
         data=data,
         analyst_signals=analyst_signals,
+        optimization_metric="directional_entry_quality",
         method="multi_stage",
         max_trials=50
     )

@@ -81,10 +81,11 @@ src/trading/
 - **Integration** with existing paper trading components
 
 ### 3. Sizing (`sizing/`)
-- **Position sizing** based on regime probabilities and risk parameters
-- **Leverage management** with configurable limits
-- **Multiple sizing methods**: fixed, volatility-adjusted, regime-based, Kelly, risk parity
-- **Portfolio allocation** and risk-based sizing
+- **Position sizing** using ML confidence scores and Kelly criterion
+- **Leverage management** with configurable limits (10x-100x)
+- **Simplified approach** based on existing tactician implementation
+- **ML confidence integration** with price target and adversarial confidences
+- **Kelly criterion** for optimal position sizing
 
 ### 4. Signal Generation (`signal_generation/`)
 - **Analyst and tactician integration** with existing components
@@ -173,11 +174,11 @@ combined_result = await signal_combiner.combine_signals(
 # Calculate position size
 position_result = await position_sizer.calculate_position_size(
     symbol="ETHUSDT",
+    ml_predictions=ml_predictions,  # From your existing ML pipeline
     current_price=3000.0,
-    regime_probabilities=regime_detection.regime_probabilities,
-    regime_confidence=regime_detection.confidence,
-    portfolio_value=10000.0,
-    available_balance=5000.0
+    account_balance=10000.0,
+    analyst_confidence=0.8,
+    tactician_confidence=0.7
 )
 
 # Execute trade

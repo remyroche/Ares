@@ -146,7 +146,8 @@ class TacticianTrainingConfig(BaseTrainingConfig):
         'late_entry_penalty': 'min',            # Minimize entering too late
         'optimal_entry_reward': 'max',          # Maximize entering at optimal timing
         'entry_timing_efficiency': 'max',       # Maximize profit from optimal entry timing
-        'directional_consistency': 'min'        # Minimize directional inconsistency
+        'directional_consistency': 'min',       # Minimize directional inconsistency
+        'confidence_score': 'max'               # Maximize confidence in optimal timing
     })
     entry_timing_range: float = 0.005  # 0-0.5% range for entry timing optimization
     expected_movement: float = 0.01  # Expected 1% movement in the right direction

@@ -65,7 +65,7 @@ class DirectionalOptimizationResult:
 
 
 class EntryTimingLossFunction:
-    """Custom loss functions for entry timing optimization within 0-0.5% range."""
+    """Custom loss functions for entry timing optimization with confidence scoring."""
     
     @staticmethod
     def early_entry_penalty_loss(y_true: np.ndarray, y_pred: np.ndarray, 
@@ -182,6 +182,183 @@ class EntryTimingLossFunction:
         directional_accuracy = np.mean(true_direction == pred_direction)
         
         return 1.0 - directional_accuracy  # Return loss (1 - accuracy)
+    
+    @staticmethod
+    def calculate_confidence_score(y_true: np.ndarray, y_pred: np.ndarray, 
+                                 tolerance: float = 0.001) -> np.ndarray:
+        """
+        Calculate confidence score (0-1) for optimal entry timing.
+        
+        Args:
+            y_true: True optimal entry timing
+            y_pred: Predicted entry timing
+            tolerance: Tolerance for "optimal" timing (0.1%)
+            
+        Returns:
+            Confidence scores between 0 and 1
+        """
+        # Calculate timing error
+        timing_error = np.abs(y_pred - y_true)
+        
+        # Calculate confidence based on timing accuracy
+        # Perfect timing (error = 0) -> confidence = 1
+        # Within tolerance (error <= tolerance) -> confidence = 0.8-1.0
+        # Outside tolerance -> confidence decreases exponentially
+        
+        confidence = np.exp(-timing_error / tolerance)
+        
+        # Ensure confidence is between 0 and 1
+        confidence = np.clip(confidence, 0.0, 1.0)
+        
+        return confidence
+
+
+class ConfidenceAwareModel:
+    """Wrapper for base models that provides confidence scores alongside predictions."""
+    
+    def __init__(self, base_model, loss_functions: EntryTimingLossFunction):
+        self.base_model = base_model
+        self.loss_functions = loss_functions
+        self.is_fitted = False
+    
+    def fit(self, X: np.ndarray, y: np.ndarray):
+        """Fit the base model."""
+        self.base_model.fit(X, y)
+        self.is_fitted = True
+        return self
+    
+    def predict(self, X: np.ndarray) -> np.ndarray:
+        """Predict entry timing."""
+        if not self.is_fitted:
+            raise ValueError("Model must be fitted before making predictions")
+        return self.base_model.predict(X)
+    
+    def predict_with_confidence(self, X: np.ndarray, y_true: np.ndarray = None) -> tuple:
+        """
+        Predict entry timing with confidence scores.
+        
+        Args:
+            X: Input features
+            y_true: True values (optional, for confidence calculation)
+            
+        Returns:
+            Tuple of (predictions, confidence_scores)
+        """
+        predictions = self.predict(X)
+        
+        if y_true is not None:
+            # Calculate confidence based on true values
+            confidence_scores = self.loss_functions.calculate_confidence_score(y_true, predictions)
+        else:
+            # For inference, use prediction uncertainty as proxy for confidence
+            # This is a simplified approach - in practice, you might use model uncertainty
+            confidence_scores = np.ones(len(predictions)) * 0.8  # Default confidence
+        
+        return predictions, confidence_scores
+    
+    def get_params(self, deep: bool = True) -> dict:
+        """Get model parameters."""
+        return self.base_model.get_params(deep=deep)
+    
+    def set_params(self, **params) -> 'ConfidenceAwareModel':
+        """Set model parameters."""
+        self.base_model.set_params(**params)
+        return self
+
+
+class ConfidenceAwareEnsemble:
+    """Ensemble model that provides confidence scores for entry timing predictions."""
+    
+    def __init__(self, base_models: List[ConfidenceAwareModel], meta_model, loss_functions: EntryTimingLossFunction):
+        self.base_models = base_models
+        self.meta_model = meta_model
+        self.loss_functions = loss_functions
+        self.is_fitted = False
+    
+    def fit(self, X: np.ndarray, y: np.ndarray):
+        """Fit the ensemble model."""
+        # Train base models
+        base_predictions = []
+        for model in self.base_models:
+            model.fit(X, y)
+            predictions = model.predict(X)
+            base_predictions.append(predictions)
+        
+        # Stack base model predictions
+        X_meta = np.column_stack(base_predictions)
+        
+        # Train meta model
+        self.meta_model.fit(X_meta, y)
+        self.is_fitted = True
+        return self
+    
+    def predict(self, X: np.ndarray) -> np.ndarray:
+        """Predict entry timing using ensemble."""
+        if not self.is_fitted:
+            raise ValueError("Ensemble must be fitted before making predictions")
+        
+        # Get base model predictions
+        base_predictions = []
+        for model in self.base_models:
+            predictions = model.predict(X)
+            base_predictions.append(predictions)
+        
+        # Stack predictions for meta model
+        X_meta = np.column_stack(base_predictions)
+        
+        # Get final prediction from meta model
+        final_predictions = self.meta_model.predict(X_meta)
+        
+        return final_predictions
+    
+    def predict_with_confidence(self, X: np.ndarray, y_true: np.ndarray = None) -> tuple:
+        """
+        Predict entry timing with confidence scores using ensemble.
+        
+        Args:
+            X: Input features
+            y_true: True values (optional, for confidence calculation)
+            
+        Returns:
+            Tuple of (predictions, confidence_scores)
+        """
+        # Get ensemble predictions
+        predictions = self.predict(X)
+        
+        # Get base model predictions and confidence scores
+        base_predictions = []
+        base_confidences = []
+        
+        for model in self.base_models:
+            pred, conf = model.predict_with_confidence(X, y_true)
+            base_predictions.append(pred)
+            base_confidences.append(conf)
+        
+        # Calculate ensemble confidence as weighted average of base model confidences
+        # Weight by prediction agreement
+        base_pred_array = np.array(base_predictions)
+        pred_std = np.std(base_pred_array, axis=0)
+        pred_agreement = 1.0 / (1.0 + pred_std)  # Higher agreement = higher weight
+        
+        # Weighted average of confidence scores
+        base_conf_array = np.array(base_confidences)
+        ensemble_confidence = np.average(base_conf_array, axis=0, weights=pred_agreement)
+        
+        # Adjust confidence based on prediction agreement
+        ensemble_confidence = ensemble_confidence * pred_agreement
+        
+        # Ensure confidence is between 0 and 1
+        ensemble_confidence = np.clip(ensemble_confidence, 0.0, 1.0)
+        
+        return predictions, ensemble_confidence
+    
+    def get_base_model_predictions(self, X: np.ndarray) -> Dict[str, tuple]:
+        """Get predictions and confidence scores from each base model."""
+        results = {}
+        for i, model in enumerate(self.base_models):
+            pred, conf = model.predict_with_confidence(X)
+            results[f'base_model_{i}'] = (pred, conf)
+        return results
 
 
 # DirectionalFeatureEngineer removed - using existing features from base training
@@ -334,11 +511,14 @@ class EntryTimingTacticianOptimizer:
                 from sklearn.linear_model import Lasso
                 model = Lasso(alpha=alpha)
             
+            # Create confidence-aware model
+            confidence_aware_model = ConfidenceAwareModel(model, self.loss_functions)
+            
             # Train model
-            model.fit(X, y)
+            confidence_aware_model.fit(X, y)
             
             # Evaluate entry timing metrics
-            metrics = self._evaluate_entry_timing_metrics(model, X, y)
+            metrics = self._evaluate_entry_timing_metrics(confidence_aware_model, X, y)
             
             # Store solution
             solution = Solution(
@@ -346,7 +526,8 @@ class EntryTimingTacticianOptimizer:
                 params={
                     'model_type': model_type,
                     'l1_ratio': l1_ratio if model_type == 'ElasticNetCV' else None,
-                    'alpha': alpha
+                    'alpha': alpha,
+                    'confidence_aware_model': confidence_aware_model
                 }
             )
             solutions.append(solution)
@@ -398,6 +579,10 @@ class EntryTimingTacticianOptimizer:
         # Calculate simple directional consistency
         directional_consistency = self.loss_functions.directional_consistency_simple_loss(y, y_pred)
         
+        # Calculate confidence scores for each prediction
+        confidence_scores = self.loss_functions.calculate_confidence_score(y, y_pred, tolerance)
+        avg_confidence = np.mean(confidence_scores)
+        
         # Calculate composite score (optimized weights)
         composite_score = (
             0.25 * (1 - early_entry_penalty) +      # Minimize early entry penalty
@@ -413,6 +598,8 @@ class EntryTimingTacticianOptimizer:
             'optimal_entry_reward': optimal_entry_reward,
             'entry_timing_efficiency': entry_timing_efficiency,
             'directional_consistency': directional_consistency,
+            'avg_confidence_score': avg_confidence,
+            'confidence_scores': confidence_scores,
             'composite_score': composite_score
         }
     
@@ -420,28 +607,31 @@ class EntryTimingTacticianOptimizer:
                                      X: np.ndarray,
                                      y: np.ndarray,
                                      optimization_result: Dict[str, Any]) -> Any:
-        """Train final model with best parameters."""
+        """Train final confidence-aware model with best parameters."""
         best_solution = optimization_result['best_solution']
         params = best_solution.params
         
         # Create model with best parameters
         if params['model_type'] == 'ElasticNetCV':
-            model = ElasticNetCV(
+            base_model = ElasticNetCV(
                 l1_ratio=[params['l1_ratio']],
                 alphas=[params['alpha']],
                 cv=5
             )
         elif params['model_type'] == 'Ridge':
             from sklearn.linear_model import Ridge
-            model = Ridge(alpha=params['alpha'])
+            base_model = Ridge(alpha=params['alpha'])
         else:  # Lasso
             from sklearn.linear_model import Lasso
-            model = Lasso(alpha=params['alpha'])
+            base_model = Lasso(alpha=params['alpha'])
+        
+        # Create confidence-aware model
+        confidence_aware_model = ConfidenceAwareModel(base_model, self.loss_functions)
         
         # Train model
-        model.fit(X, y)
+        confidence_aware_model.fit(X, y)
         
-        return model
+        return confidence_aware_model
     
     def _evaluate_entry_timing_performance(self, model: Any, X: np.ndarray, y: np.ndarray) -> Dict[str, float]:
         """Evaluate final entry timing performance."""

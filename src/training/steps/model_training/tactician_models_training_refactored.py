@@ -1190,9 +1190,9 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                 entry_timing_results = self._apply_entry_timing_optimization(X, y, feature_names, results)
                 results.update(entry_timing_results)
             
-            # Always add ensemble training for Tactician (core requirement)
-            self.logger.info("🔄 Training ensemble model (always enabled for Tactician)...")
-            ensemble_results = self._train_ensemble_model(X, y, feature_names, results)
+            # Always add confidence-aware ensemble training for Tactician (core requirement)
+            self.logger.info("🔄 Training confidence-aware ensemble model (always enabled for Tactician)...")
+            ensemble_results = self._train_confidence_aware_ensemble_model(X, y, feature_names, results)
             results.update(ensemble_results)
             
             return results
@@ -1319,6 +1319,93 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
             
         except Exception as e:
             self.logger.error(f"❌ Entry timing optimization failed: {e}")
+            return {}
+    
+    def _train_confidence_aware_ensemble_model(
+        self,
+        X: np.ndarray,
+        y: np.ndarray,
+        feature_names: Optional[List[str]],
+        base_models_results: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Train confidence-aware ensemble model using base models as inputs."""
+        try:
+            from .tactician_directional_optimization import ConfidenceAwareEnsemble, ConfidenceAwareModel, EntryTimingLossFunction
+            
+            self.logger.info("🔄 Training confidence-aware ensemble model from base models...")
+            
+            # Get base models from results
+            base_models = base_models_results.get('models', {})
+            if not base_models:
+                self.logger.warning("⚠️ No base models found for ensemble training")
+                return {}
+            
+            # Wrap base models with confidence awareness
+            confidence_aware_models = []
+            loss_functions = EntryTimingLossFunction()
+            
+            for model_name, model in base_models.items():
+                try:
+                    # Wrap model with confidence awareness
+                    confidence_aware_model = ConfidenceAwareModel(model, loss_functions)
+                    confidence_aware_models.append(confidence_aware_model)
+                    self.logger.info(f"📊 Wrapped {model_name} with confidence awareness")
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Failed to wrap {model_name} with confidence awareness: {e}")
+            
+            if not confidence_aware_models:
+                self.logger.warning("⚠️ No valid confidence-aware models for ensemble training")
+                return {}
+            
+            # Create meta model
+            meta_model_type = getattr(self.config, 'meta_model', 'ElasticNetCV')
+            if meta_model_type == 'ElasticNetCV':
+                from sklearn.linear_model import ElasticNetCV
+                meta_model = ElasticNetCV(
+                    cv=5,
+                    random_state=42,
+                    l1_ratio=[0.1, 0.5, 0.7, 0.9, 0.95, 0.99, 1.0],
+                    alphas=np.logspace(-4, 1, 50)
+                )
+            else:
+                meta_model = self.training_utils.create_model(meta_model_type)
+            
+            # Create confidence-aware ensemble
+            ensemble_name = getattr(self.config, 'ensemble_name', 'tactician_ensemble')
+            confidence_aware_ensemble = ConfidenceAwareEnsemble(
+                confidence_aware_models, meta_model, loss_functions
+            )
+            
+            # Train ensemble
+            confidence_aware_ensemble.fit(X, y)
+            
+            # Evaluate ensemble performance
+            ensemble_predictions, ensemble_confidence = confidence_aware_ensemble.predict_with_confidence(X, y)
+            
+            # Calculate ensemble metrics
+            ensemble_metrics = {
+                'ensemble_name': ensemble_name,
+                'n_base_models': len(confidence_aware_models),
+                'meta_model_type': meta_model_type,
+                'avg_confidence': np.mean(ensemble_confidence),
+                'confidence_std': np.std(ensemble_confidence),
+                'min_confidence': np.min(ensemble_confidence),
+                'max_confidence': np.max(ensemble_confidence)
+            }
+            
+            self.logger.info(f"✅ Confidence-aware ensemble training completed")
+            self.logger.info(f"   Average confidence: {ensemble_metrics['avg_confidence']:.4f}")
+            self.logger.info(f"   Confidence range: [{ensemble_metrics['min_confidence']:.4f}, {ensemble_metrics['max_confidence']:.4f}]")
+            
+            return {
+                'ensemble_model': confidence_aware_ensemble,
+                'ensemble_metrics': ensemble_metrics,
+                'ensemble_predictions': ensemble_predictions,
+                'ensemble_confidence': ensemble_confidence
+            }
+            
+        except Exception as e:
+            self.logger.error(f"❌ Confidence-aware ensemble training failed: {e}")
             return {}
     
     def _train_ensemble_model(

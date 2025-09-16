@@ -593,6 +593,52 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
         }
         results['meta_learner_analysis'] = meta_learner_analysis
         
+        # Add proper artifact formatting for ensemble training
+        tactician_ensembles = []
+        ensemble_metrics = {}
+        tactician_ensemble_performance = {}
+        
+        # Extract ensemble models from results
+        if 'models' in results:
+            for regime_id, regime_models in results['models'].items():
+                if isinstance(regime_models, dict):
+                    for model_name, model_data in regime_models.items():
+                        if 'error' not in model_data and model_data.get('model') is not None:
+                            tactician_ensembles.append({
+                                'regime_id': regime_id,
+                                'model_name': model_name,
+                                'model_type': model_name,
+                                'model_object': model_data.get('model'),
+                                'hyperparameters': model_data.get('hyperparameters', {})
+                            })
+                            
+                            # Add ensemble metrics
+                            ensemble_metrics[f"{regime_id}_{model_name}"] = {
+                                'regime_id': regime_id,
+                                'model_name': model_name,
+                                'training_time': model_data.get('training_time', 0.0),
+                                'evaluation_metrics': model_data.get('evaluation_metrics', {}),
+                                'feature_importance': model_data.get('feature_importance', {}),
+                                'model_performance': model_data.get('model_performance', {})
+                            }
+                            
+                            # Add performance data
+                            tactician_ensemble_performance[f"{regime_id}_{model_name}"] = {
+                                'regime_id': regime_id,
+                                'model_name': model_name,
+                                'performance_available': bool(model_data.get('evaluation_metrics')),
+                                'feature_importance_available': bool(model_data.get('feature_importance')),
+                                'training_successful': 'error' not in model_data,
+                                'model_available': model_data.get('model') is not None
+                            }
+        
+        # Add artifacts to results
+        results['artifacts'] = {
+            'tactician_ensembles': tactician_ensembles,
+            'ensemble_metrics': ensemble_metrics,
+            'tactician_ensemble_performance': tactician_ensemble_performance
+        }
+        
         return results
     
     def _add_comprehensive_reporting(self, results: Dict[str, Any], overall_start_time: float) -> Dict[str, Any]:

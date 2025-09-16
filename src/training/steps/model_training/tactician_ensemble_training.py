@@ -65,6 +65,16 @@ except ImportError as e:
                 duration = time.time() - self.start
                 tprint_performance(self.op, duration)
         return Timer(operation)
+    
+    # Create LogLevel enum for fallback
+    class LogLevel:
+        DEBUG = "DEBUG"
+        INFO = "INFO"
+        WARNING = "WARNING"
+        ERROR = "ERROR"
+        SUCCESS = "SUCCESS"
+        PROGRESS = "PROGRESS"
+        PERFORMANCE = "PERFORMANCE"
 
 # Import common utilities with error handling
 try:
@@ -74,7 +84,10 @@ try:
     )
     COMMON_OPERATIONS_AVAILABLE = True
 except ImportError as e:
-    tprint_warning(f"Common operations not available: {e}")
+    if TPRINT_AVAILABLE:
+        tprint_warning(f"Common operations not available: {e}")
+    else:
+        print(f"⚠️ WARNING: Common operations not available: {e}")
     COMMON_OPERATIONS_AVAILABLE = False
 
 try:
@@ -84,7 +97,10 @@ try:
     )
     COMMON_UTILITIES_AVAILABLE = True
 except ImportError as e:
-    tprint_warning(f"Common utilities not available: {e}")
+    if TPRINT_AVAILABLE:
+        tprint_warning(f"Common utilities not available: {e}")
+    else:
+        print(f"⚠️ WARNING: Common utilities not available: {e}")
     COMMON_UTILITIES_AVAILABLE = False
 
 try:
@@ -94,7 +110,10 @@ try:
     )
     MATH_VALIDATION_AVAILABLE = True
 except ImportError as e:
-    tprint_warning(f"Math validation not available: {e}")
+    if TPRINT_AVAILABLE:
+        tprint_warning(f"Math validation not available: {e}")
+    else:
+        print(f"⚠️ WARNING: Math validation not available: {e}")
     MATH_VALIDATION_AVAILABLE = False
 
 try:
@@ -102,7 +121,10 @@ try:
     from src.utils.serialization_utils import safe_serialize, safe_deserialize
     DATA_UTILITIES_AVAILABLE = True
 except ImportError as e:
-    tprint_warning(f"Data utilities not available: {e}")
+    if TPRINT_AVAILABLE:
+        tprint_warning(f"Data utilities not available: {e}")
+    else:
+        print(f"⚠️ WARNING: Data utilities not available: {e}")
     DATA_UTILITIES_AVAILABLE = False
 
 try:
@@ -111,7 +133,10 @@ try:
     )
     MATRIX_OPERATIONS_AVAILABLE = True
 except ImportError as e:
-    tprint_warning(f"Matrix operations not available: {e}")
+    if TPRINT_AVAILABLE:
+        tprint_warning(f"Matrix operations not available: {e}")
+    else:
+        print(f"⚠️ WARNING: Matrix operations not available: {e}")
     MATRIX_OPERATIONS_AVAILABLE = False
 
 try:
@@ -120,7 +145,10 @@ try:
     )
     ML_COMMON_AVAILABLE = True
 except ImportError as e:
-    tprint_warning(f"ML common utilities not available: {e}")
+    if TPRINT_AVAILABLE:
+        tprint_warning(f"ML common utilities not available: {e}")
+    else:
+        print(f"⚠️ WARNING: ML common utilities not available: {e}")
     ML_COMMON_AVAILABLE = False
 
 # Import vectorized training manager
@@ -130,7 +158,13 @@ try:
 except ImportError:
     VECTORIZED_TRAINING_AVAILABLE = False
 
-logger = system_logger.getChild('TacticianEnsembleTraining')
+# Initialize logger with error handling
+try:
+    logger = system_logger.getChild('TacticianEnsembleTraining')
+except Exception as e:
+    print(f"⚠️ WARNING: Failed to initialize logger: {e}")
+    import logging
+    logger = logging.getLogger('TacticianEnsembleTraining')
 
 
 @dataclass
@@ -217,7 +251,15 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
             # Initialize parent class with comprehensive error handling
             tprint_info("🔄 Initializing parent EnsembleTrainingStep...")
             super().__init__(config, enable_vectorization=enable_vectorization and VECTORIZED_TRAINING_AVAILABLE)
-            self.logger = logger.getChild('TacticianEnsembleTrainingStep')
+            
+            # Initialize logger with error handling
+            try:
+                self.logger = logger.getChild('TacticianEnsembleTrainingStep')
+            except Exception as e:
+                tprint_warning(f"⚠️ Failed to initialize child logger: {e}")
+                import logging
+                self.logger = logging.getLogger('TacticianEnsembleTrainingStep')
+            
             tprint_success("✅ Parent class initialized successfully")
             
             # Initialize progress tracking

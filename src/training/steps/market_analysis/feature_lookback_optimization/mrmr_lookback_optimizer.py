@@ -87,16 +87,20 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class LookbackOptimizationConfig:
-    """Configuration for Bayesian lookback period optimization."""
+    """Configuration for improved two-step grid + TPE lookback period optimization."""
     
     # Optimization Strategy
-    optimization_method: str = "bayesian"  # "bayesian", "grid", "random"
-    sampler_type: str = "tpe"  # "tpe", "random", "grid"
-    pruner_type: str = "median"  # "median", "successive_halving", "none"
+    optimization_method: str = "two_step_grid_tpe"  # "two_step_grid_tpe" (no fallbacks)
     
-    # Trial Configuration
-    n_trials: int = 100
-    timeout_seconds: Optional[int] = None
+    # Grid Search Configuration
+    coarse_grid_size: int = 7          # 7x7 = 49 combinations
+    fine_grid_size: int = 7            # 7x7 = 49 combinations
+    top_k_coarse_candidates: int = 8   # Top 8 from coarse grid
+    top_k_fine_candidates: int = 5     # Top 5 from fine grid
+    
+    # TPE Configuration
+    tpe_trials: int = 50               # TPE fine-tuning trials (reduced from 100)
+    tpe_timeout: Optional[int] = None
     n_startup_trials: int = 10
     n_warmup_steps: int = 5
     interval_steps: int = 1
@@ -105,6 +109,10 @@ class LookbackOptimizationConfig:
     min_lookback: int = 5
     max_lookback: int = 100
     lookback_step: int = 1
+    
+    # Refinement Factors
+    coarse_refinement_factor: float = 0.3  # 30% of original range
+    fine_refinement_factor: float = 0.2    # 20% of refined range
     
     # Advanced Feature Selection Methods
     first_lookback_method: str = "mutual_info"  # Method for first lookback period
@@ -373,20 +381,18 @@ class MRMRLookbackOptimizer:
         def objective(trial):
             return self._lookback_objective(trial, data, feature_name, target_column, parameter_type)
         
-        # Run optimization
-        if OPTUNA_AVAILABLE and self.study is not None:
-            self.study.optimize(
-                objective,
-                n_trials=self.config.n_trials,
-                timeout=self.config.timeout_seconds,
-                n_jobs=self.config.n_jobs if self.config.enable_parallel else 1
-            )
-            
-            # Extract results
-            result = self._extract_optimization_results(data, feature_name, target_column, start_time)
-        else:
-            # Fallback to basic optimization
-            result = self._fallback_optimization(data, feature_name, target_column, start_time)
+        # Run two-step grid + TPE optimization
+        if not OPTUNA_AVAILABLE:
+            raise ImportError("Optuna is required for two-step grid + TPE optimization. Please install optuna.")
+        
+        # Step 1: Coarse 7x7 Grid Search
+        coarse_results = self._coarse_grid_search_7x7(data, feature_name, target_column)
+        
+        # Step 2: Fine 7x7 Grid Search
+        fine_results = self._fine_grid_search_7x7(data, feature_name, target_column, coarse_results)
+        
+        # Step 3: TPE Fine-tuning
+        result = self._tpe_fine_tuning(data, feature_name, target_column, fine_results, start_time)
         
         # Update performance metrics
         self._update_performance_metrics(result)
@@ -1077,71 +1083,263 @@ class MRMRLookbackOptimizer:
             convergence_history=self.convergence_history
         )
     
-    def _fallback_optimization(self,
+    def _coarse_grid_search_7x7(self,
                              data: pd.DataFrame,
                              feature_name: str,
-                             target_column: str,
-                             start_time: float) -> LookbackOptimizationResult:
-        """Fallback optimization when Optuna is not available."""
-        self.logger.warning("Using fallback optimization (grid search)")
+                             target_column: str) -> Dict[str, Any]:
+        """Step 1: Coarse 7x7 grid search to identify promising regions."""
+        self.logger.info("🔍 Step 1: Coarse 7x7 grid search...")
         
-        best_first_lookback = self.config.min_lookback
-        best_second_lookback = None
-        best_score = -np.inf
-        best_correlation = 1.0
-        
-        # Simple grid search
-        for first_lookback in range(self.config.min_lookback, self.config.max_lookback + 1, self.config.lookback_step):
-            first_mi = self._calculate_mutual_information(data, feature_name, target_column, first_lookback, "technical_indicator")
-            
-            for second_lookback in range(self.config.min_lookback, self.config.max_lookback + 1, self.config.lookback_step):
-                if second_lookback == first_lookback:
-                    continue
-                
-                # Use mRMR for second lookback period
-                second_mrmr = self._calculate_second_lookback_mrmr_score(
-                    data, feature_name, target_column, second_lookback, first_lookback, "technical_indicator"
-                )
-                correlation = self._calculate_correlation_between_periods(data, feature_name, first_lookback, second_lookback, "technical_indicator")
-                
-                # Combined score with weights
-                combined_score = (
-                    self.config.first_lookback_weight * first_mi +
-                    self.config.second_lookback_weight * second_mrmr -
-                    self.config.correlation_weight * correlation
-                )
-                
-                if combined_score > best_score and correlation < self.config.max_correlation_threshold:
-                    best_score = combined_score
-                    best_first_lookback = first_lookback
-                    best_second_lookback = second_lookback
-                    best_correlation = correlation
-        
-        optimization_time = time.time() - start_time
-        
-        return LookbackOptimizationResult(
-            first_lookback_period=best_first_lookback,
-            second_lookback_period=best_second_lookback,
-            first_mi_score=self._calculate_mutual_information(data, feature_name, target_column, best_first_lookback, "technical_indicator"),
-            second_mi_score=self._calculate_second_lookback_mrmr_score(data, feature_name, target_column, best_second_lookback, best_first_lookback, "technical_indicator") if best_second_lookback else None,
-            second_mrmr_score=self._calculate_second_lookback_mrmr_score(data, feature_name, target_column, best_second_lookback, best_first_lookback, "technical_indicator") if best_second_lookback else None,
-            combined_mi_score=best_score,
-            correlation_between_periods=best_correlation,
-            correlation_method=self.config.correlation_method,
-            optimization_time=optimization_time,
-            n_trials=(self.config.max_lookback - self.config.min_lookback + 1) ** 2,
-            n_successful_trials=0,
-            n_pruned_trials=0,
-            best_score=best_score,
-            convergence_rate=1.0,
-            parameter_importance={},
-            relevance_method_used=self.config.first_lookback_method,
-            redundancy_method_used=self.config.second_lookback_method,
-            optimization_method="grid_search_fallback",
-            config=self.config,
-            all_trials=[],
-            convergence_history=[]
+        # Create 7x7 grid
+        first_lookback_values = np.linspace(
+            self.config.min_lookback, 
+            self.config.max_lookback, 
+            self.config.coarse_grid_size, 
+            dtype=int
         )
+        second_lookback_values = np.linspace(
+            self.config.min_lookback, 
+            self.config.max_lookback, 
+            self.config.coarse_grid_size, 
+            dtype=int
+        )
+        
+        results = []
+        
+        # Evaluate all 7x7 = 49 combinations
+        for first_lookback in first_lookback_values:
+            for second_lookback in second_lookback_values:
+                if first_lookback == second_lookback:
+                    continue
+                    
+                # Calculate scores
+                first_mi_score = self._calculate_mutual_information(
+                    data, feature_name, target_column, first_lookback, "technical_indicator"
+                )
+                second_mi_score = self._calculate_mutual_information(
+                    data, feature_name, target_column, second_lookback, "technical_indicator"
+                )
+                correlation = self._calculate_correlation_between_periods(
+                    data, feature_name, first_lookback, second_lookback, "technical_indicator"
+                )
+                
+                # Calculate combined score
+                combined_score = (
+                    self.config.first_lookback_weight * first_mi_score +
+                    self.config.second_lookback_weight * second_mi_score -
+                    self.config.correlation_weight * abs(correlation)
+                )
+                
+                results.append({
+                    'first_lookback': first_lookback,
+                    'second_lookback': second_lookback,
+                    'first_mi_score': first_mi_score,
+                    'second_mi_score': second_mi_score,
+                    'correlation': correlation,
+                    'combined_score': combined_score
+                })
+        
+        # Sort by combined score and return top candidates
+        results.sort(key=lambda x: x['combined_score'], reverse=True)
+        top_candidates = results[:self.config.top_k_coarse_candidates]
+        
+        self.logger.info(f"📊 Coarse grid search completed: {len(results)} combinations evaluated")
+        self.logger.info(f"📊 Top coarse candidate: {top_candidates[0]['first_lookback']}, {top_candidates[0]['second_lookback']} (score: {top_candidates[0]['combined_score']:.4f})")
+        
+        return {
+            'all_results': results,
+            'top_candidates': top_candidates,
+            'best_candidate': top_candidates[0] if top_candidates else None
+        }
+    
+    def _fine_grid_search_7x7(self, data: pd.DataFrame, feature_name: str, target_column: str, coarse_results: Dict[str, Any]) -> Dict[str, Any]:
+        """Step 2: Fine 7x7 grid search around best coarse candidates."""
+        
+        if not coarse_results['top_candidates']:
+            raise ValueError("No coarse candidates available for fine grid search")
+        
+        # Calculate refined ranges around best coarse candidates
+        best_coarse = coarse_results['best_candidate']
+        
+        # Create refined ranges (30% of original range around best candidate)
+        first_range = self._calculate_refined_range(
+            best_coarse['first_lookback'], 
+            self.config.min_lookback, 
+            self.config.max_lookback, 
+            self.config.coarse_refinement_factor
+        )
+        second_range = self._calculate_refined_range(
+            best_coarse['second_lookback'], 
+            self.config.min_lookback, 
+            self.config.max_lookback, 
+            self.config.coarse_refinement_factor
+        )
+        
+        # Create fine 7x7 grid
+        first_lookback_values = np.linspace(first_range[0], first_range[1], self.config.fine_grid_size, dtype=int)
+        second_lookback_values = np.linspace(second_range[0], second_range[1], self.config.fine_grid_size, dtype=int)
+        
+        results = []
+        
+        # Evaluate all 7x7 = 49 combinations in refined space
+        for first_lookback in first_lookback_values:
+            for second_lookback in second_lookback_values:
+                if first_lookback == second_lookback:
+                    continue
+                    
+                # Calculate scores (same as coarse grid)
+                first_mi_score = self._calculate_mutual_information(
+                    data, feature_name, target_column, first_lookback, "technical_indicator"
+                )
+                second_mi_score = self._calculate_mutual_information(
+                    data, feature_name, target_column, second_lookback, "technical_indicator"
+                )
+                correlation = self._calculate_correlation_between_periods(
+                    data, feature_name, first_lookback, second_lookback, "technical_indicator"
+                )
+                
+                combined_score = (
+                    self.config.first_lookback_weight * first_mi_score +
+                    self.config.second_lookback_weight * second_mi_score -
+                    self.config.correlation_weight * abs(correlation)
+                )
+                
+                results.append({
+                    'first_lookback': first_lookback,
+                    'second_lookback': second_lookback,
+                    'first_mi_score': first_mi_score,
+                    'second_mi_score': second_mi_score,
+                    'correlation': correlation,
+                    'combined_score': combined_score
+                })
+        
+        # Sort by combined score and return top candidates
+        results.sort(key=lambda x: x['combined_score'], reverse=True)
+        top_candidates = results[:self.config.top_k_fine_candidates]
+        
+        self.logger.info(f"📊 Fine grid search completed: {len(results)} combinations evaluated")
+        self.logger.info(f"📊 Top fine candidate: {top_candidates[0]['first_lookback']}, {top_candidates[0]['second_lookback']} (score: {top_candidates[0]['combined_score']:.4f})")
+        
+        return {
+            'all_results': results,
+            'top_candidates': top_candidates,
+            'best_candidate': top_candidates[0] if top_candidates else None,
+            'refined_ranges': {
+                'first_range': first_range,
+                'second_range': second_range
+            }
+        }
+    
+    def _tpe_fine_tuning(self, data: pd.DataFrame, feature_name: str, target_column: str, fine_results: Dict[str, Any], start_time: float) -> LookbackOptimizationResult:
+        """Step 3: TPE fine-tuning around best fine candidates."""
+        
+        if not fine_results['top_candidates']:
+            raise ValueError("No fine candidates available for TPE fine-tuning")
+        
+        best_fine = fine_results['best_candidate']
+        
+        # Calculate ultra-refined ranges (20% of fine range around best candidate)
+        first_range = self._calculate_refined_range(
+            best_fine['first_lookback'], 
+            fine_results['refined_ranges']['first_range'][0], 
+            fine_results['refined_ranges']['first_range'][1], 
+            self.config.fine_refinement_factor
+        )
+        second_range = self._calculate_refined_range(
+            best_fine['second_lookback'], 
+            fine_results['refined_ranges']['second_range'][0], 
+            fine_results['refined_ranges']['second_range'][1], 
+            self.config.fine_refinement_factor
+        )
+        
+        # Create TPE study with refined ranges
+        study = optuna.create_study(
+            sampler=TPESampler(
+                n_startup_trials=self.config.n_startup_trials,
+                n_ei_candidates=24,
+                gamma=lambda x: min(0.25, 1.0 / np.sqrt(x)),
+                prior_weight=1.0,
+                consider_magic_clip=True,
+                consider_endpoints=True
+            ),
+            pruner=MedianPruner(
+                n_startup_trials=self.config.n_startup_trials,
+                n_warmup_steps=self.config.n_warmup_steps,
+                interval_steps=self.config.interval_steps
+            ),
+            direction='maximize'
+        )
+        
+        # Define objective function with refined ranges
+        def objective(trial):
+            first_lookback = trial.suggest_int('first_lookback', first_range[0], first_range[1])
+            second_lookback = trial.suggest_int('second_lookback', second_range[0], second_range[1])
+            
+            if first_lookback == second_lookback:
+                return float('-inf')
+            
+            # Calculate scores
+            first_mi_score = self._calculate_mutual_information(
+                data, feature_name, target_column, first_lookback, "technical_indicator"
+            )
+            second_mi_score = self._calculate_mutual_information(
+                data, feature_name, target_column, second_lookback, "technical_indicator"
+            )
+            correlation = self._calculate_correlation_between_periods(
+                data, feature_name, first_lookback, second_lookback, "technical_indicator"
+            )
+            
+            # Calculate combined score
+            combined_score = (
+                self.config.first_lookback_weight * first_mi_score +
+                self.config.second_lookback_weight * second_mi_score -
+                self.config.correlation_weight * abs(correlation)
+            )
+            
+            # Set user attributes
+            trial.set_user_attr("first_lookback", first_lookback)
+            trial.set_user_attr("second_lookback", second_lookback)
+            trial.set_user_attr("first_mi_score", first_mi_score)
+            trial.set_user_attr("second_mi_score", second_mi_score)
+            trial.set_user_attr("correlation", correlation)
+            
+            return combined_score
+        
+        # Run TPE optimization
+        study.optimize(objective, n_trials=self.config.tpe_trials, timeout=self.config.tpe_timeout)
+        
+        # Extract best result
+        best_trial = study.best_trial
+        best_params = best_trial.params
+        
+        self.logger.info(f"📊 TPE fine-tuning completed: {len(study.trials)} trials")
+        self.logger.info(f"📊 Final result: {best_params['first_lookback']}, {best_params['second_lookback']} (score: {best_trial.value:.4f})")
+        
+        # Create result object
+        result = LookbackOptimizationResult(
+            first_lookback_period=best_params['first_lookback'],
+            second_lookback_period=best_params['second_lookback'],
+            first_mi_score=best_trial.user_attrs['first_mi_score'],
+            second_mi_score=best_trial.user_attrs['second_mi_score'],
+            combined_mi_score=best_trial.value,
+            correlation_between_periods=best_trial.user_attrs['correlation'],
+            optimization_time=time.time() - start_time,
+            n_trials=len(study.trials),
+            best_score=best_trial.value,
+            optimization_method="two_step_grid_tpe"
+        )
+        
+        return result
+    
+    def _calculate_refined_range(self, center: int, min_val: int, max_val: int, refinement_factor: float) -> Tuple[int, int]:
+        """Calculate refined range around center point."""
+        range_size = max_val - min_val
+        refined_size = range_size * refinement_factor
+        
+        new_min = max(min_val, int(center - refined_size / 2))
+        new_max = min(max_val, int(center + refined_size / 2))
+        
+        return (new_min, new_max)
     
     def _calculate_convergence_rate(self) -> float:
         """Calculate convergence rate of optimization."""

@@ -46,43 +46,30 @@ except ImportError as e:
     logging.warning(f"PID utilities not available: {e}")
     PID_AVAILABLE = False
 
-# Import matrix operations
+# Import matrix operations with advanced capabilities
 try:
-    from src.utils.matrix_operations import get_unified_matrix_operations
+    from src.utils.matrix_operations import (
+        get_unified_matrix_operations, get_enhanced_matrix_operations,
+        get_vectorized_processing_core, get_batch_matrix_processor,
+        compute_trading_indicators, optimize_matrix_operation_with_hardware,
+        safe_matrix_multiply, safe_correlation_matrix, safe_matrix_inverse,
+        gpu_matrix_multiply, correlation_matrix_gpu, eigendecomposition_gpu,
+        batch_matrix_multiply, batch_feature_transformation, batch_correlation_analysis,
+        create_ml_pipeline, execute_ml_pipeline, optimize_pipeline_config
+    )
     MATRIX_OPS_AVAILABLE = True
 except ImportError as e:
     logging.warning(f"Matrix operations not available: {e}")
     MATRIX_OPS_AVAILABLE = False
 
+# Import base feature generator
+from .base_feature_generator import BaseFeatureGenerator, BaseFeatureConfig, BaseFeatureResult
+
 # Import common operations for comprehensive utility integration
 try:
     from src.utils.common_operations import (
-        # Data validation and quality
-        validate_dataframe, validate_dataframe_columns, calculate_data_quality_metrics,
-        create_data_quality_report, get_dataframe_info, optimize_dataframe_dtypes,
-        
-        # Safe operations
-        safe_dataframe_operation, safe_fillna, safe_convert_dtypes, safe_merge_dataframes,
-        safe_drop_columns, safe_rename_columns, safe_timestamp_conversion,
-        
-        # Math operations
         safe_divide, safe_log, safe_sqrt, safe_power, safe_mean, safe_std,
-        safe_float, safe_int, validate_finite, validate_positive, validate_range,
-        safe_kelly_calculation, safe_weighted_average, safe_percentage_change,
-        
-        # Performance utilities
-        timed_operation, format_bytes, chunked_iterable, parallel_map,
-        
-        # M1 optimization
-        get_m1_gpu_manager, get_m1_memory_optimizer, get_m1_cpu_optimizer,
-        integrate_with_m1_optimizers, cleanup_m1_optimizers,
-        memory_checkpoint, gpu_context, optimize_memory, get_memory_usage,
-        
-        # Matrix utilities
-        validate_correlation_matrix, safe_matrix_inverse, math_safe,
-        
-        # Logging utilities
-        get_logger, setup_basic_logging, safe_log_metric, safe_log_params, safe_log_artifact
+        validate_finite, get_memory_usage
     )
     COMMON_OPERATIONS_AVAILABLE = True
 except ImportError as e:
@@ -94,16 +81,6 @@ except ImportError as e:
     def safe_sqrt(x, default=0.0): return np.sqrt(x) if x >= 0 else default
     def safe_power(x, y, default=0.0): return x ** y if np.isfinite(x) and np.isfinite(y) else default
     def validate_finite(value, name="value"): return float(value) if np.isfinite(value) else 0.0
-
-# Import serialization utilities
-try:
-    from src.utils.serialization_utils import (
-        JSONSerializer, PickleSerializer, ParquetSerializer, UniversalSerializer
-    )
-    SERIALIZATION_AVAILABLE = True
-except ImportError as e:
-    SERIALIZATION_AVAILABLE = False
-    logging.warning(f"Serialization utilities not available: {e}")
 
 # Import math validation for additional math operations
 try:
@@ -150,8 +127,8 @@ class InteractionType(Enum):
 
 
 @dataclass
-class InteractionConfig:
-    """Configuration for interaction feature generation."""
+class InteractionConfig(BaseFeatureConfig):
+    """Configuration for interaction feature generation with common utilities integration."""
     # PID Configuration
     synergy_threshold: float = 0.1
     redundancy_threshold: float = 0.15
@@ -183,28 +160,11 @@ class InteractionConfig:
     # Hardware Optimization
     chunk_size_mb: int = 256
     max_memory_percent: float = 0.7
-    
-    # Common Utilities Integration
-    enable_common_operations: bool = True
-    enable_serialization: bool = True
-    enable_data_validation: bool = True
-    enable_data_optimization: bool = True
-    enable_m1_optimization: bool = True
-    
-    # Data Quality Settings
-    min_data_quality_score: float = 0.7
-    max_missing_data_ratio: float = 0.1
-    enable_quality_reporting: bool = True
-    
-    # Performance Settings
-    enable_profiling: bool = True
-    enable_memory_monitoring: bool = True
-    enable_performance_logging: bool = True
 
 
 @dataclass
-class InteractionResult:
-    """Result of interaction feature generation."""
+class InteractionResult(BaseFeatureResult):
+    """Result of interaction feature generation with common utilities integration."""
     interaction_features: Dict[str, np.ndarray] = field(default_factory=dict)
     feature_names: List[str] = field(default_factory=list)
     interaction_scores: Dict[str, float] = field(default_factory=dict)
@@ -220,20 +180,9 @@ class InteractionResult:
     average_correlation: float = 0.0
     feature_stability_score: float = 0.0
     redundancy_score: float = 0.0
-    
-    # Common Utilities Integration Results
-    data_quality_report: Optional[Dict[str, Any]] = None
-    validation_results: Dict[str, Any] = field(default_factory=dict)
-    optimization_results: Dict[str, Any] = field(default_factory=dict)
-    serialization_status: Dict[str, bool] = field(default_factory=dict)
-    artifact_paths: Dict[str, str] = field(default_factory=dict)
-    hardware_optimization_used: bool = False
-    memory_usage: Dict[str, float] = field(default_factory=dict)
-    performance_metrics: Dict[str, Any] = field(default_factory=dict)
-    utility_integration_status: Dict[str, bool] = field(default_factory=dict)
 
 
-class InteractionFeatureGenerator:
+class InteractionFeatureGenerator(BaseFeatureGenerator):
     """
     Interaction Feature Generator using Partial Information Decomposition.
     
@@ -243,61 +192,10 @@ class InteractionFeatureGenerator:
     
     def __init__(self, config: Optional[InteractionConfig] = None):
         """Initialize the interaction feature generator with common utilities integration."""
-        self.config = config or InteractionConfig()
-        self.logger = logger.getChild('InteractionFeatureGenerator')
+        super().__init__(config or InteractionConfig(), "InteractionFeatureGenerator")
         
-        # Initialize common utilities integration
-        self._initialize_common_utilities()
-        
-        # Initialize components
-        self._initialize_components()
-        
-        self.logger.info("🔧 InteractionFeatureGenerator initialized")
         self.logger.info(f"📊 Max interaction features: {self.config.max_interaction_features}")
         self.logger.info(f"📊 Interaction types: {[t.value for t in self.config.interaction_types]}")
-        self.logger.info(f"🔧 Common operations available: {COMMON_OPERATIONS_AVAILABLE}")
-        self.logger.info(f"🔧 Serialization available: {SERIALIZATION_AVAILABLE}")
-        self.logger.info(f"🔧 Math validation available: {MATH_VALIDATION_AVAILABLE}")
-        self.logger.info(f"🔧 Matrix operations available: {MATRIX_OPS_AVAILABLE}")
-    
-    def _initialize_common_utilities(self):
-        """Initialize common utilities integration."""
-        # Initialize serializers
-        if SERIALIZATION_AVAILABLE and self.config.enable_serialization:
-            self.json_serializer = JSONSerializer()
-            self.pickle_serializer = PickleSerializer()
-            self.parquet_serializer = ParquetSerializer()
-            self.universal_serializer = UniversalSerializer()
-            self.logger.info("✅ Serializers initialized")
-        else:
-            self.json_serializer = None
-            self.pickle_serializer = None
-            self.parquet_serializer = None
-            self.universal_serializer = None
-        
-        # Initialize M1 optimizers
-        if COMMON_OPERATIONS_AVAILABLE and self.config.enable_m1_optimization:
-            self.gpu_manager = get_m1_gpu_manager()
-            self.memory_optimizer = get_m1_memory_optimizer()
-            self.cpu_optimizer = get_m1_cpu_optimizer()
-            self.logger.info("✅ M1 optimizers initialized")
-        else:
-            self.gpu_manager = None
-            self.memory_optimizer = None
-            self.cpu_optimizer = None
-        
-        # Initialize utility status tracking
-        self.utility_integration_status = {
-            'common_operations': COMMON_OPERATIONS_AVAILABLE and self.config.enable_common_operations,
-            'serialization': SERIALIZATION_AVAILABLE and self.config.enable_serialization,
-            'math_validation': MATH_VALIDATION_AVAILABLE,
-            'matrix_operations': MATRIX_OPS_AVAILABLE,
-            'data_validation': self.config.enable_data_validation,
-            'data_optimization': self.config.enable_data_optimization,
-            'm1_optimization': self.config.enable_m1_optimization
-        }
-        
-        self.logger.info(f"🔧 Utility integration status: {self.utility_integration_status}")
     
     def _initialize_components(self):
         """Initialize required components."""
@@ -315,16 +213,32 @@ class InteractionFeatureGenerator:
             self.pid_decompositor = None
             self.logger.warning("⚠️ PID Decompositor not available")
         
-        # Initialize matrix operations
+        # Initialize matrix operations with advanced capabilities
         if MATRIX_OPS_AVAILABLE:
             self.matrix_ops = get_unified_matrix_operations(
                 enable_gpu=self.config.enable_gpu_acceleration,
                 enable_memory_optimization=True,
                 enable_parallel=self.config.enable_parallel_processing
             )
-            self.logger.info("✅ Matrix Operations initialized")
+            
+            # Initialize enhanced matrix operations
+            self.enhanced_matrix_ops = get_enhanced_matrix_operations()
+            
+            # Initialize vectorized processing core
+            self.vectorized_core = get_vectorized_processing_core()
+            
+            # Initialize batch processor
+            self.batch_processor = get_batch_matrix_processor()
+            
+            self.logger.info("✅ Advanced Matrix Operations initialized")
+            self.logger.info("✅ Enhanced Matrix Operations initialized")
+            self.logger.info("✅ Vectorized Processing Core initialized")
+            self.logger.info("✅ Batch Matrix Processor initialized")
         else:
             self.matrix_ops = None
+            self.enhanced_matrix_ops = None
+            self.vectorized_core = None
+            self.batch_processor = None
             self.logger.warning("⚠️ Matrix Operations not available")
     
     async def generate_interaction_features(
@@ -409,18 +323,24 @@ class InteractionFeatureGenerator:
                 X, feature_names, significant_pairs
             )
             
+            # Generate enhanced features using advanced matrix operations
+            self.logger.info("🔧 Generating enhanced features using advanced matrix operations...")
+            enhanced_features = self._generate_enhanced_interaction_features(X, feature_names, target)
+            
             # Calculate interaction scores
             interaction_scores = self._calculate_interaction_scores(
                 interaction_features, interaction_names, target
             )
             
+            # Combine traditional and enhanced features
+            all_features = {name: feature for name, feature in zip(interaction_names, interaction_features.T)}
+            all_features.update(enhanced_features)
+            
             # Store results
-            result.interaction_features = {
-                name: feature for name, feature in zip(interaction_names, interaction_features.T)
-            }
-            result.feature_names = interaction_names
+            result.interaction_features = all_features
+            result.feature_names = list(all_features.keys())
             result.interaction_scores = interaction_scores
-            result.total_features_generated = len(interaction_names)
+            result.total_features_generated = len(all_features)
             result.matrix_ops_used = self.matrix_ops is not None
             
             # Calculate quality metrics
@@ -431,14 +351,8 @@ class InteractionFeatureGenerator:
             execution_time = time.time() - start_time
             result.execution_time = execution_time
             
-            # Set utility integration status
-            result.utility_integration_status = getattr(self, 'utility_integration_status', {})
-            result.hardware_optimization_used = bool(self.gpu_manager or self.memory_optimizer or self.cpu_optimizer)
-            
-            # Collect performance metrics
-            if self.config.enable_performance_logging:
-                result.performance_metrics = self.get_performance_metrics()
-                result.memory_usage = {'current': get_memory_usage()} if COMMON_OPERATIONS_AVAILABLE else {}
+            # Set utility integration status using base class method
+            self._set_utility_integration_status(result)
             
             self.logger.info(f"✅ Interaction feature generation completed in {execution_time:.3f}s")
             self.logger.info(f"📊 Generated {result.total_features_generated} interaction features")
@@ -743,159 +657,85 @@ class InteractionFeatureGenerator:
         except Exception:
             return 0.0
     
-    async def _validate_input_data(
-        self, 
-        data: Union[np.ndarray, pd.DataFrame], 
-        feature_names: Optional[List[str]], 
-        target: Optional[np.ndarray]
-    ) -> Dict[str, Any]:
-        """Validate input data using common utilities."""
-        validation_result = {
-            'is_valid': False,
-            'issues': [],
-            'data_quality_score': 0.0
-        }
-        
-        try:
-            if COMMON_OPERATIONS_AVAILABLE and self.config.enable_data_validation:
-                # Convert to DataFrame for validation
-                if isinstance(data, np.ndarray):
-                    if feature_names is None:
-                        feature_names = [f"feature_{i}" for i in range(data.shape[1])]
-                    df = pd.DataFrame(data, columns=feature_names)
-                else:
-                    df = data
-                
-                # Validate DataFrame
-                if not validate_dataframe(df):
-                    validation_result['issues'].append("Invalid DataFrame")
-                    return validation_result
-                
-                # Check required columns
-                if feature_names and not validate_dataframe_columns(df, feature_names):
-                    validation_result['issues'].append("Missing required columns")
-                    return validation_result
-                
-                # Calculate data quality metrics
-                quality_metrics = calculate_data_quality_metrics(df)
-                validation_result['data_quality_score'] = 1.0 - (quality_metrics.get('missing_percentage', 0) / 100)
-                
-                # Check data quality thresholds
-                if quality_metrics.get('missing_percentage', 0) > self.config.max_missing_data_ratio * 100:
-                    validation_result['issues'].append(f"High missing data ratio: {quality_metrics.get('missing_percentage', 0):.2f}%")
-                
-                validation_result['is_valid'] = len(validation_result['issues']) == 0
-            else:
-                # Fallback validation
-                if data is None or (hasattr(data, 'shape') and data.shape[0] == 0):
-                    validation_result['issues'].append("Empty or None data")
-                else:
-                    validation_result['is_valid'] = True
-            
-            return validation_result
-            
-        except Exception as e:
-            validation_result['issues'].append(f"Validation error: {e}")
-            return validation_result
-    
-    async def _optimize_input_data(
-        self, 
-        data: Union[np.ndarray, pd.DataFrame], 
-        feature_names: Optional[List[str]]
-    ) -> Tuple[Union[np.ndarray, pd.DataFrame], List[str], Dict[str, Any]]:
-        """Optimize input data using common utilities."""
-        optimization_info = {
-            'optimizations_applied': [],
-            'memory_usage_before': 0.0,
-            'memory_usage_after': 0.0,
-            'optimization_time': 0.0
-        }
-        
-        start_time = time.time()
-        
-        try:
-            if COMMON_OPERATIONS_AVAILABLE:
-                # Get initial memory usage
-                optimization_info['memory_usage_before'] = get_memory_usage()
-                
-                # Convert to DataFrame if needed
-                if isinstance(data, np.ndarray):
-                    if feature_names is None:
-                        feature_names = [f"feature_{i}" for i in range(data.shape[1])]
-                    df = pd.DataFrame(data, columns=feature_names)
-                else:
-                    df = data.copy()
-                
-                # Optimize dtypes
-                df = optimize_dataframe_dtypes(df)
-                optimization_info['optimizations_applied'].append('dtype_optimization')
-                
-                # Fill missing values safely
-                df = safe_fillna(df, method='forward')
-                optimization_info['optimizations_applied'].append('missing_value_filling')
-                
-                # Apply M1-specific optimizations
-                if self.config.enable_m1_optimization and self.gpu_manager:
-                    optimization_info['optimizations_applied'].append('m1_optimization')
-                
-                # Get final memory usage
-                optimization_info['memory_usage_after'] = get_memory_usage()
-                optimization_info['optimization_time'] = time.time() - start_time
-                
-                return df, feature_names, optimization_info
-            else:
-                return data, feature_names, optimization_info
-                
-        except Exception as e:
-            self.logger.warning(f"Data optimization failed: {e}")
-            return data, feature_names, optimization_info
-    
-    async def _assess_data_quality(
+    def _generate_enhanced_interaction_features(
         self, 
         X: np.ndarray, 
-        feature_names: List[str]
-    ) -> Dict[str, Any]:
-        """Assess data quality using common utilities."""
-        quality_report = {
-            'overall_score': 0.0,
-            'missing_data_ratio': 0.0,
-            'duplicate_ratio': 0.0,
-            'data_types': {},
-            'statistics': {}
-        }
+        feature_names: List[str],
+        target: Optional[np.ndarray] = None
+    ) -> Dict[str, np.ndarray]:
+        """Generate enhanced interaction features using advanced matrix operations."""
+        enhanced_features = {}
         
         try:
-            if COMMON_OPERATIONS_AVAILABLE:
-                # Convert to DataFrame for quality assessment
-                df = pd.DataFrame(X, columns=feature_names)
-                
-                # Calculate data quality metrics
-                quality_metrics = calculate_data_quality_metrics(df)
-                
-                # Create comprehensive quality report
-                quality_report = create_data_quality_report(df)
-                
-                # Calculate overall score
-                missing_ratio = quality_metrics.get('missing_percentage', 0) / 100
-                duplicate_ratio = quality_metrics.get('duplicate_percentage', 0) / 100
-                
-                quality_report['overall_score'] = max(0.0, 1.0 - missing_ratio - duplicate_ratio)
-                quality_report['missing_data_ratio'] = missing_ratio
-                quality_report['duplicate_ratio'] = duplicate_ratio
-                
-                # Add basic statistics
-                quality_report['statistics'] = {
-                    'mean': safe_mean(pd.Series(X.flatten())),
-                    'std': safe_std(pd.Series(X.flatten())),
-                    'min': float(np.min(X)),
-                    'max': float(np.max(X))
-                }
+            if not MATRIX_OPS_AVAILABLE:
+                return enhanced_features
             
-            return quality_report
+            # Convert to DataFrame for vectorized processing
+            df = pd.DataFrame(X, columns=feature_names)
+            
+            # Use vectorized processing core for advanced feature engineering
+            if self.vectorized_core:
+                # Compute trading indicators as additional features
+                trading_indicators = compute_trading_indicators(df)
+                
+                # Add trading indicator features
+                for col in trading_indicators.columns:
+                    if col not in feature_names:
+                        enhanced_features[f"trading_{col}"] = trading_indicators[col].values
+                
+                # Use batch processing for large datasets
+                if X.shape[0] > 1000 and self.batch_processor:
+                    # Process in batches for memory efficiency
+                    batch_size = min(500, X.shape[0] // 4)
+                    batches = [X[i:i+batch_size] for i in range(0, X.shape[0], batch_size)]
+                    
+                    # Process each batch
+                    batch_results = []
+                    for batch in batches:
+                        batch_df = pd.DataFrame(batch, columns=feature_names)
+                        batch_features = self.vectorized_core.optimize_dataframe_for_processing(batch_df)
+                        batch_results.append(batch_features.values)
+                    
+                    # Combine batch results
+                    if batch_results:
+                        combined_features = np.vstack(batch_results)
+                        enhanced_features["batch_optimized"] = combined_features
+            
+            # Use enhanced matrix operations for advanced correlations
+            if self.enhanced_matrix_ops:
+                # Compute advanced correlation features
+                corr_matrix = correlation_matrix_gpu(df) if self.config.enable_gpu_acceleration else safe_correlation_matrix(df)
+                
+                # Extract upper triangle correlations as features
+                n = corr_matrix.shape[0]
+                upper_triangle = corr_matrix[np.triu_indices(n, k=1)]
+                enhanced_features["correlation_features"] = upper_triangle
+            
+            # Use ML pipeline for complex feature transformations
+            if self.config.enable_parallel_processing:
+                pipeline_config = [
+                    {"operation": "normalize", "params": {"method": "zscore"}},
+                    {"operation": "polynomial", "params": {"degree": 2}},
+                    {"operation": "interaction", "params": {"max_features": 10}}
+                ]
+                
+                try:
+                    pipeline = create_ml_pipeline(pipeline_config)
+                    pipeline_result = execute_ml_pipeline(df, pipeline)
+                    
+                    # Add pipeline features
+                    for i, col in enumerate(pipeline_result.columns):
+                        if col not in feature_names:
+                            enhanced_features[f"pipeline_{col}"] = pipeline_result[col].values
+                except Exception as e:
+                    self.logger.warning(f"ML pipeline execution failed: {e}")
+            
+            self.logger.info(f"✅ Generated {len(enhanced_features)} enhanced interaction features")
+            return enhanced_features
             
         except Exception as e:
-            self.logger.warning(f"Data quality assessment failed: {e}")
-            return quality_report
+            self.logger.warning(f"Enhanced feature generation failed: {e}")
+            return enhanced_features
     
     def get_performance_metrics(self) -> Dict[str, Any]:
         """Get performance metrics with common utilities integration."""

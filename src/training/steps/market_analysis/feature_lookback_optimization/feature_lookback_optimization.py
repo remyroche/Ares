@@ -94,13 +94,24 @@ except ImportError as e:
 # Import matrix operations for efficient computation
 try:
     from src.utils.matrix_operations.unified_operations import (
-        UnifiedMatrixOperations, MatrixOptimizer
+        UnifiedMatrixOperations, MatrixOptimizer, safe_correlation_matrix,
+        safe_matrix_inverse, eigendecomposition, svd_decomposition,
+        kmeans_plus_plus_init, normalize_matrix, initialize_covariances,
+        get_unified_matrix_operations
     )
     from src.utils.matrix_operations.vectorized_core import (
-        VectorizedOperations, VectorizedOptimizer
+        VectorizedOperations, VectorizedOptimizer, VectorizedProcessingCore,
+        vectorized_rolling_features, matrix_correlation_analysis,
+        compute_trading_indicators, get_vectorized_processing_core
     )
     from src.utils.matrix_operations.hardware_integration import (
-        HardwareOptimizedOperations
+        HardwareOptimizedOperations, HardwareOptimizedMatrixProcessor,
+        hardware_optimized, optimize_matrix_operation, get_hardware_optimized_processor,
+        HardwareConfig
+    )
+    from src.utils.matrix_operations.batch_operations import (
+        BatchMatrixProcessor, batch_feature_transformation,
+        batch_correlation_analysis, get_batch_matrix_processor
     )
     MATRIX_OPS_AVAILABLE = True
 except ImportError as e:
@@ -246,19 +257,45 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
         # Initialize matrix operations if available
         if MATRIX_OPS_AVAILABLE:
             try:
-                self.matrix_ops = UnifiedMatrixOperations()
-                self.vectorized_ops = VectorizedOperations()
-                self.hardware_ops = HardwareOptimizedOperations()
-                tprint("✅ Matrix operations initialized")
+                # Initialize unified matrix operations
+                self.matrix_ops = get_unified_matrix_operations(
+                    enable_gpu=True,
+                    enable_memory_optimization=True,
+                    enable_parallel=True
+                )
+                
+                # Initialize vectorized processing core
+                self.vectorized_ops = get_vectorized_processing_core()
+                
+                # Initialize hardware-optimized processor
+                hardware_config = HardwareConfig(
+                    max_memory_gb=8.0,
+                    enable_gpu=True,
+                    auto_optimize_dtypes=True,
+                    auto_chunk_large_data=True,
+                    chunk_size_threshold=50000
+                )
+                self.hardware_ops = get_hardware_optimized_processor(hardware_config)
+                
+                # Initialize batch processor
+                self.batch_processor = get_batch_matrix_processor(
+                    chunk_size_mb=512,
+                    enable_gpu=True,
+                    enable_parallel=True
+                )
+                
+                tprint("✅ Advanced matrix operations initialized")
             except Exception as e:
                 tprint(f"⚠️ Matrix operations initialization failed: {e}")
                 self.matrix_ops = None
                 self.vectorized_ops = None
                 self.hardware_ops = None
+                self.batch_processor = None
         else:
             self.matrix_ops = None
             self.vectorized_ops = None
             self.hardware_ops = None
+            self.batch_processor = None
         
         # Initialize reporter
         self.reporter = OptimizationReporter(
@@ -376,7 +413,7 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
             return None
     
     def _validate_and_optimize_data(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Validate and optimize data using common utilities."""
+        """Validate and optimize data using common utilities and advanced matrix operations."""
         try:
             # Use common utilities for data validation
             if not validate_dataframe(data):
@@ -398,26 +435,226 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
                 except Exception as e:
                     tprint(f"⚠️ M1 optimization failed: {e}")
             
-            # Use matrix operations optimization if available
-            if self.matrix_ops:
+            # Use vectorized processing core optimization if available
+            if self.vectorized_ops:
                 try:
-                    # Convert to optimized format for matrix operations
-                    numeric_data = data.select_dtypes(include=[np.number])
-                    if not numeric_data.empty:
-                        # Apply matrix optimizations
-                        optimized_data = self.matrix_ops.optimize_dataframe(numeric_data)
-                        # Merge back with non-numeric columns
-                        for col in optimized_data.columns:
-                            data[col] = optimized_data[col]
-                        tprint("✅ Data optimized using matrix operations")
+                    data = self.vectorized_ops.optimize_dataframe_for_processing(data)
+                    tprint("✅ Data optimized using vectorized processing core")
                 except Exception as e:
-                    tprint(f"⚠️ Matrix optimization failed: {e}")
+                    tprint(f"⚠️ Vectorized optimization failed: {e}")
+            
+            # Use hardware-optimized processing if available
+            if self.hardware_ops:
+                try:
+                    data = self.hardware_ops.optimize_data_for_processing(data)
+                    tprint("✅ Data optimized using hardware-optimized processing")
+                except Exception as e:
+                    tprint(f"⚠️ Hardware optimization failed: {e}")
             
             return data
             
         except Exception as e:
             tprint(f"⚠️ Data validation and optimization failed: {e}")
             return data
+    
+    def _enhanced_correlation_analysis(self, data: pd.DataFrame) -> Dict[str, Any]:
+        """Enhanced correlation analysis using advanced matrix operations."""
+        try:
+            if not MATRIX_OPS_AVAILABLE or not self.matrix_ops:
+                tprint("⚠️ Matrix operations not available for correlation analysis")
+                return {}
+            
+            # Use safe correlation matrix computation
+            corr_matrix = safe_correlation_matrix(data)
+            
+            # Eigenvalue decomposition for principal components
+            eigenvalues, eigenvectors = self.matrix_ops.eigendecomposition(corr_matrix)
+            
+            # SVD for dimensionality reduction
+            U, s, Vh = self.matrix_ops.svd_decomposition(corr_matrix, k=10)
+            
+            # Compute feature importance based on correlation strength
+            feature_importance = pd.DataFrame({
+                'feature': data.columns,
+                'mean_abs_corr': np.abs(corr_matrix).mean(axis=1),
+                'max_corr': np.abs(corr_matrix).max(axis=1),
+                'corr_std': np.abs(corr_matrix).std(axis=1),
+                'eigenvalue_contribution': eigenvalues[:len(data.columns)]
+            })
+            
+            tprint("✅ Enhanced correlation analysis completed")
+            
+            return {
+                'correlation_matrix': corr_matrix,
+                'eigenvalues': eigenvalues,
+                'eigenvectors': eigenvectors,
+                'singular_values': s,
+                'principal_components': U,
+                'feature_importance': feature_importance
+            }
+            
+        except Exception as e:
+            tprint(f"⚠️ Enhanced correlation analysis failed: {e}")
+            return {}
+    
+    def _vectorized_feature_engineering(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Enhanced vectorized feature engineering using matrix operations."""
+        try:
+            if not MATRIX_OPS_AVAILABLE or not self.vectorized_ops:
+                tprint("⚠️ Vectorized operations not available for feature engineering")
+                return data
+            
+            # Optimize DataFrame for processing
+            optimized_data = self.vectorized_ops.optimize_dataframe_for_processing(data)
+            
+            # Vectorized rolling features
+            rolling_features = self.vectorized_ops.vectorized_rolling_features(
+                optimized_data, 
+                windows=[5, 10, 20, 50, 100],
+                features=['close', 'volume', 'high', 'low']
+            )
+            
+            # Comprehensive trading indicators
+            trading_indicators = self.vectorized_ops.compute_trading_indicators(
+                rolling_features,
+                config=self._get_enhanced_indicator_config()
+            )
+            
+            tprint("✅ Vectorized feature engineering completed")
+            return trading_indicators
+            
+        except Exception as e:
+            tprint(f"⚠️ Vectorized feature engineering failed: {e}")
+            return data
+    
+    def _get_enhanced_indicator_config(self) -> Dict[str, Any]:
+        """Get enhanced configuration for trading indicators."""
+        return {
+            # Moving averages
+            'sma_periods': [9, 21, 50, 200],
+            'ema_periods': [12, 26, 50],
+            
+            # RSI
+            'rsi_period': 14,
+            'rsi_overbought': 70,
+            'rsi_oversold': 30,
+            
+            # MACD
+            'macd_fast': 12,
+            'macd_slow': 26,
+            'macd_signal': 9,
+            
+            # Bollinger Bands
+            'bb_period': 20,
+            'bb_std': 2.0,
+            
+            # Stochastic
+            'stoch_k': 14,
+            'stoch_d': 3,
+            'stoch_smooth': 3,
+            
+            # Williams %R
+            'williams_period': 14,
+            
+            # ADX
+            'adx_period': 14,
+            
+            # ATR
+            'atr_period': 14,
+            
+            # CCI
+            'cci_period': 20,
+            
+            # ROC
+            'roc_period': 10,
+            
+            # Volume indicators
+            'volume_sma_period': 20,
+            'obv_smooth': 10,
+        }
+    
+    @hardware_optimized("feature_optimization")
+    def _hardware_optimized_feature_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Hardware-optimized feature processing using matrix operations."""
+        try:
+            if not MATRIX_OPS_AVAILABLE or not self.hardware_ops:
+                tprint("⚠️ Hardware-optimized processing not available")
+                return data
+            
+            # Hardware-optimized standard scaling
+            scaled_data = self.hardware_ops.optimized_standard_scaling(data)
+            
+            # Convert back to DataFrame
+            scaled_df = pd.DataFrame(scaled_data, columns=data.columns, index=data.index)
+            
+            tprint("✅ Hardware-optimized feature processing completed")
+            return scaled_df
+            
+        except Exception as e:
+            tprint(f"⚠️ Hardware-optimized processing failed: {e}")
+            return data
+    
+    def _batch_optimization_processing(self, data: pd.DataFrame) -> Dict[str, Any]:
+        """Batch processing for large-scale feature optimization."""
+        try:
+            if not MATRIX_OPS_AVAILABLE or not self.batch_processor:
+                tprint("⚠️ Batch processing not available")
+                return {'data': data}
+            
+            # Batch feature transformations
+            transformations = [
+                {'type': 'standardize', 'columns': ['close', 'volume']},
+                {'type': 'robust_scale', 'columns': ['high', 'low']},
+                {'type': 'power_transform', 'columns': ['returns'], 'params': {'method': 'yeo-johnson'}}
+            ]
+            
+            transformed_data = self.batch_processor.batch_feature_transformation(
+                data, transformations
+            )
+            
+            # Batch correlation analysis
+            corr_matrix, p_values = self.batch_processor.batch_correlation_analysis(
+                transformed_data, method='pearson'
+            )
+            
+            # Compute feature importance
+            feature_importance = self._compute_feature_importance(corr_matrix, data.columns)
+            
+            tprint("✅ Batch optimization processing completed")
+            
+            return {
+                'transformed_data': transformed_data,
+                'correlation_matrix': corr_matrix,
+                'p_values': p_values,
+                'feature_importance': feature_importance
+            }
+            
+        except Exception as e:
+            tprint(f"⚠️ Batch optimization processing failed: {e}")
+            return {'data': data}
+    
+    def _compute_feature_importance(self, corr_matrix: np.ndarray, feature_names: List[str]) -> pd.DataFrame:
+        """Compute feature importance based on correlation matrix."""
+        try:
+            feature_importance = pd.DataFrame({
+                'feature': feature_names,
+                'mean_abs_corr': np.abs(corr_matrix).mean(axis=1),
+                'max_corr': np.abs(corr_matrix).max(axis=1),
+                'corr_std': np.abs(corr_matrix).std(axis=1)
+            })
+            
+            # Composite score
+            feature_importance['composite_score'] = (
+                feature_importance['mean_abs_corr'] * 0.4 +
+                feature_importance['max_corr'] * 0.3 +
+                feature_importance['corr_std'] * 0.3
+            )
+            
+            return feature_importance.sort_values('composite_score', ascending=False)
+            
+        except Exception as e:
+            tprint(f"⚠️ Feature importance computation failed: {e}")
+            return pd.DataFrame()
     
     def _monitor_performance(self, operation_name: str) -> None:
         """Monitor performance metrics during execution."""
@@ -1129,7 +1366,7 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
         triple_barrier_labeling: Dict[str, Any],
         config: Any
     ) -> Dict[str, Any]:
-        """Perform the actual feature optimization process with comprehensive error handling."""
+        """Perform the actual feature optimization process with comprehensive error handling and matrix operations."""
         optimization_start_time = time.time()
         
         try:
@@ -1138,9 +1375,42 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
             prepared_data = self._prepare_data_for_optimization(market_data, triple_barrier_labeling)
             self._monitor_performance('data_prepared')
             
-            tprint('🚀 Executing feature optimization...')
-            # Perform feature optimization
-            optimization_result = await feature_optimizer.optimize_features(prepared_data, config)
+            # Enhanced optimization using matrix operations if available
+            if MATRIX_OPS_AVAILABLE and self.matrix_ops:
+                tprint('🚀 Executing enhanced feature optimization with matrix operations...')
+                
+                # Enhanced correlation analysis
+                correlation_analysis = self._enhanced_correlation_analysis(prepared_data)
+                
+                # Vectorized feature engineering
+                engineered_features = self._vectorized_feature_engineering(prepared_data)
+                
+                # Hardware-optimized processing
+                hardware_optimized_features = self._hardware_optimized_feature_processing(engineered_features)
+                
+                # Batch optimization processing
+                batch_results = self._batch_optimization_processing(hardware_optimized_features)
+                
+                # Perform traditional optimization on enhanced data
+                optimization_result = await feature_optimizer.optimize_features(hardware_optimized_features, config)
+                
+                # Enhance results with matrix operations data
+                optimization_result.update({
+                    'correlation_analysis': correlation_analysis,
+                    'engineered_features': engineered_features,
+                    'hardware_optimized_features': hardware_optimized_features,
+                    'batch_results': batch_results,
+                    'optimization_method': 'matrix_operations_enhanced'
+                })
+                
+                tprint('✅ Enhanced feature optimization with matrix operations completed')
+            else:
+                tprint('🚀 Executing standard feature optimization...')
+                # Perform standard feature optimization
+                optimization_result = await feature_optimizer.optimize_features(prepared_data, config)
+                optimization_result['optimization_method'] = 'standard'
+                tprint('✅ Standard feature optimization completed')
+            
             self._monitor_performance('optimization_executed')
             
             # Add timing information

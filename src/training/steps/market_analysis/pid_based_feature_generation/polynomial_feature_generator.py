@@ -69,18 +69,63 @@ except ImportError:
     def tprint_debug(*args, **kwargs): print("DEBUG:", *args, **kwargs)
     def tprint_performance(*args, **kwargs): print("PERFORMANCE:", *args, **kwargs)
 
-# Import math validation for safe operations
+# Import common operations for comprehensive utility integration
 try:
-    from src.utils.math_validation import MathValidation, safe_divide, safe_log, safe_sqrt, safe_power, validate_finite
-    MATH_VALIDATION_AVAILABLE = True
-except ImportError:
-    MATH_VALIDATION_AVAILABLE = False
+    from src.utils.common_operations import (
+        # Data validation and quality
+        validate_dataframe, validate_dataframe_columns, calculate_data_quality_metrics,
+        create_data_quality_report, get_dataframe_info, optimize_dataframe_dtypes,
+        
+        # Safe operations
+        safe_dataframe_operation, safe_fillna, safe_convert_dtypes, safe_merge_dataframes,
+        safe_drop_columns, safe_rename_columns, safe_timestamp_conversion,
+        
+        # Math operations
+        safe_divide, safe_log, safe_sqrt, safe_power, safe_mean, safe_std,
+        safe_float, safe_int, validate_finite, validate_positive, validate_range,
+        safe_kelly_calculation, safe_weighted_average, safe_percentage_change,
+        
+        # Performance utilities
+        timed_operation, format_bytes, chunked_iterable, parallel_map,
+        
+        # M1 optimization
+        get_m1_gpu_manager, get_m1_memory_optimizer, get_m1_cpu_optimizer,
+        integrate_with_m1_optimizers, cleanup_m1_optimizers,
+        memory_checkpoint, gpu_context, optimize_memory, get_memory_usage,
+        
+        # Matrix utilities
+        validate_correlation_matrix, safe_matrix_inverse, math_safe,
+        
+        # Logging utilities
+        get_logger, setup_basic_logging, safe_log_metric, safe_log_params, safe_log_artifact
+    )
+    COMMON_OPERATIONS_AVAILABLE = True
+except ImportError as e:
+    COMMON_OPERATIONS_AVAILABLE = False
+    logging.warning(f"Common operations not available: {e}")
     # Fallback functions
     def safe_divide(a, b, default=0.0): return a / b if b != 0 else default
     def safe_log(x, default=0.0): return np.log(x) if x > 0 else default
     def safe_sqrt(x, default=0.0): return np.sqrt(x) if x >= 0 else default
     def safe_power(x, y, default=0.0): return x ** y if np.isfinite(x) and np.isfinite(y) else default
     def validate_finite(value, name="value"): return float(value) if np.isfinite(value) else 0.0
+
+# Import serialization utilities
+try:
+    from src.utils.serialization_utils import (
+        JSONSerializer, PickleSerializer, ParquetSerializer, UniversalSerializer
+    )
+    SERIALIZATION_AVAILABLE = True
+except ImportError as e:
+    SERIALIZATION_AVAILABLE = False
+    logging.warning(f"Serialization utilities not available: {e}")
+
+# Import math validation for additional math operations
+try:
+    from src.utils.math_validation import MathValidation, safe_correlation, safe_covariance, safe_percentile
+    MATH_VALIDATION_AVAILABLE = True
+except ImportError:
+    MATH_VALIDATION_AVAILABLE = False
 
 # Import logger as fallback
 try:
@@ -137,6 +182,23 @@ class PolynomialConfig:
     # Hardware Optimization
     chunk_size_mb: int = 256
     max_memory_percent: float = 0.7
+    
+    # Common Utilities Integration
+    enable_common_operations: bool = True
+    enable_serialization: bool = True
+    enable_data_validation: bool = True
+    enable_data_optimization: bool = True
+    enable_m1_optimization: bool = True
+    
+    # Data Quality Settings
+    min_data_quality_score: float = 0.7
+    max_missing_data_ratio: float = 0.1
+    enable_quality_reporting: bool = True
+    
+    # Performance Settings
+    enable_profiling: bool = True
+    enable_memory_monitoring: bool = True
+    enable_performance_logging: bool = True
 
 
 @dataclass
@@ -157,6 +219,17 @@ class PolynomialResult:
     average_variance: float = 0.0
     feature_stability_score: float = 0.0
     polynomial_degree_distribution: Dict[int, int] = field(default_factory=dict)
+    
+    # Common Utilities Integration Results
+    data_quality_report: Optional[Dict[str, Any]] = None
+    validation_results: Dict[str, Any] = field(default_factory=dict)
+    optimization_results: Dict[str, Any] = field(default_factory=dict)
+    serialization_status: Dict[str, bool] = field(default_factory=dict)
+    artifact_paths: Dict[str, str] = field(default_factory=dict)
+    hardware_optimization_used: bool = False
+    memory_usage: Dict[str, float] = field(default_factory=dict)
+    performance_metrics: Dict[str, Any] = field(default_factory=dict)
+    utility_integration_status: Dict[str, bool] = field(default_factory=dict)
 
 
 class PolynomialFeatureGenerator:
@@ -177,6 +250,9 @@ class PolynomialFeatureGenerator:
             self.config = config or PolynomialConfig()
             self.logger = logger.getChild('PolynomialFeatureGenerator')
             
+            # Initialize common utilities integration
+            self._initialize_common_utilities()
+            
             # Initialize math validation
             if MATH_VALIDATION_AVAILABLE:
                 self.math_validator = MathValidation()
@@ -190,12 +266,53 @@ class PolynomialFeatureGenerator:
             tprint_info(f"Max polynomial features: {self.config.max_polynomial_features}")
             tprint_info(f"Max polynomial degree: {self.config.max_polynomial_degree}")
             tprint_info(f"Polynomial types: {[t.value for t in self.config.polynomial_types]}")
-            tprint_info(f"tprint available: {TPRINT_AVAILABLE}")
+            tprint_info(f"Common operations available: {COMMON_OPERATIONS_AVAILABLE}")
+            tprint_info(f"Serialization available: {SERIALIZATION_AVAILABLE}")
             tprint_info(f"Math validation available: {MATH_VALIDATION_AVAILABLE}")
+            tprint_info(f"Matrix operations available: {MATRIX_OPS_AVAILABLE}")
             
         except Exception as e:
             tprint_error(f"Failed to initialize PolynomialFeatureGenerator: {e}")
             raise
+    
+    def _initialize_common_utilities(self):
+        """Initialize common utilities integration."""
+        # Initialize serializers
+        if SERIALIZATION_AVAILABLE and self.config.enable_serialization:
+            self.json_serializer = JSONSerializer()
+            self.pickle_serializer = PickleSerializer()
+            self.parquet_serializer = ParquetSerializer()
+            self.universal_serializer = UniversalSerializer()
+            tprint_success("Serializers initialized")
+        else:
+            self.json_serializer = None
+            self.pickle_serializer = None
+            self.parquet_serializer = None
+            self.universal_serializer = None
+        
+        # Initialize M1 optimizers
+        if COMMON_OPERATIONS_AVAILABLE and self.config.enable_m1_optimization:
+            self.gpu_manager = get_m1_gpu_manager()
+            self.memory_optimizer = get_m1_memory_optimizer()
+            self.cpu_optimizer = get_m1_cpu_optimizer()
+            tprint_success("M1 optimizers initialized")
+        else:
+            self.gpu_manager = None
+            self.memory_optimizer = None
+            self.cpu_optimizer = None
+        
+        # Initialize utility status tracking
+        self.utility_integration_status = {
+            'common_operations': COMMON_OPERATIONS_AVAILABLE and self.config.enable_common_operations,
+            'serialization': SERIALIZATION_AVAILABLE and self.config.enable_serialization,
+            'math_validation': MATH_VALIDATION_AVAILABLE,
+            'matrix_operations': MATRIX_OPS_AVAILABLE,
+            'data_validation': self.config.enable_data_validation,
+            'data_optimization': self.config.enable_data_optimization,
+            'm1_optimization': self.config.enable_m1_optimization
+        }
+        
+        tprint_info(f"Utility integration status: {self.utility_integration_status}")
     
     def _initialize_components(self):
         """Initialize required components."""

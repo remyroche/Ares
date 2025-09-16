@@ -55,7 +55,7 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
                 config = EnsembleTrainingConfig(
                     model_name="hmm_ensemble_models",
                     timeframe="1h",
-                    model_types=["logistic_regression", "xgboost", "random_forest", "voting_classifier"],
+                    model_types=["lightgbm", "elastic_net", "xgboost"],
                     hpo_n_trials=100,
                     hpo_timeout_seconds=3600,
                     min_samples_per_regime=1000,
@@ -330,10 +330,9 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
             from sklearn.ensemble import GradientBoostingClassifier
             
             mock_models = {
-                'logistic_regression_model': LogisticRegression(random_state=42, max_iter=1000),
-                'xgboost_model': RandomForestClassifier(n_estimators=10, random_state=43, max_depth=5),
-                'random_forest_model': RandomForestClassifier(n_estimators=10, random_state=44, max_depth=5),
-                'voting_classifier_model': GradientBoostingClassifier(n_estimators=10, random_state=45, max_depth=3)
+                'lightgbm_model': RandomForestClassifier(n_estimators=10, random_state=42, max_depth=5),
+                'elastic_net_model': LogisticRegression(random_state=43, max_iter=1000, penalty='elasticnet', l1_ratio=0.5, solver='saga'),
+                'xgboost_model': RandomForestClassifier(n_estimators=10, random_state=44, max_depth=5)
             }
             
             self.logger.info(f"📊 Created {len(mock_models)} mock base models for ensemble training")
@@ -753,7 +752,7 @@ if __name__ == "__main__":
     config = EnsembleTrainingConfig(
         model_name="hmm_ensemble_models",
         timeframe="1h",
-        model_types=["logistic_regression", "xgboost", "random_forest", "voting_classifier"],
+        model_types=["lightgbm", "elastic_net", "xgboost"],
         hpo_n_trials=50,  # Reduced for demo
         enable_hpo=True,
         save_models=True,
@@ -777,7 +776,7 @@ if __name__ == "__main__":
     print("- Combines individual HMM models into robust ensembles")
     print("- Per-regime ensemble training for regime-specific optimization")
     print("- Enhanced market regime detection accuracy through model combination")
-    print("- Models: Logistic Regression, XGBoost, Random Forest, Voting Classifier")
+    print("- Models: LightGBM, Elastic Net, XGBoost")
     print("- Comprehensive context from multi-timeframe dynamics")
     
     print("\n🔄 Integration with Individual HMM Models:")

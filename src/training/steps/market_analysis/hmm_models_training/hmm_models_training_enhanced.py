@@ -122,11 +122,20 @@ class ModelFactory:
     """Factory for creating model instances with standardized configuration."""
     
     _model_configs = {
-        'logistic_regression': {
+        'lightgbm': {
+            'class': 'lightgbm.LGBMClassifier',
+            'default_params': {
+                'n_estimators': 100, 'learning_rate': 0.1,
+                'max_depth': 6, 'random_state': 42, 'verbosity': -1,
+                'objective': 'multiclass', 'num_class': 3
+            }
+        },
+        'elastic_net': {
             'class': 'sklearn.linear_model.LogisticRegression',
             'default_params': {
                 'C': 1.0, 'max_iter': 1000, 'random_state': 42,
-                'class_weight': 'balanced'
+                'class_weight': 'balanced', 'penalty': 'elasticnet',
+                'l1_ratio': 0.5, 'solver': 'saga'
             }
         },
         'xgboost': {
@@ -219,7 +228,7 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
                 n_features=100,
                 sequence_length=20,
                 n_regimes=3,
-                model_types=["logistic_regression", "xgboost"],
+                model_types=["lightgbm", "elastic_net", "xgboost"],
                 hpo_trials=50,
                 enable_multi_objective=True
             )
@@ -292,13 +301,28 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
     def _register_models(self):
         """Register available models with their configurations."""
         self.model_registry = {
-            'logistic_regression': {
+            'lightgbm': {
+                'class': 'lightgbm.LGBMClassifier',
+                'params': {
+                    'n_estimators': 100,
+                    'learning_rate': 0.1,
+                    'max_depth': 6,
+                    'random_state': 42,
+                    'verbosity': -1,
+                    'objective': 'multiclass',
+                    'num_class': 3
+                }
+            },
+            'elastic_net': {
                 'class': 'sklearn.linear_model.LogisticRegression',
                 'params': {
                     'C': 1.0,
                     'max_iter': 1000,
                     'random_state': 42,
-                    'class_weight': 'balanced'
+                    'class_weight': 'balanced',
+                    'penalty': 'elasticnet',
+                    'l1_ratio': 0.5,
+                    'solver': 'saga'
                 }
             },
             'xgboost': {
@@ -515,13 +539,19 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
             
             model_config = self.model_registry[model_type]
             
-            # Handle sklearn models (preserving original logic)
-            if model_type == 'logistic_regression':
+            # Handle LightGBM
+            if model_type == 'lightgbm':
+                import lightgbm as lgb
+                params = {**model_config['params'], **kwargs}
+                return lgb.LGBMClassifier(**params)
+            
+            # Handle Elastic Net (Logistic Regression with elastic net penalty)
+            elif model_type == 'elastic_net':
                 from sklearn.linear_model import LogisticRegression
                 params = {**model_config['params'], **kwargs}
                 return LogisticRegression(**params)
             
-            # Handle XGBoost (preserving original logic)
+            # Handle XGBoost
             elif model_type == 'xgboost':
                 import xgboost as xgb
                 params = {**model_config['params'], **kwargs}
@@ -976,7 +1006,7 @@ if __name__ == "__main__":
         n_features=50,
         sequence_length=20,
         n_regimes=3,
-        model_types=["logistic_regression", "xgboost"],
+        model_types=["lightgbm", "elastic_net", "xgboost"],
         hpo_trials=25,
         enable_multi_objective=True
     )

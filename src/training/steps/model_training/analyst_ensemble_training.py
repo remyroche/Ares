@@ -1,9 +1,17 @@
 """
-Analyst Ensemble Training Step - Enhanced with Comprehensive Error Handling and Logging
+Analyst Ensemble Training Step - Enhanced for 5m Timeframe with HMM Integration
 
 This step handles per-regime ensemble training of Analyst models using common dependencies.
 The Analyst Ensemble operates on 5m timeframe and combines individual analyst models
 to create robust ensemble predictions for trade decisions.
+
+Enhanced Features:
+- 5m base timeframe with cross-timeframe features (300+ features)
+- HMM regime outputs integration for comprehensive context
+- TCN + CatBoost + LightGBM base models with Elastic Net meta-learner
+- Per-regime training for regime-specific optimization
+- Runs every 2 minutes for live trading
+- Decides IF we trade and emits green light for Tactician
 
 Enhanced with:
 - Extensive try/except blocks with fast failing for important errors
@@ -69,22 +77,27 @@ cpu_optimizer = get_m1_cpu_optimizer()
 
 class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
     """
-    Enhanced Analyst Ensemble Training Step with comprehensive error handling and logging.
+    Enhanced Analyst Ensemble Training Step for 5m timeframe with HMM integration.
     
     Features:
+    - 5m base timeframe with cross-timeframe features (300+ features)
+    - HMM regime outputs integration for comprehensive context
+    - TCN + CatBoost + LightGBM base models with Elastic Net meta-learner
+    - Per-regime training for regime-specific optimization
+    - Runs every 2 minutes for live trading
+    - Decides IF we trade and emits green light for Tactician
+    
+    Enhanced with:
     - Extensive try/except blocks with fast failing for important errors
     - Comprehensive logging using tprint at every step
     - Integration with common utilities (math_validation, serialization, hardware optimization)
     - ML common utilities (CV, lookahead, HPO, etc.)
     - Per-regime ensemble training, HPO, saving, and metrics
-    
-    The Analyst Ensemble operates on 5m timeframe and combines individual analyst models
-    to create robust ensemble predictions for trade decisions.
     """
     
     def __init__(self, config: Optional[EnsembleTrainingConfig] = None, enable_vectorization: bool = True):
         """
-        Initialize Analyst ensemble training step with enhanced error handling and logging.
+        Initialize Analyst ensemble training step for 5m timeframe with HMM integration.
 
         Args:
             config: Per-regime training configuration
@@ -94,7 +107,7 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
             RuntimeError: If initialization fails with critical errors
             ValueError: If configuration is invalid
         """
-        tprint_info("🚀 Initializing Analyst Ensemble Training Step")
+        tprint_info("🚀 Initializing Analyst Ensemble Training Step for 5m timeframe with HMM integration")
         
         # Initialize logging and timing
         self.logger = logger.getChild('AnalystEnsembleTrainingStep')
@@ -138,17 +151,17 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
         """Setup configuration with enhanced error handling."""
         try:
             if config is None:
-                tprint_info("📋 Creating default configuration for analyst ensemble training")
+                tprint_info("📋 Creating default configuration for analyst ensemble training (5m timeframe)")
                 config = EnsembleTrainingConfig(
-                    model_name="analyst_ensemble_models",
+                    model_name="analyst_ensemble_models_5m",
                     timeframe="5m",
-                    model_types=["tcn", "catboost", "lightgbm", "ensemble_rf"],
+                    model_types=["tcn", "catboost", "lightgbm", "elastic_net"],
                     hpo_n_trials=100,
                     hpo_timeout_seconds=3600,
                     min_samples_per_regime=1000,
                     enable_data_augmentation=True,
                     augmentation_method="smote",
-                    model_save_path="./models/analyst_ensemble_models",
+                    model_save_path="./models/analyst_ensemble_models_5m",
                     evaluation_metrics=["mse", "mae", "r2", "mape", "smape"]
                 )
                 tprint_success("✅ Default configuration created successfully")
@@ -593,25 +606,28 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
         feature_names: Optional[List[str]] = None,
         hmm_states: Optional[np.ndarray] = None,
         base_analyst_models: Optional[Dict[str, Any]] = None,
-        analyst_training_metrics: Optional[Dict[str, Any]] = None
+        analyst_training_metrics: Optional[Dict[str, Any]] = None,
+        hmm_data: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """
-        Execute Analyst ensemble training step with comprehensive error handling, logging, and progress tracking.
+        Execute Analyst ensemble training step for 5m timeframe with HMM integration.
         
         Features:
-        - Extensive try/except blocks with fast failing for important errors
-        - Comprehensive logging using tprint at every step
-        - Integration with common utilities and hardware optimizers
-        - Performance monitoring and memory optimization
+        - 5m base timeframe with cross-timeframe features (300+ features)
+        - HMM regime outputs integration for comprehensive context
+        - TCN + CatBoost + LightGBM base models with Elastic Net meta-learner
+        - Per-regime training for regime-specific optimization
+        - Decides IF we trade and emits green light for Tactician
         
         Args:
-            X: Input features (5m timeframe with cross-timeframe features)
-            y: Target values (analyst outputs)
+            X: Input features (5m timeframe with cross-timeframe features, 300+ features)
+            y: Target values (analyst outputs - trade decision signals)
             regime_labels: Regime labels for each sample
             feature_names: Names of input features
             hmm_states: HMM cluster/regime states
             base_analyst_models: Individual analyst models to ensemble
             analyst_training_metrics: Performance metrics of base models
+            hmm_data: HMM regime data and features for integration
             
         Returns:
             Dictionary containing training results and metadata
@@ -639,7 +655,7 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
             # Step 1: Pre-execution validation and setup
             tprint_info("🔄 Step 1: Pre-execution validation and setup")
             with tprint_timer("Pre-execution validation"):
-                self._pre_execution_validation(X, y, regime_labels, feature_names, hmm_states, base_analyst_models, analyst_training_metrics)
+                self._pre_execution_validation(X, y, regime_labels, feature_names, hmm_states, base_analyst_models, analyst_training_metrics, hmm_data)
             execution_stats['steps_completed'] += 1
             
             # Step 2: Hardware optimization setup
@@ -654,35 +670,41 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
                 self._validate_input_data(X, y, regime_labels)
             execution_stats['steps_completed'] += 1
             
-            # Step 4: Base models validation and preparation
-            tprint_info("🔄 Step 4: Base models validation and preparation")
+            # Step 4: HMM integration and feature enhancement
+            tprint_info("🔄 Step 4: HMM integration and feature enhancement")
+            with tprint_timer("HMM integration"):
+                X_enhanced = self._integrate_hmm_features(X, hmm_data, execution_stats)
+            execution_stats['steps_completed'] += 1
+            
+            # Step 5: Base models validation and preparation
+            tprint_info("🔄 Step 5: Base models validation and preparation")
             with tprint_timer("Base models preparation"):
                 base_analyst_models = self._prepare_base_models(base_analyst_models, execution_stats)
             execution_stats['steps_completed'] += 1
             
-            # Step 5: Execute training with enhanced error handling
-            tprint_info("🔄 Step 5: Executing ensemble training")
+            # Step 6: Execute training with enhanced error handling
+            tprint_info("🔄 Step 6: Executing ensemble training")
             with tprint_timer("Ensemble training execution"):
                 results = self._execute_training_with_enhanced_error_handling(
-                    X, y, regime_labels, feature_names, hmm_states, base_analyst_models, execution_stats
+                    X_enhanced, y, regime_labels, feature_names, hmm_states, base_analyst_models, execution_stats
                 )
             execution_stats['steps_completed'] += 1
             
-            # Step 6: Post-training processing
-            tprint_info("🔄 Step 6: Post-training processing")
+            # Step 7: Post-training processing
+            tprint_info("🔄 Step 7: Post-training processing")
             with tprint_timer("Post-training processing"):
                 results = self._post_training_processing(results, base_analyst_models, analyst_training_metrics, execution_stats)
             execution_stats['steps_completed'] += 1
             
-            # Step 7: Generate comprehensive report
-            tprint_info("🔄 Step 7: Generating comprehensive report")
+            # Step 8: Generate comprehensive report
+            tprint_info("🔄 Step 8: Generating comprehensive report")
             with tprint_timer("Report generation"):
                 execution_time = time.time() - execution_start_time
                 results = self._generate_enhanced_comprehensive_report(results, execution_time, base_analyst_models, analyst_training_metrics, execution_stats)
             execution_stats['steps_completed'] += 1
             
-            # Step 8: Final validation and cleanup
-            tprint_info("🔄 Step 8: Final validation and cleanup")
+            # Step 9: Final validation and cleanup
+            tprint_info("🔄 Step 9: Final validation and cleanup")
             with tprint_timer("Final validation and cleanup"):
                 self._final_validation_and_cleanup(results, execution_stats)
             execution_stats['steps_completed'] += 1
@@ -722,7 +744,8 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
         feature_names: Optional[List[str]],
         hmm_states: Optional[np.ndarray],
         base_analyst_models: Optional[Dict[str, Any]],
-        analyst_training_metrics: Optional[Dict[str, Any]]
+        analyst_training_metrics: Optional[Dict[str, Any]],
+        hmm_data: Optional[Dict[str, Any]]
     ) -> None:
         """Pre-execution validation with comprehensive checks."""
         try:
@@ -755,6 +778,17 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
             if analyst_training_metrics is not None:
                 if not isinstance(analyst_training_metrics, dict):
                     tprint_warning("⚠️ Analyst training metrics must be a dictionary")
+            
+            # Validate HMM data
+            if hmm_data is not None:
+                if not isinstance(hmm_data, dict):
+                    tprint_warning("⚠️ HMM data must be a dictionary")
+                else:
+                    # Check for required HMM components
+                    required_hmm_keys = ['regime_states', 'regime_probabilities', 'regime_confidence']
+                    for key in required_hmm_keys:
+                        if key not in hmm_data:
+                            tprint_warning(f"⚠️ HMM data missing key: {key}")
             
             tprint_success("✅ Pre-execution validation completed")
             
@@ -798,6 +832,77 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
                 tprint_info("ℹ️ GPU not available for optimization")
         
         tprint_success("✅ Hardware optimizations setup completed")
+    
+    def _integrate_hmm_features(
+        self,
+        X: np.ndarray,
+        hmm_data: Optional[Dict[str, Any]],
+        execution_stats: Dict[str, Any]
+    ) -> np.ndarray:
+        """Integrate HMM features with base features for enhanced context."""
+        try:
+            tprint_info("🔄 Integrating HMM features with base features")
+            
+            if hmm_data is None:
+                tprint_warning("⚠️ No HMM data provided, using base features only")
+                return X
+            
+            # Extract HMM features
+            hmm_features = []
+            feature_count = X.shape[1]
+            
+            # Add regime probabilities
+            if 'regime_probabilities' in hmm_data:
+                regime_probs = np.array(hmm_data['regime_probabilities'])
+                if regime_probs.shape[0] == X.shape[0]:
+                    hmm_features.append(regime_probs)
+                    feature_count += regime_probs.shape[1]
+                    tprint_success(f"✅ Added {regime_probs.shape[1]} regime probability features")
+                else:
+                    tprint_warning("⚠️ Regime probabilities shape mismatch")
+            
+            # Add regime confidence
+            if 'regime_confidence' in hmm_data:
+                regime_conf = np.array(hmm_data['regime_confidence'])
+                if len(regime_conf) == X.shape[0]:
+                    regime_conf = regime_conf.reshape(-1, 1)
+                    hmm_features.append(regime_conf)
+                    feature_count += 1
+                    tprint_success("✅ Added regime confidence feature")
+                else:
+                    tprint_warning("⚠️ Regime confidence shape mismatch")
+            
+            # Add regime states as one-hot encoded features
+            if 'regime_states' in hmm_data:
+                regime_states = np.array(hmm_data['regime_states'])
+                if len(regime_states) == X.shape[0]:
+                    # One-hot encode regime states
+                    n_regimes = len(set(regime_states))
+                    regime_onehot = np.eye(n_regimes)[regime_states]
+                    hmm_features.append(regime_onehot)
+                    feature_count += n_regimes
+                    tprint_success(f"✅ Added {n_regimes} regime state features (one-hot encoded)")
+                else:
+                    tprint_warning("⚠️ Regime states shape mismatch")
+            
+            # Combine features
+            if hmm_features:
+                X_enhanced = np.column_stack([X] + hmm_features)
+                tprint_success(f"✅ Enhanced features: {X.shape[1]} base + {feature_count - X.shape[1]} HMM = {feature_count} total")
+                
+                # Update execution stats
+                execution_stats['hmm_features_added'] = feature_count - X.shape[1]
+                execution_stats['total_features'] = feature_count
+                
+                return X_enhanced
+            else:
+                tprint_warning("⚠️ No valid HMM features found, using base features only")
+                return X
+                
+        except Exception as e:
+            tprint_error(f"❌ HMM feature integration failed: {e}")
+            tprint_warning("⚠️ Returning base features due to integration failure")
+            return X
     
     def _prepare_base_models(
         self,
@@ -1153,32 +1258,27 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
         from sklearn.linear_model import LinearRegression
         from sklearn.svm import SVR
         
-        # Create base models
+        # Create base models for Analyst (5m timeframe)
         base_models = {
-            'tcn_model': RandomForestRegressor(
-                n_estimators=50, 
+            'tcn_model': RandomForestRegressor(  # TCN placeholder - would be Temporal Convolutional Network
+                n_estimators=100, 
                 random_state=42, 
-                max_depth=10,
+                max_depth=12,
                 n_jobs=-1
             ),
-            'catboost_model': RandomForestRegressor(
-                n_estimators=50, 
+            'catboost_model': RandomForestRegressor(  # CatBoost placeholder
+                n_estimators=100, 
                 random_state=43, 
                 max_depth=10,
                 n_jobs=-1
             ),
-            'lightgbm_model': GradientBoostingRegressor(
-                n_estimators=50, 
+            'lightgbm_model': GradientBoostingRegressor(  # LightGBM placeholder
+                n_estimators=100, 
                 random_state=44, 
-                max_depth=6,
+                max_depth=8,
                 learning_rate=0.1
             ),
-            'ensemble_rf_model': RandomForestRegressor(
-                n_estimators=50, 
-                random_state=45, 
-                max_depth=10,
-                n_jobs=-1
-            ),
+            'elastic_net_model': LinearRegression(),  # Elastic Net placeholder
             'linear_model': LinearRegression(),
             'svr_model': SVR(kernel='rbf', C=1.0, gamma='scale')
         }

@@ -117,9 +117,9 @@ def example_regime_aware_labeling():
     
     regime_data = pd.DataFrame({'regime': regimes}, index=data.index)
     
-    # Configure regime-aware labeling
+    # Configure regime-aware labeling (HMM-based only)
     regime_config = RegimeAwareConfig(
-        regime_detection_method="custom",
+        regime_detection_method="hmm",  # Only HMM-based detection
         regime_params={
             'bull_market': TripleBarrierConfig(pt_mult=0.03, sl_mult=0.015),
             'bear_market': TripleBarrierConfig(pt_mult=0.015, sl_mult=0.02),

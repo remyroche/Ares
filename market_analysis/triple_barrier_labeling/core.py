@@ -68,7 +68,17 @@ class LabelingMethod(Enum):
 
 @dataclass
 class TripleBarrierConfig:
-    """Configuration for triple barrier labeling."""
+    """Configuration for triple barrier labeling.
+    
+    Barrier Value Calculation:
+    - Profit Target Price = entry_price * (1 + pt_mult)
+    - Stop Loss Price = entry_price * (1 - sl_mult)
+    
+    Where:
+    - pt_mult: Profit target multiplier (e.g., 0.002 = 0.2%)
+    - sl_mult: Stop loss multiplier (e.g., 0.001 = 0.1%)
+    - entry_price: The price at which the position is entered
+    """
     # Core parameters
     pt_mult: float = 1.0  # Profit target multiplier
     sl_mult: float = 1.0  # Stop loss multiplier
@@ -523,7 +533,14 @@ class TripleBarrierLabeler:
         sl_price: float, 
         config: TripleBarrierConfig
     ) -> Tuple[int, float, str]:
-        """Find which barrier is hit first."""
+        """Find which barrier is hit first.
+        
+        Barrier values are calculated as:
+        - Profit Target: entry_price * (1 + pt_mult)
+        - Stop Loss: entry_price * (1 - sl_mult)
+        
+        Where pt_mult and sl_mult are multipliers (e.g., 0.002 = 0.2%)
+        """
         for j, (_, row) in enumerate(future_data.iterrows()):
             if j >= config.max_holding_period:
                 return 0, 0.0, "time_barrier"

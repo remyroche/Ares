@@ -198,7 +198,7 @@ class MarketAnalysisUtils:
             }
 
     def calculate_technical_indicators(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Calculate technical indicators for market data.
+        """Calculate technical indicators using feature_engineering module.
         
         Args:
             data: Market data with OHLC columns
@@ -207,37 +207,37 @@ class MarketAnalysisUtils:
             DataFrame with technical indicators
         """
         try:
+            # Import feature engineering generators
+            from src.feature_engineering.feature_generators import (
+                rsi_generator, macd_generator, bollinger_bands_generator,
+                sma_generator, ema_generator
+            )
+            
             result = data.copy()
             
-            # Price-based indicators
+            # Use feature_engineering generators for technical indicators
+            # RSI
+            result['rsi_14'] = rsi_generator(data, lookback=14, price_column='close')
+            
+            # MACD
+            result['macd'] = macd_generator(data, lookback=26, price_column='close')
+            
+            # Bollinger Bands
+            result['bb_position'] = bollinger_bands_generator(data, lookback=20, price_column='close')
+            
+            # Moving averages
+            result['sma_10'] = sma_generator(data, lookback=10, price_column='close')
+            result['sma_20'] = sma_generator(data, lookback=20, price_column='close')
+            result['sma_50'] = sma_generator(data, lookback=50, price_column='close')
+            
+            # EMAs
+            result['ema_12'] = ema_generator(data, lookback=12, price_column='close')
+            result['ema_26'] = ema_generator(data, lookback=26, price_column='close')
+            
+            # Basic price indicators
             result['returns'] = data['close'].pct_change()
             result['log_returns'] = np.log(data['close'] / data['close'].shift(1))
             result['volatility'] = result['returns'].rolling(window=20).std()
-            
-            # Moving averages
-            result['sma_10'] = data['close'].rolling(window=10).mean()
-            result['sma_20'] = data['close'].rolling(window=20).mean()
-            result['sma_50'] = data['close'].rolling(window=50).mean()
-            result['ema_12'] = data['close'].ewm(span=12).mean()
-            result['ema_26'] = data['close'].ewm(span=26).mean()
-            
-            # MACD
-            result['macd'] = result['ema_12'] - result['ema_26']
-            result['macd_signal'] = result['macd'].ewm(span=9).mean()
-            result['macd_histogram'] = result['macd'] - result['macd_signal']
-            
-            # RSI
-            result['rsi'] = self._calculate_rsi(data['close'])
-            
-            # Bollinger Bands
-            bb_period = 20
-            bb_std = 2
-            result['bb_middle'] = data['close'].rolling(window=bb_period).mean()
-            bb_std_val = data['close'].rolling(window=bb_period).std()
-            result['bb_upper'] = result['bb_middle'] + (bb_std_val * bb_std)
-            result['bb_lower'] = result['bb_middle'] - (bb_std_val * bb_std)
-            result['bb_width'] = (result['bb_upper'] - result['bb_lower']) / result['bb_middle']
-            result['bb_position'] = (data['close'] - result['bb_lower']) / (result['bb_upper'] - result['bb_lower'])
             
             # Volume indicators (if available)
             if 'volume' in data.columns:
@@ -248,121 +248,80 @@ class MarketAnalysisUtils:
             # Fill NaN values
             result = result.fillna(method='ffill').fillna(0)
             
-            self.logger.info(f"✅ Calculated technical indicators for {len(result)} records")
+            self.logger.info(f"✅ Calculated technical indicators using feature_engineering for {len(result)} records")
+            return result
+            
+        except ImportError as e:
+            self.logger.warning(f"⚠️ Feature engineering not available: {e}")
+            self.logger.info("💡 Falling back to basic price indicators only")
+            
+            # Fallback to basic indicators
+            result = data.copy()
+            result['returns'] = data['close'].pct_change()
+            result['log_returns'] = np.log(data['close'] / data['close'].shift(1))
+            result['volatility'] = result['returns'].rolling(window=20).std()
+            result = result.fillna(method='ffill').fillna(0)
+            
             return result
             
         except Exception as e:
             self.logger.error(f"❌ Failed to calculate technical indicators: {e}")
             return data
 
-    def _calculate_rsi(self, prices: pd.Series, window: int = 14) -> pd.Series:
-        """Calculate RSI indicator."""
-        try:
-            delta = prices.diff()
-            gain = (delta.where(delta > 0, 0)).rolling(window=window).mean()
-            loss = (-delta.where(delta < 0, 0)).rolling(window=window).mean()
-            rs = gain / loss
-            rsi = 100 - (100 / (1 + rs))
-            return rsi
-        except Exception:
-            return pd.Series(0, index=prices.index)
+    # Note: RSI calculation now uses feature_engineering module
 
-    def detect_market_regimes(self, data: pd.DataFrame, method: str = "volatility") -> pd.DataFrame:
-        """Detect market regimes in the data.
+    def detect_market_regimes(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Detect market regimes using HMM state only.
         
         Args:
             data: Market data with technical indicators
-            method: Regime detection method ('volatility', 'trend', 'hmm')
             
         Returns:
             DataFrame with regime information
         """
         try:
-            if method == "volatility":
-                return self._detect_volatility_regimes(data)
-            elif method == "trend":
-                return self._detect_trend_regimes(data)
-            elif method == "hmm":
-                return self._detect_hmm_regimes(data)
-            else:
-                raise ValueError(f"Unsupported regime detection method: {method}")
+            # Check if HMM regime data already exists in the data
+            hmm_columns = ['hmm_regime', 'composite_cluster_id', 'regime']
+            existing_regime_col = None
+            
+            for col in hmm_columns:
+                if col in data.columns:
+                    existing_regime_col = col
+                    break
+            
+            if existing_regime_col:
+                self.logger.info(f"✅ Using existing HMM regime column: {existing_regime_col}")
+                return pd.DataFrame({
+                    'regime': data[existing_regime_col]
+                }, index=data.index)
+            
+            # If no HMM regime data exists, warn user
+            self.logger.warning("⚠️ No HMM regime data found in input data")
+            self.logger.info("💡 HMM regime data should be provided by the pipeline (step03_hmm_regime_discovery)")
+            
+            # Create default regime assignment
+            return self._create_default_regimes(data)
                 
         except Exception as e:
             self.logger.error(f"❌ Failed to detect market regimes: {e}")
             return pd.DataFrame({'regime': ['unknown'] * len(data)}, index=data.index)
 
-    def _detect_volatility_regimes(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Detect regimes based on volatility."""
-        try:
-            if 'volatility' not in data.columns:
-                # Calculate volatility if not present
-                returns = data['close'].pct_change().dropna()
-                volatility = returns.rolling(window=20).std()
+    # Note: Only HMM-based regime detection is used
+    # Other methods (volatility, trend) have been removed as per requirements
+
+    def _create_default_regimes(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Create default regime assignment when HMM data is not available."""
+        self.logger.warning("⚠️ Using default regime assignment")
+        
+        # Simple alternating regime assignment
+        regimes = []
+        for i in range(len(data)):
+            if i % 100 < 50:  # Alternate every 100 periods
+                regimes.append('bull_market')
             else:
-                volatility = data['volatility']
-            
-            # Define volatility thresholds
-            vol_high = volatility.quantile(0.8)
-            vol_low = volatility.quantile(0.2)
-            
-            # Classify regimes
-            regimes = []
-            for vol in volatility:
-                if pd.isna(vol):
-                    regimes.append('unknown')
-                elif vol > vol_high:
-                    regimes.append('high_volatility')
-                elif vol < vol_low:
-                    regimes.append('low_volatility')
-                else:
-                    regimes.append('normal_volatility')
-            
-            return pd.DataFrame({'regime': regimes}, index=data.index)
-            
-        except Exception as e:
-            self.logger.error(f"❌ Failed to detect volatility regimes: {e}")
-            return pd.DataFrame({'regime': ['unknown'] * len(data)}, index=data.index)
-
-    def _detect_trend_regimes(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Detect regimes based on trend analysis."""
-        try:
-            # Calculate trend indicators
-            sma_short = data['close'].rolling(window=10).mean()
-            sma_long = data['close'].rolling(window=30).mean()
-            
-            # Classify regimes based on trend
-            regimes = []
-            for i in range(len(data)):
-                if i < 30:  # Not enough data for trend analysis
-                    regimes.append('unknown')
-                else:
-                    short_ma = sma_short.iloc[i]
-                    long_ma = sma_long.iloc[i]
-                    
-                    if short_ma > long_ma * 1.02:  # 2% above long MA
-                        regimes.append('bull_market')
-                    elif short_ma < long_ma * 0.98:  # 2% below long MA
-                        regimes.append('bear_market')
-                    else:
-                        regimes.append('sideways')
-            
-            return pd.DataFrame({'regime': regimes}, index=data.index)
-            
-        except Exception as e:
-            self.logger.error(f"❌ Failed to detect trend regimes: {e}")
-            return pd.DataFrame({'regime': ['unknown'] * len(data)}, index=data.index)
-
-    def _detect_hmm_regimes(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Detect regimes using HMM (placeholder implementation)."""
-        try:
-            # This is a placeholder - in practice, you would use a proper HMM implementation
-            # For now, fall back to volatility-based detection
-            self.logger.warning("⚠️ HMM regime detection not implemented, using volatility-based detection")
-            return self._detect_volatility_regimes(data)
-            
-        except Exception as e:
-            self.logger.error(f"❌ Failed to detect HMM regimes: {e}")
-            return pd.DataFrame({'regime': ['unknown'] * len(data)}, index=data.index)
+                regimes.append('bear_market')
+        
+        return pd.DataFrame({'regime': regimes}, index=data.index)
 
     def optimize_dataframe_memory(self, df: pd.DataFrame) -> pd.DataFrame:
         """Optimize DataFrame memory usage.

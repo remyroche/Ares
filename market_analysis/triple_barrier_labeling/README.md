@@ -14,10 +14,29 @@ A comprehensive triple barrier labeling system for market analysis, providing mu
 
 ### Labeling Methods
 1. **Standard Triple Barrier**: Classic profit target and stop loss barriers
-2. **Regime-Aware Triple Barrier**: Adaptive parameters based on market regimes
+2. **Regime-Aware Triple Barrier**: Adaptive parameters based on HMM regime states
 3. **Fractional Triple Barrier**: Continuous target labeling
 4. **Profit-Based Labels**: Transaction cost-aware labeling
 5. **Volatility-Based Labels**: Volatility-adjusted barriers
+
+### Regime Detection
+- **HMM-Based Only**: Uses existing HMM regime states from the pipeline (step03_hmm_regime_discovery)
+- **No Custom Detection**: Does not implement custom regime detection methods
+- **Pipeline Integration**: Expects HMM regime data to be provided by the existing pipeline
+
+### Barrier Value Calculation
+The triple barrier method calculates barrier values as follows:
+- **Profit Target Price** = `entry_price * (1 + pt_mult)`
+- **Stop Loss Price** = `entry_price * (1 - sl_mult)`
+
+Where:
+- `pt_mult`: Profit target multiplier (e.g., 0.002 = 0.2%)
+- `sl_mult`: Stop loss multiplier (e.g., 0.001 = 0.1%)
+- `entry_price`: The price at which the position is entered
+
+Example: If entry price is $100, pt_mult=0.02, sl_mult=0.01:
+- Profit target = $100 * (1 + 0.02) = $102
+- Stop loss = $100 * (1 - 0.01) = $99
 
 ### Quality Assessment
 - Label distribution analysis

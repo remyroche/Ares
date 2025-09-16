@@ -219,111 +219,43 @@ class RegimeAwareLabeler:
             raise
 
     def _detect_regimes(self, data: pd.DataFrame, config: RegimeAwareConfig) -> pd.DataFrame:
-        """Detect market regimes using specified method."""
-        self.logger.debug(f"🔍 Detecting regimes using method: {config.regime_detection_method}")
+        """Detect market regimes using HMM state only."""
+        self.logger.debug("🔍 Using HMM state for regime detection")
         
-        if config.regime_detection_method == "hmm":
-            return self._detect_regimes_hmm(data, config)
-        elif config.regime_detection_method == "volatility":
-            return self._detect_regimes_volatility(data, config)
-        elif config.regime_detection_method == "trend":
-            return self._detect_regimes_trend(data, config)
-        else:
-            raise ValueError(f"Unsupported regime detection method: {config.regime_detection_method}")
+        # Only use HMM-based regime detection
+        return self._detect_regimes_hmm(data, config)
 
     def _detect_regimes_hmm(self, data: pd.DataFrame, config: RegimeAwareConfig) -> pd.DataFrame:
-        """Detect regimes using HMM."""
+        """Detect regimes using existing HMM state from the pipeline."""
         try:
-            if self.regime_detector is None:
-                raise ValueError("HMM regime detector not initialized")
+            # Check if HMM regime data already exists in the data
+            hmm_columns = ['hmm_regime', 'composite_cluster_id', 'regime']
+            existing_regime_col = None
             
-            # Prepare features for HMM
-            features = self._prepare_hmm_features(data)
+            for col in hmm_columns:
+                if col in data.columns:
+                    existing_regime_col = col
+                    break
             
-            # Detect regimes
-            regimes = self.regime_detector.detect_regimes(features)
+            if existing_regime_col:
+                self.logger.info(f"✅ Using existing HMM regime column: {existing_regime_col}")
+                return pd.DataFrame({
+                    'regime': data[existing_regime_col]
+                }, index=data.index)
             
-            # Create regime DataFrame
-            regime_df = pd.DataFrame({
-                'regime': regimes
-            }, index=data.index)
+            # If no HMM regime data exists, try to load it
+            self.logger.warning("⚠️ No HMM regime data found in input data")
+            self.logger.info("💡 HMM regime data should be provided by the pipeline (step03_hmm_regime_discovery)")
             
-            return regime_df
+            # Create default regime assignment
+            return self._create_default_regimes(data)
             
         except Exception as e:
             self.logger.error(f"❌ HMM regime detection failed: {e}")
-            # Fallback to volatility-based detection
-            return self._detect_regimes_volatility(data, config)
-
-    def _detect_regimes_volatility(self, data: pd.DataFrame, config: RegimeAwareConfig) -> pd.DataFrame:
-        """Detect regimes based on volatility."""
-        try:
-            # Calculate rolling volatility
-            returns = data['close'].pct_change().dropna()
-            volatility = returns.rolling(window=20).std()
-            
-            # Define volatility thresholds
-            vol_high = volatility.quantile(0.8)
-            vol_low = volatility.quantile(0.2)
-            
-            # Classify regimes
-            regimes = []
-            for vol in volatility:
-                if pd.isna(vol):
-                    regimes.append(RegimeType.SIDEWAYS.value)
-                elif vol > vol_high:
-                    regimes.append(RegimeType.HIGH_VOLATILITY.value)
-                elif vol < vol_low:
-                    regimes.append(RegimeType.LOW_VOLATILITY.value)
-                else:
-                    regimes.append(RegimeType.SIDEWAYS.value)
-            
-            # Create regime DataFrame
-            regime_df = pd.DataFrame({
-                'regime': regimes
-            }, index=data.index)
-            
-            return regime_df
-            
-        except Exception as e:
-            self.logger.error(f"❌ Volatility regime detection failed: {e}")
-            # Fallback to simple regime assignment
             return self._create_default_regimes(data)
 
-    def _detect_regimes_trend(self, data: pd.DataFrame, config: RegimeAwareConfig) -> pd.DataFrame:
-        """Detect regimes based on trend analysis."""
-        try:
-            # Calculate trend indicators
-            sma_short = data['close'].rolling(window=10).mean()
-            sma_long = data['close'].rolling(window=30).mean()
-            
-            # Classify regimes based on trend
-            regimes = []
-            for i in range(len(data)):
-                if i < 30:  # Not enough data for trend analysis
-                    regimes.append(RegimeType.SIDEWAYS.value)
-                else:
-                    short_ma = sma_short.iloc[i]
-                    long_ma = sma_long.iloc[i]
-                    
-                    if short_ma > long_ma * 1.02:  # 2% above long MA
-                        regimes.append(RegimeType.BULL_MARKET.value)
-                    elif short_ma < long_ma * 0.98:  # 2% below long MA
-                        regimes.append(RegimeType.BEAR_MARKET.value)
-                    else:
-                        regimes.append(RegimeType.SIDEWAYS.value)
-            
-            # Create regime DataFrame
-            regime_df = pd.DataFrame({
-                'regime': regimes
-            }, index=data.index)
-            
-            return regime_df
-            
-        except Exception as e:
-            self.logger.error(f"❌ Trend regime detection failed: {e}")
-            # Fallback to simple regime assignment
-            return self._create_default_regimes(data)
+    # Note: Only HMM-based regime detection is used
+    # Other methods (volatility, trend) have been removed as per requirements
 
     def _create_default_regimes(self, data: pd.DataFrame) -> pd.DataFrame:
         """Create default regime assignment when detection fails."""

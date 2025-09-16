@@ -83,15 +83,15 @@ class CoarseGridConfig:
     pt_mult_range: Tuple[float, float] = (0.005, 0.02)  # 0.5% to 2.0%
     sl_mult_range: Tuple[float, float] = (0.002, 0.01)  # 0.2% to 1.0%
     time_barrier_range: Tuple[int, int] = (20, 90)      # 20 to 90 minutes
-    grid_size: int = 10  # Number of points per dimension (10³ = 1,000 combinations)
+    grid_size: int = 7  # Number of points per dimension (7³ = 343 combinations)
     top_k_candidates: int = 8  # Top candidates to pass to fine grid
 
 @dataclass
 class FineGridConfig:
     """Configuration for fine grid search (second stage)."""
     refinement_factor: float = 0.3  # How much to narrow the search space around coarse results
-    grid_size: int = 10  # Number of points per dimension (fine)
-    top_k_candidates: int = 3  # Top candidates to pass to Bayesian optimization
+    grid_size: int = 7  # Number of points per dimension (7³ = 343 combinations)
+    top_k_candidates: int = 5  # Top candidates to pass to Bayesian optimization
     min_range_size: float = 0.001  # Minimum range size to prevent over-narrowing
 
 @dataclass
@@ -850,8 +850,8 @@ class EnhancedOptimizedTripleBarrierLabeler:
             self.bayesian_config.n_trials = n_trials
         
         self.logger.info(f"🔧 Starting three-stage regime parameter optimization")
-        self.logger.info(f"   Coarse grid: {self.coarse_grid_config.grid_size}³ combinations (3 parameters)")
-        self.logger.info(f"   Fine grid: {self.fine_grid_config.grid_size}³ combinations (3 parameters)")
+        self.logger.info(f"   Coarse grid: {self.coarse_grid_config.grid_size}³ = {self.coarse_grid_config.grid_size**3} combinations")
+        self.logger.info(f"   Fine grid: {self.fine_grid_config.grid_size}³ = {self.fine_grid_config.grid_size**3} combinations")
         self.logger.info(f"   Bayesian: {self.bayesian_config.n_trials} trials")
         
         start_time = time.time()

@@ -239,9 +239,6 @@ class SRParameterOptimizationComponent(BaseMarketAnalysisComponent):
     ) -> Dict[str, Any]:
         """Run the actual parameter optimization process."""
         try:
-            # Import the function here to ensure it's available
-            from src.utils.sr_clustering.parameter_optimization_engine import get_parameter_optimization_engine
-            
             # Get parameter optimization engine
             optimization_engine = get_parameter_optimization_engine(param_config)
             

@@ -33,7 +33,7 @@ except ImportError as e:
     print(f"❌ CRITICAL: Failed to import core ML utilities: {e}")
     raise
 
-# Import enhanced logging and utilities
+# Import enhanced logging and utilities - CRITICAL: Fast fail if not available
 try:
     from src.utils.tprint import (
         tprint, tprint_info, tprint_warning, tprint_error, tprint_success,
@@ -42,52 +42,20 @@ try:
     )
     TPRINT_AVAILABLE = True
 except ImportError as e:
-    print(f"⚠️ WARNING: tprint not available, using standard logging: {e}")
-    TPRINT_AVAILABLE = False
-    # Fallback functions
-    def tprint(*args, **kwargs): print(*args, **kwargs)
-    def tprint_info(*args, **kwargs): print("INFO:", *args, **kwargs)
-    def tprint_warning(*args, **kwargs): print("WARNING:", *args, **kwargs)
-    def tprint_error(*args, **kwargs): print("ERROR:", *args, **kwargs)
-    def tprint_success(*args, **kwargs): print("SUCCESS:", *args, **kwargs)
-    def tprint_debug(*args, **kwargs): print("DEBUG:", *args, **kwargs)
-    def tprint_progress(step, total, message="", **kwargs): print(f"PROGRESS {step}/{total}: {message}")
-    def tprint_performance(op, duration, **kwargs): print(f"PERFORMANCE: {op} took {duration:.3f}s")
-    def tprint_structured(data, level=None, **kwargs): print("STRUCTURED:", data)
-    def tprint_timer(operation, level=None):
-        class Timer:
-            def __init__(self, op):
-                self.op = op
-                self.start = time.time()
-            def __enter__(self):
-                return self
-            def __exit__(self, *args):
-                duration = time.time() - self.start
-                tprint_performance(self.op, duration)
-        return Timer(operation)
-    
-    # Create LogLevel enum for fallback
-    class LogLevel:
-        DEBUG = "DEBUG"
-        INFO = "INFO"
-        WARNING = "WARNING"
-        ERROR = "ERROR"
-        SUCCESS = "SUCCESS"
-        PROGRESS = "PROGRESS"
-        PERFORMANCE = "PERFORMANCE"
+    print(f"❌ CRITICAL ERROR: tprint is required but not available: {e}")
+    print("❌ This is a critical dependency for enhanced logging. Please install tprint.")
+    raise ImportError(f"CRITICAL: tprint is required but not available: {e}") from e
 
-# Import common utilities with error handling
+# Import common utilities - NON-CRITICAL: Keep fallback for hardware optimizers
 try:
     from src.utils.common_operations import (
         get_m1_gpu_manager, get_m1_memory_optimizer, get_m1_cpu_optimizer,
         cleanup_m1_optimizers, integrate_with_m1_optimizers
     )
     COMMON_OPERATIONS_AVAILABLE = True
+    tprint_info("✅ Common operations utilities loaded")
 except ImportError as e:
-    if TPRINT_AVAILABLE:
-        tprint_warning(f"Common operations not available: {e}")
-    else:
-        print(f"⚠️ WARNING: Common operations not available: {e}")
+    tprint_warning(f"⚠️ Common operations not available (hardware optimizers disabled): {e}")
     COMMON_OPERATIONS_AVAILABLE = False
 
 try:
@@ -96,11 +64,9 @@ try:
         safe_merge_dataframes, create_summary_statistics
     )
     COMMON_UTILITIES_AVAILABLE = True
+    tprint_info("✅ Common utilities loaded")
 except ImportError as e:
-    if TPRINT_AVAILABLE:
-        tprint_warning(f"Common utilities not available: {e}")
-    else:
-        print(f"⚠️ WARNING: Common utilities not available: {e}")
+    tprint_warning(f"⚠️ Common utilities not available (enhanced data operations disabled): {e}")
     COMMON_UTILITIES_AVAILABLE = False
 
 try:
@@ -109,22 +75,18 @@ try:
         safe_correlation, safe_percentage_change
     )
     MATH_VALIDATION_AVAILABLE = True
+    tprint_info("✅ Math validation utilities loaded")
 except ImportError as e:
-    if TPRINT_AVAILABLE:
-        tprint_warning(f"Math validation not available: {e}")
-    else:
-        print(f"⚠️ WARNING: Math validation not available: {e}")
+    tprint_warning(f"⚠️ Math validation not available (safe math operations disabled): {e}")
     MATH_VALIDATION_AVAILABLE = False
 
 try:
     from src.utils.kline_parquet import validate_klines_data, process_klines_data
     from src.utils.serialization_utils import safe_serialize, safe_deserialize
     DATA_UTILITIES_AVAILABLE = True
+    tprint_info("✅ Data utilities loaded")
 except ImportError as e:
-    if TPRINT_AVAILABLE:
-        tprint_warning(f"Data utilities not available: {e}")
-    else:
-        print(f"⚠️ WARNING: Data utilities not available: {e}")
+    tprint_warning(f"⚠️ Data utilities not available (enhanced data validation disabled): {e}")
     DATA_UTILITIES_AVAILABLE = False
 
 try:
@@ -132,11 +94,9 @@ try:
         safe_matrix_operations, validate_matrix_properties, optimize_matrix_computations
     )
     MATRIX_OPERATIONS_AVAILABLE = True
+    tprint_info("✅ Matrix operations utilities loaded")
 except ImportError as e:
-    if TPRINT_AVAILABLE:
-        tprint_warning(f"Matrix operations not available: {e}")
-    else:
-        print(f"⚠️ WARNING: Matrix operations not available: {e}")
+    tprint_warning(f"⚠️ Matrix operations not available (optimized matrix computations disabled): {e}")
     MATRIX_OPERATIONS_AVAILABLE = False
 
 try:
@@ -144,11 +104,9 @@ try:
         cross_validation_utils, lookahead_bias_detector, hyperparameter_optimization
     )
     ML_COMMON_AVAILABLE = True
+    tprint_info("✅ ML common utilities loaded")
 except ImportError as e:
-    if TPRINT_AVAILABLE:
-        tprint_warning(f"ML common utilities not available: {e}")
-    else:
-        print(f"⚠️ WARNING: ML common utilities not available: {e}")
+    tprint_warning(f"⚠️ ML common utilities not available (advanced ML features disabled): {e}")
     ML_COMMON_AVAILABLE = False
 
 # Import vectorized training manager for enhanced capabilities
@@ -158,13 +116,13 @@ try:
 except ImportError:
     VECTORIZED_TRAINING_AVAILABLE = False
 
-# Initialize logger with error handling
+# Initialize logger - CRITICAL: Fast fail if not available
 try:
     logger = system_logger.getChild('TacticianModelsTrainingEnhanced')
 except Exception as e:
-    print(f"⚠️ WARNING: Failed to initialize logger: {e}")
-    import logging
-    logger = logging.getLogger('TacticianModelsTrainingEnhanced')
+    print(f"❌ CRITICAL ERROR: Failed to initialize system logger: {e}")
+    print("❌ System logger is required for proper logging. Please check logger configuration.")
+    raise RuntimeError(f"CRITICAL: Failed to initialize system logger: {e}") from e
 
 
 class TrainingPhase(Enum):
@@ -264,13 +222,13 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
             tprint_info("🔄 Initializing parent PerRegimeTrainingStep...")
             super().__init__(config)
             
-            # Initialize logger with error handling
+            # Initialize logger - CRITICAL: Fast fail if not available
             try:
                 self.logger = logger.getChild('TacticianModelsTrainingEnhanced')
             except Exception as e:
-                tprint_warning(f"⚠️ Failed to initialize child logger: {e}")
-                import logging
-                self.logger = logging.getLogger('TacticianModelsTrainingEnhanced')
+                error_msg = f"CRITICAL: Failed to initialize child logger: {e}"
+                tprint_error(f"❌ {error_msg}")
+                raise RuntimeError(error_msg) from e
             
             tprint_success("✅ Parent class initialized successfully")
             
@@ -368,30 +326,22 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
             if not config.timeframe:
                 raise ValueError("No timeframe specified in configuration")
             
-            # Validate minimum samples
+            # Validate minimum samples - CRITICAL: Fast fail on invalid config
             if config.min_samples_per_regime < 100:
-                if hasattr(self, 'logger') and self.logger:
-                    self.logger.warning(f"⚠️ Very low minimum samples per regime: {config.min_samples_per_regime}")
-                else:
-                    tprint_warning(f"⚠️ Very low minimum samples per regime: {config.min_samples_per_regime}")
+                error_msg = f"CRITICAL: Very low minimum samples per regime: {config.min_samples_per_regime} (minimum: 100)"
+                tprint_error(f"❌ {error_msg}")
+                raise ValueError(error_msg)
             
-            # Validate HPO settings
+            # Validate HPO settings - CRITICAL: Fast fail on invalid config
             if config.enable_hpo and config.hpo_n_trials < 10:
-                if hasattr(self, 'logger') and self.logger:
-                    self.logger.warning(f"⚠️ Very low HPO trials: {config.hpo_n_trials}")
-                else:
-                    tprint_warning(f"⚠️ Very low HPO trials: {config.hpo_n_trials}")
+                error_msg = f"CRITICAL: Very low HPO trials: {config.hpo_n_trials} (minimum: 10)"
+                tprint_error(f"❌ {error_msg}")
+                raise ValueError(error_msg)
             
-            if hasattr(self, 'logger') and self.logger:
-                self.logger.info("✅ Configuration validation passed")
-            else:
-                tprint_success("✅ Configuration validation passed")
+            tprint_success("✅ Configuration validation passed")
             
         except Exception as e:
-            if hasattr(self, 'logger') and self.logger:
-                self.logger.error(f"❌ Configuration validation failed: {e}")
-            else:
-                tprint_error(f"❌ Configuration validation failed: {e}")
+            tprint_error(f"❌ Configuration validation failed: {e}")
             raise
     
     def _initialize_hardware_optimizers(self) -> None:
@@ -578,36 +528,28 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
         try:
             tprint_info("🔍 Starting comprehensive input data validation...")
             
-            # Basic shape validation with fast failing
+            # CRITICAL: Fast fail on data shape mismatches
             tprint_debug("Validating data shapes...")
             if X.shape[0] != y.shape[0]:
-                error_msg = f"Feature and target sample counts don't match: {X.shape[0]} vs {y.shape[0]}"
-                validation_results['errors'].append(error_msg)
-                validation_results['is_valid'] = False
+                error_msg = f"CRITICAL: Feature and target sample counts don't match: {X.shape[0]} vs {y.shape[0]}"
                 tprint_error(f"❌ {error_msg}")
-                raise ValueError(error_msg)  # Fast fail on critical errors
+                raise ValueError(error_msg)
             
             if X.shape[0] != regime_labels.shape[0]:
-                error_msg = f"Feature and regime label sample counts don't match: {X.shape[0]} vs {regime_labels.shape[0]}"
-                validation_results['errors'].append(error_msg)
-                validation_results['is_valid'] = False
+                error_msg = f"CRITICAL: Feature and regime label sample counts don't match: {X.shape[0]} vs {regime_labels.shape[0]}"
                 tprint_error(f"❌ {error_msg}")
-                raise ValueError(error_msg)  # Fast fail on critical errors
+                raise ValueError(error_msg)
             
-            # Check for empty data with fast failing
+            # CRITICAL: Fast fail on empty data
             if X.shape[0] == 0:
-                error_msg = "No samples provided in input data"
-                validation_results['errors'].append(error_msg)
-                validation_results['is_valid'] = False
+                error_msg = "CRITICAL: No samples provided in input data"
                 tprint_error(f"❌ {error_msg}")
-                raise ValueError(error_msg)  # Fast fail on critical errors
+                raise ValueError(error_msg)
             
             if X.shape[1] == 0:
-                error_msg = "No features provided in input data"
-                validation_results['errors'].append(error_msg)
-                validation_results['is_valid'] = False
+                error_msg = "CRITICAL: No features provided in input data"
                 tprint_error(f"❌ {error_msg}")
-                raise ValueError(error_msg)  # Fast fail on critical errors
+                raise ValueError(error_msg)
             
             tprint_success(f"✅ Basic shape validation passed: {X.shape[0]} samples, {X.shape[1]} features")
             

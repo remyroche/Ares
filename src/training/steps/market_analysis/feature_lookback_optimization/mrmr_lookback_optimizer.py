@@ -93,13 +93,13 @@ class LookbackOptimizationConfig:
     optimization_method: str = "two_step_grid_tpe"  # "two_step_grid_tpe" (no fallbacks)
     
     # Grid Search Configuration
-    coarse_grid_size: int = 7          # 7x7 = 49 combinations
-    fine_grid_size: int = 7            # 7x7 = 49 combinations
-    top_k_coarse_candidates: int = 8   # Top 8 from coarse grid
-    top_k_fine_candidates: int = 5     # Top 5 from fine grid
+    coarse_grid_size: int = 5          # 5x5 = 25 combinations
+    fine_grid_size: int = 5            # 5x5 = 25 combinations
+    top_k_coarse_candidates: int = 6   # Top 6 from coarse grid
+    top_k_fine_candidates: int = 4     # Top 4 from fine grid
     
     # TPE Configuration
-    tpe_trials: int = 50               # TPE fine-tuning trials (reduced from 100)
+    tpe_trials: int = 25               # TPE fine-tuning trials (reduced from 50)
     tpe_timeout: Optional[int] = None
     n_startup_trials: int = 10
     n_warmup_steps: int = 5
@@ -385,11 +385,11 @@ class MRMRLookbackOptimizer:
         if not OPTUNA_AVAILABLE:
             raise ImportError("Optuna is required for two-step grid + TPE optimization. Please install optuna.")
         
-        # Step 1: Coarse 7x7 Grid Search
-        coarse_results = self._coarse_grid_search_7x7(data, feature_name, target_column)
+        # Step 1: Coarse 5x5 Grid Search
+        coarse_results = self._coarse_grid_search_5x5(data, feature_name, target_column)
         
-        # Step 2: Fine 7x7 Grid Search
-        fine_results = self._fine_grid_search_7x7(data, feature_name, target_column, coarse_results)
+        # Step 2: Fine 5x5 Grid Search
+        fine_results = self._fine_grid_search_5x5(data, feature_name, target_column, coarse_results)
         
         # Step 3: TPE Fine-tuning
         result = self._tpe_fine_tuning(data, feature_name, target_column, fine_results, start_time)
@@ -1083,14 +1083,14 @@ class MRMRLookbackOptimizer:
             convergence_history=self.convergence_history
         )
     
-    def _coarse_grid_search_7x7(self,
+    def _coarse_grid_search_5x5(self,
                              data: pd.DataFrame,
                              feature_name: str,
                              target_column: str) -> Dict[str, Any]:
-        """Step 1: Coarse 7x7 grid search to identify promising regions."""
-        self.logger.info("🔍 Step 1: Coarse 7x7 grid search...")
+        """Step 1: Coarse 5x5 grid search to identify promising regions."""
+        self.logger.info("🔍 Step 1: Coarse 5x5 grid search...")
         
-        # Create 7x7 grid
+        # Create 5x5 grid
         first_lookback_values = np.linspace(
             self.config.min_lookback, 
             self.config.max_lookback, 
@@ -1106,7 +1106,7 @@ class MRMRLookbackOptimizer:
         
         results = []
         
-        # Evaluate all 7x7 = 49 combinations
+        # Evaluate all 5x5 = 25 combinations
         for first_lookback in first_lookback_values:
             for second_lookback in second_lookback_values:
                 if first_lookback == second_lookback:
@@ -1152,8 +1152,8 @@ class MRMRLookbackOptimizer:
             'best_candidate': top_candidates[0] if top_candidates else None
         }
     
-    def _fine_grid_search_7x7(self, data: pd.DataFrame, feature_name: str, target_column: str, coarse_results: Dict[str, Any]) -> Dict[str, Any]:
-        """Step 2: Fine 7x7 grid search around best coarse candidates."""
+    def _fine_grid_search_5x5(self, data: pd.DataFrame, feature_name: str, target_column: str, coarse_results: Dict[str, Any]) -> Dict[str, Any]:
+        """Step 2: Fine 5x5 grid search around best coarse candidates."""
         
         if not coarse_results['top_candidates']:
             raise ValueError("No coarse candidates available for fine grid search")
@@ -1175,13 +1175,13 @@ class MRMRLookbackOptimizer:
             self.config.coarse_refinement_factor
         )
         
-        # Create fine 7x7 grid
+        # Create fine 5x5 grid
         first_lookback_values = np.linspace(first_range[0], first_range[1], self.config.fine_grid_size, dtype=int)
         second_lookback_values = np.linspace(second_range[0], second_range[1], self.config.fine_grid_size, dtype=int)
         
         results = []
         
-        # Evaluate all 7x7 = 49 combinations in refined space
+        # Evaluate all 5x5 = 25 combinations in refined space
         for first_lookback in first_lookback_values:
             for second_lookback in second_lookback_values:
                 if first_lookback == second_lookback:

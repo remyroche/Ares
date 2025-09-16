@@ -2,34 +2,34 @@
 
 ## ✅ **Implementation Completed Successfully**
 
-The feature lookback optimization has been successfully updated to use the **two-step grid search (7x7 + 7x7) + TPE fine-tuning (50 trials)** approach with **no fallback mechanisms**.
+The feature lookback optimization has been successfully updated to use the **two-step grid search (5x5 + 5x5) + TPE fine-tuning (25 trials)** approach with **no fallback mechanisms**.
 
 ## 🔧 **Changes Made**
 
 ### **1. Configuration Updates**
 - **Optimization Method**: Changed from `"bayesian"` to `"two_step_grid_tpe"`
-- **Grid Sizes**: Added `coarse_grid_size=7` and `fine_grid_size=7`
-- **Candidate Selection**: Added `top_k_coarse_candidates=8` and `top_k_fine_candidates=5`
-- **TPE Trials**: Reduced from 100 to **50 trials** as requested
+- **Grid Sizes**: Added `coarse_grid_size=5` and `fine_grid_size=5`
+- **Candidate Selection**: Added `top_k_coarse_candidates=6` and `top_k_fine_candidates=4`
+- **TPE Trials**: Reduced from 100 to **25 trials** as requested
 - **Refinement Factors**: Added `coarse_refinement_factor=0.3` and `fine_refinement_factor=0.2`
 
 ### **2. New Methods Implemented**
 
-#### **`_coarse_grid_search_7x7()`**
-- **Purpose**: Step 1 - Coarse 7x7 grid search to identify promising regions
-- **Grid Size**: 7×7 = 49 combinations
-- **Output**: Top 8 candidates for fine grid search
+#### **`_coarse_grid_search_5x5()`**
+- **Purpose**: Step 1 - Coarse 5x5 grid search to identify promising regions
+- **Grid Size**: 5×5 = 25 combinations
+- **Output**: Top 6 candidates for fine grid search
 - **Range**: Full parameter space (min_lookback to max_lookback)
 
-#### **`_fine_grid_search_7x7()`**
-- **Purpose**: Step 2 - Fine 7x7 grid search around best coarse candidates
-- **Grid Size**: 7×7 = 49 combinations
-- **Output**: Top 5 candidates for TPE fine-tuning
+#### **`_fine_grid_search_5x5()`**
+- **Purpose**: Step 2 - Fine 5x5 grid search around best coarse candidates
+- **Grid Size**: 5×5 = 25 combinations
+- **Output**: Top 4 candidates for TPE fine-tuning
 - **Range**: 30% of original range around best coarse candidate
 
 #### **`_tpe_fine_tuning()`**
 - **Purpose**: Step 3 - TPE fine-tuning around best fine candidates
-- **Trials**: 50 trials (reduced from 100 as requested)
+- **Trials**: 25 trials (reduced from 50 as requested)
 - **Range**: 20% of fine range around best fine candidate
 - **Sampler**: Tree-structured Parzen Estimator (TPE)
 - **Pruner**: Median pruner for early stopping
@@ -56,11 +56,11 @@ else:
 if not OPTUNA_AVAILABLE:
     raise ImportError("Optuna is required for two-step grid + TPE optimization")
 
-# Step 1: Coarse 7x7 Grid Search
-coarse_results = self._coarse_grid_search_7x7(data, feature_name, target_column)
+# Step 1: Coarse 5x5 Grid Search
+coarse_results = self._coarse_grid_search_5x5(data, feature_name, target_column)
 
-# Step 2: Fine 7x7 Grid Search  
-fine_results = self._fine_grid_search_7x7(data, feature_name, target_column, coarse_results)
+# Step 2: Fine 5x5 Grid Search  
+fine_results = self._fine_grid_search_5x5(data, feature_name, target_column, coarse_results)
 
 # Step 3: TPE Fine-tuning
 result = self._tpe_fine_tuning(data, feature_name, target_column, fine_results, start_time)
@@ -68,23 +68,23 @@ result = self._tpe_fine_tuning(data, feature_name, target_column, fine_results, 
 
 ## 📊 **Optimization Strategy Details**
 
-### **Step 1: Coarse Grid Search (7×7 = 49 combinations)**
+### **Step 1: Coarse Grid Search (5×5 = 25 combinations)**
 - **Purpose**: Systematic exploration of entire parameter space
-- **Grid**: 7 evenly spaced points for first_lookback × 7 evenly spaced points for second_lookback
-- **Selection**: Top 8 candidates based on combined score
+- **Grid**: 5 evenly spaced points for first_lookback × 5 evenly spaced points for second_lookback
+- **Selection**: Top 6 candidates based on combined score
 - **Time**: Fast, broad exploration
 
-### **Step 2: Fine Grid Search (7×7 = 49 combinations)**
+### **Step 2: Fine Grid Search (5×5 = 25 combinations)**
 - **Purpose**: Focused search around promising regions
-- **Grid**: 7×7 grid in refined parameter space (30% of original range)
-- **Selection**: Top 5 candidates for TPE fine-tuning
+- **Grid**: 5×5 grid in refined parameter space (30% of original range)
+- **Selection**: Top 4 candidates for TPE fine-tuning
 - **Time**: Medium, refined exploration
 
-### **Step 3: TPE Fine-tuning (50 trials)**
+### **Step 3: TPE Fine-tuning (25 trials)**
 - **Purpose**: Intelligent fine-tuning around optimal regions
 - **Method**: Tree-structured Parzen Estimator
 - **Range**: Ultra-refined space (20% of fine range)
-- **Trials**: 50 trials (reduced from 100 as requested)
+- **Trials**: 25 trials (reduced from 50 as requested)
 - **Time**: Intelligent, fine-tuning
 
 ## 🎯 **Benefits of New Approach**
@@ -100,10 +100,10 @@ result = self._tpe_fine_tuning(data, feature_name, target_column, fine_results, 
 - **Consistent Results**: Same optimization strategy every time
 
 ### **3. Optimal Resource Allocation**
-- **Total Evaluations**: 49 + 49 + 50 = 148 evaluations
-- **Coarse Grid**: 49 evaluations (fast, broad exploration)
-- **Fine Grid**: 49 evaluations (focused, refined exploration)  
-- **TPE**: 50 trials (intelligent, fine-tuning)
+- **Total Evaluations**: 25 + 25 + 25 = 75 evaluations
+- **Coarse Grid**: 25 evaluations (fast, broad exploration)
+- **Fine Grid**: 25 evaluations (focused, refined exploration)  
+- **TPE**: 25 trials (intelligent, fine-tuning)
 
 ### **4. Better Convergence**
 - **Grid Search**: Guarantees finding good regions
@@ -119,13 +119,13 @@ class LookbackOptimizationConfig:
     optimization_method: str = "two_step_grid_tpe"  # No fallbacks
     
     # Grid Search Configuration
-    coarse_grid_size: int = 7          # 7x7 = 49 combinations
-    fine_grid_size: int = 7            # 7x7 = 49 combinations
-    top_k_coarse_candidates: int = 8   # Top 8 from coarse grid
-    top_k_fine_candidates: int = 5     # Top 5 from fine grid
+    coarse_grid_size: int = 5          # 5x5 = 25 combinations
+    fine_grid_size: int = 5            # 5x5 = 25 combinations
+    top_k_coarse_candidates: int = 6   # Top 6 from coarse grid
+    top_k_fine_candidates: int = 4     # Top 4 from fine grid
     
     # TPE Configuration
-    tpe_trials: int = 50               # TPE fine-tuning trials (reduced from 100)
+    tpe_trials: int = 25               # TPE fine-tuning trials (reduced from 50)
     tpe_timeout: Optional[int] = None
     n_startup_trials: int = 10
     n_warmup_steps: int = 5
@@ -182,7 +182,7 @@ The implementation is **production-ready** with:
 
 ## 📈 **Expected Performance**
 
-- **Total Evaluations**: 148 (49 + 49 + 50)
+- **Total Evaluations**: 75 (25 + 25 + 25)
 - **Convergence**: Better than pure TPE or pure grid search
 - **Reliability**: No fallback dependencies, consistent execution
 - **Efficiency**: Systematic exploration followed by intelligent fine-tuning

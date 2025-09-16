@@ -1005,11 +1005,11 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
                 random_state=42,
                 
                 # Two-step grid + TPE parameters
-                coarse_grid_size=7,
-                fine_grid_size=7,
-                top_k_coarse_candidates=8,
-                top_k_fine_candidates=5,
-                tpe_trials=50,
+                coarse_grid_size=5,
+                fine_grid_size=5,
+                top_k_coarse_candidates=6,
+                top_k_fine_candidates=4,
+                tpe_trials=25,
                 coarse_refinement_factor=0.3,
                 fine_refinement_factor=0.2,
                 
@@ -1046,9 +1046,9 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
             return {
                 'optimization_method': 'two_step_grid_tpe',
                 'lookback_range': OptimizationConfig.DEFAULT_LOOKBACK_RANGE,
-                'coarse_grid_size': 7,
-                'fine_grid_size': 7,
-                'tpe_trials': 50,
+                'coarse_grid_size': 5,
+                'fine_grid_size': 5,
+                'tpe_trials': 25,
                 'regime_aware': False,
                 'use_ml_common_utilities': ML_COMMON_AVAILABLE,
                 'use_matrix_operations': MATRIX_OPS_AVAILABLE,

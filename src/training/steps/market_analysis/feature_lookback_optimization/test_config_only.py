@@ -43,18 +43,18 @@ def test_configuration():
         print("✅ Optimization method: two_step_grid_tpe")
         
         # Check grid sizes
-        assert config.coarse_grid_size == 7, f"Expected 7, got {config.coarse_grid_size}"
-        assert config.fine_grid_size == 7, f"Expected 7, got {config.fine_grid_size}"
-        print("✅ Grid sizes: 7x7 for both coarse and fine")
+        assert config.coarse_grid_size == 5, f"Expected 5, got {config.coarse_grid_size}"
+        assert config.fine_grid_size == 5, f"Expected 5, got {config.fine_grid_size}"
+        print("✅ Grid sizes: 5x5 for both coarse and fine")
         
         # Check TPE trials
-        assert config.tpe_trials == 50, f"Expected 50, got {config.tpe_trials}"
-        print("✅ TPE trials: 50 (reduced from 100)")
+        assert config.tpe_trials == 25, f"Expected 25, got {config.tpe_trials}"
+        print("✅ TPE trials: 25 (reduced from 50)")
         
         # Check candidate selection
-        assert config.top_k_coarse_candidates == 8, f"Expected 8, got {config.top_k_coarse_candidates}"
-        assert config.top_k_fine_candidates == 5, f"Expected 5, got {config.top_k_fine_candidates}"
-        print("✅ Candidate selection: 8 coarse, 5 fine")
+        assert config.top_k_coarse_candidates == 6, f"Expected 6, got {config.top_k_coarse_candidates}"
+        assert config.top_k_fine_candidates == 4, f"Expected 4, got {config.top_k_fine_candidates}"
+        print("✅ Candidate selection: 6 coarse, 4 fine")
         
         # Check refinement factors
         assert config.coarse_refinement_factor == 0.3, f"Expected 0.3, got {config.coarse_refinement_factor}"
@@ -95,11 +95,11 @@ def test_method_signatures():
         print("✅ MRMRLookbackOptimizer instantiated successfully")
         
         # Check that new methods exist
-        assert hasattr(optimizer, '_coarse_grid_search_7x7'), "Missing _coarse_grid_search_7x7 method"
-        print("✅ _coarse_grid_search_7x7 method exists")
+        assert hasattr(optimizer, '_coarse_grid_search_5x5'), "Missing _coarse_grid_search_5x5 method"
+        print("✅ _coarse_grid_search_5x5 method exists")
         
-        assert hasattr(optimizer, '_fine_grid_search_7x7'), "Missing _fine_grid_search_7x7 method"
-        print("✅ _fine_grid_search_7x7 method exists")
+        assert hasattr(optimizer, '_fine_grid_search_5x5'), "Missing _fine_grid_search_5x5 method"
+        print("✅ _fine_grid_search_5x5 method exists")
         
         assert hasattr(optimizer, '_tpe_fine_tuning'), "Missing _tpe_fine_tuning method"
         print("✅ _tpe_fine_tuning method exists")
@@ -141,10 +141,10 @@ def test_optimization_flow():
         source = inspect.getsource(optimizer.optimize_lookback_periods)
         
         # Check that the new flow is implemented
-        assert '_coarse_grid_search_7x7' in source, "Coarse grid search not found in main method"
+        assert '_coarse_grid_search_5x5' in source, "Coarse grid search not found in main method"
         print("✅ Coarse grid search call found")
         
-        assert '_fine_grid_search_7x7' in source, "Fine grid search not found in main method"
+        assert '_fine_grid_search_5x5' in source, "Fine grid search not found in main method"
         print("✅ Fine grid search call found")
         
         assert '_tpe_fine_tuning' in source, "TPE fine-tuning not found in main method"

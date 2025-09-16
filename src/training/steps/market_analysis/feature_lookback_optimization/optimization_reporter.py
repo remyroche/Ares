@@ -15,6 +15,7 @@ import pandas as pd
 from dataclasses import asdict
 
 from src.utils.logger import system_logger
+from src.utils.tprint import tprint
 
 logger = system_logger.getChild('OptimizationReporter')
 
@@ -65,7 +66,7 @@ class OptimizationReporter:
         Returns:
             Comprehensive report dictionary
         """
-        self.logger.info("📊 Generating comprehensive optimization report...")
+        tprint("📊 Generating comprehensive optimization report...")
         
         try:
             # Generate timestamp for report
@@ -102,11 +103,11 @@ class OptimizationReporter:
             # Generate insights
             self._generate_insights(report, report_id)
             
-            self.logger.info(f"✅ Comprehensive report generated: {report_id}")
+            tprint(f"✅ Comprehensive report generated: {report_id}")
             return report
             
         except Exception as e:
-            self.logger.error(f"❌ Report generation failed: {e}")
+            tprint(f"❌ Report generation failed: {e}")
             return {'error': str(e), 'report_id': 'failed'}
     
     def _generate_executive_summary(self, optimization_result: Dict[str, Any], metrics: Any) -> Dict[str, Any]:
@@ -152,7 +153,7 @@ class OptimizationReporter:
             return summary
             
         except Exception as e:
-            self.logger.error(f"Executive summary generation failed: {e}")
+            tprint(f"❌ Executive summary generation failed: {e}")
             return {'error': str(e)}
     
     def _format_optimization_results(self, optimization_result: Dict[str, Any]) -> Dict[str, Any]:
@@ -192,7 +193,7 @@ class OptimizationReporter:
             }
             
         except Exception as e:
-            self.logger.error(f"Optimization results formatting failed: {e}")
+            tprint(f"❌ Optimization results formatting failed: {e}")
             return {'error': str(e)}
     
     def _analyze_performance(self, metrics: Any, performance_metrics: Dict[str, Any]) -> Dict[str, Any]:
@@ -228,7 +229,7 @@ class OptimizationReporter:
             return analysis
             
         except Exception as e:
-            self.logger.error(f"Performance analysis failed: {e}")
+            tprint(f"❌ Performance analysis failed: {e}")
             return {'error': str(e)}
     
     def _assess_data_quality(self, validation_results: Dict[str, Any]) -> Dict[str, Any]:
@@ -254,7 +255,7 @@ class OptimizationReporter:
             return assessment
             
         except Exception as e:
-            self.logger.error(f"Data quality assessment failed: {e}")
+            tprint(f"❌ Data quality assessment failed: {e}")
             return {'error': str(e)}
     
     def _analyze_features(self, optimization_result: Dict[str, Any]) -> Dict[str, Any]:
@@ -286,7 +287,7 @@ class OptimizationReporter:
             return analysis
             
         except Exception as e:
-            self.logger.error(f"Feature analysis failed: {e}")
+            tprint(f"❌ Feature analysis failed: {e}")
             return {'error': str(e)}
     
     def _generate_recommendations(self, optimization_result: Dict[str, Any], metrics: Any, validation_results: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -349,7 +350,7 @@ class OptimizationReporter:
             return recommendations
             
         except Exception as e:
-            self.logger.error(f"Recommendations generation failed: {e}")
+            tprint(f"❌ Recommendations generation failed: {e}")
             return [{'error': str(e)}]
     
     def _assess_risks(self, optimization_result: Dict[str, Any], metrics: Any) -> Dict[str, Any]:
@@ -381,7 +382,7 @@ class OptimizationReporter:
             return risks
             
         except Exception as e:
-            self.logger.error(f"Risk assessment failed: {e}")
+            tprint(f"❌ Risk assessment failed: {e}")
             return {'error': str(e)}
     
     def _suggest_next_steps(self, optimization_result: Dict[str, Any], metrics: Any) -> List[Dict[str, Any]]:
@@ -426,7 +427,7 @@ class OptimizationReporter:
             return next_steps
             
         except Exception as e:
-            self.logger.error(f"Next steps suggestion failed: {e}")
+            tprint(f"❌ Next steps suggestion failed: {e}")
             return [{'error': str(e)}]
     
     def _generate_technical_details(self, optimization_result: Dict[str, Any], metrics: Any, performance_metrics: Dict[str, Any]) -> Dict[str, Any]:
@@ -450,7 +451,7 @@ class OptimizationReporter:
             }
             
         except Exception as e:
-            self.logger.error(f"Technical details generation failed: {e}")
+            tprint(f"❌ Technical details generation failed: {e}")
             return {'error': str(e)}
     
     def _save_report(self, report: Dict[str, Any], report_id: str) -> None:
@@ -460,10 +461,10 @@ class OptimizationReporter:
             with open(report_file, 'w') as f:
                 json.dump(report, f, indent=2, default=str)
             
-            self.logger.info(f"Report saved to: {report_file}")
+            tprint(f"Report saved to: {report_file}")
             
         except Exception as e:
-            self.logger.error(f"Report saving failed: {e}")
+            tprint(f"❌ Report saving failed: {e}")
     
     def _generate_visualizations(self, optimization_result: Dict[str, Any], metrics: Any, report_id: str) -> None:
         """Generate visualizations for the report."""
@@ -485,10 +486,10 @@ class OptimizationReporter:
             with open(viz_file, 'w') as f:
                 json.dump(viz_data, f, indent=2)
             
-            self.logger.info(f"Visualizations data saved to: {viz_file}")
+            tprint(f"Visualizations data saved to: {viz_file}")
             
         except Exception as e:
-            self.logger.error(f"Visualization generation failed: {e}")
+            tprint(f"❌ Visualization generation failed: {e}")
     
     def _generate_insights(self, report: Dict[str, Any], report_id: str) -> None:
         """Generate actionable insights from the report."""
@@ -511,10 +512,10 @@ class OptimizationReporter:
             with open(insights_file, 'w') as f:
                 json.dump(insights, f, indent=2)
             
-            self.logger.info(f"Insights saved to: {insights_file}")
+            tprint(f"Insights saved to: {insights_file}")
             
         except Exception as e:
-            self.logger.error(f"Insights generation failed: {e}")
+            tprint(f"❌ Insights generation failed: {e}")
     
     # Helper methods
     def _calculate_confidence_level(self, feature_data: Dict[str, Any]) -> str:
@@ -553,11 +554,13 @@ class OptimizationReporter:
         bottlenecks = []
         
         # Check for high memory usage
-        if performance_metrics.get('memory_usage', [0])[-1] > 1000:
+        memory_usage = performance_metrics.get('memory_usage', [])
+        if memory_usage and memory_usage[-1] > 1000:
             bottlenecks.append('HIGH_MEMORY_USAGE')
         
         # Check for high CPU usage
-        if performance_metrics.get('cpu_usage', [0])[-1] > 80:
+        cpu_usage = performance_metrics.get('cpu_usage', [])
+        if cpu_usage and cpu_usage[-1] > 80:
             bottlenecks.append('HIGH_CPU_USAGE')
         
         return bottlenecks

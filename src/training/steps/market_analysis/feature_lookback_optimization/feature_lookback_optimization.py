@@ -23,14 +23,39 @@ np, np_fallback = get_dependency('numpy')
 pd, pd_fallback = get_dependency('pandas')
 
 if np_fallback or pd_fallback:
-    import logging
-    logging.warning("Using fallback implementations for core dependencies")
+    from src.utils.tprint import tprint
+    tprint("⚠️ Using fallback implementations for core dependencies")
 
 from ...market_analysis.components.base_component import BaseMarketAnalysisComponent, ComponentConfig, ComponentResult
 from .optimization_reporter import OptimizationReporter
 from .validation_framework import ValidationFramework, ValidationLevel, ValidationStatus
 from .monitoring_metrics import MonitoringMetrics, MetricType, MetricLevel
 from src.utils.logger import system_logger
+from src.utils.tprint import tprint
+
+# Hardware optimization imports
+try:
+    from src.utils.hardware import get_unified_hardware_manager, get_advanced_memory_optimizer
+    HARDWARE_OPTIMIZATION_AVAILABLE = True
+except ImportError:
+    HARDWARE_OPTIMIZATION_AVAILABLE = False
+    tprint("⚠️ Hardware optimization not available - using fallback memory management")
+
+# Configuration constants
+class OptimizationConfig:
+    """Configuration constants for optimization."""
+    DEFAULT_LOOKBACK_RANGE = (5, 50)
+    DEFAULT_POPULATION_SIZE = 50
+    DEFAULT_GENERATIONS = 100
+    DEFAULT_MUTATION_RATE = 0.1
+    DEFAULT_CROSSOVER_RATE = 0.8
+    DEFAULT_ELITISM_RATE = 0.1
+    DEFAULT_MAX_FEATURES = 20
+    DEFAULT_FEATURE_IMPORTANCE_THRESHOLD = 0.01
+    DEFAULT_MEMORY_LIMIT_GB = 8.0
+    DEFAULT_DATA_COMPLETENESS_THRESHOLD = 0.8
+    DEFAULT_OPTIMIZATION_TIMEOUT = 600  # 10 minutes
+    DEFAULT_MEMORY_CLEANUP_INTERVAL = 100  # Cleanup every 100 operations
 
 
 class OptimizationStatus(Enum):
@@ -83,6 +108,20 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
             'error_counts': 0
         }
         
+        # Initialize hardware optimization if available
+        if HARDWARE_OPTIMIZATION_AVAILABLE:
+            try:
+                self.hardware_manager = get_unified_hardware_manager()
+                self.memory_optimizer = get_advanced_memory_optimizer()
+                tprint("✅ Hardware optimization initialized")
+            except Exception as e:
+                tprint(f"⚠️ Hardware optimization initialization failed: {e}")
+                self.hardware_manager = None
+                self.memory_optimizer = None
+        else:
+            self.hardware_manager = None
+            self.memory_optimizer = None
+        
         # Initialize reporter
         self.reporter = OptimizationReporter(
             output_dir=f"reports/feature_lookback_optimization/{self.config.symbol}_{self.config.exchange}_{self.config.timeframe}"
@@ -93,10 +132,30 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
         
         # Initialize monitoring metrics
         self.monitoring = MonitoringMetrics(f"FeatureLookbackOptimization_{self.config.symbol}")
+        
+        # Memory cleanup counter
+        self.operation_count = 0
     
     def get_required_artifacts(self) -> List[str]:
         """Get list of required artifacts this component must produce."""
         return ['feature_lookback_optimization_result']
+    
+    def _cleanup_memory(self) -> None:
+        """Clean up memory using hardware optimization tools."""
+        self.operation_count += 1
+        
+        if self.operation_count % OptimizationConfig.DEFAULT_MEMORY_CLEANUP_INTERVAL == 0:
+            try:
+                if self.memory_optimizer:
+                    self.memory_optimizer.cleanup_memory()
+                    tprint("🧹 Memory cleanup performed")
+                else:
+                    # Basic cleanup
+                    import gc
+                    gc.collect()
+                    tprint("🧹 Basic memory cleanup performed")
+            except Exception as e:
+                tprint(f"⚠️ Memory cleanup failed: {e}")
     
     async def _enhanced_data_handling(self, data: Any, pipeline_state: Dict[str, Any]) -> Optional[pd.DataFrame]:
         """Enhanced data handling to get data from multiple sources."""
@@ -104,12 +163,12 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
             # Try direct data first
             if data is not None:
                 if isinstance(data, pd.DataFrame) and not data.empty:
-                    self.logger.info("✅ Using direct DataFrame data")
+                    tprint("✅ Using direct DataFrame data")
                     return data
                 elif hasattr(data, 'to_dataframe'):
                     df = data.to_dataframe()
                     if not df.empty:
-                        self.logger.info("✅ Converted data to DataFrame")
+                        tprint("✅ Converted data to DataFrame")
                         return df
             
             # Try to get data from pipeline state
@@ -121,12 +180,12 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
                         pipeline_data = pipeline_state[key]
                         if pipeline_data is not None:
                             if isinstance(pipeline_data, pd.DataFrame) and not pipeline_data.empty:
-                                self.logger.info(f"✅ Using data from pipeline state key: {key}")
+                                tprint(f"✅ Using data from pipeline state key: {key}")
                                 return pipeline_data
                             elif hasattr(pipeline_data, 'to_dataframe'):
                                 df = pipeline_data.to_dataframe()
                                 if not df.empty:
-                                    self.logger.info(f"✅ Converted pipeline data from key: {key}")
+                                    tprint(f"✅ Converted pipeline data from key: {key}")
                                     return df
                 
                 # Try to get from regime data
@@ -135,7 +194,7 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
                     if isinstance(regime_data, dict) and 'data' in regime_data:
                         regime_df = regime_data['data']
                         if isinstance(regime_df, pd.DataFrame) and not regime_df.empty:
-                            self.logger.info("✅ Using data from regime_data")
+                            tprint("✅ Using data from regime_data")
                             return regime_df
             
             # Try to get from artifacts
@@ -145,14 +204,14 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
                     if isinstance(artifact_data, dict) and 'data' in artifact_data:
                         artifact_df = artifact_data['data']
                         if isinstance(artifact_df, pd.DataFrame) and not artifact_df.empty:
-                            self.logger.info(f"✅ Using data from artifact: {artifact_key}")
+                            tprint(f"✅ Using data from artifact: {artifact_key}")
                             return artifact_df
             
-            self.logger.warning("⚠️ No valid data found in any source")
+            tprint("⚠️ No valid data found in any source")
             return None
             
         except Exception as e:
-            self.logger.error(f"Enhanced data handling failed: {e}")
+            tprint(f"❌ Enhanced data handling failed: {e}")
             return None
     
     def _monitor_performance(self, operation_name: str) -> None:
@@ -168,15 +227,18 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
                 self.performance_monitor['cpu_usage'].append(cpu_percent)
                 
                 if is_fallback:
-                    self.logger.debug("Using fallback psutil for performance monitoring")
+                    tprint("Using fallback psutil for performance monitoring")
             
             if operation_name not in self.performance_monitor['execution_times']:
                 self.performance_monitor['execution_times'][operation_name] = []
             
             self.performance_monitor['execution_times'][operation_name].append(time.time())
             
+            # Cleanup memory periodically
+            self._cleanup_memory()
+            
         except Exception as e:
-            self.logger.warning(f"Performance monitoring failed: {e}")
+            tprint(f"⚠️ Performance monitoring failed: {e}")
     
     async def execute(self, data: Any, pipeline_state: Dict[str, Any]) -> ComponentResult:
         """
@@ -195,7 +257,7 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
         # Start comprehensive monitoring
         self.monitoring.start_monitoring()
         
-        self.logger.info('⚙️ Starting Feature Lookback Optimization')
+        tprint('⚙️ Starting Feature Lookback Optimization')
         self._monitor_performance('start')
         
         # Record start metrics
@@ -209,7 +271,7 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
         
         try:
             # Step 0: Enhanced data handling - try to get data from multiple sources
-            self.logger.info('🔍 Step 0: Enhanced data handling...')
+            tprint('🔍 Step 0: Enhanced data handling...')
             processed_data = await self._enhanced_data_handling(data, pipeline_state)
             if processed_data is None:
                 self.optimization_status = OptimizationStatus.FAILED
@@ -221,7 +283,7 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
                 )
             
             # Step 1: Comprehensive validation using framework
-            self.logger.info('🔍 Step 1: Validating input data and pipeline state...')
+            tprint('🔍 Step 1: Validating input data and pipeline state...')
             
             # Validate data with auto-fixing
             data_is_valid, data_validation_results, fixed_data = self.validation_framework.validate_data(processed_data)
@@ -229,7 +291,7 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
                 critical_failures = [r for r in data_validation_results 
                                    if r.status == ValidationStatus.FAILED and r.level == ValidationLevel.CRITICAL]
                 error_msg = f"Data validation failed: {[r.message for r in critical_failures]}"
-                self.logger.error(f'❌ {error_msg}')
+                tprint(f'❌ {error_msg}')
                 self.optimization_status = OptimizationStatus.FAILED
                 return ComponentResult(
                     success=False,
@@ -244,7 +306,7 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
                 critical_failures = [r for r in pipeline_validation_results 
                                    if r.status == ValidationStatus.FAILED and r.level == ValidationLevel.CRITICAL]
                 error_msg = f"Pipeline state validation failed: {[r.message for r in critical_failures]}"
-                self.logger.error(f'❌ {error_msg}')
+                tprint(f'❌ {error_msg}')
                 self.optimization_status = OptimizationStatus.FAILED
                 return ComponentResult(
                     success=False,
@@ -257,7 +319,7 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
             all_warnings = [r for r in data_validation_results + pipeline_validation_results 
                           if r.status == ValidationStatus.WARNING]
             for warning in all_warnings:
-                self.logger.warning(f'⚠️ {warning.message}')
+                tprint(f'⚠️ {warning.message}')
             
             # Generate validation summary
             data_validation_summary = self.validation_framework.generate_validation_summary(data_validation_results)
@@ -269,16 +331,16 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
             self.monitoring.record_technical_metric("validation_rules_passed", data_validation_summary.passed + pipeline_validation_summary.passed)
             self.monitoring.record_technical_metric("validation_rules_failed", data_validation_summary.failed + pipeline_validation_summary.failed)
             
-            self.logger.info(f'✅ Validation passed (data quality: {data_validation_summary.quality_score:.3f})')
+            tprint(f'✅ Validation passed (data quality: {data_validation_summary.quality_score:.3f})')
             self._monitor_performance('validation_complete')
             
             # Step 2: Load and prepare market data (use fixed data if available)
-            self.logger.info('📊 Loading and preparing market data...')
-            market_data = await self._load_market_data(fixed_data if fixed_data is not None else data)
+            tprint('📊 Loading and preparing market data...')
+            market_data = await self._load_market_data(fixed_data if fixed_data is not None else processed_data)
             if market_data is None or market_data.empty:
                 raise ValueError("No market data available for feature lookback optimization")
             
-            self.logger.info(f'📈 Market data loaded: {len(market_data)} rows, {len(market_data.columns)} columns')
+            tprint(f'📈 Market data loaded: {len(market_data)} rows, {len(market_data.columns)} columns')
             self._monitor_performance('data_loaded')
             
             # Step 3: Get labeled data from previous stage
@@ -286,27 +348,27 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
             if not triple_barrier_labeling:
                 raise ValueError("No triple barrier labeling results available for feature optimization")
             
-            self.logger.info('🏷️ Triple barrier labeling data retrieved')
+            tprint('🏷️ Triple barrier labeling data retrieved')
             
             # Step 4: Configure feature optimization
-            self.logger.info('⚙️ Configuring feature optimization...')
+            tprint('⚙️ Configuring feature optimization...')
             optimization_config = self._create_optimization_config(pipeline_state)
             self._monitor_performance('config_created')
             
             # Step 5: Get feature optimizer
-            self.logger.info('🔧 Initializing feature optimizer...')
+            tprint('🔧 Initializing feature optimizer...')
             feature_optimizer = await self._get_feature_optimizer(optimization_config)
             self._monitor_performance('optimizer_ready')
             
             # Step 6: Perform feature lookback optimization
-            self.logger.info('🚀 Starting feature optimization process...')
+            tprint('🚀 Starting feature optimization process...')
             optimization_result = await self._perform_feature_optimization(
                 feature_optimizer, market_data, triple_barrier_labeling, optimization_config
             )
             self._monitor_performance('optimization_complete')
             
             # Step 7: Extract and validate results
-            self.logger.info('📋 Extracting optimization results...')
+            tprint('📋 Extracting optimization results...')
             optimization_results = optimization_result.get('optimization_results', {})
             optimized_features = optimization_result.get('optimized_features', {})
             optimization_metrics = optimization_result.get('optimization_metrics', {})
@@ -317,14 +379,14 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
                 critical_failures = [r for r in optimization_validation_results 
                                    if r.status == ValidationStatus.FAILED and r.level == ValidationLevel.CRITICAL]
                 error_msg = f"Optimization results validation failed: {[r.message for r in critical_failures]}"
-                self.logger.error(f'❌ {error_msg}')
+                tprint(f'❌ {error_msg}')
                 raise ValueError(error_msg)
             
             # Log optimization validation warnings
             optimization_warnings = [r for r in optimization_validation_results 
                                    if r.status == ValidationStatus.WARNING]
             for warning in optimization_warnings:
-                self.logger.warning(f'⚠️ {warning.message}')
+                tprint(f'⚠️ {warning.message}')
             
             optimization_validation_summary = self.validation_framework.generate_validation_summary(optimization_validation_results)
             
@@ -333,7 +395,7 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
             self.monitoring.record_business_metric("features_optimized", len(optimized_features))
             self.monitoring.record_quality_metric("best_optimization_score", optimization_results.get('best_score', 0.0))
             
-            self.logger.info(f'✅ Optimization results validated (quality: {optimization_validation_summary.quality_score:.3f})')
+            tprint(f'✅ Optimization results validated (quality: {optimization_validation_summary.quality_score:.3f})')
             
             # Step 8: Create comprehensive metrics
             self.metrics = self._create_optimization_metrics(
@@ -341,7 +403,7 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
             )
             
             # Step 9: Generate comprehensive report using reporter
-            self.logger.info('📊 Generating comprehensive optimization report...')
+            tprint('📊 Generating comprehensive optimization report...')
             comprehensive_report = self.reporter.generate_comprehensive_report(
                 optimization_result=optimization_result,
                 metrics=self.metrics,
@@ -394,8 +456,8 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
             # Stop monitoring
             self.monitoring.stop_monitoring()
             
-            self.logger.info(f'✅ Feature Lookback Optimization completed successfully in {execution_time:.2f}s')
-            self.logger.info(f'📈 Optimized {len(optimized_features)} features with best lookback period: {self.metrics.best_lookback_period}')
+            tprint(f'✅ Feature Lookback Optimization completed successfully in {execution_time:.2f}s')
+            tprint(f'📈 Optimized {len(optimized_features)} features with best lookback period: {self.metrics.best_lookback_period}')
             
             return ComponentResult(
                 success=True,
@@ -429,9 +491,9 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
             # Stop monitoring
             self.monitoring.stop_monitoring()
             
-            self.logger.error(f'❌ Feature Lookback Optimization failed after {execution_time:.2f}s: {e}')
+            tprint(f'❌ Feature Lookback Optimization failed after {execution_time:.2f}s: {e}')
             import traceback
-            self.logger.error(f'❌ Error details: {traceback.format_exc()}')
+            tprint(f'❌ Error details: {traceback.format_exc()}')
             
             return ComponentResult(
                 success=False,
@@ -456,7 +518,7 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
             
             config = FeatureOptimizationConfig(
                 optimization_method='genetic_algorithm',
-                lookback_range=(5, 50),  # 5 to 50 periods
+                lookback_range=OptimizationConfig.DEFAULT_LOOKBACK_RANGE,
                 feature_types=['technical_indicators', 'price_features', 'volume_features'],
                 optimization_metric='sharpe_ratio',
                 cross_validation_folds=5,
@@ -464,16 +526,16 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
                 random_state=42,
                 
                 # Genetic algorithm parameters
-                population_size=50,
-                generations=100,
-                mutation_rate=0.1,
-                crossover_rate=0.8,
-                elitism_rate=0.1,
+                population_size=OptimizationConfig.DEFAULT_POPULATION_SIZE,
+                generations=OptimizationConfig.DEFAULT_GENERATIONS,
+                mutation_rate=OptimizationConfig.DEFAULT_MUTATION_RATE,
+                crossover_rate=OptimizationConfig.DEFAULT_CROSSOVER_RATE,
+                elitism_rate=OptimizationConfig.DEFAULT_ELITISM_RATE,
                 
                 # Feature selection
                 enable_feature_selection=True,
-                max_features=20,
-                feature_importance_threshold=0.01,
+                max_features=OptimizationConfig.DEFAULT_MAX_FEATURES,
+                feature_importance_threshold=OptimizationConfig.DEFAULT_FEATURE_IMPORTANCE_THRESHOLD,
                 
                 # Regime-aware optimization
                 enable_regime_aware_optimization=enable_regime_aware,
@@ -482,18 +544,18 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
                 # Hardware optimization
                 enable_parallel_processing=True,
                 enable_gpu_acceleration=True,
-                memory_limit_gb=8.0
+                memory_limit_gb=OptimizationConfig.DEFAULT_MEMORY_LIMIT_GB
             )
             
-            self.logger.info(f'⚙️ Optimization config created (regime-aware: {enable_regime_aware})')
+            tprint(f'⚙️ Optimization config created (regime-aware: {enable_regime_aware})')
             return config
             
         except ImportError as e:
-            self.logger.warning(f"Feature optimization config import failed: {e}")
+            tprint(f"⚠️ Feature optimization config import failed: {e}")
             # Return a simple fallback config
             return {
                 'optimization_method': 'statistical',
-                'lookback_range': (5, 50),
+                'lookback_range': OptimizationConfig.DEFAULT_LOOKBACK_RANGE,
                 'regime_aware': False
             }
     
@@ -502,11 +564,11 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
         try:
             from src.feature_engineering.feature_generation_optimization import get_feature_optimizer
             optimizer = get_feature_optimizer(config)
-            self.logger.info('✅ Feature optimizer initialized successfully')
+            tprint('✅ Feature optimizer initialized successfully')
             return optimizer
             
         except ImportError as e:
-            self.logger.warning(f"Feature optimizer import failed: {e}")
+            tprint(f"⚠️ Feature optimizer import failed: {e}")
             # Return a fallback optimizer
             return self._create_fallback_optimizer()
     
@@ -518,7 +580,7 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
                 self.logger = system_logger.getChild('FallbackOptimizer')
             
             async def optimize_features(self, data, config):
-                self.logger.info("Using fallback statistical optimization")
+                tprint("Using fallback statistical optimization")
                 return {
                     'optimization_results': {
                         'best_lookback_period': 20,
@@ -576,11 +638,11 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
                 error_rate=self.performance_monitor['error_counts'] / max(1, len(optimized_features))
             )
             
-            self.logger.info(f'📊 Metrics created: score={metrics.best_score:.3f}, stability={metrics.stability_score:.3f}')
+            tprint(f'📊 Metrics created: score={metrics.best_score:.3f}, stability={metrics.stability_score:.3f}')
             return metrics
             
         except Exception as e:
-            self.logger.error(f"Failed to create optimization metrics: {e}")
+            tprint(f"❌ Failed to create optimization metrics: {e}")
             # Return default metrics
             return OptimizationMetrics(
                 best_lookback_period=0,
@@ -764,12 +826,12 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
         optimization_start_time = time.time()
         
         try:
-            self.logger.info('🔄 Preparing data for optimization...')
+            tprint('🔄 Preparing data for optimization...')
             # Prepare data for optimization
             prepared_data = self._prepare_data_for_optimization(market_data, triple_barrier_labeling)
             self._monitor_performance('data_prepared')
             
-            self.logger.info('🚀 Executing feature optimization...')
+            tprint('🚀 Executing feature optimization...')
             # Perform feature optimization
             optimization_result = await feature_optimizer.optimize_features(prepared_data, config)
             self._monitor_performance('optimization_executed')
@@ -778,12 +840,12 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
             optimization_time = time.time() - optimization_start_time
             optimization_result['optimization_time'] = optimization_time
             
-            self.logger.info(f'✅ Feature optimization completed in {optimization_time:.2f}s')
+            tprint(f'✅ Feature optimization completed in {optimization_time:.2f}s')
             return optimization_result
             
         except Exception as e:
             optimization_time = time.time() - optimization_start_time
-            self.logger.error(f"❌ Feature optimization process failed after {optimization_time:.2f}s: {e}")
+            tprint(f"❌ Feature optimization process failed after {optimization_time:.2f}s: {e}")
             self.performance_monitor['error_counts'] += 1
             
             # Return comprehensive fallback optimization result
@@ -819,7 +881,7 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
         """Prepare market data and labeled data for optimization with comprehensive validation."""
         try:
             if not isinstance(data, pd.DataFrame):
-                self.logger.warning("Data is not a DataFrame, using fallback preparation")
+                tprint("⚠️ Data is not a DataFrame, using fallback preparation")
                 return {
                     'market_data': data,
                     'triple_barrier_labeling': triple_barrier_labeling,
@@ -834,16 +896,16 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
             missing_columns = [col for col in required_columns if col not in prepared_data.columns]
             
             if missing_columns:
-                self.logger.warning(f"Missing columns for optimization: {missing_columns}")
+                tprint(f"⚠️ Missing columns for optimization: {missing_columns}")
                 # Use available columns or create fallback data
                 for col in missing_columns:
                     if col == 'volume':
                         prepared_data[col] = 1000  # Default volume
-                        self.logger.info(f"Created fallback {col} column with default value")
+                        tprint(f"Created fallback {col} column with default value")
                     else:
                         fallback_value = prepared_data.get('close', 100.0)
                         prepared_data[col] = fallback_value
-                        self.logger.info(f"Created fallback {col} column using close price")
+                        tprint(f"Created fallback {col} column using close price")
             
             # Add metadata about preparation
             preparation_metadata = {
@@ -862,7 +924,7 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
             }
             
         except Exception as e:
-            self.logger.error(f"Data preparation failed: {e}")
+            tprint(f"❌ Data preparation failed: {e}")
             # Return minimal fallback
             return {
                 'market_data': data,

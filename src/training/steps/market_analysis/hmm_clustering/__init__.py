@@ -40,8 +40,7 @@ from .hmm_executor import (
 from .hmm_utils import (
     HMMCommonUtilities,
     TechnicalIndicators,
-    create_fallback_logger,
-    safe_json_dump
+    create_fallback_logger
 )
 from .clustering_executor import (
     create_clustering_dependencies,
@@ -78,7 +77,6 @@ __all__ = [
     'HMMCommonUtilities',
     'TechnicalIndicators',
     'create_fallback_logger',
-    'safe_json_dump',
     
     # Clustering utilities
     'create_clustering_dependencies',

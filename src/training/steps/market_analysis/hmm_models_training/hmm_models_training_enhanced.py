@@ -123,14 +123,12 @@ class ModelFactory:
     
     _model_configs = {
         'elastic_net': {
-            'class': 'sklearn.linear_model.LogisticRegression',
+            'class': 'sklearn.linear_model.ElasticNetCV',
             'default_params': {
-                'penalty': 'elasticnet',
-                'l1_ratio': 0.5,
-                'solver': 'saga',
-                'max_iter': 2000,
+                'l1_ratio': [0.1, 0.5, 0.7, 0.9, 0.95, 0.99],
+                'cv': 5,
                 'random_state': 42,
-                'class_weight': 'balanced',
+                'max_iter': 2000,
                 'n_jobs': -1
             }
         },

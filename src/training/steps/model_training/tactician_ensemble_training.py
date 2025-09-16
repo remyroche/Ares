@@ -16,13 +16,11 @@ Enhanced with:
 
 import numpy as np
 import pandas as pd
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional
 import logging
 import time
 import traceback
 from dataclasses import dataclass
-import sys
-import os
 from pathlib import Path
 
 # Enhanced imports with comprehensive error handling
@@ -54,33 +52,26 @@ except ImportError as e:
 try:
     from src.utils.tprint import (
         tprint, tprint_info, tprint_warning, tprint_error, tprint_success, 
-        tprint_debug, tprint_progress, tprint_performance, tprint_structured,
-        tprint_timer, LogLevel
+        tprint_debug, tprint_structured, LogLevel
     )
     TPRINT_AVAILABLE = True
 except ImportError as e:
     print(f"⚠️ Warning: Could not import tprint utilities: {e}")
     TPRINT_AVAILABLE = False
-    # Fallback functions
+    # Essential fallback functions only
     def tprint(*args, **kwargs): print(*args, **kwargs)
     def tprint_info(*args, **kwargs): print("INFO:", *args, **kwargs)
     def tprint_warning(*args, **kwargs): print("WARNING:", *args, **kwargs)
     def tprint_error(*args, **kwargs): print("ERROR:", *args, **kwargs)
     def tprint_success(*args, **kwargs): print("SUCCESS:", *args, **kwargs)
     def tprint_debug(*args, **kwargs): print("DEBUG:", *args, **kwargs)
-    def tprint_progress(step, total, message="", **kwargs): print(f"PROGRESS: {step}/{total} ({step/total*100:.1f}%) {message}")
-    def tprint_performance(operation, duration, **kwargs): print(f"PERFORMANCE: {operation} took {duration:.3f}s")
     def tprint_structured(data, level=None, **kwargs): print("STRUCTURED:", data)
-    def tprint_timer(operation): return __import__('contextlib').contextmanager(lambda: (yield))()
     class LogLevel: INFO = "INFO"; ERROR = "ERROR"; WARNING = "WARNING"; SUCCESS = "SUCCESS"
 
 try:
     from src.utils.common_operations import (
-        safe_divide, safe_log, safe_sqrt, safe_power, validate_finite, 
-        validate_positive, validate_range, safe_mean, safe_std,
-        safe_dataframe_operation, validate_dataframe_columns, 
-        calculate_data_quality_metrics, get_dataframe_info,
-        safe_json_dump, safe_json_load, ensure_directory,
+        safe_divide, validate_finite, safe_mean, safe_std,
+        calculate_data_quality_metrics, safe_json_dump, ensure_directory,
         get_m1_gpu_manager, get_m1_memory_optimizer, get_m1_cpu_optimizer,
         memory_checkpoint, gpu_context, optimize_memory
     )
@@ -88,22 +79,13 @@ try:
 except ImportError as e:
     print(f"⚠️ Warning: Could not import common_operations: {e}")
     COMMON_OPERATIONS_AVAILABLE = False
-    # Fallback functions
+    # Essential fallback functions only
     def safe_divide(a, b, default=0.0): return a / b if b != 0 else default
-    def safe_log(x, default=0.0): return np.log(x) if x > 0 else default
-    def safe_sqrt(x, default=0.0): return np.sqrt(x) if x >= 0 else default
-    def safe_power(x, y, default=0.0): return x ** y if np.isfinite(x) and np.isfinite(y) else default
     def validate_finite(value, name="value"): return float(value) if np.isfinite(float(value)) else 0.0
-    def validate_positive(value, name="value"): return value if value > 0 else 0.0
-    def validate_range(value, min_val=None, max_val=None, name="value"): return value
     def safe_mean(x, default=0.0): return np.mean(x) if len(x) > 0 else default
     def safe_std(x, default=0.0): return np.std(x) if len(x) > 1 else default
-    def safe_dataframe_operation(df, operation, *args, **kwargs): return operation(df, *args, **kwargs)
-    def validate_dataframe_columns(df, required_columns): return all(col in df.columns for col in required_columns)
     def calculate_data_quality_metrics(df): return {'total_rows': len(df), 'total_columns': len(df.columns)}
-    def get_dataframe_info(df): return {'shape': df.shape, 'columns': list(df.columns)}
     def safe_json_dump(data, file_path, **kwargs): return True
-    def safe_json_load(file_path, default=None): return default
     def ensure_directory(path): return True
     def get_m1_gpu_manager(): return None
     def get_m1_memory_optimizer(): return None
@@ -114,19 +96,14 @@ except ImportError as e:
 
 try:
     from src.utils.math_validation import (
-        safe_correlation, safe_covariance, safe_percentile,
-        validate_correlation_matrix, safe_matrix_inverse, math_safe
+        safe_correlation, validate_correlation_matrix
     )
     MATH_VALIDATION_AVAILABLE = True
 except ImportError as e:
     print(f"⚠️ Warning: Could not import math_validation: {e}")
     MATH_VALIDATION_AVAILABLE = False
     def safe_correlation(x, y, default=0.0): return default
-    def safe_covariance(x, y, default=0.0): return default
-    def safe_percentile(x, percentile=50.0, default=0.0): return default
     def validate_correlation_matrix(corr_matrix): return True
-    def safe_matrix_inverse(matrix): return np.eye(matrix.shape[0])
-    def math_safe(func, *args, default=0.0, **kwargs): return default
 
 try:
     from src.utils.serialization_utils import UniversalSerializer
@@ -144,8 +121,7 @@ try:
 except ImportError as e:
     print(f"⚠️ Warning: Could not import kline_parquet: {e}")
     KLINE_PARQUET_AVAILABLE = False
-    def safe_to_parquet(df, file_path, **kwargs): return True
-    def safe_read_parquet(file_path, **kwargs): return None
+    # Note: kline_parquet functions not used in this module, but kept for completeness
 
 # Import vectorized training manager
 try:

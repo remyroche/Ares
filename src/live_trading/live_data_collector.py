@@ -39,8 +39,11 @@ class DataQuality(Enum):
 
 class CollectionInterval(Enum):
     """Collection interval modes."""
-    FAST = 15    # 15 seconds - for high-frequency trading
-    STANDARD = 30  # 30 seconds - standard live trading
+    HMM = 15 * 60      # 15 minutes - for HMM regime detection
+    ANALYST = 2 * 60   # 2 minutes - for Analyst trade decisions
+    TACTICIAN = 30     # 30 seconds - for Tactician timing decisions
+    FAST = 15          # 15 seconds - for high-frequency trading
+    STANDARD = 30      # 30 seconds - standard live trading
 
 @dataclass
 class LiveDataConfig:
@@ -93,9 +96,12 @@ class LiveDataCollector:
         self.ml_model = None
         self.feature_engineer = None
 
-        # Data buffers
+        # Data buffers for different timeframes
         self.data_buffer: List[LiveDataPoint] = []
         self.processed_buffer: List[Dict[str, Any]] = []
+        self.hmm_buffer: List[LiveDataPoint] = []  # 1h data for HMM
+        self.analyst_buffer: List[LiveDataPoint] = []  # 5m data for Analyst
+        self.tactician_buffer: List[LiveDataPoint] = []  # 1m data for Tactician
 
         # State management
         self.is_running = False

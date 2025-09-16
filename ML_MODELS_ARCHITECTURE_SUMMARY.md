@@ -43,9 +43,9 @@ The system now implements a **3-tier ensemble architecture** with each tier oper
 **Purpose**: Market regime detection and classification
 
 **Models Trained**:
-1. **LightGBM** - Primary: Speed + robustness
+1. **CatBoost** - Primary: Speed + robustness
 2. **Elastic Net** - Primary: Fast baseline
-3. **XGBoost** - Meta-learner: Speed + efficiency
+3. **Random Forest** - Meta-learner: Speed + efficiency
 
 **Configuration**:
 - **Timeframe**: 1h
@@ -185,7 +185,7 @@ from src.training.steps.market_analysis.hmm_models_training import create_hmm_en
 config = EnsembleTrainingConfig(
     model_name="hmm_ensemble_models",
     timeframe="1h",
-    model_types=["lightgbm", "elastic_net", "xgboost"]
+    model_types=["catboost", "elastic_net", "ensemble_rf"]
 )
 
 training_component = create_hmm_ensemble_training_component(config)

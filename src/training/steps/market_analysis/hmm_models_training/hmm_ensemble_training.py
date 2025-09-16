@@ -100,7 +100,7 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
                 config = EnsembleTrainingConfig(
                     model_name="hmm_ensemble_models",
                     timeframe="1h",
-                    model_types=["lightgbm", "elastic_net", "xgboost"],
+                    model_types=["catboost", "elastic_net", "ensemble_rf"],
                     hpo_n_trials=100,
                     hpo_timeout_seconds=3600,
                     min_samples_per_regime=1000,
@@ -502,39 +502,39 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
             Dictionary of ensemble models
         """
         try:
-            from lightgbm import LGBMRegressor
+            from catboost import CatBoostRegressor
             from sklearn.linear_model import ElasticNet
-            from xgboost import XGBRegressor
+            from sklearn.ensemble import RandomForestRegressor
             
             # Create ensemble models with validated parameters using math validation
             ensemble_models = {}
             
-            # LightGBM with validated parameters
+            # CatBoost with validated parameters (Primary: Speed + robustness)
             try:
-                n_estimators = self.math_validator.validate_positive(100, "LightGBM n_estimators")
-                max_depth = self.math_validator.validate_positive(6, "LightGBM max_depth")
-                learning_rate = self.math_validator.validate_range(0.1, 0.0, 1.0, "LightGBM learning_rate")
+                iterations = self.math_validator.validate_positive(1000, "CatBoost iterations")
+                learning_rate = self.math_validator.validate_range(0.05, 0.0, 1.0, "CatBoost learning_rate")
+                depth = self.math_validator.validate_positive(6, "CatBoost depth")
                 
-                ensemble_models['lightgbm'] = LGBMRegressor(
-                    n_estimators=int(n_estimators),
-                    random_state=42,
-                    max_depth=int(max_depth),
+                ensemble_models['catboost'] = CatBoostRegressor(
+                    iterations=int(iterations),
                     learning_rate=learning_rate,
-                    verbose=-1
+                    depth=int(depth),
+                    random_seed=42,
+                    verbose=False
                 )
-                tprint("✅ LightGBM model created with validated parameters")
+                tprint("✅ CatBoost model created with validated parameters")
             except Exception as e:
-                tprint(f"⚠️ LightGBM model creation failed: {e}")
+                tprint(f"⚠️ CatBoost model creation failed: {e}")
                 # Fallback to default parameters
-                ensemble_models['lightgbm'] = LGBMRegressor(
-                    n_estimators=100,
-                    random_state=42,
-                    max_depth=6,
-                    learning_rate=0.1,
-                    verbose=-1
+                ensemble_models['catboost'] = CatBoostRegressor(
+                    iterations=1000,
+                    learning_rate=0.05,
+                    depth=6,
+                    random_seed=42,
+                    verbose=False
                 )
             
-            # Elastic Net with validated parameters
+            # Elastic Net with validated parameters (Primary: Fast baseline)
             try:
                 alpha = self.math_validator.validate_positive(0.1, "ElasticNet alpha")
                 l1_ratio = self.math_validator.validate_range(0.5, 0.0, 1.0, "ElasticNet l1_ratio")
@@ -557,29 +557,29 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
                     l1_ratio=0.5
                 )
             
-            # XGBoost with validated parameters
+            # Random Forest with validated parameters (Meta: Speed + Efficient)
             try:
-                n_estimators = self.math_validator.validate_positive(100, "XGBoost n_estimators")
-                max_depth = self.math_validator.validate_positive(6, "XGBoost max_depth")
-                learning_rate = self.math_validator.validate_range(0.1, 0.0, 1.0, "XGBoost learning_rate")
+                n_estimators = self.math_validator.validate_positive(100, "RandomForest n_estimators")
+                max_depth = self.math_validator.validate_positive(10, "RandomForest max_depth")
+                min_samples_split = self.math_validator.validate_positive(2, "RandomForest min_samples_split")
                 
-                ensemble_models['xgboost'] = XGBRegressor(
+                ensemble_models['ensemble_rf'] = RandomForestRegressor(
                     n_estimators=int(n_estimators),
-                    random_state=44,
                     max_depth=int(max_depth),
-                    learning_rate=learning_rate,
-                    verbosity=0
-                )
-                tprint("✅ XGBoost model created with validated parameters")
-            except Exception as e:
-                tprint(f"⚠️ XGBoost model creation failed: {e}")
-                # Fallback to default parameters
-                ensemble_models['xgboost'] = XGBRegressor(
-                    n_estimators=100,
+                    min_samples_split=int(min_samples_split),
                     random_state=44,
-                    max_depth=6,
-                    learning_rate=0.1,
-                    verbosity=0
+                    n_jobs=-1
+                )
+                tprint("✅ Random Forest model created with validated parameters")
+            except Exception as e:
+                tprint(f"⚠️ Random Forest model creation failed: {e}")
+                # Fallback to default parameters
+                ensemble_models['ensemble_rf'] = RandomForestRegressor(
+                    n_estimators=100,
+                    max_depth=10,
+                    min_samples_split=2,
+                    random_state=44,
+                    n_jobs=-1
                 )
             
             tprint(f"📊 Created {len(ensemble_models)} ensemble models for HMM training using common utilities")
@@ -1235,7 +1235,7 @@ if __name__ == "__main__":
     config = EnsembleTrainingConfig(
         model_name="hmm_ensemble_models",
         timeframe="1h",
-        model_types=["lightgbm", "elastic_net", "xgboost"],
+        model_types=["catboost", "elastic_net", "ensemble_rf"],
         hpo_n_trials=50,  # Reduced for demo
         enable_hpo=True,
         save_models=True,
@@ -1268,7 +1268,7 @@ if __name__ == "__main__":
     print("- Combines individual HMM models into robust ensembles")
     print("- Per-regime ensemble training for regime-specific optimization")
     print("- Enhanced market regime detection accuracy through model combination")
-    print("- Models: LightGBM, Elastic Net, XGBoost (with validated parameters)")
+    print("- Models: CatBoost, Elastic Net, Random Forest (with validated parameters)")
     print("- Comprehensive context from multi-timeframe dynamics")
     print("- M1 hardware optimization for Apple Silicon Macs")
     print("- Memory management and GPU acceleration")

@@ -83,7 +83,6 @@ class CoarseGridConfig:
     pt_mult_range: Tuple[float, float] = (0.005, 0.02)  # 0.5% to 2.0%
     sl_mult_range: Tuple[float, float] = (0.002, 0.01)  # 0.2% to 1.0%
     time_barrier_range: Tuple[int, int] = (20, 90)      # 20 to 90 minutes
-    lookahead_range: Tuple[int, int] = (50, 300)        # 50 to 300 bars
     grid_size: int = 10  # Number of points per dimension (10³ = 1,000 combinations)
     top_k_candidates: int = 8  # Top candidates to pass to fine grid
 
@@ -332,32 +331,24 @@ class EnhancedOptimizedTripleBarrierLabeler:
             self.coarse_grid_config.grid_size,
             dtype=int
         )
-        lookaheads = np.linspace(
-            self.coarse_grid_config.lookahead_range[0],
-            self.coarse_grid_config.lookahead_range[1],
-            self.coarse_grid_config.grid_size,
-            dtype=int
-        )
         
-        # Generate all combinations
+        # Generate all combinations (3 parameters instead of 4)
         param_combinations = []
         for pt_mult in pt_mults:
             for sl_mult in sl_mults:
                 for time_barrier in time_barriers:
-                    for lookahead in lookaheads:
-                        # Validate parameters
-                        if MATH_VALIDATION_AVAILABLE:
-                            if not (validate_positive(pt_mult) and validate_positive(sl_mult) and 
-                                   validate_range(pt_mult, 0.0001, 0.1) and 
-                                   validate_range(sl_mult, 0.0001, 0.1)):
-                                continue
-                        
-                        param_combinations.append({
-                            'pt_mult': pt_mult,
-                            'sl_mult': sl_mult,
-                            'time_barrier': int(time_barrier),
-                            'lookahead': int(lookahead)
-                        })
+                    # Validate parameters
+                    if MATH_VALIDATION_AVAILABLE:
+                        if not (validate_positive(pt_mult) and validate_positive(sl_mult) and 
+                               validate_range(pt_mult, 0.0001, 0.1) and 
+                               validate_range(sl_mult, 0.0001, 0.1)):
+                            continue
+                    
+                    param_combinations.append({
+                        'pt_mult': pt_mult,
+                        'sl_mult': sl_mult,
+                        'time_barrier': int(time_barrier)
+                    })
         
         self.logger.info(f"📊 Testing {len(param_combinations)} parameter combinations")
         
@@ -399,7 +390,6 @@ class EnhancedOptimizedTripleBarrierLabeler:
         pt_center = best_coarse['pt_mult']
         sl_center = best_coarse['sl_mult']
         time_center = best_coarse['time_barrier']
-        lookahead_center = best_coarse['lookahead']
         
         # Calculate refined ranges
         pt_range = self._calculate_refined_range(
@@ -423,44 +413,33 @@ class EnhancedOptimizedTripleBarrierLabeler:
             max(1, self.fine_grid_config.min_range_size * 100)  # Minimum 1 for integers
         )
         
-        lookahead_range = self._calculate_refined_range(
-            lookahead_center,
-            self.coarse_grid_config.lookahead_range,
-            self.fine_grid_config.refinement_factor,
-            max(1, self.fine_grid_config.min_range_size * 100)  # Minimum 1 for integers
-        )
-        
         self.logger.info(f"📊 Fine grid ranges:")
         self.logger.info(f"   PT: {pt_range[0]:.6f} - {pt_range[1]:.6f}")
         self.logger.info(f"   SL: {sl_range[0]:.6f} - {sl_range[1]:.6f}")
         self.logger.info(f"   Time: {time_range[0]} - {time_range[1]}")
-        self.logger.info(f"   Lookahead: {lookahead_range[0]} - {lookahead_range[1]}")
         
         # Create fine parameter grids
         pt_mults = np.linspace(pt_range[0], pt_range[1], self.fine_grid_config.grid_size)
         sl_mults = np.linspace(sl_range[0], sl_range[1], self.fine_grid_config.grid_size)
         time_barriers = np.linspace(time_range[0], time_range[1], self.fine_grid_config.grid_size, dtype=int)
-        lookaheads = np.linspace(lookahead_range[0], lookahead_range[1], self.fine_grid_config.grid_size, dtype=int)
         
-        # Generate all combinations
+        # Generate all combinations (3 parameters instead of 4)
         param_combinations = []
         for pt_mult in pt_mults:
             for sl_mult in sl_mults:
                 for time_barrier in time_barriers:
-                    for lookahead in lookaheads:
-                        # Validate parameters
-                        if MATH_VALIDATION_AVAILABLE:
-                            if not (validate_positive(pt_mult) and validate_positive(sl_mult) and 
-                                   validate_range(pt_mult, 0.0001, 0.1) and 
-                                   validate_range(sl_mult, 0.0001, 0.1)):
-                                continue
-                        
-                        param_combinations.append({
-                            'pt_mult': pt_mult,
-                            'sl_mult': sl_mult,
-                            'time_barrier': int(time_barrier),
-                            'lookahead': int(lookahead)
-                        })
+                    # Validate parameters
+                    if MATH_VALIDATION_AVAILABLE:
+                        if not (validate_positive(pt_mult) and validate_positive(sl_mult) and 
+                               validate_range(pt_mult, 0.0001, 0.1) and 
+                               validate_range(sl_mult, 0.0001, 0.1)):
+                            continue
+                    
+                    param_combinations.append({
+                        'pt_mult': pt_mult,
+                        'sl_mult': sl_mult,
+                        'time_barrier': int(time_barrier)
+                    })
         
         self.logger.info(f"📊 Testing {len(param_combinations)} fine parameter combinations")
         
@@ -593,25 +572,17 @@ class EnhancedOptimizedTripleBarrierLabeler:
                     max(1, self.fine_grid_config.min_range_size * 50)
                 )
                 
-                lookahead_range = self._calculate_refined_range(
-                    best_fine['lookahead'],
-                    self.coarse_grid_config.lookahead_range,
-                    self.fine_grid_config.refinement_factor * 0.5,
-                    max(1, self.fine_grid_config.min_range_size * 50)
-                )
-                
                 # Suggest parameters
                 pt_mult = trial.suggest_float('pt_mult', pt_range[0], pt_range[1])
                 sl_mult = trial.suggest_float('sl_mult', sl_range[0], sl_range[1])
                 time_barrier = trial.suggest_int('time_barrier', int(time_range[0]), int(time_range[1]))
-                lookahead = trial.suggest_int('lookahead', int(lookahead_range[0]), int(lookahead_range[1]))
                 
                 # Create config
                 config = TripleBarrierConfig(
                     pt_mult=pt_mult,
                     sl_mult=sl_mult,
                     min_holding_period=1,
-                    max_holding_period=lookahead,
+                    max_holding_period=time_barrier,  # Use time_barrier as max_holding_period
                     transaction_cost=0.0008
                 )
                 
@@ -622,7 +593,6 @@ class EnhancedOptimizedTripleBarrierLabeler:
                 trial.set_user_attr('pt_mult', pt_mult)
                 trial.set_user_attr('sl_mult', sl_mult)
                 trial.set_user_attr('time_barrier', time_barrier)
-                trial.set_user_attr('lookahead', lookahead)
                 
                 return score
             
@@ -645,7 +615,7 @@ class EnhancedOptimizedTripleBarrierLabeler:
                 pt_mult=best_params['pt_mult'],
                 sl_mult=best_params['sl_mult'],
                 time_barrier_minutes=best_params['time_barrier'],
-                max_lookahead=best_params['lookahead'],
+                max_lookahead=best_params['time_barrier'],  # Use time_barrier as max_lookahead
                 transaction_cost=0.0008,
                 optimization_score=best_trial.value
             )
@@ -668,7 +638,7 @@ class EnhancedOptimizedTripleBarrierLabeler:
                     pt_mult=best_candidate['pt_mult'],
                     sl_mult=best_candidate['sl_mult'],
                     time_barrier_minutes=best_candidate['time_barrier'],
-                    max_lookahead=best_candidate['lookahead'],
+                    max_lookahead=best_candidate['time_barrier'],  # Use time_barrier as max_lookahead
                     transaction_cost=0.0008,
                     optimization_score=best_candidate['score']
                 )
@@ -696,7 +666,7 @@ class EnhancedOptimizedTripleBarrierLabeler:
                 pt_mult=params['pt_mult'],
                 sl_mult=params['sl_mult'],
                 min_holding_period=1,
-                max_holding_period=params['lookahead'],
+                max_holding_period=params['time_barrier'],  # Use time_barrier as max_holding_period
                 transaction_cost=0.0008
             )
             
@@ -711,7 +681,6 @@ class EnhancedOptimizedTripleBarrierLabeler:
                 'pt_mult': params['pt_mult'],
                 'sl_mult': params['sl_mult'],
                 'time_barrier': params['time_barrier'],
-                'lookahead': params['lookahead'],
                 'score': score
             }
             
@@ -881,8 +850,8 @@ class EnhancedOptimizedTripleBarrierLabeler:
             self.bayesian_config.n_trials = n_trials
         
         self.logger.info(f"🔧 Starting three-stage regime parameter optimization")
-        self.logger.info(f"   Coarse grid: {self.coarse_grid_config.grid_size}³ combinations")
-        self.logger.info(f"   Fine grid: {self.fine_grid_config.grid_size}³ combinations")
+        self.logger.info(f"   Coarse grid: {self.coarse_grid_config.grid_size}³ combinations (3 parameters)")
+        self.logger.info(f"   Fine grid: {self.fine_grid_config.grid_size}³ combinations (3 parameters)")
         self.logger.info(f"   Bayesian: {self.bayesian_config.n_trials} trials")
         
         start_time = time.time()
@@ -947,7 +916,7 @@ class EnhancedOptimizedTripleBarrierLabeler:
                         pt_mult=best_coarse['pt_mult'],
                         sl_mult=best_coarse['sl_mult'],
                         time_barrier_minutes=best_coarse['time_barrier'],
-                        max_lookahead=best_coarse['lookahead'],
+                        max_lookahead=best_coarse['time_barrier'],  # Use time_barrier as max_lookahead
                         transaction_cost=0.0008,
                         optimization_score=best_coarse['score']
                     )
@@ -967,7 +936,7 @@ class EnhancedOptimizedTripleBarrierLabeler:
                             pt_mult=best_fine['pt_mult'],
                             sl_mult=best_fine['sl_mult'],
                             time_barrier_minutes=best_fine['time_barrier'],
-                            max_lookahead=best_fine['lookahead'],
+                            max_lookahead=best_fine['time_barrier'],  # Use time_barrier as max_lookahead
                             transaction_cost=0.0008,
                             optimization_score=best_fine['score']
                         )

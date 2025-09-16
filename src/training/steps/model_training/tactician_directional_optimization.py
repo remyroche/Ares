@@ -64,149 +64,132 @@ class DirectionalOptimizationResult:
     optimization_history: List[Dict[str, Any]]
 
 
-class DirectionalConsistencyLossFunction:
-    """Custom loss functions for ensuring directional consistency across 0.1%-0.5% price levels."""
+class EntryTimingLossFunction:
+    """Custom loss functions for entry timing optimization within 0-0.5% range."""
     
     @staticmethod
-    def directional_consistency_loss(y_true: np.ndarray, y_pred: np.ndarray, 
-                                   price_levels: List[float] = [0.001, 0.002, 0.003, 0.004, 0.005]) -> float:
+    def early_entry_penalty_loss(y_true: np.ndarray, y_pred: np.ndarray, 
+                                entry_range: float = 0.005) -> float:
         """
-        Loss function that ensures all price moves (0.1%, 0.2%, 0.3%, 0.4%, 0.5%) 
-        are in the same direction (no reversals).
+        Loss function that penalizes entering too early (before optimal timing).
         
         Args:
-            y_true: True price movements at different levels
-            y_pred: Predicted price movements at different levels
-            price_levels: List of price levels to check (0.1%, 0.2%, 0.3%, 0.4%, 0.5%)
+            y_true: True optimal entry timing (0-0.5% range)
+            y_pred: Predicted entry timing (0-0.5% range)
+            entry_range: Maximum entry range (0.5%)
+            
+        Returns:
+            Early entry penalty loss
+        """
+        # Calculate how early we're entering (negative values = too early)
+        timing_error = y_pred - y_true
+        
+        # Penalize early entries (negative timing errors)
+        early_penalty = np.mean(np.maximum(0, -timing_error))
+        
+        return early_penalty
+    
+    @staticmethod
+    def late_entry_penalty_loss(y_true: np.ndarray, y_pred: np.ndarray, 
+                               entry_range: float = 0.005) -> float:
+        """
+        Loss function that penalizes entering too late (after optimal timing).
+        
+        Args:
+            y_true: True optimal entry timing (0-0.5% range)
+            y_pred: Predicted entry timing (0-0.5% range)
+            entry_range: Maximum entry range (0.5%)
+            
+        Returns:
+            Late entry penalty loss
+        """
+        # Calculate how late we're entering (positive values = too late)
+        timing_error = y_pred - y_true
+        
+        # Penalize late entries (positive timing errors)
+        late_penalty = np.mean(np.maximum(0, timing_error))
+        
+        return late_penalty
+    
+    @staticmethod
+    def optimal_entry_reward_loss(y_true: np.ndarray, y_pred: np.ndarray, 
+                                 tolerance: float = 0.001) -> float:
+        """
+        Loss function that rewards optimal entry timing.
+        
+        Args:
+            y_true: True optimal entry timing
+            y_pred: Predicted entry timing
+            tolerance: Tolerance for "optimal" timing (0.1%)
+            
+        Returns:
+            Optimal entry reward loss (inverted reward)
+        """
+        # Calculate timing accuracy
+        timing_error = np.abs(y_pred - y_true)
+        
+        # Reward entries within tolerance
+        optimal_mask = timing_error <= tolerance
+        optimal_ratio = np.mean(optimal_mask)
+        
+        return 1.0 - optimal_ratio  # Return loss (1 - reward)
+    
+    @staticmethod
+    def entry_timing_efficiency_loss(y_true: np.ndarray, y_pred: np.ndarray, 
+                                   expected_movement: float = 0.01) -> float:
+        """
+        Loss function that maximizes profit efficiency from optimal entry timing.
+        
+        Args:
+            y_true: True optimal entry timing (0-0.5% range)
+            y_pred: Predicted entry timing (0-0.5% range)
+            expected_movement: Expected 1% movement in right direction
+            
+        Returns:
+            Entry timing efficiency loss
+        """
+        # Calculate profit from entry timing
+        # Profit = (expected_movement - entry_timing) for correct timing
+        timing_error = np.abs(y_pred - y_true)
+        
+        # Calculate potential profit (expected movement minus timing cost)
+        potential_profit = expected_movement - timing_error
+        
+        # Calculate efficiency (actual profit / maximum possible profit)
+        max_profit = expected_movement
+        efficiency = np.mean(potential_profit) / max_profit if max_profit > 0 else 0
+        
+        return 1.0 - efficiency  # Return loss (1 - efficiency)
+    
+    @staticmethod
+    def directional_consistency_simple_loss(y_true: np.ndarray, y_pred: np.ndarray) -> float:
+        """
+        Simple loss function that ensures directional consistency.
+        Ensures prediction direction matches the expected direction from Analyst.
+        
+        Args:
+            y_true: True price movements (from Analyst green light)
+            y_pred: Predicted entry timing
             
         Returns:
             Directional consistency loss
         """
-        # Ensure y_true and y_pred have the same number of levels
-        if y_true.shape[1] != len(price_levels) or y_pred.shape[1] != len(price_levels):
-            return 1.0  # Maximum loss if dimensions don't match
+        # Get directional signals
+        true_direction = np.sign(y_true)
+        pred_direction = np.sign(y_pred)
         
-        # Calculate directional consistency
-        y_true_direction = np.sign(y_true)
-        y_pred_direction = np.sign(y_pred)
+        # Calculate directional accuracy
+        directional_accuracy = np.mean(true_direction == pred_direction)
         
-        # Check if all levels have the same direction (no reversals)
-        consistency_penalty = 0.0
-        
-        for i in range(len(price_levels)):
-            for j in range(i + 1, len(price_levels)):
-                # Check if directions are consistent between levels
-                true_consistent = np.all(y_true_direction[:, i] == y_true_direction[:, j])
-                pred_consistent = np.all(y_pred_direction[:, i] == y_pred_direction[:, j])
-                
-                # Penalize if predictions don't maintain consistency
-                if not pred_consistent:
-                    consistency_penalty += 1.0
-                
-                # Additional penalty if true data is consistent but prediction isn't
-                if true_consistent and not pred_consistent:
-                    consistency_penalty += 2.0
-        
-        # Normalize by number of level pairs
-        num_pairs = len(price_levels) * (len(price_levels) - 1) // 2
-        return consistency_penalty / num_pairs if num_pairs > 0 else 1.0
-    
-    @staticmethod
-    def directional_accuracy_loss(y_true: np.ndarray, y_pred: np.ndarray) -> float:
-        """
-        Loss function that maximizes directional accuracy across all price levels.
-        
-        Args:
-            y_true: True price movements at different levels
-            y_pred: Predicted price movements at different levels
-            
-        Returns:
-            Directional accuracy loss
-        """
-        # Calculate directional accuracy for each level
-        y_true_direction = np.sign(y_true)
-        y_pred_direction = np.sign(y_pred)
-        
-        # Calculate accuracy for each level
-        level_accuracies = []
-        for level in range(y_true.shape[1]):
-            level_accuracy = np.mean(y_true_direction[:, level] == y_pred_direction[:, level])
-            level_accuracies.append(level_accuracy)
-        
-        # Return average accuracy loss
-        avg_accuracy = np.mean(level_accuracies)
-        return 1.0 - avg_accuracy
-    
-    @staticmethod
-    def magnitude_consistency_loss(y_true: np.ndarray, y_pred: np.ndarray, 
-                                 price_levels: List[float] = [0.001, 0.002, 0.003, 0.004, 0.005]) -> float:
-        """
-        Loss function that ensures magnitude consistency (0.1% < 0.2% < 0.3% < 0.4% < 0.5%).
-        
-        Args:
-            y_true: True price movements at different levels
-            y_pred: Predicted price movements at different levels
-            price_levels: List of price levels to check
-            
-        Returns:
-            Magnitude consistency loss
-        """
-        # Check if magnitudes are monotonically increasing
-        magnitude_penalty = 0.0
-        
-        for i in range(len(price_levels) - 1):
-            # Check if next level has larger magnitude than current level
-            true_magnitude_consistent = np.all(np.abs(y_true[:, i+1]) >= np.abs(y_true[:, i]))
-            pred_magnitude_consistent = np.all(np.abs(y_pred[:, i+1]) >= np.abs(y_pred[:, i]))
-            
-            # Penalize if predictions don't maintain magnitude consistency
-            if not pred_magnitude_consistent:
-                magnitude_penalty += 1.0
-            
-            # Additional penalty if true data is consistent but prediction isn't
-            if true_magnitude_consistent and not pred_magnitude_consistent:
-                magnitude_penalty += 2.0
-        
-        # Normalize by number of level transitions
-        num_transitions = len(price_levels) - 1
-        return magnitude_penalty / num_transitions if num_transitions > 0 else 1.0
-    
-    @staticmethod
-    def reversal_penalty_loss(y_true: np.ndarray, y_pred: np.ndarray) -> float:
-        """
-        Loss function that heavily penalizes any directional reversals.
-        
-        Args:
-            y_true: True price movements at different levels
-            y_pred: Predicted price movements at different levels
-            
-        Returns:
-            Reversal penalty loss
-        """
-        # Calculate directional consistency
-        y_pred_direction = np.sign(y_pred)
-        
-        # Count reversals (direction changes between consecutive levels)
-        reversals = 0
-        total_transitions = 0
-        
-        for i in range(y_pred.shape[1] - 1):
-            # Check for direction changes between consecutive levels
-            direction_changes = y_pred_direction[:, i] != y_pred_direction[:, i+1]
-            reversals += np.sum(direction_changes)
-            total_transitions += len(direction_changes)
-        
-        # Return reversal ratio (heavily penalized)
-        reversal_ratio = reversals / total_transitions if total_transitions > 0 else 0
-        return reversal_ratio * 10.0  # Heavy penalty for reversals
+        return 1.0 - directional_accuracy  # Return loss (1 - accuracy)
 
 
 # DirectionalFeatureEngineer removed - using existing features from base training
 
 
-class DirectionalConsistencyTacticianOptimizer:
+class EntryTimingTacticianOptimizer:
     """
-    Enhanced Tactician optimizer that ensures directional consistency across 0.1%-0.5% price levels.
+    Enhanced Tactician optimizer that optimizes entry timing within 0-0.5% range.
     """
     
     def __init__(self, 
@@ -241,14 +224,11 @@ class DirectionalConsistencyTacticianOptimizer:
         self.optimization_history = []
         
         # Initialize loss functions
-        self.loss_functions = DirectionalConsistencyLossFunction()
+        self.loss_functions = EntryTimingLossFunction()
         
-        # Price levels for directional consistency (0.1%, 0.2%, 0.3%, 0.4%, 0.5%)
-        self.price_levels = [0.001, 0.002, 0.003, 0.004, 0.005]
-        
-        self.logger.info("🚀 Directional Consistency Tactician optimizer initialized")
+        self.logger.info("🚀 Entry Timing Tactician optimizer initialized")
     
-    def optimize_tactician_directional_consistency(self,
+    def optimize_tactician_entry_timing(self,
                                        X: np.ndarray,
                                        y: np.ndarray,
                                        regime_labels: np.ndarray,
@@ -262,11 +242,11 @@ class DirectionalConsistencyTacticianOptimizer:
                                        analyst_ensemble_outputs: Optional[np.ndarray] = None,
                                        max_trials: int = 100) -> DirectionalOptimizationResult:
         """
-        Optimize Tactician model for directional consistency across 0.1%-0.5% price levels.
+        Optimize Tactician model for entry timing within 0-0.5% range.
         
         Args:
             X: Input features
-            y: Target values (price movements at 0.1%, 0.2%, 0.3%, 0.4%, 0.5% levels)
+            y: Target values (optimal entry timing 0-0.5% range)
             regime_labels: Regime labels
             feature_names: Feature names
             hmm_states: HMM states
@@ -279,93 +259,62 @@ class DirectionalConsistencyTacticianOptimizer:
             max_trials: Maximum optimization trials
             
         Returns:
-            DirectionalOptimizationResult with directional consistency optimization results
+            DirectionalOptimizationResult with entry timing optimization results
         """
         start_time = time.time()
         
-        self.logger.info("🔄 Starting directional consistency Tactician optimization...")
+        self.logger.info("🔄 Starting entry timing Tactician optimization...")
         
-        # Step 1: Validate and prepare multi-level targets
-        self.logger.info("📊 Step 1: Preparing multi-level targets for directional consistency")
-        y_multi_level = self._prepare_multi_level_targets(y)
-        
-        # Step 2: Use existing features (no additional feature engineering)
-        self.logger.info("📊 Step 2: Using existing features for directional consistency optimization")
+        # Step 1: Use existing features (no additional feature engineering)
+        self.logger.info("📊 Step 1: Using existing features for entry timing optimization")
         X_enhanced = X  # Use existing features as-is
         
-        # Step 3: Multi-objective optimization for directional consistency
-        self.logger.info("📊 Step 3: Multi-objective directional consistency optimization")
-        optimization_result = self._multi_objective_directional_consistency_optimization(
-            X_enhanced, y_multi_level, regime_labels, max_trials
+        # Step 2: Multi-objective optimization for entry timing
+        self.logger.info("📊 Step 2: Multi-objective entry timing optimization")
+        optimization_result = self._multi_objective_entry_timing_optimization(
+            X_enhanced, y, regime_labels, max_trials
         )
         
-        # Step 4: Train final model with best parameters
-        self.logger.info("📊 Step 4: Training final directional consistency model")
-        final_model = self._train_final_directional_consistency_model(
-            X_enhanced, y_multi_level, optimization_result
+        # Step 3: Train final model with best parameters
+        self.logger.info("📊 Step 3: Training final entry timing model")
+        final_model = self._train_final_entry_timing_model(
+            X_enhanced, y, optimization_result
         )
         
-        # Step 5: Evaluate directional consistency performance
-        self.logger.info("📊 Step 5: Evaluating directional consistency performance")
-        directional_consistency_metrics = self._evaluate_directional_consistency_performance(final_model, X_enhanced, y_multi_level)
+        # Step 4: Evaluate entry timing performance
+        self.logger.info("📊 Step 4: Evaluating entry timing performance")
+        entry_timing_metrics = self._evaluate_entry_timing_performance(final_model, X_enhanced, y)
         
         # Create result
         result = DirectionalOptimizationResult(
             model=final_model,
-            directional_accuracy=directional_consistency_metrics['directional_consistency_loss'],
-            adverse_movement_minimization=directional_consistency_metrics['directional_accuracy_loss'],
-            directional_profit_efficiency=directional_consistency_metrics['magnitude_consistency_loss'],
-            risk_adjusted_performance=directional_consistency_metrics['reversal_penalty_loss'],
-            composite_score=directional_consistency_metrics['composite_score'],
+            directional_accuracy=entry_timing_metrics['early_entry_penalty'],
+            adverse_movement_minimization=entry_timing_metrics['late_entry_penalty'],
+            directional_profit_efficiency=entry_timing_metrics['optimal_entry_reward'],
+            risk_adjusted_performance=entry_timing_metrics['entry_timing_efficiency'],
+            composite_score=entry_timing_metrics['composite_score'],
             optimization_time=time.time() - start_time,
             n_trials=max_trials,
             optimization_history=self.optimization_history.copy()
         )
         
-        self.logger.info(f"✅ Directional consistency optimization completed in {result.optimization_time:.2f}s")
-        self.logger.info(f"   Directional consistency loss: {result.directional_accuracy:.4f}")
-        self.logger.info(f"   Directional accuracy loss: {result.adverse_movement_minimization:.4f}")
-        self.logger.info(f"   Magnitude consistency loss: {result.directional_profit_efficiency:.4f}")
-        self.logger.info(f"   Reversal penalty loss: {result.risk_adjusted_performance:.4f}")
+        self.logger.info(f"✅ Entry timing optimization completed in {result.optimization_time:.2f}s")
+        self.logger.info(f"   Early entry penalty: {result.directional_accuracy:.4f}")
+        self.logger.info(f"   Late entry penalty: {result.adverse_movement_minimization:.4f}")
+        self.logger.info(f"   Optimal entry reward: {result.directional_profit_efficiency:.4f}")
+        self.logger.info(f"   Entry timing efficiency: {result.risk_adjusted_performance:.4f}")
         self.logger.info(f"   Composite score: {result.composite_score:.4f}")
         
         return result
     
-    def _prepare_multi_level_targets(self, y: np.ndarray) -> np.ndarray:
-        """
-        Prepare multi-level targets for directional consistency optimization.
-        
-        Args:
-            y: Single-level targets (price movements)
-            
-        Returns:
-            Multi-level targets (price movements at 0.1%, 0.2%, 0.3%, 0.4%, 0.5% levels)
-        """
-        # For now, we'll create synthetic multi-level targets based on the single level
-        # In practice, this would come from actual price data at different levels
-        
-        n_samples = len(y)
-        n_levels = len(self.price_levels)
-        
-        # Create multi-level targets
-        y_multi_level = np.zeros((n_samples, n_levels))
-        
-        for i, level in enumerate(self.price_levels):
-            # Scale the single-level target to different price levels
-            # This is a simplified approach - in practice, you'd use actual price data
-            y_multi_level[:, i] = y * (level / 0.005)  # Scale to 0.1%, 0.2%, etc.
-        
-        self.logger.info(f"📊 Prepared multi-level targets: {y_multi_level.shape} (levels: {self.price_levels})")
-        return y_multi_level
-    
     # Feature enhancement removed - using existing features from base training
     
-    def _multi_objective_directional_consistency_optimization(self,
+    def _multi_objective_entry_timing_optimization(self,
                                                 X: np.ndarray,
                                                 y: np.ndarray,
                                                 regime_labels: np.ndarray,
                                                 max_trials: int) -> Dict[str, Any]:
-        """Multi-objective optimization for directional consistency goals."""
+        """Multi-objective optimization for entry timing goals."""
         solutions = []
         
         def objective(trial):
@@ -388,8 +337,8 @@ class DirectionalConsistencyTacticianOptimizer:
             # Train model
             model.fit(X, y)
             
-            # Evaluate directional consistency metrics
-            metrics = self._evaluate_directional_consistency_metrics(model, X, y)
+            # Evaluate entry timing metrics
+            metrics = self._evaluate_entry_timing_metrics(model, X, y)
             
             # Store solution
             solution = Solution(
@@ -423,40 +372,51 @@ class DirectionalConsistencyTacticianOptimizer:
             'study': study
         }
     
-    def _evaluate_directional_consistency_metrics(self, model: Any, X: np.ndarray, y: np.ndarray) -> Dict[str, float]:
-        """Evaluate directional consistency metrics for a model."""
+    def _evaluate_entry_timing_metrics(self, model: Any, X: np.ndarray, y: np.ndarray) -> Dict[str, float]:
+        """Evaluate entry timing metrics for a model."""
         # Get predictions
         y_pred = model.predict(X)
         
-        # Calculate directional consistency loss
-        directional_consistency_loss = self.loss_functions.directional_consistency_loss(y, y_pred, self.price_levels)
+        # Calculate early entry penalty (minimize entering too early)
+        timing_error = y_pred - y
+        early_entry_penalty = np.mean(np.maximum(0, -timing_error))
         
-        # Calculate directional accuracy loss
-        directional_accuracy_loss = self.loss_functions.directional_accuracy_loss(y, y_pred)
+        # Calculate late entry penalty (minimize entering too late)
+        late_entry_penalty = np.mean(np.maximum(0, timing_error))
         
-        # Calculate magnitude consistency loss
-        magnitude_consistency_loss = self.loss_functions.magnitude_consistency_loss(y, y_pred, self.price_levels)
+        # Calculate optimal entry reward (maximize entries within tolerance)
+        timing_accuracy = np.abs(y_pred - y)
+        tolerance = 0.001  # 0.1% tolerance for optimal timing
+        optimal_mask = timing_accuracy <= tolerance
+        optimal_entry_reward = np.mean(optimal_mask)
         
-        # Calculate reversal penalty loss
-        reversal_penalty_loss = self.loss_functions.reversal_penalty_loss(y, y_pred)
+        # Calculate entry timing efficiency (maximize profit from optimal timing)
+        expected_movement = 0.01  # Expected 1% movement
+        potential_profit = expected_movement - timing_accuracy
+        entry_timing_efficiency = np.mean(potential_profit) / expected_movement if expected_movement > 0 else 0
         
-        # Calculate composite score (lower is better for losses)
+        # Calculate simple directional consistency
+        directional_consistency = self.loss_functions.directional_consistency_simple_loss(y, y_pred)
+        
+        # Calculate composite score (optimized weights)
         composite_score = (
-            0.4 * (1 - directional_consistency_loss) +  # Maximize directional consistency
-            0.3 * (1 - directional_accuracy_loss) +     # Maximize directional accuracy
-            0.2 * (1 - magnitude_consistency_loss) +    # Maximize magnitude consistency
-            0.1 * (1 - reversal_penalty_loss)           # Minimize reversals
+            0.25 * (1 - early_entry_penalty) +      # Minimize early entry penalty
+            0.25 * (1 - late_entry_penalty) +       # Minimize late entry penalty
+            0.2 * optimal_entry_reward +            # Maximize optimal entry reward
+            0.2 * entry_timing_efficiency +         # Maximize entry timing efficiency
+            0.1 * (1 - directional_consistency)     # Minimize directional inconsistency
         )
         
         return {
-            'directional_consistency_loss': directional_consistency_loss,
-            'directional_accuracy_loss': directional_accuracy_loss,
-            'magnitude_consistency_loss': magnitude_consistency_loss,
-            'reversal_penalty_loss': reversal_penalty_loss,
+            'early_entry_penalty': early_entry_penalty,
+            'late_entry_penalty': late_entry_penalty,
+            'optimal_entry_reward': optimal_entry_reward,
+            'entry_timing_efficiency': entry_timing_efficiency,
+            'directional_consistency': directional_consistency,
             'composite_score': composite_score
         }
     
-    def _train_final_directional_consistency_model(self,
+    def _train_final_entry_timing_model(self,
                                      X: np.ndarray,
                                      y: np.ndarray,
                                      optimization_result: Dict[str, Any]) -> Any:
@@ -483,9 +443,9 @@ class DirectionalConsistencyTacticianOptimizer:
         
         return model
     
-    def _evaluate_directional_consistency_performance(self, model: Any, X: np.ndarray, y: np.ndarray) -> Dict[str, float]:
-        """Evaluate final directional consistency performance."""
-        return self._evaluate_directional_consistency_metrics(model, X, y)
+    def _evaluate_entry_timing_performance(self, model: Any, X: np.ndarray, y: np.ndarray) -> Dict[str, float]:
+        """Evaluate final entry timing performance."""
+        return self._evaluate_entry_timing_metrics(model, X, y)
 
 
 # Convenience functions

@@ -139,15 +139,16 @@ class TacticianTrainingConfig(BaseTrainingConfig):
     meta_model: str = "ElasticNetCV"  # Use ElasticNetCV for better performance
     ensemble_name: str = "tactician_ensemble"
     
-    # Directional consistency optimization (ensure all 0.1%-0.5% moves are in same direction)
-    enable_directional_consistency_optimization: bool = True
-    directional_consistency_objectives: Dict[str, str] = field(default_factory=lambda: {
-        'directional_consistency_loss': 'min',      # Minimize directional inconsistencies
-        'directional_accuracy_loss': 'min',         # Minimize directional accuracy errors
-        'magnitude_consistency_loss': 'min',        # Minimize magnitude inconsistencies
-        'reversal_penalty_loss': 'min'              # Minimize directional reversals
+    # Entry timing optimization (focus on optimal entry within 0-0.5% range)
+    enable_entry_timing_optimization: bool = True
+    entry_timing_objectives: Dict[str, str] = field(default_factory=lambda: {
+        'early_entry_penalty': 'min',           # Minimize entering too early
+        'late_entry_penalty': 'min',            # Minimize entering too late
+        'optimal_entry_reward': 'max',          # Maximize entering at optimal timing
+        'entry_timing_efficiency': 'max',       # Maximize profit from optimal entry timing
+        'directional_consistency': 'min'        # Minimize directional inconsistency
     })
-    price_levels: List[float] = field(default_factory=lambda: [0.001, 0.002, 0.003, 0.004, 0.005])  # 0.1%, 0.2%, 0.3%, 0.4%, 0.5%
+    entry_timing_range: float = 0.005  # 0-0.5% range for entry timing optimization
     expected_movement: float = 0.01  # Expected 1% movement in the right direction
     
     # Model-specific HPO search spaces

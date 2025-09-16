@@ -120,8 +120,9 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                 ensemble_method="stacking",
                 meta_model="ElasticNetCV",
                 ensemble_name="tactician_ensemble",
-                enable_directional_optimization=True,
-                short_term_threshold=0.005
+                enable_entry_timing_optimization=True,
+                entry_timing_range=0.005,
+                expected_movement=0.01
             )
 
         try:
@@ -1183,11 +1184,11 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
             # Add training metrics to results
             results['training_execution_metrics'] = training_metrics
             
-            # Add directional optimization if enabled
-            if hasattr(self.config, 'enable_directional_optimization') and self.config.enable_directional_optimization:
-                self.logger.info("🔄 Applying directional optimization for short-term 0.5% movements...")
-                directional_results = self._apply_directional_optimization(X, y, feature_names, results)
-                results.update(directional_results)
+            # Add entry timing optimization if enabled
+            if hasattr(self.config, 'enable_entry_timing_optimization') and self.config.enable_entry_timing_optimization:
+                self.logger.info("🔄 Applying entry timing optimization for 0-0.5% range...")
+                entry_timing_results = self._apply_entry_timing_optimization(X, y, feature_names, results)
+                results.update(entry_timing_results)
             
             # Always add ensemble training for Tactician (core requirement)
             self.logger.info("🔄 Training ensemble model (always enabled for Tactician)...")
@@ -1253,71 +1254,71 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
             self.logger.error(f"❌ Training input validation failed: {e}")
             raise
     
-    def _apply_directional_optimization(self,
+    def _apply_entry_timing_optimization(self,
                                       X: np.ndarray,
                                       y: np.ndarray,
                                       feature_names: Optional[List[str]],
                                       base_results: Dict[str, Any]) -> Dict[str, Any]:
-        """Apply directional optimization for short-term 0.5% movements."""
+        """Apply entry timing optimization for 0-0.5% range."""
         try:
-            from .tactician_directional_optimization import DirectionalTacticianOptimizer
+            from .tactician_directional_optimization import EntryTimingTacticianOptimizer
             
-            # Initialize directional optimizer
-            directional_optimizer = DirectionalTacticianOptimizer(self.config)
+            # Initialize entry timing optimizer
+            entry_timing_optimizer = EntryTimingTacticianOptimizer(self.config)
             
-            # Get short-term threshold from config
-            short_term_threshold = getattr(self.config, 'short_term_threshold', 0.005)  # 0.5%
+            # Get entry timing range from config
+            entry_timing_range = getattr(self.config, 'entry_timing_range', 0.005)  # 0-0.5% range
             
-            # Filter targets for short-term movements (0.5% threshold)
-            short_term_mask = np.abs(y) >= short_term_threshold
-            X_short_term = X[short_term_mask]
-            y_short_term = y[short_term_mask]
+            # Filter targets for entry timing range (0-0.5%)
+            entry_timing_mask = np.abs(y) <= entry_timing_range
+            X_entry_timing = X[entry_timing_mask]
+            y_entry_timing = y[entry_timing_mask]
             
-            self.logger.info(f"📊 Short-term filtering: {len(y_short_term)}/{len(y)} samples (≥{short_term_threshold:.1%} movements)")
+            self.logger.info(f"📊 Entry timing filtering: {len(y_entry_timing)}/{len(y)} samples (≤{entry_timing_range:.1%} range)")
             
-            if len(y_short_term) < 100:  # Need minimum samples for optimization
-                self.logger.warning("⚠️ Insufficient short-term samples for directional optimization")
+            if len(y_entry_timing) < 100:  # Need minimum samples for optimization
+                self.logger.warning("⚠️ Insufficient entry timing samples for optimization")
                 return {}
             
-            # Apply directional optimization
-            directional_result = directional_optimizer.optimize_tactician_directionally(
-                X=X_short_term, y=y_short_term, regime_labels=np.zeros(len(y_short_term)),
+            # Apply entry timing optimization
+            entry_timing_result = entry_timing_optimizer.optimize_tactician_entry_timing(
+                X=X_entry_timing, y=y_entry_timing, regime_labels=np.zeros(len(y_entry_timing)),
                 feature_names=feature_names, hmm_states=None,
-                max_trials=getattr(self.config, 'hpo_n_trials', 100) // 2  # Half trials for directional
+                max_trials=getattr(self.config, 'hpo_n_trials', 100) // 2  # Half trials for entry timing
             )
             
-            # Create directional optimization results
-            directional_results = {
-                'directional_optimization': {
+            # Create entry timing optimization results
+            entry_timing_results = {
+                'entry_timing_optimization': {
                     'enabled': True,
-                    'short_term_threshold': short_term_threshold,
-                    'short_term_samples': len(y_short_term),
+                    'entry_timing_range': entry_timing_range,
+                    'entry_timing_samples': len(y_entry_timing),
                     'total_samples': len(y),
-                    'objectives': getattr(self.config, 'directional_objectives', {}),
-                    'optimization_time': directional_result.optimization_time,
-                    'n_trials': directional_result.n_trials
+                    'objectives': getattr(self.config, 'entry_timing_objectives', {}),
+                    'optimization_time': entry_timing_result.optimization_time,
+                    'n_trials': entry_timing_result.n_trials
                 },
-                'directional_model': directional_result.model,
-                'directional_metrics': {
-                    'directional_accuracy': directional_result.directional_accuracy,
-                    'adverse_movement_minimization': directional_result.adverse_movement_minimization,
-                    'directional_profit_efficiency': directional_result.directional_profit_efficiency,
-                    'risk_adjusted_performance': directional_result.risk_adjusted_performance,
-                    'composite_score': directional_result.composite_score
+                'entry_timing_model': entry_timing_result.model,
+                'entry_timing_metrics': {
+                    'early_entry_penalty': entry_timing_result.directional_accuracy,
+                    'late_entry_penalty': entry_timing_result.adverse_movement_minimization,
+                    'optimal_entry_reward': entry_timing_result.directional_profit_efficiency,
+                    'entry_timing_efficiency': entry_timing_result.risk_adjusted_performance,
+                    'composite_score': entry_timing_result.composite_score
                 }
             }
             
-            self.logger.info(f"✅ Directional optimization completed for short-term movements")
-            self.logger.info(f"   Directional accuracy: {directional_result.directional_accuracy:.4f}")
-            self.logger.info(f"   Adverse movement min: {directional_result.adverse_movement_minimization:.4f}")
-            self.logger.info(f"   Profit efficiency: {directional_result.directional_profit_efficiency:.4f}")
-            self.logger.info(f"   Risk-adjusted perf: {directional_result.risk_adjusted_performance:.4f}")
-            self.logger.info(f"   Composite score: {directional_result.composite_score:.4f}")
+            self.logger.info(f"✅ Entry timing optimization completed for 0-0.5% range")
+            self.logger.info(f"   Early entry penalty: {entry_timing_result.directional_accuracy:.4f}")
+            self.logger.info(f"   Late entry penalty: {entry_timing_result.adverse_movement_minimization:.4f}")
+            self.logger.info(f"   Optimal entry reward: {entry_timing_result.directional_profit_efficiency:.4f}")
+            self.logger.info(f"   Entry timing efficiency: {entry_timing_result.risk_adjusted_performance:.4f}")
+            self.logger.info(f"   Composite score: {entry_timing_result.composite_score:.4f}")
             
-            return directional_results
+            return entry_timing_results
             
         except Exception as e:
-            self.logger.error(f"❌ Directional optimization failed: {e}")
+            self.logger.error(f"❌ Entry timing optimization failed: {e}")
             return {}
     
     def _train_ensemble_model(

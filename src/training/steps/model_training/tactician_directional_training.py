@@ -46,7 +46,7 @@ from src.utils.math_validation import (
 # Base training imports
 from .tactician_models_training_refactored import TacticianModelsTrainingStepRefactored
 from .tactician_directional_optimization import (
-    DirectionalLossFunction, DirectionalTacticianOptimizer
+    EntryTimingLossFunction, EntryTimingTacticianOptimizer
 )
 from src.utils.ml_common.config import TacticianTrainingConfig
 
@@ -82,26 +82,26 @@ class DirectionalTacticianTrainingStep(TacticianModelsTrainingStepRefactored):
         self.enable_directional_optimization = enable_directional_optimization
         self.logger = logger.getChild('DirectionalTacticianTrainingStep')
         
-        # Initialize directional components
+        # Initialize entry timing components
         if enable_directional_optimization:
-            self.directional_optimizer = DirectionalTacticianOptimizer(config)
-            self.loss_functions = DirectionalLossFunction()
+            self.entry_timing_optimizer = EntryTimingTacticianOptimizer(config)
+            self.loss_functions = EntryTimingLossFunction()
             
-            # Directional optimization objectives
-            self.directional_objectives = {
-                'directional_accuracy': 'max',
-                'adverse_movement_minimization': 'max',
-                'directional_profit_efficiency': 'max',
-                'risk_adjusted_performance': 'max'
+            # Entry timing optimization objectives
+            self.entry_timing_objectives = {
+                'early_entry_penalty': 'min',
+                'late_entry_penalty': 'min',
+                'optimal_entry_reward': 'max',
+                'entry_timing_efficiency': 'max'
             }
             
-            self.logger.info("🚀 Directional optimization enabled")
+            self.logger.info("🚀 Entry timing optimization enabled")
         else:
-            self.directional_optimizer = None
+            self.entry_timing_optimizer = None
             self.loss_functions = None
-            self.directional_objectives = None
+            self.entry_timing_objectives = None
             
-            self.logger.info("ℹ️ Directional optimization disabled")
+            self.logger.info("ℹ️ Entry timing optimization disabled")
     
     def execute(self,
                 X: np.ndarray,
@@ -171,9 +171,9 @@ class DirectionalTacticianTrainingStep(TacticianModelsTrainingStepRefactored):
                     all_analyst_models_outputs, hmm_model_outputs, analyst_ensemble_outputs
                 )
                 
-                # Using existing features for directional optimization (no additional feature engineering)
+                # Using existing features for entry timing optimization (no additional feature engineering)
                 if self.enable_directional_optimization:
-                    self.logger.info(f"📊 Using existing features for directional optimization: {X.shape[1]} features")
+                    self.logger.info(f"📊 Using existing features for entry timing optimization: {X.shape[1]} features")
                 
                 self._complete_phase("FEATURE_PREPARATION", preparation_metrics)
             except Exception as e:

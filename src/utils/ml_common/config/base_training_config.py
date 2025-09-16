@@ -139,15 +139,16 @@ class TacticianTrainingConfig(BaseTrainingConfig):
     meta_model: str = "ElasticNetCV"  # Use ElasticNetCV for better performance
     ensemble_name: str = "tactician_ensemble"
     
-    # Directional optimization (focus on short-term 0.5% movements)
-    enable_directional_optimization: bool = True
-    directional_objectives: Dict[str, str] = field(default_factory=lambda: {
-        'directional_accuracy': 'max',           # How often direction is correct
-        'adverse_movement_minimization': 'max',  # Minimize adverse price movement
-        'directional_profit_efficiency': 'max',  # Profit from correct directional moves
-        'risk_adjusted_performance': 'max'       # Risk-adjusted returns
+    # Entry timing optimization (focus on optimal entry within 0-0.5% range)
+    enable_entry_timing_optimization: bool = True
+    entry_timing_objectives: Dict[str, str] = field(default_factory=lambda: {
+        'early_entry_penalty': 'min',           # Minimize entering too early
+        'late_entry_penalty': 'min',            # Minimize entering too late
+        'optimal_entry_reward': 'max',          # Maximize entering at optimal timing
+        'entry_timing_efficiency': 'max'        # Maximize profit from optimal entry timing
     })
-    short_term_threshold: float = 0.005  # 0.5% threshold for short-term focus
+    entry_timing_range: float = 0.005  # 0-0.5% range for entry timing optimization
+    expected_movement: float = 0.01  # Expected 1% movement in the right direction
     
     # Model-specific HPO search spaces
     hpo_search_spaces: Dict[str, Dict[str, Any]] = field(default_factory=lambda: {

@@ -64,123 +64,110 @@ class DirectionalOptimizationResult:
     optimization_history: List[Dict[str, Any]]
 
 
-class DirectionalLossFunction:
-    """Custom loss functions for directional optimization."""
+class EntryTimingLossFunction:
+    """Custom loss functions for entry timing optimization within 0-0.5% range."""
     
     @staticmethod
-    def directional_accuracy_loss(y_true: np.ndarray, y_pred: np.ndarray) -> float:
+    def early_entry_penalty_loss(y_true: np.ndarray, y_pred: np.ndarray, 
+                                entry_range: float = 0.005) -> float:
         """
-        Loss function that maximizes directional accuracy.
+        Loss function that penalizes entering too early (before optimal timing).
         
         Args:
-            y_true: True directional labels (1 for up, -1 for down, 0 for neutral)
-            y_pred: Predicted directional probabilities
+            y_true: True optimal entry timing (0-0.5% range)
+            y_pred: Predicted entry timing (0-0.5% range)
+            entry_range: Maximum entry range (0.5%)
             
         Returns:
-            Negative directional accuracy (for minimization)
+            Early entry penalty loss
         """
-        # Convert predictions to directional labels
-        y_pred_direction = np.sign(y_pred)
+        # Calculate how early we're entering (negative values = too early)
+        timing_error = y_pred - y_true
         
-        # Calculate directional accuracy
-        correct_directions = np.sum(y_true * y_pred_direction > 0)
-        total_predictions = np.sum(y_true != 0)
+        # Penalize early entries (negative timing errors)
+        early_penalty = np.sum(np.maximum(0, -timing_error)) / len(y_true)
         
-        if total_predictions == 0:
-            return 1.0  # Worst possible loss
-        
-        directional_accuracy = correct_directions / total_predictions
-        return 1.0 - directional_accuracy  # Return loss (1 - accuracy)
+        return early_penalty
     
     @staticmethod
-    def adverse_movement_loss(y_true: np.ndarray, y_pred: np.ndarray, 
-                            adverse_threshold: float = 0.005) -> float:  # 0.5% threshold
+    def late_entry_penalty_loss(y_true: np.ndarray, y_pred: np.ndarray, 
+                               entry_range: float = 0.005) -> float:
         """
-        Loss function that minimizes adverse price movement for short-term 0.5% movements.
+        Loss function that penalizes entering too late (after optimal timing).
         
         Args:
-            y_true: True price movements
-            y_pred: Predicted price movements
-            adverse_threshold: Threshold for adverse movement (0.5% for short-term focus)
+            y_true: True optimal entry timing (0-0.5% range)
+            y_pred: Predicted entry timing (0-0.5% range)
+            entry_range: Maximum entry range (0.5%)
             
         Returns:
-            Adverse movement loss
+            Late entry penalty loss
         """
-        # Calculate prediction errors
-        errors = np.abs(y_true - y_pred)
+        # Calculate how late we're entering (positive values = too late)
+        timing_error = y_pred - y_true
         
-        # Identify adverse movements (large errors in wrong direction)
-        adverse_mask = (np.sign(y_true) != np.sign(y_pred)) & (errors > adverse_threshold)
-        adverse_movements = np.sum(adverse_mask)
-        total_movements = len(y_true)
+        # Penalize late entries (positive timing errors)
+        late_penalty = np.sum(np.maximum(0, timing_error)) / len(y_true)
         
-        if total_movements == 0:
-            return 1.0
-        
-        adverse_ratio = adverse_movements / total_movements
-        return adverse_ratio
+        return late_penalty
     
     @staticmethod
-    def directional_profit_efficiency_loss(y_true: np.ndarray, y_pred: np.ndarray) -> float:
+    def optimal_entry_reward_loss(y_true: np.ndarray, y_pred: np.ndarray, 
+                                 tolerance: float = 0.001) -> float:
         """
-        Loss function that maximizes profit efficiency from correct directional moves.
+        Loss function that rewards optimal entry timing.
         
         Args:
-            y_true: True price movements
-            y_pred: Predicted price movements
+            y_true: True optimal entry timing
+            y_pred: Predicted entry timing
+            tolerance: Tolerance for "optimal" timing (0.1%)
             
         Returns:
-            Negative profit efficiency (for minimization)
+            Optimal entry reward loss (inverted reward)
         """
-        # Calculate profit from correct directional predictions
-        correct_direction_mask = np.sign(y_true) == np.sign(y_pred)
-        correct_movements = y_true[correct_direction_mask]
+        # Calculate timing accuracy
+        timing_error = np.abs(y_pred - y_true)
         
-        if len(correct_movements) == 0:
-            return 1.0  # No correct predictions
+        # Reward entries within tolerance
+        optimal_mask = timing_error <= tolerance
+        optimal_ratio = np.sum(optimal_mask) / len(y_true)
         
-        # Calculate profit efficiency
-        total_profit = np.sum(np.abs(correct_movements))
-        max_possible_profit = np.sum(np.abs(y_true))
-        
-        if max_possible_profit == 0:
-            return 1.0
-        
-        profit_efficiency = total_profit / max_possible_profit
-        return 1.0 - profit_efficiency  # Return loss (1 - efficiency)
+        return 1.0 - optimal_ratio  # Return loss (1 - reward)
     
     @staticmethod
-    def risk_adjusted_loss(y_true: np.ndarray, y_pred: np.ndarray) -> float:
+    def entry_timing_efficiency_loss(y_true: np.ndarray, y_pred: np.ndarray, 
+                                   expected_movement: float = 0.01) -> float:
         """
-        Loss function that optimizes risk-adjusted performance.
+        Loss function that maximizes profit efficiency from optimal entry timing.
         
         Args:
-            y_true: True returns
-            y_pred: Predicted returns
+            y_true: True optimal entry timing (0-0.5% range)
+            y_pred: Predicted entry timing (0-0.5% range)
+            expected_movement: Expected 1% movement in right direction
             
         Returns:
-            Negative risk-adjusted performance (for minimization)
+            Entry timing efficiency loss
         """
-        # Calculate returns
-        returns = y_pred - y_true
+        # Calculate profit from entry timing
+        # Profit = (expected_movement - entry_timing) for correct timing
+        timing_error = np.abs(y_pred - y_true)
         
-        # Calculate risk-adjusted performance (Sharpe-like ratio)
-        mean_return = np.mean(returns)
-        return_std = np.std(returns)
+        # Calculate potential profit (expected movement minus timing cost)
+        potential_profit = expected_movement - timing_error
         
-        if return_std == 0:
-            return 1.0  # No risk, but also no return
+        # Calculate efficiency (actual profit / maximum possible profit)
+        max_profit = expected_movement
+        efficiency = np.mean(potential_profit) / max_profit if max_profit > 0 else 0
         
-        risk_adjusted_performance = mean_return / return_std
-        return -risk_adjusted_performance  # Return negative for minimization
+        return 1.0 - efficiency  # Return loss (1 - efficiency)
 
 
 # DirectionalFeatureEngineer removed - using existing features from base training
 
 
-class DirectionalTacticianOptimizer:
+class EntryTimingTacticianOptimizer:
     """
-    Enhanced Tactician optimizer that directly optimizes for directional goals.
+    Enhanced Tactician optimizer that directly optimizes for entry timing within 0-0.5% range.
     """
     
     def __init__(self, 
@@ -214,9 +201,12 @@ class DirectionalTacticianOptimizer:
         # Optimization history
         self.optimization_history = []
         
-        self.logger.info("🚀 Directional Tactician optimizer initialized")
+        # Initialize loss functions
+        self.loss_functions = EntryTimingLossFunction()
+        
+        self.logger.info("🚀 Entry Timing Tactician optimizer initialized")
     
-    def optimize_tactician_directionally(self,
+    def optimize_tactician_entry_timing(self,
                                        X: np.ndarray,
                                        y: np.ndarray,
                                        regime_labels: np.ndarray,
@@ -230,11 +220,11 @@ class DirectionalTacticianOptimizer:
                                        analyst_ensemble_outputs: Optional[np.ndarray] = None,
                                        max_trials: int = 100) -> DirectionalOptimizationResult:
         """
-        Optimize Tactician model for directional objectives.
+        Optimize Tactician model for entry timing within 0-0.5% range.
         
         Args:
             X: Input features
-            y: Target values
+            y: Target values (optimal entry timing 0-0.5% range)
             regime_labels: Regime labels
             feature_names: Feature names
             hmm_states: HMM states
@@ -247,62 +237,62 @@ class DirectionalTacticianOptimizer:
             max_trials: Maximum optimization trials
             
         Returns:
-            DirectionalOptimizationResult with optimized model
+            DirectionalOptimizationResult with entry timing optimization results
         """
         start_time = time.time()
         
-        self.logger.info("🔄 Starting directional Tactician optimization...")
+        self.logger.info("🔄 Starting entry timing Tactician optimization...")
         
         # Step 1: Use existing features (no additional feature engineering)
-        self.logger.info("📊 Step 1: Using existing features for directional optimization")
+        self.logger.info("📊 Step 1: Using existing features for entry timing optimization")
         X_enhanced = X  # Use existing features as-is
         
-        # Step 2: Multi-objective optimization
-        self.logger.info("📊 Step 2: Multi-objective directional optimization")
-        optimization_result = self._multi_objective_directional_optimization(
+        # Step 2: Multi-objective optimization for entry timing
+        self.logger.info("📊 Step 2: Multi-objective entry timing optimization")
+        optimization_result = self._multi_objective_entry_timing_optimization(
             X_enhanced, y, regime_labels, max_trials
         )
         
         # Step 3: Train final model with best parameters
-        self.logger.info("📊 Step 3: Training final directional model")
-        final_model = self._train_final_directional_model(
+        self.logger.info("📊 Step 3: Training final entry timing model")
+        final_model = self._train_final_entry_timing_model(
             X_enhanced, y, optimization_result
         )
         
-        # Step 4: Evaluate directional performance
-        self.logger.info("📊 Step 4: Evaluating directional performance")
-        directional_metrics = self._evaluate_directional_performance(final_model, X_enhanced, y)
+        # Step 4: Evaluate entry timing performance
+        self.logger.info("📊 Step 4: Evaluating entry timing performance")
+        entry_timing_metrics = self._evaluate_entry_timing_performance(final_model, X_enhanced, y)
         
         # Create result
         result = DirectionalOptimizationResult(
             model=final_model,
-            directional_accuracy=directional_metrics['directional_accuracy'],
-            adverse_movement_minimization=directional_metrics['adverse_movement_minimization'],
-            directional_profit_efficiency=directional_metrics['directional_profit_efficiency'],
-            risk_adjusted_performance=directional_metrics['risk_adjusted_performance'],
-            composite_score=directional_metrics['composite_score'],
+            directional_accuracy=entry_timing_metrics['early_entry_penalty'],
+            adverse_movement_minimization=entry_timing_metrics['late_entry_penalty'],
+            directional_profit_efficiency=entry_timing_metrics['optimal_entry_reward'],
+            risk_adjusted_performance=entry_timing_metrics['entry_timing_efficiency'],
+            composite_score=entry_timing_metrics['composite_score'],
             optimization_time=time.time() - start_time,
             n_trials=max_trials,
             optimization_history=self.optimization_history.copy()
         )
         
-        self.logger.info(f"✅ Directional optimization completed in {result.optimization_time:.2f}s")
-        self.logger.info(f"   Directional accuracy: {result.directional_accuracy:.4f}")
-        self.logger.info(f"   Adverse movement min: {result.adverse_movement_minimization:.4f}")
-        self.logger.info(f"   Profit efficiency: {result.directional_profit_efficiency:.4f}")
-        self.logger.info(f"   Risk-adjusted perf: {result.risk_adjusted_performance:.4f}")
+        self.logger.info(f"✅ Entry timing optimization completed in {result.optimization_time:.2f}s")
+        self.logger.info(f"   Early entry penalty: {result.directional_accuracy:.4f}")
+        self.logger.info(f"   Late entry penalty: {result.adverse_movement_minimization:.4f}")
+        self.logger.info(f"   Optimal entry reward: {result.directional_profit_efficiency:.4f}")
+        self.logger.info(f"   Entry timing efficiency: {result.risk_adjusted_performance:.4f}")
         self.logger.info(f"   Composite score: {result.composite_score:.4f}")
         
         return result
     
     # Feature enhancement removed - using existing features from base training
     
-    def _multi_objective_directional_optimization(self,
+    def _multi_objective_entry_timing_optimization(self,
                                                 X: np.ndarray,
                                                 y: np.ndarray,
                                                 regime_labels: np.ndarray,
                                                 max_trials: int) -> Dict[str, Any]:
-        """Multi-objective optimization for directional goals."""
+        """Multi-objective optimization for entry timing goals."""
         solutions = []
         
         def objective(trial):
@@ -325,8 +315,8 @@ class DirectionalTacticianOptimizer:
             # Train model
             model.fit(X, y)
             
-            # Evaluate directional metrics
-            metrics = self._evaluate_directional_metrics(model, X, y)
+            # Evaluate entry timing metrics
+            metrics = self._evaluate_entry_timing_metrics(model, X, y)
             
             # Store solution
             solution = Solution(
@@ -360,53 +350,46 @@ class DirectionalTacticianOptimizer:
             'study': study
         }
     
-    def _evaluate_directional_metrics(self, model: Any, X: np.ndarray, y: np.ndarray) -> Dict[str, float]:
-        """Evaluate directional metrics for a model."""
+    def _evaluate_entry_timing_metrics(self, model: Any, X: np.ndarray, y: np.ndarray) -> Dict[str, float]:
+        """Evaluate entry timing metrics for a model."""
         # Get predictions
         y_pred = model.predict(X)
         
-        # Calculate directional accuracy
-        y_direction = np.sign(y)
-        y_pred_direction = np.sign(y_pred)
-        directional_accuracy = np.mean(y_direction == y_pred_direction)
+        # Calculate early entry penalty (minimize entering too early)
+        timing_error = y_pred - y
+        early_entry_penalty = np.mean(np.maximum(0, -timing_error))
         
-        # Calculate adverse movement minimization (focused on short-term 0.5% movements)
-        adverse_movements = np.sum((y_direction != y_pred_direction) & (np.abs(y) > 0.005))  # 0.5% threshold
-        total_movements = np.sum(y_direction != 0)
-        adverse_movement_minimization = 1 - (adverse_movements / total_movements) if total_movements > 0 else 1.0
+        # Calculate late entry penalty (minimize entering too late)
+        late_entry_penalty = np.mean(np.maximum(0, timing_error))
         
-        # Calculate directional profit efficiency
-        correct_direction_mask = y_direction == y_pred_direction
-        if np.sum(correct_direction_mask) > 0:
-            correct_returns = np.abs(y[correct_direction_mask])
-            total_returns = np.abs(y[y_direction != 0])
-            directional_profit_efficiency = np.sum(correct_returns) / np.sum(total_returns) if np.sum(total_returns) > 0 else 0.0
-        else:
-            directional_profit_efficiency = 0.0
+        # Calculate optimal entry reward (maximize entries within tolerance)
+        timing_accuracy = np.abs(y_pred - y)
+        tolerance = 0.001  # 0.1% tolerance for optimal timing
+        optimal_mask = timing_accuracy <= tolerance
+        optimal_entry_reward = np.mean(optimal_mask)
         
-        # Calculate risk-adjusted performance
-        returns = y_pred - y
-        mean_return = np.mean(returns)
-        return_std = np.std(returns)
-        risk_adjusted_performance = mean_return / return_std if return_std > 0 else 0.0
+        # Calculate entry timing efficiency (maximize profit from optimal timing)
+        expected_movement = 0.01  # Expected 1% movement
+        potential_profit = expected_movement - timing_accuracy
+        entry_timing_efficiency = np.mean(potential_profit) / expected_movement if expected_movement > 0 else 0
         
         # Calculate composite score
         composite_score = (
-            0.4 * directional_accuracy +
-            0.3 * adverse_movement_minimization +
-            0.2 * directional_profit_efficiency +
-            0.1 * risk_adjusted_performance
+            0.3 * (1 - early_entry_penalty) +  # Minimize early entry penalty
+            0.3 * (1 - late_entry_penalty) +   # Minimize late entry penalty
+            0.2 * optimal_entry_reward +       # Maximize optimal entry reward
+            0.2 * entry_timing_efficiency      # Maximize entry timing efficiency
         )
         
         return {
-            'directional_accuracy': directional_accuracy,
-            'adverse_movement_minimization': adverse_movement_minimization,
-            'directional_profit_efficiency': directional_profit_efficiency,
-            'risk_adjusted_performance': risk_adjusted_performance,
+            'early_entry_penalty': early_entry_penalty,
+            'late_entry_penalty': late_entry_penalty,
+            'optimal_entry_reward': optimal_entry_reward,
+            'entry_timing_efficiency': entry_timing_efficiency,
             'composite_score': composite_score
         }
     
-    def _train_final_directional_model(self,
+    def _train_final_entry_timing_model(self,
                                      X: np.ndarray,
                                      y: np.ndarray,
                                      optimization_result: Dict[str, Any]) -> Any:
@@ -433,9 +416,9 @@ class DirectionalTacticianOptimizer:
         
         return model
     
-    def _evaluate_directional_performance(self, model: Any, X: np.ndarray, y: np.ndarray) -> Dict[str, float]:
-        """Evaluate final directional performance."""
-        return self._evaluate_directional_metrics(model, X, y)
+    def _evaluate_entry_timing_performance(self, model: Any, X: np.ndarray, y: np.ndarray) -> Dict[str, float]:
+        """Evaluate final entry timing performance."""
+        return self._evaluate_entry_timing_metrics(model, X, y)
 
 
 # Convenience functions

@@ -119,7 +119,7 @@ class TacticianTrainingConfig(BaseTrainingConfig):
     
     # Model types to train
     model_types: List[str] = field(default_factory=lambda: [
-        "NODE", "CatBoostRegressor", "LGBMRegressor", "Ridge"
+        "XGBoost_custom", "RandomForest", "CatBoostRegressor", "ElasticNet"
     ])
     
     # Analyst integration
@@ -129,14 +129,49 @@ class TacticianTrainingConfig(BaseTrainingConfig):
     ])
     analyst_threshold: float = 0.6
     
+    # Single model training (not per-regime)
+    use_single_model: bool = True
+    single_model_name: str = "tactician_unified_model"
+    
+    # Ensemble training (always enabled for Tactician)
+    enable_ensemble_training: bool = True  # Always True for Tactician
+    ensemble_method: str = "stacking"  # stacking, voting, blending
+    meta_model: str = "LightGBM"  # Use LightGBM as meta-learner
+    ensemble_name: str = "tactician_ensemble"
+    
+    # Entry timing optimization (focus on optimal entry within 0-0.5% range)
+    enable_entry_timing_optimization: bool = True
+    entry_timing_objectives: Dict[str, str] = field(default_factory=lambda: {
+        'early_entry_penalty': 'min',           # Minimize entering too early
+        'late_entry_penalty': 'min',            # Minimize entering too late
+        'optimal_entry_reward': 'max',          # Maximize entering at optimal timing
+        'entry_timing_efficiency': 'max',       # Maximize profit from optimal entry timing
+        'directional_consistency': 'min',       # Minimize directional inconsistency
+        'confidence_score': 'max'               # Maximize confidence in optimal timing
+    })
+    entry_timing_range: float = 0.005  # 0-0.5% range for entry timing optimization
+    expected_movement: float = 0.01  # Expected 1% movement in the right direction
+    
     # Model-specific HPO search spaces
     hpo_search_spaces: Dict[str, Dict[str, Any]] = field(default_factory=lambda: {
-        'NODE': {
-            'n_d': {'type': 'int', 'low': 32, 'high': 128},
-            'n_a': {'type': 'int', 'low': 32, 'high': 128},
-            'n_steps': {'type': 'int', 'low': 3, 'high': 8},
-            'gamma': {'type': 'float', 'low': 1.0, 'high': 2.0},
-            'lambda_sparse': {'type': 'float', 'low': 1e-4, 'high': 1e-2, 'log': True}
+        'XGBoost_custom': {
+            'n_estimators': {'type': 'int', 'low': 500, 'high': 2000},
+            'learning_rate': {'type': 'float', 'low': 0.01, 'high': 0.2, 'log': True},
+            'max_depth': {'type': 'int', 'low': 4, 'high': 8},
+            'subsample': {'type': 'float', 'low': 0.7, 'high': 1.0},
+            'colsample_bytree': {'type': 'float', 'low': 0.7, 'high': 1.0},
+            'reg_alpha': {'type': 'float', 'low': 0.0, 'high': 1.0},
+            'reg_lambda': {'type': 'float', 'low': 0.0, 'high': 1.0},
+            'min_child_weight': {'type': 'int', 'low': 1, 'high': 7},
+            'gamma': {'type': 'float', 'low': 0.0, 'high': 0.3}
+        },
+        'RandomForest': {
+            'n_estimators': {'type': 'int', 'low': 100, 'high': 1000},
+            'max_depth': {'type': 'int', 'low': 5, 'high': 20},
+            'min_samples_split': {'type': 'int', 'low': 2, 'high': 10},
+            'min_samples_leaf': {'type': 'int', 'low': 1, 'high': 4},
+            'max_features': {'type': 'categorical', 'choices': ['sqrt', 'log2', None]},
+            'bootstrap': {'type': 'categorical', 'choices': [True, False]}
         },
         'CatBoostRegressor': {
             'n_estimators': {'type': 'int', 'low': 500, 'high': 2000},
@@ -144,16 +179,10 @@ class TacticianTrainingConfig(BaseTrainingConfig):
             'depth': {'type': 'int', 'low': 4, 'high': 10},
             'l2_leaf_reg': {'type': 'float', 'low': 1.0, 'high': 10.0}
         },
-        'LGBMRegressor': {
-            'n_estimators': {'type': 'int', 'low': 500, 'high': 2000},
-            'learning_rate': {'type': 'float', 'low': 0.01, 'high': 0.2, 'log': True},
-            'max_depth': {'type': 'int', 'low': 4, 'high': 10},
-            'reg_alpha': {'type': 'float', 'low': 0.0, 'high': 1.0},
-            'reg_lambda': {'type': 'float', 'low': 0.0, 'high': 1.0}
-        },
-        'Ridge': {
-            'alpha': {'type': 'float', 'low': 0.1, 'high': 10.0, 'log': True},
-            'solver': {'type': 'categorical', 'choices': ['auto', 'svd', 'cholesky', 'lsqr', 'sparse_cg', 'sag', 'saga']}
+        'ElasticNet': {
+            'alpha': {'type': 'float', 'low': 0.001, 'high': 10.0, 'log': True},
+            'l1_ratio': {'type': 'float', 'low': 0.1, 'high': 1.0},
+            'max_iter': {'type': 'int', 'low': 1000, 'high': 5000}
         }
     })
 

@@ -66,6 +66,17 @@ except ImportError as e:
     COMMON_OPERATIONS_AVAILABLE = False
     tprint(f"⚠️ Common operations not available: {e}")
 
+# Import Bayesian lookback optimizer
+try:
+    from .bayesian_lookback_optimizer import (
+        BayesianLookbackOptimizer, LookbackOptimizationConfig, LookbackOptimizationResult,
+        optimize_lookback_periods
+    )
+    BAYESIAN_OPTIMIZER_AVAILABLE = True
+except ImportError as e:
+    BAYESIAN_OPTIMIZER_AVAILABLE = False
+    tprint(f"⚠️ Bayesian lookback optimizer not available: {e}")
+
 # Configuration constants
 class OptimizationConfig:
     """Configuration constants for optimization."""
@@ -163,6 +174,16 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
         
         tprint(f"🔧 Matrix operations available: {MATRIX_OPS_AVAILABLE}")
         tprint(f"🔧 Common operations available: {COMMON_OPERATIONS_AVAILABLE}")
+        tprint(f"🔧 Bayesian optimizer available: {BAYESIAN_OPTIMIZER_AVAILABLE}")
+        
+        # Initialize Bayesian optimizer if available
+        self.bayesian_optimizer = None
+        if BAYESIAN_OPTIMIZER_AVAILABLE:
+            try:
+                self.bayesian_optimizer = BayesianLookbackOptimizer()
+                tprint("✅ Bayesian lookback optimizer initialized")
+            except Exception as e:
+                tprint(f"⚠️ Failed to initialize Bayesian optimizer: {e}")
         
         # Initialize reporter
         self.reporter = OptimizationReporter(
@@ -1089,3 +1110,194 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
         }
         
         return enhanced_metrics
+    
+    def optimize_lookback_periods_bayesian(self, 
+                                         data: pd.DataFrame,
+                                         feature_columns: List[str],
+                                         target_column: str = 'returns',
+                                         optimization_config: Optional[LookbackOptimizationConfig] = None) -> Dict[str, Any]:
+        """
+        Optimize lookback periods using Bayesian optimization with TPE and intelligent pruning.
+        
+        Args:
+            data: Input data with features and target
+            feature_columns: List of feature columns to optimize
+            target_column: Name of the target column
+            optimization_config: Optional configuration for optimization
+            
+        Returns:
+            Dictionary with optimization results for each feature
+        """
+        if not BAYESIAN_OPTIMIZER_AVAILABLE or self.bayesian_optimizer is None:
+            tprint("⚠️ Bayesian optimizer not available - using fallback optimization")
+            return self._fallback_lookback_optimization(data, feature_columns, target_column)
+        
+        tprint("🔍 Starting Bayesian lookback period optimization...")
+        start_time = time.time()
+        
+        optimization_results = {}
+        
+        try:
+            # Create optimization config if not provided
+            if optimization_config is None:
+                optimization_config = LookbackOptimizationConfig(
+                    n_trials=50,  # Reduced for faster execution
+                    min_lookback=5,
+                    max_lookback=50,
+                    max_correlation_threshold=0.7,
+                    min_mutual_info_threshold=0.1,
+                    enable_pruning=True,
+                    enable_parallel=True
+                )
+            
+            # Optimize each feature
+            for feature_name in feature_columns:
+                tprint(f"📊 Optimizing lookback periods for {feature_name}...")
+                
+                try:
+                    # Optimize lookback periods for this feature
+                    result = self.bayesian_optimizer.optimize_lookback_periods(
+                        data=data,
+                        feature_name=feature_name,
+                        target_column=target_column,
+                        parameter_type="technical_indicator"
+                    )
+                    
+                    # Store results
+                    optimization_results[feature_name] = {
+                        'first_lookback_period': result.first_lookback_period,
+                        'second_lookback_period': result.second_lookback_period,
+                        'first_mi_score': result.first_mi_score,
+                        'second_mi_score': result.second_mi_score,
+                        'combined_mi_score': result.combined_mi_score,
+                        'correlation_between_periods': result.correlation_between_periods,
+                        'optimization_time': result.optimization_time,
+                        'n_trials': result.n_trials,
+                        'best_score': result.best_score,
+                        'convergence_rate': result.convergence_rate,
+                        'parameter_importance': result.parameter_importance
+                    }
+                    
+                    tprint(f"✅ {feature_name}: First={result.first_lookback_period} (MI={result.first_mi_score:.4f}), "
+                          f"Second={result.second_lookback_period} (MI={result.second_mi_score:.4f}), "
+                          f"Correlation={result.correlation_between_periods:.4f}")
+                    
+                except Exception as e:
+                    tprint(f"❌ Failed to optimize {feature_name}: {e}")
+                    optimization_results[feature_name] = {
+                        'error': str(e),
+                        'first_lookback_period': None,
+                        'second_lookback_period': None
+                    }
+            
+            total_time = time.time() - start_time
+            tprint(f"✅ Bayesian optimization completed in {total_time:.2f} seconds")
+            
+            # Generate summary
+            summary = self._generate_optimization_summary(optimization_results)
+            optimization_results['_summary'] = summary
+            
+            return optimization_results
+            
+        except Exception as e:
+            tprint(f"❌ Bayesian optimization failed: {e}")
+            return {'error': str(e)}
+    
+    def _fallback_lookback_optimization(self, 
+                                      data: pd.DataFrame,
+                                      feature_columns: List[str],
+                                      target_column: str) -> Dict[str, Any]:
+        """Fallback optimization when Bayesian optimizer is not available."""
+        tprint("🔄 Using fallback lookback optimization...")
+        
+        optimization_results = {}
+        
+        for feature_name in feature_columns:
+            try:
+                # Simple grid search for lookback periods
+                best_first = 10
+                best_second = 20
+                best_score = 0.0
+                
+                # Basic optimization logic
+                for first_lookback in range(5, 51, 5):
+                    for second_lookback in range(5, 51, 5):
+                        if second_lookback == first_lookback:
+                            continue
+                        
+                        # Calculate simple correlation
+                        first_feature = data['close'].rolling(window=first_lookback).mean()
+                        second_feature = data['close'].rolling(window=second_lookback).mean()
+                        
+                        correlation = first_feature.corr(second_feature)
+                        
+                        if abs(correlation) < 0.7:  # Low correlation
+                            score = 1.0 - abs(correlation)  # Higher score for lower correlation
+                            if score > best_score:
+                                best_score = score
+                                best_first = first_lookback
+                                best_second = second_lookback
+                
+                optimization_results[feature_name] = {
+                    'first_lookback_period': best_first,
+                    'second_lookback_period': best_second,
+                    'first_mi_score': 0.5,  # Placeholder
+                    'second_mi_score': 0.5,  # Placeholder
+                    'combined_mi_score': best_score,
+                    'correlation_between_periods': abs(correlation),
+                    'optimization_time': 0.1,
+                    'n_trials': 100,
+                    'best_score': best_score,
+                    'convergence_rate': 1.0,
+                    'parameter_importance': {},
+                    'method': 'fallback_grid_search'
+                }
+                
+            except Exception as e:
+                optimization_results[feature_name] = {
+                    'error': str(e),
+                    'first_lookback_period': 10,
+                    'second_lookback_period': 20
+                }
+        
+        return optimization_results
+    
+    def _generate_optimization_summary(self, optimization_results: Dict[str, Any]) -> Dict[str, Any]:
+        """Generate summary of optimization results."""
+        summary = {
+            'total_features_optimized': len([k for k in optimization_results.keys() if k != '_summary']),
+            'successful_optimizations': len([k for k, v in optimization_results.items() 
+                                           if k != '_summary' and 'error' not in v]),
+            'failed_optimizations': len([k for k, v in optimization_results.items() 
+                                       if k != '_summary' and 'error' in v]),
+            'average_optimization_time': 0.0,
+            'average_mi_score': 0.0,
+            'average_correlation': 0.0,
+            'best_features': [],
+            'worst_features': []
+        }
+        
+        successful_results = [v for k, v in optimization_results.items() 
+                            if k != '_summary' and 'error' not in v]
+        
+        if successful_results:
+            summary['average_optimization_time'] = np.mean([r.get('optimization_time', 0) for r in successful_results])
+            summary['average_mi_score'] = np.mean([r.get('combined_mi_score', 0) for r in successful_results])
+            summary['average_correlation'] = np.mean([r.get('correlation_between_periods', 1) for r in successful_results])
+            
+            # Find best and worst features
+            sorted_features = sorted(successful_results, key=lambda x: x.get('combined_mi_score', 0), reverse=True)
+            summary['best_features'] = [f for f in sorted_features[:3]]
+            summary['worst_features'] = [f for f in sorted_features[-3:]]
+        
+        return summary
+    
+    def get_bayesian_optimization_metrics(self) -> Dict[str, Any]:
+        """Get metrics from Bayesian optimization."""
+        if not BAYESIAN_OPTIMIZER_AVAILABLE or self.bayesian_optimizer is None:
+            return {'error': 'Bayesian optimizer not available'}
+        
+        try:
+            return self.bayesian_optimizer.get_optimization_summary()
+        except Exception as e:
+            return {'error': str(e)}

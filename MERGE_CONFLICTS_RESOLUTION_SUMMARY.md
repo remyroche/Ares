@@ -10,16 +10,16 @@ Successfully resolved merge conflicts by updating model configurations in both H
 
 #### **Updated Model Configuration**:
 - **Base Models**:
-  - `"lightgbm"`: LGBMClassifier - Primary: Speed + robustness
+  - `"catboost"`: CatBoostClassifier - Primary: Speed + robustness
   - `"elastic_net"`: LogisticRegression with elastic net penalty - Primary: Fast baseline
 - **Meta-learner**:
-  - `"xgboost"`: XGBClassifier - Meta: Speed + efficiency
+  - `"ensemble_rf"`: RandomForestClassifier - Meta: Speed + efficiency
 
 #### **Files Updated**:
 - **ModelFactory._model_configs**: Updated to include LightGBM, Elastic Net, and XGBoost configurations
 - **HMMModelsTrainingEnhanced._register_models**: Updated model registry with new configurations
 - **HMMModelsTrainingEnhanced._create_model**: Updated model creation logic to handle new model types
-- **Default configurations**: Updated model_types from `["logistic_regression", "xgboost"]` to `["lightgbm", "elastic_net", "xgboost"]`
+- **Default configurations**: Updated model_types from `["logistic_regression", "xgboost"]` to `["catboost", "elastic_net", "ensemble_rf"]`
 
 #### **Model Configurations**:
 ```python
@@ -57,7 +57,7 @@ Successfully resolved merge conflicts by updating model configurations in both H
 ### 2. **HMM Ensemble Training** (`hmm_ensemble_training.py`)
 
 #### **Updated Configuration**:
-- **Model Types**: Changed from `["logistic_regression", "xgboost", "random_forest", "voting_classifier"]` to `["lightgbm", "elastic_net", "xgboost"]`
+- **Model Types**: Changed from `["logistic_regression", "xgboost", "random_forest", "voting_classifier"]` to `["catboost", "elastic_net", "ensemble_rf"]`
 - **Mock Base Models**: Updated to reflect new model types
 - **Documentation**: Updated print statements and descriptions
 

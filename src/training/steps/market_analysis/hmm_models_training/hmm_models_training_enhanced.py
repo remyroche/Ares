@@ -1211,7 +1211,7 @@ if __name__ == "__main__":
         n_features=50,
         sequence_length=20,
         n_regimes=3,
-        model_types=["lightgbm", "elastic_net", "xgboost"],
+        model_types=["catboost", "elastic_net", "ensemble_rf"],
         hpo_trials=25,
         enable_multi_objective=True
     )

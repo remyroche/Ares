@@ -2,292 +2,344 @@
 """
 Enhanced HMM Clustering Usage Example
 
-This script demonstrates how to use the enhanced HMM clustering system
-with common utilities integration in the existing market analysis pipeline.
+This example demonstrates how to use the enhanced HMM clustering modules
+with full integration of all available common utilities.
 """
 
 import logging
+import time
+from typing import Any, Dict, List, Optional
 import numpy as np
 import pandas as pd
-from datetime import datetime, timedelta
-from pathlib import Path
 
-# Import the enhanced HMM utilities
+# Import enhanced HMM clustering modules
 from hmm_executor import (
-    create_enhanced_dependencies, 
+    create_hmm_dependencies,
     train_hmm_optimized,
-    validate_hmm_model,
-    calculate_regime_characteristics,
-    calculate_feature_importance,
-    save_hmm_model,
-    load_hmm_model
+    save_hmm_results,
+    validate_hmm_model
 )
-from hmm_utils import (
-    create_enhanced_hmm_utils,
-    TechnicalIndicators
+from hmm_utils import HMMCommonUtilities
+from clustering_executor import (
+    create_clustering_dependencies,
+    kmeans_standard,
+    kmeans_minibatch,
+    save_clustering_results
 )
+
+# Import common utilities
+from src.utils.common_operations import (
+    get_m1_gpu_manager,
+    get_m1_memory_optimizer,
+    get_m1_cpu_optimizer,
+    validate_dataframe_columns,
+    calculate_data_quality_metrics
+)
+from src.utils.common_utilities import safe_convert_dtypes
+from src.utils.math_validation import safe_divide, safe_log
+from src.utils.serialization_utils import JSONSerializer, PickleSerializer
+from src.utils.matrix_operations.unified_operations import UnifiedMatrixOperations
+from src.utils.ml_common.hmm_regime_detection import HMMRegimeDetector
+from src.utils.ml_common.validation.cross_validation import TimeSeriesCrossValidator
+from src.utils.ml_common.optimization.hyperparameter_optimization import HyperparameterOptimizer
+from src.utils.logger import system_logger
 
 # Setup logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+logger = system_logger.getChild('EnhancedHMMExample')
 
-def create_sample_data(n_samples: int = 1000) -> pd.DataFrame:
-    """Create sample market data for demonstration."""
+def generate_sample_market_data(n_samples: int = 2000) -> pd.DataFrame:
+    """Generate realistic sample market data for testing."""
+    logger.info(f"📊 Generating sample market data: {n_samples} samples")
+    
     np.random.seed(42)
     
-    # Generate synthetic price data with multiple regimes
-    dates = pd.date_range(start='2023-01-01', periods=n_samples, freq='H')
+    # Generate time series data
+    dates = pd.date_range('2023-01-01', periods=n_samples, freq='1H')
     
-    # Create different market regimes
-    regime_lengths = [200, 300, 250, 250]
-    regimes = []
+    # Generate price data with trends and volatility clusters
+    returns = np.random.normal(0, 0.02, n_samples)
+    prices = 100 * np.exp(np.cumsum(returns))
     
-    for i, length in enumerate(regime_lengths):
-        if i == 0:  # Bull market
-            trend = 0.001
-            volatility = 0.02
-        elif i == 1:  # Bear market
-            trend = -0.0005
-            volatility = 0.03
-        elif i == 2:  # Sideways market
-            trend = 0.0001
-            volatility = 0.015
-        else:  # High volatility
-            trend = 0.0002
-            volatility = 0.04
-        
-        regime_data = np.random.normal(trend, volatility, length)
-        regimes.extend(regime_data)
-    
-    regimes = regimes[:n_samples]
-    
-    # Generate price series
-    prices = [100]
-    for return_val in regimes:
-        prices.append(prices[-1] * (1 + return_val))
-    
-    prices = prices[:n_samples]
+    # Generate volume data
+    volume = np.random.lognormal(10, 0.5, n_samples)
     
     # Create OHLCV data
-    data = pd.DataFrame({
+    market_data = pd.DataFrame({
         'timestamp': dates,
         'open': prices,
-        'high': [p * (1 + abs(np.random.normal(0, 0.01))) for p in prices],
-        'low': [p * (1 - abs(np.random.normal(0, 0.01))) for p in prices],
+        'high': prices * (1 + np.abs(np.random.normal(0, 0.01, n_samples))),
+        'low': prices * (1 - np.abs(np.random.normal(0, 0.01, n_samples))),
         'close': prices,
-        'volume': np.random.uniform(1000, 10000, n_samples)
+        'volume': volume
     })
     
-    # Ensure OHLCV consistency
-    data['high'] = np.maximum(data['high'], data[['open', 'close']].max(axis=1))
-    data['low'] = np.minimum(data['low'], data[['open', 'close']].min(axis=1))
-    
-    return data
+    logger.info(f"✅ Sample market data generated: {market_data.shape}")
+    return market_data
 
 def demonstrate_enhanced_hmm_clustering():
-    """Demonstrate the enhanced HMM clustering with common utilities integration."""
-    logger.info("Starting Enhanced HMM Clustering Demonstration")
-    logger.info("=" * 60)
+    """Demonstrate enhanced HMM clustering with common utilities integration."""
+    logger.info("🚀 Starting Enhanced HMM Clustering Demonstration")
     
     try:
-        # Create sample data
-        logger.info("Creating sample market data...")
-        data = create_sample_data(1000)
-        logger.info(f"Created {len(data)} data points")
+        # Generate sample data
+        market_data = generate_sample_market_data(1000)
         
-        # Initialize enhanced HMM utilities
-        logger.info("Initializing enhanced HMM utilities...")
-        hmm_utils = create_enhanced_hmm_utils()
+        # Initialize HMM common utilities
+        hmm_utils = HMMCommonUtilities()
         
-        # Engineer features using enhanced utilities
-        logger.info("Engineering features with enhanced utilities...")
-        features = hmm_utils.engineer_features_enhanced(
-            data=data,
-            lookback_windows=[5, 10, 20, 50],
-            technical_indicators=["rsi", "macd", "bollinger_bands", "atr"]
-        )
-        logger.info(f"Engineered {len(features.columns)} features")
+        # Prepare features with validation
+        logger.info("🔧 Preparing features with validation...")
+        features_prepared = hmm_utils.prepare_features_with_validation(market_data)
         
-        # Create enhanced dependencies
-        logger.info("Creating enhanced dependencies...")
-        deps = create_enhanced_dependencies(
-            use_gpu=True,
-            use_memory_optimization=True,
-            use_cpu_optimization=True
-        )
+        # Calculate technical indicators
+        logger.info("📊 Calculating technical indicators...")
+        features_with_indicators = hmm_utils.calculate_technical_indicators_safe(features_prepared)
         
-        # Train HMM model with enhanced utilities
-        logger.info("Training HMM model with enhanced utilities...")
-        hmm_result = train_hmm_optimized(
-            features=features,
-            n_components=4,
-            covariance_type="full",
+        # Select numeric features for HMM training
+        numeric_features = features_with_indicators.select_dtypes(include=[np.number]).columns.tolist()
+        features_array = features_with_indicators[numeric_features].values
+        
+        logger.info(f"Features prepared: {features_array.shape}")
+        
+        # Create HMM dependencies with common utilities
+        hmm_deps = create_hmm_dependencies()
+        
+        # Train HMM with optimization
+        logger.info("🎯 Training HMM with hardware optimization...")
+        hmm_results = train_hmm_optimized(
+            features=features_with_indicators[numeric_features],
+            n_components=3,
+            covariance_type='full',
             n_iter=100,
             random_state=42,
-            deps=deps
+            deps=hmm_deps
         )
         
-        logger.info("✓ HMM model training completed")
-        logger.info(f"  - Processing time: {hmm_result.get('processing_time', 0):.2f}s")
-        logger.info(f"  - Used GPU: {hmm_result.get('used_gpu', False)}")
-        logger.info(f"  - Model score: {hmm_result.get('score', 0):.4f}")
+        logger.info("✅ HMM training completed!")
+        logger.info(f"   Used GPU: {hmm_results.get('used_gpu', False)}")
+        logger.info(f"   Score: {hmm_results.get('score', 0):.3f}")
+        logger.info(f"   Converged: {hmm_results.get('validation_metrics', {}).get('converged', False)}")
         
-        # Validate model
-        logger.info("Validating HMM model...")
-        validation_result = validate_hmm_model(
-            hmm_model=hmm_result['model'],
-            features=features.values,
-            n_components=4,
-            logger=deps.logger
+        # Validate HMM model
+        logger.info("🔍 Validating HMM model...")
+        validation_results = validate_hmm_model(
+            hmm_results['model'],
+            features_array,
+            3,
+            hmm_deps.logger
+        )
+        logger.info(f"Validation results: {validation_results}")
+        
+        # Save HMM results
+        logger.info("💾 Saving HMM results...")
+        save_success = save_hmm_results(hmm_results, 'hmm_results.json', hmm_deps)
+        if save_success:
+            logger.info("✅ HMM results saved successfully")
+        
+        # Demonstrate clustering with common utilities
+        logger.info("🎭 Demonstrating clustering with common utilities...")
+        
+        # Create clustering dependencies
+        clustering_deps = create_clustering_dependencies()
+        
+        # Run KMeans clustering
+        kmeans_results = kmeans_standard(
+            features_array=features_array,
+            n_clusters=3,
+            random_state=42,
+            logger=clustering_deps.logger,
+            deps=clustering_deps
         )
         
-        logger.info("✓ Model validation completed")
-        logger.info(f"  - Converged: {validation_result['converged']}")
-        logger.info(f"  - Issues: {len(validation_result['issues'])}")
-        logger.info(f"  - Recommendations: {len(validation_result['recommendations'])}")
+        logger.info("✅ KMeans clustering completed!")
+        logger.info(f"   Quality metrics: {kmeans_results['quality_metrics']}")
+        logger.info(f"   Used optimization: {kmeans_results.get('used_optimization', False)}")
         
-        if validation_result['quality_metrics']:
-            logger.info("Quality metrics:")
-            for metric, value in validation_result['quality_metrics'].items():
-                logger.info(f"  - {metric}: {value:.4f}")
-        
-        # Calculate regime characteristics
-        logger.info("Calculating regime characteristics...")
-        regime_characteristics = calculate_regime_characteristics(
-            features=features,
-            state_sequence=hmm_result['state_sequence'],
-            state_probs=hmm_result['state_probs'],
-            logger=deps.logger
+        # Run MiniBatch KMeans clustering
+        minibatch_results = kmeans_minibatch(
+            features_array=features_array,
+            n_clusters=3,
+            random_state=42,
+            logger=clustering_deps.logger,
+            deps=clustering_deps
         )
         
-        logger.info("✓ Regime characteristics calculated")
-        for regime, char in regime_characteristics.items():
-            logger.info(f"  - {regime}: {char['count']} samples ({char['percentage']:.1f}%)")
+        logger.info("✅ MiniBatch KMeans clustering completed!")
+        logger.info(f"   Quality metrics: {minibatch_results['quality_metrics']}")
         
-        # Calculate feature importance
-        logger.info("Calculating feature importance...")
-        feature_importance = calculate_feature_importance(
-            features=features,
-            state_sequence=hmm_result['state_sequence'],
-            logger=deps.logger
+        # Save clustering results
+        save_clustering_results(kmeans_results, 'kmeans_results.json', clustering_deps)
+        save_clustering_results(minibatch_results, 'minibatch_results.json', clustering_deps)
+        
+        # Demonstrate cross-validation
+        logger.info("🔄 Running cross-validation...")
+        cv_results = hmm_utils.run_cross_validation(
+            hmm_results['model'],
+            features_array,
+            cv_folds=5
         )
+        logger.info(f"Cross-validation results: {cv_results}")
         
-        logger.info("✓ Feature importance calculated")
-        if feature_importance:
-            top_features = sorted(feature_importance.items(), key=lambda x: x[1], reverse=True)[:5]
-            logger.info("Top 5 most important features:")
-            for feature, importance in top_features:
-                logger.info(f"  - {feature}: {importance:.4f}")
-        
-        # Calculate enhanced regime metrics
-        logger.info("Calculating enhanced regime metrics...")
-        regime_metrics = hmm_utils.calculate_regime_metrics_enhanced(
-            features=features,
-            state_sequence=hmm_result['state_sequence'],
-            state_probs=hmm_result['state_probs']
-        )
-        
-        logger.info("✓ Enhanced regime metrics calculated")
-        for metric, value in regime_metrics.items():
-            logger.info(f"  - {metric}: {value:.4f}")
-        
-        # Save results
-        logger.info("Saving results...")
-        results = {
-            'model': hmm_result['model'],
-            'scaler': hmm_result['scaler'],
-            'state_sequence': hmm_result['state_sequence'],
-            'state_probs': hmm_result['state_probs'],
-            'regime_characteristics': regime_characteristics,
-            'feature_importance': feature_importance,
-            'regime_metrics': regime_metrics,
-            'validation_result': validation_result,
-            'processing_time': hmm_result.get('processing_time', 0),
-            'memory_usage': hmm_result.get('memory_usage', {})
+        # Demonstrate hyperparameter optimization
+        logger.info("🔧 Running hyperparameter optimization...")
+        param_grid = {
+            'n_components': [2, 3, 4],
+            'covariance_type': ['full', 'tied'],
+            'n_iter': [50, 100]
         }
         
-        # Save using enhanced utilities
-        save_success = hmm_utils.save_results_enhanced(
-            results=results,
-            filepath="enhanced_hmm_results.json"
+        best_params = hmm_utils.optimize_hyperparameters(
+            model_class=type(hmm_results['model']),
+            data=features_array,
+            param_grid=param_grid
         )
+        logger.info(f"Best parameters: {best_params}")
         
-        if save_success:
-            logger.info("✓ Results saved successfully")
-        else:
-            logger.warning("✗ Failed to save results")
+        # Create comprehensive results summary
+        comprehensive_results = {
+            'hmm_results': hmm_results,
+            'validation_results': validation_results,
+            'kmeans_results': kmeans_results,
+            'minibatch_results': minibatch_results,
+            'cv_results': cv_results,
+            'best_params': best_params,
+            'data_quality': calculate_data_quality_metrics(features_with_indicators),
+            'timestamp': time.time()
+        }
         
-        # Test model loading
-        logger.info("Testing model loading...")
-        loaded_results = hmm_utils.load_results_enhanced("enhanced_hmm_results.json")
+        # Save comprehensive results
+        hmm_utils.save_results(comprehensive_results, 'comprehensive_results.json')
         
-        if loaded_results:
-            logger.info("✓ Model loaded successfully")
-            logger.info(f"  - Loaded {len(loaded_results)} result components")
-        else:
-            logger.warning("✗ Failed to load model")
+        logger.info("🎉 Enhanced HMM Clustering Demonstration completed successfully!")
         
-        logger.info("=" * 60)
-        logger.info("Enhanced HMM Clustering Demonstration Completed Successfully!")
-        
-        return results
+        return comprehensive_results
         
     except Exception as e:
-        logger.error(f"Enhanced HMM clustering demonstration failed: {e}")
-        import traceback
-        traceback.print_exc()
-        return None
+        logger.error(f"❌ Enhanced HMM Clustering Demonstration failed: {e}")
+        raise
 
-def demonstrate_technical_indicators():
-    """Demonstrate enhanced technical indicators with common utilities."""
-    logger.info("\nDemonstrating Enhanced Technical Indicators")
-    logger.info("=" * 40)
+def demonstrate_common_utilities_integration():
+    """Demonstrate integration with all common utilities."""
+    logger.info("🔧 Demonstrating Common Utilities Integration")
     
     try:
-        # Create sample price data
-        data = create_sample_data(500)
-        prices = data['close']
+        # Initialize all common utilities
+        logger.info("Initializing common utilities...")
         
-        # Test RSI calculation
-        logger.info("Testing RSI calculation...")
-        rsi = TechnicalIndicators.calculate_rsi(prices, window=14)
-        logger.info(f"✓ RSI calculated: {len(rsi)} values, range: {rsi.min():.2f} - {rsi.max():.2f}")
+        # Hardware utilities
+        gpu_manager = get_m1_gpu_manager()
+        memory_optimizer = get_m1_memory_optimizer()
+        cpu_optimizer = get_m1_cpu_optimizer()
         
-        # Test MACD calculation
-        logger.info("Testing MACD calculation...")
-        macd_line, macd_signal, macd_hist = TechnicalIndicators.calculate_macd(prices)
-        logger.info(f"✓ MACD calculated: {len(macd_line)} values")
+        # Data operations
+        matrix_ops = UnifiedMatrixOperations()
+        json_serializer = JSONSerializer()
+        pickle_serializer = PickleSerializer()
         
-        # Test Bollinger Bands calculation
-        logger.info("Testing Bollinger Bands calculation...")
-        bb_upper, bb_middle, bb_lower = TechnicalIndicators.calculate_bollinger_bands(prices)
-        logger.info(f"✓ Bollinger Bands calculated: {len(bb_upper)} values")
+        # ML utilities
+        hmm_regime_detector = HMMRegimeDetector()
+        cv_validator = TimeSeriesCrossValidator()
+        hpo_optimizer = HyperparameterOptimizer()
         
-        # Test ATR calculation
-        logger.info("Testing ATR calculation...")
-        atr = TechnicalIndicators.calculate_atr(data)
-        logger.info(f"✓ ATR calculated: {len(atr)} values")
+        # Log utility status
+        logger.info("Common utilities status:")
+        logger.info(f"   GPU Manager: {'Available' if gpu_manager else 'Not Available'}")
+        logger.info(f"   Memory Optimizer: {'Available' if memory_optimizer else 'Not Available'}")
+        logger.info(f"   CPU Optimizer: {'Available' if cpu_optimizer else 'Not Available'}")
+        logger.info(f"   Matrix Operations: {'Available' if matrix_ops else 'Not Available'}")
+        logger.info(f"   HMM Regime Detector: {'Available' if hmm_regime_detector else 'Not Available'}")
+        logger.info(f"   CV Validator: {'Available' if cv_validator else 'Not Available'}")
+        logger.info(f"   HPO Optimizer: {'Available' if hpo_optimizer else 'Not Available'}")
         
-        logger.info("✓ All technical indicators working correctly")
+        # Generate sample data
+        sample_data = generate_sample_market_data(500)
+        
+        # Demonstrate data operations
+        logger.info("Demonstrating data operations...")
+        
+        # Validate DataFrame
+        is_valid = validate_dataframe_columns(sample_data, sample_data.columns.tolist())
+        logger.info(f"DataFrame validation: {'Passed' if is_valid else 'Failed'}")
+        
+        # Calculate data quality metrics
+        quality_metrics = calculate_data_quality_metrics(sample_data)
+        logger.info(f"Data quality metrics: {quality_metrics}")
+        
+        # Convert dtypes
+        dtype_mapping = {col: 'float32' for col in sample_data.select_dtypes(include=[np.number]).columns}
+        sample_data_optimized = safe_convert_dtypes(sample_data, dtype_mapping)
+        logger.info("Data types optimized for performance")
+        
+        # Demonstrate safe math operations
+        logger.info("Demonstrating safe math operations...")
+        
+        if 'close' in sample_data.columns:
+            returns = sample_data['close'].pct_change()
+            log_returns = safe_log(returns, 0.0)
+            volatility = returns.rolling(20).std()
+            
+            logger.info(f"Calculated returns, log returns, and volatility")
+            logger.info(f"   Returns range: {returns.min():.4f} to {returns.max():.4f}")
+            logger.info(f"   Log returns range: {log_returns.min():.4f} to {log_returns.max():.4f}")
+            logger.info(f"   Volatility range: {volatility.min():.4f} to {volatility.max():.4f}")
+        
+        # Demonstrate matrix operations
+        if matrix_ops:
+            logger.info("Demonstrating matrix operations...")
+            numeric_data = sample_data.select_dtypes(include=[np.number]).values
+            
+            if hasattr(matrix_ops, 'optimize_for_clustering'):
+                optimized_data = matrix_ops.optimize_for_clustering(numeric_data)
+                logger.info(f"Matrix optimized: {numeric_data.shape} -> {optimized_data.shape}")
+        
+        # Demonstrate serialization
+        logger.info("Demonstrating serialization...")
+        
+        test_data = {
+            'sample_data_shape': sample_data.shape,
+            'quality_metrics': quality_metrics,
+            'timestamp': time.time()
+        }
+        
+        # Save as JSON
+        json_success = json_serializer.save(test_data, 'test_data.json')
+        logger.info(f"JSON serialization: {'Success' if json_success else 'Failed'}")
+        
+        # Save as Pickle
+        pickle_success = pickle_serializer.save(test_data, 'test_data.pkl')
+        logger.info(f"Pickle serialization: {'Success' if pickle_success else 'Failed'}")
+        
+        logger.info("✅ Common Utilities Integration demonstration completed!")
         
     except Exception as e:
-        logger.error(f"Technical indicators demonstration failed: {e}")
-        import traceback
-        traceback.print_exc()
+        logger.error(f"❌ Common Utilities Integration demonstration failed: {e}")
+        raise
+
+def main():
+    """Main function to run all demonstrations."""
+    logger.info("🚀 Starting Enhanced HMM Clustering with Common Utilities Integration")
+    
+    try:
+        # Demonstrate common utilities integration
+        demonstrate_common_utilities_integration()
+        
+        # Demonstrate enhanced HMM clustering
+        results = demonstrate_enhanced_hmm_clustering()
+        
+        # Print summary
+        logger.info("📊 Demonstration Summary:")
+        logger.info(f"   HMM Score: {results['hmm_results'].get('score', 0):.3f}")
+        logger.info(f"   HMM Converged: {results['validation_results'].get('converged', False)}")
+        logger.info(f"   KMeans Balance Score: {results['kmeans_results']['quality_metrics'].get('regime_balance_score', 0):.3f}")
+        logger.info(f"   MiniBatch Balance Score: {results['minibatch_results']['quality_metrics'].get('regime_balance_score', 0):.3f}")
+        logger.info(f"   CV Mean Score: {results['cv_results'].get('mean_score', 0):.3f}")
+        logger.info(f"   Best Parameters: {results['best_params']}")
+        
+        logger.info("🎉 All demonstrations completed successfully!")
+        
+    except Exception as e:
+        logger.error(f"❌ Demonstration failed: {e}")
+        raise
 
 if __name__ == "__main__":
-    # Run demonstrations
-    logger.info("Enhanced HMM Clustering with Common Utilities Integration")
-    logger.info("=" * 70)
-    
-    # Demonstrate enhanced HMM clustering
-    results = demonstrate_enhanced_hmm_clustering()
-    
-    # Demonstrate technical indicators
-    demonstrate_technical_indicators()
-    
-    if results:
-        print("\n✅ All demonstrations completed successfully!")
-        print("The enhanced HMM clustering system is working correctly with common utilities integration.")
-    else:
-        print("\n❌ Some demonstrations failed. Please check the implementation.")
+    main()

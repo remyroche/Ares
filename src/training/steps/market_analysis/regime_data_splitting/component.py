@@ -245,31 +245,30 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
         report = RegimeSplittingReport(status=RegimeSplittingStatus.IN_PROGRESS)
         tprint(f'📊 Initialized report with status: {report.status.value}')
         
-        try:
-            # Fast fail validation for critical inputs with standardized error messages
-            if data is None:
-                error_msg = "CRITICAL_ERROR: Input data is None. Action required: Provide valid market data for regime splitting."
-                self.logger.error(f"❌ {error_msg}")
-                tprint(f"❌ {error_msg}")
-                report.status = RegimeSplittingStatus.FAILED
-                report.errors.append(error_msg)
-                return self._create_failure_result(report, error_msg)
-            
-            if not isinstance(pipeline_state, dict):
-                error_msg = "CRITICAL_ERROR: Pipeline state must be a dictionary. Action required: Ensure pipeline_state is properly initialized as a dict."
-                self.logger.error(f"❌ {error_msg}")
-                tprint(f"❌ {error_msg}")
-                report.status = RegimeSplittingStatus.FAILED
-                report.errors.append(error_msg)
-                return self._create_failure_result(report, error_msg)
-            
-            if not self.config.symbol or not self.config.exchange:
-                error_msg = "CRITICAL_ERROR: Symbol and exchange must be configured. Action required: Set config.symbol and config.exchange before execution."
-                self.logger.error(f"❌ {error_msg}")
-                tprint(f"❌ {error_msg}")
-                report.status = RegimeSplittingStatus.FAILED
-                report.errors.append(error_msg)
-                return self._create_failure_result(report, error_msg)
+        # Fast fail validation for critical inputs with standardized error messages
+        if data is None:
+            error_msg = "CRITICAL_ERROR: Input data is None. Action required: Provide valid market data for regime splitting."
+            self.logger.error(f"❌ {error_msg}")
+            tprint(f"❌ {error_msg}")
+            report.status = RegimeSplittingStatus.FAILED
+            report.errors.append(error_msg)
+            return self._create_failure_result(report, error_msg)
+        
+        if not isinstance(pipeline_state, dict):
+            error_msg = "CRITICAL_ERROR: Pipeline state must be a dictionary. Action required: Ensure pipeline_state is properly initialized as a dict."
+            self.logger.error(f"❌ {error_msg}")
+            tprint(f"❌ {error_msg}")
+            report.status = RegimeSplittingStatus.FAILED
+            report.errors.append(error_msg)
+            return self._create_failure_result(report, error_msg)
+        
+        if not self.config.symbol or not self.config.exchange:
+            error_msg = "CRITICAL_ERROR: Symbol and exchange must be configured. Action required: Set config.symbol and config.exchange before execution."
+            self.logger.error(f"❌ {error_msg}")
+            tprint(f"❌ {error_msg}")
+            report.status = RegimeSplittingStatus.FAILED
+            report.errors.append(error_msg)
+            return self._create_failure_result(report, error_msg)
         
         try:
             # Step 1: Validate inputs

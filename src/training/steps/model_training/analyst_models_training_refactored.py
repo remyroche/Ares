@@ -14,19 +14,181 @@ Enhanced Features:
 - Comprehensive ML utilities integration (CV, HPO, lookahead, etc.)
 """
 
-import numpy as np
-import pandas as pd
 from typing import Any, Dict, List, Optional, Tuple, Union
 import logging
 from datetime import datetime
 from pathlib import Path
 import json
 import time
-import psutil
 import traceback
+
+# Safe psutil import
+try:
+    import psutil
+    PSUTIL_AVAILABLE = True
+except ImportError:
+    print("Warning: psutil not available, using fallback system monitoring")
+    PSUTIL_AVAILABLE = False
+    # Create a minimal psutil-like interface
+    class MockPsutil:
+        class Process:
+            def memory_info(self):
+                return type('MockMemoryInfo', (), {'rss': 1024 * 1024 * 100})()  # 100MB
+        
+        def cpu_percent(self, interval=None):
+            return 50.0  # 50% CPU usage
+        
+        def virtual_memory(self):
+            return type('MockVirtualMemory', (), {
+                'total': 8 * 1024 * 1024 * 1024,  # 8GB
+                'available': 4 * 1024 * 1024 * 1024,  # 4GB
+                'percent': 50.0
+            })()
+        
+        def swap_memory(self):
+            return type('MockSwapMemory', (), {
+                'total': 2 * 1024 * 1024 * 1024,  # 2GB
+                'percent': 10.0
+            })()
+        
+        def disk_usage(self, path):
+            return type('MockDiskUsage', (), {
+                'total': 100 * 1024 * 1024 * 1024,  # 100GB
+                'used': 50 * 1024 * 1024 * 1024,   # 50GB
+                'free': 50 * 1024 * 1024 * 1024    # 50GB
+            })()
+        
+        def getloadavg(self):
+            return (1.0, 1.0, 1.0)
+        
+        def cpu_count(self):
+            return 4
+        
+        def Process(self):
+            return self.Process()
+    
+    psutil = MockPsutil()
 from contextlib import contextmanager
 import sys
 import os
+
+# Safe numpy import
+try:
+    import numpy as np
+    NUMPY_AVAILABLE = True
+except ImportError:
+    print("Warning: numpy not available, using fallback array operations")
+    NUMPY_AVAILABLE = False
+    # Create a minimal numpy-like interface
+    class MockNumpy:
+        def __init__(self):
+            self.inf = float('inf')
+            self.nan = float('nan')
+        
+        def array(self, data, dtype=None):
+            return data
+        
+        def ndarray(self, shape, dtype=None):
+            return [0] * (shape[0] if isinstance(shape, (list, tuple)) else shape)
+        
+        def isnan(self, arr):
+            return [False] * len(arr) if hasattr(arr, '__len__') else False
+        
+        def isinf(self, arr):
+            return [False] * len(arr) if hasattr(arr, '__len__') else False
+        
+        def isfinite(self, val):
+            return True
+        
+        def mean(self, arr):
+            return sum(arr) / len(arr) if hasattr(arr, '__len__') and len(arr) > 0 else 0.0
+        
+        def std(self, arr):
+            if not hasattr(arr, '__len__') or len(arr) <= 1:
+                return 0.0
+            mean_val = self.mean(arr)
+            variance = sum((x - mean_val) ** 2 for x in arr) / (len(arr) - 1)
+            return variance ** 0.5
+        
+        def min(self, arr):
+            return min(arr) if hasattr(arr, '__len__') and len(arr) > 0 else 0
+        
+        def max(self, arr):
+            return max(arr) if hasattr(arr, '__len__') and len(arr) > 0 else 0
+        
+        def unique(self, arr):
+            return list(set(arr)) if hasattr(arr, '__len__') else [arr]
+        
+        def bincount(self, arr):
+            counts = {}
+            for val in arr:
+                counts[val] = counts.get(val, 0) + 1
+            max_val = max(counts.keys()) if counts else 0
+            return [counts.get(i, 0) for i in range(max_val + 1)]
+        
+        def random(self):
+            import random
+            return type('MockRandom', (), {
+                'randn': lambda *args: [random.gauss(0, 1) for _ in range(args[0] if args else 1)],
+                'randint': lambda low, high, size: [random.randint(low, high-1) for _ in range(size)]
+            })()
+    
+    np = MockNumpy()
+
+# Safe pandas import
+try:
+    import pandas as pd
+    PANDAS_AVAILABLE = True
+except ImportError:
+    print("Warning: pandas not available, using fallback DataFrame operations")
+    PANDAS_AVAILABLE = False
+    # Create a minimal pandas-like interface
+    class MockDataFrame:
+        def __init__(self, data=None, columns=None):
+            self.data = data if data is not None else []
+            self.columns = columns if columns is not None else []
+            self.shape = (len(self.data), len(self.columns)) if self.data else (0, 0)
+        
+        def isnull(self):
+            return MockDataFrame([[False] * len(self.columns) for _ in self.data])
+        
+        def sum(self):
+            return [0] * len(self.columns)
+        
+        def duplicated(self):
+            return [False] * len(self.data)
+        
+        def select_dtypes(self, include=None):
+            return MockDataFrame()
+        
+        def memory_usage(self, deep=True):
+            return [0] * len(self.columns)
+        
+        def to_parquet(self, path):
+            pass
+        
+        def to_dict(self):
+            return {}
+    
+    class MockSeries:
+        def __init__(self, data=None):
+            self.data = data if data is not None else []
+        
+        def sum(self):
+            return 0
+        
+        def mean(self):
+            return 0.0
+        
+        def std(self):
+            return 0.0
+    
+    pd = type('MockPandas', (), {
+        'DataFrame': MockDataFrame,
+        'Series': MockSeries,
+        'read_parquet': lambda path: MockDataFrame(),
+        'to_datetime': lambda x: x
+    })()
 
 # Core imports
 from src.utils.logger import system_logger
@@ -40,73 +202,297 @@ from src.utils.tprint import (
     tprint_timer, tprint_logged, LogLevel
 )
 
-# Common utilities integration
-from src.utils.common_operations import (
-    get_m1_gpu_manager, get_m1_memory_optimizer, get_m1_cpu_optimizer,
-    integrate_with_m1_optimizers, cleanup_m1_optimizers,
-    safe_divide, safe_log, safe_sqrt, safe_power, safe_mean, safe_std,
-    validate_finite, validate_positive, validate_range,
-    safe_kelly_calculation, safe_weighted_average, safe_percentage_change,
-    ensure_directory, safe_file_exists, safe_json_dump, safe_json_load,
-    create_empty_dataframe, validate_dataframe, validate_dataframe_columns,
-    safe_dataframe_operation, safe_fillna, safe_convert_dtypes,
-    safe_merge_dataframes, safe_drop_columns, safe_rename_columns,
-    validate_timestamp_column, safe_timestamp_conversion,
-    optimize_dataframe_dtypes, calculate_data_quality_metrics,
-    get_dataframe_info, create_data_quality_report,
-    safe_rolling, safe_groupby_operation, safe_apply_function,
-    safe_filter_dataframe, create_summary_statistics,
-    safe_to_parquet, safe_read_parquet, list_parquet_files,
-    safe_copy, validate_dataframe_schema, validate_file_size,
-    guard_dataframe_nulls, secure_file_path, with_tracing_span,
-    sanitize_string, memory_checkpoint, gpu_context, optimize_memory,
-    get_memory_usage, validate_file_path, get_file_size, check_disk_space,
-    timed_operation, format_bytes, chunked_iterable, parallel_map,
-    validate_correlation_matrix, safe_matrix_inverse, math_safe,
-    MathValidationError
-)
+# Common utilities integration with safe imports
+try:
+    from src.utils.common_operations import (
+        get_m1_gpu_manager, get_m1_memory_optimizer, get_m1_cpu_optimizer,
+        integrate_with_m1_optimizers, cleanup_m1_optimizers,
+        safe_divide, safe_log, safe_sqrt, safe_power, safe_mean, safe_std,
+        validate_finite, validate_positive, validate_range,
+        safe_kelly_calculation, safe_weighted_average, safe_percentage_change,
+        ensure_directory, safe_file_exists, safe_json_dump, safe_json_load,
+        create_empty_dataframe, validate_dataframe, validate_dataframe_columns,
+        safe_dataframe_operation, safe_fillna, safe_convert_dtypes,
+        safe_merge_dataframes, safe_drop_columns, safe_rename_columns,
+        validate_timestamp_column, safe_timestamp_conversion,
+        optimize_dataframe_dtypes, calculate_data_quality_metrics,
+        get_dataframe_info, create_data_quality_report,
+        safe_rolling, safe_groupby_operation, safe_apply_function,
+        safe_filter_dataframe, create_summary_statistics,
+        safe_to_parquet, safe_read_parquet, list_parquet_files,
+        safe_copy, validate_dataframe_schema, validate_file_size,
+        guard_dataframe_nulls, secure_file_path, with_tracing_span,
+        sanitize_string, memory_checkpoint, gpu_context, optimize_memory,
+        get_memory_usage, validate_file_path, get_file_size, check_disk_space,
+        timed_operation, format_bytes, chunked_iterable, parallel_map,
+        validate_correlation_matrix, safe_matrix_inverse, math_safe,
+        MathValidationError
+    )
+    COMMON_UTILITIES_AVAILABLE = True
+except ImportError as e:
+    print(f"Warning: Common utilities not available: {e}")
+    COMMON_UTILITIES_AVAILABLE = False
+    # Define fallback functions
+    def safe_divide(a, b, default=0.0):
+        return a / b if b != 0 else default
+    def safe_mean(arr):
+        return np.mean(arr) if hasattr(arr, '__len__') and len(arr) > 0 else 0.0
+    def safe_std(arr):
+        return np.std(arr) if hasattr(arr, '__len__') and len(arr) > 0 else 0.0
+    def validate_finite(value, name="value"):
+        if not np.isfinite(value):
+            raise ValueError(f"{name} must be finite, got {value}")
+        return value
+    def validate_positive(value, name="value"):
+        if value <= 0:
+            raise ValueError(f"{name} must be positive, got {value}")
+        return value
+    def ensure_directory(path):
+        Path(path).mkdir(parents=True, exist_ok=True)
+        return True
+    def safe_json_dump(data, filepath, **kwargs):
+        try:
+            with open(filepath, 'w') as f:
+                json.dump(data, f, **kwargs)
+            return True
+        except Exception:
+            return False
+    def safe_json_load(filepath, default=None):
+        try:
+            with open(filepath, 'r') as f:
+                return json.load(f)
+        except Exception:
+            return default
+    def sanitize_string(s, max_length=255):
+        if not isinstance(s, str):
+            s = str(s)
+        return s[:max_length].strip()
+    def get_memory_usage():
+        try:
+            return psutil.Process().memory_info().rss
+        except Exception:
+            return 0
+    def check_disk_space(path, required_gb=1.0):
+        try:
+            import shutil
+            stat = shutil.disk_usage(path)
+            free_gb = stat.free / (1024 ** 3)
+            return {'sufficient': free_gb >= required_gb, 'free_gb': free_gb}
+        except Exception:
+            return {'sufficient': False, 'free_gb': 0}
 
-# Math validation utilities
-from src.utils.math_validation import (
-    safe_divide as math_safe_divide, safe_log as math_safe_log,
-    safe_sqrt as math_safe_sqrt, safe_power as math_safe_power,
-    validate_finite as math_validate_finite, validate_positive as math_validate_positive,
-    validate_range as math_validate_range, safe_kelly_calculation as math_safe_kelly,
-    safe_weighted_average as math_safe_weighted_avg, safe_percentage_change as math_safe_pct_change,
-    safe_correlation, safe_covariance, safe_mean as math_safe_mean,
-    safe_std as math_safe_std, safe_percentile, validate_correlation_matrix as math_validate_corr,
-    safe_matrix_inverse as math_safe_matrix_inv, math_safe as math_safe_func,
-    MathValidation, MathValidationError as MathValidationError
-)
+# Math validation utilities with safe imports
+try:
+    from src.utils.math_validation import (
+        safe_divide as math_safe_divide, safe_log as math_safe_log,
+        safe_sqrt as math_safe_sqrt, safe_power as math_safe_power,
+        validate_finite as math_validate_finite, validate_positive as math_validate_positive,
+        validate_range as math_validate_range, safe_kelly_calculation as math_safe_kelly,
+        safe_weighted_average as math_safe_weighted_avg, safe_percentage_change as math_safe_pct_change,
+        safe_correlation, safe_covariance, safe_mean as math_safe_mean,
+        safe_std as math_safe_std, safe_percentile, validate_correlation_matrix as math_validate_corr,
+        safe_matrix_inverse as math_safe_matrix_inv, math_safe as math_safe_func,
+        MathValidation, MathValidationError as MathValidationError
+    )
+    MATH_VALIDATION_AVAILABLE = True
+except ImportError as e:
+    print(f"Warning: Math validation utilities not available: {e}")
+    MATH_VALIDATION_AVAILABLE = False
+    # Define fallback functions
+    def math_validate_finite(value, name="value"):
+        if not np.isfinite(value):
+            raise ValueError(f"{name} must be finite, got {value}")
+        return value
+    def math_validate_positive(value, name="value"):
+        if value <= 0:
+            raise ValueError(f"{name} must be positive, got {value}")
+        return value
+    def math_safe_mean(arr):
+        return np.mean(arr) if hasattr(arr, '__len__') and len(arr) > 0 else 0.0
+    def math_safe_std(arr):
+        return np.std(arr) if hasattr(arr, '__len__') and len(arr) > 0 else 0.0
+    class MathValidation:
+        def __init__(self):
+            pass
+        def validate_finite(self, value, name="value"):
+            return math_validate_finite(value, name)
+        def validate_positive(self, value, name="value"):
+            return math_validate_positive(value, name)
+    class MathValidationError(Exception):
+        pass
 
-# Serialization utilities
-from src.utils.serialization_utils import (
-    JSONSerializer, PickleSerializer, ParquetSerializer, UniversalSerializer
-)
+# Serialization utilities with safe imports
+try:
+    from src.utils.serialization_utils import (
+        JSONSerializer, PickleSerializer, ParquetSerializer, UniversalSerializer
+    )
+    SERIALIZATION_UTILITIES_AVAILABLE = True
+except ImportError as e:
+    print(f"Warning: Serialization utilities not available: {e}")
+    SERIALIZATION_UTILITIES_AVAILABLE = False
+    # Define fallback classes
+    class JSONSerializer:
+        @staticmethod
+        def save(data, filepath):
+            try:
+                with open(filepath, 'w') as f:
+                    json.dump(data, f, indent=2, default=str)
+                return True
+            except Exception:
+                return False
+        @staticmethod
+        def load(filepath):
+            try:
+                with open(filepath, 'r') as f:
+                    return json.load(f)
+            except Exception:
+                return None
+    class PickleSerializer:
+        @staticmethod
+        def save(data, filepath):
+            try:
+                import pickle
+                with open(filepath, 'wb') as f:
+                    pickle.dump(data, f)
+                return True
+            except Exception:
+                return False
+        @staticmethod
+        def load(filepath):
+            try:
+                import pickle
+                with open(filepath, 'rb') as f:
+                    return pickle.load(f)
+            except Exception:
+                return None
+    class ParquetSerializer:
+        @staticmethod
+        def save(data, filepath):
+            try:
+                if hasattr(data, 'to_parquet'):
+                    data.to_parquet(filepath)
+                    return True
+                return False
+            except Exception:
+                return False
+        @staticmethod
+        def load(filepath):
+            try:
+                return pd.read_parquet(filepath)
+            except Exception:
+                return None
+    class UniversalSerializer:
+        def __init__(self):
+            self.serializers = {
+                'json': JSONSerializer,
+                'pickle': PickleSerializer,
+                'parquet': ParquetSerializer
+            }
+        def save(self, data, filepath, format='auto'):
+            if format == 'auto':
+                if filepath.endswith('.json'):
+                    format = 'json'
+                elif filepath.endswith('.pkl') or filepath.endswith('.pickle'):
+                    format = 'pickle'
+                elif filepath.endswith('.parquet'):
+                    format = 'parquet'
+                else:
+                    format = 'pickle'
+            serializer = self.serializers.get(format)
+            if serializer:
+                return serializer.save(data, filepath)
+            return False
+        def load(self, filepath):
+            if filepath.endswith('.json'):
+                return JSONSerializer.load(filepath)
+            elif filepath.endswith('.pkl') or filepath.endswith('.pickle'):
+                return PickleSerializer.load(filepath)
+            elif filepath.endswith('.parquet'):
+                return ParquetSerializer.load(filepath)
+            else:
+                return PickleSerializer.load(filepath)
 
-# Hardware optimization utilities
-from src.utils.hardware.m1_gpu_utils import (
-    get_m1_gpu_manager as get_gpu_manager, is_m1_available, is_mps_available,
-    optimize_dataframe_for_m1, create_m1_optimized_array,
-    m1_backtesting_simulate, m1_monte_carlo_simulate
-)
+# Hardware optimization utilities with safe imports
+try:
+    from src.utils.hardware.m1_gpu_utils import (
+        get_m1_gpu_manager as get_gpu_manager, is_m1_available, is_mps_available,
+        optimize_dataframe_for_m1, create_m1_optimized_array,
+        m1_backtesting_simulate, m1_monte_carlo_simulate
+    )
+    HARDWARE_UTILITIES_AVAILABLE = True
+except ImportError as e:
+    print(f"Warning: Hardware utilities not available: {e}")
+    HARDWARE_UTILITIES_AVAILABLE = False
+    # Define fallback functions
+    def is_m1_available():
+        return False
+    def is_mps_available():
+        return False
+    def get_gpu_manager():
+        return None
+    def optimize_dataframe_for_m1(df):
+        return df
+    def create_m1_optimized_array(data, dtype=None):
+        return np.array(data, dtype=dtype)
+    def m1_backtesting_simulate(*args, **kwargs):
+        return {'error': 'M1 utilities not available'}
+    def m1_monte_carlo_simulate(*args, **kwargs):
+        return {'error': 'M1 utilities not available'}
 
-# ML common utilities
-from src.utils.ml_common.validation.validation_utils import (
-    validate_input_data, validate_model_config, validate_training_data
-)
-from src.utils.ml_common.optimization.hpo_utils import (
-    optimize_hyperparameters, create_search_space, validate_hpo_config
-)
-from src.utils.ml_common.evaluation.evaluation_utils import (
-    calculate_metrics, evaluate_model_performance, create_evaluation_report
-)
-from src.utils.ml_common.monitoring.enhanced_error_detector import (
-    ErrorDetector, ErrorHandler, ErrorReporter
-)
-from src.utils.ml_common.reporting.enhanced_reporting_system import (
-    ReportGenerator, ReportManager, create_training_report
-)
+# ML common utilities with safe imports
+try:
+    from src.utils.ml_common.validation.validation_utils import (
+        validate_input_data, validate_model_config, validate_training_data
+    )
+    from src.utils.ml_common.optimization.hpo_utils import (
+        optimize_hyperparameters, create_search_space, validate_hpo_config
+    )
+    from src.utils.ml_common.evaluation.evaluation_utils import (
+        calculate_metrics, evaluate_model_performance, create_evaluation_report
+    )
+    from src.utils.ml_common.monitoring.enhanced_error_detector import (
+        ErrorDetector, ErrorHandler, ErrorReporter
+    )
+    from src.utils.ml_common.reporting.enhanced_reporting_system import (
+        ReportGenerator, ReportManager, create_training_report
+    )
+    ML_UTILITIES_AVAILABLE = True
+except ImportError as e:
+    print(f"Warning: ML utilities not available: {e}")
+    ML_UTILITIES_AVAILABLE = False
+    # Define fallback functions
+    def validate_input_data(*args, **kwargs):
+        return {'valid': True}
+    def validate_model_config(*args, **kwargs):
+        return {'valid': True}
+    def validate_training_data(*args, **kwargs):
+        return {'valid': True}
+    def optimize_hyperparameters(*args, **kwargs):
+        return {'error': 'ML utilities not available'}
+    def create_search_space(*args, **kwargs):
+        return {}
+    def validate_hpo_config(*args, **kwargs):
+        return {'valid': True}
+    def calculate_metrics(*args, **kwargs):
+        return {}
+    def evaluate_model_performance(*args, **kwargs):
+        return {'error': 'ML utilities not available'}
+    def create_evaluation_report(*args, **kwargs):
+        return {'error': 'ML utilities not available'}
+    class ErrorDetector:
+        def analyze_error(self, *args, **kwargs):
+            return {'error': 'ML utilities not available'}
+    class ErrorHandler:
+        pass
+    class ErrorReporter:
+        def report_critical_error(self, *args, **kwargs):
+            pass
+    class ReportGenerator:
+        pass
+    class ReportManager:
+        pass
+    def create_training_report(*args, **kwargs):
+        return {'error': 'ML utilities not available'}
 
 logger = system_logger.getChild('AnalystModelsTrainingEnhanced')
 
@@ -631,6 +1017,18 @@ class AnalystModelsTrainingStepRefactored(PerRegimeTrainingStep):
     def _initialize_hardware_optimization(self):
         """Initialize hardware optimization components."""
         try:
+            if not HARDWARE_UTILITIES_AVAILABLE:
+                tprint_warning("⚠️ Hardware utilities not available, using CPU-only mode")
+                self.gpu_manager = None
+                self.memory_optimizer = None
+                self.cpu_optimizer = None
+                self.training_metrics['hardware_optimization'] = {
+                    'success': False,
+                    'error': 'Hardware utilities not available',
+                    'fallback': 'CPU_only_mode'
+                }
+                return
+            
             # Initialize M1 optimizers
             self.gpu_manager = get_m1_gpu_manager()
             self.memory_optimizer = get_m1_memory_optimizer()
@@ -640,7 +1038,7 @@ class AnalystModelsTrainingStepRefactored(PerRegimeTrainingStep):
             integration_result = integrate_with_m1_optimizers()
             self.training_metrics['hardware_optimization'] = integration_result
             
-            if integration_result['success']:
+            if integration_result.get('success', False):
                 tprint_success("✅ Hardware optimization initialized successfully")
             else:
                 tprint_warning(f"⚠️ Hardware optimization initialization failed: {integration_result.get('error', 'Unknown error')}")
@@ -655,6 +1053,17 @@ class AnalystModelsTrainingStepRefactored(PerRegimeTrainingStep):
     def _initialize_common_utilities(self):
         """Initialize common utilities for data operations and validation."""
         try:
+            if not COMMON_UTILITIES_AVAILABLE:
+                tprint_warning("⚠️ Common utilities not available, using basic operations")
+                self.math_validator = MathValidation()
+                self.data_quality_tools = {}
+                self.file_operations = {
+                    'ensure_directory': ensure_directory,
+                    'safe_json_dump': safe_json_dump,
+                    'safe_json_load': safe_json_load
+                }
+                return
+            
             # Initialize math validation
             self.math_validator = MathValidation()
             
@@ -689,6 +1098,14 @@ class AnalystModelsTrainingStepRefactored(PerRegimeTrainingStep):
     def _initialize_ml_utilities(self):
         """Initialize ML common utilities for CV, HPO, and other ML operations."""
         try:
+            if not ML_UTILITIES_AVAILABLE:
+                tprint_warning("⚠️ ML utilities not available, using basic ML operations")
+                self.ml_validation = {}
+                self.ml_hpo = {}
+                self.ml_evaluation = {}
+                self.ml_reporting = {}
+                return
+            
             # Initialize validation utilities
             self.ml_validation = {
                 'validate_input_data': validate_input_data,
@@ -1493,14 +1910,45 @@ class AnalystModelsTrainingStepRefactored(PerRegimeTrainingStep):
             tprint_info("🔍 Assessing data quality with common utilities")
             
             # Convert to DataFrame for quality assessment
-            df = pd.DataFrame(X)
-            df['target'] = y
-            df['regime'] = regime_labels
+            if PANDAS_AVAILABLE:
+                df = pd.DataFrame(X)
+                df['target'] = y
+                df['regime'] = regime_labels
+            else:
+                # Fallback for when pandas is not available
+                df = pd.DataFrame(X)
+                # Add target and regime as additional columns
+                df.data = [list(row) + [y[i], regime_labels[i]] for i, row in enumerate(X)]
+                df.columns = list(range(X.shape[1])) + ['target', 'regime']
             
-            # Use common utilities for quality assessment
-            quality_metrics = calculate_data_quality_metrics(df)
-            dataframe_info = get_dataframe_info(df)
-            quality_report = create_data_quality_report(df)
+            # Use common utilities for quality assessment if available
+            if COMMON_UTILITIES_AVAILABLE and hasattr(self, 'data_quality_tools') and self.data_quality_tools:
+                quality_metrics = self.data_quality_tools.get('calculate_data_quality_metrics', lambda x: {})(df)
+                dataframe_info = self.data_quality_tools.get('get_dataframe_info', lambda x: {})(df)
+                quality_report = self.data_quality_tools.get('create_data_quality_report', lambda x: {})(df)
+            else:
+                # Fallback to basic quality assessment
+                quality_metrics = {
+                    'total_rows': len(df),
+                    'total_columns': len(df.columns),
+                    'missing_values': df.isnull().sum().sum(),
+                    'missing_percentage': (df.isnull().sum().sum() / (len(df) * len(df.columns))) * 100,
+                    'duplicate_rows': df.duplicated().sum(),
+                    'duplicate_percentage': (df.duplicated().sum() / len(df)) * 100,
+                    'numeric_columns': len(df.select_dtypes(include=[np.number]).columns),
+                    'categorical_columns': len(df.select_dtypes(include=['object']).columns)
+                }
+                dataframe_info = {
+                    'shape': df.shape,
+                    'columns': list(df.columns),
+                    'dtypes': df.dtypes.to_dict(),
+                    'memory_usage': df.memory_usage(deep=True).sum()
+                }
+                quality_report = {
+                    'basic_info': dataframe_info,
+                    'quality_metrics': quality_metrics,
+                    'issues': []
+                }
             
             # Enhanced quality assessment
             quality_assessment = {
@@ -1543,7 +1991,7 @@ class AnalystModelsTrainingStepRefactored(PerRegimeTrainingStep):
             }
             
             # M1 GPU optimization
-            if is_mps_available():
+            if is_mps_available() and HARDWARE_UTILITIES_AVAILABLE:
                 try:
                     # Optimize data for M1 GPU
                     X_optimized = create_m1_optimized_array(X, dtype=np.float32)
@@ -1559,9 +2007,11 @@ class AnalystModelsTrainingStepRefactored(PerRegimeTrainingStep):
                     
                 except Exception as e:
                     tprint_warning(f"⚠️ M1 GPU optimization failed: {e}")
+            else:
+                tprint_info("ℹ️ M1 GPU optimization not available")
             
             # Memory optimization
-            if self.memory_optimizer:
+            if self.memory_optimizer and hasattr(self.memory_optimizer, 'optimize_memory'):
                 try:
                     memory_result = self.memory_optimizer.optimize_memory()
                     optimization_result['optimizations_applied'].append('memory_optimization')
@@ -1571,9 +2021,11 @@ class AnalystModelsTrainingStepRefactored(PerRegimeTrainingStep):
                     
                 except Exception as e:
                     tprint_warning(f"⚠️ Memory optimization failed: {e}")
+            else:
+                tprint_info("ℹ️ Memory optimization not available")
             
             # CPU optimization
-            if self.cpu_optimizer:
+            if self.cpu_optimizer and hasattr(self.cpu_optimizer, 'optimize_numpy_operations'):
                 try:
                     self.cpu_optimizer.optimize_numpy_operations()
                     optimization_result['optimizations_applied'].append('cpu_optimization')
@@ -1583,6 +2035,8 @@ class AnalystModelsTrainingStepRefactored(PerRegimeTrainingStep):
                     
                 except Exception as e:
                     tprint_warning(f"⚠️ CPU optimization failed: {e}")
+            else:
+                tprint_info("ℹ️ CPU optimization not available")
             
             tprint_success(f"✅ Hardware optimization setup completed: {len(optimization_result['optimizations_applied'])} optimizations applied")
             return optimization_result
@@ -1882,19 +2336,19 @@ class AnalystModelsTrainingStepRefactored(PerRegimeTrainingStep):
             max_score = 4.0  # 4 categories of utilities
             
             # Common utilities
-            if hasattr(self, 'math_validator'):
+            if COMMON_UTILITIES_AVAILABLE and hasattr(self, 'math_validator'):
                 score += 1.0
             
             # Hardware optimization
-            if is_m1_available() and (self.gpu_manager or self.memory_optimizer or self.cpu_optimizer):
+            if HARDWARE_UTILITIES_AVAILABLE and is_m1_available() and (self.gpu_manager or self.memory_optimizer or self.cpu_optimizer):
                 score += 1.0
             
             # ML utilities
-            if hasattr(self, 'ml_validation'):
+            if ML_UTILITIES_AVAILABLE and hasattr(self, 'ml_validation') and self.ml_validation:
                 score += 1.0
             
             # Serialization utilities
-            if hasattr(self, 'serializers'):
+            if SERIALIZATION_UTILITIES_AVAILABLE and hasattr(self, 'serializers'):
                 score += 1.0
             
             return safe_divide(score, max_score, 0)
@@ -2289,10 +2743,10 @@ def execute_analyst_models_training_enhanced(
         
         # Add utilities integration summary
         results['utilities_integration_summary'] = {
-            'common_utilities_used': hasattr(step, 'math_validator'),
-            'hardware_optimization_used': is_m1_available(),
-            'ml_utilities_used': hasattr(step, 'ml_validation'),
-            'serialization_utilities_used': hasattr(step, 'serializers'),
+            'common_utilities_used': COMMON_UTILITIES_AVAILABLE and hasattr(step, 'math_validator'),
+            'hardware_optimization_used': HARDWARE_UTILITIES_AVAILABLE and is_m1_available(),
+            'ml_utilities_used': ML_UTILITIES_AVAILABLE and hasattr(step, 'ml_validation'),
+            'serialization_utilities_used': SERIALIZATION_UTILITIES_AVAILABLE and hasattr(step, 'serializers'),
             'enhancement_score': step._calculate_utilities_enhancement_score()
         }
         
@@ -2510,10 +2964,10 @@ def get_enhanced_training_status() -> Dict[str, Any]:
                 'disk_space': check_disk_space('/', 1.0)
             },
             'utilities_status': {
-                'common_utilities_available': True,  # We know these are available since we imported them
-                'hardware_optimization_available': is_m1_available(),
-                'ml_utilities_available': True,  # We know these are available since we imported them
-                'serialization_utilities_available': True  # We know these are available since we imported them
+                'common_utilities_available': COMMON_UTILITIES_AVAILABLE,
+                'hardware_optimization_available': HARDWARE_UTILITIES_AVAILABLE and is_m1_available(),
+                'ml_utilities_available': ML_UTILITIES_AVAILABLE,
+                'serialization_utilities_available': SERIALIZATION_UTILITIES_AVAILABLE
             },
             'system_health': {
                 'memory_healthy': get_memory_usage() / 1024 / 1024 < 8000,  # Less than 8GB

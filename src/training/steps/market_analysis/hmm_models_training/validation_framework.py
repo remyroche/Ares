@@ -11,9 +11,9 @@ from dataclasses import dataclass
 from enum import Enum
 import warnings
 
-from src.utils.logger import system_logger
+from src.utils.tprint import tprint
 
-logger = system_logger.getChild('HMMValidationFramework')
+# Using tprint for all logging - no logger needed
 
 
 class ValidationLevel(Enum):

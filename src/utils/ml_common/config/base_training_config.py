@@ -129,6 +129,10 @@ class TacticianTrainingConfig(BaseTrainingConfig):
     ])
     analyst_threshold: float = 0.6
     
+    # Single model training (not per-regime)
+    use_single_model: bool = True
+    single_model_name: str = "tactician_unified_model"
+    
     # Model-specific HPO search spaces
     hpo_search_spaces: Dict[str, Dict[str, Any]] = field(default_factory=lambda: {
         'NODE': {

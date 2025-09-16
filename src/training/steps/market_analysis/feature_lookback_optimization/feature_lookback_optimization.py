@@ -996,7 +996,7 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
                 cv_config = {'folds': 5, 'test_size': 0.2}
             
             config = FeatureOptimizationConfig(
-                optimization_method='genetic_algorithm',
+                optimization_method='two_step_grid_tpe',
                 lookback_range=OptimizationConfig.DEFAULT_LOOKBACK_RANGE,
                 feature_types=['technical_indicators', 'price_features', 'volume_features'],
                 optimization_metric='sharpe_ratio',
@@ -1004,12 +1004,14 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
                 test_size=cv_config.get('test_size', 0.2),
                 random_state=42,
                 
-                # Genetic algorithm parameters (use optimized values if available)
-                population_size=hpo_config.get('population_size', OptimizationConfig.DEFAULT_POPULATION_SIZE),
-                generations=hpo_config.get('generations', OptimizationConfig.DEFAULT_GENERATIONS),
-                mutation_rate=hpo_config.get('mutation_rate', OptimizationConfig.DEFAULT_MUTATION_RATE),
-                crossover_rate=hpo_config.get('crossover_rate', OptimizationConfig.DEFAULT_CROSSOVER_RATE),
-                elitism_rate=hpo_config.get('elitism_rate', OptimizationConfig.DEFAULT_ELITISM_RATE),
+                # Two-step grid + TPE parameters
+                coarse_grid_size=5,
+                fine_grid_size=5,
+                top_k_coarse_candidates=6,
+                top_k_fine_candidates=4,
+                tpe_trials=25,
+                coarse_refinement_factor=0.3,
+                fine_refinement_factor=0.2,
                 
                 # Feature selection
                 enable_feature_selection=True,
@@ -1040,10 +1042,13 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
             
         except ImportError as e:
             tprint(f"⚠️ Feature optimization config import failed: {e}")
-            # Return a simple fallback config with common utilities integration
+            # Return a simple config with two-step grid + TPE approach
             return {
-                'optimization_method': 'statistical',
+                'optimization_method': 'two_step_grid_tpe',
                 'lookback_range': OptimizationConfig.DEFAULT_LOOKBACK_RANGE,
+                'coarse_grid_size': 5,
+                'fine_grid_size': 5,
+                'tpe_trials': 25,
                 'regime_aware': False,
                 'use_ml_common_utilities': ML_COMMON_AVAILABLE,
                 'use_matrix_operations': MATRIX_OPS_AVAILABLE,
@@ -1059,38 +1064,8 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
             return optimizer
             
         except ImportError as e:
-            tprint(f"⚠️ Feature optimizer import failed: {e}")
-            # Return a fallback optimizer
-            return self._create_fallback_optimizer()
+            raise ImportError(f"Feature optimizer import failed: {e}. Required dependencies not available.")
     
-    def _create_fallback_optimizer(self) -> Any:
-        """Create a fallback optimizer for when ML commons are not available."""
-        class FallbackOptimizer:
-            def __init__(self, config):
-                self.config = config
-                self.logger = system_logger.getChild('FallbackOptimizer')
-            
-            async def optimize_features(self, data, config):
-                tprint("Using fallback statistical optimization")
-                return {
-                    'optimization_results': {
-                        'best_lookback_period': 20,
-                        'best_score': 0.5,
-                        'optimization_method': 'fallback_statistical'
-                    },
-                    'optimized_features': {
-                        'rsi': {'lookback': 14, 'score': 0.5},
-                        'sma': {'lookback': 20, 'score': 0.4},
-                        'ema': {'lookback': 12, 'score': 0.45}
-                    },
-                    'optimization_metrics': {
-                        'method': 'fallback_statistical',
-                        'convergence_iterations': 1
-                    },
-                    'optimization_time': 0.1
-                }
-        
-        return FallbackOptimizer(self.config)
     
     def _create_optimization_metrics(
         self, 
@@ -1682,8 +1657,7 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
             Dictionary with optimization results for each feature
         """
         if not MRMR_OPTIMIZER_AVAILABLE or self.mrmr_optimizer is None:
-            tprint("⚠️ Bayesian optimizer not available - using fallback optimization")
-            return self._fallback_lookback_optimization(data, feature_columns, target_column)
+            raise ImportError("MRMR optimizer is required for two-step grid + TPE optimization. Please install required dependencies.")
         
         tprint("🔍 Starting Bayesian lookback period optimization...")
         start_time = time.time()
@@ -1756,64 +1730,6 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
             tprint(f"❌ Bayesian optimization failed: {e}")
             return {'error': str(e)}
     
-    def _fallback_lookback_optimization(self, 
-                                      data: pd.DataFrame,
-                                      feature_columns: List[str],
-                                      target_column: str) -> Dict[str, Any]:
-        """Fallback optimization when Bayesian optimizer is not available."""
-        tprint("🔄 Using fallback lookback optimization...")
-        
-        optimization_results = {}
-        
-        for feature_name in feature_columns:
-            try:
-                # Simple grid search for lookback periods
-                best_first = 10
-                best_second = 20
-                best_score = 0.0
-                
-                # Basic optimization logic
-                for first_lookback in range(5, 51, 5):
-                    for second_lookback in range(5, 51, 5):
-                        if second_lookback == first_lookback:
-                            continue
-                        
-                        # Calculate simple correlation
-                        first_feature = data['close'].rolling(window=first_lookback).mean()
-                        second_feature = data['close'].rolling(window=second_lookback).mean()
-                        
-                        correlation = first_feature.corr(second_feature)
-                        
-                        if abs(correlation) < 0.7:  # Low correlation
-                            score = 1.0 - abs(correlation)  # Higher score for lower correlation
-                            if score > best_score:
-                                best_score = score
-                                best_first = first_lookback
-                                best_second = second_lookback
-                
-                optimization_results[feature_name] = {
-                    'first_lookback_period': best_first,
-                    'second_lookback_period': best_second,
-                    'first_mi_score': 0.5,  # Placeholder
-                    'second_mi_score': 0.5,  # Placeholder
-                    'combined_mi_score': best_score,
-                    'correlation_between_periods': abs(correlation),
-                    'optimization_time': 0.1,
-                    'n_trials': 100,
-                    'best_score': best_score,
-                    'convergence_rate': 1.0,
-                    'parameter_importance': {},
-                    'method': 'fallback_grid_search'
-                }
-                
-            except Exception as e:
-                optimization_results[feature_name] = {
-                    'error': str(e),
-                    'first_lookback_period': 10,
-                    'second_lookback_period': 20
-                }
-        
-        return optimization_results
     
     def _generate_optimization_summary(self, optimization_results: Dict[str, Any]) -> Dict[str, Any]:
         """Generate summary of optimization results."""

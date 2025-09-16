@@ -201,11 +201,18 @@ class EntryTimingLossFunction:
         timing_error = np.abs(y_pred - y_true)
         
         # Calculate confidence based on timing accuracy
-        # Perfect timing (error = 0) -> confidence = 1
-        # Within tolerance (error <= tolerance) -> confidence = 0.8-1.0
-        # Outside tolerance -> confidence decreases exponentially
+        # Within tolerance (error <= 0.1%) -> confidence = 1.0
+        # Outside tolerance -> -0.2 confidence points per 0.1% price deviation
         
-        confidence = np.exp(-timing_error / tolerance)
+        confidence = np.ones_like(timing_error)  # Start with 1.0
+        
+        # For errors outside tolerance, subtract 0.2 per 0.1% deviation
+        outside_tolerance_mask = timing_error > tolerance
+        if np.any(outside_tolerance_mask):
+            # Calculate how many 0.1% deviations we're off
+            deviations = (timing_error[outside_tolerance_mask] - tolerance) / 0.001  # 0.1% = 0.001
+            # Subtract 0.2 confidence points per deviation
+            confidence[outside_tolerance_mask] = 1.0 - (0.2 * deviations)
         
         # Ensure confidence is between 0 and 1
         confidence = np.clip(confidence, 0.0, 1.0)
@@ -314,6 +321,7 @@ class ConfidenceAwareEnsemble:
     def predict_with_confidence(self, X: np.ndarray, y_true: np.ndarray = None) -> tuple:
         """
         Predict entry timing with confidence scores using ensemble.
+        Uses only the meta-model's confidence score.
         
         Args:
             X: Input features
@@ -325,32 +333,16 @@ class ConfidenceAwareEnsemble:
         # Get ensemble predictions
         predictions = self.predict(X)
         
-        # Get base model predictions and confidence scores
-        base_predictions = []
-        base_confidences = []
+        # Calculate confidence using only the meta-model's predictions
+        if y_true is not None:
+            # Use meta-model predictions vs true values for confidence
+            confidence_scores = self.loss_functions.calculate_confidence_score(y_true, predictions)
+        else:
+            # For inference, use meta-model prediction uncertainty as proxy
+            # This is a simplified approach - in practice, you might use model uncertainty
+            confidence_scores = np.ones(len(predictions)) * 0.8  # Default confidence
         
-        for model in self.base_models:
-            pred, conf = model.predict_with_confidence(X, y_true)
-            base_predictions.append(pred)
-            base_confidences.append(conf)
-        
-        # Calculate ensemble confidence as weighted average of base model confidences
-        # Weight by prediction agreement
-        base_pred_array = np.array(base_predictions)
-        pred_std = np.std(base_pred_array, axis=0)
-        pred_agreement = 1.0 / (1.0 + pred_std)  # Higher agreement = higher weight
-        
-        # Weighted average of confidence scores
-        base_conf_array = np.array(base_confidences)
-        ensemble_confidence = np.average(base_conf_array, axis=0, weights=pred_agreement)
-        
-        # Adjust confidence based on prediction agreement
-        ensemble_confidence = ensemble_confidence * pred_agreement
-        
-        # Ensure confidence is between 0 and 1
-        ensemble_confidence = np.clip(ensemble_confidence, 0.0, 1.0)
-        
-        return predictions, ensemble_confidence
+        return predictions, confidence_scores
     
     def get_base_model_predictions(self, X: np.ndarray) -> Dict[str, tuple]:
         """Get predictions and confidence scores from each base model."""
@@ -496,12 +488,14 @@ class EntryTimingTacticianOptimizer:
         
         def objective(trial):
             # Suggest model parameters
-            model_type = trial.suggest_categorical('model_type', ['ElasticNetCV', 'Ridge', 'Lasso'])
+            model_type = trial.suggest_categorical('model_type', ['ElasticNet', 'Ridge', 'Lasso'])
             
-            if model_type == 'ElasticNetCV':
-                l1_ratio = trial.suggest_float('l1_ratio', 0.1, 0.9)
-                alpha = trial.suggest_float('alpha', 0.001, 1.0, log=True)
-                model = ElasticNetCV(l1_ratio=[l1_ratio], alphas=[alpha], cv=5)
+            if model_type == 'ElasticNet':
+                alpha = trial.suggest_float('alpha', 0.001, 10.0, log=True)
+                l1_ratio = trial.suggest_float('l1_ratio', 0.1, 1.0)
+                max_iter = trial.suggest_int('max_iter', 1000, 5000)
+                from sklearn.linear_model import ElasticNet
+                model = ElasticNet(alpha=alpha, l1_ratio=l1_ratio, max_iter=max_iter)
             elif model_type == 'Ridge':
                 alpha = trial.suggest_float('alpha', 0.1, 10.0, log=True)
                 from sklearn.linear_model import Ridge
@@ -612,11 +606,12 @@ class EntryTimingTacticianOptimizer:
         params = best_solution.params
         
         # Create model with best parameters
-        if params['model_type'] == 'ElasticNetCV':
-            base_model = ElasticNetCV(
-                l1_ratio=[params['l1_ratio']],
-                alphas=[params['alpha']],
-                cv=5
+        if params['model_type'] == 'ElasticNet':
+            from sklearn.linear_model import ElasticNet
+            base_model = ElasticNet(
+                alpha=params['alpha'],
+                l1_ratio=params['l1_ratio'],
+                max_iter=params['max_iter']
             )
         elif params['model_type'] == 'Ridge':
             from sklearn.linear_model import Ridge

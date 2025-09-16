@@ -1357,9 +1357,21 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                 self.logger.warning("⚠️ No valid confidence-aware models for ensemble training")
                 return {}
             
-            # Create meta model
-            meta_model_type = getattr(self.config, 'meta_model', 'ElasticNetCV')
-            if meta_model_type == 'ElasticNetCV':
+            # Create meta model (LightGBM as meta-learner)
+            meta_model_type = getattr(self.config, 'meta_model', 'LightGBM')
+            if meta_model_type == 'LightGBM':
+                from lightgbm import LGBMRegressor
+                meta_model = LGBMRegressor(
+                    n_estimators=1000,
+                    learning_rate=0.05,
+                    max_depth=6,
+                    num_leaves=31,
+                    subsample=0.8,
+                    colsample_bytree=0.8,
+                    random_state=42,
+                    verbose=-1
+                )
+            elif meta_model_type == 'ElasticNetCV':
                 from sklearn.linear_model import ElasticNetCV
                 meta_model = ElasticNetCV(
                     cv=5,

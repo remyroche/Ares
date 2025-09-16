@@ -136,7 +136,7 @@ class TacticianTrainingConfig(BaseTrainingConfig):
     # Ensemble training (always enabled for Tactician)
     enable_ensemble_training: bool = True  # Always True for Tactician
     ensemble_method: str = "stacking"  # stacking, voting, blending
-    meta_model: str = "ElasticNetCV"  # Use ElasticNetCV for better performance
+    meta_model: str = "LightGBM"  # Use LightGBM as meta-learner
     ensemble_name: str = "tactician_ensemble"
     
     # Entry timing optimization (focus on optimal entry within 0-0.5% range)
@@ -177,6 +177,11 @@ class TacticianTrainingConfig(BaseTrainingConfig):
         'Ridge': {
             'alpha': {'type': 'float', 'low': 0.1, 'high': 10.0, 'log': True},
             'solver': {'type': 'categorical', 'choices': ['auto', 'svd', 'cholesky', 'lsqr', 'sparse_cg', 'sag', 'saga']}
+        },
+        'ElasticNet': {
+            'alpha': {'type': 'float', 'low': 0.001, 'high': 10.0, 'log': True},
+            'l1_ratio': {'type': 'float', 'low': 0.1, 'high': 1.0},
+            'max_iter': {'type': 'int', 'low': 1000, 'high': 5000}
         }
     })
 

@@ -1,10 +1,12 @@
-from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 #!/usr/bin/env python3
-"""Step03 Configuration Management.
+"""
+Step03 Configuration Management.
 
 Centralized configuration for HMM regime discovery with all parameters
 organized by component and use case.
 """
+
+from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 
 from dataclasses import dataclass, field
 from typing import Dict, Any, List, Optional, Union

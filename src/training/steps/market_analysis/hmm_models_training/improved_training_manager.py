@@ -20,6 +20,17 @@ from src.utils.logger import system_logger
 from src.utils.ml_common.config.base_training_config import HMMTrainingConfig
 from src.utils.ml_common.training.base_training_step import BaseTrainingStep
 
+# Shared utilities
+from .shared_utilities import (
+    TrainingErrorHandler,
+    UnifiedModelFactory,
+    CircuitBreaker,
+    ValidationUtils,
+    ProgressReporter,
+    MemoryTracker
+)
+from .shared_utilities.training_error_handler import TrainingMetrics, ModelResult
+
 logger = system_logger.getChild('ImprovedTrainingManager')
 
 
@@ -47,223 +58,7 @@ class ValidationCheck:
     severity: str = "medium"
 
 
-@dataclass
-class TrainingMetrics:
-    """Enhanced training metrics with more detailed information."""
-    accuracy: float = 0.0
-    f1_score: float = 0.0
-    precision: float = 0.0
-    recall: float = 0.0
-    training_time: float = 0.0
-    convergence_epochs: int = 0
-    memory_usage_mb: float = 0.0
-    validation_loss: Optional[float] = None
-    test_accuracy: Optional[float] = None
-    error_message: Optional[str] = None
-    warnings: List[str] = None
-    
-    def __post_init__(self):
-        if self.warnings is None:
-            self.warnings = []
-
-
-@dataclass
-class ModelResult:
-    """Enhanced model result container."""
-    model: Any
-    metrics: TrainingMetrics
-    feature_importance: Optional[Dict[str, float]] = None
-    predictions: Optional[np.ndarray] = None
-    probabilities: Optional[np.ndarray] = None
-    hyperparameters: Optional[Dict[str, Any]] = None
-    training_history: Optional[Dict[str, List[float]]] = None
-
-
-class TrainingErrorHandler:
-    """Centralized error handling for training operations."""
-    
-    @staticmethod
-    def handle_model_creation_error(model_type: str, error: Exception) -> ModelResult:
-        """Standardized model creation error handling."""
-        return ModelResult(
-            model=None,
-            metrics=TrainingMetrics(
-                error_message=f"Failed to create {model_type}: {str(error)}",
-                training_time=0.0
-            )
-        )
-    
-    @staticmethod
-    def handle_training_error(model_type: str, error: Exception, training_time: float) -> ModelResult:
-        """Standardized training error handling."""
-        return ModelResult(
-            model=None,
-            metrics=TrainingMetrics(
-                error_message=f"Failed to train {model_type}: {str(error)}",
-                training_time=training_time
-            )
-        )
-
-
-class ModelFactory:
-    """Factory for creating model instances with standardized configuration."""
-    
-    _model_configs = {
-        'logistic_regression': {
-            'class': 'sklearn.linear_model.LogisticRegression',
-            'default_params': {
-                'C': 1.0, 'max_iter': 1000, 'random_state': 42,
-                'class_weight': 'balanced'
-            }
-        },
-        'lightgbm': {
-            'class': 'lightgbm.LGBMClassifier',
-            'default_params': {
-                'n_estimators': 100, 'learning_rate': 0.1,
-                'max_depth': 6, 'random_state': 42, 'verbose': -1
-            }
-        },
-        'random_forest': {
-            'class': 'sklearn.ensemble.RandomForestClassifier',
-            'default_params': {
-                'n_estimators': 100, 'max_depth': 10,
-                'random_state': 42, 'n_jobs': -1
-            }
-        }
-    }
-    
-    @classmethod
-    def create_model(cls, model_type: str, **custom_params) -> Any:
-        """Create model instance with standardized configuration."""
-        if model_type not in cls._model_configs:
-            raise ValueError(f"Unknown model type: {model_type}")
-        
-        config = cls._model_configs[model_type]
-        
-        # Import the class dynamically
-        class_path = config['class']
-        module_name, class_name = class_path.rsplit('.', 1)
-        module = __import__(module_name, fromlist=[class_name])
-        model_class = getattr(module, class_name)
-        
-        # Merge default and custom parameters
-        params = {**config['default_params'], **custom_params}
-        return model_class(**params)
-
-
-class CircuitBreaker:
-    """Circuit breaker to prevent cascading failures."""
-    
-    def __init__(self, failure_threshold: int = 3, timeout: int = 300):
-        self.failure_threshold = failure_threshold
-        self.timeout = timeout
-        self.failure_count = 0
-        self.last_failure_time = None
-        self.state = "CLOSED"  # CLOSED, OPEN, HALF_OPEN
-    
-    def call(self, func: Callable, *args, **kwargs):
-        """Execute function with circuit breaker protection."""
-        if self.state == "OPEN":
-            if time.time() - self.last_failure_time > self.timeout:
-                self.state = "HALF_OPEN"
-            else:
-                raise Exception("Circuit breaker is OPEN - too many failures")
-        
-        try:
-            result = func(*args, **kwargs)
-            if self.state == "HALF_OPEN":
-                self.state = "CLOSED"
-                self.failure_count = 0
-            return result
-        except Exception as e:
-            self.failure_count += 1
-            self.last_failure_time = time.time()
-            
-            if self.failure_count >= self.failure_threshold:
-                self.state = "OPEN"
-            
-            raise e
-
-
-class RealTimeProgressReporter:
-    """Real-time progress reporting during training."""
-    
-    def __init__(self, total_models: int):
-        self.total_models = total_models
-        self.completed_models = 0
-        self.start_time = time.time()
-        self.model_times = []
-        self.successful_models = 0
-        self.failed_models = 0
-    
-    def update_progress(self, model_name: str, success: bool, training_time: float):
-        """Update progress after each model training."""
-        self.completed_models += 1
-        self.model_times.append(training_time)
-        
-        if success:
-            self.successful_models += 1
-        else:
-            self.failed_models += 1
-        
-        progress_percent = (self.completed_models / self.total_models) * 100
-        avg_time = np.mean(self.model_times)
-        eta = avg_time * (self.total_models - self.completed_models)
-        
-        status = "✅" if success else "❌"
-        
-        print(f"\r{status} {model_name} | Progress: {progress_percent:.1f}% | "
-              f"Success: {self.successful_models}/{self.completed_models} | "
-              f"ETA: {eta:.1f}s", end="", flush=True)
-    
-    def finish_report(self):
-        """Generate final progress report."""
-        total_time = time.time() - self.start_time
-        print(f"\n\n🎯 Training Summary:")
-        print(f"   Total time: {total_time:.2f}s")
-        print(f"   Average time per model: {np.mean(self.model_times):.2f}s")
-        print(f"   Successful models: {self.successful_models}/{self.total_models}")
-        print(f"   Success rate: {(self.successful_models/self.total_models)*100:.1f}%")
-
-
-class PerformanceMetricsCollector:
-    """Collect detailed performance metrics during training."""
-    
-    def __init__(self):
-        self.metrics = {
-            'training_times': [],
-            'memory_usage': [],
-            'model_accuracies': [],
-            'feature_counts': []
-        }
-    
-    def start_training_timer(self) -> str:
-        """Start timer for training session."""
-        timer_id = f"training_{int(time.time())}"
-        self.metrics[timer_id] = {'start_time': time.time()}
-        return timer_id
-    
-    def end_training_timer(self, timer_id: str):
-        """End timer and record training time."""
-        if timer_id in self.metrics:
-            self.metrics[timer_id]['end_time'] = time.time()
-            training_time = self.metrics[timer_id]['end_time'] - self.metrics[timer_id]['start_time']
-            self.metrics['training_times'].append(training_time)
-    
-    def record_model_performance(self, accuracy: float, training_time: float, memory_mb: float):
-        """Record individual model performance."""
-        self.metrics['model_accuracies'].append(accuracy)
-        self.metrics['training_times'].append(training_time)
-        self.metrics['memory_usage'].append(memory_mb)
-    
-    def get_summary_stats(self) -> Dict[str, Any]:
-        """Get summary statistics of collected metrics."""
-        return {
-            'avg_training_time': np.mean(self.metrics['training_times']) if self.metrics['training_times'] else 0,
-            'max_memory_usage': np.max(self.metrics['memory_usage']) if self.metrics['memory_usage'] else 0,
-            'avg_accuracy': np.mean(self.metrics['model_accuracies']) if self.metrics['model_accuracies'] else 0,
-            'total_training_sessions': len(self.metrics['training_times'])
-        }
+# All duplicated classes now imported from shared utilities
 
 
 class ImprovedHMMTrainingManager(BaseTrainingStep):
@@ -298,7 +93,7 @@ class ImprovedHMMTrainingManager(BaseTrainingStep):
         
         # Initialize improved components
         self.circuit_breaker = CircuitBreaker(failure_threshold=2, timeout=60)
-        self.performance_collector = PerformanceMetricsCollector()
+        self.memory_tracker = MemoryTracker()
         self.progress_reporter = None
         
         # Training state
@@ -390,8 +185,8 @@ class ImprovedHMMTrainingManager(BaseTrainingStep):
         try:
             self.logger.info(f"🔄 Training {model_type}...")
             
-            # Create model using factory
-            model = ModelFactory.create_model(model_type)
+            # Create model using shared unified factory
+            model = UnifiedModelFactory.create_model(model_type)
             
             # Train model with circuit breaker protection
             def train_model():
@@ -627,7 +422,7 @@ class ImprovedHMMTrainingManager(BaseTrainingStep):
                 raise ValueError("Enhanced input validation failed")
             
             # Step 2: Initialize progress reporter
-            self.progress_reporter = RealTimeProgressReporter(len(self.config.model_types))
+            self.progress_reporter = ProgressReporter(len(self.config.model_types))
             
             # Step 3: Train models with improved error handling
             self.logger.info("🔄 Step 3: Training models with improved error handling...")
@@ -641,13 +436,18 @@ class ImprovedHMMTrainingManager(BaseTrainingStep):
                     
                     # Update progress
                     success = model_result.metrics.error_message is None
-                    self.progress_reporter.update_progress(model_type, success, model_result.metrics.training_time)
+                    accuracy = model_result.metrics.accuracy if success else None
+                    error_message = model_result.metrics.error_message if not success else None
+                    self.progress_reporter.update_progress(
+                        model_type, success, model_result.metrics.training_time, 
+                        accuracy, error_message
+                    )
                     
                 except Exception as e:
                     self.logger.error(f"❌ Failed to train {model_type}: {e}")
                     # Create failed result using error handler
                     model_results[model_type] = TrainingErrorHandler.handle_training_error(model_type, e, 0.0)
-                    self.progress_reporter.update_progress(model_type, False, 0.0)
+                    self.progress_reporter.update_progress(model_type, False, 0.0, None, str(e))
             
             # Step 4: Finish progress reporting
             self.progress_reporter.finish_report()

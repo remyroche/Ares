@@ -20,6 +20,17 @@ from src.utils.logger import system_logger
 from src.utils.ml_common.config.base_training_config import EnsembleTrainingConfig
 from src.utils.ml_common.training.ensemble_training_step import EnsembleTrainingStep
 
+# Shared utilities
+from .shared_utilities import (
+    TrainingErrorHandler,
+    UnifiedModelFactory,
+    CircuitBreaker,
+    ValidationUtils,
+    ProgressReporter,
+    MemoryTracker
+)
+from .shared_utilities.training_error_handler import TrainingMetrics, ModelResult
+
 # Import vectorized training manager
 try:
     from src.utils.ml_common.training.vectorized_training_manager import VectorizedTrainingManager
@@ -325,14 +336,11 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
             Dictionary of mock base models
         """
         try:
-            from sklearn.linear_model import LogisticRegression
-            from sklearn.ensemble import RandomForestClassifier
-            from sklearn.ensemble import GradientBoostingClassifier
-            
+            # Use shared unified model factory for consistent model creation
             mock_models = {
-                'lightgbm_model': RandomForestClassifier(n_estimators=10, random_state=42, max_depth=5),
-                'elastic_net_model': LogisticRegression(random_state=43, max_iter=1000, penalty='elasticnet', l1_ratio=0.5, solver='saga'),
-                'xgboost_model': RandomForestClassifier(n_estimators=10, random_state=44, max_depth=5)
+                'lightgbm_model': UnifiedModelFactory.create_model('lightgbm', n_estimators=10, max_depth=5, random_state=42),
+                'elastic_net_model': UnifiedModelFactory.create_model('elastic_net_lr', random_state=43, max_iter=1000),
+                'xgboost_model': UnifiedModelFactory.create_model('xgboost', n_estimators=10, max_depth=5, random_state=44)
             }
             
             self.logger.info(f"📊 Created {len(mock_models)} mock base models for ensemble training")

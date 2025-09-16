@@ -23,255 +23,21 @@ from src.utils.logger import system_logger
 from src.utils.ml_common.config.base_training_config import HMMTrainingConfig
 from src.utils.ml_common.training.base_training_step import BaseTrainingStep
 
+# Shared utilities
+from .shared_utilities import (
+    TrainingErrorHandler,
+    UnifiedModelFactory,
+    CircuitBreaker,
+    ValidationUtils,
+    ProgressReporter,
+    MemoryTracker
+)
+
 logger = system_logger.getChild('HMMModelsTrainingEnhanced')
 
 
-class MemoryTracker:
-    """Utility class for tracking memory usage during training."""
-    
-    def __init__(self):
-        self.process = psutil.Process(os.getpid())
-        self.initial_memory = self._get_memory_usage()
-        self.peak_memory = self.initial_memory
-        self.memory_snapshots = []
-    
-    def _get_memory_usage(self) -> float:
-        """Get current memory usage in MB."""
-        try:
-            return self.process.memory_info().rss / 1024 / 1024
-        except (psutil.NoSuchProcess, psutil.AccessDenied):
-            return 0.0
-    
-    def take_snapshot(self, label: str = "") -> float:
-        """Take a memory snapshot and return current usage."""
-        current_memory = self._get_memory_usage()
-        self.peak_memory = max(self.peak_memory, current_memory)
-        
-        snapshot = {
-            'label': label,
-            'memory_mb': current_memory,
-            'timestamp': time.time()
-        }
-        self.memory_snapshots.append(snapshot)
-        
-        return current_memory
-    
-    def get_peak_memory(self) -> float:
-        """Get peak memory usage during tracking."""
-        return self.peak_memory
-    
-    def get_memory_increase(self) -> float:
-        """Get memory increase from initial state."""
-        return self.peak_memory - self.initial_memory
-    
-    def cleanup(self):
-        """Force garbage collection and take final snapshot."""
-        gc.collect()
-        self.take_snapshot("cleanup")
-
-
-@dataclass
-class TrainingMetrics:
-    """Enhanced training metrics container with additional monitoring."""
-    accuracy: float = 0.0
-    f1_score: float = 0.0
-    precision: float = 0.0
-    recall: float = 0.0
-    training_time: float = 0.0
-    convergence_epochs: int = 0
-    memory_usage_mb: float = 0.0
-    validation_loss: Optional[float] = None
-    test_accuracy: Optional[float] = None
-    error_message: Optional[str] = None
-    warnings: List[str] = None
-    
-    def __post_init__(self):
-        if self.warnings is None:
-            self.warnings = []
-
-
-@dataclass
-class ModelResult:
-    """Enhanced model result container with additional metadata."""
-    model: Any
-    metrics: TrainingMetrics
-    feature_importance: Optional[Dict[str, float]] = None
-    predictions: Optional[np.ndarray] = None
-    probabilities: Optional[np.ndarray] = None
-    hyperparameters: Optional[Dict[str, Any]] = None
-    training_history: Optional[Dict[str, List[float]]] = None
-
-
-class CircuitBreaker:
-    """Circuit breaker to prevent cascading failures in model training."""
-    
-    def __init__(self, failure_threshold: int = 3, timeout: int = 300):
-        self.failure_threshold = failure_threshold
-        self.timeout = timeout
-        self.failure_count = 0
-        self.last_failure_time = None
-        self.state = "CLOSED"  # CLOSED, OPEN, HALF_OPEN
-    
-    def call(self, func: Callable, *args, **kwargs):
-        """Execute function with circuit breaker protection."""
-        current_time = time.time()
-        
-        # Check if we should transition from OPEN to HALF_OPEN
-        if self.state == "OPEN":
-            if current_time - self.last_failure_time > self.timeout:
-                self.state = "HALF_OPEN"
-                logger.info("🔄 Circuit breaker transitioning to HALF_OPEN")
-            else:
-                remaining_time = self.timeout - (current_time - self.last_failure_time)
-                logger.error(f"🚨 Circuit breaker is OPEN - too many failures detected. Retry in {remaining_time:.1f}s")
-                raise Exception(f"Circuit breaker is OPEN - too many failures detected. Retry in {remaining_time:.1f}s")
-        
-        try:
-            result = func(*args, **kwargs)
-            # If we were in HALF_OPEN and succeeded, reset to CLOSED
-            if self.state == "HALF_OPEN":
-                self.state = "CLOSED"
-                self.failure_count = 0
-                logger.info("✅ Circuit breaker reset to CLOSED after successful operation")
-            return result
-        except Exception as e:
-            self.failure_count += 1
-            self.last_failure_time = current_time
-            
-            if self.failure_count >= self.failure_threshold:
-                self.state = "OPEN"
-                logger.error(f"🚨 Circuit breaker opened after {self.failure_count} failures. Will retry after {self.timeout}s")
-            else:
-                logger.warning(f"⚠️ Circuit breaker failure count: {self.failure_count}/{self.failure_threshold}")
-            
-            raise e
-
-
-class TrainingErrorHandler:
-    """Centralized error handling for training operations."""
-    
-    @staticmethod
-    def handle_model_creation_error(model_type: str, error: Exception) -> ModelResult:
-        """Standardized model creation error handling."""
-        return ModelResult(
-            model=None,
-            metrics=TrainingMetrics(
-                error_message=f"Failed to create {model_type}: {str(error)}",
-                training_time=0.0
-            )
-        )
-    
-    @staticmethod
-    def handle_training_error(model_type: str, error: Exception, training_time: float) -> ModelResult:
-        """Standardized training error handling."""
-        return ModelResult(
-            model=None,
-            metrics=TrainingMetrics(
-                error_message=f"Failed to train {model_type}: {str(error)}",
-                training_time=training_time
-            )
-        )
-
-
-class ModelFactory:
-    """Factory for creating model instances with standardized configuration."""
-    
-    _model_configs = {
-        'elastic_net_cv': {
-            'class': 'sklearn.linear_model.ElasticNetCV',
-            'default_params': {
-                'l1_ratio': [0.1, 0.5, 0.7, 0.9, 0.95, 0.99],
-                'cv': 5,
-                'random_state': 42,
-                'max_iter': 2000,
-                'n_jobs': -1
-            }
-        },
-        'lightgbm': {
-            'class': 'lightgbm.LGBMClassifier',
-            'default_params': {
-                'n_estimators': 100, 'learning_rate': 0.1,
-                'max_depth': 6, 'random_state': 42, 'verbosity': -1,
-                'objective': 'multiclass', 'num_class': 3
-            }
-        },
-        'elastic_net_lr': {
-            'class': 'sklearn.linear_model.LogisticRegression',
-            'default_params': {
-                'C': 1.0, 'max_iter': 1000, 'random_state': 42,
-                'class_weight': 'balanced', 'penalty': 'elasticnet',
-                'l1_ratio': 0.5, 'solver': 'saga'
-            }
-        },
-        'xgboost': {
-            'class': 'xgboost.XGBClassifier',
-            'default_params': {
-                'n_estimators': 100, 'learning_rate': 0.1,
-                'max_depth': 6, 'random_state': 42, 'verbosity': 0,
-                'objective': 'multi:softprob', 'eval_metric': 'mlogloss'
-            }
-        }
-    }
-    
-    @classmethod
-    def create_model(cls, model_type: str, **custom_params) -> Any:
-        """Create model instance with standardized configuration."""
-        if model_type not in cls._model_configs:
-            raise ValueError(f"Unknown model type: {model_type}")
-        
-        config = cls._model_configs[model_type]
-        
-        # Import the class dynamically
-        class_path = config['class']
-        module_name, class_name = class_path.rsplit('.', 1)
-        module = __import__(module_name, fromlist=[class_name])
-        model_class = getattr(module, class_name)
-        
-        # Merge default and custom parameters
-        params = {**config['default_params'], **custom_params}
-        return model_class(**params)
-
-
-class RealTimeProgressReporter:
-    """Real-time progress reporting during training."""
-    
-    def __init__(self, total_models: int):
-        self.total_models = total_models
-        self.completed_models = 0
-        self.start_time = time.time()
-        self.model_times = []
-        self.successful_models = 0
-        self.failed_models = 0
-    
-    def update_progress(self, model_name: str, success: bool, training_time: float):
-        """Update progress after each model training."""
-        self.completed_models += 1
-        self.model_times.append(training_time)
-        
-        if success:
-            self.successful_models += 1
-        else:
-            self.failed_models += 1
-        
-        progress_percent = (self.completed_models / self.total_models) * 100
-        avg_time = np.mean(self.model_times) if self.model_times else 0
-        eta = avg_time * (self.total_models - self.completed_models)
-        
-        status = "✅" if success else "❌"
-        
-        print(f"\r{status} {model_name} | Progress: {progress_percent:.1f}% | "
-              f"Success: {self.successful_models}/{self.completed_models} | "
-              f"ETA: {eta:.1f}s", end="", flush=True)
-    
-    def finish_report(self):
-        """Generate final progress report."""
-        total_time = time.time() - self.start_time
-        print(f"\n\n🎯 Training Summary:")
-        print(f"   Total time: {total_time:.2f}s")
-        if self.model_times:
-            print(f"   Average time per model: {np.mean(self.model_times):.2f}s")
-        print(f"   Successful models: {self.successful_models}/{self.total_models}")
-        print(f"   Success rate: {(self.successful_models/self.total_models)*100:.1f}%")
+# Import shared data classes
+from .shared_utilities.training_error_handler import TrainingMetrics, ModelResult
 
 
 class HMMModelsTrainingEnhanced(BaseTrainingStep):
@@ -309,9 +75,10 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
         super().__init__(config)
         self.logger = logger.getChild('HMMModelsTrainingEnhanced')
         
-        # Initialize enhanced components
+        # Initialize enhanced components using shared utilities
         self.circuit_breaker = CircuitBreaker(failure_threshold=2, timeout=60)
         self.progress_reporter = None
+        self.memory_tracker = MemoryTracker()
         
         # Initialize components with error handling
         self._initialize_components()
@@ -332,36 +99,13 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
         Raises:
             ValueError: If configuration is invalid
         """
-        errors = []
-        warnings = []
-        
         try:
-            # Critical validations (cause fast-fail)
-            if not config.model_types or len(config.model_types) == 0:
-                errors.append("CRITICAL: No model types specified")
+            # Use shared validation utility
+            if not ValidationUtils.validate_config(config):
+                raise ValueError("Configuration validation failed")
             
-            if config.n_features <= 0:
-                errors.append("CRITICAL: n_features must be positive")
-            
-            if config.sequence_length <= 0:
-                errors.append("CRITICAL: sequence_length must be positive")
-            
-            if config.n_regimes < 2:
-                errors.append("CRITICAL: n_regimes must be at least 2")
-            
-            if config.hpo_trials < 0:
-                errors.append("CRITICAL: hpo_trials must be non-negative")
-            
-            # Validate model types
-            valid_model_types = ['lightgbm', 'elastic_net_lr', 'elastic_net_cv', 'xgboost', 'random_forest', 'logistic_regression']
-            invalid_types = [mt for mt in config.model_types if mt not in valid_model_types]
-            if invalid_types:
-                errors.append(f"CRITICAL: Invalid model types: {invalid_types}. Valid types: {valid_model_types}")
-            
-            # Validate timeframe
-            valid_timeframes = ['1m', '5m', '15m', '30m', '1h', '4h', '1d']
-            if config.timeframe not in valid_timeframes:
-                errors.append(f"CRITICAL: Invalid timeframe: {config.timeframe}. Valid timeframes: {valid_timeframes}")
+            # Additional HMM-specific validations
+            warnings = []
             
             # Warning validations (don't cause fast-fail)
             if config.n_features > 1000:
@@ -372,12 +116,6 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
             
             if config.sequence_length > 100:
                 warnings.append("WARNING: Large sequence length may impact memory usage")
-            
-            # Fast-fail on critical errors
-            if errors:
-                error_msg = " | ".join(errors)
-                self.logger.error(f"❌ Configuration validation failed: {error_msg}")
-                raise ValueError(f"Invalid configuration: {error_msg}")
             
             # Log warnings
             if warnings:
@@ -401,9 +139,7 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
         # Initialize evaluation utilities with specific error handling
         self.evaluation_utils = self._initialize_evaluation_utils()
 
-        # Initialize model registry
-        self.model_registry = {}
-        self._register_models()
+        # Model creation now handled by shared UnifiedModelFactory
     
     def _initialize_feature_generator(self) -> Optional[Any]:
         """Initialize feature generator with specific error handling."""
@@ -520,56 +256,7 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
             self.logger.error(f"❌ Failed to convert data to numpy array: {e}")
             raise ValueError(f"Data conversion failed: {e}") from e
     
-    def _register_models(self) -> None:
-        """Register available models with their configurations."""
-        self.model_registry = {
-            'lightgbm': {
-                'class': 'lightgbm.LGBMClassifier',
-                'params': {
-                    'n_estimators': 100,
-                    'learning_rate': 0.1,
-                    'max_depth': 6,
-                    'random_state': 42,
-                    'verbosity': -1,
-                    'objective': 'multiclass',
-                    'num_class': 3
-                }
-            },
-            'elastic_net_lr': {
-                'class': 'sklearn.linear_model.LogisticRegression',
-                'params': {
-                    'C': 1.0,
-                    'max_iter': 1000,
-                    'random_state': 42,
-                    'class_weight': 'balanced',
-                    'penalty': 'elasticnet',
-                    'l1_ratio': 0.5,
-                    'solver': 'saga'
-                }
-            },
-            'elastic_net_cv': {
-                'class': 'sklearn.linear_model.ElasticNetCV',
-                'params': {
-                    'l1_ratio': [0.1, 0.5, 0.7, 0.9, 0.95, 0.99],
-                    'cv': 5,
-                    'random_state': 42,
-                    'max_iter': 2000,
-                    'n_jobs': -1
-                }
-            },
-            'xgboost': {
-                'class': 'xgboost.XGBClassifier',
-                'params': {
-                    'n_estimators': 100,
-                    'learning_rate': 0.1,
-                    'max_depth': 6,
-                    'random_state': 42,
-                    'verbosity': 0,
-                    'objective': 'multi:softprob',
-                    'eval_metric': 'mlogloss'
-                }
-            }
-        }
+# Model registration now handled by shared UnifiedModelFactory
     
     def _validate_input_data(self, X: np.ndarray, y: np.ndarray, regime_labels: np.ndarray) -> bool:
         """
@@ -583,58 +270,20 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
         Returns:
             True if validation passes, False otherwise
         """
-        critical_failures = []
-        warnings = []
-        
         try:
-            # Critical checks (cause early exit)
-            if len(X) == 0:
-                critical_failures.append("Input data is empty")
-            
-            # Check data types
-            if not isinstance(X, (np.ndarray, pd.DataFrame)):
-                critical_failures.append(f"X must be numpy array or DataFrame, got {type(X)}")
-            
-            if not isinstance(y, np.ndarray):
-                critical_failures.append(f"y must be numpy array, got {type(y)}")
-            
-            if not isinstance(regime_labels, np.ndarray):
-                critical_failures.append(f"regime_labels must be numpy array, got {type(regime_labels)}")
-            
-            # Check shapes
-            if len(X) != len(y):
-                critical_failures.append(f"X length ({len(X)}) != y length ({len(y)})")
-            
-            if len(X) != len(regime_labels):
-                critical_failures.append(f"X length ({len(X)}) != regime_labels length ({len(regime_labels)})")
-            
-            # Check for NaN values (critical)
-            if isinstance(X, np.ndarray):
-                if np.any(np.isnan(X)):
-                    critical_failures.append("X contains NaN values")
-                if np.any(np.isinf(X)):
-                    critical_failures.append("X contains infinite values")
-            else:  # DataFrame
-                if X.isnull().any().any():
-                    critical_failures.append("X contains NaN values")
-                if np.isinf(X.select_dtypes(include=[np.number])).any().any():
-                    critical_failures.append("X contains infinite values")
-            
-            if np.any(np.isnan(y)):
-                critical_failures.append("y contains NaN values")
-            
-            if np.any(np.isnan(regime_labels)):
-                critical_failures.append("regime_labels contains NaN values")
-            
-            # Check regime distribution
-            unique_regimes = np.unique(regime_labels)
-            if len(unique_regimes) < 2:
-                critical_failures.append(f"Need at least 2 regimes, found {len(unique_regimes)}")
-            
-            # Early exit on critical failures
-            if critical_failures:
-                self.logger.error(f"❌ Critical validation failures: {critical_failures}")
+            # Use shared validation utilities
+            if not ValidationUtils.validate_data_shapes(X, y, regime_labels):
                 return False
+            
+            if not ValidationUtils.validate_data_quality(X, y, regime_labels):
+                return False
+            
+            if not ValidationUtils.validate_regime_distribution(regime_labels, min_samples_per_regime=10):
+                return False
+            
+            # Additional HMM-specific validations
+            warnings = []
+            unique_regimes = np.unique(regime_labels)
             
             # Warning checks (don't cause early exit)
             if len(X) < 1000:
@@ -767,7 +416,7 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
     
     def _create_model(self, model_type: str, **kwargs) -> Any:
         """
-        Create model instance with enhanced factory pattern and fallback to original registry.
+        Create model instance using shared UnifiedModelFactory.
         
         Args:
             model_type: Type of model to create
@@ -777,44 +426,8 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
             Model instance
         """
         try:
-            # Try factory pattern first
-            return ModelFactory.create_model(model_type, **kwargs)
-        except Exception as factory_error:
-            self.logger.warning(f"⚠️ Factory pattern failed for {model_type}: {factory_error}, trying original registry")
-            
-            # Fallback to original model registry
-            if model_type not in self.model_registry:
-                raise ValueError(f"Unknown model type: {model_type}")
-            
-            model_config = self.model_registry[model_type]
-            
-            # Handle LightGBM
-            if model_type == 'lightgbm':
-                import lightgbm as lgb
-                params = {**model_config['params'], **kwargs}
-                return lgb.LGBMClassifier(**params)
-            
-            # Handle Elastic Net Logistic Regression
-            elif model_type == 'elastic_net_lr':
-                from sklearn.linear_model import LogisticRegression
-                params = {**model_config['params'], **kwargs}
-                return LogisticRegression(**params)
-            
-            # Handle Elastic Net CV
-            elif model_type == 'elastic_net_cv':
-                from sklearn.linear_model import ElasticNetCV
-                params = {**model_config['params'], **kwargs}
-                return ElasticNetCV(**params)
-            
-            # Handle XGBoost
-            elif model_type == 'xgboost':
-                import xgboost as xgb
-                params = {**model_config['params'], **kwargs}
-                return xgb.XGBClassifier(**params)
-            
-            else:
-                raise ValueError(f"Model type {model_type} not implemented")
-                
+            # Use shared unified model factory
+            return UnifiedModelFactory.create_model(model_type, **kwargs)
         except Exception as e:
             self.logger.error(f"❌ Failed to create model {model_type}: {e}")
             raise
@@ -833,6 +446,7 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
         """
         start_time = time.time()
         metrics = TrainingMetrics()
+        # Use shared memory tracker
         memory_tracker = MemoryTracker()
         
         try:
@@ -1125,7 +739,7 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
             
             # Step 4: Initialize progress reporter and train models
             self.logger.info("🔄 Step 4: Training models with real-time progress...")
-            self.progress_reporter = RealTimeProgressReporter(len(self.config.model_types))
+            self.progress_reporter = ProgressReporter(len(self.config.model_types))
             model_results = {}
             
             for model_type in self.config.model_types:
@@ -1139,13 +753,18 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
                     
                     # Update progress
                     success = model_result.metrics.error_message is None
-                    self.progress_reporter.update_progress(model_type, success, model_result.metrics.training_time)
+                    accuracy = model_result.metrics.accuracy if success else None
+                    error_message = model_result.metrics.error_message if not success else None
+                    self.progress_reporter.update_progress(
+                        model_type, success, model_result.metrics.training_time, 
+                        accuracy, error_message
+                    )
                     
                 except Exception as e:
                     self.logger.error(f"❌ Failed to train {model_type}: {e}")
                     # Create failed result using centralized error handler
                     model_results[model_type] = TrainingErrorHandler.handle_training_error(model_type, e, 0.0)
-                    self.progress_reporter.update_progress(model_type, False, 0.0)
+                    self.progress_reporter.update_progress(model_type, False, 0.0, None, str(e))
             
             # Step 5: Finish progress reporting
             self.progress_reporter.finish_report()

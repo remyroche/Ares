@@ -107,8 +107,8 @@ class LookbackOptimizationConfig:
     lookback_step: int = 1
     
     # Advanced Feature Selection Methods
-    relevance_method: str = "mrmr"  # "mutual_info", "mrmr", "elastic_net", "feature_importance", "pid"
-    redundancy_method: str = "elastic_net"  # "correlation", "elastic_net", "mrmr", "pid"
+    first_lookback_method: str = "mutual_info"  # Method for first lookback period
+    second_lookback_method: str = "mrmr"  # Method for second lookback period (mRMR only)
     quality_assessment: bool = True  # Enable comprehensive quality metrics
     
     # Correlation and MI Constraints
@@ -117,9 +117,9 @@ class LookbackOptimizationConfig:
     correlation_method: str = "pearson"  # "pearson", "spearman", "kendall"
     
     # Multi-objective Weights
-    mi_weight: float = 0.4  # Weight for mutual information
-    correlation_weight: float = 0.3  # Weight for low correlation
-    quality_weight: float = 0.3  # Weight for quality metrics
+    first_lookback_weight: float = 0.4  # Weight for first lookback period (MI)
+    second_lookback_weight: float = 0.4  # Weight for second lookback period (mRMR)
+    correlation_weight: float = 0.2  # Weight for low correlation between periods
     
     # Advanced Feature Selection Parameters
     mrmr_config: Dict[str, Any] = field(default_factory=lambda: {
@@ -263,8 +263,8 @@ class BayesianLookbackOptimizer:
         self.logger.info(f"📊 Sampler type: {self.config.sampler_type}")
         self.logger.info(f"📊 Pruner type: {self.config.pruner_type}")
         self.logger.info(f"📊 Lookback range: {self.config.min_lookback}-{self.config.max_lookback}")
-        self.logger.info(f"📊 Relevance method: {self.config.relevance_method}")
-        self.logger.info(f"📊 Redundancy method: {self.config.redundancy_method}")
+        self.logger.info(f"📊 First lookback method: {self.config.first_lookback_method}")
+        self.logger.info(f"📊 Second lookback method: {self.config.second_lookback_method}")
         self.logger.info(f"📊 Advanced feature selection available: {ADVANCED_FEATURE_SELECTION_AVAILABLE}")
     
     def _initialize_optuna(self):
@@ -331,36 +331,15 @@ class BayesianLookbackOptimizer:
             return
         
         try:
-            # Initialize mRMR selector
-            if self.config.relevance_method == "mrmr" or self.config.redundancy_method == "mrmr":
+            # Initialize mRMR selector for second lookback period
+            if self.config.second_lookback_method == "mrmr":
                 self.advanced_selectors['mrmr'] = MRMRSelector(self.config.mrmr_config)
-                self.logger.info("✅ mRMR selector initialized")
-            
-            # Initialize Elastic Net stability selector
-            if self.config.relevance_method == "elastic_net" or self.config.redundancy_method == "elastic_net":
-                self.advanced_selectors['elastic_net'] = ElasticNetStabilitySelector(self.config.elastic_net_config)
-                self.logger.info("✅ Elastic Net stability selector initialized")
-            
-            # Initialize PID analyzer
-            if self.config.relevance_method == "pid" or self.config.redundancy_method == "pid":
-                pid_config = PIDConfig(**self.config.pid_config)
-                self.advanced_selectors['pid'] = PartialInformationDecomposition(pid_config)
-                self.logger.info("✅ PID analyzer initialized")
-            
-            # Initialize feature importance ranker
-            if self.config.relevance_method == "feature_importance":
-                self.advanced_selectors['feature_importance'] = FeatureImportanceRanker()
-                self.logger.info("✅ Feature importance ranker initialized")
+                self.logger.info("✅ mRMR selector initialized for second lookback period")
             
             # Initialize quality metrics calculator
             if self.config.quality_assessment:
                 self.advanced_selectors['quality_metrics'] = QualityMetricsCalculator(self.config.quality_metrics_config)
                 self.logger.info("✅ Quality metrics calculator initialized")
-            
-            # Initialize correlation-based filter
-            if self.config.redundancy_method == "correlation":
-                self.advanced_selectors['correlation_filter'] = CorrelationBasedFilter()
-                self.logger.info("✅ Correlation-based filter initialized")
             
         except Exception as e:
             self.logger.warning(f"Failed to initialize some advanced feature selection tools: {e}")
@@ -461,16 +440,18 @@ class BayesianLookbackOptimizer:
                 step=self.config.lookback_step
             )
         
-        # Calculate advanced relevance scores for both periods
-        first_relevance_score = self._calculate_advanced_relevance_score(
+        # Calculate first lookback period score (using basic MI)
+        first_relevance_score = self._calculate_mutual_information(
             data, feature_name, target_column, first_lookback, parameter_type
         )
-        second_relevance_score = self._calculate_advanced_relevance_score(
-            data, feature_name, target_column, second_lookback, parameter_type
+        
+        # Calculate second lookback period score (using mRMR)
+        second_relevance_score = self._calculate_second_lookback_mrmr_score(
+            data, feature_name, target_column, second_lookback, first_lookback, parameter_type
         )
         
-        # Calculate advanced redundancy/correlation analysis
-        redundancy_penalty = self._calculate_advanced_redundancy_penalty(
+        # Calculate correlation between the two lookback periods
+        correlation_penalty = self._calculate_correlation_between_periods(
             data, feature_name, first_lookback, second_lookback, parameter_type
         )
         
@@ -483,15 +464,13 @@ class BayesianLookbackOptimizer:
         
         # Calculate combined score with weights
         combined_score = (
-            self.config.mi_weight * (first_relevance_score + second_relevance_score) / 2 +
-            self.config.quality_weight * quality_score
+            self.config.first_lookback_weight * first_relevance_score +
+            self.config.second_lookback_weight * second_relevance_score +
+            (1.0 - self.config.first_lookback_weight - self.config.second_lookback_weight) * quality_score
         )
         
-        # Calculate penalty score
-        penalty_score = (
-            self.config.correlation_weight * redundancy_penalty +
-            (1.0 - self.config.correlation_weight) * max(0, self.config.min_mutual_info_threshold - second_relevance_score)
-        )
+        # Calculate penalty score (correlation penalty)
+        penalty_score = self.config.correlation_weight * correlation_penalty
         
         # Set user attributes for analysis
         trial.set_user_attr("first_lookback", first_lookback)
@@ -560,6 +539,77 @@ class BayesianLookbackOptimizer:
         except Exception as e:
             self.logger.warning(f"Failed to calculate MI for lookback {lookback_period}: {e}")
             return 0.0
+    
+    def _calculate_second_lookback_mrmr_score(self, 
+                                            data: pd.DataFrame,
+                                            feature_name: str,
+                                            target_column: str,
+                                            second_lookback: int,
+                                            first_lookback: int,
+                                            parameter_type: str) -> float:
+        """
+        Calculate mRMR score for the second lookback period.
+        This considers both relevance to target and redundancy with the first lookback period.
+        """
+        try:
+            if self.config.second_lookback_method != "mrmr" or 'mrmr' not in self.advanced_selectors:
+                # Fallback to basic mutual information
+                return self._calculate_mutual_information(
+                    data, feature_name, target_column, second_lookback, parameter_type
+                )
+            
+            # Generate features for both lookback periods
+            first_feature = self._generate_feature_with_lookback(
+                data, feature_name, first_lookback, parameter_type
+            )
+            second_feature = self._generate_feature_with_lookback(
+                data, feature_name, second_lookback, parameter_type
+            )
+            
+            # Get target values
+            target_values = data[target_column].values
+            
+            # Ensure same length and remove NaN values
+            min_length = min(len(first_feature), len(second_feature), len(target_values))
+            first_feature = first_feature[:min_length]
+            second_feature = second_feature[:min_length]
+            target_values = target_values[:min_length]
+            
+            mask = ~(np.isnan(first_feature) | np.isnan(second_feature) | np.isnan(target_values))
+            first_feature = first_feature[mask]
+            second_feature = second_feature[mask]
+            target_values = target_values[mask]
+            
+            if len(first_feature) < 10:
+                return 0.0
+            
+            # Create feature matrix with both lookback periods
+            X = np.column_stack([first_feature, second_feature])
+            feature_names = [f"{feature_name}_lookback_{first_lookback}", f"{feature_name}_lookback_{second_lookback}"]
+            
+            # Use mRMR to select features (we want the second feature)
+            result = self.advanced_selectors['mrmr'].select_features(X, target_values, feature_names, 2)
+            
+            if result['success'] and result['scores']:
+                # Get the mRMR score for the second lookback period
+                second_feature_name = f"{feature_name}_lookback_{second_lookback}"
+                if second_feature_name in result['scores']:
+                    return result['scores'][second_feature_name]
+                else:
+                    # If second feature not selected, return 0 (low relevance/redundancy)
+                    return 0.0
+            else:
+                # Fallback to basic mutual information
+                return self._calculate_mutual_information(
+                    data, feature_name, target_column, second_lookback, parameter_type
+                )
+                
+        except Exception as e:
+            self.logger.warning(f"Failed to calculate mRMR score for second lookback period: {e}")
+            # Fallback to basic mutual information
+            return self._calculate_mutual_information(
+                data, feature_name, target_column, second_lookback, parameter_type
+            )
     
     def _calculate_advanced_relevance_score(self, 
                                           data: pd.DataFrame,
@@ -968,8 +1018,8 @@ class BayesianLookbackOptimizer:
         first_mi_score = self._calculate_mutual_information(
             data, feature_name, target_column, first_lookback, "technical_indicator"
         )
-        second_mi_score = self._calculate_mutual_information(
-            data, feature_name, target_column, second_lookback, "technical_indicator"
+        second_mrmr_score = self._calculate_second_lookback_mrmr_score(
+            data, feature_name, target_column, second_lookback, first_lookback, "technical_indicator"
         )
         
         # Calculate correlation
@@ -978,7 +1028,7 @@ class BayesianLookbackOptimizer:
         )
         
         # Calculate combined score
-        combined_mi_score = (first_mi_score + second_mi_score) / 2
+        combined_mi_score = (first_mi_score + second_mrmr_score) / 2
         
         # Get parameter importance
         if OPTUNA_AVAILABLE:
@@ -1007,8 +1057,9 @@ class BayesianLookbackOptimizer:
             first_lookback_period=first_lookback,
             second_lookback_period=second_lookback,
             first_mi_score=first_mi_score,
-            second_mi_score=second_mi_score,
+            second_mi_score=second_mrmr_score,  # This is actually mRMR score
             combined_mi_score=combined_mi_score,
+            second_mrmr_score=second_mrmr_score,  # Store mRMR score separately
             correlation_between_periods=correlation,
             correlation_method=self.config.correlation_method,
             optimization_time=optimization_time,
@@ -1018,6 +1069,8 @@ class BayesianLookbackOptimizer:
             best_score=best_trial.values[0] if best_trial.values else 0.0,
             convergence_rate=convergence_rate,
             parameter_importance=parameter_importance,
+            relevance_method_used=self.config.first_lookback_method,
+            redundancy_method_used=self.config.second_lookback_method,
             optimization_method=self.config.optimization_method,
             config=self.config,
             all_trials=all_trials,
@@ -1045,11 +1098,18 @@ class BayesianLookbackOptimizer:
                 if second_lookback == first_lookback:
                     continue
                 
-                second_mi = self._calculate_mutual_information(data, feature_name, target_column, second_lookback, "technical_indicator")
+                # Use mRMR for second lookback period
+                second_mrmr = self._calculate_second_lookback_mrmr_score(
+                    data, feature_name, target_column, second_lookback, first_lookback, "technical_indicator"
+                )
                 correlation = self._calculate_correlation_between_periods(data, feature_name, first_lookback, second_lookback, "technical_indicator")
                 
-                # Combined score
-                combined_score = (first_mi + second_mi) / 2 - correlation * 0.5
+                # Combined score with weights
+                combined_score = (
+                    self.config.first_lookback_weight * first_mi +
+                    self.config.second_lookback_weight * second_mrmr -
+                    self.config.correlation_weight * correlation
+                )
                 
                 if combined_score > best_score and correlation < self.config.max_correlation_threshold:
                     best_score = combined_score
@@ -1063,7 +1123,8 @@ class BayesianLookbackOptimizer:
             first_lookback_period=best_first_lookback,
             second_lookback_period=best_second_lookback,
             first_mi_score=self._calculate_mutual_information(data, feature_name, target_column, best_first_lookback, "technical_indicator"),
-            second_mi_score=self._calculate_mutual_information(data, feature_name, target_column, best_second_lookback, "technical_indicator") if best_second_lookback else None,
+            second_mi_score=self._calculate_second_lookback_mrmr_score(data, feature_name, target_column, best_second_lookback, best_first_lookback, "technical_indicator") if best_second_lookback else None,
+            second_mrmr_score=self._calculate_second_lookback_mrmr_score(data, feature_name, target_column, best_second_lookback, best_first_lookback, "technical_indicator") if best_second_lookback else None,
             combined_mi_score=best_score,
             correlation_between_periods=best_correlation,
             correlation_method=self.config.correlation_method,
@@ -1074,6 +1135,8 @@ class BayesianLookbackOptimizer:
             best_score=best_score,
             convergence_rate=1.0,
             parameter_importance={},
+            relevance_method_used=self.config.first_lookback_method,
+            redundancy_method_used=self.config.second_lookback_method,
             optimization_method="grid_search_fallback",
             config=self.config,
             all_trials=[],

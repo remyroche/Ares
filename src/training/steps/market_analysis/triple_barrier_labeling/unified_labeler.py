@@ -18,16 +18,12 @@ import logging
 from dataclasses import dataclass, field, asdict
 from typing import Dict, List, Optional, Union, Any, Tuple, Callable
 from datetime import datetime
-from pathlib import Path
-import contextlib
 
 import pandas as pd
 import numpy as np
 
 from src.utils.tprint import tprint
 from src.utils.logger import get_logger
-from src.core.decorators import handles_errors, traced, validates, log_execution_time, cached
-from src.utils.math_validation import safe_divide, validate_positive, MathValidationError
 
 # Hardware optimization imports with proper error handling
 try:
@@ -144,8 +140,11 @@ class TripleBarrierConfig:
             errors.append("Profit take and stop loss multipliers must be positive")
         else:
             risk_reward_ratio = self.profit_take_multiplier / self.stop_loss_multiplier
-            if risk_reward_ratio < 1.0:
-                errors.append(f"Risk-reward ratio {risk_reward_ratio:.2f} < 1.0 - may be unprofitable")
+            if risk_reward_ratio < 0.5:
+                errors.append(f"Risk-reward ratio {risk_reward_ratio:.2f} < 0.5 - very unprofitable")
+            elif risk_reward_ratio < 1.0:
+                # This is a warning, not an error - some strategies may use this
+                pass
         
         # Check if barriers are too close
         barrier_diff = abs(self.profit_take_multiplier - self.stop_loss_multiplier)
@@ -280,18 +279,22 @@ class ProgressReporter:
         self.current_step += 1
         progress = (self.current_step / self.total_steps) * 100
         elapsed = time.time() - self.start_time
+        tprint(f"🔄 Step {self.current_step}/{self.total_steps} ({progress:.1f}%): {step_name}")
         self.logger.info(f"🔄 Step {self.current_step}/{self.total_steps} ({progress:.1f}%): {step_name}")
         
     def complete_step(self, step_name: str, metrics: Dict[str, Any] = None):
         """Complete a step with optional metrics."""
         elapsed = time.time() - self.start_time
+        tprint(f"✅ Completed: {step_name} in {elapsed:.2f}s")
         self.logger.info(f"✅ Completed: {step_name} in {elapsed:.2f}s")
         if metrics:
             for key, value in metrics.items():
+                tprint(f"   {key}: {value}")
                 self.logger.info(f"   {key}: {value}")
                 
     def report_failure(self, step_name: str, error: str):
         """Report a step failure."""
+        tprint(f"❌ Failed: {step_name} - {error}")
         self.logger.error(f"❌ Failed: {step_name} - {error}")
 
 class DataValidator:
@@ -470,7 +473,7 @@ if NUMBA_AVAILABLE:
             stop_barrier = entry_price * (1.0 - sl_mult)
             end_idx = int(end_idx_arr[i])
             
-            if end_idx <= i + 1:
+            if end_idx <= i:
                 labels[i] = 0
                 profit_pcts[i] = 0.0
                 transaction_costs[i] = 0.0
@@ -535,6 +538,19 @@ class UnifiedTripleBarrierLabeler:
     
     def _log_initialization(self):
         """Log initialization parameters."""
+        tprint('🚀 Initializing Unified Triple Barrier Labeler')
+        tprint(f'📋 Configuration:')
+        tprint(f'   → Profit take: {self.config.profit_take_multiplier:.4f} ({self.config.profit_take_multiplier*100:.2f}%)')
+        tprint(f'   → Stop loss: {self.config.stop_loss_multiplier:.4f} ({self.config.stop_loss_multiplier*100:.2f}%)')
+        tprint(f'   → Transaction cost: {self.config.transaction_cost:.4f} ({self.config.transaction_cost*100:.2f}%)')
+        tprint(f'   → Time barrier: {self.config.time_barrier_minutes} minutes')
+        tprint(f'   → Max lookahead: {self.config.max_lookahead}')
+        tprint(f'   → Binary classification: {self.config.binary_classification}')
+        tprint(f'   → Regime aware: {self.config.regime_aware}')
+        tprint(f'   → Numba acceleration: {NUMBA_AVAILABLE}')
+        tprint(f'   → Hardware optimizations: {HARDWARE_OPTIMIZATIONS_AVAILABLE}')
+        
+        # Also log to logger for consistency
         self.logger.info('🚀 Initializing Unified Triple Barrier Labeler')
         self.logger.info(f'📋 Configuration:')
         self.logger.info(f'   → Profit take: {self.config.profit_take_multiplier:.4f} ({self.config.profit_take_multiplier*100:.2f}%)')
@@ -549,6 +565,7 @@ class UnifiedTripleBarrierLabeler:
     
     def apply_labeling(self, data: pd.DataFrame) -> TripleBarrierResult:
         """Main entry point for triple barrier labeling."""
+        tprint('🏷️ Starting Triple Barrier Labeling Process')
         start_time = datetime.now()
         result = TripleBarrierResult(
             success=False,  # Will be set to True if successful
@@ -613,6 +630,8 @@ class UnifiedTripleBarrierLabeler:
             result.execution_duration = (result.end_time - result.start_time).total_seconds()
             
             # Log final summary
+            tprint("✅ Triple barrier labeling completed successfully")
+            tprint(result.generate_summary())
             self.logger.info("✅ Triple barrier labeling completed successfully")
             self.logger.info(result.generate_summary())
             
@@ -625,6 +644,7 @@ class UnifiedTripleBarrierLabeler:
             result.end_time = datetime.now()
             result.execution_duration = (result.end_time - result.start_time).total_seconds()
             
+            tprint(f"❌ Triple barrier labeling failed: {e}")
             self.logger.error(f"❌ Triple barrier labeling failed: {e}")
             if self.progress:
                 self.progress.report_failure("Triple Barrier Labeling", str(e))
@@ -633,40 +653,67 @@ class UnifiedTripleBarrierLabeler:
     
     def _validate_input_data(self, data: pd.DataFrame) -> ValidationResult:
         """Validate input data comprehensively."""
-        # Validate OHLC data
-        ohlc_result = self.validator.validate_ohlc_data(data)
-        
-        # Validate regime data if needed
-        regime_result = self.validator.validate_regime_data(data)
-        
-        # Combine results
-        combined_result = ValidationResult()
-        combined_result.errors.extend(ohlc_result.errors)
-        combined_result.errors.extend(regime_result.errors)
-        combined_result.warnings.extend(ohlc_result.warnings)
-        combined_result.warnings.extend(regime_result.warnings)
-        combined_result.is_valid = len(combined_result.errors) == 0
-        
-        return combined_result
+        try:
+            tprint("🔍 Validating input data...")
+            
+            # Validate OHLC data
+            ohlc_result = self.validator.validate_ohlc_data(data)
+            
+            # Validate regime data if needed
+            regime_result = self.validator.validate_regime_data(data)
+            
+            # Combine results
+            combined_result = ValidationResult()
+            combined_result.errors.extend(ohlc_result.errors)
+            combined_result.errors.extend(regime_result.errors)
+            combined_result.warnings.extend(ohlc_result.warnings)
+            combined_result.warnings.extend(regime_result.warnings)
+            combined_result.is_valid = len(combined_result.errors) == 0
+            
+            if combined_result.is_valid:
+                tprint(f"✅ Data validation passed with {len(combined_result.warnings)} warnings")
+            else:
+                tprint(f"❌ Data validation failed with {len(combined_result.errors)} errors")
+                
+            return combined_result
+            
+        except Exception as e:
+            tprint(f"❌ Data validation error: {e}")
+            self.logger.error(f"Data validation error: {e}")
+            result = ValidationResult()
+            result.add_error(f"Validation process failed: {e}")
+            return result
     
     def _prepare_data(self, data: pd.DataFrame) -> pd.DataFrame:
         """Prepare data for labeling."""
-        # Create working copy
-        prepared_data = data.copy()
-        
-        # Standardize column names
-        rename_map = self._get_column_rename_map(prepared_data)
-        if rename_map:
-            prepared_data = prepared_data.rename(columns=rename_map)
-            self.logger.info(f"📝 Renamed columns: {rename_map}")
-        
-        # Ensure required columns exist
-        required_columns = ['close', 'high', 'low']
-        missing_columns = [col for col in required_columns if col not in prepared_data.columns]
-        if missing_columns:
-            raise DataQualityError(f"Missing required columns after preparation: {missing_columns}")
-        
-        return prepared_data
+        try:
+            tprint("📝 Preparing data for labeling...")
+            
+            # Create working copy
+            prepared_data = data.copy()
+            
+            # Standardize column names
+            rename_map = self._get_column_rename_map(prepared_data)
+            if rename_map:
+                prepared_data = prepared_data.rename(columns=rename_map)
+                tprint(f"📝 Renamed columns: {rename_map}")
+                self.logger.info(f"📝 Renamed columns: {rename_map}")
+            
+            # Ensure required columns exist
+            required_columns = ['close', 'high', 'low']
+            missing_columns = [col for col in required_columns if col not in prepared_data.columns]
+            if missing_columns:
+                error_msg = f"Missing required columns after preparation: {missing_columns}"
+                tprint(f"❌ {error_msg}")
+                raise DataQualityError(error_msg)
+            
+            tprint(f"✅ Data preparation completed: {len(prepared_data)} rows")
+            return prepared_data
+            
+        except Exception as e:
+            tprint(f"❌ Data preparation failed: {e}")
+            self.logger.error(f"Data preparation failed: {e}")
+            raise
     
     def _get_column_rename_map(self, data: pd.DataFrame) -> Dict[str, str]:
         """Get column rename mapping for standardization."""
@@ -697,48 +744,70 @@ class UnifiedTripleBarrierLabeler:
     
     def _apply_triple_barrier_labeling(self, data: pd.DataFrame) -> pd.DataFrame:
         """Apply triple barrier labeling to data."""
-        n = len(data)
-        close = data['close'].to_numpy()
-        high = data['high'].to_numpy()
-        low = data['low'].to_numpy()
-        idx = data.index
-        
-        # Calculate end indices
-        end_idx_arr = self._calculate_end_indices(n, idx)
-        
-        # Apply barrier logic
-        labels, profit_pcts, transaction_costs = self._apply_barrier_logic(
-            close, high, low, end_idx_arr
-        )
-        
-        # Add results to dataframe
-        result_data = data.copy()
-        result_data['label'] = labels
-        result_data['potential_profit_pct'] = profit_pcts
-        result_data['transaction_cost'] = transaction_costs
-        result_data['net_profit_pct'] = profit_pcts  # Net profit after transaction costs
-        result_data['labeling_method'] = 'unified'
-        
-        return result_data
+        try:
+            tprint("🏷️ Applying triple barrier labeling...")
+            
+            n = len(data)
+            close = data['close'].to_numpy()
+            high = data['high'].to_numpy()
+            low = data['low'].to_numpy()
+            idx = data.index
+            
+            # Calculate end indices
+            end_idx_arr = self._calculate_end_indices(n, idx)
+            
+            # Apply barrier logic
+            labels, profit_pcts, transaction_costs = self._apply_barrier_logic(
+                close, high, low, end_idx_arr
+            )
+            
+            # Add results to dataframe
+            result_data = data.copy()
+            result_data['label'] = labels
+            result_data['potential_profit_pct'] = profit_pcts
+            result_data['transaction_cost'] = transaction_costs
+            result_data['net_profit_pct'] = profit_pcts  # Net profit after transaction costs
+            result_data['labeling_method'] = 'unified'
+            
+            tprint(f"✅ Triple barrier labeling completed: {len(result_data)} rows processed")
+            return result_data
+            
+        except Exception as e:
+            tprint(f"❌ Triple barrier labeling failed: {e}")
+            self.logger.error(f"Triple barrier labeling failed: {e}")
+            raise
     
     def _calculate_end_indices(self, n: int, idx: pd.Index) -> np.ndarray:
         """Calculate end indices for barrier evaluation."""
-        arange_n = np.arange(n, dtype=np.int64)
-        end_by_lookahead = np.minimum(arange_n + 1 + int(self.config.max_lookahead), n)
-        
-        if isinstance(idx, pd.DatetimeIndex) and idx.is_monotonic_increasing:
-            try:
-                idx_ns = idx.view(np.int64)
-                delta_ns = np.int64(self.config.time_barrier_minutes) * np.int64(60000000000)
-                end_times = idx_ns + delta_ns
-                end_by_time = np.searchsorted(idx_ns, end_times, side='right')
-            except Exception as e:
-                self.logger.warning(f"⚠️ Time barrier calculation failed: {e}, using lookahead only")
-                end_by_time = end_by_lookahead
-        else:
-            end_by_time = end_by_lookahead
+        try:
+            tprint("📊 Calculating end indices for barrier evaluation...")
             
-        return np.minimum(end_by_lookahead, end_by_time).astype(np.int64)
+            arange_n = np.arange(n, dtype=np.int64)
+            end_by_lookahead = np.minimum(arange_n + int(self.config.max_lookahead), n)
+            
+            if isinstance(idx, pd.DatetimeIndex) and idx.is_monotonic_increasing:
+                try:
+                    idx_ns = idx.view(np.int64)
+                    delta_ns = np.int64(self.config.time_barrier_minutes) * np.int64(60000000000)
+                    end_times = idx_ns + delta_ns
+                    end_by_time = np.searchsorted(idx_ns, end_times, side='right')
+                    tprint(f"✅ Time barrier calculation completed: {self.config.time_barrier_minutes} minutes")
+                except Exception as e:
+                    tprint(f"⚠️ Time barrier calculation failed: {e}, using lookahead only")
+                    self.logger.warning(f"⚠️ Time barrier calculation failed: {e}, using lookahead only")
+                    end_by_time = end_by_lookahead
+            else:
+                tprint("📊 Using lookahead-based end indices (no datetime index)")
+                end_by_time = end_by_lookahead
+                
+            result = np.minimum(end_by_lookahead, end_by_time).astype(np.int64)
+            tprint(f"✅ End indices calculated: {len(result)} indices")
+            return result
+            
+        except Exception as e:
+            tprint(f"❌ End indices calculation failed: {e}")
+            self.logger.error(f"End indices calculation failed: {e}")
+            raise
     
     def _apply_barrier_logic(
         self, 
@@ -764,6 +833,7 @@ class UnifiedTripleBarrierLabeler:
                     n >= 512)
         
         if use_numba:
+            tprint('⚡ Using Numba-accelerated triple barrier labeling')
             self.logger.info('⚡ Using Numba-accelerated triple barrier labeling')
             labels, profit_pcts, transaction_costs = _numba_triple_barrier_labels(
                 close.astype(np.float64), 
@@ -775,6 +845,7 @@ class UnifiedTripleBarrierLabeler:
                 tx_cost
             )
         else:
+            tprint('🐍 Using Python triple barrier labeling')
             self.logger.info('🐍 Using Python triple barrier labeling')
             labels, profit_pcts, transaction_costs = self._apply_barrier_logic_python(
                 close, high, low, end_idx_arr, pt_mult, sl_mult, tx_cost
@@ -812,7 +883,7 @@ class UnifiedTripleBarrierLabeler:
             stop_barrier = entry_price * (1.0 - sl_mult)
             end_idx = int(end_idx_arr[i])
             
-            if end_idx <= i + 1:
+            if end_idx <= i:
                 labels[i] = 0
                 profit_pcts[i] = 0.0
                 transaction_costs[i] = 0.0
@@ -843,8 +914,10 @@ class UnifiedTripleBarrierLabeler:
                 profit_pcts[i] = pt_mult - tx_cost
                 transaction_costs[i] = tx_cost
             else:
-                # Both hit - use first one
-                if profit_hits[0] <= stop_hits[0]:
+                # Both hit - use first one chronologically
+                first_profit_hit = profit_hits[0]
+                first_stop_hit = stop_hits[0]
+                if first_profit_hit <= first_stop_hit:
                     labels[i] = 1
                     profit_pcts[i] = pt_mult - tx_cost
                     transaction_costs[i] = tx_cost
@@ -857,15 +930,24 @@ class UnifiedTripleBarrierLabeler:
     
     def _post_process_results(self, labeled_data: pd.DataFrame) -> pd.DataFrame:
         """Apply post-processing and filtering."""
-        original_count = len(labeled_data)
-        
-        # Filter out HOLD samples if binary classification
-        if self.config.binary_classification:
-            hold_samples = (labeled_data['label'] == 0).sum()
-            labeled_data = labeled_data[labeled_data['label'] != 0].copy()
-            self.logger.info(f'📊 Filtered {hold_samples} HOLD samples for binary classification')
-        
-        return labeled_data
+        try:
+            tprint("🔧 Post-processing results...")
+            original_count = len(labeled_data)
+            
+            # Filter out HOLD samples if binary classification
+            if self.config.binary_classification:
+                hold_samples = (labeled_data['label'] == 0).sum()
+                labeled_data = labeled_data[labeled_data['label'] != 0].copy()
+                tprint(f'📊 Filtered {hold_samples} HOLD samples for binary classification')
+                self.logger.info(f'📊 Filtered {hold_samples} HOLD samples for binary classification')
+            
+            tprint(f"✅ Post-processing completed: {len(labeled_data)} rows remaining")
+            return labeled_data
+            
+        except Exception as e:
+            tprint(f"❌ Post-processing failed: {e}")
+            self.logger.error(f"Post-processing failed: {e}")
+            raise
     
     def _populate_result_metrics(self, result: TripleBarrierResult, final_data: pd.DataFrame):
         """Populate result metrics from execution."""

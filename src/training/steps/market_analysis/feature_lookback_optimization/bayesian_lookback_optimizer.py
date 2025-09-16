@@ -45,6 +45,21 @@ except ImportError:
     SKLEARN_AVAILABLE = False
     logging.warning("Sklearn not available - using fallback correlation methods")
 
+# Import advanced feature selection tools
+try:
+    from src.training.utils.feature_selection.selection_methods import (
+        MRMRSelector, ElasticNetStabilitySelector, CorrelationBasedFilter,
+        RecursiveFeatureEliminator, FeatureImportanceRanker
+    )
+    from src.training.utils.feature_selection.partial_information_decomposition import (
+        PartialInformationDecomposition, PIDConfig, PIDMeasure
+    )
+    from src.training.utils.feature_selection.quality_metrics import QualityMetricsCalculator
+    ADVANCED_FEATURE_SELECTION_AVAILABLE = True
+except ImportError as e:
+    ADVANCED_FEATURE_SELECTION_AVAILABLE = False
+    logging.warning(f"Advanced feature selection tools not available: {e}")
+
 # Import common operations for enhanced functionality
 try:
     from src.utils.common_operations import (
@@ -91,14 +106,54 @@ class LookbackOptimizationConfig:
     max_lookback: int = 100
     lookback_step: int = 1
     
+    # Advanced Feature Selection Methods
+    relevance_method: str = "mrmr"  # "mutual_info", "mrmr", "elastic_net", "feature_importance", "pid"
+    redundancy_method: str = "elastic_net"  # "correlation", "elastic_net", "mrmr", "pid"
+    quality_assessment: bool = True  # Enable comprehensive quality metrics
+    
     # Correlation and MI Constraints
     max_correlation_threshold: float = 0.7  # Maximum correlation between lookback periods
     min_mutual_info_threshold: float = 0.1  # Minimum mutual information for second period
     correlation_method: str = "pearson"  # "pearson", "spearman", "kendall"
     
     # Multi-objective Weights
-    mi_weight: float = 0.6  # Weight for mutual information
-    correlation_weight: float = 0.4  # Weight for low correlation
+    mi_weight: float = 0.4  # Weight for mutual information
+    correlation_weight: float = 0.3  # Weight for low correlation
+    quality_weight: float = 0.3  # Weight for quality metrics
+    
+    # Advanced Feature Selection Parameters
+    mrmr_config: Dict[str, Any] = field(default_factory=lambda: {
+        'relevance_method': 'mutual_info',
+        'redundancy_method': 'correlation',
+        'n_neighbors': 3
+    })
+    
+    elastic_net_config: Dict[str, Any] = field(default_factory=lambda: {
+        'n_bootstraps': 20,
+        'bootstrap_fraction': 0.8,
+        'stability_threshold': 0.6,
+        'alpha_range': (0.001, 1.0),
+        'l1_ratio_range': (0.1, 0.9),
+        'cv_folds': 5
+    })
+    
+    pid_config: Dict[str, Any] = field(default_factory=lambda: {
+        'method': 'bivariate',
+        'pid_measures': ['i_min', 'i_ccs'],
+        'discretization_method': 'adaptive',
+        'n_bins': 10,
+        'enable_parallel': True
+    })
+    
+    quality_metrics_config: Dict[str, Any] = field(default_factory=lambda: {
+        'redundancy_weight': 0.2,
+        'relevance_weight': 0.3,
+        'stability_weight': 0.2,
+        'interpretability_weight': 0.1,
+        'performance_weight': 0.2,
+        'correlation_threshold': 0.8,
+        'performance_threshold': 0.7
+    })
     
     # Advanced Features
     enable_pruning: bool = True
@@ -124,29 +179,51 @@ class LookbackOptimizationResult:
     first_lookback_period: int
     second_lookback_period: Optional[int]
     
-    # Mutual Information Scores
+    # Basic Mutual Information Scores
     first_mi_score: float
     second_mi_score: Optional[float]
     combined_mi_score: float
     
+    # Advanced Feature Selection Scores
+    first_mrmr_score: Optional[float] = None
+    second_mrmr_score: Optional[float] = None
+    first_elastic_net_score: Optional[float] = None
+    second_elastic_net_score: Optional[float] = None
+    first_pid_score: Optional[float] = None
+    second_pid_score: Optional[float] = None
+    first_importance_score: Optional[float] = None
+    second_importance_score: Optional[float] = None
+    
+    # Quality Metrics
+    quality_metrics: Optional[Dict[str, Any]] = None
+    overall_quality_score: Optional[float] = None
+    
     # Correlation Analysis
-    correlation_between_periods: Optional[float]
-    correlation_method: str
+    correlation_between_periods: Optional[float] = None
+    correlation_method: str = "pearson"
+    
+    # Advanced Redundancy Analysis
+    redundancy_analysis: Optional[Dict[str, Any]] = None
+    stability_analysis: Optional[Dict[str, Any]] = None
     
     # Optimization Metrics
-    optimization_time: float
-    n_trials: int
-    n_successful_trials: int
-    n_pruned_trials: int
+    optimization_time: float = 0.0
+    n_trials: int = 0
+    n_successful_trials: int = 0
+    n_pruned_trials: int = 0
     
     # Performance Metrics
-    best_score: float
-    convergence_rate: float
-    parameter_importance: Dict[str, float]
+    best_score: float = 0.0
+    convergence_rate: float = 0.0
+    parameter_importance: Dict[str, float] = field(default_factory=dict)
+    
+    # Feature Selection Method Used
+    relevance_method_used: str = "mutual_info"
+    redundancy_method_used: str = "correlation"
     
     # Additional Information
-    optimization_method: str
-    config: LookbackOptimizationConfig
+    optimization_method: str = "bayesian"
+    config: Optional[LookbackOptimizationConfig] = None
     all_trials: List[Dict[str, Any]] = field(default_factory=list)
     convergence_history: List[Dict[str, Any]] = field(default_factory=list)
 
@@ -178,11 +255,17 @@ class BayesianLookbackOptimizer:
         # Initialize performance tracking
         self._initialize_performance_tracking()
         
+        # Initialize advanced feature selection tools
+        self._initialize_advanced_feature_selection()
+        
         self.logger.info("🔧 BayesianLookbackOptimizer initialized")
         self.logger.info(f"📊 Optimization method: {self.config.optimization_method}")
         self.logger.info(f"📊 Sampler type: {self.config.sampler_type}")
         self.logger.info(f"📊 Pruner type: {self.config.pruner_type}")
         self.logger.info(f"📊 Lookback range: {self.config.min_lookback}-{self.config.max_lookback}")
+        self.logger.info(f"📊 Relevance method: {self.config.relevance_method}")
+        self.logger.info(f"📊 Redundancy method: {self.config.redundancy_method}")
+        self.logger.info(f"📊 Advanced feature selection available: {ADVANCED_FEATURE_SELECTION_AVAILABLE}")
     
     def _initialize_optuna(self):
         """Initialize Optuna study with TPE sampler and intelligent pruning."""
@@ -238,6 +321,50 @@ class BayesianLookbackOptimizer:
         
         self.convergence_history = []
         self.parameter_importance = {}
+    
+    def _initialize_advanced_feature_selection(self):
+        """Initialize advanced feature selection tools."""
+        self.advanced_selectors = {}
+        
+        if not ADVANCED_FEATURE_SELECTION_AVAILABLE:
+            self.logger.warning("Advanced feature selection tools not available")
+            return
+        
+        try:
+            # Initialize mRMR selector
+            if self.config.relevance_method == "mrmr" or self.config.redundancy_method == "mrmr":
+                self.advanced_selectors['mrmr'] = MRMRSelector(self.config.mrmr_config)
+                self.logger.info("✅ mRMR selector initialized")
+            
+            # Initialize Elastic Net stability selector
+            if self.config.relevance_method == "elastic_net" or self.config.redundancy_method == "elastic_net":
+                self.advanced_selectors['elastic_net'] = ElasticNetStabilitySelector(self.config.elastic_net_config)
+                self.logger.info("✅ Elastic Net stability selector initialized")
+            
+            # Initialize PID analyzer
+            if self.config.relevance_method == "pid" or self.config.redundancy_method == "pid":
+                pid_config = PIDConfig(**self.config.pid_config)
+                self.advanced_selectors['pid'] = PartialInformationDecomposition(pid_config)
+                self.logger.info("✅ PID analyzer initialized")
+            
+            # Initialize feature importance ranker
+            if self.config.relevance_method == "feature_importance":
+                self.advanced_selectors['feature_importance'] = FeatureImportanceRanker()
+                self.logger.info("✅ Feature importance ranker initialized")
+            
+            # Initialize quality metrics calculator
+            if self.config.quality_assessment:
+                self.advanced_selectors['quality_metrics'] = QualityMetricsCalculator(self.config.quality_metrics_config)
+                self.logger.info("✅ Quality metrics calculator initialized")
+            
+            # Initialize correlation-based filter
+            if self.config.redundancy_method == "correlation":
+                self.advanced_selectors['correlation_filter'] = CorrelationBasedFilter()
+                self.logger.info("✅ Correlation-based filter initialized")
+            
+        except Exception as e:
+            self.logger.warning(f"Failed to initialize some advanced feature selection tools: {e}")
+            # Continue with available tools
     
     def optimize_lookback_periods(self, 
                                  data: pd.DataFrame,
@@ -304,10 +431,10 @@ class BayesianLookbackOptimizer:
                            target_column: str,
                            parameter_type: str) -> Tuple[float, float]:
         """
-        Objective function for lookback period optimization.
+        Enhanced objective function for lookback period optimization using advanced feature selection.
         
         Returns:
-            Tuple of (mutual_information_score, correlation_penalty)
+            Tuple of (combined_score, penalty_score)
         """
         # Suggest first lookback period
         first_lookback = trial.suggest_int(
@@ -315,11 +442,6 @@ class BayesianLookbackOptimizer:
             self.config.min_lookback,
             self.config.max_lookback,
             step=self.config.lookback_step
-        )
-        
-        # Calculate mutual information for first lookback period
-        first_mi_score = self._calculate_mutual_information(
-            data, feature_name, target_column, first_lookback, parameter_type
         )
         
         # Suggest second lookback period (optional)
@@ -339,39 +461,49 @@ class BayesianLookbackOptimizer:
                 step=self.config.lookback_step
             )
         
-        # Calculate mutual information for second lookback period
-        second_mi_score = self._calculate_mutual_information(
+        # Calculate advanced relevance scores for both periods
+        first_relevance_score = self._calculate_advanced_relevance_score(
+            data, feature_name, target_column, first_lookback, parameter_type
+        )
+        second_relevance_score = self._calculate_advanced_relevance_score(
             data, feature_name, target_column, second_lookback, parameter_type
         )
         
-        # Calculate correlation between the two lookback periods
-        correlation = self._calculate_correlation_between_periods(
+        # Calculate advanced redundancy/correlation analysis
+        redundancy_penalty = self._calculate_advanced_redundancy_penalty(
             data, feature_name, first_lookback, second_lookback, parameter_type
         )
         
-        # Check constraints
-        if correlation > self.config.max_correlation_threshold:
-            # High correlation - penalize heavily
-            correlation_penalty = correlation * 10
-        elif second_mi_score < self.config.min_mutual_info_threshold:
-            # Low mutual information - penalize
-            correlation_penalty = (self.config.min_mutual_info_threshold - second_mi_score) * 5
-        else:
-            # Good combination - reward
-            correlation_penalty = correlation
+        # Calculate quality metrics if enabled
+        quality_score = 0.0
+        if self.config.quality_assessment and 'quality_metrics' in self.advanced_selectors:
+            quality_score = self._calculate_quality_score(
+                data, feature_name, target_column, first_lookback, second_lookback, parameter_type
+            )
         
-        # Combined score (maximize MI, minimize correlation)
-        combined_mi_score = (first_mi_score + second_mi_score) / 2
+        # Calculate combined score with weights
+        combined_score = (
+            self.config.mi_weight * (first_relevance_score + second_relevance_score) / 2 +
+            self.config.quality_weight * quality_score
+        )
+        
+        # Calculate penalty score
+        penalty_score = (
+            self.config.correlation_weight * redundancy_penalty +
+            (1.0 - self.config.correlation_weight) * max(0, self.config.min_mutual_info_threshold - second_relevance_score)
+        )
         
         # Set user attributes for analysis
         trial.set_user_attr("first_lookback", first_lookback)
         trial.set_user_attr("second_lookback", second_lookback)
-        trial.set_user_attr("first_mi_score", first_mi_score)
-        trial.set_user_attr("second_mi_score", second_mi_score)
-        trial.set_user_attr("correlation", correlation)
-        trial.set_user_attr("combined_mi_score", combined_mi_score)
+        trial.set_user_attr("first_relevance_score", first_relevance_score)
+        trial.set_user_attr("second_relevance_score", second_relevance_score)
+        trial.set_user_attr("redundancy_penalty", redundancy_penalty)
+        trial.set_user_attr("quality_score", quality_score)
+        trial.set_user_attr("combined_score", combined_score)
+        trial.set_user_attr("penalty_score", penalty_score)
         
-        return combined_mi_score, correlation_penalty
+        return combined_score, penalty_score
     
     def _calculate_mutual_information(self, 
                                     data: pd.DataFrame,
@@ -427,6 +559,284 @@ class BayesianLookbackOptimizer:
             
         except Exception as e:
             self.logger.warning(f"Failed to calculate MI for lookback {lookback_period}: {e}")
+            return 0.0
+    
+    def _calculate_advanced_relevance_score(self, 
+                                          data: pd.DataFrame,
+                                          feature_name: str,
+                                          target_column: str,
+                                          lookback_period: int,
+                                          parameter_type: str) -> float:
+        """Calculate advanced relevance score using the configured method."""
+        try:
+            # Generate feature with lookback period
+            feature_values = self._generate_feature_with_lookback(
+                data, feature_name, lookback_period, parameter_type
+            )
+            
+            # Get target values
+            target_values = data[target_column].values
+            
+            # Ensure same length and remove NaN values
+            min_length = min(len(feature_values), len(target_values))
+            feature_values = feature_values[:min_length]
+            target_values = target_values[:min_length]
+            
+            mask = ~(np.isnan(feature_values) | np.isnan(target_values))
+            feature_values = feature_values[mask]
+            target_values = target_values[mask]
+            
+            if len(feature_values) < 10:
+                return 0.0
+            
+            # Use configured relevance method
+            if self.config.relevance_method == "mrmr" and 'mrmr' in self.advanced_selectors:
+                return self._calculate_mrmr_relevance_score(feature_values, target_values)
+            elif self.config.relevance_method == "elastic_net" and 'elastic_net' in self.advanced_selectors:
+                return self._calculate_elastic_net_relevance_score(feature_values, target_values)
+            elif self.config.relevance_method == "pid" and 'pid' in self.advanced_selectors:
+                return self._calculate_pid_relevance_score(feature_values, target_values)
+            elif self.config.relevance_method == "feature_importance" and 'feature_importance' in self.advanced_selectors:
+                return self._calculate_importance_relevance_score(feature_values, target_values)
+            else:
+                # Fallback to basic mutual information
+                return self._calculate_mutual_information(
+                    data, feature_name, target_column, lookback_period, parameter_type
+                )
+                
+        except Exception as e:
+            self.logger.warning(f"Failed to calculate advanced relevance score: {e}")
+            return 0.0
+    
+    def _calculate_advanced_redundancy_penalty(self, 
+                                             data: pd.DataFrame,
+                                             feature_name: str,
+                                             first_lookback: int,
+                                             second_lookback: int,
+                                             parameter_type: str) -> float:
+        """Calculate advanced redundancy penalty using the configured method."""
+        try:
+            # Generate features for both lookback periods
+            first_feature = self._generate_feature_with_lookback(
+                data, feature_name, first_lookback, parameter_type
+            )
+            second_feature = self._generate_feature_with_lookback(
+                data, feature_name, second_lookback, parameter_type
+            )
+            
+            # Ensure same length and remove NaN values
+            min_length = min(len(first_feature), len(second_feature))
+            first_feature = first_feature[:min_length]
+            second_feature = second_feature[:min_length]
+            
+            mask = ~(np.isnan(first_feature) | np.isnan(second_feature))
+            first_feature = first_feature[mask]
+            second_feature = second_feature[mask]
+            
+            if len(first_feature) < 10:
+                return 1.0  # High penalty for insufficient data
+            
+            # Use configured redundancy method
+            if self.config.redundancy_method == "elastic_net" and 'elastic_net' in self.advanced_selectors:
+                return self._calculate_elastic_net_redundancy_penalty(first_feature, second_feature)
+            elif self.config.redundancy_method == "mrmr" and 'mrmr' in self.advanced_selectors:
+                return self._calculate_mrmr_redundancy_penalty(first_feature, second_feature)
+            elif self.config.redundancy_method == "pid" and 'pid' in self.advanced_selectors:
+                return self._calculate_pid_redundancy_penalty(first_feature, second_feature)
+            else:
+                # Fallback to basic correlation
+                return self._calculate_correlation_between_periods(
+                    data, feature_name, first_lookback, second_lookback, parameter_type
+                )
+                
+        except Exception as e:
+            self.logger.warning(f"Failed to calculate advanced redundancy penalty: {e}")
+            return 1.0  # High penalty for errors
+    
+    def _calculate_quality_score(self, 
+                               data: pd.DataFrame,
+                               feature_name: str,
+                               target_column: str,
+                               first_lookback: int,
+                               second_lookback: int,
+                               parameter_type: str) -> float:
+        """Calculate quality score using comprehensive quality metrics."""
+        try:
+            if 'quality_metrics' not in self.advanced_selectors:
+                return 0.0
+            
+            # Generate features for both lookback periods
+            first_feature = self._generate_feature_with_lookback(
+                data, feature_name, first_lookback, parameter_type
+            )
+            second_feature = self._generate_feature_with_lookback(
+                data, feature_name, second_lookback, parameter_type
+            )
+            
+            # Get target values
+            target_values = data[target_column].values
+            
+            # Ensure same length and remove NaN values
+            min_length = min(len(first_feature), len(second_feature), len(target_values))
+            first_feature = first_feature[:min_length]
+            second_feature = second_feature[:min_length]
+            target_values = target_values[:min_length]
+            
+            mask = ~(np.isnan(first_feature) | np.isnan(second_feature) | np.isnan(target_values))
+            first_feature = first_feature[mask]
+            second_feature = second_feature[mask]
+            target_values = target_values[mask]
+            
+            if len(first_feature) < 10:
+                return 0.0
+            
+            # Create feature matrix with both lookback periods
+            X = np.column_stack([first_feature, second_feature])
+            feature_names = [f"{feature_name}_lookback_{first_lookback}", f"{feature_name}_lookback_{second_lookback}"]
+            
+            # Calculate quality metrics
+            quality_result = self.advanced_selectors['quality_metrics'].calculate_comprehensive_quality_metrics(
+                X, target_values, feature_names, feature_names
+            )
+            
+            return quality_result.get('overall_quality_score', 0.0)
+            
+        except Exception as e:
+            self.logger.warning(f"Failed to calculate quality score: {e}")
+            return 0.0
+    
+    def _calculate_mrmr_relevance_score(self, feature_values: np.ndarray, target_values: np.ndarray) -> float:
+        """Calculate mRMR relevance score."""
+        try:
+            # Create feature matrix
+            X = feature_values.reshape(-1, 1)
+            feature_names = ['feature']
+            
+            # Use mRMR selector to get relevance score
+            result = self.advanced_selectors['mrmr'].select_features(X, target_values, feature_names, 1)
+            
+            if result['success'] and result['scores']:
+                return list(result['scores'].values())[0]
+            else:
+                return 0.0
+                
+        except Exception as e:
+            self.logger.warning(f"Failed to calculate mRMR relevance score: {e}")
+            return 0.0
+    
+    def _calculate_elastic_net_relevance_score(self, feature_values: np.ndarray, target_values: np.ndarray) -> float:
+        """Calculate Elastic Net relevance score."""
+        try:
+            # Create feature matrix
+            X = feature_values.reshape(-1, 1)
+            feature_names = ['feature']
+            
+            # Use Elastic Net selector to get stability score
+            result = self.advanced_selectors['elastic_net'].select_features(X, target_values, feature_names)
+            
+            if result['success'] and result['stability_scores']:
+                return list(result['stability_scores'].values())[0]
+            else:
+                return 0.0
+                
+        except Exception as e:
+            self.logger.warning(f"Failed to calculate Elastic Net relevance score: {e}")
+            return 0.0
+    
+    def _calculate_pid_relevance_score(self, feature_values: np.ndarray, target_values: np.ndarray) -> float:
+        """Calculate PID relevance score."""
+        try:
+            # Use PID analyzer to get information decomposition
+            # This is a simplified version - full PID analysis would be more complex
+            result = self.advanced_selectors['pid'].analyze_information_decomposition(
+                feature_values, target_values
+            )
+            
+            if result and 'total_information' in result:
+                return result['total_information']
+            else:
+                return 0.0
+                
+        except Exception as e:
+            self.logger.warning(f"Failed to calculate PID relevance score: {e}")
+            return 0.0
+    
+    def _calculate_importance_relevance_score(self, feature_values: np.ndarray, target_values: np.ndarray) -> float:
+        """Calculate feature importance relevance score."""
+        try:
+            # Create feature matrix
+            X = feature_values.reshape(-1, 1)
+            feature_names = ['feature']
+            
+            # Use feature importance ranker
+            result = self.advanced_selectors['feature_importance'].select_features(X, target_values, feature_names, 1)
+            
+            if result['success'] and result['importance_scores']:
+                return list(result['importance_scores'].values())[0]
+            else:
+                return 0.0
+                
+        except Exception as e:
+            self.logger.warning(f"Failed to calculate importance relevance score: {e}")
+            return 0.0
+    
+    def _calculate_elastic_net_redundancy_penalty(self, first_feature: np.ndarray, second_feature: np.ndarray) -> float:
+        """Calculate Elastic Net redundancy penalty."""
+        try:
+            # Create feature matrix with both features
+            X = np.column_stack([first_feature, second_feature])
+            feature_names = ['feature1', 'feature2']
+            
+            # Use Elastic Net selector to analyze redundancy
+            result = self.advanced_selectors['elastic_net'].select_features(X, first_feature, feature_names)
+            
+            if result['success'] and result['all_stability_scores']:
+                # Higher stability scores indicate more redundancy
+                scores = list(result['all_stability_scores'].values())
+                return np.mean(scores) if scores else 0.0
+            else:
+                return 0.0
+                
+        except Exception as e:
+            self.logger.warning(f"Failed to calculate Elastic Net redundancy penalty: {e}")
+            return 0.0
+    
+    def _calculate_mrmr_redundancy_penalty(self, first_feature: np.ndarray, second_feature: np.ndarray) -> float:
+        """Calculate mRMR redundancy penalty."""
+        try:
+            # Create feature matrix with both features
+            X = np.column_stack([first_feature, second_feature])
+            feature_names = ['feature1', 'feature2']
+            
+            # Use mRMR selector to analyze redundancy
+            result = self.advanced_selectors['mrmr'].select_features(X, first_feature, feature_names, 2)
+            
+            if result['success'] and result['scores']:
+                # Calculate redundancy as inverse of mRMR scores
+                scores = list(result['scores'].values())
+                return 1.0 - np.mean(scores) if scores else 0.0
+            else:
+                return 0.0
+                
+        except Exception as e:
+            self.logger.warning(f"Failed to calculate mRMR redundancy penalty: {e}")
+            return 0.0
+    
+    def _calculate_pid_redundancy_penalty(self, first_feature: np.ndarray, second_feature: np.ndarray) -> float:
+        """Calculate PID redundancy penalty."""
+        try:
+            # Use PID analyzer to get redundancy information
+            result = self.advanced_selectors['pid'].analyze_information_decomposition(
+                first_feature, second_feature
+            )
+            
+            if result and 'redundant_information' in result:
+                return result['redundant_information']
+            else:
+                return 0.0
+                
+        except Exception as e:
+            self.logger.warning(f"Failed to calculate PID redundancy penalty: {e}")
             return 0.0
     
     def _calculate_correlation_between_periods(self,

@@ -1,11 +1,19 @@
 """
-Tactician Ensemble Training Step
+Tactician Ensemble Training Step - Enhanced & Streamlined
 
 This step handles all-regime ensemble training of Tactician models using common dependencies.
 The Tactician Ensemble operates on 1m timeframe and combines individual tactician models
 with all previous model inputs (HMM, Analyst) to create the final meta-learner for timing decisions.
 
-Enhanced with vectorized training capabilities for improved performance.
+ENHANCED FEATURES:
+- Comprehensive error handling with detailed failure reporting
+- Enhanced progress tracking and sub-step reporting
+- Input validation and data quality checks
+- Optimized vectorization with intelligent fallback
+- Structured logging with performance metrics
+- Health monitoring throughout training process
+- Integration with common utilities and hardware optimizers
+- Extensive logging with tprint at every step
 """
 
 import numpy as np
@@ -16,9 +24,104 @@ import time
 import traceback
 from dataclasses import dataclass
 
-from src.utils.logger import system_logger
-from src.utils.ml_common.config.base_training_config import EnsembleTrainingConfig
-from src.utils.ml_common.training.ensemble_training_step import EnsembleTrainingStep
+# Enhanced imports with comprehensive error handling
+try:
+    from src.utils.logger import system_logger
+    from src.utils.ml_common.config.base_training_config import EnsembleTrainingConfig
+    from src.utils.ml_common.training.ensemble_training_step import EnsembleTrainingStep
+except ImportError as e:
+    print(f"❌ CRITICAL: Failed to import core ML utilities: {e}")
+    raise
+
+# Import enhanced logging and utilities
+try:
+    from src.utils.tprint import (
+        tprint, tprint_info, tprint_warning, tprint_error, tprint_success,
+        tprint_debug, tprint_progress, tprint_performance, tprint_structured,
+        tprint_timer, LogLevel
+    )
+    TPRINT_AVAILABLE = True
+except ImportError as e:
+    print(f"⚠️ WARNING: tprint not available, using standard logging: {e}")
+    TPRINT_AVAILABLE = False
+    # Fallback functions
+    def tprint(*args, **kwargs): print(*args, **kwargs)
+    def tprint_info(*args, **kwargs): print("INFO:", *args, **kwargs)
+    def tprint_warning(*args, **kwargs): print("WARNING:", *args, **kwargs)
+    def tprint_error(*args, **kwargs): print("ERROR:", *args, **kwargs)
+    def tprint_success(*args, **kwargs): print("SUCCESS:", *args, **kwargs)
+    def tprint_debug(*args, **kwargs): print("DEBUG:", *args, **kwargs)
+    def tprint_progress(step, total, message="", **kwargs): print(f"PROGRESS {step}/{total}: {message}")
+    def tprint_performance(op, duration, **kwargs): print(f"PERFORMANCE: {op} took {duration:.3f}s")
+    def tprint_structured(data, level=None, **kwargs): print("STRUCTURED:", data)
+    def tprint_timer(operation, level=None):
+        class Timer:
+            def __init__(self, op):
+                self.op = op
+                self.start = time.time()
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                duration = time.time() - self.start
+                tprint_performance(self.op, duration)
+        return Timer(operation)
+
+# Import common utilities with error handling
+try:
+    from src.utils.common_operations import (
+        get_m1_gpu_manager, get_m1_memory_optimizer, get_m1_cpu_optimizer,
+        cleanup_m1_optimizers, integrate_with_m1_optimizers
+    )
+    COMMON_OPERATIONS_AVAILABLE = True
+except ImportError as e:
+    tprint_warning(f"Common operations not available: {e}")
+    COMMON_OPERATIONS_AVAILABLE = False
+
+try:
+    from src.utils.common_utilities import (
+        safe_dataframe_operation, validate_dataframe_columns, calculate_data_quality_metrics,
+        safe_merge_dataframes, create_summary_statistics
+    )
+    COMMON_UTILITIES_AVAILABLE = True
+except ImportError as e:
+    tprint_warning(f"Common utilities not available: {e}")
+    COMMON_UTILITIES_AVAILABLE = False
+
+try:
+    from src.utils.math_validation import (
+        safe_divide, validate_finite, validate_positive, validate_range,
+        safe_correlation, safe_percentage_change
+    )
+    MATH_VALIDATION_AVAILABLE = True
+except ImportError as e:
+    tprint_warning(f"Math validation not available: {e}")
+    MATH_VALIDATION_AVAILABLE = False
+
+try:
+    from src.utils.kline_parquet import validate_klines_data, process_klines_data
+    from src.utils.serialization_utils import safe_serialize, safe_deserialize
+    DATA_UTILITIES_AVAILABLE = True
+except ImportError as e:
+    tprint_warning(f"Data utilities not available: {e}")
+    DATA_UTILITIES_AVAILABLE = False
+
+try:
+    from src.utils.matrix_operations import (
+        safe_matrix_operations, validate_matrix_properties, optimize_matrix_computations
+    )
+    MATRIX_OPERATIONS_AVAILABLE = True
+except ImportError as e:
+    tprint_warning(f"Matrix operations not available: {e}")
+    MATRIX_OPERATIONS_AVAILABLE = False
+
+try:
+    from src.utils.ml_common import (
+        cross_validation_utils, lookahead_bias_detector, hyperparameter_optimization
+    )
+    ML_COMMON_AVAILABLE = True
+except ImportError as e:
+    tprint_warning(f"ML common utilities not available: {e}")
+    ML_COMMON_AVAILABLE = False
 
 # Import vectorized training manager
 try:
@@ -70,70 +173,273 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
     
     def __init__(self, config: Optional[EnsembleTrainingConfig] = None, enable_vectorization: bool = True):
         """
-        Initialize Tactician ensemble training step with vectorization support.
+        Initialize enhanced Tactician ensemble training step with comprehensive error handling and utility integration.
 
         Args:
             config: Per-regime training configuration
             enable_vectorization: Whether to enable vectorized training
         """
+        # Initialize comprehensive tracking
+        self.initialization_errors = []
+        self.utility_integration_status = {}
+        
+        # Log initialization start
+        tprint_info("🚀 Starting Enhanced Tactician Ensemble Training Step initialization")
+        
         try:
-            # Set default configuration for tactician ensemble models
+            # Set default configuration for tactician ensemble models with enhanced settings
             if config is None:
-                config = EnsembleTrainingConfig(
-                    model_name="tactician_ensemble_models",
-                    timeframe="1m",
-                    model_types=["node", "catboost", "lightgbm", "elastic_net"],
-                    hpo_n_trials=100,
-                    hpo_timeout_seconds=3600,
-                    min_samples_per_regime=1000,
-                    enable_data_augmentation=True,
-                    augmentation_method="smote",
-                    model_save_path="./models/tactician_ensemble_models",
-                    evaluation_metrics=["mse", "mae", "r2", "mape", "smape"]
-                )
+                try:
+                    config = EnsembleTrainingConfig(
+                        model_name="tactician_ensemble_models",
+                        timeframe="1m",
+                        model_types=["node", "catboost", "lightgbm", "elastic_net"],
+                        hpo_n_trials=100,
+                        hpo_timeout_seconds=3600,
+                        min_samples_per_regime=1000,
+                        enable_data_augmentation=True,
+                        augmentation_method="smote",
+                        model_save_path="./models/tactician_ensemble_models",
+                        evaluation_metrics=["mse", "mae", "r2", "mape", "smape"]
+                    )
+                    tprint_success("✅ Default ensemble configuration created successfully")
+                except Exception as e:
+                    error_msg = f"Failed to create default ensemble configuration: {e}"
+                    tprint_error(f"❌ {error_msg}")
+                    self.initialization_errors.append(error_msg)
+                    raise RuntimeError(error_msg) from e
 
-            # Validate configuration
+            # Validate configuration with comprehensive checks
+            tprint_info("🔍 Validating ensemble configuration...")
             self._validate_config(config)
+            tprint_success("✅ Ensemble configuration validation passed")
             
+            # Initialize parent class with comprehensive error handling
+            tprint_info("🔄 Initializing parent EnsembleTrainingStep...")
             super().__init__(config, enable_vectorization=enable_vectorization and VECTORIZED_TRAINING_AVAILABLE)
             self.logger = logger.getChild('TacticianEnsembleTrainingStep')
+            tprint_success("✅ Parent class initialized successfully")
             
             # Initialize progress tracking
             self.progress_tracker: List[TrainingProgress] = []
             self.current_step: Optional[TrainingProgress] = None
-
+            
+            # Initialize hardware optimizers with error handling
+            tprint_info("🧠 Initializing hardware optimizers...")
+            self._initialize_hardware_optimizers()
+            
+            # Initialize utility integrations
+            tprint_info("🔧 Initializing utility integrations...")
+            self._initialize_utility_integrations()
+            
+            # Log initialization success with comprehensive status
             if self.enable_vectorization:
-                self.logger.info("🚀 Tactician Ensemble Training Step initialized with vectorization")
+                tprint_success("🚀 Enhanced Tactician Ensemble Training Step initialized with vectorization")
             else:
-                self.logger.info("✅ Tactician Ensemble Training Step initialized (standard mode)")
+                tprint_success("✅ Enhanced Tactician Ensemble Training Step initialized (standard mode)")
+            
+            # Log utility integration status
+            self._log_utility_integration_status()
                 
         except Exception as e:
             error_msg = f"Failed to initialize TacticianEnsembleTrainingStep: {str(e)}"
-            logger.error(error_msg)
-            logger.error(f"Traceback: {traceback.format_exc()}")
+            tprint_error(f"❌ {error_msg}")
+            tprint_error(f"❌ Traceback: {traceback.format_exc()}")
+            
+            # Log utility integration status even on failure
+            if hasattr(self, 'utility_integration_status'):
+                self._log_utility_integration_status()
+            
             raise RuntimeError(error_msg) from e
     
+    def _initialize_hardware_optimizers(self) -> None:
+        """Initialize hardware optimizers with comprehensive error handling."""
+        try:
+            if not COMMON_OPERATIONS_AVAILABLE:
+                tprint_warning("⚠️ Common operations not available, skipping hardware optimizer initialization")
+                self.utility_integration_status['hardware_optimizers'] = 'unavailable'
+                return
+            
+            tprint_info("🧠 Initializing M1 hardware optimizers for ensemble training...")
+            
+            # Initialize M1 GPU manager
+            try:
+                self.m1_gpu_manager = get_m1_gpu_manager()
+                if self.m1_gpu_manager:
+                    tprint_success("✅ M1 GPU manager initialized for ensemble")
+                    self.utility_integration_status['m1_gpu_manager'] = 'available'
+                else:
+                    tprint_warning("⚠️ M1 GPU manager not available for ensemble")
+                    self.utility_integration_status['m1_gpu_manager'] = 'unavailable'
+            except Exception as e:
+                tprint_warning(f"⚠️ Failed to initialize M1 GPU manager for ensemble: {e}")
+                self.utility_integration_status['m1_gpu_manager'] = f'error: {e}'
+            
+            # Initialize M1 memory optimizer
+            try:
+                self.m1_memory_optimizer = get_m1_memory_optimizer()
+                if self.m1_memory_optimizer:
+                    tprint_success("✅ M1 memory optimizer initialized for ensemble")
+                    self.utility_integration_status['m1_memory_optimizer'] = 'available'
+                else:
+                    tprint_warning("⚠️ M1 memory optimizer not available for ensemble")
+                    self.utility_integration_status['m1_memory_optimizer'] = 'unavailable'
+            except Exception as e:
+                tprint_warning(f"⚠️ Failed to initialize M1 memory optimizer for ensemble: {e}")
+                self.utility_integration_status['m1_memory_optimizer'] = f'error: {e}'
+            
+            # Initialize M1 CPU optimizer
+            try:
+                self.m1_cpu_optimizer = get_m1_cpu_optimizer()
+                if self.m1_cpu_optimizer:
+                    tprint_success("✅ M1 CPU optimizer initialized for ensemble")
+                    self.utility_integration_status['m1_cpu_optimizer'] = 'available'
+                else:
+                    tprint_warning("⚠️ M1 CPU optimizer not available for ensemble")
+                    self.utility_integration_status['m1_cpu_optimizer'] = 'unavailable'
+            except Exception as e:
+                tprint_warning(f"⚠️ Failed to initialize M1 CPU optimizer for ensemble: {e}")
+                self.utility_integration_status['m1_cpu_optimizer'] = f'error: {e}'
+            
+            # Integrate with M1 optimizers
+            try:
+                integration_result = integrate_with_m1_optimizers()
+                if integration_result.get('success', False):
+                    tprint_success("✅ M1 optimizers integration successful for ensemble")
+                    self.utility_integration_status['m1_integration'] = 'success'
+                else:
+                    tprint_warning("⚠️ M1 optimizers integration failed for ensemble")
+                    self.utility_integration_status['m1_integration'] = 'failed'
+            except Exception as e:
+                tprint_warning(f"⚠️ Failed to integrate M1 optimizers for ensemble: {e}")
+                self.utility_integration_status['m1_integration'] = f'error: {e}'
+            
+            self.utility_integration_status['hardware_optimizers'] = 'initialized'
+            tprint_success("✅ Hardware optimizers initialization completed for ensemble")
+            
+        except Exception as e:
+            error_msg = f"Hardware optimizer initialization failed for ensemble: {e}"
+            tprint_error(f"❌ {error_msg}")
+            self.utility_integration_status['hardware_optimizers'] = f'error: {e}'
+            self.initialization_errors.append(error_msg)
+    
+    def _initialize_utility_integrations(self) -> None:
+        """Initialize utility integrations with comprehensive error handling."""
+        try:
+            tprint_info("🔧 Initializing utility integrations for ensemble...")
+            
+            # Initialize common utilities
+            if COMMON_UTILITIES_AVAILABLE:
+                tprint_success("✅ Common utilities available for ensemble")
+                self.utility_integration_status['common_utilities'] = 'available'
+            else:
+                tprint_warning("⚠️ Common utilities not available for ensemble")
+                self.utility_integration_status['common_utilities'] = 'unavailable'
+            
+            # Initialize math validation
+            if MATH_VALIDATION_AVAILABLE:
+                tprint_success("✅ Math validation utilities available for ensemble")
+                self.utility_integration_status['math_validation'] = 'available'
+            else:
+                tprint_warning("⚠️ Math validation utilities not available for ensemble")
+                self.utility_integration_status['math_validation'] = 'unavailable'
+            
+            # Initialize data utilities
+            if DATA_UTILITIES_AVAILABLE:
+                tprint_success("✅ Data utilities available for ensemble")
+                self.utility_integration_status['data_utilities'] = 'available'
+            else:
+                tprint_warning("⚠️ Data utilities not available for ensemble")
+                self.utility_integration_status['data_utilities'] = 'unavailable'
+            
+            # Initialize matrix operations
+            if MATRIX_OPERATIONS_AVAILABLE:
+                tprint_success("✅ Matrix operations utilities available for ensemble")
+                self.utility_integration_status['matrix_operations'] = 'available'
+            else:
+                tprint_warning("⚠️ Matrix operations utilities not available for ensemble")
+                self.utility_integration_status['matrix_operations'] = 'unavailable'
+            
+            # Initialize ML common utilities
+            if ML_COMMON_AVAILABLE:
+                tprint_success("✅ ML common utilities available for ensemble")
+                self.utility_integration_status['ml_common'] = 'available'
+            else:
+                tprint_warning("⚠️ ML common utilities not available for ensemble")
+                self.utility_integration_status['ml_common'] = 'unavailable'
+            
+            # Initialize tprint
+            if TPRINT_AVAILABLE:
+                tprint_success("✅ Enhanced tprint logging available for ensemble")
+                self.utility_integration_status['tprint'] = 'available'
+            else:
+                tprint_warning("⚠️ Enhanced tprint logging not available for ensemble")
+                self.utility_integration_status['tprint'] = 'unavailable'
+            
+            tprint_success("✅ Utility integrations initialization completed for ensemble")
+            
+        except Exception as e:
+            error_msg = f"Utility integration initialization failed for ensemble: {e}"
+            tprint_error(f"❌ {error_msg}")
+            self.utility_integration_status['utility_integrations'] = f'error: {e}'
+            self.initialization_errors.append(error_msg)
+    
+    def _log_utility_integration_status(self) -> None:
+        """Log comprehensive utility integration status."""
+        try:
+            tprint_info("📊 Ensemble Utility Integration Status:")
+            
+            for utility, status in self.utility_integration_status.items():
+                if status == 'available':
+                    tprint_success(f"  ✅ {utility}: {status}")
+                elif status == 'unavailable':
+                    tprint_warning(f"  ⚠️ {utility}: {status}")
+                elif status.startswith('error:'):
+                    tprint_error(f"  ❌ {utility}: {status}")
+                else:
+                    tprint_info(f"  ℹ️ {utility}: {status}")
+            
+            # Log initialization errors if any
+            if self.initialization_errors:
+                tprint_error("❌ Ensemble initialization errors encountered:")
+                for error in self.initialization_errors:
+                    tprint_error(f"  - {error}")
+            
+        except Exception as e:
+            tprint_error(f"❌ Failed to log ensemble utility integration status: {e}")
+    
     def _validate_config(self, config: EnsembleTrainingConfig) -> None:
-        """Validate configuration parameters."""
+        """Validate configuration parameters with enhanced error handling."""
         validation_errors = []
         
-        if not config.model_name or not isinstance(config.model_name, str):
-            validation_errors.append("model_name must be a non-empty string")
-        
-        if not config.timeframe or not isinstance(config.timeframe, str):
-            validation_errors.append("timeframe must be a non-empty string")
+        try:
+            tprint_debug("Validating ensemble configuration parameters...")
             
-        if not config.model_types or not isinstance(config.model_types, list) or len(config.model_types) == 0:
-            validation_errors.append("model_types must be a non-empty list")
+            if not config.model_name or not isinstance(config.model_name, str):
+                validation_errors.append("model_name must be a non-empty string")
             
-        if config.hpo_n_trials <= 0:
-            validation_errors.append("hpo_n_trials must be positive")
+            if not config.timeframe or not isinstance(config.timeframe, str):
+                validation_errors.append("timeframe must be a non-empty string")
+                
+            if not config.model_types or not isinstance(config.model_types, list) or len(config.model_types) == 0:
+                validation_errors.append("model_types must be a non-empty list")
+                
+            if config.hpo_n_trials <= 0:
+                validation_errors.append("hpo_n_trials must be positive")
+                
+            if config.min_samples_per_regime <= 0:
+                validation_errors.append("min_samples_per_regime must be positive")
             
-        if config.min_samples_per_regime <= 0:
-            validation_errors.append("min_samples_per_regime must be positive")
+            if validation_errors:
+                error_msg = f"Configuration validation failed: {'; '.join(validation_errors)}"
+                tprint_error(f"❌ {error_msg}")
+                raise ValueError(error_msg)
             
-        if validation_errors:
-            raise ValueError(f"Configuration validation failed: {'; '.join(validation_errors)}")
+            tprint_debug("✅ Ensemble configuration validation passed")
+            
+        except Exception as e:
+            tprint_error(f"❌ Ensemble configuration validation failed: {e}")
+            raise
     
     def _start_step(self, step_name: str) -> TrainingProgress:
         """Start tracking a training step."""
@@ -736,43 +1042,108 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
             self.logger.warning(f"Failed to summarize evaluation results: {e}")
             return {'error': str(e)}
     
+    def cleanup_resources(self) -> None:
+        """Clean up hardware optimizers and other resources for ensemble training."""
+        try:
+            tprint_info("🧹 Cleaning up ensemble training resources...")
+            
+            # Clean up M1 optimizers if available
+            if COMMON_OPERATIONS_AVAILABLE:
+                try:
+                    cleanup_result = cleanup_m1_optimizers()
+                    if cleanup_result:
+                        tprint_success("✅ M1 optimizers cleaned up successfully for ensemble")
+                    else:
+                        tprint_warning("⚠️ M1 optimizer cleanup returned False for ensemble")
+                except Exception as e:
+                    tprint_warning(f"⚠️ Failed to cleanup M1 optimizers for ensemble: {e}")
+            
+            # Clean up any other resources
+            if hasattr(self, 'm1_gpu_manager') and self.m1_gpu_manager:
+                try:
+                    # Add specific cleanup for GPU manager if needed
+                    tprint_debug("Cleaning up M1 GPU manager for ensemble...")
+                except Exception as e:
+                    tprint_warning(f"⚠️ Failed to cleanup M1 GPU manager for ensemble: {e}")
+            
+            if hasattr(self, 'm1_memory_optimizer') and self.m1_memory_optimizer:
+                try:
+                    # Add specific cleanup for memory optimizer if needed
+                    tprint_debug("Cleaning up M1 memory optimizer for ensemble...")
+                except Exception as e:
+                    tprint_warning(f"⚠️ Failed to cleanup M1 memory optimizer for ensemble: {e}")
+            
+            if hasattr(self, 'm1_cpu_optimizer') and self.m1_cpu_optimizer:
+                try:
+                    # Add specific cleanup for CPU optimizer if needed
+                    tprint_debug("Cleaning up M1 CPU optimizer for ensemble...")
+                except Exception as e:
+                    tprint_warning(f"⚠️ Failed to cleanup M1 CPU optimizer for ensemble: {e}")
+            
+            tprint_success("✅ Ensemble resource cleanup completed")
+            
+        except Exception as e:
+            tprint_error(f"❌ Ensemble resource cleanup failed: {e}")
+    
+    def __del__(self):
+        """Destructor to ensure cleanup on object deletion."""
+        try:
+            self.cleanup_resources()
+        except Exception:
+            # Silently handle cleanup errors in destructor
+            pass
+    
     def _log_comprehensive_summary(self, report: Dict[str, Any]) -> None:
-        """Log comprehensive training summary."""
+        """Log comprehensive training summary with enhanced tprint integration."""
         try:
             summary = report['training_summary']
             performance = report['performance_metrics']
             
-            self.logger.info("=" * 80)
-            self.logger.info("🎯 TACTICIAN ENSEMBLE TRAINING SUMMARY")
-            self.logger.info("=" * 80)
-            self.logger.info(f"⏱️  Total Training Time: {summary['total_training_time']:.2f}s")
-            self.logger.info(f"✅ Steps Completed: {summary['steps_completed']}")
-            self.logger.info(f"❌ Steps Failed: {summary['steps_failed']}")
-            self.logger.info(f"🚀 Vectorization: {'Enabled' if summary['vectorization_enabled'] else 'Disabled'}")
-            self.logger.info(f"📊 Total Regimes: {performance['total_regimes']}")
-            self.logger.info(f"✅ Successful Regimes: {performance['successful_regimes']}")
-            self.logger.info(f"❌ Failed Regimes: {performance['failed_regimes']}")
+            tprint_info("=" * 80)
+            tprint_info("🎯 TACTICIAN ENSEMBLE TRAINING SUMMARY")
+            tprint_info("=" * 80)
+            tprint_info(f"⏱️  Total Training Time: {summary['total_training_time']:.2f}s")
+            tprint_info(f"✅ Steps Completed: {summary['steps_completed']}")
+            tprint_info(f"❌ Steps Failed: {summary['steps_failed']}")
+            tprint_info(f"🚀 Vectorization: {'Enabled' if summary['vectorization_enabled'] else 'Disabled'}")
+            tprint_info(f"📊 Total Regimes: {performance['total_regimes']}")
+            tprint_info(f"✅ Successful Regimes: {performance['successful_regimes']}")
+            tprint_info(f"❌ Failed Regimes: {performance['failed_regimes']}")
             
             # Log step breakdown
-            self.logger.info("\n📋 Step Breakdown:")
+            tprint_info("\n📋 Step Breakdown:")
             for step in report['step_breakdown']:
                 status = "✅" if step['success'] else "❌"
-                self.logger.info(f"  {status} {step['step_name']}: {step['duration']:.2f}s")
+                tprint_info(f"  {status} {step['step_name']}: {step['duration']:.2f}s")
                 if not step['success'] and step['error_message']:
-                    self.logger.info(f"    Error: {step['error_message']}")
+                    tprint_error(f"    Error: {step['error_message']}")
             
             # Log evaluation summary if available
             if 'evaluation_summary' in report:
                 eval_summary = report['evaluation_summary']
                 if 'overall_performance' in eval_summary and eval_summary['overall_performance']:
-                    self.logger.info("\n📈 Overall Performance:")
+                    tprint_info("\n📈 Overall Performance:")
                     for metric, stats in eval_summary['overall_performance'].items():
-                        self.logger.info(f"  {metric}: {stats['mean']:.4f} ± {stats['std']:.4f}")
+                        tprint_info(f"  {metric}: {stats['mean']:.4f} ± {stats['std']:.4f}")
             
-            self.logger.info("=" * 80)
+            # Log utility integration status
+            if hasattr(self, 'utility_integration_status'):
+                tprint_info("\n🔧 Utility Integration Status:")
+                for utility, status in self.utility_integration_status.items():
+                    if status == 'available':
+                        tprint_success(f"  ✅ {utility}: {status}")
+                    elif status == 'unavailable':
+                        tprint_warning(f"  ⚠️ {utility}: {status}")
+                    elif status.startswith('error:'):
+                        tprint_error(f"  ❌ {utility}: {status}")
+                    else:
+                        tprint_info(f"  ℹ️ {utility}: {status}")
+            
+            tprint_info("=" * 80)
             
         except Exception as e:
-            self.logger.error(f"Failed to log comprehensive summary: {e}")
+            tprint_error(f"❌ Failed to log comprehensive summary: {e}")
+            tprint_error(f"❌ Traceback: {traceback.format_exc()}")
 
 
 # Convenience functions for backward compatibility

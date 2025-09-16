@@ -2,7 +2,7 @@
 
 ## 🎯 Objective Achieved
 
-Successfully implemented **mRMR (Minimum Redundancy Maximum Relevance) for the second lookback period per feature** in the Bayesian optimization system. This approach provides an optimal balance between:
+Successfully implemented **mRMR (Minimum Redundancy Maximum Relevance) for the second lookback period per feature** in the MRMR optimization system. This approach provides an optimal balance between:
 
 1. **First lookback period**: Uses basic Mutual Information (MI) for simplicity and speed
 2. **Second lookback period**: Uses mRMR to find a complementary period with low redundancy and high relevance
@@ -139,7 +139,7 @@ class LookbackOptimizationResult:
 
 ### **Basic Configuration**
 ```python
-from bayesian_lookback_optimizer import BayesianLookbackOptimizer, LookbackOptimizationConfig
+from mrmr_lookback_optimizer import MRMRLookbackOptimizer, LookbackOptimizationConfig
 
 # Configuration for mRMR second lookback optimization
 config = LookbackOptimizationConfig(
@@ -167,7 +167,7 @@ config = LookbackOptimizationConfig(
 )
 
 # Initialize optimizer
-optimizer = BayesianLookbackOptimizer(config)
+optimizer = MRMRLookbackOptimizer(config)
 
 # Optimize lookback periods
 result = optimizer.optimize_lookback_periods(

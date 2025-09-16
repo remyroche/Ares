@@ -227,17 +227,17 @@ class LookbackOptimizationResult:
     all_trials: List[Dict[str, Any]] = field(default_factory=list)
     convergence_history: List[Dict[str, Any]] = field(default_factory=list)
 
-class BayesianLookbackOptimizer:
+class MRMRLookbackOptimizer:
     """
-    Bayesian Lookback Period Optimizer using TPE and intelligent pruning.
+    MRMR Lookback Period Optimizer using MI + mRMR approach.
     
     Optimizes lookback periods for feature parameters based on:
     1. Mutual Information (MI) maximization for the first lookback period
-    2. Low correlation & high mutual importance for the second lookback period
+    2. mRMR (minimum Redundancy Maximum Relevance) for the second lookback period
     """
     
     def __init__(self, config: Optional[LookbackOptimizationConfig] = None):
-        """Initialize the Bayesian lookback optimizer."""
+        """Initialize the MRMR lookback optimizer."""
         self.config = config or LookbackOptimizationConfig()
         self.logger = logging.getLogger(__name__)
         

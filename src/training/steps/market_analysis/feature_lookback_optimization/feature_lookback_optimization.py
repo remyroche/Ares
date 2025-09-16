@@ -68,14 +68,14 @@ except ImportError as e:
 
 # Import Bayesian lookback optimizer
 try:
-    from .bayesian_lookback_optimizer import (
-        BayesianLookbackOptimizer, LookbackOptimizationConfig, LookbackOptimizationResult,
+    from .mrmr_lookback_optimizer import (
+        MRMRLookbackOptimizer, LookbackOptimizationConfig, LookbackOptimizationResult,
         optimize_lookback_periods
     )
-    BAYESIAN_OPTIMIZER_AVAILABLE = True
+    MRMR_OPTIMIZER_AVAILABLE = True
 except ImportError as e:
-    BAYESIAN_OPTIMIZER_AVAILABLE = False
-    tprint(f"⚠️ Bayesian lookback optimizer not available: {e}")
+    MRMR_OPTIMIZER_AVAILABLE = False
+    tprint(f"⚠️ MRMR lookback optimizer not available: {e}")
 
 # Configuration constants
 class OptimizationConfig:
@@ -174,16 +174,16 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
         
         tprint(f"🔧 Matrix operations available: {MATRIX_OPS_AVAILABLE}")
         tprint(f"🔧 Common operations available: {COMMON_OPERATIONS_AVAILABLE}")
-        tprint(f"🔧 Bayesian optimizer available: {BAYESIAN_OPTIMIZER_AVAILABLE}")
+        tprint(f"🔧 MRMR optimizer available: {MRMR_OPTIMIZER_AVAILABLE}")
         
-        # Initialize Bayesian optimizer if available
-        self.bayesian_optimizer = None
-        if BAYESIAN_OPTIMIZER_AVAILABLE:
+        # Initialize MRMR optimizer if available
+        self.mrmr_optimizer = None
+        if MRMR_OPTIMIZER_AVAILABLE:
             try:
-                self.bayesian_optimizer = BayesianLookbackOptimizer()
-                tprint("✅ Bayesian lookback optimizer initialized")
+                self.mrmr_optimizer = MRMRLookbackOptimizer()
+                tprint("✅ MRMR lookback optimizer initialized")
             except Exception as e:
-                tprint(f"⚠️ Failed to initialize Bayesian optimizer: {e}")
+                tprint(f"⚠️ Failed to initialize MRMR optimizer: {e}")
         
         # Initialize reporter
         self.reporter = OptimizationReporter(
@@ -1111,13 +1111,13 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
         
         return enhanced_metrics
     
-    def optimize_lookback_periods_bayesian(self, 
+    def optimize_lookback_periods_mrmr(self, 
                                          data: pd.DataFrame,
                                          feature_columns: List[str],
                                          target_column: str = 'returns',
                                          optimization_config: Optional[LookbackOptimizationConfig] = None) -> Dict[str, Any]:
         """
-        Optimize lookback periods using Bayesian optimization with TPE and intelligent pruning.
+        Optimize lookback periods using MRMR approach (MI + mRMR).
         
         Args:
             data: Input data with features and target
@@ -1128,7 +1128,7 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
         Returns:
             Dictionary with optimization results for each feature
         """
-        if not BAYESIAN_OPTIMIZER_AVAILABLE or self.bayesian_optimizer is None:
+        if not MRMR_OPTIMIZER_AVAILABLE or self.mrmr_optimizer is None:
             tprint("⚠️ Bayesian optimizer not available - using fallback optimization")
             return self._fallback_lookback_optimization(data, feature_columns, target_column)
         
@@ -1156,7 +1156,7 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
                 
                 try:
                     # Optimize lookback periods for this feature
-                    result = self.bayesian_optimizer.optimize_lookback_periods(
+                    result = self.mrmr_optimizer.optimize_lookback_periods(
                         data=data,
                         feature_name=feature_name,
                         target_column=target_column,
@@ -1292,12 +1292,12 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
         
         return summary
     
-    def get_bayesian_optimization_metrics(self) -> Dict[str, Any]:
-        """Get metrics from Bayesian optimization."""
-        if not BAYESIAN_OPTIMIZER_AVAILABLE or self.bayesian_optimizer is None:
-            return {'error': 'Bayesian optimizer not available'}
+    def get_mrmr_optimization_metrics(self) -> Dict[str, Any]:
+        """Get metrics from MRMR optimization."""
+        if not MRMR_OPTIMIZER_AVAILABLE or self.mrmr_optimizer is None:
+            return {'error': 'MRMR optimizer not available'}
         
         try:
-            return self.bayesian_optimizer.get_optimization_summary()
+            return self.mrmr_optimizer.get_optimization_summary()
         except Exception as e:
             return {'error': str(e)}

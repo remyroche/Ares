@@ -129,18 +129,12 @@ class ModelFactory:
                 'class_weight': 'balanced'
             }
         },
-        'lightgbm': {
-            'class': 'lightgbm.LGBMClassifier',
+        'xgboost': {
+            'class': 'xgboost.XGBClassifier',
             'default_params': {
                 'n_estimators': 100, 'learning_rate': 0.1,
-                'max_depth': 6, 'random_state': 42, 'verbose': -1
-            }
-        },
-        'tcn': {
-            'class': 'sklearn.ensemble.RandomForestClassifier',
-            'default_params': {
-                'n_estimators': 100, 'max_depth': 10,
-                'random_state': 42, 'n_jobs': -1
+                'max_depth': 6, 'random_state': 42, 'verbosity': 0,
+                'objective': 'multi:softprob', 'eval_metric': 'mlogloss'
             }
         }
     }
@@ -225,7 +219,7 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
                 n_features=100,
                 sequence_length=20,
                 n_regimes=3,
-                model_types=["logistic_regression", "lightgbm", "tcn"],
+                model_types=["logistic_regression", "xgboost"],
                 hpo_trials=50,
                 enable_multi_objective=True
             )
@@ -307,23 +301,16 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
                     'class_weight': 'balanced'
                 }
             },
-            'lightgbm': {
-                'class': 'lightgbm.LGBMClassifier',
+            'xgboost': {
+                'class': 'xgboost.XGBClassifier',
                 'params': {
                     'n_estimators': 100,
                     'learning_rate': 0.1,
                     'max_depth': 6,
                     'random_state': 42,
-                    'verbose': -1
-                }
-            },
-            'tcn': {
-                'class': 'sklearn.ensemble.RandomForestClassifier',
-                'params': {
-                    'n_estimators': 100,
-                    'max_depth': 10,
-                    'random_state': 42,
-                    'n_jobs': -1
+                    'verbosity': 0,
+                    'objective': 'multi:softprob',
+                    'eval_metric': 'mlogloss'
                 }
             }
         }
@@ -528,28 +515,17 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
             
             model_config = self.model_registry[model_type]
             
-            # Handle special cases (preserving original logic)
-            if model_type == 'tcn':
-                # Create a simple TCN-like model using available libraries
-                from sklearn.ensemble import RandomForestClassifier
-                return RandomForestClassifier(
-                    n_estimators=100,
-                    max_depth=10,
-                    random_state=42,
-                    n_jobs=-1
-                )
-            
             # Handle sklearn models (preserving original logic)
-            elif model_type == 'logistic_regression':
+            if model_type == 'logistic_regression':
                 from sklearn.linear_model import LogisticRegression
                 params = {**model_config['params'], **kwargs}
                 return LogisticRegression(**params)
             
-            # Handle LightGBM (preserving original logic)
-            elif model_type == 'lightgbm':
-                import lightgbm as lgb
+            # Handle XGBoost (preserving original logic)
+            elif model_type == 'xgboost':
+                import xgboost as xgb
                 params = {**model_config['params'], **kwargs}
-                return lgb.LGBMClassifier(**params)
+                return xgb.XGBClassifier(**params)
             
             else:
                 raise ValueError(f"Model type {model_type} not implemented")
@@ -1000,7 +976,7 @@ if __name__ == "__main__":
         n_features=50,
         sequence_length=20,
         n_regimes=3,
-        model_types=["logistic_regression", "lightgbm"],
+        model_types=["logistic_regression", "xgboost"],
         hpo_trials=25,
         enable_multi_objective=True
     )

@@ -36,6 +36,7 @@ except ImportError as e:
 
 from ..components.base_component import BaseMarketAnalysisComponent, ComponentConfig, ComponentResult
 from src.utils.logger import system_logger
+from src.utils.tprint import tprint
 
 
 class RegimeSplittingStatus(Enum):
@@ -98,19 +99,24 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
         
     def _validate_dependencies(self) -> None:
         """Validate required dependencies and fail fast if missing."""
-        missing_deps = []
-        
-        if not NUMPY_AVAILABLE:
-            missing_deps.append("numpy")
-        if not PANDAS_AVAILABLE:
-            missing_deps.append("pandas")
+        try:
+            missing_deps = []
             
-        if missing_deps:
-            error_msg = f"Critical dependencies missing: {', '.join(missing_deps)}"
-            self.logger.error(f"❌ {error_msg}")
-            raise ImportError(error_msg)
+            if not NUMPY_AVAILABLE:
+                missing_deps.append("numpy")
+            if not PANDAS_AVAILABLE:
+                missing_deps.append("pandas")
+                
+            if missing_deps:
+                error_msg = f"Critical dependencies missing: {', '.join(missing_deps)}"
+                self.logger.error(f"❌ {error_msg}")
+                raise ImportError(error_msg)
+                
+            self.logger.info("✅ All required dependencies available")
             
-        self.logger.info("✅ All required dependencies available")
+        except Exception as e:
+            self.logger.error(f"❌ Critical error in dependency validation: {e}")
+            raise
     
     def get_required_artifacts(self) -> List[str]:
         """Get list of required artifacts this component must produce."""
@@ -133,62 +139,111 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
         """
         self.start_time = datetime.now()
         self.logger.info('✂️ Starting Enhanced Regime Data Splitting')
+        tprint('✂️ Starting Enhanced Regime Data Splitting')
         
         # Initialize report
         report = RegimeSplittingReport(status=RegimeSplittingStatus.IN_PROGRESS)
+        tprint(f'📊 Initialized report with status: {report.status.value}')
+        
+        try:
+            # Fast fail validation for critical inputs with standardized error messages
+            if data is None:
+                error_msg = "CRITICAL_ERROR: Input data is None. Action required: Provide valid market data for regime splitting."
+                self.logger.error(f"❌ {error_msg}")
+                tprint(f"❌ {error_msg}")
+                report.status = RegimeSplittingStatus.FAILED
+                report.errors.append(error_msg)
+                return self._create_failure_result(report, error_msg)
+            
+            if not isinstance(pipeline_state, dict):
+                error_msg = "CRITICAL_ERROR: Pipeline state must be a dictionary. Action required: Ensure pipeline_state is properly initialized as a dict."
+                self.logger.error(f"❌ {error_msg}")
+                tprint(f"❌ {error_msg}")
+                report.status = RegimeSplittingStatus.FAILED
+                report.errors.append(error_msg)
+                return self._create_failure_result(report, error_msg)
+            
+            if not self.config.symbol or not self.config.exchange:
+                error_msg = "CRITICAL_ERROR: Symbol and exchange must be configured. Action required: Set config.symbol and config.exchange before execution."
+                self.logger.error(f"❌ {error_msg}")
+                tprint(f"❌ {error_msg}")
+                report.status = RegimeSplittingStatus.FAILED
+                report.errors.append(error_msg)
+                return self._create_failure_result(report, error_msg)
         
         try:
             # Step 1: Validate inputs
+            tprint('🔍 Step 1: Validating inputs...')
             validation_result = await self._validate_inputs(data, pipeline_state)
             if not validation_result['valid']:
+                tprint(f'❌ Input validation failed: {validation_result["errors"]}')
                 report.status = RegimeSplittingStatus.VALIDATION_FAILED
                 report.errors.extend(validation_result['errors'])
                 return self._create_failure_result(report, "Input validation failed")
+            tprint('✅ Input validation passed')
             
             # Step 2: Load and prepare data
+            tprint('📊 Step 2: Loading and preparing market data...')
             market_data = await self._load_and_prepare_data(data)
             if market_data is None:
+                tprint('❌ Failed to load market data')
                 report.status = RegimeSplittingStatus.FAILED
                 report.errors.append("Failed to load market data")
                 return self._create_failure_result(report, "Data loading failed")
+            tprint(f'✅ Market data loaded: {market_data.shape}')
             
             # Step 3: Get regime discovery results
+            tprint('🔍 Step 3: Retrieving regime discovery results...')
             regime_discovery = await self._get_regime_discovery_results(pipeline_state)
             if not regime_discovery:
+                tprint('❌ No regime discovery results available')
                 report.status = RegimeSplittingStatus.FAILED
                 report.errors.append("No regime discovery results available")
                 return self._create_failure_result(report, "Missing regime discovery results")
+            tprint('✅ Regime discovery results retrieved')
             
             # Step 4: Perform regime data splitting
+            tprint('✂️ Step 4: Performing regime data splitting...')
             splitting_result = await self._perform_regime_splitting(
                 market_data, regime_discovery, report
             )
             
             if not splitting_result['success']:
+                tprint(f'❌ Regime splitting failed: {splitting_result["errors"]}')
                 report.status = RegimeSplittingStatus.FAILED
                 report.errors.extend(splitting_result['errors'])
                 return self._create_failure_result(report, "Regime splitting failed")
+            tprint('✅ Regime data splitting completed')
             
             # Step 5: Validate results
+            tprint('🔍 Step 5: Validating splitting results...')
             validation_result = await self._validate_splitting_results(splitting_result, report)
             if not validation_result['valid']:
+                tprint(f'❌ Result validation failed: {validation_result["errors"]}')
                 report.status = RegimeSplittingStatus.VALIDATION_FAILED
                 report.errors.extend(validation_result['errors'])
                 return self._create_failure_result(report, "Result validation failed")
+            tprint('✅ Result validation passed')
             
             # Step 6: Generate comprehensive report
+            tprint('📊 Step 6: Generating comprehensive report...')
             report = await self._generate_comprehensive_report(
                 splitting_result, market_data, report
             )
+            tprint('✅ Comprehensive report generated')
             
             # Step 7: Create artifacts
+            tprint('💾 Step 7: Creating artifacts...')
             artifacts = await self._create_artifacts(splitting_result, report)
+            tprint('✅ Artifacts created')
             
             # Update metrics
+            tprint('📈 Updating metrics...')
             self._update_metrics(report, splitting_result)
             
             report.status = RegimeSplittingStatus.COMPLETED
             self.logger.info(f'✅ Enhanced Regime Data Splitting completed: {self.metrics.regime_count} regimes processed')
+            tprint(f'✅ Enhanced Regime Data Splitting completed: {self.metrics.regime_count} regimes processed')
             
             return ComponentResult(
                 success=True,
@@ -205,8 +260,10 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
             
         except Exception as e:
             self.logger.error(f'❌ Enhanced Regime Data Splitting failed: {e}')
+            tprint(f'❌ Enhanced Regime Data Splitting failed: {e}')
             import traceback
             self.logger.error(f'❌ Error details: {traceback.format_exc()}')
+            tprint(f'❌ Error details: {traceback.format_exc()}')
             
             report.status = RegimeSplittingStatus.FAILED
             report.errors.append(f"Unexpected error: {str(e)}")
@@ -216,6 +273,7 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
     async def _validate_inputs(self, data: Any, pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
         """Validate input data and pipeline state."""
         self.logger.info("🔍 Validating inputs...")
+        tprint("🔍 Validating inputs...")
         
         validation_result = {
             'valid': True,
@@ -223,54 +281,59 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
             'warnings': []
         }
         
-        # Check data availability
+        # Check data availability with standardized error messages
         if data is None:
             validation_result['valid'] = False
-            validation_result['errors'].append("Input data is None")
+            validation_result['errors'].append("VALIDATION_ERROR: Input data is None. Action required: Provide valid market data.")
         
         # Check pipeline state
         if not isinstance(pipeline_state, dict):
             validation_result['valid'] = False
-            validation_result['errors'].append("Pipeline state must be a dictionary")
+            validation_result['errors'].append("VALIDATION_ERROR: Pipeline state must be a dictionary. Action required: Initialize pipeline_state as dict.")
         
         # Check for required regime discovery results
         required_keys = ['hmm_regime_discovery_result']
         for key in required_keys:
             if key not in pipeline_state:
-                validation_result['warnings'].append(f"Missing pipeline state key: {key}")
+                validation_result['warnings'].append(f"WARNING: Missing pipeline state key '{key}'. Action suggested: Ensure previous steps completed successfully.")
         
         # Check configuration
         if not self.config.symbol:
             validation_result['valid'] = False
-            validation_result['errors'].append("Symbol not configured")
+            validation_result['errors'].append("CONFIG_ERROR: Symbol not configured. Action required: Set config.symbol.")
         
         if not self.config.exchange:
             validation_result['valid'] = False
-            validation_result['errors'].append("Exchange not configured")
+            validation_result['errors'].append("CONFIG_ERROR: Exchange not configured. Action required: Set config.exchange.")
         
         if validation_result['valid']:
             self.logger.info("✅ Input validation passed")
+            tprint("✅ Input validation passed")
         else:
             self.logger.error(f"❌ Input validation failed: {validation_result['errors']}")
+            tprint(f"❌ Input validation failed: {validation_result['errors']}")
         
         return validation_result
     
     async def _load_and_prepare_data(self, data: Any) -> Optional[pd.DataFrame]:
         """Load and prepare market data for regime splitting."""
         self.logger.info("📊 Loading and preparing market data...")
+        tprint("📊 Loading and preparing market data...")
         
         try:
             if data is None:
                 self.logger.error("❌ No data provided")
                 return None
             
-            # Handle different data types
+            # Handle different data types with memory optimization
             if isinstance(data, pd.DataFrame):
-                market_data = data.copy()
+                # Use view instead of copy when possible to save memory
+                market_data = data.copy() if data.is_copy is None else data
             elif isinstance(data, dict) and 'data' in data:
                 market_data = data['data']
             else:
                 self.logger.error(f"❌ Unsupported data type: {type(data)}")
+                tprint(f"❌ Unsupported data type: {type(data)}")
                 return None
             
             # Validate DataFrame structure
@@ -298,14 +361,16 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
             # Validate data quality
             if market_data.isnull().sum().sum() > 0:
                 self.logger.warning("⚠️ Market data contains null values")
-                # Fill null values with forward fill
-                market_data = market_data.fillna(method='ffill')
+                # Fill null values with forward fill (using modern pandas syntax)
+                market_data = market_data.ffill()
             
             self.logger.info(f"✅ Market data loaded: {market_data.shape}")
+            tprint(f"✅ Market data loaded: {market_data.shape}")
             return market_data
             
         except Exception as e:
             self.logger.error(f"❌ Error loading market data: {e}")
+            tprint(f"❌ Error loading market data: {e}")
             return None
     
     async def _get_regime_discovery_results(self, pipeline_state: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -370,8 +435,11 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                     'data': None
                 }
             
-            # Align data lengths
+            # Align data lengths with memory optimization
             min_len = min(len(market_data), len(regime_states))
+            tprint(f"📊 Aligning data lengths: {len(market_data)} -> {min_len}")
+            
+            # Use iloc view instead of copy when possible to save memory
             market_data_aligned = market_data.iloc[:min_len].copy()
             regime_states_aligned = regime_states[:min_len]
             
@@ -379,6 +447,11 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                 regime_probabilities_aligned = regime_probabilities[:min_len]
             else:
                 regime_probabilities_aligned = None
+            
+            # Clean up original data references to free memory
+            del market_data
+            import gc
+            gc.collect()
             
             # Add regime information to market data
             market_data_aligned['regime_state'] = regime_states_aligned
@@ -484,8 +557,9 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                 regime_details[regime_id] = {
                     'count': len(regime_data),
                     'percentage': len(regime_data) / len(market_data) * 100,
-                    'mean_volatility': regime_data['close'].std() if 'close' in regime_data.columns else 0,
+                    'volatility_std': regime_data['close'].std() if 'close' in regime_data.columns else 0,
                     'mean_volume': regime_data['volume'].mean() if 'volume' in regime_data.columns else 0,
+                    'mean_price': regime_data['close'].mean() if 'close' in regime_data.columns else 0,
                     'price_range': {
                         'min': regime_data['close'].min() if 'close' in regime_data.columns else 0,
                         'max': regime_data['close'].max() if 'close' in regime_data.columns else 0
@@ -507,6 +581,7 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
     ) -> Dict[str, Any]:
         """Validate the results of regime splitting."""
         self.logger.info("🔍 Validating splitting results...")
+        tprint("🔍 Validating splitting results...")
         
         validation_result = {
             'valid': True,
@@ -555,10 +630,41 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
             if not regime_stats or 'total_regimes' not in regime_stats:
                 validation_result['warnings'].append("Incomplete regime statistics")
             
+            # Additional data consistency checks
+            # Check for regime state consistency
+            if 'regime_state' in market_data.columns:
+                regime_states_in_data = market_data['regime_state'].values
+                if not np.array_equal(regime_states, regime_states_in_data):
+                    validation_result['warnings'].append("Regime states in data don't match extracted regime states")
+            
+            # Check for regime probability consistency
+            if 'regime_probability' in market_data.columns and regime_data['regime_probabilities'] is not None:
+                regime_probs_in_data = market_data['regime_probability'].values
+                if len(regime_probs_in_data) != len(regime_data['regime_probabilities']):
+                    validation_result['warnings'].append("Regime probabilities length mismatch")
+            
+            # Check for data type consistency
+            if not isinstance(regime_states, np.ndarray):
+                validation_result['warnings'].append("Regime states should be numpy array")
+            
+            # Check for reasonable regime values
+            if len(regime_states) > 0:
+                min_regime = np.min(regime_states)
+                max_regime = np.max(regime_states)
+                if min_regime < 0:
+                    validation_result['warnings'].append(f"Negative regime values detected: min={min_regime}")
+                if max_regime > 100:
+                    validation_result['warnings'].append(f"Unusually high regime values detected: max={max_regime}")
+            
             if validation_result['valid']:
                 self.logger.info("✅ Splitting results validation passed")
+                tprint("✅ Splitting results validation passed")
             else:
                 self.logger.error(f"❌ Splitting results validation failed: {validation_result['errors']}")
+                tprint(f"❌ Splitting results validation failed: {validation_result['errors']}")
+            
+            if validation_result['warnings']:
+                tprint(f"⚠️ Validation warnings: {validation_result['warnings']}")
             
             return validation_result
             
@@ -632,9 +738,11 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
             score -= duplicate_ratio * 0.2
             
             # Check for infinite values
-            inf_count = np.isinf(market_data.select_dtypes(include=[np.number])).sum().sum()
-            inf_ratio = inf_count / (len(market_data) * len(market_data.select_dtypes(include=[np.number]).columns))
-            score -= inf_ratio * 0.3
+            numeric_cols = market_data.select_dtypes(include=[np.number]).columns
+            if len(numeric_cols) > 0 and len(market_data) > 0:
+                inf_count = np.isinf(market_data[numeric_cols]).sum().sum()
+                inf_ratio = inf_count / (len(market_data) * len(numeric_cols))
+                score -= inf_ratio * 0.3
             
             # Check for zero/negative prices
             if 'close' in market_data.columns:

@@ -33,6 +33,12 @@ from .enhanced_reporting import (
     generate_hmm_training_report
 )
 
+from .hmm_ensemble_training import (
+    HMMEnsembleTrainingComponent,
+    create_hmm_ensemble_training_component,
+    execute_hmm_ensemble_training
+)
+
 __all__ = [
     # Main training class
     'HMMModelsTrainingEnhanced',
@@ -60,5 +66,10 @@ __all__ = [
     
     # Reporting
     'HMMTrainingReporter',
-    'generate_hmm_training_report'
+    'generate_hmm_training_report',
+    
+    # HMM Ensemble Training
+    'HMMEnsembleTrainingComponent',
+    'create_hmm_ensemble_training_component',
+    'execute_hmm_ensemble_training'
 ]

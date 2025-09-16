@@ -1,7 +1,7 @@
 """
-HMM Ensemble Training Step
+HMM Ensemble Training Component
 
-This step handles per-regime ensemble training of HMM models using common dependencies.
+This component handles per-regime ensemble training of HMM models using common dependencies.
 The HMM Ensemble operates on 1h timeframe and combines individual HMM models
 to create robust ensemble predictions for market regime detection.
 
@@ -30,9 +30,9 @@ except ImportError:
 logger = system_logger.getChild('HMMEnsembleTraining')
 
 
-class HMMEnsembleTrainingStep(EnsembleTrainingStep):
+class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
     """
-    HMM Ensemble Training Step with per-regime ensemble training, HPO, saving, and metrics.
+    HMM Ensemble Training Component with per-regime ensemble training, HPO, saving, and metrics.
     
     The HMM Ensemble operates on 1h timeframe and combines individual HMM models
     to create robust ensemble predictions for market regime detection.
@@ -40,13 +40,13 @@ class HMMEnsembleTrainingStep(EnsembleTrainingStep):
     
     def __init__(self, config: Optional[EnsembleTrainingConfig] = None, enable_vectorization: bool = True):
         """
-        Initialize HMM ensemble training step with vectorization support.
+        Initialize HMM ensemble training component with vectorization support.
 
         Args:
             config: Per-regime training configuration
             enable_vectorization: Whether to enable vectorized training
         """
-        self.logger = logger.getChild('HMMEnsembleTrainingStep')
+        self.logger = logger.getChild('HMMEnsembleTrainingComponent')
         self.start_time = time.time()
         
         try:
@@ -83,16 +83,16 @@ class HMMEnsembleTrainingStep(EnsembleTrainingStep):
             
             # Log initialization success
             if self.enable_vectorization:
-                self.logger.info("🚀 HMM Ensemble Training Step initialized with vectorization")
+                self.logger.info("🚀 HMM Ensemble Training Component initialized with vectorization")
             else:
-                self.logger.info("✅ HMM Ensemble Training Step initialized (standard mode)")
+                self.logger.info("✅ HMM Ensemble Training Component initialized (standard mode)")
                 
             self.logger.info(f"📊 Configuration: {len(config.model_types)} ensemble types, {config.timeframe} timeframe")
             
         except Exception as e:
-            self.logger.error(f"❌ Failed to initialize HMM Ensemble Training Step: {e}")
+            self.logger.error(f"❌ Failed to initialize HMM Ensemble Training Component: {e}")
             self.logger.error(f"🔍 Traceback: {traceback.format_exc()}")
-            raise RuntimeError(f"HMM Ensemble Training Step initialization failed: {e}") from e
+            raise RuntimeError(f"HMM Ensemble Training Component initialization failed: {e}") from e
     
     def _validate_config(self, config: EnsembleTrainingConfig) -> None:
         """
@@ -200,7 +200,7 @@ class HMMEnsembleTrainingStep(EnsembleTrainingStep):
         hmm_training_metrics: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """
-        Execute HMM ensemble training step with comprehensive error handling and progress tracking.
+        Execute HMM ensemble training component with comprehensive error handling and progress tracking.
         
         Args:
             X: Input features (1h timeframe with cross-timeframe features)
@@ -215,7 +215,7 @@ class HMMEnsembleTrainingStep(EnsembleTrainingStep):
             Dictionary containing training results and metadata
         """
         execution_start_time = time.time()
-        self.logger.info("🚀 Starting HMM ensemble training step")
+        self.logger.info("🚀 Starting HMM ensemble training component")
         
         try:
             # Step 1: Validate inputs
@@ -721,11 +721,11 @@ class HMMEnsembleTrainingStep(EnsembleTrainingStep):
 
 
 # Convenience functions for backward compatibility
-def create_hmm_ensemble_training_step(
+def create_hmm_ensemble_training_component(
     config: Optional[EnsembleTrainingConfig] = None
-) -> HMMEnsembleTrainingStep:
-    """Create HMM ensemble training step."""
-    return HMMEnsembleTrainingStep(config)
+) -> HMMEnsembleTrainingComponent:
+    """Create HMM ensemble training component."""
+    return HMMEnsembleTrainingComponent(config)
 
 
 def execute_hmm_ensemble_training(
@@ -738,15 +738,15 @@ def execute_hmm_ensemble_training(
     base_hmm_models: Optional[Dict[str, Any]] = None,
     hmm_training_metrics: Optional[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
-    """Execute HMM ensemble training step."""
-    step = create_hmm_ensemble_training_step(config)
-    return step.execute(X, y, regime_labels, feature_names, hmm_states, base_hmm_models, hmm_training_metrics)
+    """Execute HMM ensemble training component."""
+    component = create_hmm_ensemble_training_component(config)
+    return component.execute(X, y, regime_labels, feature_names, hmm_states, base_hmm_models, hmm_training_metrics)
 
 
 # Example usage and comparison
 if __name__ == "__main__":
-    # Example of how to use the HMM ensemble training version
-    print("HMM Ensemble Training Step")
+    # Example of how to use the HMM ensemble training component
+    print("HMM Ensemble Training Component")
     print("=" * 50)
     
     # Create configuration
@@ -760,19 +760,19 @@ if __name__ == "__main__":
         model_save_path="./models/hmm_ensemble_models_refactored"
     )
     
-    # Create training step
-    training_step = create_hmm_ensemble_training_step(config)
+    # Create training component
+    training_component = create_hmm_ensemble_training_component(config)
     
-    print(f"✅ Created HMM ensemble training step with {len(config.model_types)} ensemble types")
+    print(f"✅ Created HMM ensemble training component with {len(config.model_types)} ensemble types")
     print(f"📊 HPO enabled: {config.enable_hpo}")
     print(f"💾 Save models: {config.save_models}")
     print(f"📁 Save path: {config.model_save_path}")
     print(f"⏰ Base timeframe: {config.timeframe}")
     
     # The actual training would be called with:
-    # results = training_step.execute(X, y, regime_labels, feature_names, hmm_states, base_hmm_models, hmm_training_metrics)
+    # results = training_component.execute(X, y, regime_labels, feature_names, hmm_states, base_hmm_models, hmm_training_metrics)
     
-    print("\n🎯 HMM Ensemble Module Features:")
+    print("\n🎯 HMM Ensemble Component Features:")
     print("- Operates on 1h timeframe with cross-timeframe features")
     print("- Combines individual HMM models into robust ensembles")
     print("- Per-regime ensemble training for regime-specific optimization")

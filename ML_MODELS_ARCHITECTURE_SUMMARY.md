@@ -38,7 +38,7 @@ The HMM models training system now uses a **2-model stack approach**:
 The system now implements a **3-tier ensemble architecture** with each tier operating on different timeframes:
 
 ### **Tier 1: HMM Ensemble Training** (1h timeframe)
-**File**: `/workspace/src/training/steps/model_training/hmm_ensemble_training.py`
+**File**: `/workspace/src/training/steps/market_analysis/hmm_models_training/hmm_ensemble_training.py`
 
 **Purpose**: Market regime detection and classification
 
@@ -181,7 +181,7 @@ The system creates a **hierarchical model architecture** with the following flow
 
 ### **HMM Ensemble Training:**
 ```python
-from src.training.steps.model_training.hmm_ensemble_training import create_hmm_ensemble_training_step
+from src.training.steps.market_analysis.hmm_models_training import create_hmm_ensemble_training_component
 
 config = EnsembleTrainingConfig(
     model_name="hmm_ensemble_models",
@@ -189,8 +189,8 @@ config = EnsembleTrainingConfig(
     model_types=["logistic_regression", "xgboost", "random_forest", "voting_classifier"]
 )
 
-training_step = create_hmm_ensemble_training_step(config)
-results = training_step.execute(X, y, regime_labels, feature_names, hmm_states)
+training_component = create_hmm_ensemble_training_component(config)
+results = training_component.execute(X, y, regime_labels, feature_names, hmm_states)
 ```
 
 ### **Analyst Ensemble Training:**

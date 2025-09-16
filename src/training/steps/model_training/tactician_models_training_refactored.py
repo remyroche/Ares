@@ -46,68 +46,68 @@ except ImportError as e:
     print("❌ This is a critical dependency for enhanced logging. Please install tprint.")
     raise ImportError(f"CRITICAL: tprint is required but not available: {e}") from e
 
-# Import common utilities - NON-CRITICAL: Keep fallback for hardware optimizers
+# Import common utilities - CRITICAL: Fast fail if not available
 try:
     from src.utils.common_operations import (
         get_m1_gpu_manager, get_m1_memory_optimizer, get_m1_cpu_optimizer,
         cleanup_m1_optimizers, integrate_with_m1_optimizers
     )
-    COMMON_OPERATIONS_AVAILABLE = True
     tprint_info("✅ Common operations utilities loaded")
 except ImportError as e:
-    tprint_warning(f"⚠️ Common operations not available (hardware optimizers disabled): {e}")
-    COMMON_OPERATIONS_AVAILABLE = False
+    print(f"❌ CRITICAL ERROR: Common operations utilities are required but not available: {e}")
+    print("❌ Hardware optimizers are essential for performance. Please install common_operations.")
+    raise ImportError(f"CRITICAL: Common operations utilities are required but not available: {e}") from e
 
 try:
     from src.utils.common_utilities import (
         safe_dataframe_operation, validate_dataframe_columns, calculate_data_quality_metrics,
         safe_merge_dataframes, create_summary_statistics
     )
-    COMMON_UTILITIES_AVAILABLE = True
     tprint_info("✅ Common utilities loaded")
 except ImportError as e:
-    tprint_warning(f"⚠️ Common utilities not available (enhanced data operations disabled): {e}")
-    COMMON_UTILITIES_AVAILABLE = False
+    print(f"❌ CRITICAL ERROR: Common utilities are required but not available: {e}")
+    print("❌ Enhanced data operations are essential. Please install common_utilities.")
+    raise ImportError(f"CRITICAL: Common utilities are required but not available: {e}") from e
 
 try:
     from src.utils.math_validation import (
         safe_divide, validate_finite, validate_positive, validate_range,
         safe_correlation, safe_percentage_change
     )
-    MATH_VALIDATION_AVAILABLE = True
     tprint_info("✅ Math validation utilities loaded")
 except ImportError as e:
-    tprint_warning(f"⚠️ Math validation not available (safe math operations disabled): {e}")
-    MATH_VALIDATION_AVAILABLE = False
+    print(f"❌ CRITICAL ERROR: Math validation utilities are required but not available: {e}")
+    print("❌ Safe math operations are essential for data integrity. Please install math_validation.")
+    raise ImportError(f"CRITICAL: Math validation utilities are required but not available: {e}") from e
 
 try:
     from src.utils.kline_parquet import validate_klines_data, process_klines_data
     from src.utils.serialization_utils import safe_serialize, safe_deserialize
-    DATA_UTILITIES_AVAILABLE = True
     tprint_info("✅ Data utilities loaded")
 except ImportError as e:
-    tprint_warning(f"⚠️ Data utilities not available (enhanced data validation disabled): {e}")
-    DATA_UTILITIES_AVAILABLE = False
+    print(f"❌ CRITICAL ERROR: Data utilities are required but not available: {e}")
+    print("❌ Enhanced data validation is essential. Please install kline_parquet and serialization_utils.")
+    raise ImportError(f"CRITICAL: Data utilities are required but not available: {e}") from e
 
 try:
     from src.utils.matrix_operations import (
         safe_matrix_operations, validate_matrix_properties, optimize_matrix_computations
     )
-    MATRIX_OPERATIONS_AVAILABLE = True
     tprint_info("✅ Matrix operations utilities loaded")
 except ImportError as e:
-    tprint_warning(f"⚠️ Matrix operations not available (optimized matrix computations disabled): {e}")
-    MATRIX_OPERATIONS_AVAILABLE = False
+    print(f"❌ CRITICAL ERROR: Matrix operations utilities are required but not available: {e}")
+    print("❌ Optimized matrix computations are essential for performance. Please install matrix_operations.")
+    raise ImportError(f"CRITICAL: Matrix operations utilities are required but not available: {e}") from e
 
 try:
     from src.utils.ml_common import (
         cross_validation_utils, lookahead_bias_detector, hyperparameter_optimization
     )
-    ML_COMMON_AVAILABLE = True
     tprint_info("✅ ML common utilities loaded")
 except ImportError as e:
-    tprint_warning(f"⚠️ ML common utilities not available (advanced ML features disabled): {e}")
-    ML_COMMON_AVAILABLE = False
+    print(f"❌ CRITICAL ERROR: ML common utilities are required but not available: {e}")
+    print("❌ Advanced ML features are essential. Please install ml_common.")
+    raise ImportError(f"CRITICAL: ML common utilities are required but not available: {e}") from e
 
 # Import vectorized training manager for enhanced capabilities
 try:
@@ -345,136 +345,69 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
             raise
     
     def _initialize_hardware_optimizers(self) -> None:
-        """Initialize hardware optimizers with comprehensive error handling."""
+        """Initialize hardware optimizers - CRITICAL: Fast fail if not available."""
         try:
-            if not COMMON_OPERATIONS_AVAILABLE:
-                tprint_warning("⚠️ Common operations not available, skipping hardware optimizer initialization")
-                self.utility_integration_status['hardware_optimizers'] = 'unavailable'
-                return
-            
             tprint_info("🧠 Initializing M1 hardware optimizers...")
             
-            # Initialize M1 GPU manager
-            try:
-                self.m1_gpu_manager = get_m1_gpu_manager()
-                if self.m1_gpu_manager:
-                    tprint_success("✅ M1 GPU manager initialized")
-                    self.utility_integration_status['m1_gpu_manager'] = 'available'
-                else:
-                    tprint_warning("⚠️ M1 GPU manager not available")
-                    self.utility_integration_status['m1_gpu_manager'] = 'unavailable'
-            except Exception as e:
-                tprint_warning(f"⚠️ Failed to initialize M1 GPU manager: {e}")
-                self.utility_integration_status['m1_gpu_manager'] = f'error: {e}'
+            # Initialize M1 GPU manager - CRITICAL: Fast fail if not available
+            self.m1_gpu_manager = get_m1_gpu_manager()
+            if not self.m1_gpu_manager:
+                error_msg = "CRITICAL: M1 GPU manager is required but not available"
+                tprint_error(f"❌ {error_msg}")
+                raise RuntimeError(error_msg)
+            tprint_success("✅ M1 GPU manager initialized")
             
-            # Initialize M1 memory optimizer
-            try:
-                self.m1_memory_optimizer = get_m1_memory_optimizer()
-                if self.m1_memory_optimizer:
-                    tprint_success("✅ M1 memory optimizer initialized")
-                    self.utility_integration_status['m1_memory_optimizer'] = 'available'
-                else:
-                    tprint_warning("⚠️ M1 memory optimizer not available")
-                    self.utility_integration_status['m1_memory_optimizer'] = 'unavailable'
-            except Exception as e:
-                tprint_warning(f"⚠️ Failed to initialize M1 memory optimizer: {e}")
-                self.utility_integration_status['m1_memory_optimizer'] = f'error: {e}'
+            # Initialize M1 memory optimizer - CRITICAL: Fast fail if not available
+            self.m1_memory_optimizer = get_m1_memory_optimizer()
+            if not self.m1_memory_optimizer:
+                error_msg = "CRITICAL: M1 memory optimizer is required but not available"
+                tprint_error(f"❌ {error_msg}")
+                raise RuntimeError(error_msg)
+            tprint_success("✅ M1 memory optimizer initialized")
             
-            # Initialize M1 CPU optimizer
-            try:
-                self.m1_cpu_optimizer = get_m1_cpu_optimizer()
-                if self.m1_cpu_optimizer:
-                    tprint_success("✅ M1 CPU optimizer initialized")
-                    self.utility_integration_status['m1_cpu_optimizer'] = 'available'
-                else:
-                    tprint_warning("⚠️ M1 CPU optimizer not available")
-                    self.utility_integration_status['m1_cpu_optimizer'] = 'unavailable'
-            except Exception as e:
-                tprint_warning(f"⚠️ Failed to initialize M1 CPU optimizer: {e}")
-                self.utility_integration_status['m1_cpu_optimizer'] = f'error: {e}'
+            # Initialize M1 CPU optimizer - CRITICAL: Fast fail if not available
+            self.m1_cpu_optimizer = get_m1_cpu_optimizer()
+            if not self.m1_cpu_optimizer:
+                error_msg = "CRITICAL: M1 CPU optimizer is required but not available"
+                tprint_error(f"❌ {error_msg}")
+                raise RuntimeError(error_msg)
+            tprint_success("✅ M1 CPU optimizer initialized")
             
-            # Integrate with M1 optimizers
-            try:
-                integration_result = integrate_with_m1_optimizers()
-                if integration_result.get('success', False):
-                    tprint_success("✅ M1 optimizers integration successful")
-                    self.utility_integration_status['m1_integration'] = 'success'
-                else:
-                    tprint_warning("⚠️ M1 optimizers integration failed")
-                    self.utility_integration_status['m1_integration'] = 'failed'
-            except Exception as e:
-                tprint_warning(f"⚠️ Failed to integrate M1 optimizers: {e}")
-                self.utility_integration_status['m1_integration'] = f'error: {e}'
+            # Integrate with M1 optimizers - CRITICAL: Fast fail if not successful
+            integration_result = integrate_with_m1_optimizers()
+            if not integration_result.get('success', False):
+                error_msg = "CRITICAL: M1 optimizers integration failed"
+                tprint_error(f"❌ {error_msg}")
+                raise RuntimeError(error_msg)
+            tprint_success("✅ M1 optimizers integration successful")
             
-            self.utility_integration_status['hardware_optimizers'] = 'initialized'
             tprint_success("✅ Hardware optimizers initialization completed")
             
         except Exception as e:
-            error_msg = f"Hardware optimizer initialization failed: {e}"
+            error_msg = f"CRITICAL: Hardware optimizer initialization failed: {e}"
             tprint_error(f"❌ {error_msg}")
-            self.utility_integration_status['hardware_optimizers'] = f'error: {e}'
-            self.initialization_errors.append(error_msg)
+            raise RuntimeError(error_msg) from e
     
     def _initialize_utility_integrations(self) -> None:
-        """Initialize utility integrations with comprehensive error handling."""
+        """Initialize utility integrations - All utilities are required."""
         try:
             tprint_info("🔧 Initializing utility integrations...")
             
-            # Initialize common utilities
-            if COMMON_UTILITIES_AVAILABLE:
-                tprint_success("✅ Common utilities available")
-                self.utility_integration_status['common_utilities'] = 'available'
-            else:
-                tprint_warning("⚠️ Common utilities not available")
-                self.utility_integration_status['common_utilities'] = 'unavailable'
-            
-            # Initialize math validation
-            if MATH_VALIDATION_AVAILABLE:
-                tprint_success("✅ Math validation utilities available")
-                self.utility_integration_status['math_validation'] = 'available'
-            else:
-                tprint_warning("⚠️ Math validation utilities not available")
-                self.utility_integration_status['math_validation'] = 'unavailable'
-            
-            # Initialize data utilities
-            if DATA_UTILITIES_AVAILABLE:
-                tprint_success("✅ Data utilities available")
-                self.utility_integration_status['data_utilities'] = 'available'
-            else:
-                tprint_warning("⚠️ Data utilities not available")
-                self.utility_integration_status['data_utilities'] = 'unavailable'
-            
-            # Initialize matrix operations
-            if MATRIX_OPERATIONS_AVAILABLE:
-                tprint_success("✅ Matrix operations utilities available")
-                self.utility_integration_status['matrix_operations'] = 'available'
-            else:
-                tprint_warning("⚠️ Matrix operations utilities not available")
-                self.utility_integration_status['matrix_operations'] = 'unavailable'
-            
-            # Initialize ML common utilities
-            if ML_COMMON_AVAILABLE:
-                tprint_success("✅ ML common utilities available")
-                self.utility_integration_status['ml_common'] = 'available'
-            else:
-                tprint_warning("⚠️ ML common utilities not available")
-                self.utility_integration_status['ml_common'] = 'unavailable'
-            
-            # Initialize tprint
-            if TPRINT_AVAILABLE:
-                tprint_success("✅ Enhanced tprint logging available")
-                self.utility_integration_status['tprint'] = 'available'
-            else:
-                tprint_warning("⚠️ Enhanced tprint logging not available")
-                self.utility_integration_status['tprint'] = 'unavailable'
+            # All utilities are already loaded at import time with fast fail
+            tprint_success("✅ All utility integrations verified and available")
+            tprint_success("✅ Common utilities available")
+            tprint_success("✅ Math validation utilities available")
+            tprint_success("✅ Data utilities available")
+            tprint_success("✅ Matrix operations utilities available")
+            tprint_success("✅ ML common utilities available")
+            tprint_success("✅ Enhanced tprint logging available")
             
             tprint_success("✅ Utility integrations initialization completed")
             
         except Exception as e:
-            error_msg = f"Utility integration initialization failed: {e}"
+            error_msg = f"CRITICAL: Utility integration initialization failed: {e}"
             tprint_error(f"❌ {error_msg}")
-            self.utility_integration_status['utility_integrations'] = f'error: {e}'
-            self.initialization_errors.append(error_msg)
+            raise RuntimeError(error_msg) from e
     
     def _log_utility_integration_status(self) -> None:
         """Log comprehensive utility integration status."""
@@ -588,10 +521,7 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
             max_regime_size = np.max(regime_counts)
             
             # Use math validation utilities for safe calculations
-            if MATH_VALIDATION_AVAILABLE:
-                regime_balance = safe_divide(min_regime_size, max_regime_size, 0.0)
-            else:
-                regime_balance = min_regime_size / max_regime_size if max_regime_size > 0 else 0
+            regime_balance = safe_divide(min_regime_size, max_regime_size, 0.0)
             
             regime_analysis = {
                 'unique_regimes_count': len(unique_regimes),
@@ -681,10 +611,7 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
             # Check for NaN values with enhanced reporting
             nan_count = np.sum(np.isnan(data))
             if nan_count > 0:
-                if MATH_VALIDATION_AVAILABLE:
-                    nan_percentage = safe_divide(nan_count * 100, data.size, 0.0)
-                else:
-                    nan_percentage = (nan_count / data.size) * 100
+                nan_percentage = safe_divide(nan_count * 100, data.size, 0.0)
                 
                 quality_metrics['nan_count'] = nan_count
                 quality_metrics['nan_percentage'] = nan_percentage
@@ -704,10 +631,7 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
             # Check for infinite values with enhanced reporting
             inf_count = np.sum(np.isinf(data))
             if inf_count > 0:
-                if MATH_VALIDATION_AVAILABLE:
-                    inf_percentage = safe_divide(inf_count * 100, data.size, 0.0)
-                else:
-                    inf_percentage = (inf_count / data.size) * 100
+                inf_percentage = safe_divide(inf_count * 100, data.size, 0.0)
                 
                 quality_metrics['inf_count'] = inf_count
                 quality_metrics['inf_percentage'] = inf_percentage
@@ -725,56 +649,54 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                 tprint_debug(f"✅ {data_name}: No infinite values found")
             
             # Enhanced statistical validation using math validation utilities
-            if MATH_VALIDATION_AVAILABLE:
-                try:
-                    # Validate finite values
-                    finite_data = data[np.isfinite(data)]
-                    if len(finite_data) > 0:
-                        # Calculate statistical metrics safely
-                        mean_val = np.mean(finite_data)
-                        std_val = np.std(finite_data)
-                        min_val = np.min(finite_data)
-                        max_val = np.max(finite_data)
-                        
-                        # Validate statistical properties
-                        validate_finite(mean_val, f"{data_name}_mean")
-                        validate_finite(std_val, f"{data_name}_std")
-                        validate_finite(min_val, f"{data_name}_min")
-                        validate_finite(max_val, f"{data_name}_max")
-                        
-                        quality_metrics['statistical_metrics'] = {
-                            'mean': mean_val,
-                            'std': std_val,
-                            'min': min_val,
-                            'max': max_val,
-                            'finite_count': len(finite_data),
-                            'total_count': data.size
-                        }
-                        
-                        tprint_debug(f"✅ {data_name}: Statistical validation passed")
-                    else:
-                        warning_msg = f"{data_name}: No finite values found for statistical analysis"
-                        quality_metrics['warnings'].append(warning_msg)
-                        tprint_warning(f"⚠️ {warning_msg}")
-                        
-                except Exception as e:
-                    warning_msg = f"Statistical validation failed for {data_name}: {e}"
+            try:
+                # Validate finite values
+                finite_data = data[np.isfinite(data)]
+                if len(finite_data) > 0:
+                    # Calculate statistical metrics safely
+                    mean_val = np.mean(finite_data)
+                    std_val = np.std(finite_data)
+                    min_val = np.min(finite_data)
+                    max_val = np.max(finite_data)
+                    
+                    # Validate statistical properties
+                    validate_finite(mean_val, f"{data_name}_mean")
+                    validate_finite(std_val, f"{data_name}_std")
+                    validate_finite(min_val, f"{data_name}_min")
+                    validate_finite(max_val, f"{data_name}_max")
+                    
+                    quality_metrics['statistical_metrics'] = {
+                        'mean': mean_val,
+                        'std': std_val,
+                        'min': min_val,
+                        'max': max_val,
+                        'finite_count': len(finite_data),
+                        'total_count': data.size
+                    }
+                    
+                    tprint_debug(f"✅ {data_name}: Statistical validation passed")
+                else:
+                    warning_msg = f"{data_name}: No finite values found for statistical analysis"
                     quality_metrics['warnings'].append(warning_msg)
                     tprint_warning(f"⚠️ {warning_msg}")
+                    
+            except Exception as e:
+                warning_msg = f"Statistical validation failed for {data_name}: {e}"
+                quality_metrics['warnings'].append(warning_msg)
+                tprint_warning(f"⚠️ {warning_msg}")
             
-            # Matrix operations validation if available
-            if MATRIX_OPERATIONS_AVAILABLE:
-                try:
-                    matrix_validation = validate_matrix_properties(data)
-                    quality_metrics['utility_validation']['matrix_operations'] = matrix_validation
-                    tprint_debug(f"✅ {data_name}: Matrix operations validation completed")
-                except Exception as e:
-                    warning_msg = f"Matrix operations validation failed for {data_name}: {e}"
-                    quality_metrics['warnings'].append(warning_msg)
-                    tprint_warning(f"⚠️ {warning_msg}")
+            # Matrix operations validation
+            try:
+                matrix_validation = validate_matrix_properties(data)
+                quality_metrics['utility_validation']['matrix_operations'] = matrix_validation
+                tprint_debug(f"✅ {data_name}: Matrix operations validation completed")
+            except Exception as e:
+                warning_msg = f"Matrix operations validation failed for {data_name}: {e}"
+                quality_metrics['warnings'].append(warning_msg)
+                tprint_warning(f"⚠️ {warning_msg}")
             
-            # Data utilities validation if available
-            if DATA_UTILITIES_AVAILABLE and data_name == "features":
+            # Data utilities validation
+            if data_name == "features":
                 try:
                     # Convert to DataFrame for validation if possible
                     if data.ndim == 2:
@@ -821,7 +743,7 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
             # Count available utilities
             available_count = sum(1 for available in utility_validation.values() if available)
             total_count = len(utility_validation)
-            availability_rate = safe_divide(available_count * 100, total_count, 0.0) if MATH_VALIDATION_AVAILABLE else (available_count / total_count) * 100
+            availability_rate = safe_divide(available_count * 100, total_count, 0.0)
             
             utility_validation['available_count'] = available_count
             utility_validation['total_count'] = total_count
@@ -1868,43 +1790,35 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
         try:
             tprint_info("🧹 Cleaning up resources...")
             
-            # Clean up M1 optimizers if available
-            if COMMON_OPERATIONS_AVAILABLE:
-                try:
-                    cleanup_result = cleanup_m1_optimizers()
-                    if cleanup_result:
-                        tprint_success("✅ M1 optimizers cleaned up successfully")
-                    else:
-                        tprint_warning("⚠️ M1 optimizer cleanup returned False")
-                except Exception as e:
-                    tprint_warning(f"⚠️ Failed to cleanup M1 optimizers: {e}")
+            # Clean up M1 optimizers - CRITICAL: Must be available
+            try:
+                cleanup_result = cleanup_m1_optimizers()
+                if not cleanup_result:
+                    error_msg = "CRITICAL: M1 optimizer cleanup failed"
+                    tprint_error(f"❌ {error_msg}")
+                    raise RuntimeError(error_msg)
+                tprint_success("✅ M1 optimizers cleaned up successfully")
+            except Exception as e:
+                error_msg = f"CRITICAL: Failed to cleanup M1 optimizers: {e}"
+                tprint_error(f"❌ {error_msg}")
+                raise RuntimeError(error_msg) from e
             
-            # Clean up any other resources
+            # Clean up hardware resources
             if hasattr(self, 'm1_gpu_manager') and self.m1_gpu_manager:
-                try:
-                    # Add specific cleanup for GPU manager if needed
-                    tprint_debug("Cleaning up M1 GPU manager...")
-                except Exception as e:
-                    tprint_warning(f"⚠️ Failed to cleanup M1 GPU manager: {e}")
+                tprint_debug("Cleaning up M1 GPU manager...")
             
             if hasattr(self, 'm1_memory_optimizer') and self.m1_memory_optimizer:
-                try:
-                    # Add specific cleanup for memory optimizer if needed
-                    tprint_debug("Cleaning up M1 memory optimizer...")
-                except Exception as e:
-                    tprint_warning(f"⚠️ Failed to cleanup M1 memory optimizer: {e}")
+                tprint_debug("Cleaning up M1 memory optimizer...")
             
             if hasattr(self, 'm1_cpu_optimizer') and self.m1_cpu_optimizer:
-                try:
-                    # Add specific cleanup for CPU optimizer if needed
-                    tprint_debug("Cleaning up M1 CPU optimizer...")
-                except Exception as e:
-                    tprint_warning(f"⚠️ Failed to cleanup M1 CPU optimizer: {e}")
+                tprint_debug("Cleaning up M1 CPU optimizer...")
             
             tprint_success("✅ Resource cleanup completed")
             
         except Exception as e:
-            tprint_error(f"❌ Resource cleanup failed: {e}")
+            error_msg = f"CRITICAL: Resource cleanup failed: {e}"
+            tprint_error(f"❌ {error_msg}")
+            raise RuntimeError(error_msg) from e
     
     def __del__(self):
         """Destructor to ensure cleanup on object deletion."""

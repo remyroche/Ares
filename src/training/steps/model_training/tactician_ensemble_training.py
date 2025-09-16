@@ -46,68 +46,68 @@ except ImportError as e:
     print("❌ This is a critical dependency for enhanced logging. Please install tprint.")
     raise ImportError(f"CRITICAL: tprint is required but not available: {e}") from e
 
-# Import common utilities - NON-CRITICAL: Keep fallback for hardware optimizers
+# Import common utilities - CRITICAL: Fast fail if not available
 try:
     from src.utils.common_operations import (
         get_m1_gpu_manager, get_m1_memory_optimizer, get_m1_cpu_optimizer,
         cleanup_m1_optimizers, integrate_with_m1_optimizers
     )
-    COMMON_OPERATIONS_AVAILABLE = True
     tprint_info("✅ Common operations utilities loaded for ensemble")
 except ImportError as e:
-    tprint_warning(f"⚠️ Common operations not available (hardware optimizers disabled): {e}")
-    COMMON_OPERATIONS_AVAILABLE = False
+    print(f"❌ CRITICAL ERROR: Common operations utilities are required but not available: {e}")
+    print("❌ Hardware optimizers are essential for performance. Please install common_operations.")
+    raise ImportError(f"CRITICAL: Common operations utilities are required but not available: {e}") from e
 
 try:
     from src.utils.common_utilities import (
         safe_dataframe_operation, validate_dataframe_columns, calculate_data_quality_metrics,
         safe_merge_dataframes, create_summary_statistics
     )
-    COMMON_UTILITIES_AVAILABLE = True
     tprint_info("✅ Common utilities loaded for ensemble")
 except ImportError as e:
-    tprint_warning(f"⚠️ Common utilities not available (enhanced data operations disabled): {e}")
-    COMMON_UTILITIES_AVAILABLE = False
+    print(f"❌ CRITICAL ERROR: Common utilities are required but not available: {e}")
+    print("❌ Enhanced data operations are essential. Please install common_utilities.")
+    raise ImportError(f"CRITICAL: Common utilities are required but not available: {e}") from e
 
 try:
     from src.utils.math_validation import (
         safe_divide, validate_finite, validate_positive, validate_range,
         safe_correlation, safe_percentage_change
     )
-    MATH_VALIDATION_AVAILABLE = True
     tprint_info("✅ Math validation utilities loaded for ensemble")
 except ImportError as e:
-    tprint_warning(f"⚠️ Math validation not available (safe math operations disabled): {e}")
-    MATH_VALIDATION_AVAILABLE = False
+    print(f"❌ CRITICAL ERROR: Math validation utilities are required but not available: {e}")
+    print("❌ Safe math operations are essential for data integrity. Please install math_validation.")
+    raise ImportError(f"CRITICAL: Math validation utilities are required but not available: {e}") from e
 
 try:
     from src.utils.kline_parquet import validate_klines_data, process_klines_data
     from src.utils.serialization_utils import safe_serialize, safe_deserialize
-    DATA_UTILITIES_AVAILABLE = True
     tprint_info("✅ Data utilities loaded for ensemble")
 except ImportError as e:
-    tprint_warning(f"⚠️ Data utilities not available (enhanced data validation disabled): {e}")
-    DATA_UTILITIES_AVAILABLE = False
+    print(f"❌ CRITICAL ERROR: Data utilities are required but not available: {e}")
+    print("❌ Enhanced data validation is essential. Please install kline_parquet and serialization_utils.")
+    raise ImportError(f"CRITICAL: Data utilities are required but not available: {e}") from e
 
 try:
     from src.utils.matrix_operations import (
         safe_matrix_operations, validate_matrix_properties, optimize_matrix_computations
     )
-    MATRIX_OPERATIONS_AVAILABLE = True
     tprint_info("✅ Matrix operations utilities loaded for ensemble")
 except ImportError as e:
-    tprint_warning(f"⚠️ Matrix operations not available (optimized matrix computations disabled): {e}")
-    MATRIX_OPERATIONS_AVAILABLE = False
+    print(f"❌ CRITICAL ERROR: Matrix operations utilities are required but not available: {e}")
+    print("❌ Optimized matrix computations are essential for performance. Please install matrix_operations.")
+    raise ImportError(f"CRITICAL: Matrix operations utilities are required but not available: {e}") from e
 
 try:
     from src.utils.ml_common import (
         cross_validation_utils, lookahead_bias_detector, hyperparameter_optimization
     )
-    ML_COMMON_AVAILABLE = True
     tprint_info("✅ ML common utilities loaded for ensemble")
 except ImportError as e:
-    tprint_warning(f"⚠️ ML common utilities not available (advanced ML features disabled): {e}")
-    ML_COMMON_AVAILABLE = False
+    print(f"❌ CRITICAL ERROR: ML common utilities are required but not available: {e}")
+    print("❌ Advanced ML features are essential. Please install ml_common.")
+    raise ImportError(f"CRITICAL: ML common utilities are required but not available: {e}") from e
 
 # Import vectorized training manager
 try:
@@ -253,136 +253,69 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
             raise RuntimeError(error_msg) from e
     
     def _initialize_hardware_optimizers(self) -> None:
-        """Initialize hardware optimizers with comprehensive error handling."""
+        """Initialize hardware optimizers - CRITICAL: Fast fail if not available."""
         try:
-            if not COMMON_OPERATIONS_AVAILABLE:
-                tprint_warning("⚠️ Common operations not available, skipping hardware optimizer initialization")
-                self.utility_integration_status['hardware_optimizers'] = 'unavailable'
-                return
-            
             tprint_info("🧠 Initializing M1 hardware optimizers for ensemble training...")
             
-            # Initialize M1 GPU manager
-            try:
-                self.m1_gpu_manager = get_m1_gpu_manager()
-                if self.m1_gpu_manager:
-                    tprint_success("✅ M1 GPU manager initialized for ensemble")
-                    self.utility_integration_status['m1_gpu_manager'] = 'available'
-                else:
-                    tprint_warning("⚠️ M1 GPU manager not available for ensemble")
-                    self.utility_integration_status['m1_gpu_manager'] = 'unavailable'
-            except Exception as e:
-                tprint_warning(f"⚠️ Failed to initialize M1 GPU manager for ensemble: {e}")
-                self.utility_integration_status['m1_gpu_manager'] = f'error: {e}'
+            # Initialize M1 GPU manager - CRITICAL: Fast fail if not available
+            self.m1_gpu_manager = get_m1_gpu_manager()
+            if not self.m1_gpu_manager:
+                error_msg = "CRITICAL: M1 GPU manager is required but not available for ensemble"
+                tprint_error(f"❌ {error_msg}")
+                raise RuntimeError(error_msg)
+            tprint_success("✅ M1 GPU manager initialized for ensemble")
             
-            # Initialize M1 memory optimizer
-            try:
-                self.m1_memory_optimizer = get_m1_memory_optimizer()
-                if self.m1_memory_optimizer:
-                    tprint_success("✅ M1 memory optimizer initialized for ensemble")
-                    self.utility_integration_status['m1_memory_optimizer'] = 'available'
-                else:
-                    tprint_warning("⚠️ M1 memory optimizer not available for ensemble")
-                    self.utility_integration_status['m1_memory_optimizer'] = 'unavailable'
-            except Exception as e:
-                tprint_warning(f"⚠️ Failed to initialize M1 memory optimizer for ensemble: {e}")
-                self.utility_integration_status['m1_memory_optimizer'] = f'error: {e}'
+            # Initialize M1 memory optimizer - CRITICAL: Fast fail if not available
+            self.m1_memory_optimizer = get_m1_memory_optimizer()
+            if not self.m1_memory_optimizer:
+                error_msg = "CRITICAL: M1 memory optimizer is required but not available for ensemble"
+                tprint_error(f"❌ {error_msg}")
+                raise RuntimeError(error_msg)
+            tprint_success("✅ M1 memory optimizer initialized for ensemble")
             
-            # Initialize M1 CPU optimizer
-            try:
-                self.m1_cpu_optimizer = get_m1_cpu_optimizer()
-                if self.m1_cpu_optimizer:
-                    tprint_success("✅ M1 CPU optimizer initialized for ensemble")
-                    self.utility_integration_status['m1_cpu_optimizer'] = 'available'
-                else:
-                    tprint_warning("⚠️ M1 CPU optimizer not available for ensemble")
-                    self.utility_integration_status['m1_cpu_optimizer'] = 'unavailable'
-            except Exception as e:
-                tprint_warning(f"⚠️ Failed to initialize M1 CPU optimizer for ensemble: {e}")
-                self.utility_integration_status['m1_cpu_optimizer'] = f'error: {e}'
+            # Initialize M1 CPU optimizer - CRITICAL: Fast fail if not available
+            self.m1_cpu_optimizer = get_m1_cpu_optimizer()
+            if not self.m1_cpu_optimizer:
+                error_msg = "CRITICAL: M1 CPU optimizer is required but not available for ensemble"
+                tprint_error(f"❌ {error_msg}")
+                raise RuntimeError(error_msg)
+            tprint_success("✅ M1 CPU optimizer initialized for ensemble")
             
-            # Integrate with M1 optimizers
-            try:
-                integration_result = integrate_with_m1_optimizers()
-                if integration_result.get('success', False):
-                    tprint_success("✅ M1 optimizers integration successful for ensemble")
-                    self.utility_integration_status['m1_integration'] = 'success'
-                else:
-                    tprint_warning("⚠️ M1 optimizers integration failed for ensemble")
-                    self.utility_integration_status['m1_integration'] = 'failed'
-            except Exception as e:
-                tprint_warning(f"⚠️ Failed to integrate M1 optimizers for ensemble: {e}")
-                self.utility_integration_status['m1_integration'] = f'error: {e}'
+            # Integrate with M1 optimizers - CRITICAL: Fast fail if not successful
+            integration_result = integrate_with_m1_optimizers()
+            if not integration_result.get('success', False):
+                error_msg = "CRITICAL: M1 optimizers integration failed for ensemble"
+                tprint_error(f"❌ {error_msg}")
+                raise RuntimeError(error_msg)
+            tprint_success("✅ M1 optimizers integration successful for ensemble")
             
-            self.utility_integration_status['hardware_optimizers'] = 'initialized'
             tprint_success("✅ Hardware optimizers initialization completed for ensemble")
             
         except Exception as e:
-            error_msg = f"Hardware optimizer initialization failed for ensemble: {e}"
+            error_msg = f"CRITICAL: Hardware optimizer initialization failed for ensemble: {e}"
             tprint_error(f"❌ {error_msg}")
-            self.utility_integration_status['hardware_optimizers'] = f'error: {e}'
-            self.initialization_errors.append(error_msg)
+            raise RuntimeError(error_msg) from e
     
     def _initialize_utility_integrations(self) -> None:
-        """Initialize utility integrations with comprehensive error handling."""
+        """Initialize utility integrations - All utilities are required."""
         try:
             tprint_info("🔧 Initializing utility integrations for ensemble...")
             
-            # Initialize common utilities
-            if COMMON_UTILITIES_AVAILABLE:
-                tprint_success("✅ Common utilities available for ensemble")
-                self.utility_integration_status['common_utilities'] = 'available'
-            else:
-                tprint_warning("⚠️ Common utilities not available for ensemble")
-                self.utility_integration_status['common_utilities'] = 'unavailable'
-            
-            # Initialize math validation
-            if MATH_VALIDATION_AVAILABLE:
-                tprint_success("✅ Math validation utilities available for ensemble")
-                self.utility_integration_status['math_validation'] = 'available'
-            else:
-                tprint_warning("⚠️ Math validation utilities not available for ensemble")
-                self.utility_integration_status['math_validation'] = 'unavailable'
-            
-            # Initialize data utilities
-            if DATA_UTILITIES_AVAILABLE:
-                tprint_success("✅ Data utilities available for ensemble")
-                self.utility_integration_status['data_utilities'] = 'available'
-            else:
-                tprint_warning("⚠️ Data utilities not available for ensemble")
-                self.utility_integration_status['data_utilities'] = 'unavailable'
-            
-            # Initialize matrix operations
-            if MATRIX_OPERATIONS_AVAILABLE:
-                tprint_success("✅ Matrix operations utilities available for ensemble")
-                self.utility_integration_status['matrix_operations'] = 'available'
-            else:
-                tprint_warning("⚠️ Matrix operations utilities not available for ensemble")
-                self.utility_integration_status['matrix_operations'] = 'unavailable'
-            
-            # Initialize ML common utilities
-            if ML_COMMON_AVAILABLE:
-                tprint_success("✅ ML common utilities available for ensemble")
-                self.utility_integration_status['ml_common'] = 'available'
-            else:
-                tprint_warning("⚠️ ML common utilities not available for ensemble")
-                self.utility_integration_status['ml_common'] = 'unavailable'
-            
-            # Initialize tprint
-            if TPRINT_AVAILABLE:
-                tprint_success("✅ Enhanced tprint logging available for ensemble")
-                self.utility_integration_status['tprint'] = 'available'
-            else:
-                tprint_warning("⚠️ Enhanced tprint logging not available for ensemble")
-                self.utility_integration_status['tprint'] = 'unavailable'
+            # All utilities are already loaded at import time with fast fail
+            tprint_success("✅ All utility integrations verified and available for ensemble")
+            tprint_success("✅ Common utilities available for ensemble")
+            tprint_success("✅ Math validation utilities available for ensemble")
+            tprint_success("✅ Data utilities available for ensemble")
+            tprint_success("✅ Matrix operations utilities available for ensemble")
+            tprint_success("✅ ML common utilities available for ensemble")
+            tprint_success("✅ Enhanced tprint logging available for ensemble")
             
             tprint_success("✅ Utility integrations initialization completed for ensemble")
             
         except Exception as e:
-            error_msg = f"Utility integration initialization failed for ensemble: {e}"
+            error_msg = f"CRITICAL: Utility integration initialization failed for ensemble: {e}"
             tprint_error(f"❌ {error_msg}")
-            self.utility_integration_status['utility_integrations'] = f'error: {e}'
-            self.initialization_errors.append(error_msg)
+            raise RuntimeError(error_msg) from e
     
     def _log_utility_integration_status(self) -> None:
         """Log comprehensive utility integration status."""
@@ -1047,43 +980,35 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
         try:
             tprint_info("🧹 Cleaning up ensemble training resources...")
             
-            # Clean up M1 optimizers if available
-            if COMMON_OPERATIONS_AVAILABLE:
-                try:
-                    cleanup_result = cleanup_m1_optimizers()
-                    if cleanup_result:
-                        tprint_success("✅ M1 optimizers cleaned up successfully for ensemble")
-                    else:
-                        tprint_warning("⚠️ M1 optimizer cleanup returned False for ensemble")
-                except Exception as e:
-                    tprint_warning(f"⚠️ Failed to cleanup M1 optimizers for ensemble: {e}")
+            # Clean up M1 optimizers - CRITICAL: Must be available
+            try:
+                cleanup_result = cleanup_m1_optimizers()
+                if not cleanup_result:
+                    error_msg = "CRITICAL: M1 optimizer cleanup failed for ensemble"
+                    tprint_error(f"❌ {error_msg}")
+                    raise RuntimeError(error_msg)
+                tprint_success("✅ M1 optimizers cleaned up successfully for ensemble")
+            except Exception as e:
+                error_msg = f"CRITICAL: Failed to cleanup M1 optimizers for ensemble: {e}"
+                tprint_error(f"❌ {error_msg}")
+                raise RuntimeError(error_msg) from e
             
-            # Clean up any other resources
+            # Clean up hardware resources
             if hasattr(self, 'm1_gpu_manager') and self.m1_gpu_manager:
-                try:
-                    # Add specific cleanup for GPU manager if needed
-                    tprint_debug("Cleaning up M1 GPU manager for ensemble...")
-                except Exception as e:
-                    tprint_warning(f"⚠️ Failed to cleanup M1 GPU manager for ensemble: {e}")
+                tprint_debug("Cleaning up M1 GPU manager for ensemble...")
             
             if hasattr(self, 'm1_memory_optimizer') and self.m1_memory_optimizer:
-                try:
-                    # Add specific cleanup for memory optimizer if needed
-                    tprint_debug("Cleaning up M1 memory optimizer for ensemble...")
-                except Exception as e:
-                    tprint_warning(f"⚠️ Failed to cleanup M1 memory optimizer for ensemble: {e}")
+                tprint_debug("Cleaning up M1 memory optimizer for ensemble...")
             
             if hasattr(self, 'm1_cpu_optimizer') and self.m1_cpu_optimizer:
-                try:
-                    # Add specific cleanup for CPU optimizer if needed
-                    tprint_debug("Cleaning up M1 CPU optimizer for ensemble...")
-                except Exception as e:
-                    tprint_warning(f"⚠️ Failed to cleanup M1 CPU optimizer for ensemble: {e}")
+                tprint_debug("Cleaning up M1 CPU optimizer for ensemble...")
             
             tprint_success("✅ Ensemble resource cleanup completed")
             
         except Exception as e:
-            tprint_error(f"❌ Ensemble resource cleanup failed: {e}")
+            error_msg = f"CRITICAL: Ensemble resource cleanup failed: {e}"
+            tprint_error(f"❌ {error_msg}")
+            raise RuntimeError(error_msg) from e
     
     def __del__(self):
         """Destructor to ensure cleanup on object deletion."""

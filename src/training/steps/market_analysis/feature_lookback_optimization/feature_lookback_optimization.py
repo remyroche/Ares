@@ -41,6 +41,31 @@ except ImportError:
     HARDWARE_OPTIMIZATION_AVAILABLE = False
     tprint("⚠️ Hardware optimization not available - using fallback memory management")
 
+# Import advanced matrix operations
+try:
+    from src.utils.matrix_operations import (
+        get_enhanced_matrix_operations, get_vectorized_processing_core, 
+        get_batch_matrix_processor, safe_matrix_multiply, safe_correlation_matrix,
+        safe_matrix_inverse, gpu_matrix_multiply, correlation_matrix_gpu,
+        eigendecomposition_gpu, batch_matrix_multiply, batch_feature_transformation,
+        batch_correlation_analysis, optimize_matrix_operation_with_hardware
+    )
+    MATRIX_OPS_AVAILABLE = True
+except ImportError as e:
+    MATRIX_OPS_AVAILABLE = False
+    tprint(f"⚠️ Advanced matrix operations not available: {e}")
+
+# Import common operations for enhanced functionality
+try:
+    from src.utils.common_operations import (
+        safe_divide, safe_log, safe_sqrt, safe_power, safe_mean, safe_std,
+        validate_finite, get_memory_usage, timed_operation
+    )
+    COMMON_OPERATIONS_AVAILABLE = True
+except ImportError as e:
+    COMMON_OPERATIONS_AVAILABLE = False
+    tprint(f"⚠️ Common operations not available: {e}")
+
 # Configuration constants
 class OptimizationConfig:
     """Configuration constants for optimization."""
@@ -121,6 +146,23 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
         else:
             self.hardware_manager = None
             self.memory_optimizer = None
+        
+        # Initialize matrix operations components
+        self.enhanced_matrix_ops = None
+        self.vectorized_core = None
+        self.batch_processor = None
+        
+        if MATRIX_OPS_AVAILABLE:
+            try:
+                self.enhanced_matrix_ops = get_enhanced_matrix_operations()
+                self.vectorized_core = get_vectorized_processing_core()
+                self.batch_processor = get_batch_matrix_processor()
+                tprint("✅ Advanced matrix operations initialized for feature lookback optimization")
+            except Exception as e:
+                tprint(f"⚠️ Matrix operations initialization failed: {e}")
+        
+        tprint(f"🔧 Matrix operations available: {MATRIX_OPS_AVAILABLE}")
+        tprint(f"🔧 Common operations available: {COMMON_OPERATIONS_AVAILABLE}")
         
         # Initialize reporter
         self.reporter = OptimizationReporter(
@@ -932,3 +974,118 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
                 'preparation_method': 'fallback',
                 'preparation_error': str(e)
             }
+    
+    def compute_enhanced_correlation_analysis(self, data: pd.DataFrame, feature_columns: List[str]) -> Dict[str, Any]:
+        """Compute enhanced correlation analysis using advanced matrix operations."""
+        try:
+            if not MATRIX_OPS_AVAILABLE:
+                return {}
+            
+            results = {}
+            
+            # Extract feature data
+            feature_data = data[feature_columns].values
+            
+            if self.enhanced_matrix_ops:
+                # Use GPU-accelerated correlation analysis
+                corr_matrix = correlation_matrix_gpu(pd.DataFrame(feature_data, columns=feature_columns))
+                results['correlation_matrix'] = corr_matrix
+                
+                # Compute eigendecomposition for feature importance
+                eigenvalues, eigenvectors = eigendecomposition_gpu(corr_matrix)
+                results['eigenvalues'] = eigenvalues
+                results['eigenvectors'] = eigenvectors
+                
+                # Feature importance based on eigenvalues
+                feature_importance = np.abs(eigenvectors).sum(axis=1)
+                results['feature_importance'] = dict(zip(feature_columns, feature_importance))
+            else:
+                # Fallback to traditional correlation analysis
+                corr_matrix = data[feature_columns].corr()
+                results['correlation_matrix'] = corr_matrix
+                
+                # Compute eigendecomposition
+                eigenvalues, eigenvectors = np.linalg.eig(corr_matrix)
+                results['eigenvalues'] = eigenvalues
+                results['eigenvectors'] = eigenvectors
+                
+                # Feature importance
+                feature_importance = np.abs(eigenvectors).sum(axis=1)
+                results['feature_importance'] = dict(zip(feature_columns, feature_importance))
+            
+            return results
+            
+        except Exception as e:
+            self.logger.warning(f"Enhanced correlation analysis failed: {e}")
+            return {}
+    
+    def compute_batch_optimization_analysis(self, data: pd.DataFrame, feature_columns: List[str]) -> Dict[str, Any]:
+        """Compute optimization analysis in batches for large datasets."""
+        try:
+            if not MATRIX_OPS_AVAILABLE or not self.batch_processor:
+                return {}
+            
+            if len(data) > 1000:
+                # Process in batches for memory efficiency
+                batch_size = min(500, len(data) // 4)
+                batches = [data.iloc[i:i+batch_size] for i in range(0, len(data), batch_size)]
+                
+                batch_results = []
+                for batch in batches:
+                    batch_analysis = batch_feature_transformation(batch[feature_columns])
+                    batch_results.append(batch_analysis)
+                
+                # Combine batch results
+                if batch_results:
+                    combined_analysis = np.mean(batch_results, axis=0)
+                    return {
+                        'batch_optimization_analysis': combined_analysis,
+                        'n_batches_processed': len(batches),
+                        'batch_size': batch_size
+                    }
+            
+            return {}
+            
+        except Exception as e:
+            self.logger.warning(f"Batch optimization analysis failed: {e}")
+            return {}
+    
+    def optimize_matrix_operations(self, data: pd.DataFrame, operation_type: str = "correlation") -> Dict[str, Any]:
+        """Optimize matrix operations based on hardware capabilities."""
+        try:
+            if not MATRIX_OPS_AVAILABLE:
+                return {}
+            
+            optimization_result = optimize_matrix_operation_with_hardware(
+                data.values, operation_type, 
+                gpu_enabled=True,
+                batch_enabled=True
+            )
+            
+            return optimization_result
+            
+        except Exception as e:
+            self.logger.warning(f"Matrix operations optimization failed: {e}")
+            return {}
+    
+    def get_enhanced_performance_metrics(self) -> Dict[str, Any]:
+        """Get enhanced performance metrics including matrix operations status."""
+        base_metrics = {
+            'optimization_status': self.optimization_status.value,
+            'execution_time': time.time() - self.start_time if self.start_time else 0.0,
+            'memory_usage': get_memory_usage() if COMMON_OPERATIONS_AVAILABLE else 0.0
+        }
+        
+        enhanced_metrics = {
+            **base_metrics,
+            'matrix_operations_available': MATRIX_OPS_AVAILABLE,
+            'common_operations_available': COMMON_OPERATIONS_AVAILABLE,
+            'enhanced_matrix_ops_initialized': self.enhanced_matrix_ops is not None,
+            'vectorized_core_initialized': self.vectorized_core is not None,
+            'batch_processor_initialized': self.batch_processor is not None,
+            'hardware_optimization_available': HARDWARE_OPTIMIZATION_AVAILABLE,
+            'hardware_manager_initialized': self.hardware_manager is not None,
+            'memory_optimizer_initialized': self.memory_optimizer is not None
+        }
+        
+        return enhanced_metrics

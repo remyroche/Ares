@@ -2,15 +2,77 @@
 Feature calculation utilities for matrix optimization.
 
 This module contains all feature calculation methods extracted from the main optimizer
-to reduce complexity and improve maintainability.
+to reduce complexity and improve maintainability. Enhanced with advanced matrix operations
+for GPU acceleration, batch processing, and optimized computations.
 """
 
 import pandas as pd
 import numpy as np
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List, Union
+import logging
+
+# Import advanced matrix operations
+try:
+    from src.utils.matrix_operations import (
+        get_enhanced_matrix_operations, get_vectorized_processing_core, 
+        get_batch_matrix_processor, compute_trading_indicators,
+        optimize_matrix_operation_with_hardware, safe_matrix_multiply,
+        safe_correlation_matrix, safe_matrix_inverse, gpu_matrix_multiply,
+        correlation_matrix_gpu, eigendecomposition_gpu, batch_matrix_multiply,
+        batch_feature_transformation, batch_correlation_analysis,
+        create_ml_pipeline, execute_ml_pipeline, optimize_pipeline_config
+    )
+    MATRIX_OPS_AVAILABLE = True
+except ImportError as e:
+    MATRIX_OPS_AVAILABLE = False
+    logging.warning(f"Advanced matrix operations not available: {e}")
+
+# Import common operations for enhanced functionality
+try:
+    from src.utils.common_operations import (
+        safe_divide, safe_log, safe_sqrt, safe_power, safe_mean, safe_std,
+        validate_finite, get_memory_usage, timed_operation
+    )
+    COMMON_OPERATIONS_AVAILABLE = True
+except ImportError as e:
+    COMMON_OPERATIONS_AVAILABLE = False
+    logging.warning(f"Common operations not available: {e}")
+
+# Set up logging
+logger = logging.getLogger(__name__)
 
 class FeatureCalculator:
-    """Utility class for calculating various technical indicators."""
+    """
+    Enhanced utility class for calculating various technical indicators.
+    
+    Features:
+    - Traditional technical indicators (RSI, SMA, EMA, Bollinger Bands, ATR)
+    - GPU-accelerated calculations for large datasets
+    - Batch processing for memory efficiency
+    - Advanced matrix operations integration
+    - Safe mathematical operations with error handling
+    """
+    
+    def __init__(self, enable_gpu_acceleration: bool = True, enable_batch_processing: bool = True):
+        """Initialize the enhanced feature calculator."""
+        self.enable_gpu_acceleration = enable_gpu_acceleration and MATRIX_OPS_AVAILABLE
+        self.enable_batch_processing = enable_batch_processing and MATRIX_OPS_AVAILABLE
+        
+        # Initialize matrix operations components
+        self.enhanced_matrix_ops = None
+        self.vectorized_core = None
+        self.batch_processor = None
+        
+        if MATRIX_OPS_AVAILABLE:
+            try:
+                self.enhanced_matrix_ops = get_enhanced_matrix_operations()
+                self.vectorized_core = get_vectorized_processing_core()
+                self.batch_processor = get_batch_matrix_processor()
+                logger.info("✅ Advanced matrix operations initialized for feature calculations")
+            except Exception as e:
+                logger.warning(f"Failed to initialize matrix operations: {e}")
+        
+        logger.info(f"🔧 FeatureCalculator initialized - GPU: {self.enable_gpu_acceleration}, Batch: {self.enable_batch_processing}")
     
     @staticmethod
     def calculate_rsi(prices: pd.Series, period: int) -> pd.Series:
@@ -48,6 +110,182 @@ class FeatureCalculator:
         low_close = np.abs(data['low'] - data['close'].shift())
         true_range = pd.concat([high_low, high_close, low_close], axis = 1).max(axis = 1)
         return true_range.rolling(window = period).mean()
+    
+    def calculate_enhanced_rsi(self, prices: pd.Series, period: int) -> pd.Series:
+        """Calculate RSI using enhanced matrix operations for better performance."""
+        try:
+            if self.enable_gpu_acceleration and self.enhanced_matrix_ops:
+                # Use GPU-accelerated RSI calculation
+                prices_array = prices.values.reshape(-1, 1)
+                delta = np.diff(prices_array, axis=0)
+                gain = np.maximum(delta, 0)
+                loss = np.maximum(-delta, 0)
+                
+                # Use rolling operations with GPU acceleration
+                gain_ma = self.enhanced_matrix_ops.rolling_mean(gain, period)
+                loss_ma = self.enhanced_matrix_ops.rolling_mean(loss, period)
+                
+                rs = safe_divide(gain_ma, loss_ma, default=1.0)
+                rsi = 100 - 100 / (1 + rs)
+                
+                # Convert back to pandas Series
+                result = pd.Series(index=prices.index, dtype=float)
+                result.iloc[period:] = rsi.flatten()
+                return result
+            else:
+                # Fallback to traditional calculation
+                return self.calculate_rsi(prices, period)
+        except Exception as e:
+            logger.warning(f"Enhanced RSI calculation failed, using fallback: {e}")
+            return self.calculate_rsi(prices, period)
+    
+    def calculate_enhanced_bollinger_bands(self, data: pd.DataFrame, period: int) -> Dict[str, pd.Series]:
+        """Calculate Bollinger Bands using enhanced matrix operations."""
+        try:
+            if self.enable_gpu_acceleration and self.enhanced_matrix_ops:
+                close_prices = data['close'].values.reshape(-1, 1)
+                
+                # Calculate SMA and STD using GPU acceleration
+                sma = self.enhanced_matrix_ops.rolling_mean(close_prices, period)
+                std = self.enhanced_matrix_ops.rolling_std(close_prices, period)
+                
+                # Calculate bands
+                upper_band = sma + 2 * std
+                lower_band = sma - 2 * std
+                
+                # Convert back to pandas Series
+                result = {
+                    'upper': pd.Series(index=data.index, dtype=float),
+                    'middle': pd.Series(index=data.index, dtype=float),
+                    'lower': pd.Series(index=data.index, dtype=float)
+                }
+                
+                result['upper'].iloc[period-1:] = upper_band.flatten()
+                result['middle'].iloc[period-1:] = sma.flatten()
+                result['lower'].iloc[period-1:] = lower_band.flatten()
+                
+                return result
+            else:
+                # Fallback to traditional calculation
+                sma = data['close'].rolling(window=period).mean()
+                std = data['close'].rolling(window=period).std()
+                return {
+                    'upper': sma + 2 * std,
+                    'middle': sma,
+                    'lower': sma - 2 * std
+                }
+        except Exception as e:
+            logger.warning(f"Enhanced Bollinger Bands calculation failed, using fallback: {e}")
+            sma = data['close'].rolling(window=period).mean()
+            std = data['close'].rolling(window=period).std()
+            return {
+                'upper': sma + 2 * std,
+                'middle': sma,
+                'lower': sma - 2 * std
+            }
+    
+    def calculate_batch_indicators(self, data: pd.DataFrame, indicators: List[str], periods: List[int]) -> Dict[str, pd.Series]:
+        """Calculate multiple indicators in batch for better performance."""
+        try:
+            if self.enable_batch_processing and self.batch_processor:
+                results = {}
+                
+                # Process in batches for memory efficiency
+                batch_size = min(1000, len(data) // 4)
+                batches = [data.iloc[i:i+batch_size] for i in range(0, len(data), batch_size)]
+                
+                for indicator in indicators:
+                    indicator_results = []
+                    
+                    for batch in batches:
+                        if indicator == 'rsi':
+                            for period in periods:
+                                batch_result = self.calculate_enhanced_rsi(batch['close'], period)
+                                indicator_results.append(batch_result)
+                        elif indicator == 'sma':
+                            for period in periods:
+                                batch_result = self.calculate_sma(batch['close'], period)
+                                indicator_results.append(batch_result)
+                        elif indicator == 'ema':
+                            for period in periods:
+                                batch_result = self.calculate_ema(batch['close'], period)
+                                indicator_results.append(batch_result)
+                    
+                    # Combine batch results
+                    if indicator_results:
+                        combined_result = pd.concat(indicator_results, ignore_index=True)
+                        results[f"{indicator}_combined"] = combined_result
+                
+                return results
+            else:
+                # Fallback to individual calculations
+                results = {}
+                for indicator in indicators:
+                    for period in periods:
+                        if indicator == 'rsi':
+                            results[f"rsi_{period}"] = self.calculate_rsi(data['close'], period)
+                        elif indicator == 'sma':
+                            results[f"sma_{period}"] = self.calculate_sma(data['close'], period)
+                        elif indicator == 'ema':
+                            results[f"ema_{period}"] = self.calculate_ema(data['close'], period)
+                return results
+        except Exception as e:
+            logger.warning(f"Batch indicators calculation failed: {e}")
+            return {}
+    
+    def calculate_correlation_features(self, data: pd.DataFrame, feature_columns: List[str]) -> Dict[str, pd.Series]:
+        """Calculate correlation-based features using advanced matrix operations."""
+        try:
+            if self.enable_gpu_acceleration and self.enhanced_matrix_ops:
+                # Extract feature data
+                feature_data = data[feature_columns].values
+                
+                # Calculate correlation matrix using GPU acceleration
+                corr_matrix = correlation_matrix_gpu(pd.DataFrame(feature_data, columns=feature_columns))
+                
+                # Extract correlation features
+                n = corr_matrix.shape[0]
+                upper_triangle = corr_matrix[np.triu_indices(n, k=1)]
+                
+                results = {}
+                for i, corr_value in enumerate(upper_triangle):
+                    # Create a feature with the correlation value repeated for all rows
+                    results[f"correlation_{i}"] = pd.Series(
+                        np.full(len(data), corr_value), 
+                        index=data.index
+                    )
+                
+                return results
+            else:
+                # Fallback to traditional correlation calculation
+                corr_matrix = data[feature_columns].corr()
+                n = corr_matrix.shape[0]
+                upper_triangle = corr_matrix.values[np.triu_indices(n, k=1)]
+                
+                results = {}
+                for i, corr_value in enumerate(upper_triangle):
+                    results[f"correlation_{i}"] = pd.Series(
+                        np.full(len(data), corr_value), 
+                        index=data.index
+                    )
+                
+                return results
+        except Exception as e:
+            logger.warning(f"Correlation features calculation failed: {e}")
+            return {}
+    
+    def get_performance_metrics(self) -> Dict[str, Any]:
+        """Get performance metrics for the feature calculator."""
+        return {
+            'matrix_operations_available': MATRIX_OPS_AVAILABLE,
+            'common_operations_available': COMMON_OPERATIONS_AVAILABLE,
+            'gpu_acceleration_enabled': self.enable_gpu_acceleration,
+            'batch_processing_enabled': self.enable_batch_processing,
+            'enhanced_matrix_ops_initialized': self.enhanced_matrix_ops is not None,
+            'vectorized_core_initialized': self.vectorized_core is not None,
+            'batch_processor_initialized': self.batch_processor is not None,
+            'memory_usage': get_memory_usage() if COMMON_OPERATIONS_AVAILABLE else 0.0
+        }
 
     @staticmethod
     def calculate_stochastic_k(data: pd.DataFrame, period: int) -> pd.Series:

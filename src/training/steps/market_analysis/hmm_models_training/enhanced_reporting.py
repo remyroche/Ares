@@ -13,9 +13,9 @@ from dataclasses import dataclass, asdict
 from pathlib import Path
 import warnings
 
-from src.utils.logger import system_logger
+from src.utils.tprint import tprint
 
-logger = system_logger.getChild('EnhancedReporting')
+# Using tprint for all logging - no logger needed
 
 
 @dataclass

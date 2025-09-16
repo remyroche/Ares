@@ -16,11 +16,11 @@ import json
 warnings.filterwarnings('ignore')
 
 # Core imports
-from src.utils.logger import system_logger
+from src.utils.tprint import tprint
 from src.utils.ml_common.config.base_training_config import HMMTrainingConfig
 from src.utils.ml_common.training.base_training_step import BaseTrainingStep
 
-logger = system_logger.getChild('HMMModelsTrainingEnhanced')
+# Using tprint for all logging - no logger needed
 
 
 @dataclass
@@ -70,7 +70,7 @@ class CircuitBreaker:
         if self.state == "OPEN":
             if time.time() - self.last_failure_time > self.timeout:
                 self.state = "HALF_OPEN"
-                logger.info("🔄 Circuit breaker transitioning to HALF_OPEN")
+                tprint("🔄 Circuit breaker transitioning to HALF_OPEN")
             else:
                 raise Exception("Circuit breaker is OPEN - too many failures detected")
         
@@ -79,7 +79,7 @@ class CircuitBreaker:
             if self.state == "HALF_OPEN":
                 self.state = "CLOSED"
                 self.failure_count = 0
-                logger.info("✅ Circuit breaker reset to CLOSED")
+                tprint("✅ Circuit breaker reset to CLOSED")
             return result
         except Exception as e:
             self.failure_count += 1
@@ -87,7 +87,7 @@ class CircuitBreaker:
             
             if self.failure_count >= self.failure_threshold:
                 self.state = "OPEN"
-                logger.error(f"🚨 Circuit breaker opened after {self.failure_count} failures")
+                tprint(f"🚨 Circuit breaker opened after {self.failure_count} failures")
             
             raise e
 
@@ -205,19 +205,19 @@ class RealTimeProgressReporter:
         
         status = "✅" if success else "❌"
         
-        print(f"\r{status} {model_name} | Progress: {progress_percent:.1f}% | "
-              f"Success: {self.successful_models}/{self.completed_models} | "
-              f"ETA: {eta:.1f}s", end="", flush=True)
+        tprint(f"\r{status} {model_name} | Progress: {progress_percent:.1f}% | "
+               f"Success: {self.successful_models}/{self.completed_models} | "
+               f"ETA: {eta:.1f}s", end="", flush=True)
     
     def finish_report(self):
         """Generate final progress report."""
         total_time = time.time() - self.start_time
-        print(f"\n\n🎯 Training Summary:")
-        print(f"   Total time: {total_time:.2f}s")
+        tprint(f"\n\n🎯 Training Summary:")
+        tprint(f"   Total time: {total_time:.2f}s")
         if self.model_times:
-            print(f"   Average time per model: {np.mean(self.model_times):.2f}s")
-        print(f"   Successful models: {self.successful_models}/{self.total_models}")
-        print(f"   Success rate: {(self.successful_models/self.total_models)*100:.1f}%")
+            tprint(f"   Average time per model: {np.mean(self.model_times):.2f}s")
+        tprint(f"   Successful models: {self.successful_models}/{self.total_models}")
+        tprint(f"   Success rate: {(self.successful_models/self.total_models)*100:.1f}%")
 
 
 class HMMModelsTrainingEnhanced(BaseTrainingStep):
@@ -250,8 +250,6 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
             config = HMMTrainingConfig(**config_dict)
 
         super().__init__(config)
-        self.logger = logger.getChild('HMMModelsTrainingEnhanced')
-        
         # Initialize enhanced components
         self.circuit_breaker = CircuitBreaker(failure_threshold=2, timeout=60)
         self.progress_reporter = None
@@ -263,7 +261,7 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
         self.training_start_time = None
         self.training_results = {}
         
-        self.logger.info("✅ Enhanced HMM Models Training initialized with circuit breaker protection")
+        tprint("✅ Enhanced HMM Models Training initialized with circuit breaker protection")
     
     def _initialize_components(self):
         """Initialize training components with comprehensive error handling."""
@@ -272,14 +270,14 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
             try:
                 from src.feature_engineering.feature_generators import FeatureGenerators
                 self.feature_generator = FeatureGenerators()
-                self.logger.info("✅ Feature generator initialized from feature_engineering")
+                tprint("✅ Feature generator initialized from feature_engineering")
             except ImportError:
                 # Fallback to standalone compatibility
                 from src.hmm_feature_compatibility import FeatureGenerators
                 self.feature_generator = FeatureGenerators()
-                self.logger.info("✅ Feature generator initialized from standalone compatibility")
+                tprint("✅ Feature generator initialized from standalone compatibility")
         except ImportError as e:
-            self.logger.warning(f"⚠️ Feature generator not available: {e}")
+            tprint(f"⚠️ Feature generator not available: {e}")
             self.feature_generator = None
 
         try:
@@ -291,18 +289,18 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
                 'enable_stability_analysis': True
             }
             self.feature_selector = FeatureSelectionFramework(fs_config)
-            self.logger.info("✅ Feature selector initialized")
+            tprint("✅ Feature selector initialized")
         except ImportError as e:
-            self.logger.warning(f"⚠️ Feature selector not available: {e}")
+            tprint(f"⚠️ Feature selector not available: {e}")
             self.feature_selector = None
 
         try:
             # Initialize evaluation utilities
             from src.utils.ml_common.evaluation.evaluation_utils import EvaluationUtils
             self.evaluation_utils = EvaluationUtils()
-            self.logger.info("✅ Evaluation utilities initialized")
+            tprint("✅ Evaluation utilities initialized")
         except ImportError as e:
-            self.logger.warning(f"⚠️ Evaluation utilities not available: {e}")
+            tprint(f"⚠️ Evaluation utilities not available: {e}")
             self.evaluation_utils = None
 
         # Initialize model registry
@@ -412,7 +410,7 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
             
             # Early exit on critical failures
             if critical_failures:
-                self.logger.error(f"❌ Critical validation failures: {critical_failures}")
+                tprint(f"❌ Critical validation failures: {critical_failures}")
                 return False
             
             # Warning checks (don't cause early exit)
@@ -428,13 +426,13 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
             # Log warnings
             if warnings:
                 for warning in warnings:
-                    self.logger.warning(f"⚠️ {warning}")
+                    tprint(f"⚠️ {warning}")
             
-            self.logger.info(f"✅ Enhanced validation passed: {len(X)} samples, {len(unique_regimes)} regimes")
+            tprint(f"✅ Enhanced validation passed: {len(X)} samples, {len(unique_regimes)} regimes")
             return True
             
         except Exception as e:
-            self.logger.error(f"❌ Validation error: {e}")
+            tprint(f"❌ Validation error: {e}")
             return False
     
     def _prepare_features(self, X: Union[np.ndarray, pd.DataFrame], feature_names: Optional[List[str]] = None) -> Tuple[pd.DataFrame, List[str]]:
@@ -465,7 +463,7 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
                 raise ValueError("No numeric columns found in input data")
             
             X_numeric = X_df[numeric_columns]
-            self.logger.info(f"📊 Using {len(numeric_columns)} numeric features")
+            tprint(f"📊 Using {len(numeric_columns)} numeric features")
             
             # Enhance features if generator is available
             if self.feature_generator is not None:

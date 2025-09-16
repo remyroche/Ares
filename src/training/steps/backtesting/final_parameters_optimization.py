@@ -103,7 +103,10 @@ class FinalParametersOptimizer:
             'confidence': {
                 'base_entry_threshold': {'type': 'float', 'min': 0.5, 'max': 0.9},
                 'analyst_confidence_threshold': {'type': 'float', 'min': 0.6, 'max': 0.8},
-                'tactician_confidence_threshold': {'type': 'float', 'min': 0.7, 'max': 0.9}
+                'tactician_confidence_threshold': {'type': 'float', 'min': 0.7, 'max': 0.9},
+                'tactician_confidence_weight': {'type': 'float', 'min': 0.3, 'max': 0.8},
+                'analyst_confidence_weight': {'type': 'float', 'min': 0.2, 'max': 0.7},
+                'confidence_combination_method': {'type': 'categorical', 'choices': ['multiplicative', 'logarithmic', 'harmonic', 'weighted_average']}
             },
             'position_sizing': {
                 'base_position_size': {'type': 'float', 'min': 0.01, 'max': 0.15},
@@ -393,6 +396,8 @@ class FinalParametersOptimizer:
                         )
                     elif param_config['type'] == 'bool':
                         params[param_name] = trial.suggest_categorical(param_name, [True, False])
+                    elif param_config['type'] == 'categorical':
+                        params[param_name] = trial.suggest_categorical(param_name, param_config['choices'])
             else:
                 # Fallback to original linear sampling
                 for param_name, param_config in search_space.items():
@@ -406,6 +411,8 @@ class FinalParametersOptimizer:
                         )
                     elif param_config['type'] == 'bool':
                         params[param_name] = trial.suggest_categorical(param_name, [True, False])
+                    elif param_config['type'] == 'categorical':
+                        params[param_name] = trial.suggest_categorical(param_name, param_config['choices'])
             
             # Evaluate configuration
             score = self._evaluate_configuration(category, params, calibration_results)
@@ -477,9 +484,10 @@ class FinalParametersOptimizer:
     
     def _evaluate_confidence_params(self, params: Dict[str, Any], 
                                   calibration_results: Dict[str, Any]) -> float:
-        """Evaluate confidence threshold parameters."""
+        """Evaluate confidence threshold parameters with optimal confidence calculation."""
         score = 0.0
         
+        # Base entry threshold evaluation
         if 'base_entry_threshold' in params:
             threshold = params['base_entry_threshold']
             if 0.6 <= threshold <= 0.8:
@@ -489,16 +497,341 @@ class FinalParametersOptimizer:
             else:
                 score += 0.1
         
+        # Enhanced confidence evaluation with optimal calculation
         if 'analyst_confidence_threshold' in params and 'tactician_confidence_threshold' in params:
             analyst_thresh = params['analyst_confidence_threshold']
             tactician_thresh = params['tactician_confidence_threshold']
+            
+            # Basic threshold validation
             if tactician_thresh > analyst_thresh:
                 score += 0.2
             if 0.1 <= tactician_thresh - analyst_thresh <= 0.2:
                 score += 0.1
+            
+            # Extract confidence weights from parameters if available
+            tactician_weight = params.get('tactician_confidence_weight', 0.6)
+            analyst_weight = params.get('analyst_confidence_weight', 0.4)
+            
+            # Validate weight constraints
+            if 0.1 <= tactician_weight <= 0.9 and 0.1 <= analyst_weight <= 0.9:
+                score += 0.1
+                if abs(tactician_weight + analyst_weight - 1.0) < 0.1:
+                    score += 0.1  # Bonus for weights that sum close to 1.0
+            
+            # Update calibration results with parameter weights
+            enhanced_calibration = calibration_results.copy()
+            enhanced_calibration.update({
+                'tactician_confidence_weight': tactician_weight,
+                'analyst_confidence_weight': analyst_weight,
+                'confidence_combination_method': params.get('confidence_combination_method', 'weighted_average')
+            })
+            
+            # Calculate optimal confidence using multiplicative and logarithmic operations
+            optimal_confidence = self._calculate_optimal_confidence(
+                analyst_thresh, tactician_thresh, enhanced_calibration
+            )
+            
+            if optimal_confidence is not None:
+                # Score based on optimal confidence quality
+                if optimal_confidence > 0.8:
+                    score += 0.3
+                elif optimal_confidence > 0.6:
+                    score += 0.2
+                else:
+                    score += 0.1
+                
+                # Additional score for confidence stability
+                confidence_stability = self._evaluate_confidence_stability(
+                    analyst_thresh, tactician_thresh, enhanced_calibration
+                )
+                score += confidence_stability * 0.2
+                
+                # Score based on combination method effectiveness
+                combination_method = params.get('confidence_combination_method', 'weighted_average')
+                if combination_method in ['multiplicative', 'logarithmic']:
+                    score += 0.1  # Bonus for advanced methods
         
         return score
     
+    def _calculate_optimal_confidence(self, analyst_threshold: float, tactician_threshold: float, 
+                                    calibration_results: Dict[str, Any]) -> Optional[float]:
+        """
+        Calculate optimal confidence using multiplicative and logarithmic operations.
+        
+        This method implements the requirement for optimal confidence calculation based on
+        tactician's and analyst's confidence outputs, using:
+        1. Multiplicative operations for combining confidences
+        2. Logarithmic additions for weighted combination
+        3. Different weights for tactician and analyst
+        
+        Args:
+            analyst_threshold: Analyst confidence threshold
+            tactician_threshold: Tactician confidence threshold
+            calibration_results: Results from confidence calibration
+            
+        Returns:
+            Optimal confidence value or None if calculation fails
+        """
+        try:
+            # Check if both confidence levels are available (requirement 1)
+            if not self._has_confidence_levels_available(calibration_results):
+                self.logger.warning("⚠️ Both tactician and analyst confidence levels not available")
+                return None
+            
+            # Extract confidence weights from calibration results or use defaults
+            tactician_weight = calibration_results.get('tactician_confidence_weight', 0.6)
+            analyst_weight = calibration_results.get('analyst_confidence_weight', 0.4)
+            
+            # Ensure weights sum to 1.0
+            total_weight = tactician_weight + analyst_weight
+            if total_weight > 0:
+                tactician_weight = tactician_weight / total_weight
+                analyst_weight = analyst_weight / total_weight
+            else:
+                tactician_weight = 0.6
+                analyst_weight = 0.4
+            
+            self.logger.debug(f"📊 Using confidence weights - Tactician: {tactician_weight:.3f}, Analyst: {analyst_weight:.3f}")
+            
+            # Get combination method from calibration results
+            combination_method = calibration_results.get('confidence_combination_method', 'weighted_average')
+            
+            # Calculate confidence based on selected method
+            if combination_method == 'multiplicative':
+                optimal_confidence = self._calculate_multiplicative_confidence(
+                    analyst_threshold, tactician_threshold, tactician_weight, analyst_weight
+                )
+            elif combination_method == 'logarithmic':
+                optimal_confidence = self._calculate_logarithmic_confidence(
+                    analyst_threshold, tactician_threshold, tactician_weight, analyst_weight
+                )
+            elif combination_method == 'harmonic':
+                optimal_confidence = self._calculate_harmonic_confidence(
+                    analyst_threshold, tactician_threshold, tactician_weight, analyst_weight
+                )
+            else:  # weighted_average or default
+                # Method 1: Multiplicative combination
+                multiplicative_confidence = self._calculate_multiplicative_confidence(
+                    analyst_threshold, tactician_threshold, tactician_weight, analyst_weight
+                )
+                
+                # Method 2: Logarithmic addition combination
+                logarithmic_confidence = self._calculate_logarithmic_confidence(
+                    analyst_threshold, tactician_threshold, tactician_weight, analyst_weight
+                )
+                
+                # Method 3: Weighted harmonic mean (additional method for robustness)
+                harmonic_confidence = self._calculate_harmonic_confidence(
+                    analyst_threshold, tactician_threshold, tactician_weight, analyst_weight
+                )
+                
+                # Combine methods using weighted average
+                optimal_confidence = (
+                    0.4 * multiplicative_confidence +
+                    0.4 * logarithmic_confidence +
+                    0.2 * harmonic_confidence
+                )
+            
+            # Ensure confidence is within valid range [0, 1]
+            optimal_confidence = max(0.0, min(1.0, optimal_confidence))
+            
+            self.logger.debug(f"📊 Optimal confidence calculation using {combination_method}:")
+            if combination_method == 'weighted_average':
+                self.logger.debug(f"   Multiplicative: {multiplicative_confidence:.4f}")
+                self.logger.debug(f"   Logarithmic: {logarithmic_confidence:.4f}")
+                self.logger.debug(f"   Harmonic: {harmonic_confidence:.4f}")
+            self.logger.debug(f"   Final optimal: {optimal_confidence:.4f}")
+            
+            return optimal_confidence
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error calculating optimal confidence: {e}")
+            return None
+    
+    def _has_confidence_levels_available(self, calibration_results: Dict[str, Any]) -> bool:
+        """
+        Check if both tactician and analyst confidence levels are available.
+        
+        Args:
+            calibration_results: Results from confidence calibration
+            
+        Returns:
+            True if both confidence levels are available, False otherwise
+        """
+        try:
+            # Check for tactician confidence data
+            tactician_available = (
+                'tactician_confidence' in calibration_results or
+                'tactician_models' in calibration_results or
+                'tactician_ensemble' in calibration_results
+            )
+            
+            # Check for analyst confidence data
+            analyst_available = (
+                'analyst_confidence' in calibration_results or
+                'analyst_models' in calibration_results or
+                'analyst_ensemble' in calibration_results
+            )
+            
+            both_available = tactician_available and analyst_available
+            
+            if not both_available:
+                self.logger.warning(f"⚠️ Confidence availability - Tactician: {tactician_available}, Analyst: {analyst_available}")
+            
+            return both_available
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error checking confidence availability: {e}")
+            return False
+    
+    def _calculate_multiplicative_confidence(self, analyst_threshold: float, tactician_threshold: float,
+                                           tactician_weight: float, analyst_weight: float) -> float:
+        """
+        Calculate confidence using multiplicative operations.
+        
+        Formula: (tactician_threshold^tactician_weight) * (analyst_threshold^analyst_weight)
+        
+        Args:
+            analyst_threshold: Analyst confidence threshold
+            tactician_threshold: Tactician confidence threshold
+            tactician_weight: Weight for tactician confidence
+            analyst_weight: Weight for analyst confidence
+            
+        Returns:
+            Multiplicative confidence value
+        """
+        try:
+            # Ensure thresholds are positive for power operations
+            analyst_thresh = max(0.001, analyst_threshold)
+            tactician_thresh = max(0.001, tactician_threshold)
+            
+            # Multiplicative combination with weights as exponents
+            multiplicative_conf = (
+                (tactician_thresh ** tactician_weight) * 
+                (analyst_thresh ** analyst_weight)
+            )
+            
+            # Normalize to [0, 1] range
+            multiplicative_conf = min(1.0, multiplicative_conf)
+            
+            return multiplicative_conf
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error in multiplicative confidence calculation: {e}")
+            return 0.5  # Default fallback
+    
+    def _calculate_logarithmic_confidence(self, analyst_threshold: float, tactician_threshold: float,
+                                        tactician_weight: float, analyst_weight: float) -> float:
+        """
+        Calculate confidence using logarithmic additions.
+        
+        Formula: exp(tactician_weight * log(tactician_threshold) + analyst_weight * log(analyst_threshold))
+        
+        Args:
+            analyst_threshold: Analyst confidence threshold
+            tactician_threshold: Tactician confidence threshold
+            tactician_weight: Weight for tactician confidence
+            analyst_weight: Weight for analyst confidence
+            
+        Returns:
+            Logarithmic confidence value
+        """
+        try:
+            # Ensure thresholds are positive for log operations
+            analyst_thresh = max(0.001, analyst_threshold)
+            tactician_thresh = max(0.001, tactician_threshold)
+            
+            # Logarithmic addition with weights
+            log_combination = (
+                tactician_weight * np.log(tactician_thresh) +
+                analyst_weight * np.log(analyst_thresh)
+            )
+            
+            # Convert back using exponential
+            logarithmic_conf = np.exp(log_combination)
+            
+            # Normalize to [0, 1] range
+            logarithmic_conf = min(1.0, max(0.0, logarithmic_conf))
+            
+            return logarithmic_conf
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error in logarithmic confidence calculation: {e}")
+            return 0.5  # Default fallback
+    
+    def _calculate_harmonic_confidence(self, analyst_threshold: float, tactician_threshold: float,
+                                     tactician_weight: float, analyst_weight: float) -> float:
+        """
+        Calculate confidence using weighted harmonic mean.
+        
+        Formula: 1 / (tactician_weight/tactician_threshold + analyst_weight/analyst_threshold)
+        
+        Args:
+            analyst_threshold: Analyst confidence threshold
+            tactician_threshold: Tactician confidence threshold
+            tactician_weight: Weight for tactician confidence
+            analyst_weight: Weight for analyst confidence
+            
+        Returns:
+            Harmonic confidence value
+        """
+        try:
+            # Ensure thresholds are positive for harmonic mean
+            analyst_thresh = max(0.001, analyst_threshold)
+            tactician_thresh = max(0.001, tactician_threshold)
+            
+            # Weighted harmonic mean
+            harmonic_conf = 1.0 / (
+                tactician_weight / tactician_thresh + 
+                analyst_weight / analyst_thresh
+            )
+            
+            # Normalize to [0, 1] range
+            harmonic_conf = min(1.0, max(0.0, harmonic_conf))
+            
+            return harmonic_conf
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error in harmonic confidence calculation: {e}")
+            return 0.5  # Default fallback
+    
+    def _evaluate_confidence_stability(self, analyst_threshold: float, tactician_threshold: float,
+                                     calibration_results: Dict[str, Any]) -> float:
+        """
+        Evaluate confidence stability based on threshold consistency.
+        
+        Args:
+            analyst_threshold: Analyst confidence threshold
+            tactician_threshold: Tactician confidence threshold
+            calibration_results: Results from confidence calibration
+            
+        Returns:
+            Stability score between 0 and 1
+        """
+        try:
+            stability_score = 0.0
+            
+            # Check threshold consistency
+            threshold_diff = abs(tactician_threshold - analyst_threshold)
+            if 0.05 <= threshold_diff <= 0.3:  # Good separation
+                stability_score += 0.4
+            elif threshold_diff < 0.05:  # Too close
+                stability_score += 0.1
+            else:  # Too far apart
+                stability_score += 0.2
+            
+            # Check if thresholds are in reasonable ranges
+            if 0.5 <= analyst_threshold <= 0.9:
+                stability_score += 0.3
+            if 0.6 <= tactician_threshold <= 0.95:
+                stability_score += 0.3
+            
+            return min(1.0, stability_score)
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error evaluating confidence stability: {e}")
+            return 0.5  # Default fallback
+
     def _evaluate_position_sizing_params(self, params: Dict[str, Any], 
                                        calibration_results: Dict[str, Any]) -> float:
         """Evaluate position sizing parameters."""
@@ -1339,6 +1672,8 @@ class FinalParametersOptimizer:
                 
             elif param_config['type'] == 'bool':
                 param_combinations.append([(param_name, v) for v in [True, False]])
+            elif param_config['type'] == 'categorical':
+                param_combinations.append([(param_name, v) for v in param_config['choices']])
         
         # Generate all combinations
         all_combinations = list(itertools.product(*param_combinations))
@@ -1392,6 +1727,8 @@ class FinalParametersOptimizer:
                 
             elif param_config['type'] == 'bool':
                 param_combinations.append([(param_name, v) for v in [True, False]])
+            elif param_config['type'] == 'categorical':
+                param_combinations.append([(param_name, v) for v in param_config['choices']])
         
         # Generate all combinations
         all_combinations = list(itertools.product(*param_combinations))
@@ -1449,6 +1786,8 @@ class FinalParametersOptimizer:
                 default_params[param_name] = (param_config['min'] + param_config['max']) // 2
             elif param_config['type'] == 'bool':
                 default_params[param_name] = True
+            elif param_config['type'] == 'categorical':
+                default_params[param_name] = param_config['choices'][0]  # Use first choice as default
         
         return {
             'best_params': default_params,

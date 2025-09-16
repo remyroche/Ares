@@ -5,7 +5,7 @@ This factory manages the creation and registration of all pipeline components.
 """
 
 from typing import Dict, Type, Any, Optional
-from .base_component import BaseMarketAnalysisComponent, ComponentConfig
+from .base_component import BaseMarketAnalysisComponent, ComponentConfig, ComponentResult
 from .sr_parameter_optimization import SRParameterOptimizationComponent
 from .sr_detection import SRDetectionComponent
 from .sr_clustering import SRClusteringComponent
@@ -33,6 +33,10 @@ class HMMModelsTrainingComponentWrapper(BaseMarketAnalysisComponent):
         super().__init__(config)
         self.training_class = training_class
         self.training_instance = None
+    
+    def get_required_artifacts(self) -> list[str]:
+        """Get list of required artifacts this component must produce."""
+        return ['hmm_models_training_result']
     
     async def execute(self, data, pipeline_state: Dict[str, Any]) -> 'ComponentResult':
         """Execute HMM models training as a component."""
@@ -73,6 +77,7 @@ class HMMModelsTrainingComponentWrapper(BaseMarketAnalysisComponent):
         except Exception as e:
             return ComponentResult(
                 success=False,
+                artifacts={},
                 error_message=str(e),
                 metadata={'component_type': 'hmm_models_training'}
             )
@@ -85,6 +90,10 @@ class HMMEnsembleTrainingComponentWrapper(BaseMarketAnalysisComponent):
         super().__init__(config)
         self.training_class = training_class
         self.training_instance = None
+    
+    def get_required_artifacts(self) -> list[str]:
+        """Get list of required artifacts this component must produce."""
+        return ['hmm_ensemble_training_result']
     
     async def execute(self, data, pipeline_state: Dict[str, Any]) -> 'ComponentResult':
         """Execute HMM ensemble training as a component."""
@@ -133,6 +142,7 @@ class HMMEnsembleTrainingComponentWrapper(BaseMarketAnalysisComponent):
         except Exception as e:
             return ComponentResult(
                 success=False,
+                artifacts={},
                 error_message=str(e),
                 metadata={'component_type': 'hmm_ensemble_training'}
             )
@@ -190,7 +200,7 @@ class ComponentFactory:
         # Handle HMM training components (moved to hmm_models_training module)
         if component_name == 'hmm_models_training':
             try:
-                from ..hmm_models_training import HMMModelsTrainingEnhanced
+                from ..hmm_models_training.hmm_models_training_enhanced import HMMModelsTrainingEnhanced
                 return HMMModelsTrainingComponentWrapper(HMMModelsTrainingEnhanced, config)
             except ImportError as e:
                 raise ValueError(f"Failed to import HMMModelsTrainingEnhanced: {e}")
@@ -240,7 +250,9 @@ class ComponentFactory:
         Returns:
             List of component names
         """
-        return list(self._components.keys())
+        # Include both registered components and lazy-loaded components
+        lazy_components = ['regime_data_splitting', 'hmm_models_training', 'hmm_ensemble_training']
+        return list(self._components.keys()) + lazy_components
     
     @classmethod
     def is_component_available(self, component_name: str) -> bool:
@@ -253,4 +265,6 @@ class ComponentFactory:
         Returns:
             True if component is available
         """
-        return component_name in self._components
+        # Check both registered components and lazy-loaded components
+        lazy_components = ['regime_data_splitting', 'hmm_models_training', 'hmm_ensemble_training']
+        return component_name in self._components or component_name in lazy_components

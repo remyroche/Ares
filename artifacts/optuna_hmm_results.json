@@ -1245,5 +1245,61 @@
     "success": true,
     "n_trials_completed": 5,
     "optimization_duration": 64.48314309120178
+  },
+  {
+    "best_params": {
+      "n_components": 4,
+      "covariance_type": "diag",
+      "n_iter": 100,
+      "tol": 0.001
+    },
+    "best_score": 214700.4048319669,
+    "optimization_method": "vectorized",
+    "batch_processing": true,
+    "success": true,
+    "n_trials_completed": 3,
+    "optimization_duration": 315.19827008247375
+  },
+  {
+    "best_params": {
+      "n_components": 4,
+      "covariance_type": "diag",
+      "n_iter": 100,
+      "tol": 0.001
+    },
+    "best_score": -261146.27985939334,
+    "optimization_method": "vectorized",
+    "batch_processing": true,
+    "success": true,
+    "n_trials_completed": 5,
+    "optimization_duration": 52.74593997001648
+  },
+  {
+    "best_params": {
+      "n_components": 4,
+      "covariance_type": "diag",
+      "n_iter": 100,
+      "tol": 0.001
+    },
+    "best_score": -19369962.45120098,
+    "optimization_method": "vectorized",
+    "batch_processing": true,
+    "success": true,
+    "n_trials_completed": 1,
+    "optimization_duration": 572.6974928379059
+  },
+  {
+    "best_params": {
+      "n_components": 4,
+      "covariance_type": "diag",
+      "n_iter": 100,
+      "tol": 0.001
+    },
+    "best_score": -240157.63878271682,
+    "optimization_method": "vectorized",
+    "batch_processing": true,
+    "success": true,
+    "n_trials_completed": 5,
+    "optimization_duration": 17.235573053359985
   }
 ]

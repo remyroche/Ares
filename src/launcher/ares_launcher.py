@@ -564,6 +564,10 @@ class AresLauncher:
         config.enabled_sub_pipelines[target_stage] = [sub_pipeline]
         tprint("✅ [SUB_PIPELINE_CONFIG] Stage and sub-pipeline enabled")
         
+        # Set single stage execution mode for individual sub-pipeline execution
+        config.single_stage_only = True
+        tprint("🎯 [SUB_PIPELINE_CONFIG] Single stage execution mode enabled")
+        
         # Add intensity parameters to stage configuration
         tprint("🔧 [SUB_PIPELINE_CONFIG] Adding intensity parameters...")
         if config.training_mode_config:

@@ -1,6 +1,6 @@
 {
   "sub_pipeline_config": {
-    "sub_pipeline": "hmm_regime_discovery",
+    "sub_pipeline": "hmm_clustering",
     "stage": "market_analysis",
     "mode": "light",
     "symbol": "ETHUSDT",
@@ -8,17 +8,17 @@
     "timeframe": "1h"
   },
   "execution_metadata": {
-    "start_time": "2025-09-16T23:19:54.222980",
-    "pipeline_id": "sub_pipeline_hmm_regime_discovery_20250916_231954",
+    "start_time": "2025-09-16T23:42:13.209067",
+    "pipeline_id": "sub_pipeline_hmm_clustering_20250916_234213",
     "execution_mode": "sub_pipeline_execution"
   },
   "sub_pipeline_info": {
-    "description": "Discover market regimes",
+    "description": "HMM-based regime clustering",
     "dependencies": [
-      "hmm_clustering"
+      "sr_clustering"
     ],
     "outputs": [
-      "regime_assignments.parquet"
+      "hmm_clusters.json"
     ]
   }
 }

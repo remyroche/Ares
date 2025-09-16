@@ -69,12 +69,10 @@ except ImportError:
     m1_matrix_correlation_analysis = None
 
 # Import existing feature selection tools
-try:
-    from src.utils.feature_selection.step08_unified_complete import UnifiedStep08
-    from src.utils.feature_selection.step08_unified_methods import UnifiedStep08Methods
-    EXISTING_FEATURE_SELECTION_AVAILABLE = True
-except ImportError:
-    EXISTING_FEATURE_SELECTION_AVAILABLE = False
+# Note: step08_unified modules are not available, using fallback
+EXISTING_FEATURE_SELECTION_AVAILABLE = False
+UnifiedStep08 = None
+UnifiedStep08Methods = None
 
 # Import parameter optimization
 # from .parameter_optimization import ParameterOptimizer  # Temporarily disabled due to syntax errors
@@ -124,7 +122,8 @@ except ImportError:
 
 try:
     from src.utils.ml_common.ensembles.ensemble_manager import EnsembleManager as AdvancedEnsembleClustering
-    from .parameter_optimization import ParameterOptimizer
+    # ParameterOptimizer module not available, using fallback
+    ParameterOptimizer = None
     # Create a fallback ParallelClusteringProcessor class
     class ParallelClusteringProcessor:
         def __init__(self, *args, **kwargs):
@@ -278,7 +277,8 @@ def safe_json_dump(data: Any, file_path: Path, **kwargs) -> None:
     with open(file_path, 'w') as f:
         json.dump(data, f, **kwargs)
 if system_logger is None:
-    system_logger = create_fallback_logger()
+    from src.utils.logger import system_logger as main_system_logger
+    system_logger = main_system_logger
 comprehensive_data_validation = create_fallback_decorator()
 handle_errors = create_fallback_decorator()
 memory_efficient = create_fallback_decorator()

@@ -34,7 +34,8 @@ from src.utils.math_validation import (
     safe_divide, safe_log, safe_sqrt,
     validate_positive, validate_range
 )
-from src.utils.core.common import create_fallback_logger, create_fallback_decorator
+from src.utils.core.common import create_fallback_decorator
+from src.utils.logger import system_logger
 from src.utils.parquet_utils import ParquetUtils
 from src.utils.serialization_utils import UniversalSerializer
 from src.utils.data_processing_utils import DataProcessingUtils
@@ -174,7 +175,7 @@ class EnhancedHMMRegimeDetector:
     """Enhanced HMM regime detector with comprehensive functionality."""
     
     def __init__(self, config: Optional[HMMRegimeConfig] = None):
-        self.logger = create_fallback_logger()
+        self.logger = system_logger.getChild('EnhancedHMMRegimeDetector')
         self.logger.info("🚀 Initializing EnhancedHMMRegimeDetector...")
         start_time = time.time()
         
@@ -452,6 +453,10 @@ class EnhancedHMMRegimeDetector:
             self.logger.warning("⚠️ Found infinite values in data, replacing with finite values")
             numeric_data = numeric_data.replace([np.inf, -np.inf], np.nan).fillna(method='ffill').fillna(method='bfill').fillna(0)
 
+        # Ensure data covariance is positive-definite for stable HMM fitting
+        # This must be done BEFORE any HMM training attempts
+        numeric_data = self._ensure_positive_definite_data(numeric_data)
+
         # Use HMM composite manager for optimization
         # Use passed mode parameter or default to 'light'
         optimization_mode = (mode or 'light').upper()
@@ -503,16 +508,30 @@ class EnhancedHMMRegimeDetector:
         # Stage 1: Coarse Grid Search
         self.logger.info(f"\n🔍 Stage 1: Coarse Grid Search ({n_coarse_configs} configs)")
 
-        coarse_configs = [
-            {'n_components': 2, 'covariance_type': 'spherical', 'n_iter': 30, 'tol': 1e-2},
-            {'n_components': 3, 'covariance_type': 'diag', 'n_iter': 50, 'tol': 5e-3},
-            {'n_components': 4, 'covariance_type': 'diag', 'n_iter': 75, 'tol': 1e-3},
-            {'n_components': 2, 'covariance_type': 'diag', 'n_iter': 40, 'tol': 1e-2},
-            {'n_components': 5, 'covariance_type': 'diag', 'n_iter': 60, 'tol': 5e-4},
-            {'n_components': 3, 'covariance_type': 'spherical', 'n_iter': 45, 'tol': 1e-2},
-            {'n_components': 4, 'covariance_type': 'tied', 'n_iter': 55, 'tol': 1e-3},
-            {'n_components': 2, 'covariance_type': 'tied', 'n_iter': 35, 'tol': 5e-3},
-        ][:n_coarse_configs]
+        # Mode-specific coarse configurations
+        if mode == 'light':
+            coarse_configs = [
+                {'n_components': 2, 'covariance_type': 'spherical', 'n_iter': 3, 'tol': 1e-2},
+                {'n_components': 3, 'covariance_type': 'diag', 'n_iter': 3, 'tol': 5e-3},
+                {'n_components': 4, 'covariance_type': 'diag', 'n_iter': 5, 'tol': 1e-3},
+            ][:n_coarse_configs]
+        elif mode == 'blank':
+            coarse_configs = [
+                {'n_components': 2, 'covariance_type': 'spherical', 'n_iter': 8, 'tol': 1e-2},
+                {'n_components': 3, 'covariance_type': 'diag', 'n_iter': 10, 'tol': 5e-3},
+                {'n_components': 4, 'covariance_type': 'diag', 'n_iter': 12, 'tol': 1e-3},
+            ][:n_coarse_configs]
+        else:  # full mode
+            coarse_configs = [
+                {'n_components': 2, 'covariance_type': 'spherical', 'n_iter': 15, 'tol': 1e-2},   # Simple, fast
+                {'n_components': 3, 'covariance_type': 'diag', 'n_iter': 25, 'tol': 5e-3},        # Moderate complexity
+                {'n_components': 4, 'covariance_type': 'diag', 'n_iter': 35, 'tol': 1e-3},        # Moderate complexity
+                {'n_components': 2, 'covariance_type': 'full', 'n_iter': 20, 'tol': 1e-2},        # Complex, fewer components
+                {'n_components': 3, 'covariance_type': 'tied', 'n_iter': 25, 'tol': 5e-3},        # Shared, moderate
+                {'n_components': 4, 'covariance_type': 'tied', 'n_iter': 30, 'tol': 1e-3},        # Shared, more components
+                {'n_components': 3, 'covariance_type': 'full', 'n_iter': 30, 'tol': 1e-3},        # Complex, moderate components
+                {'n_components': 2, 'covariance_type': 'diag', 'n_iter': 15, 'tol': 1e-2},        # Simple fallback
+            ][:n_coarse_configs]
 
         coarse_results = []
         best_coarse_config = None
@@ -541,7 +560,26 @@ class EnhancedHMMRegimeDetector:
                     temp_model.startprob_ = np.ones(coarse_config['n_components']) / coarse_config['n_components']
 
                 # Fit on full dataset for coarse evaluation
-                temp_model.fit(numeric_data)
+                try:
+                    temp_model.fit(numeric_data)
+                except Exception as e:
+                    if "covars must be symmetric, positive-definite" in str(e):
+                        self.logger.warning(f"⚠️ Covariance matrix issue in coarse config {i+1}, trying with diagonal covariance")
+                        # Try with diagonal covariance as fallback
+                        temp_model = hmm.GaussianHMM(
+                            n_components=coarse_config['n_components'],
+                            covariance_type='diag',  # Use diagonal covariance
+                            n_iter=coarse_config['n_iter'],
+                            tol=coarse_config['tol'],
+                            random_state=42,
+                            init_params='mc',
+                            params='stmc'
+                        )
+                        if hasattr(temp_model, 'startprob_'):
+                            temp_model.startprob_ = np.ones(coarse_config['n_components']) / coarse_config['n_components']
+                        temp_model.fit(numeric_data)
+                    else:
+                        raise e
                 score = temp_model.score(numeric_data)
 
                 elapsed = time_module.time() - start_time
@@ -579,15 +617,25 @@ class EnhancedHMMRegimeDetector:
 
         fine_configs = []
 
-        # Generate fine grid around best coarse config
+        # Generate fine grid around best coarse config with mode-specific parameters
+        if mode == 'light':
+            n_iter_multipliers = [0.8, 1.0, 1.2]
+            min_n_iter = 2
+        elif mode == 'blank':
+            n_iter_multipliers = [0.8, 1.0, 1.2]
+            min_n_iter = 5
+        else:  # full mode
+            n_iter_multipliers = [0.8, 1.0, 1.2]
+            min_n_iter = 12
+            
         for n_comp in [max(2, base_n_comp - 1), base_n_comp, min(6, base_n_comp + 1)]:
             for cov_type in [base_cov, 'diag' if base_cov != 'diag' else 'spherical']:
-                for n_iter_mult in [0.7, 1.0, 1.3]:
+                for n_iter_mult in n_iter_multipliers:
                     for tol_mult in [0.3, 1.0, 3.0]:
                         fine_config = {
                             'n_components': n_comp,
                             'covariance_type': cov_type,
-                            'n_iter': max(20, int(base_iter * n_iter_mult)),
+                            'n_iter': max(min_n_iter, int(base_iter * n_iter_mult)),
                             'tol': base_tol * tol_mult
                         }
                         if fine_config not in fine_configs:
@@ -621,7 +669,26 @@ class EnhancedHMMRegimeDetector:
                     temp_model.startprob_ = np.ones(fine_config['n_components']) / fine_config['n_components']
 
                 # Fit on full dataset for fine search
-                temp_model.fit(numeric_data)
+                try:
+                    temp_model.fit(numeric_data)
+                except Exception as e:
+                    if "covars must be symmetric, positive-definite" in str(e):
+                        self.logger.warning(f"⚠️ Covariance matrix issue in fine config {i+1}, trying with diagonal covariance")
+                        # Try with diagonal covariance as fallback
+                        temp_model = hmm.GaussianHMM(
+                            n_components=fine_config['n_components'],
+                            covariance_type='diag',  # Use diagonal covariance
+                            n_iter=fine_config['n_iter'],
+                            tol=fine_config['tol'],
+                            random_state=42,
+                            init_params='mc',
+                            params='stmc'
+                        )
+                        if hasattr(temp_model, 'startprob_'):
+                            temp_model.startprob_ = np.ones(fine_config['n_components']) / fine_config['n_components']
+                        temp_model.fit(numeric_data)
+                    else:
+                        raise e
                 score = temp_model.score(numeric_data)
 
                 elapsed = time_module.time() - start_time
@@ -662,10 +729,18 @@ class EnhancedHMMRegimeDetector:
                     cov_options.append('tied')
                 cov_type = trial.suggest_categorical('covariance_type', cov_options)
 
-                # Suggest n_iter around best fine config
-                n_iter = trial.suggest_int('n_iter',
-                                         max(20, int(best_fine_config['n_iter'] * 0.5)),
-                                         int(best_fine_config['n_iter'] * 1.5))
+                # Suggest n_iter around best fine config with mode-specific ranges
+                if mode == 'light':
+                    min_n_iter = max(3, int(best_fine_config['n_iter'] * 0.5))
+                    max_n_iter = int(best_fine_config['n_iter'] * 1.5)
+                elif mode == 'blank':
+                    min_n_iter = max(10, int(best_fine_config['n_iter'] * 0.5))
+                    max_n_iter = int(best_fine_config['n_iter'] * 1.5)
+                else:  # full mode
+                    min_n_iter = max(20, int(best_fine_config['n_iter'] * 0.5))
+                    max_n_iter = int(best_fine_config['n_iter'] * 1.5)
+                    
+                n_iter = trial.suggest_int('n_iter', min_n_iter, max_n_iter)
 
                 # Suggest tol around best fine config
                 tol = trial.suggest_float('tol',
@@ -699,14 +774,40 @@ class EnhancedHMMRegimeDetector:
                     score = temp_model.score(numeric_data)
 
                     if verbose_logging:
-                        self.logger.info(f"    Bayesian trial - Config: {config}, Score: {score:.2f}")
+                        self.logger.info(f"    Bayesian trial - Config: {bayesian_config}, Score: {score:.2f}")
 
                     return score
 
                 except Exception as e:
-                    if verbose_logging:
-                        self.logger.warning(f"    Bayesian trial failed: {e}")
-                    return float('-inf')
+                    if "covars must be symmetric, positive-definite" in str(e):
+                        if verbose_logging:
+                            self.logger.warning(f"    Bayesian trial failed due to covariance matrix issue, trying diagonal covariance")
+                        # Try with diagonal covariance as fallback
+                        try:
+                            temp_model = hmm.GaussianHMM(
+                                n_components=n_comp,
+                                covariance_type='diag',  # Use diagonal covariance
+                                n_iter=n_iter,
+                                tol=tol,
+                                random_state=42,
+                                init_params='mc',
+                                params='stmc'
+                            )
+                            if hasattr(temp_model, 'startprob_'):
+                                temp_model.startprob_ = np.ones(n_comp) / n_comp
+                            temp_model.fit(numeric_data)
+                            score = temp_model.score(numeric_data)
+                            if verbose_logging:
+                                self.logger.info(f"    Bayesian trial (diag fallback) - Score: {score:.2f}")
+                            return score
+                        except Exception as e2:
+                            if verbose_logging:
+                                self.logger.warning(f"    Bayesian trial (diag fallback) also failed: {e2}")
+                            return float('-inf')
+                    else:
+                        if verbose_logging:
+                            self.logger.warning(f"    Bayesian trial failed: {e}")
+                        return float('-inf')
 
             # Create study with pruner for early stopping
             pruner = optuna.pruners.MedianPruner(
@@ -763,18 +864,32 @@ class EnhancedHMMRegimeDetector:
         # Use memory optimizer if available
         if self.memory_optimizer:
             numeric_data = self.memory_optimizer.optimize_dataframe_memory(numeric_data)
-        
-        # Ensure data covariance is positive-definite for stable HMM fitting
-        numeric_data = self._ensure_positive_definite_data(numeric_data)
 
-        # Standard fallback configurations
-        fallback_configs = [
-            {'covariance_type': 'diag', 'n_components': min(config.n_components, 3), 'n_iter': 300, 'tol': 1e-2},
-            {'covariance_type': 'spherical', 'n_components': 2, 'n_iter': 300, 'tol': 1e-2},
-            {'covariance_type': 'tied', 'n_components': min(config.n_components, 2), 'n_iter': 300, 'tol': 1e-2},
-            {'covariance_type': 'diag', 'n_components': 2, 'n_iter': 500, 'tol': 1e-1},
-            {'covariance_type': 'spherical', 'n_components': 2, 'n_iter': 500, 'tol': 1e-1},
-        ]
+        # Mode-specific fallback configurations
+        if mode == 'light':
+            fallback_configs = [
+                {'covariance_type': 'diag', 'n_components': min(config.n_components, 3), 'n_iter': 10, 'tol': 1e-2},
+                {'covariance_type': 'spherical', 'n_components': 2, 'n_iter': 15, 'tol': 1e-2},
+                {'covariance_type': 'tied', 'n_components': min(config.n_components, 2), 'n_iter': 10, 'tol': 1e-2},
+                {'covariance_type': 'diag', 'n_components': 2, 'n_iter': 20, 'tol': 1e-1},
+                {'covariance_type': 'spherical', 'n_components': 2, 'n_iter': 20, 'tol': 1e-1},
+            ]
+        elif mode == 'blank':
+            fallback_configs = [
+                {'covariance_type': 'diag', 'n_components': min(config.n_components, 3), 'n_iter': 30, 'tol': 1e-2},
+                {'covariance_type': 'spherical', 'n_components': 2, 'n_iter': 40, 'tol': 1e-2},
+                {'covariance_type': 'tied', 'n_components': min(config.n_components, 2), 'n_iter': 30, 'tol': 1e-2},
+                {'covariance_type': 'diag', 'n_components': 2, 'n_iter': 50, 'tol': 1e-1},
+                {'covariance_type': 'spherical', 'n_components': 2, 'n_iter': 50, 'tol': 1e-1},
+            ]
+        else:  # full mode
+            fallback_configs = [
+                {'covariance_type': 'diag', 'n_components': min(config.n_components, 3), 'n_iter': 300, 'tol': 1e-2},
+                {'covariance_type': 'spherical', 'n_components': 2, 'n_iter': 300, 'tol': 1e-2},
+                {'covariance_type': 'tied', 'n_components': min(config.n_components, 2), 'n_iter': 300, 'tol': 1e-2},
+                {'covariance_type': 'diag', 'n_components': 2, 'n_iter': 500, 'tol': 1e-1},
+                {'covariance_type': 'spherical', 'n_components': 2, 'n_iter': 500, 'tol': 1e-1},
+            ]
 
         # Try fitting with different configurations if needed
         fit_success = False
@@ -791,7 +906,10 @@ class EnhancedHMMRegimeDetector:
             self.logger.info(f"✅ HMM fitting completed in {fit_time:.2f}s")
 
         except Exception as e:
-            self.logger.warning(f"⚠️ Primary HMM fitting failed: {e}, trying fallback configurations")
+            if "covars must be symmetric, positive-definite" in str(e):
+                self.logger.warning(f"⚠️ Primary HMM fitting failed due to covariance matrix issue: {e}, trying fallback configurations")
+            else:
+                self.logger.warning(f"⚠️ Primary HMM fitting failed: {e}, trying fallback configurations")
             fit_success = False
 
             for i, fallback_config in enumerate(fallback_configs):
@@ -1257,6 +1375,16 @@ class EnhancedHMMRegimeDetector:
         """Ensure data covariance matrix is positive-definite for stable HMM fitting."""
         df = data.copy()
 
+        # Enhanced data validation and preprocessing
+        validation_results = self._validate_data_for_hmm_enhanced(df)
+        
+        # Log warnings and recommendations
+        for warning in validation_results['warnings']:
+            self.logger.warning(f"⚠️ {warning}")
+        
+        for recommendation in validation_results['recommendations']:
+            self.logger.info(f"💡 Recommendation: {recommendation}")
+
         # Remove highly correlated features to prevent ill-conditioned covariance matrices
         corr_matrix = df.corr()
         upper_tri = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
@@ -1275,7 +1403,7 @@ class EnhancedHMMRegimeDetector:
             df = df.drop(columns=high_corr_features)
             self.logger.info(f"🧹 Removed {len(high_corr_features)} highly correlated features for HMM stability: {high_corr_features}")
 
-        # Add small regularization to prevent singular matrices
+        # Enhanced regularization approach
         if len(df.columns) > 1:
             # Calculate sample covariance
             cov_matrix = df.cov()
@@ -1288,38 +1416,122 @@ class EnhancedHMMRegimeDetector:
                 is_positive_definite = False
 
             if not is_positive_definite:
-                self.logger.warning("⚠️ Data covariance matrix not positive-definite, applying regularization")
+                self.logger.warning("⚠️ Data covariance matrix not positive-definite, applying enhanced regularization")
+                
+                # Use more sophisticated regularization approach
+                df = self._apply_enhanced_regularization(df)
 
-                # Add small diagonal regularization
-                regularization_factor = 1e-6
-                n_features = len(df.columns)
-                regularization_matrix = np.eye(n_features) * regularization_factor
+        return df
 
-                # Apply regularization to make matrix positive-definite
-                regularized_cov = cov_matrix + regularization_matrix
+    def _validate_data_for_hmm_enhanced(self, data: pd.DataFrame) -> dict:
+        """Enhanced validation of data for HMM training to detect potential issues."""
+        validation_results = {
+            'is_valid': True,
+            'warnings': [],
+            'errors': [],
+            'recommendations': []
+        }
+        
+        try:
+            # Check data dimensions
+            n_samples, n_features = data.shape
+            
+            if n_samples < 10:
+                validation_results['errors'].append(f"Insufficient samples: {n_samples} (minimum 10 required)")
+                validation_results['is_valid'] = False
+            
+            if n_features == 0:
+                validation_results['errors'].append("No features available")
+                validation_results['is_valid'] = False
+            
+            # Check for NaN or infinite values
+            nan_count = data.isnull().sum().sum()
+            inf_count = np.isinf(data.select_dtypes(include=[np.number])).sum().sum()
+            
+            if nan_count > 0:
+                validation_results['warnings'].append(f"Found {nan_count} NaN values")
+                validation_results['recommendations'].append("Apply data cleaning before training")
+            
+            if inf_count > 0:
+                validation_results['warnings'].append(f"Found {inf_count} infinite values")
+                validation_results['recommendations'].append("Apply data cleaning before training")
+            
+            # Check for constant features
+            feature_stds = data.std()
+            constant_features = feature_stds < 1e-10
+            
+            if np.any(constant_features):
+                validation_results['warnings'].append(f"Found {np.sum(constant_features)} constant/near-constant features")
+                validation_results['recommendations'].append("Add minimal noise to constant features or remove them")
+            
+            # Check feature-to-sample ratio
+            if n_samples < n_features:
+                validation_results['warnings'].append(f"More features ({n_features}) than samples ({n_samples}) - can cause covariance issues")
+                validation_results['recommendations'].append("Consider feature selection or data augmentation")
+            
+            # Check for high correlations
+            try:
+                corr_matrix = data.corr()
+                if not corr_matrix.isnull().any().any():
+                    high_corr_pairs = np.sum((np.abs(corr_matrix) > 0.99) & (np.abs(corr_matrix) < 1.0))
+                    if high_corr_pairs > 0:
+                        validation_results['warnings'].append(f"Found {high_corr_pairs} highly correlated feature pairs")
+                        validation_results['recommendations'].append("Consider removing redundant features or applying regularization")
+            except:
+                validation_results['warnings'].append("Could not compute correlation matrix")
+            
+            # Check condition number
+            try:
+                cov_matrix = data.cov()
+                if cov_matrix.shape[0] > 0:
+                    cond_num = np.linalg.cond(cov_matrix.values)
+                    if cond_num > 1e12:
+                        validation_results['warnings'].append(f"High condition number: {cond_num:.2e}")
+                        validation_results['recommendations'].append("Apply ridge regularization or feature selection")
+                    elif cond_num > 1e8:
+                        validation_results['warnings'].append(f"Moderate condition number: {cond_num:.2e}")
+                        validation_results['recommendations'].append("Monitor for numerical stability issues")
+            except:
+                validation_results['warnings'].append("Could not compute condition number")
+            
+        except Exception as e:
+            validation_results['errors'].append(f"Validation failed: {e}")
+            validation_results['is_valid'] = False
+        
+        return validation_results
 
-                # Try Cholesky again
-                try:
-                    np.linalg.cholesky(regularized_cov.values)
-                    self.logger.info(f"✅ Applied regularization (factor={regularization_factor}) to ensure positive-definite covariance")
-                except np.linalg.LinAlgError:
-                    # If still not positive-definite, increase regularization
-                    regularization_factor = 1e-3
-                    regularization_matrix = np.eye(n_features) * regularization_factor
-                    regularized_cov = cov_matrix + regularization_matrix
-
-                    try:
-                        np.linalg.cholesky(regularized_cov.values)
-                        self.logger.info(f"✅ Applied stronger regularization (factor={regularization_factor}) to ensure positive-definite covariance")
-                    except np.linalg.LinAlgError:
-                        self.logger.warning("⚠️ Covariance matrix still not positive-definite after regularization, using diagonal covariance")
-
-                        # As last resort, use only the diagonal elements (variance)
-                        for i, col in enumerate(df.columns):
-                            if df[col].var() < 1e-10:  # Very small variance
-                                df[col] = df[col] + np.random.normal(0, 1e-5, len(df))
-                                self.logger.info(f"🔧 Added small noise to constant feature: {col}")
-
+    def _apply_enhanced_regularization(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Apply enhanced regularization to ensure positive-definite covariance matrix."""
+        regularization_factor = 1e-6
+        max_attempts = 5
+        
+        for attempt in range(max_attempts):
+            try:
+                # Calculate covariance matrix
+                cov_matrix = df.cov()
+                
+                # Test positive definiteness
+                np.linalg.cholesky(cov_matrix.values)
+                self.logger.info(f"✅ Applied regularization (factor={regularization_factor:.2e}) to ensure positive-definite covariance")
+                return df
+                
+            except np.linalg.LinAlgError:
+                # Apply regularization
+                for col in df.columns:
+                    if df[col].var() < 1e-10:  # Very small variance
+                        df[col] = df[col] + np.random.normal(0, regularization_factor, len(df))
+                        self.logger.info(f"🔧 Added noise to low-variance feature: {col}")
+                    else:
+                        # Add proportional noise to break perfect correlations
+                        noise_scale = df[col].std() * regularization_factor
+                        df[col] = df[col] + np.random.normal(0, noise_scale, len(df))
+                
+                # Increase regularization for next attempt
+                regularization_factor *= 10
+                
+                if attempt == max_attempts - 1:
+                    self.logger.warning("⚠️ Maximum regularization attempts reached, using diagonal covariance fallback")
+        
         return df
 
     def _validate_model_covariances(self, model):

@@ -382,7 +382,8 @@ def create_fallback_validates():
     return decorator
 
 if system_logger is None:
-    system_logger = create_fallback_logger()
+    from src.utils.logger import system_logger as main_system_logger
+    system_logger = main_system_logger
 
 # Set fallback decorators
 comprehensive_data_validation = create_fallback_validates()

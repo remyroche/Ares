@@ -61,6 +61,7 @@ class SubPipelineConfig:
     monitoring_enabled: bool = True
     fast_mode: bool = False
     skip_next_pipeline: bool = False
+    single_stage_only: bool = False  # New parameter to control single vs sequential execution
     custom_params: Dict[str, Any] = field(default_factory=dict)
 
 @dataclass
@@ -244,15 +245,24 @@ class MarketAnalysisSubPipeline:
         """
         Execute the complete market analysis sub-pipeline with backward compatible interface.
 
-        This method orchestrates the complete market analysis pipeline with 11 steps:
-        1. SR parameter optimization, detection, and clustering
-        2. HMM regime discovery and clustering
-        3. HMM models training with HPO
-        4. HMM ensemble training (meta-model)
-        5. Regime data splitting
-        6. Triple barrier labeling
-        7. Feature lookback optimization
-        8. Cross timeframe analysis
+        This method orchestrates the complete market analysis pipeline with logical groupings:
+        
+        SR Steps (1-3):
+        1. SR parameter optimization
+        2. SR detection  
+        3. SR clustering
+        
+        HMM Steps (4-7):
+        4. HMM regime discovery
+        5. HMM clustering
+        6. HMM models training with HPO
+        7. HMM ensemble training (meta-model)
+        
+        Data Processing Steps (8-11):
+        8. Regime data splitting
+        9. Triple barrier labeling
+        10. Feature lookback optimization
+        11. PID-based feature generation
         """
         self.logger.info('🎯 Starting Market Analysis Sub-Pipeline execution')
         
@@ -268,6 +278,9 @@ class MarketAnalysisSubPipeline:
             
             # Initialize results dictionary
             results = {}
+            
+            # ===== SR STEPS GROUP =====
+            self.logger.info('🎯 ===== STARTING SR STEPS GROUP =====')
             
             # Stage 1: SR Parameter Optimization (BEFORE detection and clustering)
             self.logger.info('🎯 Executing Stage 1: SR Parameter Optimization')
@@ -321,6 +334,9 @@ class MarketAnalysisSubPipeline:
             self._current_pipeline_state.update({
                 'sr_clusters': results['sr_clusters']
             })
+            
+            # ===== HMM STEPS GROUP =====
+            self.logger.info('🔍 ===== STARTING HMM STEPS GROUP =====')
             
             # Stage 4: HMM Regime Discovery
             self.logger.info('🔍 Executing Stage 4: HMM Regime Discovery')
@@ -391,6 +407,9 @@ class MarketAnalysisSubPipeline:
             self._current_pipeline_state.update({
                 'hmm_ensemble': results['hmm_ensemble']
             })
+            
+            # ===== DATA PROCESSING STEPS GROUP =====
+            self.logger.info('✂️ ===== STARTING DATA PROCESSING STEPS GROUP =====')
             
             # Stage 8: Regime Data Splitting
             self.logger.info('✂️ Executing Stage 8: Regime Data Splitting')
@@ -726,10 +745,13 @@ class MarketAnalysisSubPipeline:
         config: SubPipelineConfig
     ) -> SubPipelineResult:
         """
-        Execute a specific sub-pipeline and automatically trigger subsequent sub-pipelines.
+        Execute a specific sub-pipeline and conditionally trigger subsequent sub-pipelines.
         
         This method provides the interface expected by the main training pipeline for
-        automatic sequential execution of sub-pipelines.
+        automatic sequential execution of sub-pipelines, following logical groupings:
+        - SR steps: parameter optimization -> detection -> clustering
+        - HMM steps: regime discovery -> clustering -> models -> ensemble
+        - Data processing: regime splitting -> labeling -> feature optimization -> generation
         
         Args:
             sub_pipeline_name: Name of the sub-pipeline to execute
@@ -738,7 +760,14 @@ class MarketAnalysisSubPipeline:
         Returns:
             SubPipelineResult with execution details
         """
-        self.logger.info(f'🚀 Starting {sub_pipeline_name} sub-pipeline with automatic next triggering')
+        self.logger.info(f'🚀 Starting {sub_pipeline_name} sub-pipeline')
+        
+        # Check if we should execute only a single stage
+        if config.single_stage_only:
+            self.logger.info('🎯 Single stage execution mode - executing only the requested sub-pipeline')
+            return await self.execute_sub_pipeline(sub_pipeline_name, config)
+        
+        self.logger.info(f'🚀 Starting {sub_pipeline_name} sub-pipeline with sequential execution')
         
         # Reset accumulated artifacts for new sequence
         self._accumulated_artifacts = {}
@@ -749,21 +778,29 @@ class MarketAnalysisSubPipeline:
             self.logger.info('📊 Loading market data for sub-pipeline execution...')
             await self._load_market_data(config)
         
-        # Define the execution sequence for market analysis sub-pipelines
-        execution_sequence = [
+        # Define logical execution groups
+        sr_steps = [
             'sr_parameter_optimization',
             'sr_detection', 
-            'sr_clustering',
+            'sr_clustering'
+        ]
+        
+        hmm_steps = [
             'hmm_regime_discovery',
             'hmm_clustering',
             'hmm_models_training',
-            'hmm_ensemble_training',
+            'hmm_ensemble_training'
+        ]
+        
+        data_processing_steps = [
             'regime_data_splitting',
             'triple_barrier_labeling',
             'feature_lookback_optimization',
-            'pid_based_feature_generation',
-            'cross_timeframe_analysis'
+            'pid_based_feature_generation'
         ]
+        
+        # Complete execution sequence
+        execution_sequence = sr_steps + hmm_steps + data_processing_steps
         
         # Find the starting index
         try:
@@ -772,13 +809,40 @@ class MarketAnalysisSubPipeline:
             self.logger.error(f"❌ Unknown sub-pipeline: {sub_pipeline_name}")
             raise ValueError(f"Unknown sub-pipeline: {sub_pipeline_name}")
         
+        # Determine which group we're starting from
+        current_group = None
+        if sub_pipeline_name in sr_steps:
+            current_group = "SR Steps"
+            self.logger.info('🎯 Starting from SR steps group - will complete all SR steps before moving to HMM')
+        elif sub_pipeline_name in hmm_steps:
+            current_group = "HMM Steps"
+            self.logger.info('🎯 Starting from HMM steps group - will complete all HMM steps before moving to data processing')
+        elif sub_pipeline_name in data_processing_steps:
+            current_group = "Data Processing Steps"
+            self.logger.info('🎯 Starting from data processing steps group')
+        
+        self.logger.info(f'📋 Execution sequence: {execution_sequence}')
+        self.logger.info(f'🚀 Starting from index {start_index}: {sub_pipeline_name}')
+        
         # Execute sub-pipelines starting from the specified one
         results = []
         for i in range(start_index, len(execution_sequence)):
             pipeline_name = execution_sequence[i]
             
+            # Log group transitions
+            if pipeline_name in sr_steps and current_group != "SR Steps":
+                self.logger.info('🔄 Transitioning to SR steps group')
+                current_group = "SR Steps"
+            elif pipeline_name in hmm_steps and current_group != "HMM Steps":
+                self.logger.info('🔄 Transitioning to HMM steps group')
+                current_group = "HMM Steps"
+            elif pipeline_name in data_processing_steps and current_group != "Data Processing Steps":
+                self.logger.info('🔄 Transitioning to data processing steps group')
+                current_group = "Data Processing Steps"
+            
             try:
-                self.logger.info(f'🔄 Executing {pipeline_name} ({i+1-start_index}/{len(execution_sequence)-start_index})')
+                progress_info = f"({i+1-start_index}/{len(execution_sequence)-start_index})"
+                self.logger.info(f'🔄 Executing {pipeline_name} {progress_info} [Group: {current_group}]')
                 result = await self.execute_sub_pipeline(pipeline_name, config)
                 results.append(result)
                 

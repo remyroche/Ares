@@ -263,6 +263,30 @@ def validate_range(value: float, min_val: float = None, max_val: float = None, n
     return value
 
 
+def validate_numeric_array(array: np.ndarray, name: str = "array") -> np.ndarray:
+    """Validate a numeric array for mathematical operations."""
+    if not isinstance(array, np.ndarray):
+        array = np.array(array)
+    
+    if array.size == 0:
+        raise ValueError(f"{name} is empty")
+    
+    if np.isnan(array).any():
+        raise ValueError(f"{name} contains NaN values")
+    
+    if np.isinf(array).any():
+        raise ValueError(f"{name} contains infinite values")
+    
+    return array
+
+
+def validate_finite(value: float, name: str = "value") -> float:
+    """Validate that a value is finite (not inf or nan)."""
+    if not np.isfinite(value):
+        raise ValueError(f"{name} must be finite, got {value}")
+    return value
+
+
 __all__ = [
     'MathValidator',
     'MathValidationError',
@@ -272,5 +296,7 @@ __all__ = [
     'safe_log',
     'safe_sqrt',
     'validate_positive',
-    'validate_range'
+    'validate_range',
+    'validate_numeric_array',
+    'validate_finite'
 ]

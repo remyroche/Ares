@@ -48,7 +48,9 @@ class HMMRegimeAnalyzer:
             X = features.values
             scaler = StandardScaler()
             X_scaled = scaler.fit_transform(X)
-            self.hmm_model = hmm.GaussianHMM(n_components = self.n_regimes, covariance_type='full', n_iter = 100)
+            # Use mode-appropriate n_iter values (defaulting to blank mode equivalent)
+            n_iter = 20  # Blank mode equivalent for training components
+            self.hmm_model = hmm.GaussianHMM(n_components = self.n_regimes, covariance_type='full', n_iter = n_iter)
             self.hmm_model.fit(X_scaled)
             states = self.hmm_model.predict(X_scaled)
             state_probs = self.hmm_model.predict_proba(X_scaled)

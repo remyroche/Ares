@@ -15,6 +15,12 @@ from pathlib import Path
 from dataclasses import dataclass
 from enum import Enum
 
+# Import tprint for consistent logging
+from src.utils.tprint import tprint
+
+# Import hardware optimization decorator
+from src.utils.matrix_operations.hardware_integration import hardware_optimized
+
 # Use dependency manager for robust imports
 from .dependency_manager import dependency_manager, get_dependency, is_dependency_available
 
@@ -23,7 +29,6 @@ np, np_fallback = get_dependency('numpy')
 pd, pd_fallback = get_dependency('pandas')
 
 if np_fallback or pd_fallback:
-    from src.utils.tprint import tprint
     tprint("⚠️ Using fallback implementations for core dependencies")
 
 # Import common utilities for enhanced functionality
@@ -38,7 +43,7 @@ from src.utils.common_operations import (
     safe_to_parquet, safe_read_parquet, validate_dataframe_schema,
     guard_dataframe_nulls, memory_checkpoint, gpu_context, optimize_memory,
     get_memory_usage, integrate_with_m1_optimizers, get_m1_gpu_manager,
-    get_m1_memory_optimizer, get_m1_cpu_optimizer
+    get_m1_memory_optimizer, get_m1_cpu_optimizer, validate_dataframe
 )
 
 from src.utils.common_utilities import (
@@ -67,24 +72,18 @@ from src.utils.serialization_utils import (
 
 # Import ML common utilities for enhanced ML operations
 try:
-    from src.utils.ml_common.common_operations import (
-        safe_cross_validation, safe_hyperparameter_optimization,
-        safe_feature_selection, safe_model_training, safe_model_evaluation
-    )
     from src.utils.ml_common.data_processing.data_quality import (
-        DataQualityChecker, DataQualityReport
+        DataQualityUtilities
     )
     from src.utils.ml_common.data_processing.feature_preparation import (
-        FeaturePreparator, FeatureScaler
+        FeaturePreparator
     )
-    from src.utils.ml_common.optimization.hyperparameter_optimization import (
-        HyperparameterOptimizer, OptimizationConfig
+    from src.utils.ml_common.optimization.config import CONFIG as OptimizationConfig
+    from src.utils.ml_common.validation.cv import (
+        purged_time_series_splits, PurgedSplitConfig
     )
-    from src.utils.ml_common.validation.cross_validation import (
-        CrossValidator, CVConfig
-    )
-    from src.utils.ml_common.monitoring.performance_monitor import (
-        PerformanceMonitor, PerformanceMetrics
+    from src.utils.ml_common.monitoring.enhanced_error_detector import (
+        EnhancedErrorDetector, ErrorSeverity, ErrorCategory
     )
     ML_COMMON_AVAILABLE = True
 except ImportError as e:
@@ -94,18 +93,16 @@ except ImportError as e:
 # Import matrix operations for efficient computation
 try:
     from src.utils.matrix_operations.unified_operations import (
-        UnifiedMatrixOperations, MatrixOptimizer, safe_correlation_matrix,
-        safe_matrix_inverse, eigendecomposition, svd_decomposition,
-        kmeans_plus_plus_init, normalize_matrix, initialize_covariances,
-        get_unified_matrix_operations
+        UnifiedMatrixOperations, safe_correlation_matrix,
+        safe_matrix_inverse, get_unified_matrix_operations
     )
     from src.utils.matrix_operations.vectorized_core import (
-        VectorizedOperations, VectorizedOptimizer, VectorizedProcessingCore,
+        VectorizedProcessingCore,
         vectorized_rolling_features, matrix_correlation_analysis,
-        compute_trading_indicators, get_vectorized_processing_core
+        get_vectorized_processing_core
     )
     from src.utils.matrix_operations.hardware_integration import (
-        HardwareOptimizedOperations, HardwareOptimizedMatrixProcessor,
+        HardwareOptimizedMatrixProcessor,
         hardware_optimized, optimize_matrix_operation, get_hardware_optimized_processor,
         HardwareConfig
     )
@@ -123,7 +120,6 @@ from .optimization_reporter import OptimizationReporter
 from .validation_framework import ValidationFramework, ValidationLevel, ValidationStatus
 from .monitoring_metrics import MonitoringMetrics, MetricType, MetricLevel
 from src.utils.logger import system_logger
-from src.utils.tprint import tprint
 
 # Hardware optimization imports
 try:
@@ -133,30 +129,17 @@ except ImportError:
     HARDWARE_OPTIMIZATION_AVAILABLE = False
     tprint("⚠️ Hardware optimization not available - using fallback memory management")
 
-# Import advanced matrix operations
+# Import advanced matrix operations (additional functions)
 try:
     from src.utils.matrix_operations import (
-        get_enhanced_matrix_operations, get_vectorized_processing_core, 
-        get_batch_matrix_processor, safe_matrix_multiply, safe_correlation_matrix,
-        safe_matrix_inverse, gpu_matrix_multiply, correlation_matrix_gpu,
-        eigendecomposition_gpu, batch_matrix_multiply, batch_feature_transformation,
-        batch_correlation_analysis, optimize_matrix_operation_with_hardware
+        get_enhanced_matrix_operations, safe_matrix_multiply, gpu_matrix_multiply, 
+        correlation_matrix_gpu, eigendecomposition_gpu, batch_matrix_multiply,
+        optimize_matrix_operation_with_hardware
     )
-    MATRIX_OPS_AVAILABLE = True
+    ADVANCED_MATRIX_OPS_AVAILABLE = True
 except ImportError as e:
-    MATRIX_OPS_AVAILABLE = False
+    ADVANCED_MATRIX_OPS_AVAILABLE = False
     tprint(f"⚠️ Advanced matrix operations not available: {e}")
-
-# Import common operations for enhanced functionality
-try:
-    from src.utils.common_operations import (
-        safe_divide, safe_log, safe_sqrt, safe_power, safe_mean, safe_std,
-        validate_finite, get_memory_usage, timed_operation
-    )
-    COMMON_OPERATIONS_AVAILABLE = True
-except ImportError as e:
-    COMMON_OPERATIONS_AVAILABLE = False
-    tprint(f"⚠️ Common operations not available: {e}")
 
 # Import Bayesian lookback optimizer
 try:
@@ -270,7 +253,7 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
                 tprint(f"⚠️ Matrix operations initialization failed: {e}")
         
         tprint(f"🔧 Matrix operations available: {MATRIX_OPS_AVAILABLE}")
-        tprint(f"🔧 Common operations available: {COMMON_OPERATIONS_AVAILABLE}")
+        tprint(f"🔧 Advanced matrix operations available: {ADVANCED_MATRIX_OPS_AVAILABLE}")
         tprint(f"🔧 MRMR optimizer available: {MRMR_OPTIMIZER_AVAILABLE}")
         
         # Initialize MRMR optimizer if available
@@ -1622,13 +1605,13 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
         base_metrics = {
             'optimization_status': self.optimization_status.value,
             'execution_time': time.time() - self.start_time if self.start_time else 0.0,
-            'memory_usage': get_memory_usage() if COMMON_OPERATIONS_AVAILABLE else 0.0
+            'memory_usage': get_memory_usage() if MATRIX_OPS_AVAILABLE else 0.0
         }
         
         enhanced_metrics = {
             **base_metrics,
             'matrix_operations_available': MATRIX_OPS_AVAILABLE,
-            'common_operations_available': COMMON_OPERATIONS_AVAILABLE,
+            'advanced_matrix_operations_available': ADVANCED_MATRIX_OPS_AVAILABLE,
             'enhanced_matrix_ops_initialized': self.enhanced_matrix_ops is not None,
             'vectorized_core_initialized': self.vectorized_core is not None,
             'batch_processor_initialized': self.batch_processor is not None,

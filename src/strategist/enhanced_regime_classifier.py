@@ -56,7 +56,9 @@ class EnhancedRegimeClassifier:
         """Initialize the enhanced regime classifier."""
         try:
             self.logger.info('Initializing Enhanced Regime Classifier...')
-            self.hmm_model = hmm.GaussianHMM(n_components = self.n_states, covariance_type='diag', n_iter = 100, random_state = 42)
+            # Use mode-appropriate n_iter values (defaulting to blank mode equivalent)
+            n_iter = 20  # Blank mode equivalent for strategist regime classifier
+            self.hmm_model = hmm.GaussianHMM(n_components = self.n_states, covariance_type='diag', n_iter = n_iter, random_state = 42)
             self.logger.info('✅ Enhanced Regime Classifier initialized')
             return True
         except Exception as e:

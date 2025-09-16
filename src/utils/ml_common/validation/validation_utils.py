@@ -723,3 +723,51 @@ async def validate_ml_step(config: Dict[str, Any], data: Optional[pd.DataFrame] 
     """Convenience function for complete ML step validation."""
     suite = create_validation_suite()
     return await suite.validate_step_execution(config, data)
+
+
+class ValidationUtils:
+    """Utility class for common validation operations."""
+    
+    @staticmethod
+    def validate_config(config: Dict[str, Any]) -> bool:
+        """Validate configuration parameters."""
+        if not isinstance(config, dict):
+            return False
+        if not config:
+            return False
+        return True
+    
+    @staticmethod
+    def validate_data_shapes(X, y, regime_labels) -> bool:
+        """Validate data shapes for ML training."""
+        if X is None or y is None or regime_labels is None:
+            return False
+        if len(X) != len(y) or len(X) != len(regime_labels):
+            return False
+        return True
+    
+    @staticmethod
+    def validate_data_quality(X, y, regime_labels) -> bool:
+        """Validate data quality for ML training."""
+        if X is None or y is None or regime_labels is None:
+            return False
+        # Check for empty data
+        if len(X) == 0 or len(y) == 0 or len(regime_labels) == 0:
+            return False
+        return True
+    
+    @staticmethod
+    def validate_regime_distribution(regime_labels, min_samples_per_regime: int = 10) -> bool:
+        """Validate regime distribution for ML training."""
+        if regime_labels is None or len(regime_labels) == 0:
+            return False
+        
+        # Count samples per regime
+        unique_regimes, counts = np.unique(regime_labels, return_counts=True)
+        
+        # Check if all regimes have enough samples
+        for count in counts:
+            if count < min_samples_per_regime:
+                return False
+        
+        return True

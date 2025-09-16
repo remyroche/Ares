@@ -60,6 +60,10 @@ class M1CPUOptimizer:
         except Exception:
             return max(1, multiprocessing.cpu_count() // 4)  # Conservative fallback
 
+    def get_optimal_worker_count(self) -> int:
+        """Get optimal worker count for parallel processing."""
+        return self._get_optimal_cpu_count()
+
     def _get_performance_cores(self) -> int:
         """Get number of performance cores."""
         # M1 has 4 performance cores, M2 has 4-8, M3 has 4-12

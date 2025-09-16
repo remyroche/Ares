@@ -39,6 +39,14 @@ class SubPipelineStatus(Enum):
     COMPLETED = "completed"
     FAILED = "failed"
 
+# Define PipelineStage enum
+class PipelineStage(Enum):
+    """Pipeline stages."""
+    DATA_COLLECTION = "data_collection"
+    MARKET_ANALYSIS = "market_analysis"
+    MODEL_TRAINING = "model_training"
+    BACKTESTING = "backtesting"
+
 # Lazy imports to avoid circular dependency
 def get_system_logger():
     from src.utils.logger import system_logger
@@ -155,7 +163,7 @@ class MainPipelineConfig:
             'sr_feature_integration'
         ],
         PipelineStage.MODEL_TRAINING: [
-            'hmm_training', 'analyst_models_training', 'analyst_ensemble_training',
+            'hmm_training', 'hmm_models_training', 'analyst_models_training', 'analyst_ensemble_training',
             'tactician_models_training', 'tactician_ensemble_training'
         ],
         PipelineStage.BACKTESTING: [
@@ -171,6 +179,9 @@ class MainPipelineConfig:
     # Intensity parameters for ML training
     intensity_percentage: float = 1.0  # Default to 100% intensity
     training_mode_config: Optional[Dict[str, Any]] = None
+    
+    # Single stage execution control
+    single_stage_only: bool = False  # Control whether to execute only the requested stage
 
 @dataclass
 class MainPipelineResult:
@@ -390,6 +401,7 @@ class MainTrainingPipeline:
             'max_workers': config.max_workers,
             'validation_enabled': config.validation_enabled,
             'monitoring_enabled': config.monitoring_enabled,
+            'single_stage_only': config.single_stage_only,
             'custom_params': config.stage_params.get(stage, {})
         }
         
@@ -646,9 +658,9 @@ class MainTrainingPipeline:
             for sub_result in stage_results:
                 total_sub_pipelines += 1
                 self.logger.info(f"   Sub-pipeline: {sub_result.sub_pipeline_name}, Status: {sub_result.status.value}")
-                if sub_result.status == SubPipelineStatus.COMPLETED:
+                if sub_result.status.value == "completed":
                     completed_sub_pipelines += 1
-                elif sub_result.status == SubPipelineStatus.FAILED:
+                elif sub_result.status.value == "failed":
                     failed_sub_pipelines += 1
 
         result.total_sub_pipelines = total_sub_pipelines
@@ -678,8 +690,8 @@ class MainTrainingPipeline:
     def get_execution_summary(self) -> Dict[str, Any]:
         """Get summary of all pipeline executions."""
         total_executions = len(self.pipeline_results)
-        completed = sum(1 for r in self.pipeline_results if r.status == SubPipelineStatus.COMPLETED)
-        failed = sum(1 for r in self.pipeline_results if r.status == SubPipelineStatus.FAILED)
+        completed = sum(1 for r in self.pipeline_results if r.status.value == "completed")
+        failed = sum(1 for r in self.pipeline_results if r.status.value == "failed")
         total_duration = sum(r.duration_seconds or 0 for r in self.pipeline_results)
         
         return {

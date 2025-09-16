@@ -39,7 +39,8 @@ from ..math_validation import (
     safe_divide, safe_log, safe_sqrt,
     validate_positive, validate_range
 )
-from src.utils.core.common import create_fallback_logger, create_fallback_decorator
+from src.utils.core.common import create_fallback_decorator
+from src.utils.logger import system_logger
 from src.utils.parquet_utils import ParquetUtils
 from src.utils.serialization_utils import UniversalSerializer
 from src.utils.data_processing_utils import DataProcessingUtils
@@ -117,7 +118,7 @@ class AsyncFileProcessor:
     """High-performance async file processor for regime data."""
     
     def __init__(self, config: Optional[AsyncFileProcessorConfig] = None):
-        self.logger = create_fallback_logger()
+        self.logger = system_logger.getChild('AsyncFileProcessor')
         self.logger.info("🚀 Initializing AsyncFileProcessor...")
         start_time = time.time()
         
@@ -240,7 +241,7 @@ class MemoryPoolManager:
     
     def __init__(self, config: Optional[MemoryPoolConfig] = None):
         self.config = config or MemoryPoolConfig()
-        self.logger = create_fallback_logger()
+        self.logger = system_logger.getChild('MemoryPool')
         
         # Initialize memory optimizer
         self.memory_optimizer = get_m1_memory_optimizer() if get_m1_memory_optimizer else None
@@ -367,7 +368,7 @@ class DataTypeOptimizer:
     
     def __init__(self, config: Optional[DataTypeOptimizerConfig] = None):
         self.config = config or DataTypeOptimizerConfig()
-        self.logger = create_fallback_logger()
+        self.logger = system_logger.getChild('DataTypeOptimizer')
         
         # Initialize memory optimizer
         self.memory_optimizer = get_m1_memory_optimizer() if get_m1_memory_optimizer else None
@@ -496,7 +497,7 @@ class RegimeContinuityValidator:
     
     def __init__(self, config: Optional[RegimeContinuityConfig] = None):
         self.config = config or RegimeContinuityConfig()
-        self.logger = create_fallback_logger()
+        self.logger = system_logger.getChild('RegimeContinuityValidator')
 
     def validate_regime_continuity(
         self, 
@@ -634,7 +635,7 @@ class EnhancedRegimeDataProcessor:
     
     def __init__(self, processing_mode: ProcessingMode = ProcessingMode.SYNC):
         self.processing_mode = processing_mode
-        self.logger = create_fallback_logger()
+        self.logger = system_logger.getChild('RegimeDataProcessor')
         
         # Initialize components
         self.async_processor = AsyncFileProcessor()

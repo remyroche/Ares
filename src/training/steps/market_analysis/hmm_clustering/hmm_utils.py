@@ -25,6 +25,7 @@ from src.utils.matrix_operations.unified_operations import UnifiedMatrixOperatio
 from src.utils.ml_common.hmm_regime_detection import HMMRegimeDetector
 from src.utils.ml_common.validation.cross_validation import TimeSeriesCrossValidator
 from src.utils.ml_common.optimization.hyperparameter_optimization import HyperparameterOptimizer
+from src.utils.logger import system_logger
 
 
 def create_fallback_logger() -> Any:
@@ -49,10 +50,10 @@ def ensure_directory(path: Path) -> Path:
             raise ValueError("Path cannot be None")
         path.mkdir(parents=True, exist_ok=True)
         return path
-    except Exception as e:
-        logger = create_fallback_logger()
-        logger.exception(f"Failed to create directory {path}: {e}")
-        raise
+        except Exception as e:
+            logger = system_logger.getChild('HMMUtils')
+            logger.exception(f"Failed to create directory {path}: {e}")
+            raise
 
 
 class HMMCommonUtilities:
@@ -60,7 +61,7 @@ class HMMCommonUtilities:
     
     def __init__(self):
         """Initialize HMM common utilities."""
-        self.logger = create_fallback_logger()
+        self.logger = system_logger.getChild('HMMCommonUtilities')
         
         # Initialize common utilities
         self.matrix_ops = UnifiedMatrixOperations()
@@ -298,7 +299,7 @@ class TechnicalIndicators:
             rsi = 100 - safe_divide(100, 1 + rs, 50.0)  # Default to 50 if division fails
             return rsi.fillna(50)  # Fill NaN with neutral RSI value
         except Exception as e:
-            logger = create_fallback_logger()
+            logger = system_logger.getChild('HMMUtils')
             logger.exception(f"RSI calculation failed: {e}")
             return pd.Series()
 
@@ -321,7 +322,7 @@ class TechnicalIndicators:
             macd = ema_fast - ema_slow
             return macd
         except Exception as e:
-            logger = create_fallback_logger()
+            logger = system_logger.getChild('HMMUtils')
             logger.exception(f"MACD calculation failed: {e}")
             return pd.Series()
 
@@ -357,7 +358,7 @@ class TechnicalIndicators:
             })
             return bb_features
         except Exception as e:
-            logger = create_fallback_logger()
+            logger = system_logger.getChild('HMMUtils')
             logger.exception(f"Bollinger Bands calculation failed: {e}")
             return pd.DataFrame()
 

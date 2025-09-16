@@ -46,7 +46,7 @@ from src.utils.math_validation import (
 # Base training imports
 from .tactician_models_training_refactored import TacticianModelsTrainingStepRefactored
 from .tactician_directional_optimization import (
-    DirectionalLossFunction, DirectionalFeatureEngineer, DirectionalTacticianOptimizer
+    DirectionalLossFunction, DirectionalTacticianOptimizer
 )
 from src.utils.ml_common.config import TacticianTrainingConfig
 
@@ -85,7 +85,6 @@ class DirectionalTacticianTrainingStep(TacticianModelsTrainingStepRefactored):
         # Initialize directional components
         if enable_directional_optimization:
             self.directional_optimizer = DirectionalTacticianOptimizer(config)
-            self.feature_engineer = DirectionalFeatureEngineer()
             self.loss_functions = DirectionalLossFunction()
             
             # Directional optimization objectives
@@ -99,7 +98,6 @@ class DirectionalTacticianTrainingStep(TacticianModelsTrainingStepRefactored):
             self.logger.info("🚀 Directional optimization enabled")
         else:
             self.directional_optimizer = None
-            self.feature_engineer = None
             self.loss_functions = None
             self.directional_objectives = None
             
@@ -173,10 +171,9 @@ class DirectionalTacticianTrainingStep(TacticianModelsTrainingStepRefactored):
                     all_analyst_models_outputs, hmm_model_outputs, analyst_ensemble_outputs
                 )
                 
-                # Enhanced directional feature engineering
+                # Using existing features for directional optimization (no additional feature engineering)
                 if self.enable_directional_optimization:
-                    X = self._enhance_features_for_direction(X, y, feature_names)
-                    self.logger.info(f"📊 Enhanced features for directional optimization: {X.shape[1]} features")
+                    self.logger.info(f"📊 Using existing features for directional optimization: {X.shape[1]} features")
                 
                 self._complete_phase("FEATURE_PREPARATION", preparation_metrics)
             except Exception as e:
@@ -237,30 +234,7 @@ class DirectionalTacticianTrainingStep(TacticianModelsTrainingStepRefactored):
             self.logger.error(f"❌ Traceback: {traceback.format_exc()}")
             return self._create_error_result(str(e))
     
-    def _enhance_features_for_direction(self, 
-                                      X: np.ndarray, 
-                                      y: np.ndarray,
-                                      feature_names: Optional[List[str]]) -> np.ndarray:
-        """Enhance features specifically for directional prediction."""
-        if not self.enable_directional_optimization or not self.feature_engineer:
-            return X
-        
-        # Convert to DataFrame for feature engineering
-        if feature_names:
-            df = pd.DataFrame(X, columns=feature_names)
-        else:
-            df = pd.DataFrame(X, columns=[f'feature_{i}' for i in range(X.shape[1])])
-        
-        # Add directional features
-        directional_features = self.feature_engineer.create_directional_features(df)
-        
-        # Combine original and directional features
-        enhanced_df = pd.concat([df, directional_features], axis=1)
-        
-        # Handle NaN values
-        enhanced_df = enhanced_df.fillna(0)
-        
-        return enhanced_df.values
+    # Feature enhancement removed - using existing features from base training
     
     def _execute_directional_training(self,
                                     X: np.ndarray,

@@ -94,14 +94,14 @@ class DirectionalLossFunction:
     
     @staticmethod
     def adverse_movement_loss(y_true: np.ndarray, y_pred: np.ndarray, 
-                            adverse_threshold: float = 0.001) -> float:
+                            adverse_threshold: float = 0.005) -> float:  # 0.5% threshold
         """
-        Loss function that minimizes adverse price movement.
+        Loss function that minimizes adverse price movement for short-term 0.5% movements.
         
         Args:
             y_true: True price movements
             y_pred: Predicted price movements
-            adverse_threshold: Threshold for adverse movement
+            adverse_threshold: Threshold for adverse movement (0.5% for short-term focus)
             
         Returns:
             Adverse movement loss
@@ -175,158 +175,7 @@ class DirectionalLossFunction:
         return -risk_adjusted_performance  # Return negative for minimization
 
 
-class DirectionalFeatureEngineer:
-    """Enhanced feature engineering for directional prediction."""
-    
-    def __init__(self, lookback_periods: List[int] = [5, 10, 20, 50]):
-        self.lookback_periods = lookback_periods
-        self.logger = logger.getChild('DirectionalFeatureEngineer')
-    
-    def create_directional_features(self, data: pd.DataFrame) -> pd.DataFrame:
-        """
-        Create features specifically designed for directional prediction.
-        
-        Args:
-            data: OHLC data with datetime index
-            
-        Returns:
-            DataFrame with directional features
-        """
-        features = pd.DataFrame(index=data.index)
-        
-        # Price-based directional features
-        features['price_momentum'] = self._calculate_price_momentum(data)
-        features['price_acceleration'] = self._calculate_price_acceleration(data)
-        features['volatility_regime'] = self._calculate_volatility_regime(data)
-        
-        # Volume-based directional features
-        features['volume_momentum'] = self._calculate_volume_momentum(data)
-        features['volume_price_trend'] = self._calculate_volume_price_trend(data)
-        
-        # Time-based directional features
-        features['time_of_day_effect'] = self._calculate_time_of_day_effect(data)
-        features['day_of_week_effect'] = self._calculate_day_of_week_effect(data)
-        
-        # Multi-timeframe directional features
-        for period in self.lookback_periods:
-            features[f'directional_strength_{period}'] = self._calculate_directional_strength(data, period)
-            features[f'trend_consistency_{period}'] = self._calculate_trend_consistency(data, period)
-            features[f'support_resistance_{period}'] = self._calculate_support_resistance(data, period)
-        
-        # Risk-based directional features
-        features['risk_adjusted_momentum'] = self._calculate_risk_adjusted_momentum(data)
-        features['adverse_movement_probability'] = self._calculate_adverse_movement_probability(data)
-        
-        self.logger.info(f"📊 Created {len(features.columns)} directional features")
-        return features
-    
-    def _calculate_price_momentum(self, data: pd.DataFrame) -> pd.Series:
-        """Calculate price momentum for directional prediction."""
-        close = data['close']
-        return (close - close.shift(1)) / close.shift(1)
-    
-    def _calculate_price_acceleration(self, data: pd.DataFrame) -> pd.Series:
-        """Calculate price acceleration (second derivative)."""
-        momentum = self._calculate_price_momentum(data)
-        return momentum - momentum.shift(1)
-    
-    def _calculate_volatility_regime(self, data: pd.DataFrame) -> pd.Series:
-        """Calculate volatility regime for risk assessment."""
-        returns = self._calculate_price_momentum(data)
-        volatility = returns.rolling(20).std()
-        return (volatility - volatility.rolling(50).mean()) / volatility.rolling(50).std()
-    
-    def _calculate_volume_momentum(self, data: pd.DataFrame) -> pd.Series:
-        """Calculate volume momentum."""
-        volume = data['volume']
-        return (volume - volume.shift(1)) / volume.shift(1)
-    
-    def _calculate_volume_price_trend(self, data: pd.DataFrame) -> pd.Series:
-        """Calculate volume-price trend for directional confirmation."""
-        price_change = data['close'] - data['close'].shift(1)
-        volume_change = data['volume'] - data['volume'].shift(1)
-        return price_change * volume_change
-    
-    def _calculate_time_of_day_effect(self, data: pd.DataFrame) -> pd.Series:
-        """Calculate time-of-day effects on directional movement."""
-        hour = data.index.hour
-        # Create cyclical encoding for hour
-        return np.sin(2 * np.pi * hour / 24)
-    
-    def _calculate_day_of_week_effect(self, data: pd.DataFrame) -> pd.Series:
-        """Calculate day-of-week effects on directional movement."""
-        day_of_week = data.index.dayofweek
-        # Create cyclical encoding for day of week
-        return np.sin(2 * np.pi * day_of_week / 7)
-    
-    def _calculate_directional_strength(self, data: pd.DataFrame, period: int) -> pd.Series:
-        """Calculate directional strength over specified period."""
-        close = data['close']
-        high = data['high']
-        low = data['low']
-        
-        # Calculate directional movement
-        dm_plus = np.maximum(high - high.shift(1), 0)
-        dm_minus = np.maximum(low.shift(1) - low, 0)
-        
-        # Calculate true range
-        tr = np.maximum(high - low, np.maximum(
-            np.abs(high - close.shift(1)),
-            np.abs(low - close.shift(1))
-        ))
-        
-        # Calculate directional strength
-        di_plus = (dm_plus.rolling(period).sum() / tr.rolling(period).sum()) * 100
-        di_minus = (dm_minus.rolling(period).sum() / tr.rolling(period).sum()) * 100
-        
-        return di_plus - di_minus
-    
-    def _calculate_trend_consistency(self, data: pd.DataFrame, period: int) -> pd.Series:
-        """Calculate trend consistency over specified period."""
-        close = data['close']
-        trend_direction = np.sign(close - close.shift(period))
-        
-        # Calculate consistency as percentage of periods with same direction
-        consistency = trend_direction.rolling(period).apply(
-            lambda x: np.sum(x == x.iloc[-1]) / len(x) if len(x) > 0 else 0
-        )
-        
-        return consistency
-    
-    def _calculate_support_resistance(self, data: pd.DataFrame, period: int) -> pd.Series:
-        """Calculate support/resistance levels for directional prediction."""
-        high = data['high']
-        low = data['low']
-        close = data['close']
-        
-        # Calculate support and resistance levels
-        resistance = high.rolling(period).max()
-        support = low.rolling(period).min()
-        
-        # Calculate distance to support/resistance
-        distance_to_resistance = (resistance - close) / close
-        distance_to_support = (close - support) / close
-        
-        # Return relative position between support and resistance
-        return (distance_to_resistance - distance_to_support) / (distance_to_resistance + distance_to_support)
-    
-    def _calculate_risk_adjusted_momentum(self, data: pd.DataFrame) -> pd.Series:
-        """Calculate risk-adjusted momentum."""
-        returns = self._calculate_price_momentum(data)
-        momentum = returns.rolling(10).mean()
-        volatility = returns.rolling(10).std()
-        
-        return safe_divide(momentum, volatility, 0.0)
-    
-    def _calculate_adverse_movement_probability(self, data: pd.DataFrame) -> pd.Series:
-        """Calculate probability of adverse movement."""
-        returns = self._calculate_price_momentum(data)
-        
-        # Calculate probability of large adverse movements
-        adverse_threshold = returns.rolling(20).std() * 2  # 2 standard deviations
-        adverse_movements = np.abs(returns) > adverse_threshold
-        
-        return adverse_movements.rolling(20).mean()
+# DirectionalFeatureEngineer removed - using existing features from base training
 
 
 class DirectionalTacticianOptimizer:
@@ -357,8 +206,7 @@ class DirectionalTacticianOptimizer:
         self.memory_optimizer = get_m1_memory_optimizer() if use_memory_optimization else None
         self.cpu_optimizer = get_m1_cpu_optimizer()
         
-        # Initialize feature engineer
-        self.feature_engineer = DirectionalFeatureEngineer()
+        # Using existing features from base training - no additional feature engineering
         
         # Initialize Pareto front analyzer
         self.pareto_front = ParetoFront()
@@ -405,9 +253,9 @@ class DirectionalTacticianOptimizer:
         
         self.logger.info("🔄 Starting directional Tactician optimization...")
         
-        # Step 1: Enhanced feature engineering
-        self.logger.info("📊 Step 1: Enhanced directional feature engineering")
-        X_enhanced = self._enhance_features_for_direction(X, y, feature_names)
+        # Step 1: Use existing features (no additional feature engineering)
+        self.logger.info("📊 Step 1: Using existing features for directional optimization")
+        X_enhanced = X  # Use existing features as-is
         
         # Step 2: Multi-objective optimization
         self.logger.info("📊 Step 2: Multi-objective directional optimization")
@@ -447,27 +295,7 @@ class DirectionalTacticianOptimizer:
         
         return result
     
-    def _enhance_features_for_direction(self, 
-                                      X: np.ndarray, 
-                                      y: np.ndarray,
-                                      feature_names: Optional[List[str]]) -> np.ndarray:
-        """Enhance features specifically for directional prediction."""
-        # Convert to DataFrame for feature engineering
-        if feature_names:
-            df = pd.DataFrame(X, columns=feature_names)
-        else:
-            df = pd.DataFrame(X, columns=[f'feature_{i}' for i in range(X.shape[1])])
-        
-        # Add directional features
-        directional_features = self.feature_engineer.create_directional_features(df)
-        
-        # Combine original and directional features
-        enhanced_df = pd.concat([df, directional_features], axis=1)
-        
-        # Handle NaN values
-        enhanced_df = enhanced_df.fillna(0)
-        
-        return enhanced_df.values
+    # Feature enhancement removed - using existing features from base training
     
     def _multi_objective_directional_optimization(self,
                                                 X: np.ndarray,
@@ -542,8 +370,8 @@ class DirectionalTacticianOptimizer:
         y_pred_direction = np.sign(y_pred)
         directional_accuracy = np.mean(y_direction == y_pred_direction)
         
-        # Calculate adverse movement minimization
-        adverse_movements = np.sum((y_direction != y_pred_direction) & (np.abs(y) > 0.001))
+        # Calculate adverse movement minimization (focused on short-term 0.5% movements)
+        adverse_movements = np.sum((y_direction != y_pred_direction) & (np.abs(y) > 0.005))  # 0.5% threshold
         total_movements = np.sum(y_direction != 0)
         adverse_movement_minimization = 1 - (adverse_movements / total_movements) if total_movements > 0 else 1.0
         

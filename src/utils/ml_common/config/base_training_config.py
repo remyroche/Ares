@@ -139,6 +139,16 @@ class TacticianTrainingConfig(BaseTrainingConfig):
     meta_model: str = "ElasticNetCV"  # Use ElasticNetCV for better performance
     ensemble_name: str = "tactician_ensemble"
     
+    # Directional optimization (focus on short-term 0.5% movements)
+    enable_directional_optimization: bool = True
+    directional_objectives: Dict[str, str] = field(default_factory=lambda: {
+        'directional_accuracy': 'max',           # How often direction is correct
+        'adverse_movement_minimization': 'max',  # Minimize adverse price movement
+        'directional_profit_efficiency': 'max',  # Profit from correct directional moves
+        'risk_adjusted_performance': 'max'       # Risk-adjusted returns
+    })
+    short_term_threshold: float = 0.005  # 0.5% threshold for short-term focus
+    
     # Model-specific HPO search spaces
     hpo_search_spaces: Dict[str, Dict[str, Any]] = field(default_factory=lambda: {
         'NODE': {

@@ -52,7 +52,35 @@ except ImportError as e:
     logging.warning(f"Matrix operations not available: {e}")
     MATRIX_OPS_AVAILABLE = False
 
-# Import logger
+# Import tprint for extensive logging
+try:
+    from src.utils.tprint import tprint, tprint_info, tprint_error, tprint_warning, tprint_success, tprint_debug, tprint_performance
+    TPRINT_AVAILABLE = True
+except ImportError:
+    TPRINT_AVAILABLE = False
+    # Fallback to basic print
+    def tprint(*args, **kwargs): print(*args, **kwargs)
+    def tprint_info(*args, **kwargs): print("INFO:", *args, **kwargs)
+    def tprint_error(*args, **kwargs): print("ERROR:", *args, **kwargs)
+    def tprint_warning(*args, **kwargs): print("WARNING:", *args, **kwargs)
+    def tprint_success(*args, **kwargs): print("SUCCESS:", *args, **kwargs)
+    def tprint_debug(*args, **kwargs): print("DEBUG:", *args, **kwargs)
+    def tprint_performance(*args, **kwargs): print("PERFORMANCE:", *args, **kwargs)
+
+# Import math validation for safe operations
+try:
+    from src.utils.math_validation import MathValidation, safe_divide, safe_log, safe_sqrt, safe_power, validate_finite
+    MATH_VALIDATION_AVAILABLE = True
+except ImportError:
+    MATH_VALIDATION_AVAILABLE = False
+    # Fallback functions
+    def safe_divide(a, b, default=0.0): return a / b if b != 0 else default
+    def safe_log(x, default=0.0): return np.log(x) if x > 0 else default
+    def safe_sqrt(x, default=0.0): return np.sqrt(x) if x >= 0 else default
+    def safe_power(x, y, default=0.0): return x ** y if np.isfinite(x) and np.isfinite(y) else default
+    def validate_finite(value, name="value"): return float(value) if np.isfinite(value) else 0.0
+
+# Import logger as fallback
 try:
     from src.utils.logger import system_logger
     logger = system_logger.getChild('PIDBasedFeatureOrchestrator')
@@ -139,16 +167,33 @@ class PIDBasedFeatureOrchestrator:
     
     def __init__(self, config: Optional[OrchestratorConfig] = None):
         """Initialize the PID-based feature orchestrator."""
-        self.config = config or OrchestratorConfig()
-        self.logger = logger.getChild('PIDBasedFeatureOrchestrator')
-        
-        # Initialize components
-        self._initialize_components()
-        
-        self.logger.info("🔧 PIDBasedFeatureOrchestrator initialized")
-        self.logger.info(f"📊 Max interaction features: {self.config.max_interaction_features}")
-        self.logger.info(f"📊 Max polynomial features: {self.config.max_polynomial_features}")
-        self.logger.info(f"📊 Max cross-timeframe features: {self.config.max_cross_timeframe_features}")
+        try:
+            # Input validation
+            if config is not None and not isinstance(config, OrchestratorConfig):
+                raise TypeError(f"Config must be OrchestratorConfig or None, got {type(config)}")
+            
+            self.config = config or OrchestratorConfig()
+            self.logger = logger.getChild('PIDBasedFeatureOrchestrator')
+            
+            # Initialize math validation
+            if MATH_VALIDATION_AVAILABLE:
+                self.math_validator = MathValidation()
+            else:
+                self.math_validator = None
+            
+            # Initialize components
+            self._initialize_components()
+            
+            tprint_success("PIDBasedFeatureOrchestrator initialized successfully")
+            tprint_info(f"Max interaction features: {self.config.max_interaction_features}")
+            tprint_info(f"Max polynomial features: {self.config.max_polynomial_features}")
+            tprint_info(f"Max cross-timeframe features: {self.config.max_cross_timeframe_features}")
+            tprint_info(f"tprint available: {TPRINT_AVAILABLE}")
+            tprint_info(f"Math validation available: {MATH_VALIDATION_AVAILABLE}")
+            
+        except Exception as e:
+            tprint_error(f"Failed to initialize PIDBasedFeatureOrchestrator: {e}")
+            raise
     
     def _initialize_components(self):
         """Initialize required components."""
@@ -230,82 +275,172 @@ class PIDBasedFeatureOrchestrator:
             OrchestratorResult with all generated features
         """
         start_time = time.time()
-        self.logger.info("🔧 Starting PID-based feature orchestration...")
+        tprint_info("Starting PID-based feature orchestration...")
         
         result = OrchestratorResult()
         result.generation_status = GenerationStatus.IN_PROGRESS
         
         try:
+            # Fast-fail input validation
+            if data is None:
+                raise ValueError("Data cannot be None - fast failing")
+            
+            if feature_names is None or len(feature_names) == 0:
+                raise ValueError("Feature names cannot be None or empty - fast failing")
+            
             # Convert data to numpy array if needed
             if isinstance(data, pd.DataFrame):
+                if data.empty:
+                    raise ValueError("Input DataFrame is empty - fast failing")
                 X = data.values
                 if feature_names is None:
                     feature_names = list(data.columns)
+                tprint_info(f"Converted DataFrame to numpy array: {X.shape}")
             else:
+                if not hasattr(data, 'shape'):
+                    raise TypeError(f"Data must be array-like, got {type(data)} - fast failing")
                 X = data
+                tprint_info(f"Using numpy array data: {X.shape}")
             
-            self.logger.info(f"📊 Input data shape: {X.shape}")
-            self.logger.info(f"📊 Feature count: {len(feature_names)}")
+            # Validate data shape
+            if X.shape[0] == 0:
+                raise ValueError("Input data has no samples - fast failing")
+            if X.shape[1] == 0:
+                raise ValueError("Input data has no features - fast failing")
+            
+            # Check for NaN/Inf values
+            nan_count = np.sum(np.isnan(X))
+            inf_count = np.sum(np.isinf(X))
+            if nan_count > 0:
+                tprint_warning(f"Input data contains {nan_count} NaN values - this may cause issues")
+            if inf_count > 0:
+                tprint_warning(f"Input data contains {inf_count} Inf values - this may cause issues")
+            
+            # Validate feature names match data dimensions
+            if len(feature_names) != X.shape[1]:
+                raise ValueError(f"Feature names count ({len(feature_names)}) doesn't match data columns ({X.shape[1]}) - fast failing")
+            
+            # Validate target if provided
+            if target is not None:
+                if len(target) != X.shape[0]:
+                    raise ValueError(f"Target length ({len(target)}) doesn't match data length ({X.shape[0]}) - fast failing")
+                if np.any(np.isnan(target)) or np.any(np.isinf(target)):
+                    tprint_warning("Target contains NaN or Inf values - this may cause issues")
+            
+            tprint_info(f"Input data shape: {X.shape}")
+            tprint_info(f"Feature count: {len(feature_names)}")
+            tprint_info(f"Data type: {X.dtype}")
             
             # Track optimization usage
             if optimized_lookback_periods:
                 result.optimization_used = True
-                self.logger.info("✅ Optimized lookback periods will be applied")
+                tprint_info(f"Optimized lookback periods will be applied: {len(optimized_lookback_periods)} periods")
+            else:
+                tprint_info("No optimized lookback periods provided - using defaults")
             
             # Generate features in parallel if possible
             generation_tasks = []
             
             # Interaction features
             if self.interaction_generator:
-                task = asyncio.create_task(
-                    self.interaction_generator.generate_interaction_features(
-                        X, feature_names, optimized_lookback_periods, target
+                try:
+                    tprint_info("Creating interaction feature generation task...")
+                    task = asyncio.create_task(
+                        self.interaction_generator.generate_interaction_features(
+                            X, feature_names, optimized_lookback_periods, target
+                        )
                     )
-                )
-                generation_tasks.append(('interaction', task))
+                    generation_tasks.append(('interaction', task))
+                    tprint_success("Interaction feature generation task created")
+                except Exception as e:
+                    tprint_error(f"Failed to create interaction feature generation task: {e}")
+                    raise
             
             # Polynomial features
             if self.polynomial_generator:
-                task = asyncio.create_task(
-                    self.polynomial_generator.generate_polynomial_features(
-                        X, feature_names, optimized_lookback_periods, target
+                try:
+                    tprint_info("Creating polynomial feature generation task...")
+                    task = asyncio.create_task(
+                        self.polynomial_generator.generate_polynomial_features(
+                            X, feature_names, optimized_lookback_periods, target
+                        )
                     )
-                )
-                generation_tasks.append(('polynomial', task))
+                    generation_tasks.append(('polynomial', task))
+                    tprint_success("Polynomial feature generation task created")
+                except Exception as e:
+                    tprint_error(f"Failed to create polynomial feature generation task: {e}")
+                    raise
             
             # Cross-timeframe features
             if self.cross_timeframe_generator:
-                task = asyncio.create_task(
-                    self.cross_timeframe_generator.generate_cross_timeframe_features(
-                        X, feature_names, optimized_lookback_periods, target
+                try:
+                    tprint_info("Creating cross-timeframe feature generation task...")
+                    task = asyncio.create_task(
+                        self.cross_timeframe_generator.generate_cross_timeframe_features(
+                            X, feature_names, optimized_lookback_periods, target
+                        )
                     )
-                )
-                generation_tasks.append(('cross_timeframe', task))
+                    generation_tasks.append(('cross_timeframe', task))
+                    tprint_success("Cross-timeframe feature generation task created")
+                except Exception as e:
+                    tprint_error(f"Failed to create cross-timeframe feature generation task: {e}")
+                    raise
             
             # Wait for all tasks to complete
-            self.logger.info(f"🚀 Executing {len(generation_tasks)} feature generation tasks...")
-            completed_tasks = await asyncio.gather(*[task for _, task in generation_tasks], return_exceptions=True)
+            tprint_info(f"Executing {len(generation_tasks)} feature generation tasks...")
+            try:
+                completed_tasks = await asyncio.gather(*[task for _, task in generation_tasks], return_exceptions=True)
+                tprint_success("All feature generation tasks completed")
+            except Exception as e:
+                tprint_error(f"Failed to execute feature generation tasks: {e}")
+                raise
             
             # Process results
             successful_generations = 0
+            failed_generations = 0
+            
+            tprint_info("Processing feature generation results...")
             for (generation_type, _), task_result in zip(generation_tasks, completed_tasks):
-                if isinstance(task_result, Exception):
-                    self.logger.error(f"❌ {generation_type} feature generation failed: {task_result}")
-                    continue
-                
-                if generation_type == 'interaction':
-                    result.interaction_result = task_result
-                elif generation_type == 'polynomial':
-                    result.polynomial_result = task_result
-                elif generation_type == 'cross_timeframe':
-                    result.cross_timeframe_result = task_result
-                
-                successful_generations += 1
-                self.logger.info(f"✅ {generation_type} feature generation completed")
+                try:
+                    if isinstance(task_result, Exception):
+                        tprint_error(f"{generation_type} feature generation failed: {task_result}")
+                        failed_generations += 1
+                        continue
+                    
+                    # Validate task result
+                    if task_result is None:
+                        tprint_warning(f"{generation_type} feature generation returned None")
+                        failed_generations += 1
+                        continue
+                    
+                    # Store result based on type
+                    if generation_type == 'interaction':
+                        result.interaction_result = task_result
+                        tprint_success(f"Interaction features: {getattr(task_result, 'total_features_generated', 0)} features")
+                    elif generation_type == 'polynomial':
+                        result.polynomial_result = task_result
+                        tprint_success(f"Polynomial features: {getattr(task_result, 'total_features_generated', 0)} features")
+                    elif generation_type == 'cross_timeframe':
+                        result.cross_timeframe_result = task_result
+                        tprint_success(f"Cross-timeframe features: {getattr(task_result, 'total_features_generated', 0)} features")
+                    
+                    successful_generations += 1
+                    tprint_success(f"{generation_type} feature generation completed successfully")
+                    
+                except Exception as e:
+                    tprint_error(f"Error processing {generation_type} result: {e}")
+                    failed_generations += 1
+            
+            tprint_info(f"Feature generation summary: {successful_generations} successful, {failed_generations} failed")
             
             # Combine all generated features
-            self.logger.info("🔧 Combining all generated features...")
-            combined_features, combined_names, importance_scores = self._combine_features(result)
+            try:
+                tprint_info("Combining all generated features...")
+                combined_features, combined_names, importance_scores = self._combine_features(result)
+                tprint_success(f"Combined features: {len(combined_names)} total features")
+            except Exception as e:
+                tprint_error(f"Failed to combine features: {e}")
+                raise
             
             # Store combined results
             result.combined_features = combined_features
@@ -315,27 +450,60 @@ class PIDBasedFeatureOrchestrator:
             result.matrix_ops_used = self.matrix_ops is not None
             
             # Calculate quality metrics
-            result.overall_quality_score = self._calculate_overall_quality_score(result)
-            result.feature_diversity_score = self._calculate_feature_diversity_score(combined_names)
-            result.redundancy_score = self._calculate_redundancy_score(combined_features)
-            result.stability_score = self._calculate_stability_score(result)
+            try:
+                tprint_info("Calculating quality metrics...")
+                result.overall_quality_score = self._calculate_overall_quality_score(result)
+                result.feature_diversity_score = self._calculate_feature_diversity_score(combined_names)
+                result.redundancy_score = self._calculate_redundancy_score(combined_features)
+                result.stability_score = self._calculate_stability_score(result)
+                tprint_success("Quality metrics calculated successfully")
+            except Exception as e:
+                tprint_warning(f"Failed to calculate quality metrics: {e}")
+                # Set default values
+                result.overall_quality_score = 0.0
+                result.feature_diversity_score = 0.0
+                result.redundancy_score = 0.0
+                result.stability_score = 0.0
             
             # Determine final status
             if successful_generations == len(generation_tasks):
                 result.generation_status = GenerationStatus.COMPLETED
+                tprint_success("All feature generation tasks completed successfully")
             elif successful_generations > 0:
                 result.generation_status = GenerationStatus.PARTIAL
+                tprint_warning(f"Partial success: {successful_generations}/{len(generation_tasks)} tasks completed")
             else:
                 result.generation_status = GenerationStatus.FAILED
+                tprint_error("All feature generation tasks failed")
             
             execution_time = time.time() - start_time
             result.execution_time = execution_time
             
-            self.logger.info(f"✅ PID-based feature orchestration completed in {execution_time:.3f}s")
-            self.logger.info(f"📊 Generated {result.total_features_generated} total features")
-            self.logger.info(f"📊 Overall quality score: {result.overall_quality_score:.3f}")
-            self.logger.info(f"📊 Feature diversity score: {result.feature_diversity_score:.3f}")
-            self.logger.info(f"📊 Generation status: {result.generation_status.value}")
+            tprint_performance("PID-based feature orchestration", execution_time)
+            tprint_info(f"Generated {result.total_features_generated} total features")
+            tprint_info(f"Overall quality score: {result.overall_quality_score:.3f}")
+            tprint_info(f"Feature diversity score: {result.feature_diversity_score:.3f}")
+            tprint_info(f"Generation status: {result.generation_status.value}")
+            
+            return result
+            
+        except ValueError as e:
+            execution_time = time.time() - start_time
+            result.execution_time = execution_time
+            result.generation_status = GenerationStatus.FAILED
+            
+            tprint_error(f"PID-based feature orchestration failed - validation error: {e}")
+            tprint_error(f"Error details: {traceback.format_exc()}")
+            
+            return result
+            
+        except TypeError as e:
+            execution_time = time.time() - start_time
+            result.execution_time = execution_time
+            result.generation_status = GenerationStatus.FAILED
+            
+            tprint_error(f"PID-based feature orchestration failed - type error: {e}")
+            tprint_error(f"Error details: {traceback.format_exc()}")
             
             return result
             
@@ -344,8 +512,9 @@ class PIDBasedFeatureOrchestrator:
             result.execution_time = execution_time
             result.generation_status = GenerationStatus.FAILED
             
-            self.logger.error(f"❌ PID-based feature orchestration failed: {e}")
-            self.logger.error(f"❌ Error details: {traceback.format_exc()}")
+            tprint_error(f"PID-based feature orchestration failed - unexpected error: {e}")
+            tprint_error(f"Error type: {type(e).__name__}")
+            tprint_error(f"Error details: {traceback.format_exc()}")
             
             return result
     
@@ -354,47 +523,109 @@ class PIDBasedFeatureOrchestrator:
         result: OrchestratorResult
     ) -> Tuple[Dict[str, np.ndarray], List[str], Dict[str, float]]:
         """Combine features from all generators."""
-        combined_features = {}
-        combined_names = []
-        importance_scores = {}
-        
-        # Add interaction features
-        if result.interaction_result and result.interaction_result.interaction_features:
-            for name, feature in result.interaction_result.interaction_features.items():
-                combined_features[f"interaction_{name}"] = feature
-                combined_names.append(f"interaction_{name}")
-                importance_scores[f"interaction_{name}"] = result.interaction_result.interaction_scores.get(name, 0.0)
-        
-        # Add polynomial features
-        if result.polynomial_result and result.polynomial_result.polynomial_features:
-            for name, feature in result.polynomial_result.polynomial_features.items():
-                combined_features[f"polynomial_{name}"] = feature
-                combined_names.append(f"polynomial_{name}")
-                importance_scores[f"polynomial_{name}"] = result.polynomial_result.polynomial_scores.get(name, 0.0)
-        
-        # Add cross-timeframe features
-        if result.cross_timeframe_result and result.cross_timeframe_result.cross_timeframe_features:
-            for name, feature in result.cross_timeframe_result.cross_timeframe_features.items():
-                combined_features[f"cross_timeframe_{name}"] = feature
-                combined_names.append(f"cross_timeframe_{name}")
-                importance_scores[f"cross_timeframe_{name}"] = result.cross_timeframe_result.cross_timeframe_scores.get(name, 0.0)
-        
-        return combined_features, combined_names, importance_scores
+        try:
+            tprint_info("Starting feature combination process...")
+            combined_features = {}
+            combined_names = []
+            importance_scores = {}
+            
+            # Add interaction features
+            if result.interaction_result and hasattr(result.interaction_result, 'interaction_features') and result.interaction_result.interaction_features:
+                tprint_info(f"Combining {len(result.interaction_result.interaction_features)} interaction features...")
+                for name, feature in result.interaction_result.interaction_features.items():
+                    try:
+                        # Validate feature data
+                        if feature is None or not hasattr(feature, 'shape'):
+                            tprint_warning(f"Skipping invalid interaction feature: {name}")
+                            continue
+                        
+                        combined_features[f"interaction_{name}"] = feature
+                        combined_names.append(f"interaction_{name}")
+                        
+                        # Safe importance score extraction
+                        score = result.interaction_result.interaction_scores.get(name, 0.0) if hasattr(result.interaction_result, 'interaction_scores') else 0.0
+                        importance_scores[f"interaction_{name}"] = validate_finite(score, f"interaction_{name}_score")
+                        
+                    except Exception as e:
+                        tprint_warning(f"Failed to combine interaction feature {name}: {e}")
+                        continue
+                
+                tprint_success(f"Combined {len([f for f in combined_names if f.startswith('interaction_')])} interaction features")
+            
+            # Add polynomial features
+            if result.polynomial_result and hasattr(result.polynomial_result, 'polynomial_features') and result.polynomial_result.polynomial_features:
+                tprint_info(f"Combining {len(result.polynomial_result.polynomial_features)} polynomial features...")
+                for name, feature in result.polynomial_result.polynomial_features.items():
+                    try:
+                        # Validate feature data
+                        if feature is None or not hasattr(feature, 'shape'):
+                            tprint_warning(f"Skipping invalid polynomial feature: {name}")
+                            continue
+                        
+                        combined_features[f"polynomial_{name}"] = feature
+                        combined_names.append(f"polynomial_{name}")
+                        
+                        # Safe importance score extraction
+                        score = result.polynomial_result.polynomial_scores.get(name, 0.0) if hasattr(result.polynomial_result, 'polynomial_scores') else 0.0
+                        importance_scores[f"polynomial_{name}"] = validate_finite(score, f"polynomial_{name}_score")
+                        
+                    except Exception as e:
+                        tprint_warning(f"Failed to combine polynomial feature {name}: {e}")
+                        continue
+                
+                tprint_success(f"Combined {len([f for f in combined_names if f.startswith('polynomial_')])} polynomial features")
+            
+            # Add cross-timeframe features
+            if result.cross_timeframe_result and hasattr(result.cross_timeframe_result, 'cross_timeframe_features') and result.cross_timeframe_result.cross_timeframe_features:
+                tprint_info(f"Combining {len(result.cross_timeframe_result.cross_timeframe_features)} cross-timeframe features...")
+                for name, feature in result.cross_timeframe_result.cross_timeframe_features.items():
+                    try:
+                        # Validate feature data
+                        if feature is None or not hasattr(feature, 'shape'):
+                            tprint_warning(f"Skipping invalid cross-timeframe feature: {name}")
+                            continue
+                        
+                        combined_features[f"cross_timeframe_{name}"] = feature
+                        combined_names.append(f"cross_timeframe_{name}")
+                        
+                        # Safe importance score extraction
+                        score = result.cross_timeframe_result.cross_timeframe_scores.get(name, 0.0) if hasattr(result.cross_timeframe_result, 'cross_timeframe_scores') else 0.0
+                        importance_scores[f"cross_timeframe_{name}"] = validate_finite(score, f"cross_timeframe_{name}_score")
+                        
+                    except Exception as e:
+                        tprint_warning(f"Failed to combine cross-timeframe feature {name}: {e}")
+                        continue
+                
+                tprint_success(f"Combined {len([f for f in combined_names if f.startswith('cross_timeframe_')])} cross-timeframe features")
+            
+            tprint_success(f"Feature combination completed: {len(combined_names)} total features")
+            return combined_features, combined_names, importance_scores
+            
+        except Exception as e:
+            tprint_error(f"Failed to combine features: {e}")
+            raise
     
     def _calculate_overall_quality_score(self, result: OrchestratorResult) -> float:
         """Calculate overall quality score."""
         try:
+            tprint_debug("Calculating overall quality score...")
             scores = []
             
             # Individual quality scores
-            if result.interaction_result:
-                scores.append(result.interaction_result.feature_stability_score)
+            if result.interaction_result and hasattr(result.interaction_result, 'feature_stability_score'):
+                score = validate_finite(result.interaction_result.feature_stability_score, "interaction_stability")
+                scores.append(score)
+                tprint_debug(f"Interaction stability score: {score:.4f}")
             
-            if result.polynomial_result:
-                scores.append(result.polynomial_result.feature_stability_score)
+            if result.polynomial_result and hasattr(result.polynomial_result, 'feature_stability_score'):
+                score = validate_finite(result.polynomial_result.feature_stability_score, "polynomial_stability")
+                scores.append(score)
+                tprint_debug(f"Polynomial stability score: {score:.4f}")
             
-            if result.cross_timeframe_result:
-                scores.append(result.cross_timeframe_result.feature_stability_score)
+            if result.cross_timeframe_result and hasattr(result.cross_timeframe_result, 'feature_stability_score'):
+                score = validate_finite(result.cross_timeframe_result.feature_stability_score, "cross_timeframe_stability")
+                scores.append(score)
+                tprint_debug(f"Cross-timeframe stability score: {score:.4f}")
             
             # Generation success rate
             total_generators = sum([
@@ -402,18 +633,29 @@ class PIDBasedFeatureOrchestrator:
                 bool(result.polynomial_result),
                 bool(result.cross_timeframe_result)
             ])
-            success_rate = total_generators / 3.0 if total_generators > 0 else 0.0
+            success_rate = safe_divide(total_generators, 3.0, 0.0)
             scores.append(success_rate)
+            tprint_debug(f"Success rate: {success_rate:.4f}")
             
-            return float(np.mean(scores)) if scores else 0.0
+            if scores:
+                overall_score = validate_finite(np.mean(scores), "overall_quality")
+                tprint_debug(f"Overall quality score: {overall_score:.4f}")
+                return overall_score
+            else:
+                tprint_warning("No quality scores available, returning 0.0")
+                return 0.0
             
-        except Exception:
+        except Exception as e:
+            tprint_warning(f"Failed to calculate overall quality score: {e}")
             return 0.0
     
     def _calculate_feature_diversity_score(self, feature_names: List[str]) -> float:
         """Calculate feature diversity score based on naming patterns."""
         try:
+            tprint_debug("Calculating feature diversity score...")
+            
             if not feature_names:
+                tprint_warning("No feature names provided for diversity calculation")
                 return 0.0
             
             # Count different feature types
@@ -422,42 +664,68 @@ class PIDBasedFeatureOrchestrator:
             cross_timeframe_count = sum(1 for name in feature_names if name.startswith('cross_timeframe_'))
             
             total_count = len(feature_names)
+            tprint_debug(f"Feature type counts - Interaction: {interaction_count}, Polynomial: {polynomial_count}, Cross-timeframe: {cross_timeframe_count}")
             
             # Calculate diversity as entropy
             proportions = [
-                interaction_count / total_count,
-                polynomial_count / total_count,
-                cross_timeframe_count / total_count
+                safe_divide(interaction_count, total_count, 0.0),
+                safe_divide(polynomial_count, total_count, 0.0),
+                safe_divide(cross_timeframe_count, total_count, 0.0)
             ]
             
             # Remove zero proportions
             proportions = [p for p in proportions if p > 0]
             
             if not proportions:
+                tprint_warning("No valid proportions for diversity calculation")
                 return 0.0
             
-            # Calculate entropy
-            entropy = -sum(p * np.log2(p) for p in proportions)
-            max_entropy = np.log2(len(proportions))
+            # Calculate entropy using safe log
+            entropy = -sum(p * safe_log(p, 0.0) for p in proportions)
+            max_entropy = safe_log(len(proportions), 0.0)
             
-            return entropy / max_entropy if max_entropy > 0 else 0.0
+            diversity_score = safe_divide(entropy, max_entropy, 0.0) if max_entropy > 0 else 0.0
+            diversity_score = validate_finite(diversity_score, "diversity_score")
             
-        except Exception:
+            tprint_debug(f"Feature diversity score: {diversity_score:.4f}")
+            return diversity_score
+            
+        except Exception as e:
+            tprint_warning(f"Failed to calculate feature diversity score: {e}")
             return 0.0
     
     def _calculate_redundancy_score(self, combined_features: Dict[str, np.ndarray]) -> float:
         """Calculate redundancy score."""
         try:
+            tprint_debug("Calculating redundancy score...")
+            
             if len(combined_features) < 2:
+                tprint_warning("Insufficient features for redundancy calculation")
                 return 0.0
             
             # Convert to matrix
-            feature_matrix = np.column_stack(list(combined_features.values()))
+            try:
+                feature_matrix = np.column_stack(list(combined_features.values()))
+                tprint_debug(f"Feature matrix shape: {feature_matrix.shape}")
+            except Exception as e:
+                tprint_warning(f"Failed to create feature matrix: {e}")
+                return 0.0
             
-            if self.matrix_ops:
-                corr_matrix = self.matrix_ops.safe_correlation_matrix(feature_matrix)
-            else:
-                corr_matrix = np.corrcoef(feature_matrix.T)
+            # Calculate correlation matrix safely
+            try:
+                if self.matrix_ops:
+                    corr_matrix = self.matrix_ops.safe_correlation_matrix(feature_matrix)
+                else:
+                    corr_matrix = np.corrcoef(feature_matrix.T)
+                
+                # Validate correlation matrix
+                if not np.all(np.isfinite(corr_matrix)):
+                    tprint_warning("Correlation matrix contains non-finite values")
+                    return 0.0
+                    
+            except Exception as e:
+                tprint_warning(f"Failed to calculate correlation matrix: {e}")
+                return 0.0
             
             # Count high correlations (>0.8)
             n = corr_matrix.shape[0]
@@ -466,30 +734,47 @@ class PIDBasedFeatureOrchestrator:
             
             # Normalize by total possible correlations
             total_correlations = n * (n - 1) // 2
-            redundancy_score = high_correlations / total_correlations if total_correlations > 0 else 0.0
+            redundancy_score = safe_divide(high_correlations, total_correlations, 0.0)
+            redundancy_score = validate_finite(redundancy_score, "redundancy_score")
             
-            return float(redundancy_score)
+            tprint_debug(f"Redundancy score: {redundancy_score:.4f} ({high_correlations}/{total_correlations} high correlations)")
+            return redundancy_score
             
-        except Exception:
+        except Exception as e:
+            tprint_warning(f"Failed to calculate redundancy score: {e}")
             return 0.0
     
     def _calculate_stability_score(self, result: OrchestratorResult) -> float:
         """Calculate overall stability score."""
         try:
+            tprint_debug("Calculating stability score...")
             scores = []
             
-            if result.interaction_result:
-                scores.append(result.interaction_result.feature_stability_score)
+            if result.interaction_result and hasattr(result.interaction_result, 'feature_stability_score'):
+                score = validate_finite(result.interaction_result.feature_stability_score, "interaction_stability")
+                scores.append(score)
+                tprint_debug(f"Interaction stability: {score:.4f}")
             
-            if result.polynomial_result:
-                scores.append(result.polynomial_result.feature_stability_score)
+            if result.polynomial_result and hasattr(result.polynomial_result, 'feature_stability_score'):
+                score = validate_finite(result.polynomial_result.feature_stability_score, "polynomial_stability")
+                scores.append(score)
+                tprint_debug(f"Polynomial stability: {score:.4f}")
             
-            if result.cross_timeframe_result:
-                scores.append(result.cross_timeframe_result.feature_stability_score)
+            if result.cross_timeframe_result and hasattr(result.cross_timeframe_result, 'feature_stability_score'):
+                score = validate_finite(result.cross_timeframe_result.feature_stability_score, "cross_timeframe_stability")
+                scores.append(score)
+                tprint_debug(f"Cross-timeframe stability: {score:.4f}")
             
-            return float(np.mean(scores)) if scores else 0.0
+            if scores:
+                stability_score = validate_finite(np.mean(scores), "stability_score")
+                tprint_debug(f"Overall stability score: {stability_score:.4f}")
+                return stability_score
+            else:
+                tprint_warning("No stability scores available")
+                return 0.0
             
-        except Exception:
+        except Exception as e:
+            tprint_warning(f"Failed to calculate stability score: {e}")
             return 0.0
     
     def get_performance_metrics(self) -> Dict[str, Any]:

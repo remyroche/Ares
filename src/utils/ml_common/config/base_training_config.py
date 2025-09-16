@@ -119,7 +119,7 @@ class TacticianTrainingConfig(BaseTrainingConfig):
     
     # Model types to train
     model_types: List[str] = field(default_factory=lambda: [
-        "NODE", "CatBoostRegressor", "LGBMRegressor", "Ridge"
+        "NODE", "CatBoostRegressor", "ElasticNet"
     ])
     
     # Analyst integration
@@ -166,17 +166,6 @@ class TacticianTrainingConfig(BaseTrainingConfig):
             'learning_rate': {'type': 'float', 'low': 0.01, 'high': 0.2, 'log': True},
             'depth': {'type': 'int', 'low': 4, 'high': 10},
             'l2_leaf_reg': {'type': 'float', 'low': 1.0, 'high': 10.0}
-        },
-        'LGBMRegressor': {
-            'n_estimators': {'type': 'int', 'low': 500, 'high': 2000},
-            'learning_rate': {'type': 'float', 'low': 0.01, 'high': 0.2, 'log': True},
-            'max_depth': {'type': 'int', 'low': 4, 'high': 10},
-            'reg_alpha': {'type': 'float', 'low': 0.0, 'high': 1.0},
-            'reg_lambda': {'type': 'float', 'low': 0.0, 'high': 1.0}
-        },
-        'Ridge': {
-            'alpha': {'type': 'float', 'low': 0.1, 'high': 10.0, 'log': True},
-            'solver': {'type': 'categorical', 'choices': ['auto', 'svd', 'cholesky', 'lsqr', 'sparse_cg', 'sag', 'saga']}
         },
         'ElasticNet': {
             'alpha': {'type': 'float', 'low': 0.001, 'high': 10.0, 'log': True},

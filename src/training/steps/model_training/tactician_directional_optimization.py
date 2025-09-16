@@ -488,22 +488,39 @@ class EntryTimingTacticianOptimizer:
         
         def objective(trial):
             # Suggest model parameters
-            model_type = trial.suggest_categorical('model_type', ['ElasticNet', 'Ridge', 'Lasso'])
+            model_type = trial.suggest_categorical('model_type', ['NODE', 'CatBoost', 'ElasticNet'])
             
-            if model_type == 'ElasticNet':
+            if model_type == 'NODE':
+                # NODE parameters
+                n_d = trial.suggest_int('n_d', 32, 128)
+                n_a = trial.suggest_int('n_a', 32, 128)
+                n_steps = trial.suggest_int('n_steps', 3, 8)
+                gamma = trial.suggest_float('gamma', 1.0, 2.0)
+                lambda_sparse = trial.suggest_float('lambda_sparse', 1e-4, 1e-2, log=True)
+                # Note: NODE model creation would need to be implemented based on your NODE implementation
+                from sklearn.linear_model import Ridge  # Placeholder - replace with actual NODE
+                model = Ridge(alpha=0.1)
+            elif model_type == 'CatBoost':
+                # CatBoost parameters
+                n_estimators = trial.suggest_int('n_estimators', 500, 2000)
+                learning_rate = trial.suggest_float('learning_rate', 0.01, 0.2, log=True)
+                depth = trial.suggest_int('depth', 4, 10)
+                l2_leaf_reg = trial.suggest_float('l2_leaf_reg', 1.0, 10.0)
+                from catboost import CatBoostRegressor
+                model = CatBoostRegressor(
+                    n_estimators=n_estimators,
+                    learning_rate=learning_rate,
+                    depth=depth,
+                    l2_leaf_reg=l2_leaf_reg,
+                    random_seed=42,
+                    verbose=False
+                )
+            else:  # ElasticNet
                 alpha = trial.suggest_float('alpha', 0.001, 10.0, log=True)
                 l1_ratio = trial.suggest_float('l1_ratio', 0.1, 1.0)
                 max_iter = trial.suggest_int('max_iter', 1000, 5000)
                 from sklearn.linear_model import ElasticNet
                 model = ElasticNet(alpha=alpha, l1_ratio=l1_ratio, max_iter=max_iter)
-            elif model_type == 'Ridge':
-                alpha = trial.suggest_float('alpha', 0.1, 10.0, log=True)
-                from sklearn.linear_model import Ridge
-                model = Ridge(alpha=alpha)
-            else:  # Lasso
-                alpha = trial.suggest_float('alpha', 0.001, 1.0, log=True)
-                from sklearn.linear_model import Lasso
-                model = Lasso(alpha=alpha)
             
             # Create confidence-aware model
             confidence_aware_model = ConfidenceAwareModel(model, self.loss_functions)
@@ -606,19 +623,27 @@ class EntryTimingTacticianOptimizer:
         params = best_solution.params
         
         # Create model with best parameters
-        if params['model_type'] == 'ElasticNet':
+        if params['model_type'] == 'NODE':
+            # Note: NODE model creation would need to be implemented based on your NODE implementation
+            from sklearn.linear_model import Ridge  # Placeholder - replace with actual NODE
+            base_model = Ridge(alpha=0.1)
+        elif params['model_type'] == 'CatBoost':
+            from catboost import CatBoostRegressor
+            base_model = CatBoostRegressor(
+                n_estimators=params['n_estimators'],
+                learning_rate=params['learning_rate'],
+                depth=params['depth'],
+                l2_leaf_reg=params['l2_leaf_reg'],
+                random_seed=42,
+                verbose=False
+            )
+        else:  # ElasticNet
             from sklearn.linear_model import ElasticNet
             base_model = ElasticNet(
                 alpha=params['alpha'],
                 l1_ratio=params['l1_ratio'],
                 max_iter=params['max_iter']
             )
-        elif params['model_type'] == 'Ridge':
-            from sklearn.linear_model import Ridge
-            base_model = Ridge(alpha=params['alpha'])
-        else:  # Lasso
-            from sklearn.linear_model import Lasso
-            base_model = Lasso(alpha=params['alpha'])
         
         # Create confidence-aware model
         confidence_aware_model = ConfidenceAwareModel(base_model, self.loss_functions)

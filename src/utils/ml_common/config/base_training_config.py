@@ -133,6 +133,12 @@ class TacticianTrainingConfig(BaseTrainingConfig):
     use_single_model: bool = True
     single_model_name: str = "tactician_unified_model"
     
+    # Ensemble training
+    enable_ensemble_training: bool = True
+    ensemble_method: str = "stacking"  # stacking, voting, blending
+    meta_model: str = "Ridge"
+    ensemble_name: str = "tactician_ensemble"
+    
     # Model-specific HPO search spaces
     hpo_search_spaces: Dict[str, Dict[str, Any]] = field(default_factory=lambda: {
         'NODE': {

@@ -25,21 +25,35 @@ class TacticianBarrierConfig(TripleBarrierConfig):
     
     The Tactician operates on 1m timeframe and needs to find optimal entry points
     within a short time window after the Analyst gives a green light.
+    
+    Optimized barrier settings based on research:
+    - Risk-reward ratio of 1.5:1 for entry optimization
+    - Shorter time horizons for precise entry timing
+    - Dynamic barriers based on market volatility
+    - Confidence-based filtering for high-quality entries
     """
     
-    # Optimized barriers for entry point finding
-    profit_take_multiplier: float = 0.0015  # 0.15% - tighter for entry optimization
-    stop_loss_multiplier: float = 0.0010    # 0.10% - tighter for entry optimization
-    time_barrier_minutes: int = 15          # 15 minutes - shorter for entry timing
+    # Optimized barriers for entry point finding (based on research)
+    profit_take_multiplier: float = 0.0018  # 0.18% - optimized for entry timing
+    stop_loss_multiplier: float = 0.0012    # 0.12% - optimized for entry timing
+    time_barrier_minutes: int = 12          # 12 minutes - optimal for entry timing
     
     # Entry-specific parameters
-    max_lookahead: int = 30                 # 30 bars max lookahead for 1m data
-    transaction_cost: float = 0.0005        # 0.05% - lower for entry optimization
+    max_lookahead: int = 25                 # 25 bars max lookahead for 1m data
+    transaction_cost: float = 0.0004        # 0.04% - optimized for entry optimization
     
     # Entry point optimization
     entry_window_minutes: int = 5           # 5-minute window to find best entry
     min_entry_confidence: float = 0.6       # Minimum confidence for entry
     entry_signal_decay: float = 0.1         # Signal decay rate over time
+    
+    # Dynamic barrier adjustment
+    enable_dynamic_barriers: bool = True    # Enable volatility-based barrier adjustment
+    volatility_lookback: int = 20           # Lookback period for volatility calculation
+    min_barrier_multiplier: float = 0.5     # Minimum barrier adjustment factor
+    max_barrier_multiplier: float = 2.0     # Maximum barrier adjustment factor
+    volatility_threshold_low: float = 0.005 # Low volatility threshold (0.5%)
+    volatility_threshold_high: float = 0.02 # High volatility threshold (2.0%)
     
     # Tactician-specific behavior
     binary_classification: bool = True      # Binary: enter now vs wait
@@ -86,6 +100,38 @@ class TacticianBarrierConfig(TripleBarrierConfig):
         
         if errors:
             raise ValueError(f"Tactician configuration validation failed: {'; '.join(errors)}")
+    
+    def calculate_dynamic_barriers(self, volatility: float) -> Tuple[float, float]:
+        """
+        Calculate dynamic barriers based on market volatility.
+        
+        Args:
+            volatility: Current market volatility (standard deviation of returns)
+            
+        Returns:
+            Tuple of (adjusted_profit_take, adjusted_stop_loss) multipliers
+        """
+        if not self.enable_dynamic_barriers:
+            return self.profit_take_multiplier, self.stop_loss_multiplier
+        
+        # Calculate adjustment factor based on volatility
+        if volatility <= self.volatility_threshold_low:
+            # Low volatility: tighten barriers for more precise entries
+            adjustment_factor = self.min_barrier_multiplier
+        elif volatility >= self.volatility_threshold_high:
+            # High volatility: widen barriers to avoid noise
+            adjustment_factor = self.max_barrier_multiplier
+        else:
+            # Medium volatility: linear interpolation
+            volatility_range = self.volatility_threshold_high - self.volatility_threshold_low
+            volatility_position = (volatility - self.volatility_threshold_low) / volatility_range
+            adjustment_factor = self.min_barrier_multiplier + volatility_position * (self.max_barrier_multiplier - self.min_barrier_multiplier)
+        
+        # Apply adjustment to barriers
+        adjusted_profit_take = self.profit_take_multiplier * adjustment_factor
+        adjusted_stop_loss = self.stop_loss_multiplier * adjustment_factor
+        
+        return adjusted_profit_take, adjusted_stop_loss
 
 
 class TacticianBarrierLabeler(UnifiedTripleBarrierLabeler):
@@ -292,12 +338,13 @@ class TacticianBarrierLabeler(UnifiedTripleBarrierLabeler):
 
 # Convenience functions for tactician barrier labeling
 def create_tactician_barrier_labeler(
-    profit_take_multiplier: float = 0.0015,
-    stop_loss_multiplier: float = 0.0010,
-    time_barrier_minutes: int = 15,
+    profit_take_multiplier: float = 0.0018,
+    stop_loss_multiplier: float = 0.0012,
+    time_barrier_minutes: int = 12,
     entry_window_minutes: int = 5,
     min_entry_confidence: float = 0.6,
-    transaction_cost: float = 0.0005
+    transaction_cost: float = 0.0004,
+    enable_dynamic_barriers: bool = True
 ) -> TacticianBarrierLabeler:
     """Create a tactician-specific barrier labeler."""
     config = TacticianBarrierConfig(
@@ -306,7 +353,8 @@ def create_tactician_barrier_labeler(
         time_barrier_minutes=time_barrier_minutes,
         entry_window_minutes=entry_window_minutes,
         min_entry_confidence=min_entry_confidence,
-        transaction_cost=transaction_cost
+        transaction_cost=transaction_cost,
+        enable_dynamic_barriers=enable_dynamic_barriers
     )
     
     return TacticianBarrierLabeler(config)
@@ -315,11 +363,12 @@ def create_tactician_barrier_labeler(
 def apply_tactician_barrier_labeling(
     data,
     analyst_signals: Optional[np.ndarray] = None,
-    profit_take_multiplier: float = 0.0015,
-    stop_loss_multiplier: float = 0.0010,
-    time_barrier_minutes: int = 15,
+    profit_take_multiplier: float = 0.0018,
+    stop_loss_multiplier: float = 0.0012,
+    time_barrier_minutes: int = 12,
     entry_window_minutes: int = 5,
-    min_entry_confidence: float = 0.6
+    min_entry_confidence: float = 0.6,
+    enable_dynamic_barriers: bool = True
 ) -> Dict[str, Any]:
     """Apply tactician-specific barrier labeling to data."""
     labeler = create_tactician_barrier_labeler(
@@ -327,7 +376,8 @@ def apply_tactician_barrier_labeling(
         stop_loss_multiplier=stop_loss_multiplier,
         time_barrier_minutes=time_barrier_minutes,
         entry_window_minutes=entry_window_minutes,
-        min_entry_confidence=min_entry_confidence
+        min_entry_confidence=min_entry_confidence,
+        enable_dynamic_barriers=enable_dynamic_barriers
     )
     
     return labeler.apply_tactician_labeling(data, analyst_signals)

@@ -23,7 +23,7 @@ from dataclasses import dataclass
 from enum import Enum
 
 from src.utils.logger import system_logger
-from src.utils.ml_common.config import PerRegimeTrainingConfig
+from src.utils.ml_common.config import PerRegimeTrainingConfig, TacticianTrainingConfig
 from src.utils.ml_common.training import PerRegimeTrainingStep
 
 # Import vectorized training manager for enhanced capabilities
@@ -88,7 +88,7 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
     - Structured logging with performance monitoring
     """
     
-    def __init__(self, config: Optional[PerRegimeTrainingConfig] = None, enable_vectorization: bool = True):
+    def __init__(self, config: Optional[TacticianTrainingConfig] = None, enable_vectorization: bool = True):
         """
         Initialize enhanced Tactician models training step.
 
@@ -103,7 +103,7 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
         
         # Set default configuration for tactician models with enhanced settings
         if config is None:
-            config = PerRegimeTrainingConfig(
+            config = TacticianTrainingConfig(
                 model_name="tactician_models",
                 timeframe="1m",
                 model_types=["NeuralObliviousDecisionEnsembles", "CatBoostRegressor", "LGBMRegressor", "ElasticNetCV"],
@@ -113,7 +113,13 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                 enable_data_augmentation=True,
                 augmentation_method="smote",
                 model_save_path="./models/tactician_models",
-                evaluation_metrics=["mse", "mae", "r2", "mape", "smape"]
+                evaluation_metrics=["mse", "mae", "r2", "mape", "smape"],
+                use_single_model=True,
+                single_model_name="tactician_unified_model",
+                enable_ensemble_training=True,
+                ensemble_method="stacking",
+                meta_model="Ridge",
+                ensemble_name="tactician_ensemble"
             )
 
         try:
@@ -608,7 +614,8 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
         analyst_signals: Optional[np.ndarray] = None,
         analyst_model_outputs: Optional[np.ndarray] = None,
         hmm_regime_features: Optional[np.ndarray] = None,
-        all_analyst_models_outputs: Optional[Dict[str, np.ndarray]] = None
+        all_analyst_models_outputs: Optional[Dict[str, np.ndarray]] = None,
+        hmm_model_outputs: Optional[np.ndarray] = None
     ) -> Dict[str, Any]:
         """
         Execute enhanced Tactician models training step with comprehensive error handling.
@@ -623,6 +630,7 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
             analyst_model_outputs: Analyst model predictions used as features
             hmm_regime_features: HMM regime features (probabilities, characteristics)
             all_analyst_models_outputs: All individual analyst ML model outputs
+            hmm_model_outputs: HMM model outputs (predictions, probabilities, etc.)
             
         Returns:
             Dictionary containing training results and metadata with comprehensive reporting
@@ -673,7 +681,7 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                 X, y, regime_labels, feature_names, preparation_metrics = self._prepare_features(
                     X, y, regime_labels, feature_names, hmm_states, 
                     analyst_signals, analyst_model_outputs, hmm_regime_features, 
-                    all_analyst_models_outputs
+                    all_analyst_models_outputs, hmm_model_outputs
                 )
                 
                 # Log feature preparation metrics
@@ -735,7 +743,8 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
         analyst_signals: Optional[np.ndarray],
         analyst_model_outputs: Optional[np.ndarray],
         hmm_regime_features: Optional[np.ndarray],
-        all_analyst_models_outputs: Optional[Dict[str, np.ndarray]]
+        all_analyst_models_outputs: Optional[Dict[str, np.ndarray]],
+        hmm_model_outputs: Optional[np.ndarray]
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, Optional[List[str]], Dict[str, Any]]:
         """Prepare and combine all features with comprehensive error handling and validation."""
         preparation_metrics = {
@@ -795,7 +804,7 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                         preparation_metrics['errors'].append(error_msg)
                         raise ValueError(error_msg)
             
-            # Combine all features: base features + HMM regime features + all analyst model outputs
+            # Combine all features: base features + HMM regime features + HMM model outputs + all analyst model outputs
             additional_features = []
             additional_feature_names = []
             feature_combination_details = {}
@@ -839,6 +848,49 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                     
                 except Exception as e:
                     error_msg = f"Failed to add HMM regime features: {e}"
+                    preparation_metrics['errors'].append(error_msg)
+                    self.logger.error(f"❌ {error_msg}")
+                    raise
+            
+            # Add HMM model outputs if provided
+            if hmm_model_outputs is not None:
+                try:
+                    if analyst_signals is not None:
+                        hmm_model_outputs = hmm_model_outputs[green_light_mask]
+                    
+                    # Validate HMM model outputs shape
+                    if hmm_model_outputs.shape[0] != X.shape[0]:
+                        error_msg = f"HMM model outputs shape mismatch: expected {X.shape[0]}, got {hmm_model_outputs.shape[0]}"
+                        preparation_metrics['errors'].append(error_msg)
+                        raise ValueError(error_msg)
+                    
+                    # Check for NaN/Inf in HMM model outputs
+                    hmm_outputs_nan_count = np.sum(np.isnan(hmm_model_outputs))
+                    hmm_outputs_inf_count = np.sum(np.isinf(hmm_model_outputs))
+                    
+                    if hmm_outputs_nan_count > 0:
+                        warning_msg = f"HMM model outputs contain {hmm_outputs_nan_count} NaN values"
+                        preparation_metrics['warnings'].append(warning_msg)
+                        self.logger.warning(f"⚠️ {warning_msg}")
+                    
+                    if hmm_outputs_inf_count > 0:
+                        warning_msg = f"HMM model outputs contain {hmm_outputs_inf_count} infinite values"
+                        preparation_metrics['warnings'].append(warning_msg)
+                        self.logger.warning(f"⚠️ {warning_msg}")
+                    
+                    additional_features.append(hmm_model_outputs)
+                    additional_feature_names.extend([f"hmm_model_{i}" for i in range(hmm_model_outputs.shape[1])])
+                    
+                    feature_combination_details['hmm_model_outputs'] = {
+                        'count': hmm_model_outputs.shape[1],
+                        'nan_count': hmm_outputs_nan_count,
+                        'inf_count': hmm_outputs_inf_count
+                    }
+                    
+                    self.logger.info(f"📊 Added {hmm_model_outputs.shape[1]} HMM model outputs")
+                    
+                except Exception as e:
+                    error_msg = f"Failed to add HMM model outputs: {e}"
                     preparation_metrics['errors'].append(error_msg)
                     self.logger.error(f"❌ {error_msg}")
                     raise
@@ -958,7 +1010,7 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                         feature_names = [f"feature_{i}" for i in range(X.shape[1])]
                     
                     preparation_metrics['feature_combinations'] = feature_combination_details
-                    self.logger.info(f"📊 Total features: {X.shape[1]} (base + HMM + all analyst models)")
+                    self.logger.info(f"📊 Total features: {X.shape[1]} (base + HMM regime + HMM model + all analyst models)")
                     
                 except Exception as e:
                     error_msg = f"Failed to combine features: {e}"
@@ -1082,6 +1134,11 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
             # Add training metrics to results
             results['training_execution_metrics'] = training_metrics
             
+            # Add ensemble training if enabled
+            if hasattr(self.config, 'enable_ensemble_training') and self.config.enable_ensemble_training:
+                ensemble_results = self._train_ensemble_model(X, y, feature_names, results)
+                results.update(ensemble_results)
+            
             return results
             
         except Exception as e:
@@ -1140,6 +1197,142 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
         except Exception as e:
             self.logger.error(f"❌ Training input validation failed: {e}")
             raise
+    
+    def _train_ensemble_model(
+        self,
+        X: np.ndarray,
+        y: np.ndarray,
+        feature_names: Optional[List[str]],
+        base_models_results: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Train ensemble model using base models as inputs."""
+        try:
+            self.logger.info("🔄 Training ensemble model from base models...")
+            
+            # Get base models from results
+            base_models = base_models_results.get('models', {})
+            if not base_models:
+                self.logger.warning("⚠️ No base models found for ensemble training")
+                return {}
+            
+            # Generate base model predictions for ensemble training
+            base_predictions = []
+            base_model_names = []
+            
+            for model_name, model in base_models.items():
+                try:
+                    # Generate predictions using the base model
+                    if hasattr(model, 'predict'):
+                        predictions = model.predict(X)
+                        base_predictions.append(predictions.reshape(-1, 1))
+                        base_model_names.append(model_name)
+                        self.logger.info(f"📊 Generated predictions from {model_name}")
+                    else:
+                        self.logger.warning(f"⚠️ Model {model_name} does not have predict method")
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Failed to generate predictions from {model_name}: {e}")
+            
+            if not base_predictions:
+                self.logger.warning("⚠️ No valid base model predictions for ensemble training")
+                return {}
+            
+            # Combine base model predictions
+            X_ensemble = np.column_stack(base_predictions)
+            ensemble_feature_names = [f"base_model_{name}" for name in base_model_names]
+            
+            self.logger.info(f"📊 Ensemble training data: {X_ensemble.shape[0]} samples, {X_ensemble.shape[1]} base model predictions")
+            
+            # Train ensemble model
+            ensemble_method = getattr(self.config, 'ensemble_method', 'stacking')
+            meta_model_type = getattr(self.config, 'meta_model', 'Ridge')
+            ensemble_name = getattr(self.config, 'ensemble_name', 'tactician_ensemble')
+            
+            if ensemble_method == 'stacking':
+                # Use stacking ensemble
+                ensemble_model = self._train_stacking_ensemble(
+                    X_ensemble, y, meta_model_type, ensemble_name
+                )
+            else:
+                # Use simple meta-model
+                ensemble_model = self.training_utils.train_single_model(
+                    model_type=meta_model_type,
+                    X=X_ensemble,
+                    y=y,
+                    model_name=ensemble_name
+                )
+            
+            # Evaluate ensemble model
+            ensemble_evaluation = self.training_utils.evaluate_model(
+                model=ensemble_model,
+                X=X_ensemble,
+                y=y,
+                metrics=self.config.evaluation_metrics
+            )
+            
+            ensemble_results = {
+                'ensemble_model': ensemble_model,
+                'ensemble_evaluation': ensemble_evaluation,
+                'ensemble_method': ensemble_method,
+                'meta_model_type': meta_model_type,
+                'base_models_used': base_model_names,
+                'ensemble_feature_names': ensemble_feature_names
+            }
+            
+            self.logger.info(f"✅ Ensemble training completed: {ensemble_method} with {meta_model_type}")
+            self.logger.info(f"📊 Ensemble performance: {ensemble_evaluation}")
+            
+            return ensemble_results
+            
+        except Exception as e:
+            self.logger.error(f"❌ Ensemble training failed: {e}")
+            return {}
+    
+    def _train_stacking_ensemble(
+        self,
+        X_ensemble: np.ndarray,
+        y: np.ndarray,
+        meta_model_type: str,
+        ensemble_name: str
+    ):
+        """Train a stacking ensemble model."""
+        try:
+            from sklearn.ensemble import StackingRegressor
+            from sklearn.model_selection import cross_val_predict
+            
+            # Create base estimators from the ensemble features
+            base_estimators = []
+            for i in range(X_ensemble.shape[1]):
+                # Use simple models as base estimators for stacking
+                base_estimator = self.training_utils.create_model('Ridge')
+                base_estimators.append((f'base_{i}', base_estimator))
+            
+            # Create meta-model
+            meta_model = self.training_utils.create_model(meta_model_type)
+            
+            # Create stacking regressor
+            stacking_regressor = StackingRegressor(
+                estimators=base_estimators,
+                final_estimator=meta_model,
+                cv=5,  # 5-fold cross-validation
+                stack_method='predict'
+            )
+            
+            # Train the stacking ensemble
+            stacking_regressor.fit(X_ensemble, y)
+            
+            self.logger.info(f"✅ Stacking ensemble trained with {len(base_estimators)} base estimators")
+            
+            return stacking_regressor
+            
+        except Exception as e:
+            self.logger.error(f"❌ Stacking ensemble training failed: {e}")
+            # Fallback to simple meta-model
+            return self.training_utils.train_single_model(
+                model_type=meta_model_type,
+                X=X_ensemble,
+                y=y,
+                model_name=ensemble_name
+            )
     
     def _finalize_results(self, results: Dict[str, Any], analyst_signals: Optional[np.ndarray]) -> Dict[str, Any]:
         """Finalize results with tactician-specific metadata and comprehensive reporting."""
@@ -1404,7 +1597,7 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
 
 # Enhanced convenience functions with better error handling
 def create_tactician_models_training_step_refactored(
-    config: Optional[PerRegimeTrainingConfig] = None,
+    config: Optional[TacticianTrainingConfig] = None,
     enable_vectorization: bool = True
 ) -> TacticianModelsTrainingStepRefactored:
     """
@@ -1431,13 +1624,14 @@ def execute_tactician_models_training_refactored(
     X: np.ndarray,
     y: np.ndarray,
     regime_labels: np.ndarray,
-    config: Optional[PerRegimeTrainingConfig] = None,
+    config: Optional[TacticianTrainingConfig] = None,
     feature_names: Optional[List[str]] = None,
     hmm_states: Optional[np.ndarray] = None,
     analyst_signals: Optional[np.ndarray] = None,
     analyst_model_outputs: Optional[np.ndarray] = None,
     hmm_regime_features: Optional[np.ndarray] = None,
     all_analyst_models_outputs: Optional[Dict[str, np.ndarray]] = None,
+    hmm_model_outputs: Optional[np.ndarray] = None,
     enable_vectorization: bool = True
 ) -> Dict[str, Any]:
     """
@@ -1454,6 +1648,7 @@ def execute_tactician_models_training_refactored(
         analyst_model_outputs: Analyst model predictions
         hmm_regime_features: HMM regime features
         all_analyst_models_outputs: All individual analyst ML model outputs
+        hmm_model_outputs: HMM model outputs (predictions, probabilities, etc.)
         enable_vectorization: Whether to enable vectorized training
         
     Returns:
@@ -1467,7 +1662,7 @@ def execute_tactician_models_training_refactored(
         return step.execute(
             X, y, regime_labels, feature_names, hmm_states, 
             analyst_signals, analyst_model_outputs, hmm_regime_features, 
-            all_analyst_models_outputs
+            all_analyst_models_outputs, hmm_model_outputs
         )
     except Exception as e:
         logger.error(f"❌ Failed to execute tactician training: {e}")
@@ -1481,14 +1676,20 @@ if __name__ == "__main__":
     print("=" * 50)
     
     # Create configuration with enhanced settings
-    config = PerRegimeTrainingConfig(
+    config = TacticianTrainingConfig(
         model_name="tactician_models",
         timeframe="1m",
         model_types=["NeuralObliviousDecisionEnsembles", "CatBoostRegressor", "LGBMRegressor", "Ridge"],
         hpo_n_trials=50,  # Reduced for demo
         enable_hpo=True,
         save_models=True,
-        model_save_path="./models/tactician_models_enhanced"
+        model_save_path="./models/tactician_models_enhanced",
+        use_single_model=True,
+        single_model_name="tactician_unified_model",
+        enable_ensemble_training=True,
+        ensemble_method="stacking",
+        meta_model="Ridge",
+        ensemble_name="tactician_ensemble"
     )
     
     # Create enhanced training step

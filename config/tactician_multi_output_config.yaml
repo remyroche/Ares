@@ -60,40 +60,44 @@ tactician_config:
   # Meta model configuration
   meta_models:
     entry_timing:
-      model_type: "ElasticNetCV"
+      model_type: "LGBMRegressor"
       params:
-        alphas: [0.01, 0.1, 0.5, 1.0, 5.0]
-        l1_ratio: [0.1, 0.3, 0.5, 0.7, 0.9]
-        cv: 5
-        max_iter: 1000
+        n_estimators: 1000
+        learning_rate: 0.05
+        max_depth: 6
+        num_leaves: 31
         random_state: 42
+        verbosity: -1
     
     position_size:
-      model_type: "ElasticNetCV"
+      model_type: "LGBMRegressor"
       params:
-        alphas: [0.01, 0.1, 1.0, 5.0, 10.0]
-        l1_ratio: [0.1, 0.3, 0.5, 0.7, 0.9]
-        cv: 5
-        max_iter: 1000
+        n_estimators: 1000
+        learning_rate: 0.05
+        max_depth: 6
+        num_leaves: 31
         random_state: 42
+        verbosity: -1
     
     stop_loss:
-      model_type: "ElasticNetCV"
+      model_type: "LGBMRegressor"
       params:
-        alphas: [0.01, 0.1, 1.0, 2.0, 5.0, 10.0]
-        l1_ratio: [0.1, 0.3, 0.5, 0.7, 0.9]
-        cv: 5
-        max_iter: 1000
+        n_estimators: 1000
+        learning_rate: 0.05
+        max_depth: 6
+        num_leaves: 31
         random_state: 42
+        verbosity: -1
     
     take_profit:
-      model_type: "ElasticNetCV"
+      model_type: "LGBMRegressor"
       params:
-        alphas: [0.01, 0.1, 0.5, 1.0, 1.5, 5.0]
-        l1_ratio: [0.1, 0.3, 0.5, 0.7, 0.9]
-        cv: 5
-        max_iter: 1000
+        n_estimators: 1000
+        learning_rate: 0.05
+        max_depth: 6
+        num_leaves: 31
         random_state: 42
+        verbosity: -1
   
   # Training configuration
   training:

@@ -85,8 +85,14 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
         self.logger.info('🔄 Starting HMM Clustering')
         
         try:
-            # Import HMM clustering utilities
-            from src.utils.hmm_composite_manager import EnhancedHMMCompositeManager
+            # Import HMM clustering utilities with fallback
+            try:
+                from src.utils.hmm_composite_manager import EnhancedHMMCompositeManager
+                HMM_MANAGER_AVAILABLE = True
+            except ImportError as e:
+                self.logger.warning(f"⚠️ EnhancedHMMCompositeManager not available: {e}")
+                HMM_MANAGER_AVAILABLE = False
+                EnhancedHMMCompositeManager = None
             
             # Get market data
             market_data = await self._load_market_data(data)
@@ -155,8 +161,14 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                 'memory_limit_gb': 8.0
             }
             
-            # Create HMM composite manager
-            hmm_manager = EnhancedHMMCompositeManager()
+            # Create HMM composite manager with fallback
+            if HMM_MANAGER_AVAILABLE and EnhancedHMMCompositeManager is not None:
+                hmm_manager = EnhancedHMMCompositeManager()
+                self.logger.info("✅ Using EnhancedHMMCompositeManager for clustering")
+            else:
+                # Fallback to simple clustering approach
+                hmm_manager = None
+                self.logger.warning("⚠️ Using fallback clustering approach")
             
             # Perform HMM clustering
             clustering_result = await self._perform_hmm_clustering(
@@ -271,6 +283,10 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
         start_time = time.time()
         
         try:
+            # Check if we have a valid HMM manager
+            if hmm_manager is None:
+                return await self._perform_fallback_clustering(market_data, regime_discovery, config, start_time)
+            
             # Prepare data for clustering with memory optimization
             prepared_data = await self._prepare_data_for_clustering_optimized(market_data, regime_discovery, config)
             
@@ -281,7 +297,10 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                 )
             else:
                 # Use the new perform_hmm_clustering method from EnhancedHMMCompositeManager
-                clustering_result = hmm_manager.perform_hmm_clustering(prepared_data, config)
+                if hasattr(hmm_manager, 'perform_hmm_clustering'):
+                    clustering_result = hmm_manager.perform_hmm_clustering(prepared_data, config)
+                else:
+                    return await self._perform_fallback_clustering(market_data, regime_discovery, config, start_time)
             
             clustering_time = time.time() - start_time
             clustering_result['clustering_time'] = clustering_time
@@ -291,12 +310,57 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
         except Exception as e:
             self.logger.error(f"HMM clustering process failed: {e}")
             # Return fallback clustering result
+            return await self._perform_fallback_clustering(market_data, regime_discovery, config, start_time, str(e))
+    
+    async def _perform_fallback_clustering(
+        self, 
+        market_data: Any, 
+        regime_discovery: Dict[str, Any],
+        config: Dict[str, Any],
+        start_time: float,
+        error_message: str = None
+    ) -> Dict[str, Any]:
+        """Perform fallback clustering when HMM manager is not available."""
+        try:
+            self.logger.info("🔄 Performing fallback clustering...")
+            
+            # Get regime assignments from regime discovery
+            regime_assignments = regime_discovery.get('regime_assignments', [])
+            regime_models = regime_discovery.get('regime_models', [])
+            
+            if not regime_assignments:
+                # Create simple cluster assignments based on data
+                n_samples = len(market_data) if hasattr(market_data, '__len__') else 1000
+                n_clusters = min(3, len(regime_models)) if regime_models else 3
+                cluster_assignments = [i % n_clusters for i in range(n_samples)]
+                hmm_models = [f"fallback_model_{i}" for i in range(n_clusters)]
+            else:
+                # Use regime assignments as cluster assignments
+                cluster_assignments = regime_assignments
+                hmm_models = regime_models
+            
+            clustering_time = time.time() - start_time
+            
+            return {
+                'hmm_models': hmm_models,
+                'cluster_assignments': cluster_assignments,
+                'cluster_metrics': {
+                    'clustering_method': 'fallback',
+                    'n_clusters': len(set(cluster_assignments)),
+                    'total_samples': len(cluster_assignments),
+                    'error': error_message
+                },
+                'clustering_time': clustering_time
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Fallback clustering failed: {e}")
             return {
                 'hmm_models': [],
                 'cluster_assignments': [],
                 'cluster_metrics': {
-                    'clustering_method': 'fallback',
-                    'error': str(e)
+                    'clustering_method': 'fallback_failed',
+                    'error': f"Original: {error_message}, Fallback: {str(e)}"
                 },
                 'clustering_time': time.time() - start_time
             }

@@ -1,0 +1,110 @@
+# Multi-Tier Trading System Configuration
+
+# HMM System Configuration (1h base, runs every 15 minutes)
+hmm:
+  base_timeframe: "1h"
+  run_interval_minutes: 15
+  n_regimes: 20  # Will be optimized between 15-25
+  n_features: 100
+  lookback_periods: 24  # 24 hours of 1h data
+  min_regimes: 15
+  max_regimes: 25
+  convergence_threshold: 1e-6
+  max_iterations: 1000
+  random_state: 42
+
+# Analyst System Configuration (5m base, runs every 2 minutes)
+analyst:
+  base_timeframe: "5m"
+  run_interval_minutes: 2
+  n_features: 300  # 300+ features
+  target_threshold: 0.5  # 0.5% price change threshold
+  lookback_periods: 144  # 12 hours of 5m data
+  cross_timeframe_periods: [3, 6, 12, 24, 48, 72, 144, 288]  # 15m, 30m, 1h, 2h, 4h, 6h, 12h, 1d
+  train_test_split: 0.8
+  random_state: 42
+  meta_learner: "elastic_net"
+
+# Tactician System Configuration (1m base, runs every 30 seconds)
+tactician:
+  base_timeframe: "1m"
+  run_interval_seconds: 30
+  target_threshold: 0.5  # 0.5% price change target
+  lookback_periods: 60  # 1 hour of 1m data
+  cross_timeframe_periods: [5, 15, 30, 60, 120, 240]  # 5m, 15m, 30m, 1h, 2h, 4h
+  train_test_split: 0.8
+  random_state: 42
+  meta_learner: "lightgbm"
+  min_confidence_threshold: 0.6
+  max_position_size: 0.1
+  max_leverage: 3.0
+
+# System-wide Configuration
+system:
+  max_history: 1000
+  data_update_interval: 1  # seconds
+  monitoring_interval: 60  # seconds
+  error_retry_interval: 5  # seconds
+  max_errors: 10
+  
+# Model Configurations
+models:
+  hmm:
+    base:
+      catboost: "CatBoost"
+      elastic_net: "Elastic Net"
+    meta_learner:
+      xgboost: "XGBoost"
+      
+  analyst:
+    base:
+      tcn: "Temporal Convolutions Network"
+      catboost: "CatBoostRegressor"
+      lightgbm: "LGBMRegressor"
+    meta_learner:
+      elastic_net: "Elastic Net"
+      
+  tactician:
+    base:
+      xgboost: "XGBoost"
+      randomforest: "RandomForestRegressor"
+      catboost: "CatBoostRegressor"
+      elastic_net: "Elastic Net"
+    meta_learner:
+      lightgbm: "LGBMRegressor"
+
+# Risk Management
+risk_management:
+  max_drawdown: 0.05
+  max_correlation: 0.8
+  position_size_multiplier: 1.0
+  leverage_multiplier: 1.0
+  stop_loss_multiplier: 0.001
+  profit_take_multiplier: 0.002
+
+# Logging Configuration
+logging:
+  level: "INFO"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  file: "multi_tier_trading.log"
+  max_size: "10MB"
+  backup_count: 5
+
+# Data Sources
+data_sources:
+  primary: "binance"
+  backup: "ccxt"
+  symbols: ["ETHUSDT", "BTCUSDT"]
+  timeframes: ["1m", "5m", "1h"]
+  update_frequency: 1  # seconds
+
+# Performance Monitoring
+monitoring:
+  enable_metrics: true
+  enable_alerts: true
+  alert_thresholds:
+    error_rate: 0.1
+    processing_time: 5.0
+    confidence_drop: 0.3
+  export_interval: 3600  # seconds
+  export_path: "./metrics"

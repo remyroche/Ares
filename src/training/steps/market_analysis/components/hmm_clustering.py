@@ -43,6 +43,16 @@ except ImportError:
 from .base_component import BaseMarketAnalysisComponent, ComponentConfig, ComponentResult
 from src.utils.logger import system_logger
 
+# Standard return structure for clustering methods
+STANDARD_CLUSTERING_RESULT = {
+    'hmm_models': [],
+    'cluster_assignments': [],
+    'cluster_metrics': {},
+    'clustering_time': 0.0,
+    'success': False,
+    'error': None
+}
+
 
 class HMMClusteringComponent(BaseMarketAnalysisComponent):
     """
@@ -82,36 +92,107 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
         Returns:
             ComponentResult with clustering results
         """
+        from src.utils.tprint import tprint
+        
+        tprint("🔄 Starting HMM Clustering - Enhanced Error Handling")
         self.logger.info('🔄 Starting HMM Clustering')
         
         try:
+            tprint("📊 Input validation starting...")
+            tprint(f"📊 Data type: {type(data)}")
+            tprint(f"📊 Pipeline state keys: {list(pipeline_state.keys()) if pipeline_state else 'None'}")
+            
+            # Validate inputs
+            if data is None:
+                error_msg = "Input data is None"
+                tprint(f"❌ {error_msg}")
+                self.logger.error(error_msg)
+                return ComponentResult(success=False, artifacts={}, error_message=error_msg)
+            
+            if not pipeline_state:
+                error_msg = "Pipeline state is empty"
+                tprint(f"❌ {error_msg}")
+                self.logger.error(error_msg)
+                return ComponentResult(success=False, artifacts={}, error_message=error_msg)
+            
+            tprint("✅ Input validation passed")
             # Import HMM clustering utilities
-            from src.utils.hmm_composite_manager import EnhancedHMMCompositeManager
+            tprint("📦 Importing HMM clustering utilities...")
+            try:
+                from src.utils.hmm_composite_manager import EnhancedHMMCompositeManager
+                tprint("✅ EnhancedHMMCompositeManager imported successfully")
+            except ImportError as e:
+                error_msg = f"Failed to import EnhancedHMMCompositeManager: {e}"
+                tprint(f"❌ {error_msg}")
+                self.logger.error(error_msg)
+                return ComponentResult(success=False, artifacts={}, error_message=error_msg)
             
             # Get market data
-            market_data = await self._load_market_data(data)
-            if market_data is None or market_data.empty:
-                raise ValueError("No market data available for HMM clustering")
+            tprint("📊 Loading market data...")
+            try:
+                market_data = await self._load_market_data(data)
+                if market_data is None:
+                    error_msg = "Market data is None after loading"
+                    tprint(f"❌ {error_msg}")
+                    self.logger.error(error_msg)
+                    return ComponentResult(success=False, artifacts={}, error_message=error_msg)
+                
+                if hasattr(market_data, 'empty') and market_data.empty:
+                    error_msg = "Market data is empty"
+                    tprint(f"❌ {error_msg}")
+                    self.logger.error(error_msg)
+                    return ComponentResult(success=False, artifacts={}, error_message=error_msg)
+                
+                tprint(f"✅ Market data loaded successfully: {type(market_data)}")
+                if hasattr(market_data, 'shape'):
+                    tprint(f"📊 Market data shape: {market_data.shape}")
+                
+            except Exception as e:
+                error_msg = f"Failed to load market data: {e}"
+                tprint(f"❌ {error_msg}")
+                self.logger.error(error_msg)
+                return ComponentResult(success=False, artifacts={}, error_message=error_msg)
             
             # Get regime discovery results from previous stage
-            # First try to get from pipeline state (direct access)
-            hmm_regime_discovery = pipeline_state.get('hmm_regime_discovery_result', {})
-            
-            # If not found in pipeline state, try to get from artifacts in pipeline state
-            if not hmm_regime_discovery:
-                artifacts = pipeline_state.get('artifacts', {})
-                hmm_regime_discovery = artifacts.get('hmm_regime_discovery_result', {})
-            
-            # If still not found, try to get from regime models in pipeline state
-            if not hmm_regime_discovery:
-                regime_models = pipeline_state.get('regime_models', [])
-                regime_assignments = pipeline_state.get('regime_assignments', [])
-                if regime_models or regime_assignments:
-                    hmm_regime_discovery = {
-                        'regime_models': regime_models,
-                        'regime_assignments': regime_assignments,
-                        'regime_metrics': pipeline_state.get('regime_metrics', {})
-                    }
+            tprint("🔍 Retrieving regime discovery results...")
+            try:
+                # First try to get from pipeline state (direct access)
+                hmm_regime_discovery = pipeline_state.get('hmm_regime_discovery_result', {})
+                tprint(f"📊 Direct regime discovery result: {type(hmm_regime_discovery)}")
+                
+                # If not found in pipeline state, try to get from artifacts in pipeline state
+                if not hmm_regime_discovery:
+                    tprint("🔍 Trying to get regime discovery from artifacts...")
+                    artifacts = pipeline_state.get('artifacts', {})
+                    hmm_regime_discovery = artifacts.get('hmm_regime_discovery_result', {})
+                    tprint(f"📊 Artifacts regime discovery result: {type(hmm_regime_discovery)}")
+                
+                # If still not found, try to get from regime models in pipeline state
+                if not hmm_regime_discovery:
+                    tprint("🔍 Trying to construct regime discovery from individual components...")
+                    regime_models = pipeline_state.get('regime_models', [])
+                    regime_assignments = pipeline_state.get('regime_assignments', [])
+                    tprint(f"📊 Regime models count: {len(regime_models)}")
+                    tprint(f"📊 Regime assignments count: {len(regime_assignments)}")
+                    
+                    if regime_models or regime_assignments:
+                        hmm_regime_discovery = {
+                            'regime_models': regime_models,
+                            'regime_assignments': regime_assignments,
+                            'regime_metrics': pipeline_state.get('regime_metrics', {})
+                        }
+                        tprint("✅ Constructed regime discovery from individual components")
+                    else:
+                        tprint("⚠️ No regime models or assignments found")
+                
+                tprint(f"📊 Final regime discovery type: {type(hmm_regime_discovery)}")
+                tprint(f"📊 Final regime discovery keys: {list(hmm_regime_discovery.keys()) if isinstance(hmm_regime_discovery, dict) else 'Not a dict'}")
+                
+            except Exception as e:
+                error_msg = f"Failed to retrieve regime discovery results: {e}"
+                tprint(f"❌ {error_msg}")
+                self.logger.error(error_msg)
+                return ComponentResult(success=False, artifacts={}, error_message=error_msg)
             
             # Log regime discovery summary (reduced verbosity)
             if hmm_regime_discovery:
@@ -156,77 +237,171 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             }
             
             # Create HMM composite manager
-            hmm_manager = EnhancedHMMCompositeManager()
+            tprint("🔧 Creating HMM composite manager...")
+            try:
+                hmm_manager = EnhancedHMMCompositeManager()
+                tprint("✅ HMM composite manager created successfully")
+            except Exception as e:
+                error_msg = f"Failed to create HMM composite manager: {e}"
+                tprint(f"❌ {error_msg}")
+                self.logger.error(error_msg)
+                return ComponentResult(success=False, artifacts={}, error_message=error_msg)
             
             # Perform HMM clustering
-            clustering_result = await self._perform_hmm_clustering(
-                hmm_manager, market_data, hmm_regime_discovery, clustering_config
-            )
+            tprint("🔄 Starting HMM clustering process...")
+            try:
+                clustering_result = await self._perform_hmm_clustering(
+                    hmm_manager, market_data, hmm_regime_discovery, clustering_config
+                )
+                tprint(f"✅ HMM clustering completed: {type(clustering_result)}")
+                tprint(f"📊 Clustering result keys: {list(clustering_result.keys()) if isinstance(clustering_result, dict) else 'Not a dict'}")
+                
+                # Validate clustering result
+                if not isinstance(clustering_result, dict):
+                    error_msg = f"Invalid clustering result type: {type(clustering_result)}"
+                    tprint(f"❌ {error_msg}")
+                    self.logger.error(error_msg)
+                    return ComponentResult(success=False, artifacts={}, error_message=error_msg)
+                
+                if not clustering_result.get('success', False):
+                    error_msg = f"Clustering failed: {clustering_result.get('error', 'Unknown error')}"
+                    tprint(f"❌ {error_msg}")
+                    self.logger.error(error_msg)
+                    return ComponentResult(success=False, artifacts={}, error_message=error_msg)
+                
+            except Exception as e:
+                error_msg = f"HMM clustering process failed: {e}"
+                tprint(f"❌ {error_msg}")
+                self.logger.error(error_msg)
+                return ComponentResult(success=False, artifacts={}, error_message=error_msg)
             
             # Extract results
-            hmm_models = clustering_result.get('hmm_models', [])
-            cluster_assignments = clustering_result.get('cluster_assignments', [])
-            cluster_metrics = clustering_result.get('cluster_metrics', {})
-            
-            # Validate that we have clustering results
-            if not hmm_models or not cluster_assignments:
-                raise ValueError("HMM clustering completed but no clusters were created")
+            tprint("📊 Extracting clustering results...")
+            try:
+                hmm_models = clustering_result.get('hmm_models', [])
+                cluster_assignments = clustering_result.get('cluster_assignments', [])
+                cluster_metrics = clustering_result.get('cluster_metrics', {})
+                
+                tprint(f"📊 Extracted {len(hmm_models)} HMM models")
+                tprint(f"📊 Extracted {len(cluster_assignments)} cluster assignments")
+                tprint(f"📊 Cluster metrics keys: {list(cluster_metrics.keys()) if cluster_metrics else 'None'}")
+                
+                # Validate that we have clustering results
+                if not hmm_models:
+                    error_msg = "HMM clustering completed but no models were created"
+                    tprint(f"❌ {error_msg}")
+                    self.logger.error(error_msg)
+                    return ComponentResult(success=False, artifacts={}, error_message=error_msg)
+                
+                if not cluster_assignments:
+                    error_msg = "HMM clustering completed but no cluster assignments were created"
+                    tprint(f"❌ {error_msg}")
+                    self.logger.error(error_msg)
+                    return ComponentResult(success=False, artifacts={}, error_message=error_msg)
+                
+                tprint("✅ Clustering results validation passed")
+                
+            except Exception as e:
+                error_msg = f"Failed to extract clustering results: {e}"
+                tprint(f"❌ {error_msg}")
+                self.logger.error(error_msg)
+                return ComponentResult(success=False, artifacts={}, error_message=error_msg)
             
             # Apply regime constraints
-            validated_result = self._apply_regime_constraints(
-                hmm_models, cluster_assignments, clustering_config
-            )
-            hmm_models = validated_result['hmm_models']
-            cluster_assignments = validated_result['cluster_assignments']
+            tprint("🔧 Applying regime constraints...")
+            try:
+                validated_result = self._apply_regime_constraints(
+                    hmm_models, cluster_assignments, clustering_config
+                )
+                hmm_models = validated_result['hmm_models']
+                cluster_assignments = validated_result['cluster_assignments']
+                tprint(f"✅ Regime constraints applied: {len(hmm_models)} models, {len(cluster_assignments)} assignments")
+            except Exception as e:
+                error_msg = f"Failed to apply regime constraints: {e}"
+                tprint(f"❌ {error_msg}")
+                self.logger.error(error_msg)
+                return ComponentResult(success=False, artifacts={}, error_message=error_msg)
             
             # Perform comprehensive cluster quality validation
-            quality_metrics = self._validate_cluster_quality(
-                hmm_models, cluster_assignments, market_data, clustering_config
-            )
+            tprint("🔍 Performing cluster quality validation...")
+            try:
+                quality_metrics = self._validate_cluster_quality(
+                    hmm_models, cluster_assignments, market_data, clustering_config
+                )
+                tprint(f"✅ Cluster quality validation completed: {quality_metrics.get('validation_passed', False)}")
+            except Exception as e:
+                error_msg = f"Failed to validate cluster quality: {e}"
+                tprint(f"❌ {error_msg}")
+                self.logger.error(error_msg)
+                return ComponentResult(success=False, artifacts={}, error_message=error_msg)
             
             # Generate detailed metrics for each HMM cluster
-            cluster_detailed_metrics = self._generate_cluster_detailed_metrics(
-                hmm_models, cluster_assignments, market_data, clustering_config
-            )
+            tprint("📊 Generating detailed cluster metrics...")
+            try:
+                cluster_detailed_metrics = self._generate_cluster_detailed_metrics(
+                    hmm_models, cluster_assignments, market_data, clustering_config
+                )
+                tprint(f"✅ Detailed cluster metrics generated: {len(cluster_detailed_metrics)} metrics")
+            except Exception as e:
+                error_msg = f"Failed to generate detailed cluster metrics: {e}"
+                tprint(f"❌ {error_msg}")
+                self.logger.error(error_msg)
+                return ComponentResult(success=False, artifacts={}, error_message=error_msg)
             
             # Create single consolidated artifact
-            artifacts = {
-                'hmm_clustering_result': {
-                    'hmm_models': hmm_models,
-                    'cluster_assignments': cluster_assignments,
-                    'cluster_metrics': cluster_metrics,
-                    'cluster_quality_metrics': quality_metrics,
-                    'cluster_detailed_metrics': cluster_detailed_metrics,
-                    'clustering_summary': {
-                        'total_clusters': len(hmm_models),
-                        'total_assignments': len(cluster_assignments),
-                        'cluster_distribution': self._calculate_cluster_distribution(cluster_assignments),
-                        'clustering_time': clustering_result.get('clustering_time', 0.0),
-                        'quality_score': quality_metrics.get('overall_quality_score', 0.0),
-                        'validation_passed': quality_metrics.get('validation_passed', False),
-                        'regime_reduction': {
-                            'input_regimes': len(hmm_regime_discovery.get('regime_models', [])),
-                            'output_clusters': len(hmm_models),
-                            'reduction_ratio': len(hmm_models) / max(1, len(hmm_regime_discovery.get('regime_models', [])))
-                        }
-                    },
-                    'metadata': {
-                        'symbol': self.config.symbol,
-                        'exchange': self.config.exchange,
-                        'timeframe': self.config.timeframe,
-                        'data_points': len(market_data) if market_data is not None else 0,
-                        'execution_timestamp': datetime.now().isoformat(),
-                        'clustering_info': {
-                            'input_regimes': len(hmm_regime_discovery.get('regime_models', [])),
-                            'output_clusters': len(hmm_models),
-                            'max_regimes_supported': 150,
-                            'max_clusters_allowed': 25
+            tprint("📦 Creating consolidated artifacts...")
+            try:
+                artifacts = {
+                    'hmm_clustering_result': {
+                        'hmm_models': hmm_models,
+                        'cluster_assignments': cluster_assignments,
+                        'cluster_metrics': cluster_metrics,
+                        'cluster_quality_metrics': quality_metrics,
+                        'cluster_detailed_metrics': cluster_detailed_metrics,
+                        'clustering_summary': {
+                            'total_clusters': len(hmm_models),
+                            'total_assignments': len(cluster_assignments),
+                            'cluster_distribution': self._calculate_cluster_distribution(cluster_assignments),
+                            'clustering_time': clustering_result.get('clustering_time', 0.0),
+                            'quality_score': quality_metrics.get('overall_quality_score', 0.0),
+                            'validation_passed': quality_metrics.get('validation_passed', False),
+                            'regime_reduction': {
+                                'input_regimes': len(hmm_regime_discovery.get('regime_models', [])),
+                                'output_clusters': len(hmm_models),
+                                'reduction_ratio': len(hmm_models) / max(1, len(hmm_regime_discovery.get('regime_models', [])))
+                            }
+                        },
+                        'metadata': {
+                            'symbol': self.config.symbol,
+                            'exchange': self.config.exchange,
+                            'timeframe': self.config.timeframe,
+                            'data_points': len(market_data) if market_data is not None else 0,
+                            'execution_timestamp': datetime.now().isoformat(),
+                            'clustering_info': {
+                                'input_regimes': len(hmm_regime_discovery.get('regime_models', [])),
+                                'output_clusters': len(hmm_models),
+                                'max_regimes_supported': 150,
+                                'max_clusters_allowed': 25
+                            }
                         }
                     }
                 }
-            }
+                
+                tprint(f"✅ Artifacts created successfully: {len(artifacts)} artifact groups")
+                tprint(f"📊 Total clusters: {len(hmm_models)}")
+                tprint(f"📊 Total assignments: {len(cluster_assignments)}")
+                tprint(f"📊 Quality score: {quality_metrics.get('overall_quality_score', 0.0):.3f}")
+                tprint(f"📊 Validation passed: {quality_metrics.get('validation_passed', False)}")
+                
+            except Exception as e:
+                error_msg = f"Failed to create artifacts: {e}"
+                tprint(f"❌ {error_msg}")
+                self.logger.error(error_msg)
+                return ComponentResult(success=False, artifacts={}, error_message=error_msg)
             
             self.logger.info(f'✅ HMM Clustering completed: {len(hmm_models)} clusters created (from up to 150 regimes)')
+            tprint(f"🎉 HMM Clustering completed successfully: {len(hmm_models)} clusters created")
+            
             return ComponentResult(
                 success=True,
                 artifacts=artifacts,
@@ -240,9 +415,18 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             )
             
         except Exception as e:
-            self.logger.error(f'❌ HMM Clustering failed: {e}')
+            from src.utils.tprint import tprint
             import traceback
+            
+            error_msg = f'HMM Clustering failed: {e}'
+            tprint(f"❌ {error_msg}")
+            self.logger.error(f'❌ HMM Clustering failed: {e}')
             self.logger.error(f'❌ Error details: {traceback.format_exc()}')
+            
+            # Log additional debugging information
+            tprint(f"🔍 Error type: {type(e).__name__}")
+            tprint(f"🔍 Error args: {e.args}")
+            
             return ComponentResult(
                 success=False,
                 artifacts={},
@@ -272,7 +456,7 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
         
         try:
             # Prepare data for clustering with memory optimization
-            prepared_data = await self._prepare_data_for_clustering_optimized(market_data, regime_discovery, config)
+            prepared_data = self._prepare_data_for_clustering(market_data, regime_discovery)
             
             # Perform HMM clustering with hardware optimization
             if self.cpu_optimizer and config.get('enable_parallel_processing', True):
@@ -280,8 +464,10 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                     hmm_manager, prepared_data, config
                 )
             else:
-                # Use the new perform_hmm_clustering method from EnhancedHMMCompositeManager
-                clustering_result = hmm_manager.perform_hmm_clustering(prepared_data, config)
+                # Use the train_hmm_parallel method from EnhancedHMMCompositeManager
+                clustering_result = await self._perform_single_threaded_hmm_clustering(
+                    hmm_manager, prepared_data, config
+                )
             
             clustering_time = time.time() - start_time
             clustering_result['clustering_time'] = clustering_time
@@ -290,16 +476,8 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             
         except Exception as e:
             self.logger.error(f"HMM clustering process failed: {e}")
-            # Return fallback clustering result
-            return {
-                'hmm_models': [],
-                'cluster_assignments': [],
-                'cluster_metrics': {
-                    'clustering_method': 'fallback',
-                    'error': str(e)
-                },
-                'clustering_time': time.time() - start_time
-            }
+            raise
+    
     
     async def _perform_single_threaded_hmm_clustering(
         self, 
@@ -308,12 +486,49 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
         config: Dict[str, Any]
     ) -> Dict[str, Any]:
         """Perform HMM clustering using single-threaded approach."""
+        from src.utils.tprint import tprint
+        
         try:
+            tprint("🔍 Starting single-threaded HMM clustering validation...")
+            
+            # Validate prepared_data structure
+            if not isinstance(prepared_data, dict):
+                raise ValueError(f"prepared_data must be a dict, got {type(prepared_data)}")
+            
+            # Validate required keys
+            required_keys = ['market_data', 'regime_discovery']
+            missing_keys = [key for key in required_keys if key not in prepared_data]
+            if missing_keys:
+                raise ValueError(f"prepared_data missing required keys: {missing_keys}")
+            
             market_data = prepared_data.get('market_data')
             regime_discovery = prepared_data.get('regime_discovery', {})
             
-            if not PANDAS_AVAILABLE or not isinstance(market_data, pd.DataFrame):
-                raise ValueError("Market data must be a pandas DataFrame for clustering")
+            tprint(f"📊 Market data type: {type(market_data)}")
+            tprint(f"📊 Regime discovery type: {type(regime_discovery)}")
+            
+            # Validate market data
+            if not PANDAS_AVAILABLE:
+                raise ValueError("Pandas not available for data processing")
+            
+            if not isinstance(market_data, pd.DataFrame):
+                raise ValueError(f"Market data must be a pandas DataFrame, got {type(market_data)}")
+            
+            if market_data.empty:
+                raise ValueError("Market data is empty")
+            
+            tprint(f"📊 Market data shape: {market_data.shape}")
+            tprint(f"📊 Market data columns: {list(market_data.columns)}")
+            
+            # Validate regime discovery structure
+            if not isinstance(regime_discovery, dict):
+                raise ValueError(f"regime_discovery must be a dict, got {type(regime_discovery)}")
+            
+            regime_models = regime_discovery.get('regime_models', [])
+            regime_assignments = regime_discovery.get('regime_assignments', [])
+            
+            tprint(f"📊 Regime models count: {len(regime_models)}")
+            tprint(f"📊 Regime assignments count: {len(regime_assignments)}")
             
             # Get the number of clusters to create
             n_clusters = config.get('n_clusters', 3)
@@ -360,15 +575,28 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             
             self.logger.info(f"✅ HMM clustering completed: {len(hmm_models)} models, {n_clusters} clusters")
             
-            return {
+            # Return standardized format
+            result = STANDARD_CLUSTERING_RESULT.copy()
+            result.update({
                 'hmm_models': hmm_models,
                 'cluster_assignments': cluster_assignments,
-                'cluster_metrics': cluster_metrics
-            }
+                'cluster_metrics': cluster_metrics,
+                'clustering_time': time.time() - start_time,
+                'success': True,
+                'error': None
+            })
+            return result
             
         except Exception as e:
             self.logger.error(f"Single-threaded HMM clustering failed: {e}")
-            raise
+            # Return standardized error format
+            result = STANDARD_CLUSTERING_RESULT.copy()
+            result.update({
+                'success': False,
+                'error': str(e),
+                'clustering_time': time.time() - start_time if 'start_time' in locals() else 0.0
+            })
+            return result
     
     def _create_cluster_assignments(
         self, 
@@ -610,12 +838,26 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             return {'error': 'No cluster durations calculated'}
         
         # Calculate persistence metrics
-        avg_duration = np.mean(cluster_durations) if NUMPY_AVAILABLE else sum(cluster_durations) / len(cluster_durations)
-        median_duration = np.median(cluster_durations) if NUMPY_AVAILABLE else sorted(cluster_durations)[len(cluster_durations)//2]
-        std_duration = np.std(cluster_durations) if NUMPY_AVAILABLE else 0
+        if NUMPY_AVAILABLE:
+            avg_duration = np.mean(cluster_durations)
+            median_duration = np.median(cluster_durations)
+            std_duration = np.std(cluster_durations)
+        else:
+            avg_duration = sum(cluster_durations) / len(cluster_durations)
+            sorted_durations = sorted(cluster_durations)
+            median_duration = sorted_durations[len(sorted_durations)//2]
+            # Calculate standard deviation manually
+            variance = sum((x - avg_duration) ** 2 for x in cluster_durations) / len(cluster_durations)
+            std_duration = variance ** 0.5
         
-        # Calculate cluster stability (lower std = more stable)
-        stability_score = max(0, 1 - (std_duration / avg_duration)) if avg_duration > 0 else 0
+        # Calculate cluster stability (lower std = more stable) using math_validation
+        from src.utils.math_validation import safe_divide, validate_positive
+        try:
+            stability_ratio = safe_divide(std_duration, avg_duration)
+            stability_score = max(0, 1 - stability_ratio)
+        except Exception as e:
+            self.logger.warning(f"Stability score calculation failed: {e}")
+            stability_score = 0.0
         
         return {
             'avg_duration': avg_duration,
@@ -706,8 +948,13 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                     test_values = [test_dist.get(cluster, 0) for cluster in common_clusters]
                     
                     if NUMPY_AVAILABLE and len(train_values) > 1:
-                        correlation = np.corrcoef(train_values, test_values)[0, 1]
-                        stability_score = max(0, correlation) if not np.isnan(correlation) else 0
+                        try:
+                            correlation = np.corrcoef(train_values, test_values)[0, 1]
+                            stability_score = max(0, correlation) if not np.isnan(correlation) else 0
+                        except (ValueError, np.linalg.LinAlgError):
+                            # Fallback to simple similarity measure
+                            diff = sum(abs(t - s) for t, s in zip(train_values, test_values))
+                            stability_score = max(0, 1 - diff / len(common_clusters))
                     else:
                         # Simple similarity measure
                         diff = sum(abs(t - s) for t, s in zip(train_values, test_values))
@@ -756,7 +1003,11 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                 for count in transitions.values():
                     prob = count / total_transitions
                     if prob > 0:
-                        entropy -= prob * np.log2(prob) if NUMPY_AVAILABLE else prob * np.log(prob) / np.log(2)
+                        if NUMPY_AVAILABLE:
+                            entropy -= prob * np.log2(prob)
+                        else:
+                            import math
+                            entropy -= prob * math.log2(prob)
             
             return {
                 'transitions': transitions,
@@ -1239,9 +1490,21 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
         
         counts = list(cluster_counts.values())
         mean_count = sum(counts) / len(counts)
-        std_count = np.std(counts) if NUMPY_AVAILABLE else 0
+        if NUMPY_AVAILABLE:
+            std_count = np.std(counts)
+        else:
+            # Calculate standard deviation manually
+            variance = sum((x - mean_count) ** 2 for x in counts) / len(counts)
+            std_count = variance ** 0.5
         
-        balance_score = max(0, 1 - (std_count / mean_count)) if mean_count > 0 else 0
+        # Use math_validation for safe division
+        from src.utils.math_validation import safe_divide
+        try:
+            balance_ratio = safe_divide(std_count, mean_count)
+            balance_score = max(0, 1 - balance_ratio)
+        except Exception as e:
+            self.logger.warning(f"Balance score calculation failed: {e}")
+            balance_score = 0.0
         is_balanced = balance_score > 0.7
         
         return {
@@ -1374,17 +1637,47 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
         config: Dict[str, Any]
     ) -> Dict[str, Any]:
         """Perform HMM clustering with parallel processing optimization."""
+        from src.utils.tprint import tprint
+        
         try:
+            tprint("🔍 Starting parallel HMM clustering validation...")
+            
+            # Validate prepared_data structure
+            if not isinstance(prepared_data, dict):
+                raise ValueError(f"prepared_data must be a dict, got {type(prepared_data)}")
+            
+            # Validate required keys
+            required_keys = ['market_data']
+            missing_keys = [key for key in required_keys if key not in prepared_data]
+            if missing_keys:
+                raise ValueError(f"prepared_data missing required keys: {missing_keys}")
+            
             # Get optimal number of workers
             if self.cpu_optimizer:
                 max_workers = self.cpu_optimizer.get_optimal_worker_count()
-                self.logger.info(f"🔧 CPU optimization: Using {max_workers} workers for parallel processing")
+                tprint(f"🔧 CPU optimization: Using {max_workers} workers for parallel processing")
             else:
                 max_workers = 4  # Fallback worker count
+                tprint(f"🔧 Using fallback worker count: {max_workers}")
             
             # Split data into chunks for parallel processing
             market_data = prepared_data.get('market_data')
             chunk_size = prepared_data.get('chunk_size', 10000)
+            
+            tprint(f"📊 Market data type: {type(market_data)}")
+            tprint(f"📊 Chunk size: {chunk_size}")
+            
+            # Validate market data
+            if not PANDAS_AVAILABLE:
+                raise ValueError("Pandas not available for data processing")
+            
+            if not isinstance(market_data, pd.DataFrame):
+                raise ValueError(f"Market data must be a pandas DataFrame, got {type(market_data)}")
+            
+            if market_data.empty:
+                raise ValueError("Market data is empty")
+            
+            tprint(f"📊 Market data shape: {market_data.shape}")
             
             if PANDAS_AVAILABLE and isinstance(market_data, pd.DataFrame):
                 # Create data chunks
@@ -1419,15 +1712,31 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                 
                 # Merge chunk results
                 merged_result = self._merge_chunk_clustering_results(chunk_results)
+                
+                # Ensure standardized format
+                if not isinstance(merged_result, dict):
+                    merged_result = STANDARD_CLUSTERING_RESULT.copy()
+                    merged_result.update({'success': False, 'error': 'Invalid merged result format'})
+                elif 'success' not in merged_result:
+                    merged_result['success'] = True
+                    merged_result['error'] = None
+                
                 return merged_result
             else:
-                # Fallback to single-threaded processing using the new method
-                return hmm_manager.perform_hmm_clustering(prepared_data, config)
+                # Fallback to single-threaded processing
+                tprint("⚠️ Falling back to single-threaded processing")
+                return await self._perform_single_threaded_hmm_clustering(hmm_manager, prepared_data, config)
                 
         except Exception as e:
             self.logger.error(f"❌ Parallel HMM clustering failed: {e}")
-            # Fallback to single-threaded processing using the new method
-            return hmm_manager.perform_hmm_clustering(prepared_data, config)
+            # Return standardized error format
+            result = STANDARD_CLUSTERING_RESULT.copy()
+            result.update({
+                'success': False,
+                'error': str(e),
+                'clustering_time': time.time() - start_time if 'start_time' in locals() else 0.0
+            })
+            return result
     
     def _cluster_single_chunk(
         self, 
@@ -1457,25 +1766,31 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             # Create simple cluster assignments for the chunk
             cluster_assignments = [i % n_models for i in range(len(chunk_data))]
             
-            result = {
+            # Return standardized format
+            result = STANDARD_CLUSTERING_RESULT.copy()
+            result.update({
                 'hmm_models': hmm_models,
                 'cluster_assignments': cluster_assignments,
                 'cluster_metrics': {
                     'clustering_method': 'chunk_based',
                     'chunk_size': len(chunk_data)
                 },
+                'success': True,
+                'error': None,
                 'chunk_index': chunk_idx
-            }
+            })
             return result
             
         except Exception as e:
             self.logger.error(f"❌ Chunk {chunk_idx} clustering failed: {e}")
-            return {
-                'hmm_models': [],
-                'cluster_assignments': [],
-                'cluster_metrics': {'error': str(e)},
+            # Return standardized error format
+            result = STANDARD_CLUSTERING_RESULT.copy()
+            result.update({
+                'success': False,
+                'error': str(e),
                 'chunk_index': chunk_idx
-            }
+            })
+            return result
     
     def _merge_chunk_clustering_results(self, chunk_results: List[Tuple[int, Any]]) -> Dict[str, Any]:
         """Merge results from multiple clustering chunks."""
@@ -1496,11 +1811,9 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                 assignments = result.get('cluster_assignments', [])
                 metrics = result.get('cluster_metrics', {})
                 
-                # Adjust assignment indices to be globally unique
+                # Keep original assignment indices (clusters should be consistent across chunks)
                 if assignments:
-                    max_assignment = max(all_assignments) if all_assignments else -1
-                    adjusted_assignments = [a + max_assignment + 1 for a in assignments]
-                    all_assignments.extend(adjusted_assignments)
+                    all_assignments.extend(assignments)
                 
                 all_models.extend(models)
                 all_metrics.append(metrics)
@@ -1516,17 +1829,24 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             
             self.logger.info(f"✅ Merged {len(chunk_results)} chunks: {len(all_models)} models, {len(all_assignments)} assignments")
             
-            return {
+            # Return standardized format
+            result = STANDARD_CLUSTERING_RESULT.copy()
+            result.update({
                 'hmm_models': all_models,
                 'cluster_assignments': all_assignments,
-                'cluster_metrics': merged_metrics
-            }
+                'cluster_metrics': merged_metrics,
+                'success': True,
+                'error': None
+            })
+            return result
             
         except Exception as e:
             self.logger.error(f"❌ Failed to merge chunk results: {e}")
-            return {
-                'hmm_models': [],
-                'cluster_assignments': [],
-                'cluster_metrics': {'error': f'Merge failed: {e}'}
-            }
+            # Return standardized error format
+            result = STANDARD_CLUSTERING_RESULT.copy()
+            result.update({
+                'success': False,
+                'error': f'Merge failed: {e}'
+            })
+            return result
     

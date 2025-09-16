@@ -122,11 +122,14 @@ class ModelFactory:
     """Factory for creating model instances with standardized configuration."""
     
     _model_configs = {
-        'logistic_regression': {
-            'class': 'sklearn.linear_model.LogisticRegression',
+        'elastic_net': {
+            'class': 'sklearn.linear_model.ElasticNetCV',
             'default_params': {
-                'C': 1.0, 'max_iter': 1000, 'random_state': 42,
-                'class_weight': 'balanced'
+                'l1_ratio': [0.1, 0.5, 0.7, 0.9, 0.95, 0.99],
+                'cv': 5,
+                'random_state': 42,
+                'max_iter': 2000,
+                'n_jobs': -1
             }
         },
         'lightgbm': {
@@ -134,13 +137,6 @@ class ModelFactory:
             'default_params': {
                 'n_estimators': 100, 'learning_rate': 0.1,
                 'max_depth': 6, 'random_state': 42, 'verbose': -1
-            }
-        },
-        'tcn': {
-            'class': 'sklearn.ensemble.RandomForestClassifier',
-            'default_params': {
-                'n_estimators': 100, 'max_depth': 10,
-                'random_state': 42, 'n_jobs': -1
             }
         }
     }
@@ -225,7 +221,7 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
                 n_features=100,
                 sequence_length=20,
                 n_regimes=3,
-                model_types=["logistic_regression", "lightgbm", "tcn"],
+                model_types=["elastic_net", "lightgbm"],
                 hpo_trials=50,
                 enable_multi_objective=True
             )
@@ -881,11 +877,53 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
                 for regime, count in zip(unique_regimes, regime_counts)
             }
             
-            # Step 7: Create final results
+            # Step 7: Create final results with proper artifact formatting
             execution_time = time.time() - self.training_start_time
+            
+            # Format model results for artifacts
+            hmm_base_models = []
+            hmm_training_metrics = {}
+            hmm_model_performance = {}
+            
+            for model_name, model_result in model_results.items():
+                if model_result.model is not None:
+                    # Add model to base models list
+                    hmm_base_models.append({
+                        'model_name': model_name,
+                        'model_type': model_name,
+                        'model_object': model_result.model,
+                        'hyperparameters': model_result.hyperparameters
+                    })
+                    
+                    # Add training metrics
+                    hmm_training_metrics[model_name] = {
+                        'accuracy': model_result.metrics.accuracy,
+                        'f1_score': model_result.metrics.f1_score,
+                        'precision': model_result.metrics.precision,
+                        'recall': model_result.metrics.recall,
+                        'training_time': model_result.metrics.training_time,
+                        'convergence_epochs': model_result.metrics.convergence_epochs,
+                        'memory_usage_mb': model_result.metrics.memory_usage_mb,
+                        'validation_loss': model_result.metrics.validation_loss,
+                        'test_accuracy': model_result.metrics.test_accuracy,
+                        'warnings': model_result.metrics.warnings
+                    }
+                    
+                    # Add performance metrics
+                    hmm_model_performance[model_name] = {
+                        'feature_importance': model_result.feature_importance,
+                        'predictions_available': model_result.predictions is not None,
+                        'probabilities_available': model_result.probabilities is not None,
+                        'training_history_available': model_result.training_history is not None
+                    }
             
             results = {
                 'model_results': model_results,
+                'artifacts': {
+                    'hmm_base_models': hmm_base_models,
+                    'hmm_training_metrics': hmm_training_metrics,
+                    'hmm_model_performance': hmm_model_performance
+                },
                 'metadata': {
                     'total_features': X_enhanced.shape[1],
                     'selected_features': len(selected_features),
@@ -895,7 +933,9 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
                     'execution_time': execution_time,
                     'config': self.config,
                     'circuit_breaker_state': self.circuit_breaker.state,
-                    'circuit_breaker_failures': self.circuit_breaker.failure_count
+                    'circuit_breaker_failures': self.circuit_breaker.failure_count,
+                    'models_trained': len(hmm_base_models),
+                    'successful_models': len([m for m in hmm_base_models if m['model_object'] is not None])
                 },
                 'training_time': execution_time
             }
@@ -1000,7 +1040,7 @@ if __name__ == "__main__":
         n_features=50,
         sequence_length=20,
         n_regimes=3,
-        model_types=["logistic_regression", "lightgbm"],
+        model_types=["elastic_net", "lightgbm"],
         hpo_trials=25,
         enable_multi_objective=True
     )

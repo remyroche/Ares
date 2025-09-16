@@ -411,10 +411,27 @@ class MarketAnalysisSubPipeline:
             
             # Stage 9: Triple Barrier Labeling
             self.logger.info('🏷️ Executing Stage 9: Triple Barrier Labeling')
-            triple_barrier_labeling_result = await self.execute_sub_pipeline('triple_barrier_labeling', self.config)
-            is_success, error_info = self._validate_sub_pipeline_result(triple_barrier_labeling_result, "Triple Barrier Labeling")
-            if not is_success:
-                return error_info
+            try:
+                from src.training.steps.market_analysis.triple_barrier_labeling.step import execute_triple_barrier_labeling_step
+                triple_barrier_labeling_result = await execute_triple_barrier_labeling_step(
+                    data, self._current_pipeline_state, self.config
+                )
+                
+                # Create a mock result object for compatibility
+                class MockResult:
+                    def __init__(self, result_dict):
+                        self.artifacts = result_dict.get('artifacts', {})
+                        self.status = result_dict.get('status', 'unknown')
+                        self.metadata = result_dict.get('metadata', {})
+                
+                triple_barrier_labeling_result = MockResult(triple_barrier_labeling_result)
+                
+                if triple_barrier_labeling_result.status != 'completed':
+                    return self._create_error_result("Triple Barrier Labeling failed", triple_barrier_labeling_result.artifacts)
+                    
+            except Exception as e:
+                self.logger.error(f"Triple Barrier Labeling execution failed: {e}")
+                return self._create_error_result("Triple Barrier Labeling execution failed", str(e))
             
             # Extract data from consolidated artifact
             triple_barrier_data = triple_barrier_labeling_result.artifacts.get('triple_barrier_labeling_result', {})

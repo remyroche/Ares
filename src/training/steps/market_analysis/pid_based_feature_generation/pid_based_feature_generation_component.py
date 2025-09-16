@@ -137,6 +137,9 @@ class PIDBasedFeatureGenerationComponent(BaseMarketAnalysisComponent):
         })
         
         try:
+            # Store pipeline state for data access
+            self._pipeline_state = pipeline_state
+            
             # Step 1: Load and validate market data
             self.logger.info('📊 Loading and validating market data...')
             market_data = await self._load_and_validate_market_data(data)
@@ -258,37 +261,78 @@ class PIDBasedFeatureGenerationComponent(BaseMarketAnalysisComponent):
             )
     
     async def _load_and_validate_market_data(self, data: Any) -> Any:
-        """Load and validate market data."""
+        """Load and validate market data with enhanced data handling."""
         try:
-            if data is None:
-                raise ValueError("No market data provided")
+            # Enhanced data handling - try to get data from multiple sources
+            processed_data = await self._enhanced_data_handling(data)
+            if processed_data is None:
+                raise ValueError("No valid market data available from any source")
             
             if not PANDAS_AVAILABLE:
                 raise ValueError("Pandas not available for data processing")
             
-            if not isinstance(data, pd.DataFrame):
-                raise ValueError(f"Expected pandas DataFrame, got {type(data).__name__}")
+            if not isinstance(processed_data, pd.DataFrame):
+                raise ValueError(f"Expected pandas DataFrame, got {type(processed_data).__name__}")
             
-            if data.empty:
+            if processed_data.empty:
                 raise ValueError("Market data is empty")
             
             # Validate required columns
             required_columns = ['open', 'high', 'low', 'close', 'volume']
-            missing_columns = [col for col in required_columns if col not in data.columns]
+            missing_columns = [col for col in required_columns if col not in processed_data.columns]
             if missing_columns:
                 self.logger.warning(f"Missing required columns: {missing_columns}")
                 # Create fallback columns
                 for col in missing_columns:
                     if col == 'volume':
-                        data[col] = 1000  # Default volume
+                        processed_data[col] = 1000  # Default volume
                     else:
-                        data[col] = data.get('close', 100.0)  # Use close price as fallback
+                        processed_data[col] = processed_data.get('close', 100.0)  # Use close price as fallback
             
-            return data.copy()
+            return processed_data.copy()
             
         except Exception as e:
             self.logger.error(f"Data loading failed: {e}")
             raise
+    
+    async def _enhanced_data_handling(self, data: Any) -> Optional[pd.DataFrame]:
+        """Enhanced data handling to get data from multiple sources."""
+        try:
+            # Try direct data first
+            if data is not None:
+                if isinstance(data, pd.DataFrame) and not data.empty:
+                    self.logger.info("✅ Using direct DataFrame data for PID feature generation")
+                    return data
+                elif hasattr(data, 'to_dataframe'):
+                    df = data.to_dataframe()
+                    if not df.empty:
+                        self.logger.info("✅ Converted data to DataFrame for PID feature generation")
+                        return df
+            
+            # Try to get data from pipeline state
+            if hasattr(self, '_pipeline_state') and self._pipeline_state:
+                # Try different keys that might contain data
+                data_keys = ['market_data', 'data', 'processed_data', 'features', 'labeled_data']
+                for key in data_keys:
+                    if key in self._pipeline_state:
+                        pipeline_data = self._pipeline_state[key]
+                        if pipeline_data is not None:
+                            if isinstance(pipeline_data, pd.DataFrame) and not pipeline_data.empty:
+                                self.logger.info(f"✅ Using data from pipeline state key: {key}")
+                                return pipeline_data
+                            elif hasattr(pipeline_data, 'to_dataframe'):
+                                df = pipeline_data.to_dataframe()
+                                if not df.empty:
+                                    self.logger.info(f"✅ Converted pipeline data from key: {key}")
+                                    return df
+            
+            self.logger.error("❌ No valid data found for PID feature generation")
+            return None
+            
+        except Exception as e:
+            self.logger.error(f"Enhanced data handling failed: {e}")
+            return None
+    
     
     async def _get_feature_optimization_results(self, pipeline_state: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Get feature optimization results from pipeline state."""

@@ -98,6 +98,63 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
         """Get list of required artifacts this component must produce."""
         return ['feature_lookback_optimization_result']
     
+    async def _enhanced_data_handling(self, data: Any, pipeline_state: Dict[str, Any]) -> Optional[pd.DataFrame]:
+        """Enhanced data handling to get data from multiple sources."""
+        try:
+            # Try direct data first
+            if data is not None:
+                if isinstance(data, pd.DataFrame) and not data.empty:
+                    self.logger.info("✅ Using direct DataFrame data")
+                    return data
+                elif hasattr(data, 'to_dataframe'):
+                    df = data.to_dataframe()
+                    if not df.empty:
+                        self.logger.info("✅ Converted data to DataFrame")
+                        return df
+            
+            # Try to get data from pipeline state
+            if pipeline_state:
+                # Try different keys that might contain data
+                data_keys = ['market_data', 'data', 'processed_data', 'features', 'labeled_data']
+                for key in data_keys:
+                    if key in pipeline_state:
+                        pipeline_data = pipeline_state[key]
+                        if pipeline_data is not None:
+                            if isinstance(pipeline_data, pd.DataFrame) and not pipeline_data.empty:
+                                self.logger.info(f"✅ Using data from pipeline state key: {key}")
+                                return pipeline_data
+                            elif hasattr(pipeline_data, 'to_dataframe'):
+                                df = pipeline_data.to_dataframe()
+                                if not df.empty:
+                                    self.logger.info(f"✅ Converted pipeline data from key: {key}")
+                                    return df
+                
+                # Try to get from regime data
+                if 'regime_data' in pipeline_state:
+                    regime_data = pipeline_state['regime_data']
+                    if isinstance(regime_data, dict) and 'data' in regime_data:
+                        regime_df = regime_data['data']
+                        if isinstance(regime_df, pd.DataFrame) and not regime_df.empty:
+                            self.logger.info("✅ Using data from regime_data")
+                            return regime_df
+            
+            # Try to get from artifacts
+            if 'artifacts' in pipeline_state:
+                artifacts = pipeline_state['artifacts']
+                for artifact_key, artifact_data in artifacts.items():
+                    if isinstance(artifact_data, dict) and 'data' in artifact_data:
+                        artifact_df = artifact_data['data']
+                        if isinstance(artifact_df, pd.DataFrame) and not artifact_df.empty:
+                            self.logger.info(f"✅ Using data from artifact: {artifact_key}")
+                            return artifact_df
+            
+            self.logger.warning("⚠️ No valid data found in any source")
+            return None
+            
+        except Exception as e:
+            self.logger.error(f"Enhanced data handling failed: {e}")
+            return None
+    
     def _monitor_performance(self, operation_name: str) -> None:
         """Monitor performance metrics during execution."""
         try:
@@ -151,11 +208,23 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
         )
         
         try:
+            # Step 0: Enhanced data handling - try to get data from multiple sources
+            self.logger.info('🔍 Step 0: Enhanced data handling...')
+            processed_data = await self._enhanced_data_handling(data, pipeline_state)
+            if processed_data is None:
+                self.optimization_status = OptimizationStatus.FAILED
+                return ComponentResult(
+                    success=False,
+                    artifacts={},
+                    error_message="No valid data available for feature lookback optimization",
+                    metadata={'error': 'Data is None or empty from all sources'}
+                )
+            
             # Step 1: Comprehensive validation using framework
-            self.logger.info('🔍 Validating input data and pipeline state...')
+            self.logger.info('🔍 Step 1: Validating input data and pipeline state...')
             
             # Validate data with auto-fixing
-            data_is_valid, data_validation_results, fixed_data = self.validation_framework.validate_data(data)
+            data_is_valid, data_validation_results, fixed_data = self.validation_framework.validate_data(processed_data)
             if not data_is_valid:
                 critical_failures = [r for r in data_validation_results 
                                    if r.status == ValidationStatus.FAILED and r.level == ValidationLevel.CRITICAL]

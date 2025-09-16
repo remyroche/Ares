@@ -149,7 +149,7 @@ class MultiTierTradingOrchestrator:
         tprint("Multi-tier trading orchestrator initialized")
     
     @handles_errors
-    def load_data(self, data_1h: pd.DataFrame, data_5m: pd.DataFrame, data_1m: pd.DataFrame) -> None:
+    def load_data(self, data_1h: pd.DataFrame, data_5m: pd.DataFrame, data_1m: pd.DataFrame, data_15m: Optional[pd.DataFrame] = None) -> None:
         """Load market data for all timeframes."""
         tprint("Loading market data for multi-tier system...")
         
@@ -159,11 +159,15 @@ class MultiTierTradingOrchestrator:
             if not all(col in data.columns for col in required_columns):
                 raise ValueError(f"Missing required columns in {timeframe} data")
         
+        if data_15m is not None and not all(col in data_15m.columns for col in required_columns):
+            raise ValueError("Missing required columns in 15m data")
+        
         self.data_1h = data_1h.copy()
         self.data_5m = data_5m.copy()
         self.data_1m = data_1m.copy()
+        self.data_15m = data_15m.copy() if data_15m is not None else None
         
-        tprint(f"Data loaded: 1h={len(data_1h)} bars, 5m={len(data_5m)} bars, 1m={len(data_1m)} bars")
+        tprint(f"Data loaded: 1h={len(data_1h)} bars, 5m={len(data_5m)} bars, 1m={len(data_1m)} bars, 15m={len(data_15m) if data_15m is not None else 0} bars")
     
     @handles_errors
     async def train_systems(self) -> Dict[str, Any]:
@@ -296,7 +300,7 @@ class MultiTierTradingOrchestrator:
         
         try:
             # Extract features for Analyst
-            features = self._extract_analyst_features(self.data_5m, self.latest_hmm_output)
+            features = self._extract_analyst_features(self.data_5m, self.data_15m, self.latest_hmm_output)
             
             # Get regime ID from HMM
             regime_id = self.latest_hmm_output.dominant_regime
@@ -346,6 +350,7 @@ class MultiTierTradingOrchestrator:
             # Extract features for Tactician
             features = self._extract_tactician_features(
                 self.data_1m, 
+                self.data_5m,
                 self.latest_hmm_output, 
                 self.latest_analyst_output
             )
@@ -544,76 +549,77 @@ class MultiTierTradingOrchestrator:
         
         return combined.reshape(1, -1)
     
-    def _extract_analyst_features(self, data: pd.DataFrame, hmm_output: HMMOutput) -> np.ndarray:
+    def _extract_analyst_features(self, data_5m: pd.DataFrame, data_15m: Optional[pd.DataFrame], hmm_output: HMMOutput) -> np.ndarray:
         """Extract 300+ features for Analyst analysis."""
-        # Simplified feature extraction - would be implemented by actual Analyst system
-        features = []
+        # Use the Analyst feature extractor
+        analyst_extractor = create_analyst_feature_extractor()
         
-        # Price features
-        features.extend([
-            data['close'].pct_change().values,
-            data['high'].pct_change().values,
-            data['low'].pct_change().values,
-            data['volume'].pct_change().values
-        ])
+        # Convert HMM output to dict format
+        hmm_output_dict = {
+            'regime_probs': hmm_output.regime_probs,
+            'dominant_regime': hmm_output.dominant_regime,
+            'confidence': hmm_output.confidence,
+            'regime_characteristics': hmm_output.regime_characteristics
+        }
         
-        # HMM integration
-        features.append(np.full(len(data), hmm_output.dominant_regime))
-        features.append(np.full(len(data), hmm_output.confidence))
+        # Extract features
+        features_df = analyst_extractor.extract_features(data_5m, data_15m, hmm_output_dict)
         
-        # Technical indicators (simplified)
-        for period in [5, 10, 20, 50, 100]:
-            sma = data['close'].rolling(period).mean()
-            features.append(sma.pct_change().values)
-            features.append((data['close'] - sma).values)
+        # Convert to numpy array
+        features = features_df.values
         
-        # Combine and pad to 300+ features
-        combined = np.concatenate(features)
-        if len(combined) > 300:
-            combined = combined[:300]
-        else:
-            combined = np.pad(combined, (0, 300 - len(combined)), 'constant')
+        # Ensure we have the right shape
+        if features.shape[1] > 300:
+            features = features[:, :300]
+        elif features.shape[1] < 300:
+            # Pad with zeros
+            padding = np.zeros((features.shape[0], 300 - features.shape[1]))
+            features = np.concatenate([features, padding], axis=1)
         
-        return combined.reshape(1, -1)
+        return features
     
-    def _extract_tactician_features(self, data: pd.DataFrame, hmm_output: Optional[HMMOutput], 
+    def _extract_tactician_features(self, data_1m: pd.DataFrame, data_5m: pd.DataFrame, hmm_output: Optional[HMMOutput], 
                                   analyst_output: Optional[AnalystOutput]) -> np.ndarray:
-        """Extract 50+ features for Tactician analysis."""
-        # Simplified feature extraction - would be implemented by actual Tactician system
-        features = []
+        """Extract 50+ features for Tactician analysis using 1m and 5m data."""
+        # Use the Tactician feature extractor
+        tactician_extractor = create_tactician_feature_extractor()
         
-        # Price features
-        features.extend([
-            data['close'].pct_change().values,
-            data['high'].pct_change().values,
-            data['low'].pct_change().values,
-            data['volume'].pct_change().values
-        ])
-        
-        # HMM integration
+        # Convert outputs to dict format
+        hmm_output_dict = None
         if hmm_output:
-            features.append(np.full(len(data), hmm_output.dominant_regime))
-            features.append(np.full(len(data), hmm_output.confidence))
+            hmm_output_dict = {
+                'regime_probs': hmm_output.regime_probs,
+                'dominant_regime': hmm_output.dominant_regime,
+                'confidence': hmm_output.confidence,
+                'regime_characteristics': hmm_output.regime_characteristics
+            }
         
-        # Analyst integration
+        analyst_output_dict = None
         if analyst_output:
-            features.append(np.full(len(data), analyst_output.should_trade))
-            features.append(np.full(len(data), analyst_output.confidence))
+            analyst_output_dict = {
+                'should_trade': analyst_output.should_trade,
+                'confidence': analyst_output.confidence,
+                'meta_learner_prediction': analyst_output.meta_learner_prediction,
+                'regime_id': analyst_output.regime_id,
+                'base_model_predictions': analyst_output.base_model_predictions,
+                'market_conditions': analyst_output.market_conditions
+            }
         
-        # Technical indicators (simplified)
-        for period in [2, 5, 10, 20]:
-            sma = data['close'].rolling(period).mean()
-            features.append(sma.pct_change().values)
-            features.append((data['close'] - sma).values)
+        # Extract features
+        features_df = tactician_extractor.extract_features(data_1m, data_5m, hmm_output_dict, analyst_output_dict)
         
-        # Combine and pad to 50+ features
-        combined = np.concatenate(features)
-        if len(combined) > 50:
-            combined = combined[:50]
-        else:
-            combined = np.pad(combined, (0, 50 - len(combined)), 'constant')
+        # Convert to numpy array
+        features = features_df.values
         
-        return combined.reshape(1, -1)
+        # Ensure we have the right shape
+        if features.shape[1] > 50:
+            features = features[:, :50]
+        elif features.shape[1] < 50:
+            # Pad with zeros
+            padding = np.zeros((features.shape[0], 50 - features.shape[1]))
+            features = np.concatenate([features, padding], axis=1)
+        
+        return features
     
     def _get_regime_characteristics(self, regime_id: int) -> Dict[str, Any]:
         """Get characteristics for a specific regime."""

@@ -19,7 +19,7 @@ from src.multi_tier_trading import (
 )
 
 
-def generate_sample_data(n_1h: int = 1000, n_5m: int = 12000, n_1m: int = 60000) -> tuple:
+def generate_sample_data(n_1h: int = 1000, n_5m: int = 12000, n_1m: int = 60000, n_15m: int = 4000) -> tuple:
     """Generate sample market data for testing."""
     tprint("Generating sample market data...")
     
@@ -32,6 +32,8 @@ def generate_sample_data(n_1h: int = 1000, n_5m: int = 12000, n_1m: int = 60000)
     timestamps_5m = pd.date_range(end=end_time, periods=n_5m, freq='5T')
     # 1m data
     timestamps_1m = pd.date_range(end=end_time, periods=n_1m, freq='1T')
+    # 15m data
+    timestamps_15m = pd.date_range(end=end_time, periods=n_15m, freq='15T')
     
     # Generate price data with some realistic patterns
     np.random.seed(42)
@@ -81,9 +83,23 @@ def generate_sample_data(n_1h: int = 1000, n_5m: int = 12000, n_1m: int = 60000)
     })
     data_1m.set_index('timestamp', inplace=True)
     
-    tprint(f"Generated data: 1h={len(data_1h)}, 5m={len(data_5m)}, 1m={len(data_1m)}")
+    # Generate 15m data (intermediate volatility)
+    returns_15m = np.random.normal(0, 0.01, n_15m)  # 1% 15-minute volatility
+    prices_15m = base_price * np.exp(np.cumsum(returns_15m))
     
-    return data_1h, data_5m, data_1m
+    data_15m = pd.DataFrame({
+        'timestamp': timestamps_15m,
+        'open': prices_15m * (1 + np.random.normal(0, 0.0003, n_15m)),
+        'high': prices_15m * (1 + np.abs(np.random.normal(0, 0.003, n_15m))),
+        'low': prices_15m * (1 - np.abs(np.random.normal(0, 0.003, n_15m))),
+        'close': prices_15m,
+        'volume': np.random.lognormal(7, 1, n_15m)
+    })
+    data_15m.set_index('timestamp', inplace=True)
+    
+    tprint(f"Generated data: 1h={len(data_1h)}, 5m={len(data_5m)}, 1m={len(data_1m)}, 15m={len(data_15m)}")
+    
+    return data_1h, data_5m, data_1m, data_15m
 
 
 def demonstrate_model_configurations():
@@ -109,13 +125,13 @@ def demonstrate_orchestrator():
     tprint("=" * 80)
     
     # Generate sample data
-    data_1h, data_5m, data_1m = generate_sample_data()
+    data_1h, data_5m, data_1m, data_15m = generate_sample_data()
     
     # Create orchestrator
     orchestrator = create_multi_tier_trading_orchestrator()
     
     # Load data
-    orchestrator.load_data(data_1h, data_5m, data_1m)
+    orchestrator.load_data(data_1h, data_5m, data_1m, data_15m)
     
     # Train systems
     tprint("Training all systems...")
@@ -150,13 +166,13 @@ def demonstrate_live_execution():
     tprint("=" * 80)
     
     # Generate sample data
-    data_1h, data_5m, data_1m = generate_sample_data()
+    data_1h, data_5m, data_1m, data_15m = generate_sample_data()
     
     # Create live execution system
     live_system = create_live_execution_system()
     
     # Load data
-    live_system.load_data(data_1h, data_5m, data_1m)
+    live_system.load_data(data_1h, data_5m, data_1m, data_15m)
     
     # Start live execution
     tprint("Starting live execution system...")
@@ -207,7 +223,7 @@ def demonstrate_feature_extraction():
     tprint("=" * 80)
     
     # Generate sample data
-    data_1h, data_5m, data_1m = generate_sample_data()
+    data_1h, data_5m, data_1m, data_15m = generate_sample_data()
     
     # HMM Feature Extraction
     tprint("\nHMM Feature Extraction (100 features, 1h base):")
@@ -218,7 +234,7 @@ def demonstrate_feature_extraction():
     tprint(f"  Feature names: {hmm_features.columns.tolist()[:10]}...")
     
     # Analyst Feature Extraction
-    tprint("\nAnalyst Feature Extraction (300+ features, 5m base):")
+    tprint("\nAnalyst Feature Extraction (300+ features, 5m base + 15m cross-timeframe):")
     from src.multi_tier_trading import create_analyst_feature_extractor
     analyst_extractor = create_analyst_feature_extractor()
     
@@ -234,12 +250,12 @@ def demonstrate_feature_extraction():
         }
     }
     
-    analyst_features = analyst_extractor.extract_features(data_5m, hmm_output)
+    analyst_features = analyst_extractor.extract_features(data_5m, data_15m, hmm_output)
     tprint(f"  Extracted {len(analyst_features.columns)} features")
     tprint(f"  Feature names: {analyst_features.columns.tolist()[:10]}...")
     
     # Tactician Feature Extraction
-    tprint("\nTactician Feature Extraction (50+ features, 1m base):")
+    tprint("\nTactician Feature Extraction (50+ features, 1m + 5m base with all Analyst features):")
     from src.multi_tier_trading import create_tactician_feature_extractor
     tactician_extractor = create_tactician_feature_extractor()
     
@@ -248,10 +264,19 @@ def demonstrate_feature_extraction():
         'should_trade': True,
         'confidence': 0.75,
         'meta_learner_prediction': 0.3,
-        'regime_id': 5
+        'regime_id': 5,
+        'base_model_predictions': {
+            'tcn': 0.2,
+            'catboost': 0.3,
+            'lightgbm': 0.25
+        },
+        'market_conditions': {
+            'trend': 0.1,
+            'volatility': 0.02
+        }
     }
     
-    tactician_features = tactician_extractor.extract_features(data_1m, hmm_output, analyst_output)
+    tactician_features = tactician_extractor.extract_features(data_1m, data_5m, hmm_output, analyst_output)
     tprint(f"  Extracted {len(tactician_features.columns)} features")
     tprint(f"  Feature names: {tactician_features.columns.tolist()[:10]}...")
 

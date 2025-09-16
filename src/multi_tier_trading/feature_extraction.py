@@ -139,7 +139,7 @@ class HMMFeatureExtractor:
 
 
 class AnalystFeatureExtractor:
-    """Feature extractor for Analyst system (300+ features, 5m base + 15m cross-timeframe)."""
+    """Feature extractor for Analyst system (300+ features, 5m base with 15m cross-timeframe)."""
     
     def __init__(self):
         self.feature_names = []
@@ -382,49 +382,71 @@ class AnalystFeatureExtractor:
 
 
 class TacticianFeatureExtractor:
-    """Feature extractor for Tactician system (50+ features, 1m base)."""
+    """Feature extractor for Tactician system (50+ features, 1m + 5m base with all Analyst features)."""
     
     def __init__(self):
         self.feature_names = []
     
-    def extract_features(self, data: pd.DataFrame, hmm_output: Optional[Dict[str, Any]] = None, 
+    def extract_features(self, data_1m: pd.DataFrame, data_5m: pd.DataFrame, hmm_output: Optional[Dict[str, Any]] = None, 
                         analyst_output: Optional[Dict[str, Any]] = None) -> pd.DataFrame:
-        """Extract 50+ features for Tactician timing prediction."""
-        tprint("Extracting Tactician features...")
+        """Extract 50+ features for Tactician timing prediction using 1m and 5m data."""
+        tprint("Extracting Tactician features with 1m and 5m data...")
         
-        features = pd.DataFrame(index=data.index)
+        features = pd.DataFrame(index=data_1m.index)
         
-        # High-frequency price features (15 features)
-        features['returns'] = data['close'].pct_change()
-        features['log_returns'] = np.log(data['close'] / data['close'].shift(1))
-        features['price_change'] = data['close'] - data['open']
-        features['price_range'] = data['high'] - data['low']
-        features['body_size'] = abs(data['close'] - data['open'])
-        features['body_ratio'] = features['body_size'] / features['price_range']
-        features['price_acceleration'] = features['returns'].diff()
-        features['volatility_1m'] = data['close'].rolling(5).std()
-        features['volatility_5m'] = data['close'].rolling(30).std()
+        # High-frequency price features (15 features) - 1m data
+        features['returns_1m'] = data_1m['close'].pct_change()
+        features['log_returns_1m'] = np.log(data_1m['close'] / data_1m['close'].shift(1))
+        features['price_change_1m'] = data_1m['close'] - data_1m['open']
+        features['price_range_1m'] = data_1m['high'] - data_1m['low']
+        features['body_size_1m'] = abs(data_1m['close'] - data_1m['open'])
+        features['body_ratio_1m'] = features['body_size_1m'] / features['price_range_1m']
+        features['price_acceleration_1m'] = features['returns_1m'].diff()
+        features['volatility_1m'] = data_1m['close'].rolling(5).std()
+        features['volatility_5m'] = data_1m['close'].rolling(30).std()
         features['volatility_ratio'] = features['volatility_1m'] / features['volatility_5m']
         
-        # Short-term momentum (10 features)
+        # 5m timeframe features (same as Analyst) - 5m data
+        features['returns_5m'] = data_5m['close'].pct_change()
+        features['log_returns_5m'] = np.log(data_5m['close'] / data_5m['close'].shift(1))
+        features['price_change_5m'] = data_5m['close'] - data_5m['open']
+        features['price_range_5m'] = data_5m['high'] - data_5m['low']
+        features['body_size_5m'] = abs(data_5m['close'] - data_5m['open'])
+        features['body_ratio_5m'] = features['body_size_5m'] / features['price_range_5m']
+        
+        # Short-term momentum (10 features) - 1m data
         for period in [2, 3, 5, 10, 15]:
-            features[f'rsi_{period}'] = self._calculate_rsi(data['close'], period)
-            features[f'momentum_{period}'] = data['close'] / data['close'].shift(period) - 1
+            features[f'rsi_1m_{period}'] = self._calculate_rsi(data_1m['close'], period)
+            features[f'momentum_1m_{period}'] = data_1m['close'] / data_1m['close'].shift(period) - 1
         
-        # Volume analysis (10 features)
-        if 'volume' in data.columns:
+        # 5m momentum features (same as Analyst) - 5m data
+        for period in [5, 10, 14, 20, 30]:
+            features[f'rsi_5m_{period}'] = self._calculate_rsi(data_5m['close'], period)
+            features[f'momentum_5m_{period}'] = data_5m['close'] / data_5m['close'].shift(period) - 1
+        
+        # Volume analysis (10 features) - 1m data
+        if 'volume' in data_1m.columns:
             for period in [2, 5, 10, 15]:
-                features[f'volume_ma_{period}'] = data['volume'].rolling(period).mean()
-                features[f'volume_ratio_{period}'] = data['volume'] / features[f'volume_ma_{period}']
+                features[f'volume_ma_1m_{period}'] = data_1m['volume'].rolling(period).mean()
+                features[f'volume_ratio_1m_{period}'] = data_1m['volume'] / features[f'volume_ma_1m_{period}']
             
-            features['obv'] = self._calculate_obv(data['close'], data['volume'])
-            features['vpt'] = self._calculate_vpt(data['close'], data['volume'])
+            features['obv_1m'] = self._calculate_obv(data_1m['close'], data_1m['volume'])
+            features['vpt_1m'] = self._calculate_vpt(data_1m['close'], data_1m['volume'])
         
-        # Cross-timeframe features (10 features)
+        # 5m volume features (same as Analyst) - 5m data
+        if 'volume' in data_5m.columns:
+            for period in [5, 10, 20, 30]:
+                features[f'volume_ma_5m_{period}'] = data_5m['volume'].rolling(period).mean()
+                features[f'volume_ratio_5m_{period}'] = data_5m['volume'] / features[f'volume_ma_5m_{period}']
+            
+            features['obv_5m'] = self._calculate_obv(data_5m['close'], data_5m['volume'])
+            features['vpt_5m'] = self._calculate_vpt(data_5m['close'], data_5m['volume'])
+        
+        # Cross-timeframe features (10 features) - 1m data
         for period in [5, 15, 30, 60, 120]:  # 5m, 15m, 30m, 1h, 2h
-            if len(data) > period:
-                features[f'ctf_momentum_{period}'] = data['close'] / data['close'].shift(period) - 1
-                features[f'ctf_volatility_{period}'] = data['close'].rolling(period).std()
+            if len(data_1m) > period:
+                features[f'ctf_momentum_1m_{period}'] = data_1m['close'] / data_1m['close'].shift(period) - 1
+                features[f'ctf_volatility_1m_{period}'] = data_1m['close'].rolling(period).std()
         
         # HMM integration (5 features)
         if hmm_output:
@@ -435,19 +457,32 @@ class TacticianFeatureExtractor:
                 features['hmm_volatility'] = regime_chars.get('volatility', 0.02)
                 features['hmm_momentum'] = regime_chars.get('mean_returns', 0)
         
-        # Analyst integration (5 features)
+        # Analyst integration (10 features) - All Analyst outputs
         if analyst_output:
             features['analyst_should_trade'] = analyst_output.get('should_trade', False)
             features['analyst_confidence'] = analyst_output.get('confidence', 0.5)
             features['analyst_prediction'] = analyst_output.get('meta_learner_prediction', 0)
             features['analyst_regime_id'] = analyst_output.get('regime_id', 0)
+            
+            # Base model predictions from Analyst
+            if 'base_model_predictions' in analyst_output:
+                base_preds = analyst_output['base_model_predictions']
+                features['analyst_tcn_prediction'] = base_preds.get('tcn', 0)
+                features['analyst_catboost_prediction'] = base_preds.get('catboost', 0)
+                features['analyst_lightgbm_prediction'] = base_preds.get('lightgbm', 0)
+            
+            # Market conditions from Analyst
+            if 'market_conditions' in analyst_output:
+                market_conds = analyst_output['market_conditions']
+                features['analyst_market_trend'] = market_conds.get('trend', 0)
+                features['analyst_market_volatility'] = market_conds.get('volatility', 0)
         
-        # Entry timing signals (5 features)
-        features['price_breakout'] = self._detect_price_breakout(data)
-        features['volume_breakout'] = self._detect_volume_breakout(data)
-        features['momentum_divergence'] = self._detect_momentum_divergence(data)
-        features['volatility_breakout'] = self._detect_volatility_breakout(data)
-        features['entry_signal_strength'] = self._calculate_entry_signal_strength(data)
+        # Entry timing signals (5 features) - 1m data
+        features['price_breakout'] = self._detect_price_breakout(data_1m)
+        features['volume_breakout'] = self._detect_volume_breakout(data_1m)
+        features['momentum_divergence'] = self._detect_momentum_divergence(data_1m)
+        features['volatility_breakout'] = self._detect_volatility_breakout(data_1m)
+        features['entry_signal_strength'] = self._calculate_entry_signal_strength(data_1m)
         
         # Select top 50+ features
         features = features.dropna()

@@ -103,18 +103,19 @@ class LiveExecutionSystem:
         tprint("Live execution system initialized")
     
     @handles_errors
-    def load_data(self, data_1h: pd.DataFrame, data_5m: pd.DataFrame, data_1m: pd.DataFrame) -> None:
+    def load_data(self, data_1h: pd.DataFrame, data_5m: pd.DataFrame, data_1m: pd.DataFrame, data_15m: Optional[pd.DataFrame] = None) -> None:
         """Load market data for all timeframes."""
         tprint("Loading data for live execution system...")
         
         self.data_1h = data_1h.copy()
         self.data_5m = data_5m.copy()
         self.data_1m = data_1m.copy()
+        self.data_15m = data_15m.copy() if data_15m is not None else None
         
         # Load data into orchestrator
-        self.orchestrator.load_data(data_1h, data_5m, data_1m)
+        self.orchestrator.load_data(data_1h, data_5m, data_1m, data_15m)
         
-        tprint(f"Data loaded: 1h={len(data_1h)} bars, 5m={len(data_5m)} bars, 1m={len(data_1m)} bars")
+        tprint(f"Data loaded: 1h={len(data_1h)} bars, 5m={len(data_5m)} bars, 1m={len(data_1m)} bars, 15m={len(data_15m) if data_15m is not None else 0} bars")
     
     @handles_errors
     async def train_systems(self) -> Dict[str, Any]:
@@ -269,7 +270,7 @@ class LiveExecutionSystem:
                 'regime_characteristics': self.orchestrator.latest_hmm_output.regime_characteristics
             }
             
-            features = self.analyst_extractor.extract_features(self.data_5m, hmm_output)
+            features = self.analyst_extractor.extract_features(self.data_5m, self.data_15m, hmm_output)
             
             # Get Analyst predictions (simplified)
             should_trade = np.random.random() > 0.7  # 30% chance of green light
@@ -332,7 +333,7 @@ class LiveExecutionSystem:
                 'regime_id': self.orchestrator.latest_analyst_output.regime_id
             }
             
-            features = self.tactician_extractor.extract_features(self.data_1m, hmm_output, analyst_output)
+            features = self.tactician_extractor.extract_features(self.data_1m, self.data_5m, hmm_output, analyst_output)
             
             # Get Tactician predictions (simplified)
             should_enter = np.random.random() > 0.6  # 40% chance of enter signal

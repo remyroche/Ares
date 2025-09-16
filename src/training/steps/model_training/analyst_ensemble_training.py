@@ -197,7 +197,9 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
         feature_names: Optional[List[str]] = None,
         hmm_states: Optional[np.ndarray] = None,
         base_analyst_models: Optional[Dict[str, Any]] = None,
-        analyst_training_metrics: Optional[Dict[str, Any]] = None
+        analyst_training_metrics: Optional[Dict[str, Any]] = None,
+        hmm_base_models: Optional[Dict[str, Any]] = None,
+        hmm_training_metrics: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """
         Execute Analyst ensemble training step with comprehensive error handling and progress tracking.
@@ -210,6 +212,8 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
             hmm_states: HMM cluster/regime states
             base_analyst_models: Individual analyst models to ensemble
             analyst_training_metrics: Performance metrics of base models
+            hmm_base_models: HMM base models for integration
+            hmm_training_metrics: Performance metrics of HMM base models
             
         Returns:
             Dictionary containing training results and metadata
@@ -229,6 +233,14 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
                 base_analyst_models = self._create_mock_base_models()
             else:
                 self.logger.info(f"✅ Using {len(base_analyst_models)} provided base models")
+            
+            # Step 2.5: Integrate HMM base models if available
+            if hmm_base_models is not None:
+                self.logger.info("🔄 Step 2.5: Integrating HMM base models...")
+                X = self._integrate_hmm_base_models(X, hmm_base_models, hmm_training_metrics)
+                self.logger.info(f"✅ HMM base models integrated, enhanced features: {X.shape[1]}")
+            else:
+                self.logger.info("ℹ️ No HMM base models provided, using original features")
             
             # Step 3: Execute training with enhanced error handling
             self.logger.info("🔄 Step 3: Executing ensemble training...")
@@ -343,6 +355,73 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
         except Exception as e:
             self.logger.error(f"❌ Failed to create mock base models: {e}")
             raise RuntimeError(f"Mock model creation failed: {e}") from e
+    
+    def _integrate_hmm_base_models(
+        self, 
+        X: np.ndarray, 
+        hmm_base_models: Dict[str, Any], 
+        hmm_training_metrics: Optional[Dict[str, Any]] = None
+    ) -> np.ndarray:
+        """
+        Integrate HMM base models as additional features for analyst ensemble training.
+        
+        Args:
+            X: Original input features
+            hmm_base_models: HMM base models to integrate
+            hmm_training_metrics: Performance metrics of HMM base models
+            
+        Returns:
+            Enhanced feature matrix with HMM model predictions
+        """
+        try:
+            enhanced_features = [X]
+            hmm_features_count = 0
+            
+            self.logger.info(f"🔄 Integrating {len(hmm_base_models)} HMM base models...")
+            
+            for model_name, model_data in hmm_base_models.items():
+                try:
+                    # Extract model object and generate predictions
+                    if isinstance(model_data, dict) and 'model_object' in model_data:
+                        model = model_data['model_object']
+                    else:
+                        model = model_data
+                    
+                    if model is not None and hasattr(model, 'predict'):
+                        # Generate predictions
+                        predictions = model.predict(X)
+                        
+                        # Ensure predictions are 2D
+                        if predictions.ndim == 1:
+                            predictions = predictions.reshape(-1, 1)
+                        
+                        # Validate predictions
+                        if predictions.shape[0] == X.shape[0] and not np.any(np.isnan(predictions)):
+                            enhanced_features.append(predictions)
+                            hmm_features_count += predictions.shape[1]
+                            self.logger.info(f"✅ Added {predictions.shape[1]} features from HMM model: {model_name}")
+                        else:
+                            self.logger.warning(f"⚠️ Invalid predictions from HMM model: {model_name}")
+                    else:
+                        self.logger.warning(f"⚠️ HMM model {model_name} is None or has no predict method")
+                        
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Failed to integrate HMM model {model_name}: {e}")
+                    continue
+            
+            # Combine all features
+            if len(enhanced_features) > 1:
+                X_enhanced = np.column_stack(enhanced_features)
+                self.logger.info(f"📊 HMM integration complete: {X.shape[1]} original + {hmm_features_count} HMM = {X_enhanced.shape[1]} total features")
+                return X_enhanced
+            else:
+                self.logger.warning("⚠️ No valid HMM models integrated, using original features")
+                return X
+                
+        except Exception as e:
+            self.logger.error(f"❌ Failed to integrate HMM base models: {e}")
+            self.logger.warning("⚠️ Returning original features due to HMM integration failure")
+            return X
     
     def _generate_comprehensive_report(
         self,
@@ -816,11 +895,13 @@ def execute_analyst_ensemble_training(
     feature_names: Optional[List[str]] = None,
     hmm_states: Optional[np.ndarray] = None,
     base_analyst_models: Optional[Dict[str, Any]] = None,
-    analyst_training_metrics: Optional[Dict[str, Any]] = None
+    analyst_training_metrics: Optional[Dict[str, Any]] = None,
+    hmm_base_models: Optional[Dict[str, Any]] = None,
+    hmm_training_metrics: Optional[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
     """Execute Analyst ensemble training step."""
     step = create_analyst_ensemble_training_step(config)
-    return step.execute(X, y, regime_labels, feature_names, hmm_states, base_analyst_models, analyst_training_metrics)
+    return step.execute(X, y, regime_labels, feature_names, hmm_states, base_analyst_models, analyst_training_metrics, hmm_base_models, hmm_training_metrics)
 
 
 # Example usage and comparison

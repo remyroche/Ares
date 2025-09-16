@@ -165,7 +165,9 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
         analyst_models: Optional[Dict[str, Any]] = None,
         analyst_ensembles: Optional[Dict[str, Any]] = None,
         analyst_ensemble_metrics: Optional[Dict[str, Any]] = None,
-        hmm_data: Optional[Dict[str, Any]] = None
+        hmm_data: Optional[Dict[str, Any]] = None,
+        hmm_base_models: Optional[Dict[str, Any]] = None,
+        hmm_ensemble_models: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """
         Execute Tactician ensemble training step with comprehensive error handling and progress tracking.
@@ -182,6 +184,8 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
             analyst_ensembles: Analyst ensemble models
             analyst_ensemble_metrics: Performance metrics of analyst ensembles
             hmm_data: HMM regime data and features
+            hmm_base_models: HMM base models for integration
+            hmm_ensemble_models: HMM ensemble models for integration
             
         Returns:
             Dictionary containing training results and metadata
@@ -203,7 +207,8 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
             # Step 3: Feature enhancement
             self._start_step("Feature Enhancement")
             X_enhanced = self._combine_all_model_inputs(
-                X, analyst_models, analyst_ensembles, hmm_data, feature_names
+                X, analyst_models, analyst_ensembles, hmm_data, feature_names,
+                hmm_base_models, hmm_ensemble_models
             )
             enhancement_metrics = {
                 'original_features': X.shape[1],
@@ -372,7 +377,9 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
         analyst_models: Optional[Dict[str, Any]],
         analyst_ensembles: Optional[Dict[str, Any]],
         hmm_data: Optional[Dict[str, Any]],
-        feature_names: Optional[List[str]]
+        feature_names: Optional[List[str]],
+        hmm_base_models: Optional[Dict[str, Any]] = None,
+        hmm_ensemble_models: Optional[Dict[str, Any]] = None
     ) -> np.ndarray:
         """
         Combine all model inputs for meta-learner training with comprehensive error handling.
@@ -383,6 +390,8 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
             analyst_ensembles: Analyst ensemble models
             hmm_data: HMM regime data
             feature_names: Feature names for tracking
+            hmm_base_models: HMM base models for integration
+            hmm_ensemble_models: HMM ensemble models for integration
             
         Returns:
             Enhanced feature matrix with all model inputs
@@ -392,6 +401,8 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
             feature_count = X.shape[1]
             integration_stats = {
                 'hmm_features_added': 0,
+                'hmm_base_models_integrated': 0,
+                'hmm_ensemble_models_integrated': 0,
                 'analyst_models_integrated': 0,
                 'analyst_ensembles_integrated': 0,
                 'integration_errors': []
@@ -412,6 +423,38 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
                 except Exception as e:
                     self.logger.warning(f"⚠️ Failed to integrate HMM features: {e}")
                     integration_stats['integration_errors'].append(f"HMM integration failed: {e}")
+            
+            # Add HMM base models predictions if available
+            if hmm_base_models:
+                for model_name, model_data in hmm_base_models.items():
+                    try:
+                        predictions = self._generate_hmm_model_predictions(model_data, X, f"hmm_base_{model_name}")
+                        if predictions is not None:
+                            enhanced_features.append(predictions)
+                            feature_count += predictions.shape[1]
+                            integration_stats['hmm_base_models_integrated'] += 1
+                            self.logger.info(f"📊 Added predictions from HMM base model: {model_name}")
+                        else:
+                            integration_stats['integration_errors'].append(f"Failed to generate predictions for HMM base model {model_name}")
+                    except Exception as e:
+                        self.logger.warning(f"⚠️ Could not add predictions from HMM base model {model_name}: {e}")
+                        integration_stats['integration_errors'].append(f"HMM base model {model_name} failed: {e}")
+            
+            # Add HMM ensemble models predictions if available
+            if hmm_ensemble_models:
+                for ensemble_name, ensemble_data in hmm_ensemble_models.items():
+                    try:
+                        predictions = self._generate_hmm_model_predictions(ensemble_data, X, f"hmm_ensemble_{ensemble_name}")
+                        if predictions is not None:
+                            enhanced_features.append(predictions)
+                            feature_count += predictions.shape[1]
+                            integration_stats['hmm_ensemble_models_integrated'] += 1
+                            self.logger.info(f"📊 Added predictions from HMM ensemble model: {ensemble_name}")
+                        else:
+                            integration_stats['integration_errors'].append(f"Failed to generate predictions for HMM ensemble model {ensemble_name}")
+                    except Exception as e:
+                        self.logger.warning(f"⚠️ Could not add predictions from HMM ensemble model {ensemble_name}: {e}")
+                        integration_stats['integration_errors'].append(f"HMM ensemble model {ensemble_name} failed: {e}")
             
             # Add analyst model predictions if available
             if analyst_models:
@@ -494,6 +537,52 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
             
         except Exception as e:
             self.logger.warning(f"⚠️ Failed to generate predictions from {model_name}: {e}")
+            return None
+    
+    def _generate_hmm_model_predictions(self, model_data: Any, X: np.ndarray, model_name: str) -> Optional[np.ndarray]:
+        """Generate predictions from HMM model data with proper error handling."""
+        try:
+            # Extract model object from HMM model data
+            if isinstance(model_data, dict):
+                if 'model_object' in model_data:
+                    model = model_data['model_object']
+                elif 'model' in model_data:
+                    model = model_data['model']
+                else:
+                    model = model_data
+            else:
+                model = model_data
+            
+            if model is None:
+                self.logger.warning(f"⚠️ HMM model {model_name} is None")
+                return None
+            
+            # Check if model has predict method
+            if not hasattr(model, 'predict'):
+                self.logger.warning(f"⚠️ HMM model {model_name} does not have predict method")
+                return None
+            
+            # Generate predictions
+            predictions = model.predict(X)
+            
+            # Ensure predictions are 2D
+            if predictions.ndim == 1:
+                predictions = predictions.reshape(-1, 1)
+            
+            # Validate predictions
+            if predictions.shape[0] != X.shape[0]:
+                self.logger.warning(f"⚠️ HMM model {model_name} predictions shape mismatch: {predictions.shape[0]} vs {X.shape[0]}")
+                return None
+            
+            # Check for NaN or infinite values
+            if np.any(np.isnan(predictions)) or np.any(np.isinf(predictions)):
+                self.logger.warning(f"⚠️ HMM model {model_name} produced invalid predictions (NaN/Inf)")
+                return None
+            
+            return predictions
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Failed to generate predictions from HMM model {model_name}: {e}")
             return None
     
     def _add_meta_learner_metadata(
@@ -795,14 +884,17 @@ def execute_tactician_ensemble_training(
     analyst_models: Optional[Dict[str, Any]] = None,
     analyst_ensembles: Optional[Dict[str, Any]] = None,
     analyst_ensemble_metrics: Optional[Dict[str, Any]] = None,
-    hmm_data: Optional[Dict[str, Any]] = None
+    hmm_data: Optional[Dict[str, Any]] = None,
+    hmm_base_models: Optional[Dict[str, Any]] = None,
+    hmm_ensemble_models: Optional[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
     """Execute Tactician ensemble training step."""
     step = create_tactician_ensemble_training_step(config)
     return step.execute(
         X, y, regime_labels, feature_names, hmm_states,
         base_tactician_models, tactician_training_metrics,
-        analyst_models, analyst_ensembles, analyst_ensemble_metrics, hmm_data
+        analyst_models, analyst_ensembles, analyst_ensemble_metrics, hmm_data,
+        hmm_base_models, hmm_ensemble_models
     )
 
 

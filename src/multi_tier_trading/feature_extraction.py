@@ -139,77 +139,96 @@ class HMMFeatureExtractor:
 
 
 class AnalystFeatureExtractor:
-    """Feature extractor for Analyst system (300+ features, 5m base)."""
+    """Feature extractor for Analyst system (300+ features, 5m base + 15m cross-timeframe)."""
     
     def __init__(self):
         self.feature_names = []
     
-    def extract_features(self, data: pd.DataFrame, hmm_output: Optional[Dict[str, Any]] = None) -> pd.DataFrame:
-        """Extract 300+ features for Analyst decision making."""
-        tprint("Extracting Analyst features...")
+    def extract_features(self, data_5m: pd.DataFrame, data_15m: Optional[pd.DataFrame] = None, hmm_output: Optional[Dict[str, Any]] = None) -> pd.DataFrame:
+        """Extract 300+ features for Analyst decision making with 15m cross-timeframe."""
+        tprint("Extracting Analyst features with 15m cross-timeframe...")
         
-        features = pd.DataFrame(index=data.index)
+        features = pd.DataFrame(index=data_5m.index)
         
-        # Basic price features (30 features)
-        features['returns'] = data['close'].pct_change()
-        features['log_returns'] = np.log(data['close'] / data['close'].shift(1))
-        features['price_change'] = data['close'] - data['open']
-        features['price_range'] = data['high'] - data['low']
-        features['body_size'] = abs(data['close'] - data['open'])
-        features['upper_shadow'] = data['high'] - np.maximum(data['open'], data['close'])
-        features['lower_shadow'] = np.minimum(data['open'], data['close']) - data['low']
+        # Basic price features (30 features) - 5m data
+        features['returns'] = data_5m['close'].pct_change()
+        features['log_returns'] = np.log(data_5m['close'] / data_5m['close'].shift(1))
+        features['price_change'] = data_5m['close'] - data_5m['open']
+        features['price_range'] = data_5m['high'] - data_5m['low']
+        features['body_size'] = abs(data_5m['close'] - data_5m['open'])
+        features['upper_shadow'] = data_5m['high'] - np.maximum(data_5m['open'], data_5m['close'])
+        features['lower_shadow'] = np.minimum(data_5m['open'], data_5m['close']) - data_5m['low']
         features['body_ratio'] = features['body_size'] / features['price_range']
         features['shadow_ratio'] = (features['upper_shadow'] + features['lower_shadow']) / features['price_range']
         
-        # Momentum indicators (60 features)
+        # Momentum indicators (60 features) - 5m data
         for period in [5, 10, 14, 20, 30, 50]:
-            features[f'rsi_{period}'] = self._calculate_rsi(data['close'], period)
-            features[f'momentum_{period}'] = data['close'] / data['close'].shift(period) - 1
-            features[f'roc_{period}'] = data['close'].pct_change(period)
+            features[f'rsi_{period}'] = self._calculate_rsi(data_5m['close'], period)
+            features[f'momentum_{period}'] = data_5m['close'] / data_5m['close'].shift(period) - 1
+            features[f'roc_{period}'] = data_5m['close'].pct_change(period)
             features[f'roc_ma_{period}'] = features[f'roc_{period}'].rolling(5).mean()
         
-        # MACD variations (20 features)
+        # MACD variations (20 features) - 5m data
         for fast, slow in [(12, 26), (5, 35), (19, 39), (8, 21)]:
-            macd_line, macd_signal, macd_hist = self._calculate_macd(data['close'], fast, slow, 9)
+            macd_line, macd_signal, macd_hist = self._calculate_macd(data_5m['close'], fast, slow, 9)
             features[f'macd_{fast}_{slow}'] = macd_line
             features[f'macd_signal_{fast}_{slow}'] = macd_signal
             features[f'macd_hist_{fast}_{slow}'] = macd_hist
         
-        # Volatility indicators (40 features)
+        # Volatility indicators (40 features) - 5m data
         for period in [10, 14, 20, 30, 50]:
-            features[f'atr_{period}'] = self._calculate_atr(data, period)
-            features[f'volatility_{period}'] = data['close'].rolling(period).std()
-            features[f'bb_upper_{period}'] = self._calculate_bollinger_upper(data['close'], period)
-            features[f'bb_lower_{period}'] = self._calculate_bollinger_lower(data['close'], period)
-            features[f'bb_width_{period}'] = (features[f'bb_upper_{period}'] - features[f'bb_lower_{period}']) / data['close']
-            features[f'bb_position_{period}'] = (data['close'] - features[f'bb_lower_{period}']) / (features[f'bb_upper_{period}'] - features[f'bb_lower_{period}'])
+            features[f'atr_{period}'] = self._calculate_atr(data_5m, period)
+            features[f'volatility_{period}'] = data_5m['close'].rolling(period).std()
+            features[f'bb_upper_{period}'] = self._calculate_bollinger_upper(data_5m['close'], period)
+            features[f'bb_lower_{period}'] = self._calculate_bollinger_lower(data_5m['close'], period)
+            features[f'bb_width_{period}'] = (features[f'bb_upper_{period}'] - features[f'bb_lower_{period}']) / data_5m['close']
+            features[f'bb_position_{period}'] = (data_5m['close'] - features[f'bb_lower_{period}']) / (features[f'bb_upper_{period}'] - features[f'bb_lower_{period}'])
         
-        # Volume analysis (50 features)
-        if 'volume' in data.columns:
+        # Volume analysis (50 features) - 5m data
+        if 'volume' in data_5m.columns:
             for period in [5, 10, 20, 30, 50]:
-                features[f'volume_ma_{period}'] = data['volume'].rolling(period).mean()
-                features[f'volume_ratio_{period}'] = data['volume'] / features[f'volume_ma_{period}']
-                features[f'volume_std_{period}'] = data['volume'].rolling(period).std()
+                features[f'volume_ma_{period}'] = data_5m['volume'].rolling(period).mean()
+                features[f'volume_ratio_{period}'] = data_5m['volume'] / features[f'volume_ma_{period}']
+                features[f'volume_std_{period}'] = data_5m['volume'].rolling(period).std()
             
-            features['obv'] = self._calculate_obv(data['close'], data['volume'])
-            features['vpt'] = self._calculate_vpt(data['close'], data['volume'])
-            features['mfi'] = self._calculate_mfi(data, 14)
-            features['eom'] = self._calculate_eom(data)
-            features['vwap'] = self._calculate_vwap(data)
+            features['obv'] = self._calculate_obv(data_5m['close'], data_5m['volume'])
+            features['vpt'] = self._calculate_vpt(data_5m['close'], data_5m['volume'])
+            features['mfi'] = self._calculate_mfi(data_5m, 14)
+            features['eom'] = self._calculate_eom(data_5m)
+            features['vwap'] = self._calculate_vwap(data_5m)
         
-        # Cross-timeframe features (80 features)
+        # Cross-timeframe features (80 features) - 5m data
         for period in [3, 6, 12, 24, 48, 72, 144, 288]:  # 15m, 30m, 1h, 2h, 4h, 6h, 12h, 1d
-            if len(data) > period:
-                features[f'ctf_returns_{period}'] = data['close'].pct_change(period)
-                features[f'ctf_volatility_{period}'] = data['close'].rolling(period).std()
-                features[f'ctf_range_{period}'] = (data['high'].rolling(period).max() - data['low'].rolling(period).min()) / data['close']
+            if len(data_5m) > period:
+                features[f'ctf_returns_{period}'] = data_5m['close'].pct_change(period)
+                features[f'ctf_volatility_{period}'] = data_5m['close'].rolling(period).std()
+                features[f'ctf_range_{period}'] = (data_5m['high'].rolling(period).max() - data_5m['low'].rolling(period).min()) / data_5m['close']
                 
-                if 'volume' in data.columns:
-                    features[f'ctf_volume_{period}'] = data['volume'].rolling(period).mean()
-                    features[f'ctf_volume_ratio_{period}'] = data['volume'] / features[f'ctf_volume_{period}']
+                if 'volume' in data_5m.columns:
+                    features[f'ctf_volume_{period}'] = data_5m['volume'].rolling(period).mean()
+                    features[f'ctf_volume_ratio_{period}'] = data_5m['volume'] / features[f'ctf_volume_{period}']
                 
-                features[f'ctf_rsi_{period}'] = self._calculate_rsi(data['close'], period)
-                features[f'ctf_atr_{period}'] = self._calculate_atr(data, period)
+                features[f'ctf_rsi_{period}'] = self._calculate_rsi(data_5m['close'], period)
+                features[f'ctf_atr_{period}'] = self._calculate_atr(data_5m, period)
+        
+        # 15m cross-timeframe features (40 features) - Additional 15m data
+        if data_15m is not None and len(data_15m) > 0:
+            # Align 15m data with 5m data (every 3rd 5m bar)
+            for i in range(0, len(data_5m), 3):
+                if i < len(data_15m):
+                    # Price features from 15m
+                    features.loc[data_5m.index[i], 'ctf_15m_returns'] = data_15m['close'].iloc[i//3].pct_change() if i//3 > 0 else 0
+                    features.loc[data_5m.index[i], 'ctf_15m_volatility'] = data_15m['close'].rolling(4).std().iloc[i//3] if i//3 >= 4 else 0
+                    features.loc[data_5m.index[i], 'ctf_15m_range'] = (data_15m['high'].rolling(4).max() - data_15m['low'].rolling(4).min()).iloc[i//3] / data_15m['close'].iloc[i//3] if i//3 >= 4 else 0
+                    
+                    # Technical indicators from 15m
+                    features.loc[data_5m.index[i], 'ctf_15m_rsi'] = self._calculate_rsi(data_15m['close'], 14).iloc[i//3] if i//3 >= 14 else 50
+                    features.loc[data_5m.index[i], 'ctf_15m_atr'] = self._calculate_atr(data_15m, 14).iloc[i//3] if i//3 >= 14 else 0
+                    
+                    # Volume features from 15m
+                    if 'volume' in data_15m.columns:
+                        features.loc[data_5m.index[i], 'ctf_15m_volume'] = data_15m['volume'].rolling(4).mean().iloc[i//3] if i//3 >= 4 else 0
+                        features.loc[data_5m.index[i], 'ctf_15m_volume_ratio'] = data_15m['volume'].iloc[i//3] / features.loc[data_5m.index[i], 'ctf_15m_volume'] if features.loc[data_5m.index[i], 'ctf_15m_volume'] > 0 else 1
         
         # HMM integration (20 features)
         if hmm_output:

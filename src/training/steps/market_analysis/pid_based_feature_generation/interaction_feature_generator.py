@@ -699,7 +699,9 @@ class InteractionFeatureGenerator(BaseFeatureGenerator):
                     # Combine batch results
                     if batch_results:
                         combined_features = np.vstack(batch_results)
-                        enhanced_features["batch_optimized"] = combined_features
+                        # Add each column as a separate feature
+                        for i, col in enumerate(feature_names):
+                            enhanced_features[f"batch_optimized_{col}"] = combined_features[:, i]
             
             # Use enhanced matrix operations for advanced correlations
             if self.enhanced_matrix_ops:
@@ -709,7 +711,9 @@ class InteractionFeatureGenerator(BaseFeatureGenerator):
                 # Extract upper triangle correlations as features
                 n = corr_matrix.shape[0]
                 upper_triangle = corr_matrix[np.triu_indices(n, k=1)]
-                enhanced_features["correlation_features"] = upper_triangle
+                # Add each correlation as a separate feature
+                for i, corr_value in enumerate(upper_triangle):
+                    enhanced_features[f"correlation_{i}"] = np.full(X.shape[0], corr_value)
             
             # Use ML pipeline for complex feature transformations
             if self.config.enable_parallel_processing:

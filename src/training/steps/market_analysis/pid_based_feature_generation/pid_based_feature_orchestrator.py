@@ -21,6 +21,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 from datetime import datetime
 from dataclasses import dataclass, field
 from enum import Enum
+from pathlib import Path
 
 # Core dependencies with fallback support
 try:

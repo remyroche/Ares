@@ -3,10 +3,10 @@ Regime Data Splitting Component.
 
 This component tags data by regimes discovered in previous stages.
 Enhanced with comprehensive error handling, validation, and reporting.
+Refactored to use common utilities for better maintainability and performance.
 """
 
 import asyncio
-import json
 import logging
 import time
 from typing import Any, Dict, List, Optional, Tuple
@@ -37,6 +37,70 @@ except ImportError as e:
 from ..components.base_component import BaseMarketAnalysisComponent, ComponentConfig, ComponentResult
 from src.utils.logger import system_logger
 from src.utils.tprint import tprint
+
+# Import common utilities
+from src.utils.common_operations import (
+    safe_dataframe_operation, validate_dataframe_columns, safe_convert_dtypes,
+    calculate_data_quality_metrics, safe_merge_dataframes, safe_groupby_operation,
+    safe_apply_function, create_summary_statistics, safe_drop_columns,
+    safe_rename_columns, validate_timestamp_column, safe_timestamp_conversion,
+    get_dataframe_info, safe_filter_dataframe, create_data_quality_report,
+    safe_to_parquet, safe_read_parquet, validate_dataframe_schema,
+    optimize_dataframe_dtypes, safe_fillna, safe_float, safe_int,
+    validate_finite, validate_positive, validate_range, safe_divide,
+    safe_log, safe_sqrt, safe_power, safe_mean, safe_std, safe_percentage_change,
+    safe_kelly_calculation, safe_weighted_average, safe_correlation,
+    safe_covariance, safe_percentile, validate_correlation_matrix,
+    safe_matrix_inverse, math_safe, timed_operation, format_bytes,
+    chunked_iterable, parallel_map, get_m1_gpu_manager, get_m1_memory_optimizer,
+    get_m1_cpu_optimizer, cleanup_m1_optimizers, integrate_with_m1_optimizers,
+    memory_checkpoint, gpu_context, optimize_memory, get_memory_usage
+)
+
+from src.utils.math_validation import (
+    safe_divide as math_safe_divide, safe_log as math_safe_log,
+    safe_sqrt as math_safe_sqrt, safe_power as math_safe_power,
+    validate_finite as math_validate_finite, validate_positive as math_validate_positive,
+    validate_range as math_validate_range, safe_kelly_calculation as math_safe_kelly,
+    safe_weighted_average as math_safe_weighted_avg, safe_percentage_change as math_safe_pct_change,
+    safe_correlation as math_safe_corr, safe_covariance as math_safe_cov,
+    safe_mean as math_safe_mean, safe_std as math_safe_std,
+    safe_percentile as math_safe_percentile, validate_correlation_matrix as math_validate_corr_matrix,
+    safe_matrix_inverse as math_safe_matrix_inv, math_safe as math_safe_func,
+    MathValidation, MathValidationError
+)
+
+from src.utils.serialization_utils import (
+    JSONSerializer, PickleSerializer, ParquetSerializer, UniversalSerializer
+)
+
+from src.utils.data.klines_parquet import (
+    save_klines_to_parquet, load_klines_from_parquet, validate_klines_data
+)
+
+from src.utils.matrix_operations.unified_operations import (
+    safe_matrix_operation, validate_matrix, optimize_matrix_operations
+)
+
+from src.utils.hardware.m1_gpu_utils import (
+    get_m1_gpu_manager as get_gpu_manager, is_m1_available, is_mps_available,
+    optimize_dataframe_for_m1, create_m1_optimized_array, m1_backtesting_simulate,
+    m1_monte_carlo_simulate
+)
+
+from src.utils.hardware.m1_memory_optimizer import (
+    get_m1_memory_optimizer as get_memory_optimizer, optimize_dataframe_memory,
+    start_m1_memory_monitoring, stop_m1_memory_monitoring, optimize_memory as mem_optimize
+)
+
+from src.utils.hardware.m1_cpu_optimizer import (
+    get_m1_cpu_optimizer as get_cpu_optimizer, optimize_function_for_m1,
+    parallel_map_m1, create_m1_optimized_thread_pool, run_cpu_intensive_task
+)
+
+from src.utils.ml_common.common_operations import (
+    safe_ml_operation, validate_ml_data, optimize_ml_performance
+)
 
 
 class RegimeSplittingStatus(Enum):
@@ -97,6 +161,16 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
         self.metrics = RegimeSplittingMetrics()
         self.start_time: Optional[datetime] = None
         
+        # Initialize hardware optimizations
+        self._initialize_hardware_optimizations()
+        
+        # Initialize common utilities
+        self.math_validator = MathValidation()
+        self.serializer = UniversalSerializer()
+        self.gpu_manager = get_gpu_manager()
+        self.memory_optimizer = get_memory_optimizer()
+        self.cpu_optimizer = get_cpu_optimizer()
+        
     def _validate_dependencies(self) -> None:
         """Validate required dependencies and fail fast if missing."""
         try:
@@ -117,6 +191,32 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
         except Exception as e:
             self.logger.error(f"❌ Critical error in dependency validation: {e}")
             raise
+    
+    def _initialize_hardware_optimizations(self) -> None:
+        """Initialize hardware optimizations for M1."""
+        try:
+            # Check if M1 hardware is available
+            if is_m1_available():
+                self.logger.info("🧠 M1 hardware detected, initializing optimizations")
+                
+                # Start memory monitoring
+                start_m1_memory_monitoring()
+                
+                # Optimize numpy for M1
+                self.cpu_optimizer.optimize_numpy_operations()
+                
+                # Log hardware info
+                gpu_info = self.gpu_manager.get_gpu_info()
+                cpu_info = self.cpu_optimizer.get_cpu_info()
+                
+                self.logger.info(f"🧠 Hardware Info - GPU: {gpu_info.get('gpu_name', 'N/A')}, "
+                               f"CPU Cores: {cpu_info.get('total_cores', 'N/A')}")
+            else:
+                self.logger.info("💻 Non-M1 hardware detected, using standard optimizations")
+                
+        except Exception as e:
+            self.logger.warning(f"⚠️ Hardware optimization initialization failed: {e}")
+            # Continue without optimizations
     
     def get_required_artifacts(self) -> List[str]:
         """Get list of required artifacts this component must produce."""
@@ -316,7 +416,7 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
         return validation_result
     
     async def _load_and_prepare_data(self, data: Any) -> Optional[pd.DataFrame]:
-        """Load and prepare market data for regime splitting."""
+        """Load and prepare market data for regime splitting using common utilities."""
         self.logger.info("📊 Loading and preparing market data...")
         tprint("📊 Loading and preparing market data...")
         
@@ -336,7 +436,7 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                 tprint(f"❌ Unsupported data type: {type(data)}")
                 return None
             
-            # Validate DataFrame structure
+            # Validate DataFrame structure using common utilities
             if not isinstance(market_data, pd.DataFrame):
                 self.logger.error("❌ Data is not a DataFrame")
                 return None
@@ -345,24 +445,40 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                 self.logger.error("❌ Market data is empty")
                 return None
             
-            # Check for required columns
+            # Check for required columns using common utilities
             required_columns = ['open', 'high', 'low', 'close', 'volume']
-            missing_columns = [col for col in required_columns if col not in market_data.columns]
-            
-            if missing_columns:
-                self.logger.warning(f"⚠️ Missing columns: {missing_columns}")
+            if not validate_dataframe_columns(market_data, required_columns):
+                self.logger.warning("⚠️ Missing required columns, creating fallback columns")
                 # Create fallback columns with validation
-                for col in missing_columns:
-                    if col == 'volume':
-                        market_data[col] = 1000.0  # Default volume
-                    else:
-                        market_data[col] = market_data.get('close', 100.0)  # Use close price as fallback
+                for col in required_columns:
+                    if col not in market_data.columns:
+                        if col == 'volume':
+                            market_data[col] = 1000.0  # Default volume
+                        else:
+                            market_data[col] = market_data.get('close', 100.0)  # Use close price as fallback
             
-            # Validate data quality
-            if market_data.isnull().sum().sum() > 0:
-                self.logger.warning("⚠️ Market data contains null values")
-                # Fill null values with forward fill (using modern pandas syntax)
-                market_data = market_data.ffill()
+            # Optimize DataFrame for M1 if available
+            if is_m1_available():
+                market_data = optimize_dataframe_for_m1(market_data)
+            
+            # Apply memory optimization
+            market_data = self.memory_optimizer.optimize_dataframe_memory(market_data)
+            
+            # Validate and clean data using common utilities
+            market_data = safe_fillna(market_data, method='ffill')
+            
+            # Optimize data types
+            market_data = optimize_dataframe_dtypes(market_data)
+            
+            # Validate data quality using common utilities
+            quality_metrics = calculate_data_quality_metrics(market_data)
+            if quality_metrics.get('missing_percentage', 0) > 10:
+                self.logger.warning(f"⚠️ High missing data percentage: {quality_metrics['missing_percentage']:.2f}%")
+            
+            # Create data quality report
+            quality_report = create_data_quality_report(market_data)
+            if quality_report.get('issues'):
+                self.logger.warning(f"⚠️ Data quality issues detected: {quality_report['issues']}")
             
             self.logger.info(f"✅ Market data loaded: {market_data.shape}")
             tprint(f"✅ Market data loaded: {market_data.shape}")
@@ -420,74 +536,85 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
         regime_discovery: Dict[str, Any],
         report: RegimeSplittingReport
     ) -> Dict[str, Any]:
-        """Perform the actual regime data splitting process."""
+        """Perform the actual regime data splitting process using common utilities and hardware optimizations."""
         self.logger.info("✂️ Performing regime data splitting...")
         
-        try:
-            # Extract regime states and probabilities
-            regime_states = self._extract_regime_states(regime_discovery)
-            regime_probabilities = self._extract_regime_probabilities(regime_discovery)
-            
-            if regime_states is None:
+        # Use memory checkpoint for M1 optimization
+        with memory_checkpoint("regime_splitting"):
+            try:
+                # Extract regime states and probabilities using safe operations
+                regime_states = self._extract_regime_states(regime_discovery)
+                regime_probabilities = self._extract_regime_probabilities(regime_discovery)
+                
+                if regime_states is None:
+                    return {
+                        'success': False,
+                        'errors': ['Failed to extract regime states'],
+                        'data': None
+                    }
+                
+                # Align data lengths with memory optimization
+                min_len = min(len(market_data), len(regime_states))
+                tprint(f"📊 Aligning data lengths: {len(market_data)} -> {min_len}")
+                
+                # Use safe DataFrame operations
+                market_data_aligned = safe_dataframe_operation(
+                    market_data, lambda df: df.iloc[:min_len].copy()
+                )
+                regime_states_aligned = regime_states[:min_len]
+                
+                if regime_probabilities is not None:
+                    regime_probabilities_aligned = regime_probabilities[:min_len]
+                else:
+                    regime_probabilities_aligned = None
+                
+                # Clean up original data references to free memory
+                del market_data
+                mem_optimize()  # Use common memory optimization
+                
+                # Add regime information to market data using safe operations
+                market_data_aligned['regime_state'] = regime_states_aligned
+                if regime_probabilities_aligned is not None:
+                    market_data_aligned['regime_probability'] = regime_probabilities_aligned
+                    # Use safe math operations for confidence calculation
+                    market_data_aligned['regime_confidence'] = safe_apply_function(
+                        market_data_aligned, 
+                        lambda row: math_safe_func(np.max, regime_probabilities_aligned[row.name], default=1.0)
+                    )
+                else:
+                    market_data_aligned['regime_confidence'] = 1.0
+                
+                # Calculate regime statistics using common utilities
+                regime_stats = self._calculate_regime_statistics_optimized(market_data_aligned)
+                
+                # Create regime data dictionary
+                regime_data = {
+                    'market_data': market_data_aligned,
+                    'regime_states': regime_states_aligned,
+                    'regime_probabilities': regime_probabilities_aligned,
+                    'regime_statistics': regime_stats
+                }
+                
+                # Optimize final DataFrame for M1 if available
+                if is_m1_available():
+                    regime_data['market_data'] = optimize_dataframe_for_m1(regime_data['market_data'])
+                
+                self.logger.info(f"✅ Regime splitting completed: {len(np.unique(regime_states_aligned))} regimes")
+                
+                return {
+                    'success': True,
+                    'data': regime_data,
+                    'regime_stats': regime_stats,
+                    'errors': []
+                }
+                
+            except Exception as e:
+                self.logger.error(f"❌ Error in regime splitting: {e}")
                 return {
                     'success': False,
-                    'errors': ['Failed to extract regime states'],
+                    'errors': [f"Regime splitting failed: {str(e)}"],
                     'data': None
                 }
-            
-            # Align data lengths with memory optimization
-            min_len = min(len(market_data), len(regime_states))
-            tprint(f"📊 Aligning data lengths: {len(market_data)} -> {min_len}")
-            
-            # Use iloc view instead of copy when possible to save memory
-            market_data_aligned = market_data.iloc[:min_len].copy()
-            regime_states_aligned = regime_states[:min_len]
-            
-            if regime_probabilities is not None:
-                regime_probabilities_aligned = regime_probabilities[:min_len]
-            else:
-                regime_probabilities_aligned = None
-            
-            # Clean up original data references to free memory
-            del market_data
-            import gc
-            gc.collect()
-            
-            # Add regime information to market data
-            market_data_aligned['regime_state'] = regime_states_aligned
-            if regime_probabilities_aligned is not None:
-                market_data_aligned['regime_probability'] = regime_probabilities_aligned
-                market_data_aligned['regime_confidence'] = np.max(regime_probabilities_aligned, axis=1)
-            else:
-                market_data_aligned['regime_confidence'] = 1.0
-            
-            # Calculate regime statistics
-            regime_stats = self._calculate_regime_statistics(market_data_aligned)
-            
-            # Create regime data dictionary
-            regime_data = {
-                'market_data': market_data_aligned,
-                'regime_states': regime_states_aligned,
-                'regime_probabilities': regime_probabilities_aligned,
-                'regime_statistics': regime_stats
-            }
-            
-            self.logger.info(f"✅ Regime splitting completed: {len(np.unique(regime_states_aligned))} regimes")
-            
-            return {
-                'success': True,
-                'data': regime_data,
-                'regime_stats': regime_stats,
-                'errors': []
-            }
-            
-        except Exception as e:
-            self.logger.error(f"❌ Error in regime splitting: {e}")
-            return {
-                'success': False,
-                'errors': [f"Regime splitting failed: {str(e)}"],
-                'data': None
-            }
     
     def _extract_regime_states(self, regime_discovery: Dict[str, Any]) -> Optional[np.ndarray]:
         """Extract regime states from regime discovery results."""
@@ -539,30 +666,45 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
             return None
     
     def _calculate_regime_statistics(self, market_data: pd.DataFrame) -> Dict[str, Any]:
-        """Calculate comprehensive regime statistics."""
+        """Calculate comprehensive regime statistics using common utilities."""
         try:
             regime_stats = {}
             
-            # Basic regime distribution
-            regime_counts = market_data['regime_state'].value_counts().to_dict()
+            # Basic regime distribution using safe operations
+            regime_counts = safe_dataframe_operation(
+                market_data, 
+                lambda df: df['regime_state'].value_counts().to_dict()
+            )
             regime_stats['regime_distribution'] = regime_counts
             regime_stats['total_regimes'] = len(regime_counts)
             regime_stats['total_data_points'] = len(market_data)
             
-            # Calculate statistics per regime
+            # Calculate statistics per regime using safe operations
             regime_details = {}
-            for regime_id in market_data['regime_state'].unique():
-                regime_data = market_data[market_data['regime_state'] == regime_id]
+            unique_regimes = safe_dataframe_operation(
+                market_data, 
+                lambda df: df['regime_state'].unique()
+            )
+            
+            for regime_id in unique_regimes:
+                regime_data = safe_filter_dataframe(
+                    market_data, 
+                    f"regime_state == {regime_id}"
+                )
+                
+                # Use safe math operations for calculations
+                count = len(regime_data)
+                percentage = safe_divide(count, len(market_data), 0.0) * 100
                 
                 regime_details[regime_id] = {
-                    'count': len(regime_data),
-                    'percentage': len(regime_data) / len(market_data) * 100,
-                    'volatility_std': regime_data['close'].std() if 'close' in regime_data.columns else 0,
-                    'mean_volume': regime_data['volume'].mean() if 'volume' in regime_data.columns else 0,
-                    'mean_price': regime_data['close'].mean() if 'close' in regime_data.columns else 0,
+                    'count': count,
+                    'percentage': percentage,
+                    'volatility_std': safe_std(regime_data['close']) if 'close' in regime_data.columns else 0.0,
+                    'mean_volume': safe_mean(regime_data['volume']) if 'volume' in regime_data.columns else 0.0,
+                    'mean_price': safe_mean(regime_data['close']) if 'close' in regime_data.columns else 0.0,
                     'price_range': {
-                        'min': regime_data['close'].min() if 'close' in regime_data.columns else 0,
-                        'max': regime_data['close'].max() if 'close' in regime_data.columns else 0
+                        'min': safe_float(regime_data['close'].min()) if 'close' in regime_data.columns else 0.0,
+                        'max': safe_float(regime_data['close'].max()) if 'close' in regime_data.columns else 0.0
                     }
                 }
             
@@ -573,6 +715,65 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
         except Exception as e:
             self.logger.error(f"❌ Error calculating regime statistics: {e}")
             return {'error': str(e)}
+    
+    def _calculate_regime_statistics_optimized(self, market_data: pd.DataFrame) -> Dict[str, Any]:
+        """Calculate regime statistics with M1 optimizations."""
+        try:
+            # Use M1-optimized operations if available
+            if is_m1_available():
+                return self._calculate_regime_statistics_m1_optimized(market_data)
+            else:
+                return self._calculate_regime_statistics(market_data)
+                
+        except Exception as e:
+            self.logger.error(f"❌ Error in optimized regime statistics: {e}")
+            return self._calculate_regime_statistics(market_data)
+    
+    def _calculate_regime_statistics_m1_optimized(self, market_data: pd.DataFrame) -> Dict[str, Any]:
+        """Calculate regime statistics optimized for M1 hardware."""
+        try:
+            regime_stats = {}
+            
+            # Use M1-optimized array operations
+            regime_states = create_m1_optimized_array(market_data['regime_state'].values)
+            
+            # Basic regime distribution using M1 optimizations
+            unique_regimes, counts = np.unique(regime_states, return_counts=True)
+            regime_counts = dict(zip(unique_regimes, counts))
+            
+            regime_stats['regime_distribution'] = regime_counts
+            regime_stats['total_regimes'] = len(unique_regimes)
+            regime_stats['total_data_points'] = len(market_data)
+            
+            # Calculate statistics per regime using M1-optimized operations
+            regime_details = {}
+            for regime_id in unique_regimes:
+                mask = regime_states == regime_id
+                regime_data = market_data[mask]
+                
+                # Use M1-optimized math operations
+                count = int(np.sum(mask))
+                percentage = safe_divide(count, len(market_data), 0.0) * 100
+                
+                regime_details[regime_id] = {
+                    'count': count,
+                    'percentage': percentage,
+                    'volatility_std': math_safe_std(regime_data['close'].values) if 'close' in regime_data.columns else 0.0,
+                    'mean_volume': math_safe_mean(regime_data['volume'].values) if 'volume' in regime_data.columns else 0.0,
+                    'mean_price': math_safe_mean(regime_data['close'].values) if 'close' in regime_data.columns else 0.0,
+                    'price_range': {
+                        'min': safe_float(regime_data['close'].min()) if 'close' in regime_data.columns else 0.0,
+                        'max': safe_float(regime_data['close'].max()) if 'close' in regime_data.columns else 0.0
+                    }
+                }
+            
+            regime_stats['regime_details'] = regime_details
+            
+            return regime_stats
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error in M1-optimized regime statistics: {e}")
+            return self._calculate_regime_statistics(market_data)
     
     async def _validate_splitting_results(
         self, 
@@ -725,50 +926,74 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
             return report
     
     def _calculate_data_quality_score(self, market_data: pd.DataFrame) -> float:
-        """Calculate data quality score (0-1)."""
+        """Calculate data quality score (0-1) using common utilities."""
         try:
+            # Use common data quality metrics
+            quality_metrics = calculate_data_quality_metrics(market_data)
+            
             score = 1.0
             
-            # Check for null values
-            null_ratio = market_data.isnull().sum().sum() / (len(market_data) * len(market_data.columns))
+            # Check for null values using safe operations
+            null_ratio = safe_divide(
+                quality_metrics.get('missing_values', 0),
+                len(market_data) * len(market_data.columns),
+                0.0
+            )
             score -= null_ratio * 0.3
             
-            # Check for duplicate rows
-            duplicate_ratio = market_data.duplicated().sum() / len(market_data)
+            # Check for duplicate rows using safe operations
+            duplicate_ratio = safe_divide(
+                quality_metrics.get('duplicate_rows', 0),
+                len(market_data),
+                0.0
+            )
             score -= duplicate_ratio * 0.2
             
-            # Check for infinite values
+            # Check for infinite values using safe operations
             numeric_cols = market_data.select_dtypes(include=[np.number]).columns
             if len(numeric_cols) > 0 and len(market_data) > 0:
-                inf_count = np.isinf(market_data[numeric_cols]).sum().sum()
-                inf_ratio = inf_count / (len(market_data) * len(numeric_cols))
+                inf_count = safe_dataframe_operation(
+                    market_data,
+                    lambda df: np.isinf(df[numeric_cols]).sum().sum()
+                )
+                inf_ratio = safe_divide(inf_count, len(market_data) * len(numeric_cols), 0.0)
                 score -= inf_ratio * 0.3
             
-            # Check for zero/negative prices
+            # Check for zero/negative prices using safe operations
             if 'close' in market_data.columns:
-                invalid_prices = (market_data['close'] <= 0).sum() / len(market_data)
+                invalid_prices = safe_divide(
+                    (market_data['close'] <= 0).sum(),
+                    len(market_data),
+                    0.0
+                )
                 score -= invalid_prices * 0.2
             
-            return max(0.0, min(1.0, score))
+            # Use safe math operations for final score
+            return math_validate_range(score, 0.0, 1.0, "data_quality_score")
             
         except Exception as e:
             self.logger.warning(f"⚠️ Error calculating data quality score: {e}")
             return 0.5  # Default score
     
     def _calculate_regime_continuity_score(self, regime_states: np.ndarray) -> float:
-        """Calculate regime continuity score (0-1)."""
+        """Calculate regime continuity score (0-1) using safe math operations."""
         try:
             if len(regime_states) < 2:
                 return 1.0
             
-            # Count regime transitions
-            transitions = np.sum(regime_states[1:] != regime_states[:-1])
-            transition_ratio = transitions / (len(regime_states) - 1)
+            # Count regime transitions using safe operations
+            transitions = math_safe_func(
+                np.sum, 
+                regime_states[1:] != regime_states[:-1],
+                default=0
+            )
+            transition_ratio = safe_divide(transitions, len(regime_states) - 1, 0.0)
             
             # Higher continuity = fewer transitions (score closer to 1)
             continuity_score = 1.0 - min(1.0, transition_ratio * 2)
             
-            return continuity_score
+            # Validate the score is in valid range
+            return math_validate_range(continuity_score, 0.0, 1.0, "continuity_score")
             
         except Exception as e:
             self.logger.warning(f"⚠️ Error calculating regime continuity score: {e}")
@@ -805,10 +1030,11 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
         splitting_result: Dict[str, Any], 
         report: RegimeSplittingReport
     ) -> Dict[str, Any]:
-        """Create comprehensive artifacts."""
+        """Create comprehensive artifacts using common serialization utilities."""
         self.logger.info("💾 Creating artifacts...")
         
         try:
+            # Create artifacts with enhanced metadata
             artifacts = {
                 'regime_data_splitting_result': {
                     'regime_data': splitting_result['data'],
@@ -818,14 +1044,21 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                         'regime_count': self.metrics.regime_count,
                         'processing_time_seconds': self.metrics.processing_time_seconds,
                         'data_quality_score': self.metrics.data_quality_score,
-                        'regime_continuity_score': self.metrics.regime_continuity_score
+                        'regime_continuity_score': self.metrics.regime_continuity_score,
+                        'memory_usage_mb': get_memory_usage().get('used_memory', 0) / (1024 * 1024),
+                        'hardware_optimized': is_m1_available()
                     },
                     'metadata': {
                         'symbol': self.config.symbol,
                         'exchange': self.config.exchange,
                         'timeframe': self.config.timeframe,
                         'execution_timestamp': datetime.now().isoformat(),
-                        'component_version': 'enhanced_v1.0'
+                        'component_version': 'enhanced_v2.0_common_utils',
+                        'hardware_info': {
+                            'is_m1': is_m1_available(),
+                            'mps_available': is_mps_available(),
+                            'cpu_cores': self.cpu_optimizer.get_cpu_info().get('total_cores', 'unknown')
+                        }
                     }
                 },
                 'regime_splitting_report': {
@@ -858,12 +1091,44 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                 }
             }
             
+            # Save artifacts using common serialization utilities
+            await self._save_artifacts_to_files(artifacts)
+            
             self.logger.info("✅ Artifacts created successfully")
             return artifacts
             
         except Exception as e:
             self.logger.error(f"❌ Error creating artifacts: {e}")
             return {}
+    
+    async def _save_artifacts_to_files(self, artifacts: Dict[str, Any]) -> None:
+        """Save artifacts to files using common serialization utilities."""
+        try:
+            # Create artifacts directory
+            artifacts_dir = Path("artifacts/regime_data_splitting")
+            artifacts_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Save regime data splitting result as parquet
+            if 'regime_data' in artifacts['regime_data_splitting_result']:
+                regime_data = artifacts['regime_data_splitting_result']['regime_data']
+                if 'market_data' in regime_data:
+                    parquet_path = artifacts_dir / "regime_market_data.parquet"
+                    safe_to_parquet(regime_data['market_data'], parquet_path)
+                    self.logger.info(f"💾 Saved regime market data to {parquet_path}")
+            
+            # Save report as JSON
+            report_path = artifacts_dir / "regime_splitting_report.json"
+            self.serializer.save(artifacts['regime_splitting_report'], str(report_path))
+            self.logger.info(f"💾 Saved regime splitting report to {report_path}")
+            
+            # Save validation results as JSON
+            validation_path = artifacts_dir / "regime_validation_results.json"
+            self.serializer.save(artifacts['regime_validation_results'], str(validation_path))
+            self.logger.info(f"💾 Saved validation results to {validation_path}")
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Error saving artifacts to files: {e}")
+            # Continue without file saving
     
     def _update_metrics(self, report: RegimeSplittingReport, splitting_result: Dict[str, Any]) -> None:
         """Update metrics based on execution results."""
@@ -896,3 +1161,27 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                 'failure_timestamp': datetime.now().isoformat()
             }
         )
+    
+    def cleanup(self) -> None:
+        """Clean up resources and stop hardware optimizations."""
+        try:
+            # Stop memory monitoring
+            stop_m1_memory_monitoring()
+            
+            # Clean up M1 optimizers
+            cleanup_m1_optimizers()
+            
+            # Clear any cached data
+            mem_optimize()
+            
+            self.logger.info("🧹 Cleanup completed successfully")
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Error during cleanup: {e}")
+    
+    def __del__(self):
+        """Destructor to ensure cleanup on object deletion."""
+        try:
+            self.cleanup()
+        except Exception:
+            pass  # Ignore errors during cleanup

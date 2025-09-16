@@ -4,8 +4,6 @@ Triple Barrier Labeling Step Implementation
 This module provides the step implementation for triple barrier labeling in the market analysis pipeline.
 """
 
-import asyncio
-import json
 import logging
 import time
 from typing import Any, Dict, List, Optional, Tuple
@@ -28,6 +26,7 @@ except ImportError:
     pd = None
 
 from src.utils.logger import system_logger
+from src.utils.tprint import tprint
 from src.training.steps.market_analysis.triple_barrier_labeling.unified_labeler import (
     UnifiedTripleBarrierLabeler, TripleBarrierConfig
 )
@@ -62,6 +61,7 @@ class TripleBarrierLabelingStep:
         Returns:
             Dict containing labeling results and artifacts
         """
+        tprint('🏷️ Starting Triple Barrier Labeling Step')
         self.logger.info('🏷️ Starting Triple Barrier Labeling')
         start_time = time.time()
         
@@ -114,11 +114,13 @@ class TripleBarrierLabelingStep:
                 }
             }
             
+            tprint(f'✅ Triple Barrier Labeling completed in {execution_time:.2f}s')
             self.logger.info(f'✅ Triple Barrier Labeling completed in {execution_time:.2f}s')
             return results
             
         except Exception as e:
             execution_time = time.time() - start_time
+            tprint(f'❌ Triple Barrier Labeling failed: {e}')
             self.logger.error(f'❌ Triple Barrier Labeling failed: {e}')
             
             return self._create_error_result(
@@ -165,7 +167,7 @@ class TripleBarrierLabelingStep:
             stop_loss_multiplier=self.config.get('stop_loss_multiplier', 0.001),
             transaction_cost=self.config.get('transaction_cost', 0.0008),
             regime_aware=self.config.get('regime_aware', True),
-            enable_optimization=self.config.get('enable_optimization', True)
+            enable_hardware_optimizations=self.config.get('enable_hardware_optimizations', True)
         )
     
     async def _apply_triple_barrier_labeling(
@@ -193,12 +195,30 @@ class TripleBarrierLabelingStep:
                 market_data['close'] = market_data[price_col]
             
             # Apply labeling
-            labeling_result = labeler.label_data(
-                data=market_data,
-                regime_assignments=regime_assignments if regime_assignments else None
-            )
+            labeling_result = labeler.apply_labeling(market_data)
             
-            return labeling_result
+            # Convert TripleBarrierResult to expected format
+            if labeling_result.success:
+                return {
+                    'labeled_data': labeling_result.labeled_data,
+                    'labeling_metrics': {
+                        'total_labels_generated': labeling_result.total_labels_generated,
+                        'label_distribution': labeling_result.label_distribution,
+                        'data_quality_score': labeling_result.data_quality_score,
+                        'execution_duration': labeling_result.execution_duration
+                    },
+                    'barrier_config': {
+                        'profit_take_multiplier': labeling_result.labeled_data.get('potential_profit_pct', {}).mean() if labeling_result.labeled_data is not None else 0,
+                        'stop_loss_multiplier': self.config.get('stop_loss_multiplier', 0.001),
+                        'transaction_cost': self.config.get('transaction_cost', 0.0008)
+                    },
+                    'regime_analysis': {
+                        'regimes_processed': len(set(regime_assignments)) if regime_assignments else 0,
+                        'regime_coverage': labeling_result.regime_coverage
+                    }
+                }
+            else:
+                raise Exception(f"Labeling failed: {labeling_result.error_message}")
             
         except Exception as e:
             self.logger.error(f"Failed to apply triple barrier labeling: {e}")

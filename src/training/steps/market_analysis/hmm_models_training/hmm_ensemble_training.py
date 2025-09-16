@@ -1,9 +1,9 @@
 """
-Analyst Ensemble Training Step
+HMM Ensemble Training Component
 
-This step handles per-regime ensemble training of Analyst models using common dependencies.
-The Analyst Ensemble operates on 5m timeframe and combines individual analyst models
-to create robust ensemble predictions for trade decisions.
+This component handles per-regime ensemble training of HMM models using common dependencies.
+The HMM Ensemble operates on 1h timeframe and combines individual HMM models
+to create robust ensemble predictions for market regime detection.
 
 Enhanced with vectorized training capabilities for improved performance.
 """
@@ -27,44 +27,44 @@ try:
 except ImportError:
     VECTORIZED_TRAINING_AVAILABLE = False
 
-logger = system_logger.getChild('AnalystEnsembleTraining')
+logger = system_logger.getChild('HMMEnsembleTraining')
 
 
-class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
+class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
     """
-    Analyst Ensemble Training Step with per-regime ensemble training, HPO, saving, and metrics.
+    HMM Ensemble Training Component with per-regime ensemble training, HPO, saving, and metrics.
     
-    The Analyst Ensemble operates on 5m timeframe and combines individual analyst models
-    to create robust ensemble predictions for trade decisions.
+    The HMM Ensemble operates on 1h timeframe and combines individual HMM models
+    to create robust ensemble predictions for market regime detection.
     """
     
     def __init__(self, config: Optional[EnsembleTrainingConfig] = None, enable_vectorization: bool = True):
         """
-        Initialize Analyst ensemble training step with vectorization support.
+        Initialize HMM ensemble training component with vectorization support.
 
         Args:
             config: Per-regime training configuration
             enable_vectorization: Whether to enable vectorized training
         """
-        self.logger = logger.getChild('AnalystEnsembleTrainingStep')
+        self.logger = logger.getChild('HMMEnsembleTrainingComponent')
         self.start_time = time.time()
         
         try:
-            # Set default configuration for analyst ensemble models
+            # Set default configuration for HMM ensemble models
             if config is None:
                 config = EnsembleTrainingConfig(
-                    model_name="analyst_ensemble_models",
-                    timeframe="5m",
-                    model_types=["tcn", "catboost", "lightgbm", "ensemble_rf"],
+                    model_name="hmm_ensemble_models",
+                    timeframe="1h",
+                    model_types=["lightgbm", "elastic_net", "xgboost"],
                     hpo_n_trials=100,
                     hpo_timeout_seconds=3600,
                     min_samples_per_regime=1000,
                     enable_data_augmentation=True,
                     augmentation_method="smote",
-                    model_save_path="./models/analyst_ensemble_models",
-                    evaluation_metrics=["mse", "mae", "r2", "mape", "smape"]
+                    model_save_path="./models/hmm_ensemble_models",
+                    evaluation_metrics=["accuracy", "f1_score", "precision", "recall", "auc"]
                 )
-                self.logger.info("📋 Using default configuration for analyst ensemble training")
+                self.logger.info("📋 Using default configuration for HMM ensemble training")
 
             # Validate configuration
             self._validate_config(config)
@@ -83,16 +83,16 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
             
             # Log initialization success
             if self.enable_vectorization:
-                self.logger.info("🚀 Analyst Ensemble Training Step initialized with vectorization")
+                self.logger.info("🚀 HMM Ensemble Training Component initialized with vectorization")
             else:
-                self.logger.info("✅ Analyst Ensemble Training Step initialized (standard mode)")
+                self.logger.info("✅ HMM Ensemble Training Component initialized (standard mode)")
                 
             self.logger.info(f"📊 Configuration: {len(config.model_types)} ensemble types, {config.timeframe} timeframe")
             
         except Exception as e:
-            self.logger.error(f"❌ Failed to initialize Analyst Ensemble Training Step: {e}")
+            self.logger.error(f"❌ Failed to initialize HMM Ensemble Training Component: {e}")
             self.logger.error(f"🔍 Traceback: {traceback.format_exc()}")
-            raise RuntimeError(f"Analyst Ensemble Training Step initialization failed: {e}") from e
+            raise RuntimeError(f"HMM Ensemble Training Component initialization failed: {e}") from e
     
     def _validate_config(self, config: EnsembleTrainingConfig) -> None:
         """
@@ -196,26 +196,26 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
         regime_labels: np.ndarray,
         feature_names: Optional[List[str]] = None,
         hmm_states: Optional[np.ndarray] = None,
-        base_analyst_models: Optional[Dict[str, Any]] = None,
-        analyst_training_metrics: Optional[Dict[str, Any]] = None
+        base_hmm_models: Optional[Dict[str, Any]] = None,
+        hmm_training_metrics: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """
-        Execute Analyst ensemble training step with comprehensive error handling and progress tracking.
+        Execute HMM ensemble training component with comprehensive error handling and progress tracking.
         
         Args:
-            X: Input features (5m timeframe with cross-timeframe features)
-            y: Target values (analyst outputs)
+            X: Input features (1h timeframe with cross-timeframe features)
+            y: Target values (HMM regime predictions)
             regime_labels: Regime labels for each sample
             feature_names: Names of input features
             hmm_states: HMM cluster/regime states
-            base_analyst_models: Individual analyst models to ensemble
-            analyst_training_metrics: Performance metrics of base models
+            base_hmm_models: Individual HMM models to ensemble
+            hmm_training_metrics: Performance metrics of base models
             
         Returns:
             Dictionary containing training results and metadata
         """
         execution_start_time = time.time()
-        self.logger.info("🚀 Starting Analyst ensemble training step")
+        self.logger.info("🚀 Starting HMM ensemble training component")
         
         try:
             # Step 1: Validate inputs
@@ -224,33 +224,33 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
             
             # Step 2: Validate and prepare base models
             self.logger.info("🔄 Step 2: Validating base models...")
-            if base_analyst_models is None or not base_analyst_models:
-                self.logger.warning("⚠️ No base analyst models provided, using mock models")
-                base_analyst_models = self._create_mock_base_models()
+            if base_hmm_models is None or not base_hmm_models:
+                self.logger.warning("⚠️ No base HMM models provided, using mock models")
+                base_hmm_models = self._create_mock_base_models()
             else:
-                self.logger.info(f"✅ Using {len(base_analyst_models)} provided base models")
+                self.logger.info(f"✅ Using {len(base_hmm_models)} provided base models")
             
             # Step 3: Execute training with enhanced error handling
             self.logger.info("🔄 Step 3: Executing ensemble training...")
             results = self._execute_training_with_error_handling(
-                X, y, regime_labels, feature_names, hmm_states, base_analyst_models
+                X, y, regime_labels, feature_names, hmm_states, base_hmm_models
             )
             
             # Step 4: Add ensemble-specific metadata
             self.logger.info("🔄 Step 4: Adding ensemble-specific metadata...")
             if 'error' not in results:
-                results = self._add_ensemble_specific_metadata(results, base_analyst_models, analyst_training_metrics)
+                results = self._add_ensemble_specific_metadata(results, base_hmm_models, hmm_training_metrics)
             
             # Step 5: Generate comprehensive report
             execution_time = time.time() - execution_start_time
-            results = self._generate_comprehensive_report(results, execution_time, base_analyst_models, analyst_training_metrics)
+            results = self._generate_comprehensive_report(results, execution_time, base_hmm_models, hmm_training_metrics)
             
-            self.logger.info(f"✅ Analyst ensemble training completed successfully in {execution_time:.2f}s")
+            self.logger.info(f"✅ HMM ensemble training completed successfully in {execution_time:.2f}s")
             return results
             
         except Exception as e:
             execution_time = time.time() - execution_start_time
-            error_msg = f"Analyst ensemble training failed after {execution_time:.2f}s: {e}"
+            error_msg = f"HMM ensemble training failed after {execution_time:.2f}s: {e}"
             self.logger.error(f"❌ {error_msg}")
             self.logger.error(f"🔍 Traceback: {traceback.format_exc()}")
             
@@ -268,7 +268,7 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
         regime_labels: np.ndarray,
         feature_names: Optional[List[str]],
         hmm_states: Optional[np.ndarray],
-        base_analyst_models: Dict[str, Any]
+        base_hmm_models: Dict[str, Any]
     ) -> Dict[str, Any]:
         """
         Execute training with comprehensive error handling and recovery.
@@ -279,7 +279,7 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
             regime_labels: Regime labels
             feature_names: Feature names
             hmm_states: HMM states
-            base_analyst_models: Base models
+            base_hmm_models: Base models
             
         Returns:
             Training results
@@ -292,8 +292,8 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
                 regime_labels=regime_labels,
                 feature_names=feature_names,
                 hmm_states=hmm_states,
-                is_classification=False,  # Analyst ensemble models are typically regression
-                base_models=base_analyst_models,
+                is_classification=True,  # HMM ensemble models are classification
+                base_models=base_hmm_models,
                 symbol=None,  # Can be passed as kwargs
                 exchange=None,
                 timeframe=self.config.timeframe
@@ -302,7 +302,7 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
             # Update training stats
             self.training_stats.update({
                 'training_completed': True,
-                'base_models_used': len(base_analyst_models),
+                'base_models_used': len(base_hmm_models),
                 'feature_count': X.shape[1],
                 'sample_count': X.shape[0]
             })
@@ -325,15 +325,14 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
             Dictionary of mock base models
         """
         try:
-            from sklearn.ensemble import RandomForestRegressor
-            from sklearn.linear_model import LinearRegression
-            from sklearn.ensemble import GradientBoostingRegressor
+            from sklearn.linear_model import LogisticRegression
+            from sklearn.ensemble import RandomForestClassifier
+            from sklearn.ensemble import GradientBoostingClassifier
             
             mock_models = {
-                'tcn_model': RandomForestRegressor(n_estimators=10, random_state=42, max_depth=5),
-                'catboost_model': RandomForestRegressor(n_estimators=10, random_state=43, max_depth=5),
-                'lightgbm_model': GradientBoostingRegressor(n_estimators=10, random_state=44, max_depth=3),
-                'ensemble_rf_model': RandomForestRegressor(n_estimators=10, random_state=45, max_depth=5)
+                'lightgbm_model': RandomForestClassifier(n_estimators=10, random_state=42, max_depth=5),
+                'elastic_net_model': LogisticRegression(random_state=43, max_iter=1000, penalty='elasticnet', l1_ratio=0.5, solver='saga'),
+                'xgboost_model': RandomForestClassifier(n_estimators=10, random_state=44, max_depth=5)
             }
             
             self.logger.info(f"📊 Created {len(mock_models)} mock base models for ensemble training")
@@ -348,8 +347,8 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
         self,
         results: Dict[str, Any],
         execution_time: float,
-        base_analyst_models: Dict[str, Any],
-        analyst_training_metrics: Optional[Dict[str, Any]]
+        base_hmm_models: Dict[str, Any],
+        hmm_training_metrics: Optional[Dict[str, Any]]
     ) -> Dict[str, Any]:
         """
         Generate comprehensive training report with detailed statistics and analysis.
@@ -357,8 +356,8 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
         Args:
             results: Training results
             execution_time: Total execution time
-            base_analyst_models: Base models used
-            analyst_training_metrics: Base model metrics
+            base_hmm_models: Base models used
+            hmm_training_metrics: Base model metrics
             
         Returns:
             Enhanced results with comprehensive reporting
@@ -388,7 +387,7 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
                 },
                 'performance_analysis': self._analyze_performance(results),
                 'regime_analysis': self._analyze_regime_performance(results),
-                'base_model_integration': self._analyze_base_model_integration(base_analyst_models, analyst_training_metrics),
+                'base_model_integration': self._analyze_base_model_integration(base_hmm_models, hmm_training_metrics),
                 'recommendations': self._generate_recommendations(results, execution_time)
             }
             
@@ -428,19 +427,19 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
                 performance_analysis['models_trained'] = len(evaluation_results)
                 
                 # Find best performing model
-                best_r2 = -np.inf
+                best_accuracy = -np.inf
                 best_model = None
                 
                 for regime, regime_metrics in evaluation_results.items():
-                    if isinstance(regime_metrics, dict) and 'r2' in regime_metrics:
-                        if regime_metrics['r2'] > best_r2:
-                            best_r2 = regime_metrics['r2']
+                    if isinstance(regime_metrics, dict) and 'accuracy' in regime_metrics:
+                        if regime_metrics['accuracy'] > best_accuracy:
+                            best_accuracy = regime_metrics['accuracy']
                             best_model = regime
                 
                 if best_model is not None:
                     performance_analysis['best_performance'] = {
                         'regime': best_model,
-                        'r2_score': best_r2
+                        'accuracy': best_accuracy
                     }
             
             return performance_analysis
@@ -481,29 +480,29 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
     
     def _analyze_base_model_integration(
         self,
-        base_analyst_models: Dict[str, Any],
-        analyst_training_metrics: Optional[Dict[str, Any]]
+        base_hmm_models: Dict[str, Any],
+        hmm_training_metrics: Optional[Dict[str, Any]]
     ) -> Dict[str, Any]:
         """
         Analyze base model integration.
         
         Args:
-            base_analyst_models: Base models used
-            analyst_training_metrics: Base model metrics
+            base_hmm_models: Base models used
+            hmm_training_metrics: Base model metrics
             
         Returns:
             Base model integration analysis
         """
         try:
             integration_analysis = {
-                'base_models_count': len(base_analyst_models) if base_analyst_models else 0,
-                'base_model_types': list(base_analyst_models.keys()) if base_analyst_models else [],
-                'metrics_available': analyst_training_metrics is not None,
-                'integration_quality': 'good' if base_analyst_models and len(base_analyst_models) >= 3 else 'limited'
+                'base_models_count': len(base_hmm_models) if base_hmm_models else 0,
+                'base_model_types': list(base_hmm_models.keys()) if base_hmm_models else [],
+                'metrics_available': hmm_training_metrics is not None,
+                'integration_quality': 'good' if base_hmm_models and len(base_hmm_models) >= 3 else 'limited'
             }
             
-            if analyst_training_metrics:
-                integration_analysis['base_model_performance'] = analyst_training_metrics
+            if hmm_training_metrics:
+                integration_analysis['base_model_performance'] = hmm_training_metrics
             
             return integration_analysis
             
@@ -582,7 +581,7 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
             perf_analysis = comprehensive_report.get('performance_analysis', {})
             if perf_analysis.get('best_performance'):
                 best_perf = perf_analysis['best_performance']
-                self.logger.info(f"🏆 Best performance: R² = {best_perf.get('r2_score', 0):.4f} (Regime {best_perf.get('regime', 'N/A')})")
+                self.logger.info(f"🏆 Best performance: Accuracy = {best_perf.get('accuracy', 0):.4f} (Regime {best_perf.get('regime', 'N/A')})")
             
             # Recommendations
             recommendations = comprehensive_report.get('recommendations', [])
@@ -602,7 +601,7 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
         
         Args:
             results: Training results
-            base_models: Base analyst models used in ensemble
+            base_models: Base HMM models used in ensemble
             base_metrics: Performance metrics of base models
             
         Returns:
@@ -643,11 +642,11 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
                     'total_regimes_evaluated': 0,
                     'successful_evaluations': 0,
                     'failed_evaluations': 0,
-                    'average_r2': 0.0,
-                    'best_overall_r2': -np.inf
+                    'average_accuracy': 0.0,
+                    'best_overall_accuracy': -np.inf
                 }
                 
-                r2_scores = []
+                accuracies = []
                 
                 for regime, regime_metrics in evaluation_results.items():
                     performance_summary['total_regimes_evaluated'] += 1
@@ -656,40 +655,40 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
                         performance_summary['successful_evaluations'] += 1
                         
                         best_ensemble = None
-                        best_r2 = -np.inf
+                        best_accuracy = -np.inf
                         
                         for ensemble_name, metrics in regime_metrics.items():
-                            if isinstance(metrics, dict) and 'r2' in metrics:
-                                r2_scores.append(metrics['r2'])
-                                if metrics['r2'] > best_r2:
-                                    best_r2 = metrics['r2']
+                            if isinstance(metrics, dict) and 'accuracy' in metrics:
+                                accuracies.append(metrics['accuracy'])
+                                if metrics['accuracy'] > best_accuracy:
+                                    best_accuracy = metrics['accuracy']
                                     best_ensemble = ensemble_name
                         
                         if best_ensemble:
                             best_ensembles[regime] = {
                                 'ensemble': best_ensemble,
-                                'r2_score': best_r2,
+                                'accuracy': best_accuracy,
                                 'regime_samples': regime_metrics.get('samples', 0)
                             }
                             
-                            if best_r2 > performance_summary['best_overall_r2']:
-                                performance_summary['best_overall_r2'] = best_r2
+                            if best_accuracy > performance_summary['best_overall_accuracy']:
+                                performance_summary['best_overall_accuracy'] = best_accuracy
                     else:
                         performance_summary['failed_evaluations'] += 1
                 
                 # Calculate average performance
-                if r2_scores:
-                    performance_summary['average_r2'] = np.mean(r2_scores)
-                    performance_summary['r2_std'] = np.std(r2_scores)
-                    performance_summary['r2_min'] = np.min(r2_scores)
-                    performance_summary['r2_max'] = np.max(r2_scores)
+                if accuracies:
+                    performance_summary['average_accuracy'] = np.mean(accuracies)
+                    performance_summary['accuracy_std'] = np.std(accuracies)
+                    performance_summary['accuracy_min'] = np.min(accuracies)
+                    performance_summary['accuracy_max'] = np.max(accuracies)
                 
                 results['best_ensembles_per_regime'] = best_ensembles
                 results['performance_summary'] = performance_summary
                 
                 self.logger.info(f"📊 Performance summary: {performance_summary['successful_evaluations']}/{performance_summary['total_regimes_evaluated']} regimes successful")
-                if performance_summary['average_r2'] > 0:
-                    self.logger.info(f"🏆 Average R²: {performance_summary['average_r2']:.4f}, Best R²: {performance_summary['best_overall_r2']:.4f}")
+                if performance_summary['average_accuracy'] > 0:
+                    self.logger.info(f"🏆 Average Accuracy: {performance_summary['average_accuracy']:.4f}, Best Accuracy: {performance_summary['best_overall_accuracy']:.4f}")
             
             # Add enhanced ensemble-specific analysis
             ensemble_analysis = {
@@ -697,7 +696,7 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
                 'cross_timeframe_features': True,
                 'ensemble_method': 'per_regime',
                 'base_models_integrated': len(base_models) if base_models else 0,
-                'ensemble_role': 'trade_decision_enhancement',
+                'ensemble_role': 'market_regime_detection',
                 'training_configuration': {
                     'hpo_enabled': self.config.enable_hpo,
                     'hpo_trials': self.config.hpo_n_trials if self.config.enable_hpo else 0,
@@ -718,150 +717,70 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
             self.logger.error(f"❌ Failed to add ensemble-specific metadata: {e}")
             results['ensemble_metadata_error'] = str(e)
             return results
-    
-    def get_training_statistics(self) -> Dict[str, Any]:
-        """
-        Get comprehensive training statistics.
-        
-        Returns:
-            Dictionary containing training statistics
-        """
-        return {
-            'training_stats': self.training_stats.copy(),
-            'configuration': {
-                'model_name': self.config.model_name,
-                'timeframe': self.config.timeframe,
-                'model_types': self.config.model_types,
-                'hpo_enabled': self.config.enable_hpo,
-                'vectorization_enabled': self.enable_vectorization
-            },
-            'performance_metrics': getattr(self, 'training_results', {}).get('performance_summary', {}),
-            'timestamp': time.time()
-        }
-    
-    def validate_training_results(self, results: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Validate training results and provide quality assessment.
-        
-        Args:
-            results: Training results to validate
-            
-        Returns:
-            Validation report
-        """
-        validation_report = {
-            'validation_passed': True,
-            'issues_found': [],
-            'warnings': [],
-            'quality_score': 0.0
-        }
-        
-        try:
-            # Check for errors
-            if 'error' in results:
-                validation_report['validation_passed'] = False
-                validation_report['issues_found'].append(f"Training failed: {results['error']}")
-                return validation_report
-            
-            # Check for required components
-            required_components = ['ensemble_metrics', 'ensemble_analysis']
-            for component in required_components:
-                if component not in results:
-                    validation_report['warnings'].append(f"Missing component: {component}")
-            
-            # Check performance metrics
-            if 'performance_summary' in results:
-                perf_summary = results['performance_summary']
-                success_rate = perf_summary.get('successful_evaluations', 0) / max(perf_summary.get('total_regimes_evaluated', 1), 1)
-                
-                if success_rate < 0.5:
-                    validation_report['warnings'].append(f"Low success rate: {success_rate:.2%}")
-                
-                avg_r2 = perf_summary.get('average_r2', 0)
-                if avg_r2 < 0.1:
-                    validation_report['warnings'].append(f"Low average R²: {avg_r2:.4f}")
-                
-                # Calculate quality score
-                validation_report['quality_score'] = min(1.0, success_rate * (1 + avg_r2) / 2)
-            
-            # Check data quality
-            if 'ensemble_metrics' in results:
-                ensemble_metrics = results['ensemble_metrics']
-                if ensemble_metrics.get('base_models_count', 0) < 2:
-                    validation_report['warnings'].append("Limited base models for ensemble")
-            
-            self.logger.info(f"✅ Training validation completed - Quality score: {validation_report['quality_score']:.2f}")
-            
-        except Exception as e:
-            validation_report['validation_passed'] = False
-            validation_report['issues_found'].append(f"Validation failed: {e}")
-            self.logger.error(f"❌ Training validation failed: {e}")
-        
-        return validation_report
 
 
 # Convenience functions for backward compatibility
-def create_analyst_ensemble_training_step(
+def create_hmm_ensemble_training_component(
     config: Optional[EnsembleTrainingConfig] = None
-) -> AnalystEnsembleTrainingStep:
-    """Create Analyst ensemble training step."""
-    return AnalystEnsembleTrainingStep(config)
+) -> HMMEnsembleTrainingComponent:
+    """Create HMM ensemble training component."""
+    return HMMEnsembleTrainingComponent(config)
 
 
-def execute_analyst_ensemble_training(
+def execute_hmm_ensemble_training(
     X: np.ndarray,
     y: np.ndarray,
     regime_labels: np.ndarray,
     config: Optional[EnsembleTrainingConfig] = None,
     feature_names: Optional[List[str]] = None,
     hmm_states: Optional[np.ndarray] = None,
-    base_analyst_models: Optional[Dict[str, Any]] = None,
-    analyst_training_metrics: Optional[Dict[str, Any]] = None
+    base_hmm_models: Optional[Dict[str, Any]] = None,
+    hmm_training_metrics: Optional[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
-    """Execute Analyst ensemble training step."""
-    step = create_analyst_ensemble_training_step(config)
-    return step.execute(X, y, regime_labels, feature_names, hmm_states, base_analyst_models, analyst_training_metrics)
+    """Execute HMM ensemble training component."""
+    component = create_hmm_ensemble_training_component(config)
+    return component.execute(X, y, regime_labels, feature_names, hmm_states, base_hmm_models, hmm_training_metrics)
 
 
 # Example usage and comparison
 if __name__ == "__main__":
-    # Example of how to use the ensemble training version
-    print("Analyst Ensemble Training Step")
+    # Example of how to use the HMM ensemble training component
+    print("HMM Ensemble Training Component")
     print("=" * 50)
     
     # Create configuration
     config = EnsembleTrainingConfig(
-        model_name="analyst_ensemble_models",
-        timeframe="5m",
-        model_types=["tcn", "catboost", "lightgbm", "ensemble_rf"],
+        model_name="hmm_ensemble_models",
+        timeframe="1h",
+        model_types=["lightgbm", "elastic_net", "xgboost"],
         hpo_n_trials=50,  # Reduced for demo
         enable_hpo=True,
         save_models=True,
-        model_save_path="./models/analyst_ensemble_models_refactored"
+        model_save_path="./models/hmm_ensemble_models_refactored"
     )
     
-    # Create training step
-    training_step = create_analyst_ensemble_training_step(config)
+    # Create training component
+    training_component = create_hmm_ensemble_training_component(config)
     
-    print(f"✅ Created analyst ensemble training step with {len(config.model_types)} ensemble types")
+    print(f"✅ Created HMM ensemble training component with {len(config.model_types)} ensemble types")
     print(f"📊 HPO enabled: {config.enable_hpo}")
     print(f"💾 Save models: {config.save_models}")
     print(f"📁 Save path: {config.model_save_path}")
     print(f"⏰ Base timeframe: {config.timeframe}")
     
     # The actual training would be called with:
-    # results = training_step.execute(X, y, regime_labels, feature_names, hmm_states, base_analyst_models, analyst_training_metrics)
+    # results = training_component.execute(X, y, regime_labels, feature_names, hmm_states, base_hmm_models, hmm_training_metrics)
     
-    print("\n🎯 Analyst Ensemble Module Features:")
-    print("- Operates on 5m timeframe with cross-timeframe features")
-    print("- Combines individual analyst models into robust ensembles")
+    print("\n🎯 HMM Ensemble Component Features:")
+    print("- Operates on 1h timeframe with cross-timeframe features")
+    print("- Combines individual HMM models into robust ensembles")
     print("- Per-regime ensemble training for regime-specific optimization")
-    print("- Enhanced trade decision accuracy through model combination")
-    print("- Models: TCN (Temporal Convolutional Network), CatBoost, LightGBM, RandomForest")
+    print("- Enhanced market regime detection accuracy through model combination")
+    print("- Models: LightGBM, Elastic Net, XGBoost")
     print("- Comprehensive context from multi-timeframe dynamics")
     
-    print("\n🔄 Integration with Individual Analyst Models:")
-    print("- Receives individual analyst model predictions")
+    print("\n🔄 Integration with Individual HMM Models:")
+    print("- Receives individual HMM model predictions")
     print("- Uses base model performance metrics for weighting")
     print("- Creates regime-specific ensemble combinations")
-    print("- Provides enhanced trade decision signals")
+    print("- Provides enhanced market regime detection signals")

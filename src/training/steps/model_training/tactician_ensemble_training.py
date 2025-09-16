@@ -82,7 +82,7 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
                 config = EnsembleTrainingConfig(
                     model_name="tactician_ensemble_models",
                     timeframe="1m",
-                    model_types=["XGBOOST_CUSTOM"],
+                    model_types=["node", "catboost", "lightgbm", "elastic_net"],
                     hpo_n_trials=100,
                     hpo_timeout_seconds=3600,
                     min_samples_per_regime=1000,
@@ -816,7 +816,7 @@ if __name__ == "__main__":
     config = EnsembleTrainingConfig(
         model_name="tactician_ensemble_models",
         timeframe="1m",
-        model_types=["XGBOOST_CUSTOM"],
+        model_types=["node", "catboost", "lightgbm", "elastic_net"],
         hpo_n_trials=50,  # Reduced for demo
         enable_hpo=True,
         save_models=True,
@@ -840,7 +840,7 @@ if __name__ == "__main__":
     print("- Meta-learner combining ALL previous model inputs")
     print("- All-regime ensemble training for comprehensive intelligence")
     print("- Final timing decision optimization")
-    print("- Models: VotingRegressor, StackingRegressor, BaggingRegressor, AdaBoostRegressor")
+    print("- Models: NODE (Neural Oblivious Decision Ensembles), CatBoost, LightGBM, Elastic Net")
     print("- Comprehensive context from ALL model types")
     
     print("\n🔄 Integration with ALL Previous Models:")

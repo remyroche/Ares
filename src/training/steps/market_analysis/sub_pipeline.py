@@ -691,12 +691,12 @@ class MarketAnalysisSubPipeline:
             'sr_clustering',
             'hmm_regime_discovery',
             'hmm_clustering',
+            'hmm_models_training',
+            'hmm_ensemble_training',
             'regime_data_splitting',
             'triple_barrier_labeling',
             'feature_lookback_optimization',
-            'pid_based_feature_generation',
-            'temporal_feature_integration',
-            'cross_timeframe_analysis'
+            'pid_based_feature_generation'
         ]
         
         try:

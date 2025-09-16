@@ -137,6 +137,9 @@ class PIDBasedFeatureGenerationComponent(BaseMarketAnalysisComponent):
         })
         
         try:
+            # Store pipeline state for data access
+            self._pipeline_state = pipeline_state
+            
             # Step 1: Load and validate market data
             self.logger.info('📊 Loading and validating market data...')
             market_data = await self._load_and_validate_market_data(data)
@@ -306,59 +309,30 @@ class PIDBasedFeatureGenerationComponent(BaseMarketAnalysisComponent):
                         self.logger.info("✅ Converted data to DataFrame for PID feature generation")
                         return df
             
-            # Try to create synthetic data for testing
-            if data is None:
-                self.logger.warning("⚠️ No data provided, creating synthetic data for PID feature generation")
-                return self._create_synthetic_data()
+            # Try to get data from pipeline state
+            if hasattr(self, '_pipeline_state') and self._pipeline_state:
+                # Try different keys that might contain data
+                data_keys = ['market_data', 'data', 'processed_data', 'features', 'labeled_data']
+                for key in data_keys:
+                    if key in self._pipeline_state:
+                        pipeline_data = self._pipeline_state[key]
+                        if pipeline_data is not None:
+                            if isinstance(pipeline_data, pd.DataFrame) and not pipeline_data.empty:
+                                self.logger.info(f"✅ Using data from pipeline state key: {key}")
+                                return pipeline_data
+                            elif hasattr(pipeline_data, 'to_dataframe'):
+                                df = pipeline_data.to_dataframe()
+                                if not df.empty:
+                                    self.logger.info(f"✅ Converted pipeline data from key: {key}")
+                                    return df
             
-            self.logger.warning("⚠️ No valid data found for PID feature generation")
+            self.logger.error("❌ No valid data found for PID feature generation")
             return None
             
         except Exception as e:
             self.logger.error(f"Enhanced data handling failed: {e}")
             return None
     
-    def _create_synthetic_data(self) -> pd.DataFrame:
-        """Create synthetic market data for testing purposes."""
-        try:
-            if not PANDAS_AVAILABLE or not NUMPY_AVAILABLE:
-                raise ValueError("Pandas or NumPy not available for synthetic data creation")
-            
-            # Create synthetic OHLCV data
-            n_points = 1000
-            base_price = 100.0
-            
-            # Generate price movements
-            returns = np.random.normal(0, 0.02, n_points)
-            prices = [base_price]
-            
-            for ret in returns[1:]:
-                new_price = prices[-1] * (1 + ret)
-                prices.append(new_price)
-            
-            # Create OHLCV data
-            data = []
-            for i, close in enumerate(prices):
-                high = close * (1 + abs(np.random.normal(0, 0.01)))
-                low = close * (1 - abs(np.random.normal(0, 0.01)))
-                open_price = prices[i-1] if i > 0 else close
-                volume = np.random.randint(1000, 10000)
-                
-                data.append({
-                    'open': open_price,
-                    'high': high,
-                    'low': low,
-                    'close': close,
-                    'volume': volume
-                })
-            
-            df = pd.DataFrame(data)
-            self.logger.info(f"✅ Created synthetic data with {len(df)} points for PID feature generation")
-            return df
-            
-        except Exception as e:
-            self.logger.error(f"Failed to create synthetic data: {e}")
-            return None
     
     async def _get_feature_optimization_results(self, pipeline_state: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Get feature optimization results from pipeline state."""

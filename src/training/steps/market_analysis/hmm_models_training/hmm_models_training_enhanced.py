@@ -122,11 +122,16 @@ class ModelFactory:
     """Factory for creating model instances with standardized configuration."""
     
     _model_configs = {
-        'logistic_regression': {
+        'elastic_net': {
             'class': 'sklearn.linear_model.LogisticRegression',
             'default_params': {
-                'C': 1.0, 'max_iter': 1000, 'random_state': 42,
-                'class_weight': 'balanced'
+                'penalty': 'elasticnet',
+                'l1_ratio': 0.5,
+                'solver': 'saga',
+                'max_iter': 2000,
+                'random_state': 42,
+                'class_weight': 'balanced',
+                'n_jobs': -1
             }
         },
         'lightgbm': {
@@ -134,13 +139,6 @@ class ModelFactory:
             'default_params': {
                 'n_estimators': 100, 'learning_rate': 0.1,
                 'max_depth': 6, 'random_state': 42, 'verbose': -1
-            }
-        },
-        'tcn': {
-            'class': 'sklearn.ensemble.RandomForestClassifier',
-            'default_params': {
-                'n_estimators': 100, 'max_depth': 10,
-                'random_state': 42, 'n_jobs': -1
             }
         }
     }
@@ -225,7 +223,7 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
                 n_features=100,
                 sequence_length=20,
                 n_regimes=3,
-                model_types=["logistic_regression", "lightgbm", "tcn"],
+                model_types=["elastic_net", "lightgbm"],
                 hpo_trials=50,
                 enable_multi_objective=True
             )
@@ -1044,7 +1042,7 @@ if __name__ == "__main__":
         n_features=50,
         sequence_length=20,
         n_regimes=3,
-        model_types=["logistic_regression", "lightgbm"],
+        model_types=["elastic_net", "lightgbm"],
         hpo_trials=25,
         enable_multi_objective=True
     )

@@ -488,18 +488,52 @@ class EntryTimingTacticianOptimizer:
         
         def objective(trial):
             # Suggest model parameters
-            model_type = trial.suggest_categorical('model_type', ['NODE', 'CatBoost', 'ElasticNet'])
+            model_type = trial.suggest_categorical('model_type', ['XGBoost_custom', 'RandomForest', 'CatBoost', 'ElasticNet'])
             
-            if model_type == 'NODE':
-                # NODE parameters
-                n_d = trial.suggest_int('n_d', 32, 128)
-                n_a = trial.suggest_int('n_a', 32, 128)
-                n_steps = trial.suggest_int('n_steps', 3, 8)
-                gamma = trial.suggest_float('gamma', 1.0, 2.0)
-                lambda_sparse = trial.suggest_float('lambda_sparse', 1e-4, 1e-2, log=True)
-                # Note: NODE model creation would need to be implemented based on your NODE implementation
-                from sklearn.linear_model import Ridge  # Placeholder - replace with actual NODE
-                model = Ridge(alpha=0.1)
+            if model_type == 'XGBoost_custom':
+                # XGBoost_custom parameters
+                n_estimators = trial.suggest_int('n_estimators', 500, 2000)
+                learning_rate = trial.suggest_float('learning_rate', 0.01, 0.2, log=True)
+                max_depth = trial.suggest_int('max_depth', 4, 8)
+                subsample = trial.suggest_float('subsample', 0.7, 1.0)
+                colsample_bytree = trial.suggest_float('colsample_bytree', 0.7, 1.0)
+                reg_alpha = trial.suggest_float('reg_alpha', 0.0, 1.0)
+                reg_lambda = trial.suggest_float('reg_lambda', 0.0, 1.0)
+                min_child_weight = trial.suggest_int('min_child_weight', 1, 7)
+                gamma = trial.suggest_float('gamma', 0.0, 0.3)
+                from .xgboost_custom import XGBoostCustom
+                model = XGBoostCustom(
+                    n_estimators=n_estimators,
+                    learning_rate=learning_rate,
+                    max_depth=max_depth,
+                    subsample=subsample,
+                    colsample_bytree=colsample_bytree,
+                    reg_alpha=reg_alpha,
+                    reg_lambda=reg_lambda,
+                    min_child_weight=min_child_weight,
+                    gamma=gamma,
+                    random_state=42,
+                    n_jobs=-1
+                )
+            elif model_type == 'RandomForest':
+                # RandomForest parameters
+                n_estimators = trial.suggest_int('n_estimators', 100, 1000)
+                max_depth = trial.suggest_int('max_depth', 5, 20)
+                min_samples_split = trial.suggest_int('min_samples_split', 2, 10)
+                min_samples_leaf = trial.suggest_int('min_samples_leaf', 1, 4)
+                max_features = trial.suggest_categorical('max_features', ['sqrt', 'log2', None])
+                bootstrap = trial.suggest_categorical('bootstrap', [True, False])
+                from sklearn.ensemble import RandomForestRegressor
+                model = RandomForestRegressor(
+                    n_estimators=n_estimators,
+                    max_depth=max_depth,
+                    min_samples_split=min_samples_split,
+                    min_samples_leaf=min_samples_leaf,
+                    max_features=max_features,
+                    bootstrap=bootstrap,
+                    random_state=42,
+                    n_jobs=-1
+                )
             elif model_type == 'CatBoost':
                 # CatBoost parameters
                 n_estimators = trial.suggest_int('n_estimators', 500, 2000)
@@ -623,10 +657,33 @@ class EntryTimingTacticianOptimizer:
         params = best_solution.params
         
         # Create model with best parameters
-        if params['model_type'] == 'NODE':
-            # Note: NODE model creation would need to be implemented based on your NODE implementation
-            from sklearn.linear_model import Ridge  # Placeholder - replace with actual NODE
-            base_model = Ridge(alpha=0.1)
+        if params['model_type'] == 'XGBoost_custom':
+            from .xgboost_custom import XGBoostCustom
+            base_model = XGBoostCustom(
+                n_estimators=params['n_estimators'],
+                learning_rate=params['learning_rate'],
+                max_depth=params['max_depth'],
+                subsample=params['subsample'],
+                colsample_bytree=params['colsample_bytree'],
+                reg_alpha=params['reg_alpha'],
+                reg_lambda=params['reg_lambda'],
+                min_child_weight=params['min_child_weight'],
+                gamma=params['gamma'],
+                random_state=42,
+                n_jobs=-1
+            )
+        elif params['model_type'] == 'RandomForest':
+            from sklearn.ensemble import RandomForestRegressor
+            base_model = RandomForestRegressor(
+                n_estimators=params['n_estimators'],
+                max_depth=params['max_depth'],
+                min_samples_split=params['min_samples_split'],
+                min_samples_leaf=params['min_samples_leaf'],
+                max_features=params['max_features'],
+                bootstrap=params['bootstrap'],
+                random_state=42,
+                n_jobs=-1
+            )
         elif params['model_type'] == 'CatBoost':
             from catboost import CatBoostRegressor
             base_model = CatBoostRegressor(

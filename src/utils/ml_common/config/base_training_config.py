@@ -119,7 +119,7 @@ class TacticianTrainingConfig(BaseTrainingConfig):
     
     # Model types to train
     model_types: List[str] = field(default_factory=lambda: [
-        "NODE", "CatBoostRegressor", "ElasticNet"
+        "XGBoost_custom", "RandomForest", "CatBoostRegressor", "ElasticNet"
     ])
     
     # Analyst integration
@@ -154,12 +154,24 @@ class TacticianTrainingConfig(BaseTrainingConfig):
     
     # Model-specific HPO search spaces
     hpo_search_spaces: Dict[str, Dict[str, Any]] = field(default_factory=lambda: {
-        'NODE': {
-            'n_d': {'type': 'int', 'low': 32, 'high': 128},
-            'n_a': {'type': 'int', 'low': 32, 'high': 128},
-            'n_steps': {'type': 'int', 'low': 3, 'high': 8},
-            'gamma': {'type': 'float', 'low': 1.0, 'high': 2.0},
-            'lambda_sparse': {'type': 'float', 'low': 1e-4, 'high': 1e-2, 'log': True}
+        'XGBoost_custom': {
+            'n_estimators': {'type': 'int', 'low': 500, 'high': 2000},
+            'learning_rate': {'type': 'float', 'low': 0.01, 'high': 0.2, 'log': True},
+            'max_depth': {'type': 'int', 'low': 4, 'high': 8},
+            'subsample': {'type': 'float', 'low': 0.7, 'high': 1.0},
+            'colsample_bytree': {'type': 'float', 'low': 0.7, 'high': 1.0},
+            'reg_alpha': {'type': 'float', 'low': 0.0, 'high': 1.0},
+            'reg_lambda': {'type': 'float', 'low': 0.0, 'high': 1.0},
+            'min_child_weight': {'type': 'int', 'low': 1, 'high': 7},
+            'gamma': {'type': 'float', 'low': 0.0, 'high': 0.3}
+        },
+        'RandomForest': {
+            'n_estimators': {'type': 'int', 'low': 100, 'high': 1000},
+            'max_depth': {'type': 'int', 'low': 5, 'high': 20},
+            'min_samples_split': {'type': 'int', 'low': 2, 'high': 10},
+            'min_samples_leaf': {'type': 'int', 'low': 1, 'high': 4},
+            'max_features': {'type': 'categorical', 'choices': ['sqrt', 'log2', None]},
+            'bootstrap': {'type': 'categorical', 'choices': [True, False]}
         },
         'CatBoostRegressor': {
             'n_estimators': {'type': 'int', 'low': 500, 'high': 2000},

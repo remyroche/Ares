@@ -40,7 +40,6 @@ class EconomicMetric(Enum):
     
     # Market Microstructure Economics
     VOLUME_PROFILE_DIFFERENCE = "volume_profile_difference"
-    LIQUIDITY_COST_DIFFERENCE = "liquidity_cost_difference"
     MARKET_IMPACT_DIFFERENCE = "market_impact_difference"
     
     # Trading Economics
@@ -485,10 +484,6 @@ class EconomicValidator:
         # Volume profile differences
         if 'volume' in market_data.columns:
             results[EconomicMetric.VOLUME_PROFILE_DIFFERENCE] = self._calculate_volume_profile_difference(market_data, regime_labels)
-        
-        # Liquidity cost differences (using spread proxy)
-        if all(col in market_data.columns for col in ['high', 'low', 'close']):
-            results[EconomicMetric.LIQUIDITY_COST_DIFFERENCE] = self._calculate_liquidity_cost_difference(market_data, regime_labels)
         
         return results
     

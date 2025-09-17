@@ -123,7 +123,7 @@ class BaseClusterer(ABC):
         pass
     
     def _calculate_metrics(self, data: np.ndarray, labels: np.ndarray) -> Dict[str, float]:
-        """Calculate clustering quality metrics."""
+        """Calculate clustering quality metrics with statistical model selection."""
         from sklearn.metrics import silhouette_score, calinski_harabasz_score, davies_bouldin_score
         
         metrics = {}
@@ -150,7 +150,166 @@ class BaseClusterer(ABC):
             metrics['mean_cluster_size'] = float(np.mean(cluster_sizes))
             metrics['cluster_size_std'] = float(np.std(cluster_sizes))
         
+        # Add statistical model selection metrics
+        metrics.update(self._calculate_statistical_metrics(data, labels))
+        
         return metrics
+    
+    def _calculate_statistical_metrics(self, data: np.ndarray, labels: np.ndarray) -> Dict[str, float]:
+        """Calculate statistical model selection metrics (AIC, BIC, etc.)."""
+        statistical_metrics = {}
+        
+        try:
+            unique_labels = np.unique(labels[labels >= 0])  # Exclude noise points
+            n_clusters = len(unique_labels)
+            n_samples, n_features = data.shape
+            
+            if n_clusters > 1:
+                # Calculate log-likelihood for Gaussian mixture assumption
+                log_likelihood = self._calculate_log_likelihood(data, labels)
+                
+                # Number of parameters for GMM: means + covariances + mixing weights
+                # For full covariance: k*d + k*d*(d+1)/2 + (k-1)
+                n_params_full = n_clusters * n_features + n_clusters * n_features * (n_features + 1) // 2 + (n_clusters - 1)
+                
+                # For diagonal covariance: k*d + k*d + (k-1)
+                n_params_diag = n_clusters * n_features + n_clusters * n_features + (n_clusters - 1)
+                
+                # AIC and BIC with different covariance assumptions
+                statistical_metrics['aic_full'] = 2 * n_params_full - 2 * log_likelihood
+                statistical_metrics['bic_full'] = np.log(n_samples) * n_params_full - 2 * log_likelihood
+                statistical_metrics['aic_diag'] = 2 * n_params_diag - 2 * log_likelihood
+                statistical_metrics['bic_diag'] = np.log(n_samples) * n_params_diag - 2 * log_likelihood
+                
+                statistical_metrics['log_likelihood'] = log_likelihood
+                statistical_metrics['n_parameters_full'] = n_params_full
+                statistical_metrics['n_parameters_diag'] = n_params_diag
+                
+                # Minimum Description Length (MDL)
+                statistical_metrics['mdl'] = -log_likelihood + 0.5 * n_params_diag * np.log(n_samples)
+                
+                # Gap statistic approximation
+                statistical_metrics['gap_statistic'] = self._calculate_gap_statistic_approx(data, labels)
+                
+                # Within-cluster sum of squares
+                statistical_metrics['wcss'] = self._calculate_wcss(data, labels)
+                
+                # Between-cluster sum of squares
+                statistical_metrics['bcss'] = self._calculate_bcss(data, labels)
+                
+                # Variance ratio criterion (Calinski-Harabasz already calculated)
+                if n_clusters > 1 and n_samples > n_clusters:
+                    vrc = (statistical_metrics['bcss'] / (n_clusters - 1)) / (statistical_metrics['wcss'] / (n_samples - n_clusters))
+                    statistical_metrics['variance_ratio_criterion'] = vrc
+                
+        except Exception as e:
+            self.logger.warning(f"Could not calculate statistical metrics: {e}")
+        
+        return statistical_metrics
+    
+    def _calculate_log_likelihood(self, data: np.ndarray, labels: np.ndarray) -> float:
+        """Calculate log-likelihood assuming Gaussian clusters."""
+        try:
+            unique_labels = np.unique(labels[labels >= 0])
+            log_likelihood = 0.0
+            
+            for label in unique_labels:
+                cluster_data = data[labels == label]
+                if len(cluster_data) > 1:
+                    # Multivariate Gaussian log-likelihood
+                    mean = np.mean(cluster_data, axis=0)
+                    cov = np.cov(cluster_data.T) + 1e-6 * np.eye(data.shape[1])  # Regularization
+                    
+                    # Log-likelihood for this cluster
+                    diff = cluster_data - mean
+                    try:
+                        inv_cov = np.linalg.inv(cov)
+                        det_cov = np.linalg.det(cov)
+                        
+                        if det_cov > 0:
+                            cluster_ll = -0.5 * (
+                                len(cluster_data) * np.log(2 * np.pi * det_cov) +
+                                np.sum([np.dot(np.dot(d, inv_cov), d) for d in diff])
+                            )
+                            log_likelihood += cluster_ll
+                    except np.linalg.LinAlgError:
+                        # Fallback to diagonal covariance
+                        var = np.var(cluster_data, axis=0) + 1e-6
+                        cluster_ll = -0.5 * (
+                            len(cluster_data) * np.sum(np.log(2 * np.pi * var)) +
+                            np.sum(diff**2 / var)
+                        )
+                        log_likelihood += cluster_ll
+            
+            return float(log_likelihood)
+            
+        except Exception as e:
+            self.logger.warning(f"Log-likelihood calculation failed: {e}")
+            return 0.0
+    
+    def _calculate_gap_statistic_approx(self, data: np.ndarray, labels: np.ndarray) -> float:
+        """Calculate approximation of gap statistic."""
+        try:
+            # Calculate within-cluster dispersion for actual clustering
+            wcss_actual = self._calculate_wcss(data, labels)
+            
+            # Generate random reference data and calculate expected WCSS
+            n_refs = 10  # Number of reference datasets
+            reference_wcss = []
+            
+            for _ in range(n_refs):
+                # Generate uniform random data in same range as original
+                random_data = np.random.uniform(
+                    low=np.min(data, axis=0),
+                    high=np.max(data, axis=0),
+                    size=data.shape
+                )
+                
+                # Apply same clustering to random data
+                from sklearn.cluster import KMeans
+                n_clusters = len(np.unique(labels[labels >= 0]))
+                kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=1)
+                random_labels = kmeans.fit_predict(random_data)
+                
+                random_wcss = self._calculate_wcss(random_data, random_labels)
+                reference_wcss.append(random_wcss)
+            
+            # Gap statistic
+            expected_wcss = np.mean(reference_wcss)
+            gap = np.log(expected_wcss) - np.log(wcss_actual) if wcss_actual > 0 else 0
+            
+            return float(gap)
+            
+        except Exception as e:
+            self.logger.warning(f"Gap statistic calculation failed: {e}")
+            return 0.0
+    
+    def _calculate_wcss(self, data: np.ndarray, labels: np.ndarray) -> float:
+        """Calculate within-cluster sum of squares."""
+        wcss = 0.0
+        unique_labels = np.unique(labels[labels >= 0])
+        
+        for label in unique_labels:
+            cluster_data = data[labels == label]
+            if len(cluster_data) > 0:
+                centroid = np.mean(cluster_data, axis=0)
+                wcss += np.sum((cluster_data - centroid) ** 2)
+        
+        return float(wcss)
+    
+    def _calculate_bcss(self, data: np.ndarray, labels: np.ndarray) -> float:
+        """Calculate between-cluster sum of squares."""
+        overall_centroid = np.mean(data, axis=0)
+        bcss = 0.0
+        unique_labels = np.unique(labels[labels >= 0])
+        
+        for label in unique_labels:
+            cluster_data = data[labels == label]
+            if len(cluster_data) > 0:
+                cluster_centroid = np.mean(cluster_data, axis=0)
+                bcss += len(cluster_data) * np.sum((cluster_centroid - overall_centroid) ** 2)
+        
+        return float(bcss)
 
 
 class KMeansClusterer(BaseClusterer):

@@ -39,6 +39,14 @@ except ImportError as e:
     system_logger.warning(f"Feature engineering components not available: {e}")
     FEATURE_ENGINEERING_AVAILABLE = False
 
+# Import statistical dimension analysis
+try:
+    from .statistical_dimension_analysis import StatisticalDimensionAnalyzer, DimensionalityMethod
+    STATISTICAL_ANALYSIS_AVAILABLE = True
+except ImportError as e:
+    system_logger.warning(f"Statistical dimension analysis not available: {e}")
+    STATISTICAL_ANALYSIS_AVAILABLE = False
+
 
 class MarketDimension(Enum):
     """Enumeration of implicit market dimensions discovered from features."""
@@ -123,6 +131,12 @@ class MarketDimensionAnalyzer:
         self.logger = system_logger.getChild('MarketDimensionAnalyzer')
         self.dimension_results: Dict[MarketDimension, DimensionMetrics] = {}
         
+        # Initialize statistical analyzer
+        if STATISTICAL_ANALYSIS_AVAILABLE:
+            self.statistical_analyzer = StatisticalDimensionAnalyzer()
+        else:
+            self.statistical_analyzer = None
+        
     def analyze_all_dimensions(self, 
                              market_data: pd.DataFrame,
                              regime_labels: Optional[np.ndarray] = None,
@@ -155,6 +169,340 @@ class MarketDimensionAnalyzer:
         
         self.logger.info(f"✅ Completed analysis of {len(results)} implicit dimensions")
         return results
+    
+    def analyze_coherent_pipeline(self, 
+                                market_data: pd.DataFrame,
+                                regime_labels: Optional[np.ndarray] = None) -> Dict[str, Any]:
+        """
+        Run coherent pipeline: Features → Statistical Dimension Analysis → Market Dimensions.
+        
+        This method provides a complete statistical analysis of the pipeline coherence.
+        
+        Args:
+            market_data: Market data
+            regime_labels: Optional regime labels for validation
+            
+        Returns:
+            Comprehensive pipeline analysis results
+        """
+        self.logger.info("🔬 Running coherent pipeline analysis: Features → Statistical Dimensions → Market Dimensions")
+        
+        pipeline_results = {}
+        
+        # Step 1: Generate comprehensive features from existing pipeline
+        self.logger.info("📊 Step 1: Feature generation using existing pipeline")
+        feature_data = self._generate_features_from_pipeline(market_data)
+        
+        pipeline_results['feature_generation'] = {
+            'n_features_generated': len(feature_data.columns),
+            'feature_names': list(feature_data.columns),
+            'data_shape': feature_data.shape
+        }
+        
+        # Step 2: Statistical dimensionality analysis
+        self.logger.info("📊 Step 2: Statistical dimensionality analysis")
+        if self.statistical_analyzer:
+            statistical_results = self.statistical_analyzer.analyze_dimensions(
+                feature_data,
+                methods=[DimensionalityMethod.PCA, DimensionalityMethod.FACTOR_ANALYSIS, DimensionalityMethod.ICA]
+            )
+            
+            # Extract key statistical insights
+            statistical_summary = {}
+            for method, result in statistical_results.items():
+                statistical_summary[method.value] = {
+                    'n_components': result.n_components,
+                    'explained_variance': float(np.sum(result.explained_variance_ratio)) if result.explained_variance_ratio is not None else None,
+                    'statistical_tests': result.statistical_tests,
+                    'interpretation': result.interpretation
+                }
+            
+            pipeline_results['statistical_analysis'] = {
+                'methods_applied': list(statistical_summary.keys()),
+                'results': statistical_summary,
+                'statistical_report': self.statistical_analyzer.generate_statistical_report(statistical_results)
+            }
+            
+            # Use PCA results for further analysis
+            pca_result = statistical_results.get(DimensionalityMethod.PCA)
+            if pca_result:
+                # Create dimension-reduced feature set
+                reduced_features = pd.DataFrame(
+                    pca_result.transformed_data,
+                    columns=[f'PC{i+1}' for i in range(pca_result.n_components)],
+                    index=feature_data.index
+                )
+                pipeline_results['dimensionality_reduction'] = {
+                    'method': 'PCA',
+                    'original_dimensions': feature_data.shape[1],
+                    'reduced_dimensions': pca_result.n_components,
+                    'variance_explained': float(np.sum(pca_result.explained_variance_ratio)),
+                    'intrinsic_dimensionality': pca_result.n_components
+                }
+            else:
+                reduced_features = feature_data
+        else:
+            self.logger.warning("Statistical analyzer not available, skipping statistical analysis")
+            reduced_features = feature_data
+            pipeline_results['statistical_analysis'] = {'error': 'Statistical analyzer not available'}
+        
+        # Step 3: Market dimension discovery
+        self.logger.info("📊 Step 3: Market dimension discovery")
+        dimension_results = self._discover_implicit_dimensions(feature_data, regime_labels)
+        
+        pipeline_results['market_dimensions'] = {
+            'dimensions_discovered': list(dimension_results.keys()),
+            'dimension_metrics': {dim.value: metrics.to_dict() for dim, metrics in dimension_results.items()},
+            'top_dimensions': [(dim.value, metrics.metrics.get('composite_score', 0)) 
+                              for dim, metrics in sorted(dimension_results.items(), 
+                                                       key=lambda x: x[1].metrics.get('composite_score', 0), 
+                                                       reverse=True)]
+        }
+        
+        # Step 4: Pipeline coherence analysis
+        self.logger.info("📊 Step 4: Pipeline coherence analysis")
+        coherence_analysis = self._analyze_pipeline_coherence(
+            feature_data, reduced_features, dimension_results, regime_labels
+        )
+        pipeline_results['coherence_analysis'] = coherence_analysis
+        
+        self.logger.info("✅ Coherent pipeline analysis completed")
+        return pipeline_results
+    
+    def _analyze_pipeline_coherence(self, 
+                                  original_features: pd.DataFrame,
+                                  reduced_features: pd.DataFrame,
+                                  dimension_results: Dict[MarketDimension, DimensionMetrics],
+                                  regime_labels: Optional[np.ndarray] = None) -> Dict[str, Any]:
+        """Analyze the coherence of the Features → Dimensions → Clusters pipeline."""
+        
+        coherence = {}
+        
+        # 1. Feature-to-dimension mapping coherence
+        coherence['feature_dimension_mapping'] = self._analyze_feature_dimension_coherence(
+            original_features, dimension_results
+        )
+        
+        # 2. Dimensionality reduction effectiveness
+        if reduced_features.shape[1] < original_features.shape[1]:
+            coherence['dimensionality_reduction'] = {
+                'compression_ratio': reduced_features.shape[1] / original_features.shape[1],
+                'information_preservation': self._calculate_information_preservation(
+                    original_features, reduced_features
+                ),
+                'clustering_impact': self._assess_clustering_impact(
+                    original_features, reduced_features, regime_labels
+                )
+            }
+        
+        # 3. Dimension economic significance coherence
+        coherence['economic_coherence'] = self._analyze_economic_coherence(dimension_results)
+        
+        # 4. Overall pipeline coherence score
+        coherence['overall_coherence_score'] = self._calculate_overall_coherence_score(coherence)
+        
+        # 5. Pipeline recommendations
+        coherence['recommendations'] = self._generate_pipeline_recommendations(coherence)
+        
+        return coherence
+    
+    def _analyze_feature_dimension_coherence(self, 
+                                           features: pd.DataFrame,
+                                           dimension_results: Dict[MarketDimension, DimensionMetrics]) -> Dict[str, Any]:
+        """Analyze how well features map to market dimensions."""
+        
+        feature_mapping = {}
+        total_features = len(features.columns)
+        mapped_features = 0
+        
+        for dimension, metrics in dimension_results.items():
+            dimension_features = metrics.feature_names
+            feature_mapping[dimension.value] = {
+                'n_features': len(dimension_features),
+                'percentage': len(dimension_features) / total_features,
+                'top_features': dimension_features[:10]  # Top 10 features
+            }
+            mapped_features += len(dimension_features)
+        
+        # Calculate overlap (features mapped to multiple dimensions)
+        all_mapped_features = []
+        for metrics in dimension_results.values():
+            all_mapped_features.extend(metrics.feature_names)
+        
+        unique_mapped = len(set(all_mapped_features))
+        overlap_features = len(all_mapped_features) - unique_mapped
+        
+        return {
+            'total_features': total_features,
+            'mapped_features': unique_mapped,
+            'mapping_coverage': unique_mapped / total_features,
+            'dimension_mapping': feature_mapping,
+            'feature_overlap': overlap_features,
+            'mapping_coherence_score': unique_mapped / total_features  # Higher is better
+        }
+    
+    def _calculate_information_preservation(self, 
+                                          original: pd.DataFrame,
+                                          reduced: pd.DataFrame) -> float:
+        """Calculate how much information is preserved in dimensionality reduction."""
+        try:
+            # Calculate correlation between original and reconstructed data
+            if reduced.shape[1] < original.shape[1]:
+                # For PCA, we can approximate reconstruction
+                from sklearn.decomposition import PCA
+                pca = PCA(n_components=reduced.shape[1])
+                pca.fit(original.fillna(0))
+                reconstructed = pca.inverse_transform(pca.transform(original.fillna(0)))
+                
+                # Calculate mean correlation between original and reconstructed
+                correlations = []
+                for i in range(original.shape[1]):
+                    corr = np.corrcoef(original.iloc[:, i].fillna(0), reconstructed[:, i])[0, 1]
+                    if not np.isnan(corr):
+                        correlations.append(abs(corr))
+                
+                return float(np.mean(correlations)) if correlations else 0.0
+            else:
+                return 1.0  # No reduction
+                
+        except Exception as e:
+            self.logger.warning(f"Information preservation calculation failed: {e}")
+            return 0.5  # Default moderate preservation
+    
+    def _assess_clustering_impact(self, 
+                                original: pd.DataFrame,
+                                reduced: pd.DataFrame,
+                                regime_labels: Optional[np.ndarray] = None) -> Dict[str, float]:
+        """Assess impact of dimensionality reduction on clustering quality."""
+        
+        if regime_labels is None:
+            return {'clustering_impact': 0.0, 'note': 'No regime labels provided'}
+        
+        try:
+            from sklearn.metrics import silhouette_score
+            from sklearn.preprocessing import StandardScaler
+            
+            scaler = StandardScaler()
+            
+            # Silhouette score on original features
+            original_scaled = scaler.fit_transform(original.fillna(0))
+            original_silhouette = silhouette_score(original_scaled, regime_labels[:len(original_scaled)])
+            
+            # Silhouette score on reduced features
+            reduced_scaled = scaler.fit_transform(reduced.fillna(0))
+            reduced_silhouette = silhouette_score(reduced_scaled, regime_labels[:len(reduced_scaled)])
+            
+            return {
+                'original_silhouette': float(original_silhouette),
+                'reduced_silhouette': float(reduced_silhouette),
+                'silhouette_preservation': float(reduced_silhouette / original_silhouette) if original_silhouette > 0 else 0.0,
+                'clustering_impact_score': float(reduced_silhouette / original_silhouette) if original_silhouette > 0 else 1.0
+            }
+            
+        except Exception as e:
+            self.logger.warning(f"Clustering impact assessment failed: {e}")
+            return {'clustering_impact': 0.5, 'error': str(e)}
+    
+    def _analyze_economic_coherence(self, dimension_results: Dict[MarketDimension, DimensionMetrics]) -> Dict[str, Any]:
+        """Analyze economic coherence of discovered dimensions."""
+        
+        economic_scores = []
+        dimension_economic_analysis = {}
+        
+        for dimension, metrics in dimension_results.items():
+            # Extract economic significance metrics
+            economic_metrics = {
+                'regime_separability': metrics.metrics.get('regime_separability', 0),
+                'information_ratio': metrics.metrics.get('information_ratio', 0),
+                'sharpe_ratio_proxy': metrics.metrics.get('sharpe_ratio_proxy', 0),
+                'dimension_coherence': metrics.metrics.get('dimension_coherence', 0)
+            }
+            
+            # Calculate composite economic score
+            economic_score = np.mean([abs(v) for v in economic_metrics.values() if v is not None])
+            economic_scores.append(economic_score)
+            
+            dimension_economic_analysis[dimension.value] = {
+                'economic_metrics': economic_metrics,
+                'economic_score': float(economic_score),
+                'economically_significant': economic_score > 0.1  # Threshold for significance
+            }
+        
+        overall_economic_coherence = np.mean(economic_scores) if economic_scores else 0.0
+        
+        return {
+            'dimension_economic_analysis': dimension_economic_analysis,
+            'overall_economic_coherence': float(overall_economic_coherence),
+            'economically_significant_dimensions': sum(1 for analysis in dimension_economic_analysis.values() 
+                                                     if analysis['economically_significant']),
+            'economic_coherence_interpretation': self._interpret_economic_coherence(overall_economic_coherence)
+        }
+    
+    def _interpret_economic_coherence(self, score: float) -> str:
+        """Interpret economic coherence score."""
+        if score > 0.3:
+            return "Strong economic coherence - dimensions have clear economic significance"
+        elif score > 0.15:
+            return "Moderate economic coherence - some dimensions show economic relevance"
+        else:
+            return "Weak economic coherence - dimensions may lack economic significance"
+    
+    def _calculate_overall_coherence_score(self, coherence: Dict[str, Any]) -> float:
+        """Calculate overall pipeline coherence score."""
+        
+        scores = []
+        
+        # Feature-dimension mapping score
+        if 'feature_dimension_mapping' in coherence:
+            mapping_score = coherence['feature_dimension_mapping'].get('mapping_coherence_score', 0)
+            scores.append(mapping_score)
+        
+        # Dimensionality reduction score
+        if 'dimensionality_reduction' in coherence:
+            info_preservation = coherence['dimensionality_reduction'].get('information_preservation', 0)
+            clustering_impact = coherence['dimensionality_reduction'].get('clustering_impact', {}).get('clustering_impact_score', 1.0)
+            reduction_score = (info_preservation + clustering_impact) / 2
+            scores.append(reduction_score)
+        
+        # Economic coherence score
+        if 'economic_coherence' in coherence:
+            economic_score = coherence['economic_coherence'].get('overall_economic_coherence', 0)
+            scores.append(economic_score)
+        
+        return float(np.mean(scores)) if scores else 0.0
+    
+    def _generate_pipeline_recommendations(self, coherence: Dict[str, Any]) -> List[str]:
+        """Generate recommendations based on coherence analysis."""
+        
+        recommendations = []
+        overall_score = coherence.get('overall_coherence_score', 0)
+        
+        if overall_score > 0.7:
+            recommendations.append("✅ Pipeline shows strong coherence - proceed with clustering")
+        elif overall_score > 0.5:
+            recommendations.append("⚠️ Pipeline shows moderate coherence - consider refinements")
+        else:
+            recommendations.append("❌ Pipeline shows weak coherence - major revisions needed")
+        
+        # Feature mapping recommendations
+        if 'feature_dimension_mapping' in coherence:
+            mapping_coverage = coherence['feature_dimension_mapping'].get('mapping_coverage', 0)
+            if mapping_coverage < 0.7:
+                recommendations.append("🔧 Low feature mapping coverage - review feature-dimension assignments")
+        
+        # Economic coherence recommendations
+        if 'economic_coherence' in coherence:
+            economic_coherence = coherence['economic_coherence'].get('overall_economic_coherence', 0)
+            if economic_coherence < 0.2:
+                recommendations.append("💰 Weak economic coherence - focus on economically meaningful features")
+        
+        # Dimensionality reduction recommendations
+        if 'dimensionality_reduction' in coherence:
+            clustering_impact = coherence['dimensionality_reduction'].get('clustering_impact', {}).get('clustering_impact_score', 1.0)
+            if clustering_impact < 0.8:
+                recommendations.append("📉 Dimensionality reduction hurts clustering - consider using original features")
+        
+        return recommendations
     
     def _generate_features_from_pipeline(self, market_data: pd.DataFrame) -> pd.DataFrame:
         """Generate features using the existing feature engineering pipeline."""

@@ -52,14 +52,21 @@ from src.utils.common_operations import (
     calculate_data_quality_metrics,
     get_m1_gpu_manager,
     get_m1_memory_optimizer,
-    get_m1_cpu_optimizer
+    get_m1_cpu_optimizer,
+    safe_divide,
+    safe_float,
+    safe_int,
+    ensure_directory,
+    memory_checkpoint,
+    optimize_memory,
+    get_memory_usage
 )
 from src.utils.common_utilities import (
     safe_convert_dtypes,
     calculate_data_quality_metrics as df_quality_metrics
 )
-from src.utils.ml_common.math_validation import (
-    safe_divide,
+from src.utils.math_validation import (
+    safe_divide as math_safe_divide,
     safe_log,
     safe_sqrt,
     validate_positive,
@@ -69,10 +76,22 @@ from src.utils.ml_common.math_validation import (
 )
 from src.utils.serialization_utils import (
     JSONSerializer,
-    PickleSerializer
+    PickleSerializer,
+    UniversalSerializer
 )
-from src.utils.ml_common.evaluation.evaluation_utils import EvaluationUtils
-from src.utils.ml_common.validation.validation_utils import ValidationUtils as MLValidationUtils
+try:
+    from src.utils.ml_common.evaluation.evaluation_utils import EvaluationUtils
+    ML_EVALUATION_AVAILABLE = True
+except ImportError:
+    ML_EVALUATION_AVAILABLE = False
+    EvaluationUtils = None
+
+try:
+    from src.utils.ml_common.validation.validation_utils import ValidationUtils as MLValidationUtils
+    ML_VALIDATION_AVAILABLE = True
+except ImportError:
+    ML_VALIDATION_AVAILABLE = False
+    MLValidationUtils = None
 
 # Hardware optimization imports - ensure availability
 try:
@@ -196,105 +215,9 @@ except ImportError as e:
             pass
 
 
-@dataclass
-class TrainingMetrics:
-    """Enhanced training metrics container with additional monitoring."""
-    accuracy: float = 0.0
-    f1_score: float = 0.0
-    precision: float = 0.0
-    recall: float = 0.0
-    training_time: float = 0.0
-    convergence_epochs: int = 0
-    memory_usage_mb: float = 0.0
-    validation_loss: Optional[float] = None
-    test_accuracy: Optional[float] = None
-    error_message: Optional[str] = None
-    warnings: List[str] = None
-    
-    def __post_init__(self):
-        if self.warnings is None:
-            self.warnings = []
-
-
-@dataclass
-class ModelResult:
-    """Enhanced model result container with additional metadata."""
-    model: Any
-    metrics: TrainingMetrics
-    feature_importance: Optional[Dict[str, float]] = None
-    predictions: Optional[np.ndarray] = None
-    probabilities: Optional[np.ndarray] = None
-    hyperparameters: Optional[Dict[str, Any]] = None
-    training_history: Optional[Dict[str, List[float]]] = None
-
-
-class CircuitBreaker:
-    """Circuit breaker to prevent cascading failures in model training."""
-    
-    def __init__(self, failure_threshold: int = 3, timeout: int = 300):
-        self.failure_threshold = failure_threshold
-        self.timeout = timeout
-        self.failure_count = 0
-        self.last_failure_time = None
-        self.state = "CLOSED"  # CLOSED, OPEN, HALF_OPEN
-    
-    def call(self, func: Callable, *args, **kwargs):
-        """Execute function with circuit breaker protection."""
-        if self.state == "OPEN":
-            if time.time() - self.last_failure_time > self.timeout:
-                self.state = "HALF_OPEN"
-                tprint("🔄 Circuit breaker transitioning to HALF_OPEN")
-            else:
-                raise Exception("Circuit breaker is OPEN - too many failures detected")
-        
-        try:
-            result = func(*args, **kwargs)
-            if self.state == "HALF_OPEN":
-                self.state = "CLOSED"
-                self.failure_count = 0
-                tprint("✅ Circuit breaker reset to CLOSED")
-            return result
-        except Exception as e:
-            self.failure_count += 1
-            self.last_failure_time = time.time()
-            
-            if self.failure_count >= self.failure_threshold:
-                self.state = "OPEN"
-                tprint(f"🚨 Circuit breaker opened after {self.failure_count} failures")
-            
-            raise e
-
-
-class TrainingErrorHandler:
-    """Centralized error handling for training operations."""
-    
-    @staticmethod
-    def handle_model_creation_error(model_type: str, error: Exception) -> ModelResult:
-        """Standardized model creation error handling."""
-        return ModelResult(
-            model=None,
-            metrics=TrainingMetrics(
-                error_message=f"Failed to create {model_type}: {str(error)}",
-                training_time=0.0
-            )
-        )
-    
-    @staticmethod
-    def handle_training_error(model_type: str, error: Exception, training_time: float) -> ModelResult:
-        """Standardized training error handling."""
-        return ModelResult(
-            model=None,
-            metrics=TrainingMetrics(
-                error_message=f"Failed to train {model_type}: {str(error)}",
-                training_time=training_time
-            )
-        )
-
-
 logger = system_logger.getChild('HMMModelsTrainingEnhanced')
 
-
-# Import shared data classes
+# Import shared data classes from shared utilities
 from .shared_utilities.training_error_handler import TrainingMetrics, ModelResult
 
 class HMMModelsTrainingEnhanced(BaseTrainingStep):
@@ -405,8 +328,8 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
             ValueError: If configuration is invalid
         """
         try:
-            # Use common validation utilities
-            if not ValidationUtils.validate_config(config):
+            # Use common validation utilities if available
+            if SHARED_UTILITIES_AVAILABLE and not ValidationUtils.validate_config(config):
                 raise ValueError("Configuration validation failed")
             
             # Additional HMM-specific validations using math validation
@@ -604,15 +527,16 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
             True if validation passes, False otherwise
         """
         try:
-            # Use common validation utilities
-            if not ValidationUtils.validate_data_shapes(X, y, cluster_assignments):
-                return False
-            
-            if not ValidationUtils.validate_data_quality(X, y, cluster_assignments):
-                return False
-            
-            if not ValidationUtils.validate_regime_distribution(cluster_assignments, min_samples_per_regime=10):
-                return False
+            # Use common validation utilities if available
+            if SHARED_UTILITIES_AVAILABLE:
+                if not ValidationUtils.validate_data_shapes(X, y, cluster_assignments):
+                    return False
+                
+                if not ValidationUtils.validate_data_quality(X, y, cluster_assignments):
+                    return False
+                
+                if not ValidationUtils.validate_regime_distribution(cluster_assignments, min_samples_per_regime=10):
+                    return False
             
             # Additional HMM-specific validations using common math validation
             critical_failures = []
@@ -799,34 +723,32 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
         """
         start_time = time.time()
         metrics = TrainingMetrics()
-        # Use shared memory tracker
-        memory_tracker = MemoryTracker()
         
-        try:
-            tprint(f"🔄 Training {model_type}...")
-            memory_tracker.take_snapshot(f"{model_type}_start")
-            
-            # Apply hardware optimizations if available
-            if self.memory_optimizer:
-                try:
-                    self.memory_optimizer.optimize_memory_usage()
-                    tprint(f"🧠 Memory optimization applied for {model_type}")
-                except Exception as e:
-                    tprint(f"⚠️ Memory optimization failed for {model_type}: {e}")
-            
-            if self.cpu_optimizer:
-                try:
-                    self.cpu_optimizer.optimize_cpu_usage()
-                    tprint(f"⚡ CPU optimization applied for {model_type}")
-                except Exception as e:
-                    tprint(f"⚠️ CPU optimization failed for {model_type}: {e}")
-            
-            # Memory management before training
-            gc.collect()
-            initial_memory = psutil.virtual_memory().percent
-            if initial_memory > 80:
-                tprint(f"⚠️ High memory usage ({initial_memory}%) before training {model_type}")
-                gc.collect()  # Force garbage collection
+        # Use memory checkpoint from common operations for better memory management
+        with memory_checkpoint(f"training_{model_type}"):
+            try:
+                tprint(f"🔄 Training {model_type}...")
+                
+                # Apply hardware optimizations if available
+                if self.memory_optimizer:
+                    try:
+                        self.memory_optimizer.optimize_memory_usage()
+                        tprint(f"🧠 Memory optimization applied for {model_type}")
+                    except Exception as e:
+                        tprint(f"⚠️ Memory optimization failed for {model_type}: {e}")
+                
+                if self.cpu_optimizer:
+                    try:
+                        self.cpu_optimizer.optimize_cpu_usage()
+                        tprint(f"⚡ CPU optimization applied for {model_type}")
+                    except Exception as e:
+                        tprint(f"⚠️ CPU optimization failed for {model_type}: {e}")
+                
+                # Memory management before training using common operations
+                initial_memory = get_memory_usage()
+                if initial_memory > 80:
+                    tprint(f"⚠️ High memory usage ({initial_memory}%) before training {model_type}")
+                    optimize_memory()  # Use common memory optimization
             
             # Create model with circuit breaker protection and timeout
             def create_and_train_model():
@@ -846,17 +768,15 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
                     signal.alarm(timeout_seconds)
                     
                     model = self._create_model(model_type)
-                    memory_tracker.take_snapshot(f"{model_type}_model_created")
                     
-                    # Check memory before training
-                    current_memory = psutil.virtual_memory().percent
+                    # Check memory before training using common operations
+                    current_memory = get_memory_usage()
                     if current_memory > 85:
                         tprint(f"⚠️ Memory usage critical ({current_memory}%) - skipping {model_type}")
                         raise MemoryError(f"Insufficient memory for {model_type} training")
                     
                     # Train model
                     model.fit(X, y)
-                    memory_tracker.take_snapshot(f"{model_type}_model_fitted")
                     
                     # Cancel timeout
                     signal.alarm(0)
@@ -866,7 +786,7 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
                     raise e
                 except MemoryError as e:
                     signal.alarm(0)
-                    gc.collect()  # Clean up memory
+                    optimize_memory()  # Use common memory optimization
                     raise e
                 except Exception as e:
                     signal.alarm(0)
@@ -876,8 +796,8 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
                 predictions = model.predict(X)
                 accuracy = safe_divide(np.sum(predictions == y), len(y), 0.0)
                 
-                # Use evaluation utilities if available (preserving original functionality)
-                if self.evaluation_utils is not None:
+                # Use evaluation utilities if available
+                if ML_EVALUATION_AVAILABLE and self.evaluation_utils is not None:
                     try:
                         eval_metrics = self.evaluation_utils.evaluate_model_performance(
                             model, X, y,
@@ -933,58 +853,58 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
                 
                 return model, predictions, feature_importance, hyperparameters
             
-            # Execute with circuit breaker protection
-            model, predictions, feature_importance, hyperparameters = self.circuit_breaker.call(create_and_train_model)
+                # Execute with circuit breaker protection
+                model, predictions, feature_importance, hyperparameters = self.circuit_breaker.call(create_and_train_model)
+                
+                training_time = time.time() - start_time
+                metrics.training_time = validate_finite(training_time, "training_time")
+                
+                # Calculate memory usage using common operations
+                final_memory = get_memory_usage()
+                memory_increase = safe_float(final_memory - initial_memory, 0.0)
+                metrics.memory_usage_mb = validate_finite(memory_increase, "memory_usage")
+                
+                # Get probabilities if available
+                probabilities = None
+                try:
+                    if hasattr(model, 'predict_proba'):
+                        probabilities = model.predict_proba(X)
+                except Exception as e:
+                    metrics.warnings.append(f"Could not get probabilities: {e}")
+                
+                tprint(f"✅ {model_type} trained successfully (accuracy: {metrics.accuracy:.4f}, time: {training_time:.2f}s, memory: {metrics.memory_usage_mb:.1f}MB)")
+                
+                # Cleanup memory using common operations
+                if final_memory > initial_memory + 10:
+                    tprint(f"⚠️ Memory usage increased significantly: {initial_memory}% → {final_memory}%")
+                    optimize_memory()  # Use common memory optimization
+                
+                return ModelResult(
+                    model=model,
+                    metrics=metrics,
+                    feature_importance=feature_importance,
+                    predictions=predictions,
+                    probabilities=probabilities,
+                    hyperparameters=hyperparameters
+                )
             
-            training_time = time.time() - start_time
-            metrics.training_time = validate_finite(training_time, "training_time")
-            
-            # Calculate memory usage
-            memory_tracker.take_snapshot(f"{model_type}_completed")
-            metrics.memory_usage_mb = validate_finite(memory_tracker.get_memory_increase(), "memory_usage")
-            
-            # Get probabilities if available
-            probabilities = None
-            try:
-                if hasattr(model, 'predict_proba'):
-                    probabilities = model.predict_proba(X)
             except Exception as e:
-                metrics.warnings.append(f"Could not get probabilities: {e}")
-            
-            tprint(f"✅ {model_type} trained successfully (accuracy: {metrics.accuracy:.4f}, time: {training_time:.2f}s, memory: {metrics.memory_usage_mb:.1f}MB)")
-            
-            # Cleanup memory and check final memory usage
-            memory_tracker.cleanup()
-            final_memory = psutil.virtual_memory().percent
-            if final_memory > initial_memory + 10:
-                tprint(f"⚠️ Memory usage increased significantly: {initial_memory}% → {final_memory}%")
-                gc.collect()  # Force cleanup
-            
-            return ModelResult(
-                model=model,
-                metrics=metrics,
-                feature_importance=feature_importance,
-                predictions=predictions,
-                probabilities=probabilities,
-                hyperparameters=hyperparameters
-            )
-            
-        except Exception as e:
-            training_time = time.time() - start_time
-            metrics.training_time = validate_finite(training_time, "training_time")
-            metrics.error_message = str(e)
-            
-            # Calculate memory usage even on failure
-            memory_tracker.take_snapshot(f"{model_type}_failed")
-            metrics.memory_usage_mb = validate_finite(memory_tracker.get_memory_increase(), "memory_usage")
-            
-            tprint(f"❌ Failed to train {model_type}: {e}")
-            
-            # Cleanup memory
-            memory_tracker.cleanup()
-            
-            # Use centralized error handler
-            return TrainingErrorHandler.handle_training_error(model_type, e, training_time)
+                training_time = time.time() - start_time
+                metrics.training_time = validate_finite(training_time, "training_time")
+                metrics.error_message = str(e)
+                
+                # Calculate memory usage even on failure using common operations
+                final_memory = get_memory_usage()
+                memory_increase = safe_float(final_memory - initial_memory, 0.0)
+                metrics.memory_usage_mb = validate_finite(memory_increase, "memory_usage")
+                
+                tprint(f"❌ Failed to train {model_type}: {e}")
+                
+                # Cleanup memory using common operations
+                optimize_memory()
+                
+                # Use centralized error handler
+                return TrainingErrorHandler.handle_training_error(model_type, e, training_time)
     
     def _save_models_with_common_utils(self, models: Dict[str, Any], model_type: str, 
                                      symbol: str, exchange: str, timeframe: str) -> List[str]:
@@ -1004,21 +924,26 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
         saved_paths = []
         
         try:
-            # Create save directory
+            # Create save directory using common operations
             save_dir = Path("artifacts") / "models" / model_type / symbol / exchange / timeframe
-            save_dir.mkdir(parents=True, exist_ok=True)
+            if not ensure_directory(save_dir):
+                tprint(f"❌ Failed to create save directory: {save_dir}")
+                return saved_paths
+            
+            # Use UniversalSerializer for better serialization
+            serializer = UniversalSerializer()
             
             for model_name, model in models.items():
                 try:
-                    # Save model using PickleSerializer
+                    # Save model using UniversalSerializer
                     model_path = save_dir / f"{model_name}_model.pkl"
-                    if PickleSerializer.save(model, str(model_path)):
+                    if serializer.save(model, str(model_path), format='pickle'):
                         saved_paths.append(str(model_path))
                         tprint(f"✅ Saved {model_name} to {model_path}")
                     else:
                         tprint(f"❌ Failed to save {model_name}")
                         
-                    # Save metadata using JSONSerializer
+                    # Save metadata using UniversalSerializer
                     metadata = {
                         'model_name': model_name,
                         'model_type': model_type,
@@ -1030,7 +955,7 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
                     }
                     
                     metadata_path = save_dir / f"{model_name}_metadata.json"
-                    if JSONSerializer.save(metadata, str(metadata_path)):
+                    if serializer.save(metadata, str(metadata_path), format='json'):
                         tprint(f"✅ Saved {model_name} metadata to {metadata_path}")
                     else:
                         tprint(f"⚠️ Failed to save {model_name} metadata")
@@ -1039,7 +964,7 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
                     tprint(f"❌ Error saving {model_name}: {e}")
                     
         except Exception as e:
-            tprint(f"❌ Error creating save directory: {e}")
+            tprint(f"❌ Error in model saving process: {e}")
             
         return saved_paths
     

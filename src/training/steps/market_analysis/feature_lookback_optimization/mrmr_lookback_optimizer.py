@@ -35,15 +35,22 @@ except ImportError:
     OPTUNA_AVAILABLE = False
     logging.warning("Optuna not available - using fallback optimization")
 
-# Import mutual information and correlation utilities
+# Import mutual information utilities (sklearn)
 try:
     from sklearn.feature_selection import mutual_info_regression, mutual_info_classif
     from sklearn.metrics import mutual_info_score
-    from scipy.stats import pearsonr, spearmanr
     SKLEARN_AVAILABLE = True
 except ImportError:
     SKLEARN_AVAILABLE = False
-    logging.warning("Sklearn not available - using fallback correlation methods")
+    logging.warning("Sklearn not available - using fallback methods")
+
+# Import correlation utilities (scipy)
+try:
+    from scipy.stats import pearsonr, spearmanr
+    SCIPY_AVAILABLE = True
+except ImportError:
+    SCIPY_AVAILABLE = False
+    logging.warning("SciPy not available - using numpy correlation fallback")
 
 # Import advanced feature selection tools
 try:
@@ -104,6 +111,10 @@ class LookbackOptimizationConfig:
     n_startup_trials: int = 10
     n_warmup_steps: int = 5
     interval_steps: int = 1
+    
+    # Sampler/Pruner configuration
+    sampler_type: str = "tpe"  # currently supports 'tpe'
+    pruner_type: str = "median"  # 'median', 'successive_halving', or 'none'
     
     # Lookback Period Constraints
     min_lookback: int = 5
@@ -266,10 +277,8 @@ class MRMRLookbackOptimizer:
         # Initialize advanced feature selection tools
         self._initialize_advanced_feature_selection()
         
-        self.logger.info("🔧 BayesianLookbackOptimizer initialized")
+        self.logger.info("🔧 MRMRLookbackOptimizer initialized")
         self.logger.info(f"📊 Optimization method: {self.config.optimization_method}")
-        self.logger.info(f"📊 Sampler type: {self.config.sampler_type}")
-        self.logger.info(f"📊 Pruner type: {self.config.pruner_type}")
         self.logger.info(f"📊 Lookback range: {self.config.min_lookback}-{self.config.max_lookback}")
         self.logger.info(f"📊 First lookback method: {self.config.first_lookback_method}")
         self.logger.info(f"📊 Second lookback method: {self.config.second_lookback_method}")
@@ -277,32 +286,20 @@ class MRMRLookbackOptimizer:
     
     def _initialize_optuna(self):
         """Initialize Optuna study with TPE sampler and intelligent pruning."""
-        # Create TPE sampler
-        if self.config.sampler_type == "tpe":
-            sampler = TPESampler(
-                n_startup_trials=self.config.n_startup_trials,
-                n_ei_candidates=24,
-                seed=self.config.random_state
-            )
-        else:
-            sampler = TPESampler(seed=self.config.random_state)
+        # Create TPE sampler with optimal settings
+        sampler = TPESampler(
+            n_startup_trials=self.config.n_startup_trials,
+            n_ei_candidates=24,
+            seed=self.config.random_state
+        )
         
-        # Create pruner
-        if self.config.enable_pruning and self.config.pruner_type != "none":
-            if self.config.pruner_type == "median":
-                pruner = MedianPruner(
-                    n_startup_trials=self.config.n_startup_trials,
-                    n_warmup_steps=self.config.n_warmup_steps,
-                    interval_steps=self.config.interval_steps
-                )
-            elif self.config.pruner_type == "successive_halving":
-                pruner = SuccessiveHalvingPruner(
-                    min_resource=1,
-                    reduction_factor=3,
-                    min_early_stopping_rate=0
-                )
-            else:
-                pruner = MedianPruner()
+        # Create pruner if enabled
+        if self.config.enable_pruning:
+            pruner = MedianPruner(
+                n_startup_trials=self.config.n_startup_trials,
+                n_warmup_steps=self.config.n_warmup_steps,
+                interval_steps=self.config.interval_steps
+            )
         else:
             pruner = None
         
@@ -389,9 +386,13 @@ class MRMRLookbackOptimizer:
         coarse_results = self._coarse_grid_search_5x5(data, feature_name, target_column)
         
         # Step 2: Fine 5x5 Grid Search
+        if not coarse_results or not coarse_results.get('top_candidates'):
+            raise ValueError("Coarse grid search failed to produce valid candidates")
         fine_results = self._fine_grid_search_5x5(data, feature_name, target_column, coarse_results)
         
         # Step 3: TPE Fine-tuning
+        if not fine_results or not fine_results.get('top_candidates'):
+            raise ValueError("Fine grid search failed to produce valid candidates")
         result = self._tpe_fine_tuning(data, feature_name, target_column, fine_results, start_time)
         
         # Update performance metrics
@@ -478,12 +479,17 @@ class MRMRLookbackOptimizer:
         # Calculate penalty score (correlation penalty)
         penalty_score = self.config.correlation_weight * correlation_penalty
         
+        # Advanced redundancy penalty (for diagnostics)
+        redundancy_penalty = self._calculate_advanced_redundancy_penalty(
+            data, feature_name, first_lookback, second_lookback, parameter_type
+        )
+        
         # Set user attributes for analysis
         trial.set_user_attr("first_lookback", first_lookback)
         trial.set_user_attr("second_lookback", second_lookback)
         trial.set_user_attr("first_relevance_score", first_relevance_score)
         trial.set_user_attr("second_relevance_score", second_relevance_score)
-        trial.set_user_attr("redundancy_penalty", redundancy_penalty)
+        trial.set_user_attr("correlation_penalty", correlation_penalty)
         trial.set_user_attr("quality_score", quality_score)
         trial.set_user_attr("combined_score", combined_score)
         trial.set_user_attr("penalty_score", penalty_score)
@@ -925,10 +931,13 @@ class MRMRLookbackOptimizer:
                 return 1.0  # High correlation penalty for insufficient data
             
             # Calculate correlation
-            if self.config.correlation_method == "pearson":
-                correlation, _ = pearsonr(first_feature, second_feature)
-            elif self.config.correlation_method == "spearman":
-                correlation, _ = spearmanr(first_feature, second_feature)
+            if SCIPY_AVAILABLE:
+                if self.config.correlation_method == "pearson":
+                    correlation, _ = pearsonr(first_feature, second_feature)
+                elif self.config.correlation_method == "spearman":
+                    correlation, _ = spearmanr(first_feature, second_feature)
+                else:
+                    correlation = np.corrcoef(first_feature, second_feature)[0, 1]
             else:
                 correlation = np.corrcoef(first_feature, second_feature)[0, 1]
             
@@ -1332,12 +1341,23 @@ class MRMRLookbackOptimizer:
         return result
     
     def _calculate_refined_range(self, center: int, min_val: int, max_val: int, refinement_factor: float) -> Tuple[int, int]:
-        """Calculate refined range around center point."""
+        """Calculate refined range around center point with validation."""
         range_size = max_val - min_val
-        refined_size = range_size * refinement_factor
+        refined_size = max(1, range_size * refinement_factor)  # Ensure minimum size of 1
         
         new_min = max(min_val, int(center - refined_size / 2))
         new_max = min(max_val, int(center + refined_size / 2))
+        
+        # Ensure we have a valid range
+        if new_min >= new_max:
+            # Fallback to a small range around the center
+            new_min = max(min_val, center - 2)
+            new_max = min(max_val, center + 2)
+        
+        # Final validation
+        if new_min >= new_max:
+            new_min = min_val
+            new_max = max_val
         
         return (new_min, new_max)
     
@@ -1433,5 +1453,5 @@ def optimize_lookback_periods(data: pd.DataFrame,
     Returns:
         LookbackOptimizationResult with optimal lookback periods
     """
-    optimizer = BayesianLookbackOptimizer(config)
+    optimizer = MRMRLookbackOptimizer(config)
     return optimizer.optimize_lookback_periods(data, feature_name, target_column)

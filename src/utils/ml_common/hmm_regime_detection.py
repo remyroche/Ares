@@ -2048,22 +2048,43 @@ class EnhancedHMMRegimeDetector:
         regimes_df: pd.DataFrame, 
         original_data: pd.DataFrame
     ) -> Dict[str, Any]:
-        """Validate the quality of detected regimes."""
+        """Validate the quality of detected regimes using HMM-appropriate metrics."""
         try:
-            # Use HMM composite manager validation
-            validation_result = self.hmm_manager.validate_hmm_results(
-                original_data, 
-                regimes_df['regime'].values
-            )
-            
-            return validation_result
+            # Import HMM validation framework
+            try:
+                from src.utils.hmm_validation import HMMStatisticalValidator
+                validator = HMMStatisticalValidator(logger=self.logger)
+                
+                # Use HMM-appropriate validation instead of traditional clustering metrics
+                validation_result = validator.validate_hmm_regimes_appropriate(
+                    regimes_df, original_data
+                )
+                
+                # Add regime count and basic info
+                validation_result['regime_count'] = len(regimes_df['regime'].unique())
+                validation_result['total_samples'] = len(regimes_df)
+                
+                return validation_result
+                
+            except ImportError:
+                self.logger.warning("HMM validation framework not available, using basic validation")
+                # Fallback to basic validation
+                unique_regimes = regimes_df['regime'].unique()
+                return {
+                    'validation_passed': len(unique_regimes) > 1,
+                    'regime_count': len(unique_regimes),
+                    'total_samples': len(regimes_df),
+                    'validation_method': 'Basic regime count validation',
+                    'warning': 'HMM validation framework not available'
+                }
             
         except Exception as e:
             self.logger.error(f"❌ Failed to validate regime quality: {e}")
             return {
                 'validation_passed': False,
                 'errors': [str(e)],
-                'warnings': []
+                'warnings': [],
+                'validation_method': 'Error in validation'
             }
 
     def _combine_ensemble_results(self, models: List[pd.DataFrame]) -> Dict[str, Any]:

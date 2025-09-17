@@ -3,6 +3,8 @@ HMM Statistical Validation Module
 
 This module provides comprehensive statistical validation for HMM regime detection models.
 It analyzes model quality, noise characteristics, predictive performance, and overall statistical validity.
+
+Updated with HMM-appropriate validation metrics that replace traditional clustering metrics.
 """
 
 import logging
@@ -14,6 +16,19 @@ import warnings
 import json
 import os
 from pathlib import Path
+
+# Import new HMM validation framework
+try:
+    from .ml_common.hmm_validation_metrics import (
+        HMMValidationFramework,
+        TemporalCoherenceMetrics,
+        TransitionQualityMetrics,
+        EconomicDifferentiationMetrics,
+        HMMValidationMetrics
+    )
+    HMM_VALIDATION_METRICS_AVAILABLE = True
+except ImportError:
+    HMM_VALIDATION_METRICS_AVAILABLE = False
 
 # Import existing utilities
 try:
@@ -44,6 +59,14 @@ class HMMStatisticalValidator:
         # Initialize validation metrics tracking
         self.validation_history = []
         self.last_validation_timestamp = None
+        
+        # Initialize HMM validation framework
+        if HMM_VALIDATION_METRICS_AVAILABLE:
+            self.hmm_validator = HMMValidationFramework()
+            self.logger.info("✅ HMM-appropriate validation metrics initialized")
+        else:
+            self.hmm_validator = None
+            self.logger.warning("⚠️ HMM validation metrics not available - using legacy validation")
 
     def generate_statistical_assessment(self, hmm_data: pd.DataFrame,
                                       optuna_results: Optional[List[Dict[str, Any]]] = None,
@@ -1194,6 +1217,135 @@ class HMMStatisticalValidator:
         except Exception as e:
             self.logger.error(f"HMM model quality validation failed: {e}")
             return False
+    
+    def validate_hmm_regimes_appropriate(self, regime_data: pd.DataFrame, 
+                                       original_data: pd.DataFrame,
+                                       feature_columns: Optional[List[str]] = None) -> Dict[str, Any]:
+        """
+        Validate HMM regimes using appropriate metrics instead of traditional clustering metrics.
+        
+        This replaces the misleading silhouette_score, davies_bouldin_score, and calinski_harabasz_score
+        with HMM-appropriate temporal coherence, transition quality, and economic differentiation metrics.
+        
+        Args:
+            regime_data: DataFrame with regime assignments
+            original_data: Original market data
+            feature_columns: Optional list of feature columns for spatial analysis
+            
+        Returns:
+            Dict containing HMM-appropriate validation results
+        """
+        try:
+            if not self.hmm_validator:
+                self.logger.warning("HMM validator not available, falling back to legacy validation")
+                return self._legacy_validation_fallback(regime_data, original_data)
+            
+            # Use HMM-appropriate validation framework
+            hmm_metrics = self.hmm_validator.validate_hmm_regimes(
+                regime_data, original_data, feature_columns
+            )
+            
+            # Convert to dictionary format for compatibility with detailed reporting
+            validation_result = {
+                'hmm_validation_metrics': {
+                    'hmm_quality_score': hmm_metrics.hmm_quality_score,
+                    'overall_interpretation': hmm_metrics.overall_interpretation,
+                    'validation_passed': hmm_metrics.hmm_quality_score > 0.6
+                },
+                'temporal_coherence': {
+                    'temporal_coherence': hmm_metrics.temporal_coherence.temporal_coherence,
+                    'avg_regime_duration': hmm_metrics.temporal_coherence.avg_regime_duration,
+                    'duration_stability': hmm_metrics.temporal_coherence.duration_stability,
+                    'too_short_ratio': hmm_metrics.temporal_coherence.too_short_ratio,
+                    'regime_consistency': hmm_metrics.temporal_coherence.regime_consistency,
+                    'interpretation': hmm_metrics.temporal_coherence.interpretation
+                },
+                'transition_quality': {
+                    'transition_quality': hmm_metrics.transition_quality.transition_quality,
+                    'avg_persistence': hmm_metrics.transition_quality.avg_persistence,
+                    'transition_entropy': hmm_metrics.transition_quality.transition_entropy,
+                    'transition_clarity': hmm_metrics.transition_quality.transition_clarity,
+                    'persistence_consistency': hmm_metrics.transition_quality.persistence_consistency,
+                    'interpretation': hmm_metrics.transition_quality.interpretation
+                },
+                'economic_differentiation': {
+                    'economic_differentiation': hmm_metrics.economic_differentiation.economic_differentiation,
+                    'return_differentiation': hmm_metrics.economic_differentiation.return_differentiation,
+                    'volatility_differentiation': hmm_metrics.economic_differentiation.volatility_differentiation,
+                    'sharpe_differentiation': hmm_metrics.economic_differentiation.sharpe_differentiation,
+                    'risk_return_tradeoff': hmm_metrics.economic_differentiation.risk_return_tradeoff,
+                    'regime_economic_distinctness': hmm_metrics.economic_differentiation.regime_economic_distinctness,
+                    'market_efficiency_impact': hmm_metrics.economic_differentiation.market_efficiency_impact,
+                    'interpretation': hmm_metrics.economic_differentiation.interpretation,
+                    'regime_stats': hmm_metrics.economic_differentiation.regime_stats
+                },
+                'spatial_coherence': hmm_metrics.spatial_coherence,
+                'regime_stability': hmm_metrics.regime_stability,
+                'validation_timestamp': datetime.now().isoformat(),
+                'validation_method': 'HMM-appropriate metrics'
+            }
+            
+            # Add detailed report if available
+            if hmm_metrics.detailed_report:
+                validation_result['detailed_report'] = {
+                    'execution_summary': hmm_metrics.detailed_report.execution_summary,
+                    'temporal_analysis': hmm_metrics.detailed_report.temporal_analysis,
+                    'transition_analysis': hmm_metrics.detailed_report.transition_analysis,
+                    'economic_analysis': hmm_metrics.detailed_report.economic_analysis,
+                    'spatial_analysis': hmm_metrics.detailed_report.spatial_analysis,
+                    'regime_characteristics': hmm_metrics.detailed_report.regime_characteristics,
+                    'comparative_analysis': hmm_metrics.detailed_report.comparative_analysis,
+                    'recommendations': hmm_metrics.detailed_report.recommendations,
+                    'quality_assessment': hmm_metrics.detailed_report.quality_assessment
+                }
+            
+            # Add summary assessment
+            if hmm_metrics.hmm_quality_score > 0.8:
+                validation_result['summary_assessment'] = 'EXCELLENT'
+            elif hmm_metrics.hmm_quality_score > 0.6:
+                validation_result['summary_assessment'] = 'GOOD'
+            else:
+                validation_result['summary_assessment'] = 'NEEDS_IMPROVEMENT'
+            
+            self.logger.info(f"✅ HMM validation completed - Quality Score: {hmm_metrics.hmm_quality_score:.3f}")
+            return validation_result
+            
+        except Exception as e:
+            self.logger.error(f"❌ HMM validation failed: {e}")
+            return {
+                'hmm_validation_metrics': {'hmm_quality_score': 0.0, 'validation_passed': False},
+                'error': str(e),
+                'validation_timestamp': datetime.now().isoformat(),
+                'validation_method': 'Error in HMM validation'
+            }
+    
+    def _legacy_validation_fallback(self, regime_data: pd.DataFrame, 
+                                  original_data: pd.DataFrame) -> Dict[str, Any]:
+        """Fallback to legacy validation if HMM validator is not available."""
+        try:
+            # Basic regime validation
+            regime_sequence = regime_data['regime'].values if 'regime' in regime_data.columns else []
+            unique_regimes = np.unique(regime_sequence)
+            
+            return {
+                'hmm_validation_metrics': {
+                    'hmm_quality_score': 0.5,  # Neutral score
+                    'validation_passed': len(unique_regimes) > 1,
+                    'fallback_mode': True
+                },
+                'regime_count': len(unique_regimes),
+                'validation_timestamp': datetime.now().isoformat(),
+                'validation_method': 'Legacy fallback validation',
+                'warning': 'HMM validation metrics not available - using basic regime count validation'
+            }
+            
+        except Exception as e:
+            return {
+                'hmm_validation_metrics': {'hmm_quality_score': 0.0, 'validation_passed': False},
+                'error': str(e),
+                'validation_timestamp': datetime.now().isoformat(),
+                'validation_method': 'Error in legacy validation'
+            }
 
 
 # Convenience function for quick validation

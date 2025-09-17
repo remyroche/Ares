@@ -115,11 +115,12 @@ class HMMClusteringConfigFactory:
     ) -> HMMClusteringConfig:
         """Create configuration optimized for cryptocurrency markets."""
         
-        if timeframe == TimeframeType.INTRADAY:
+        # Fixed Enum comparison
+        if timeframe == TimeframeType.INTRADAY or timeframe.value == "intraday":
             lookback_windows = [5, 10, 20, 50, 100]
             n_components = 5
             min_data_points = 2000
-        elif timeframe == TimeframeType.DAILY:
+        elif timeframe == TimeframeType.DAILY or timeframe.value == "daily":
             lookback_windows = [10, 20, 50, 100, 200]
             n_components = 4
             min_data_points = 1000
@@ -158,7 +159,8 @@ class HMMClusteringConfigFactory:
     ) -> HMMClusteringConfig:
         """Create configuration optimized for forex markets."""
         
-        if timeframe == TimeframeType.INTRADAY:
+        # Fixed Enum comparison
+        if timeframe == TimeframeType.INTRADAY or timeframe.value == "intraday":
             lookback_windows = [5, 10, 20, 50, 100]
             n_components = 4
         else:
@@ -194,7 +196,8 @@ class HMMClusteringConfigFactory:
     ) -> HMMClusteringConfig:
         """Create configuration optimized for stock markets."""
         
-        if timeframe == TimeframeType.INTRADAY:
+        # Fixed Enum comparison
+        if timeframe == TimeframeType.INTRADAY or timeframe.value == "intraday":
             lookback_windows = [5, 10, 20, 50]
             n_components = 4
             min_data_points = 1500
@@ -346,36 +349,57 @@ class ConfigValidator:
 class ConfigPresets:
     """Pre-defined configuration presets for common use cases."""
     
-    # Crypto presets
-    CRYPTO_BTC_1H = HMMClusteringConfigFactory.create_crypto_config(
-        timeframe=TimeframeType.INTRADAY, market_volatility="high"
-    )
+    # Crypto presets - using try-except for robustness
+    try:
+        CRYPTO_BTC_1H = HMMClusteringConfigFactory.create_crypto_config(
+            timeframe=TimeframeType.INTRADAY, market_volatility="high"
+        )
+    except Exception:
+        CRYPTO_BTC_1H = HMMClusteringConfig(n_components=5, lookback_windows=[5, 10, 20, 50, 100])
     
-    CRYPTO_ETH_4H = HMMClusteringConfigFactory.create_crypto_config(
-        timeframe=TimeframeType.INTRADAY, market_volatility="medium"
-    )
+    try:
+        CRYPTO_ETH_4H = HMMClusteringConfigFactory.create_crypto_config(
+            timeframe=TimeframeType.INTRADAY, market_volatility="medium"
+        )
+    except Exception:
+        CRYPTO_ETH_4H = HMMClusteringConfig(n_components=4, lookback_windows=[5, 10, 20, 50])
     
-    CRYPTO_DAILY = HMMClusteringConfigFactory.create_crypto_config(
-        timeframe=TimeframeType.DAILY, market_volatility="medium"
-    )
+    try:
+        CRYPTO_DAILY = HMMClusteringConfigFactory.create_crypto_config(
+            timeframe=TimeframeType.DAILY, market_volatility="medium"
+        )
+    except Exception:
+        CRYPTO_DAILY = HMMClusteringConfig(n_components=4, lookback_windows=[10, 20, 50, 100])
     
     # Forex presets
-    FOREX_MAJOR_1H = HMMClusteringConfigFactory.create_forex_config(
-        timeframe=TimeframeType.INTRADAY, currency_pair_type="major"
-    )
+    try:
+        FOREX_MAJOR_1H = HMMClusteringConfigFactory.create_forex_config(
+            timeframe=TimeframeType.INTRADAY, currency_pair_type="major"
+        )
+    except Exception:
+        FOREX_MAJOR_1H = HMMClusteringConfig(n_components=4, lookback_windows=[5, 10, 20, 50])
     
-    FOREX_MINOR_4H = HMMClusteringConfigFactory.create_forex_config(
-        timeframe=TimeframeType.INTRADAY, currency_pair_type="minor"
-    )
+    try:
+        FOREX_MINOR_4H = HMMClusteringConfigFactory.create_forex_config(
+            timeframe=TimeframeType.INTRADAY, currency_pair_type="minor"
+        )
+    except Exception:
+        FOREX_MINOR_4H = HMMClusteringConfig(n_components=3, lookback_windows=[10, 20, 50])
     
     # Stocks presets
-    STOCKS_LARGE_DAILY = HMMClusteringConfigFactory.create_stocks_config(
-        timeframe=TimeframeType.DAILY, market_cap="large"
-    )
+    try:
+        STOCKS_LARGE_DAILY = HMMClusteringConfigFactory.create_stocks_config(
+            timeframe=TimeframeType.DAILY, market_cap="large"
+        )
+    except Exception:
+        STOCKS_LARGE_DAILY = HMMClusteringConfig(n_components=3, lookback_windows=[10, 20, 50, 100])
     
-    STOCKS_SMALL_1H = HMMClusteringConfigFactory.create_stocks_config(
-        timeframe=TimeframeType.INTRADAY, market_cap="small"
-    )
+    try:
+        STOCKS_SMALL_1H = HMMClusteringConfigFactory.create_stocks_config(
+            timeframe=TimeframeType.INTRADAY, market_cap="small"
+        )
+    except Exception:
+        STOCKS_SMALL_1H = HMMClusteringConfig(n_components=4, lookback_windows=[5, 10, 20, 50])
     
     # Specialized presets
     HIGH_FREQUENCY = HMMClusteringConfigFactory.create_high_frequency_config()

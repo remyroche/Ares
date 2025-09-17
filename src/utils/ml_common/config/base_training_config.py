@@ -203,7 +203,7 @@ class HMMTrainingConfig(BaseTrainingConfig):
     
     # Model types
     model_types: List[str] = field(default_factory=lambda: [
-        "logistic_regression", "lightgbm", "tcn"
+        "logistic_regression", "lightgbm", "random_forest"
     ])
     
     # HPO configuration

@@ -374,6 +374,58 @@ class MarketAnalysisSubPipeline:
                 'hmm_clusters': results['hmm_clusters']
             })
             
+            # Prepare data for HMM Models Training
+            self.logger.info('📊 Preparing data for HMM Models Training...')
+            try:
+                # Extract features from optimized_features or pid_based_features
+                features = None
+                feature_names = []
+                
+                if 'optimized_features' in results and results['optimized_features']:
+                    features_data = results['optimized_features']
+                    if isinstance(features_data, dict) and 'features' in features_data:
+                        features = features_data['features']
+                        feature_names = features_data.get('feature_names', [])
+                
+                if features is None and 'pid_based_features' in results:
+                    pid_features = results['pid_based_features']
+                    if isinstance(pid_features, dict) and 'combined_features' in pid_features:
+                        features = pid_features['combined_features']
+                        feature_names = pid_features.get('combined_feature_names', [])
+                
+                # Extract targets from labeled_data
+                targets = None
+                if 'labeled_data' in results and results['labeled_data']:
+                    labeled_data = results['labeled_data']
+                    if isinstance(labeled_data, dict) and 'labels' in labeled_data:
+                        targets = labeled_data['labels']
+                
+                # Extract regime labels from regime assignments
+                regime_labels = None
+                if 'regime_assignments' in results and results['regime_assignments']:
+                    regime_data = results['regime_assignments']
+                    if isinstance(regime_data, dict) and 'regime_labels' in regime_data:
+                        regime_labels = regime_data['regime_labels']
+                
+                # Update pipeline state with prepared data
+                self._current_pipeline_state.update({
+                    'features': features,
+                    'targets': targets,
+                    'regime_labels': regime_labels,
+                    'feature_names': feature_names
+                })
+                
+                # Log data availability for debugging
+                self.logger.info(f"📊 Data prepared for HMM Models Training:")
+                self.logger.info(f"   - Features: {'✅' if features is not None else '❌'}")
+                self.logger.info(f"   - Targets: {'✅' if targets is not None else '❌'}")
+                self.logger.info(f"   - Regime Labels: {'✅' if regime_labels is not None else '❌'}")
+                self.logger.info(f"   - Feature Names: {len(feature_names) if feature_names else 0}")
+                
+            except Exception as e:
+                self.logger.error(f"❌ Failed to prepare data for HMM Models Training: {e}")
+                return self._create_error_result("Data preparation failed for HMM Models Training", str(e))
+            
             # Stage 6: HMM Models Training
             self.logger.info('🏋️ Executing Stage 6: HMM Models Training')
             hmm_models_training_result = await self.execute_sub_pipeline('hmm_models_training', self.config)

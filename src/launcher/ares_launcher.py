@@ -245,7 +245,7 @@ class AresLauncher:
             'market_analysis': {
                 'next_stage': 'model_training',
                 'required_files': ['sr_levels.json', 'regime_assignments.parquet', 'labels.parquet', 'features.parquet'],
-                'required_artifacts': ['sr_clusters', 'regime_model', 'feature_metadata', 'pid_based_features'],
+                'required_artifacts': ['sr_clusters', 'regime_model', 'feature_metadata'],
                 'sub_pipelines': ['sr_detection', 'sr_clustering', 'hmm_clustering',
                                 'hmm_regime_discovery', 'regime_data_splitting', 'triple_barrier_labeling',
                                 'feature_lookback_optimization', 'fractional_differentiation', 'pid_based_feature_generation',

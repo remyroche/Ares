@@ -42,7 +42,7 @@ def test_improved_optimization():
     
     try:
         # Import the improved optimizer
-        from mrmr_lookback_optimizer import MRMRLookbackOptimizer, LookbackOptimizationConfig
+        from src.training.steps.market_analysis.feature_lookback_optimization.mrmr_lookback_optimizer import MRMRLookbackOptimizer, LookbackOptimizationConfig
         
         # Create test data
         print("📊 Creating test data...")

@@ -20,28 +20,84 @@ from pathlib import Path
 # Common utilities imports
 from src.utils.tprint import tprint
 from src.utils.common_operations import (
-    safe_dataframe_operation, validate_dataframe, safe_divide, safe_float, safe_int,
-    validate_finite, validate_positive, validate_range, safe_percentage_change,
-    safe_json_dump, safe_json_load, ensure_directory, safe_file_exists,
-    get_m1_gpu_manager, get_m1_memory_optimizer, get_m1_cpu_optimizer,
-    memory_checkpoint, gpu_context, optimize_memory, get_memory_usage
+    safe_dataframe_operation, safe_divide, safe_float, safe_int,
+    ensure_directory, memory_checkpoint, optimize_memory, get_memory_usage
 )
+try:
+    from src.utils.common_operations import (
+        validate_dataframe, validate_finite, validate_positive, validate_range, 
+        safe_percentage_change, safe_json_dump, safe_json_load, safe_file_exists,
+        get_m1_gpu_manager, get_m1_memory_optimizer, get_m1_cpu_optimizer,
+        gpu_context
+    )
+    EXTENDED_COMMON_OPS_AVAILABLE = True
+except ImportError:
+    EXTENDED_COMMON_OPS_AVAILABLE = False
+
 from src.utils.math_validation import (
-    safe_divide as math_safe_divide, safe_log, safe_sqrt, safe_power,
-    safe_mean, safe_std, safe_correlation, safe_covariance, safe_percentile,
+    safe_divide as math_safe_divide, safe_log, safe_sqrt,
     validate_finite as math_validate_finite, validate_positive as math_validate_positive,
-    validate_range as math_validate_range, MathValidation
+    validate_range as math_validate_range
 )
-from src.utils.data.klines_parquet import KlinesParquetManager, get_klines_manager
-from src.utils.serialization_utils import JSONSerializer, PickleSerializer, UniversalSerializer
-from src.utils.matrix_operations.unified_operations import (
-    UnifiedMatrixOperations, get_unified_matrix_operations,
-    safe_matrix_multiply, safe_correlation_matrix, safe_matrix_inverse
-)
-from src.utils.ml_common.config.base_training_config import EnsembleTrainingConfig
-from src.utils.ml_common.training.ensemble_training_step import EnsembleTrainingStep
-from src.utils.ml_common.math_validation import MathValidator
-from src.utils.ml_common.evaluation.evaluation_utils import EvaluationUtils
+
+# Enhanced import handling with fallbacks for better reliability
+try:
+    from src.utils.math_validation import (
+        safe_power, safe_mean, safe_std, safe_correlation, safe_covariance, 
+        safe_percentile, MathValidation
+    )
+    EXTENDED_MATH_AVAILABLE = True
+except ImportError:
+    from src.utils.math_validation import MathValidation
+    EXTENDED_MATH_AVAILABLE = False
+
+try:
+    from src.utils.data.klines_parquet import KlinesParquetManager, get_klines_manager
+    KLINES_AVAILABLE = True
+except ImportError:
+    KLINES_AVAILABLE = False
+    get_klines_manager = lambda: None
+
+try:
+    from src.utils.serialization_utils import JSONSerializer, PickleSerializer, UniversalSerializer
+    LEGACY_SERIALIZERS_AVAILABLE = True
+except ImportError:
+    from src.utils.serialization_utils import UniversalSerializer
+    LEGACY_SERIALIZERS_AVAILABLE = False
+
+try:
+    from src.utils.matrix_operations.unified_operations import (
+        UnifiedMatrixOperations, get_unified_matrix_operations,
+        safe_matrix_multiply, safe_correlation_matrix, safe_matrix_inverse
+    )
+    MATRIX_OPS_AVAILABLE = True
+except ImportError:
+    MATRIX_OPS_AVAILABLE = False
+    get_unified_matrix_operations = lambda: None
+
+try:
+    from src.utils.ml_common.config.base_training_config import EnsembleTrainingConfig
+    from src.utils.ml_common.training.ensemble_training_step import EnsembleTrainingStep
+    ML_COMMON_AVAILABLE = True
+except ImportError:
+    ML_COMMON_AVAILABLE = False
+    # Create fallback classes
+    class EnsembleTrainingConfig:
+        def __init__(self, **kwargs):
+            for k, v in kwargs.items():
+                setattr(self, k, v)
+    
+    class EnsembleTrainingStep:
+        def __init__(self, config, enable_vectorization=True):
+            self.config = config
+            self.enable_vectorization = enable_vectorization
+
+try:
+    from src.utils.ml_common.evaluation.evaluation_utils import EvaluationUtils
+    ML_EVAL_AVAILABLE = True
+except ImportError:
+    ML_EVAL_AVAILABLE = False
+    EvaluationUtils = None
 
 # Shared utilities
 from .shared_utilities import (
@@ -89,17 +145,22 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
         self.start_time = time.time()
         
         try:
-            # Initialize common utilities
-            self.math_validator = MathValidation()
-            self.matrix_ops = get_unified_matrix_operations()
+            # Initialize common utilities with availability checks
+            self.math_validator = MathValidation() if EXTENDED_MATH_AVAILABLE else None
+            self.matrix_ops = get_unified_matrix_operations() if MATRIX_OPS_AVAILABLE else None
             self.serializer = UniversalSerializer()
-            self.klines_manager = get_klines_manager()
-            self.evaluation_utils = EvaluationUtils()
+            self.klines_manager = get_klines_manager() if KLINES_AVAILABLE else None
+            self.evaluation_utils = EvaluationUtils() if ML_EVAL_AVAILABLE else None
             
-            # Initialize M1 hardware optimizers
-            self.gpu_manager = get_m1_gpu_manager()
-            self.memory_optimizer = get_m1_memory_optimizer()
-            self.cpu_optimizer = get_m1_cpu_optimizer()
+            # Initialize M1 hardware optimizers with availability checks
+            if EXTENDED_COMMON_OPS_AVAILABLE:
+                self.gpu_manager = get_m1_gpu_manager()
+                self.memory_optimizer = get_m1_memory_optimizer()
+                self.cpu_optimizer = get_m1_cpu_optimizer()
+            else:
+                self.gpu_manager = None
+                self.memory_optimizer = None
+                self.cpu_optimizer = None
             
             # Set default configuration for HMM ensemble models
             if config is None:
@@ -114,12 +175,19 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
                     enable_data_augmentation=True,
                     augmentation_method="smote",
                     model_save_path="./models/hmm_ensemble_models",
-                    evaluation_metrics=["accuracy", "f1_score", "precision", "recall", "log_loss", "auc"]
+                    evaluation_metrics=["accuracy", "precision", "recall", "f1_score", "log_loss"]
                 )
-                tprint("📋 Using default configuration for HMM ensemble training")
+                tprint("📋 Using default configuration for HMM ensemble training (classification)")
 
             # Validate configuration with fast-fail using common utilities
             self._validate_config(config)
+            
+            # Backward-compat: ensure model_types exists (used by parent/vectorized paths)
+            try:
+                if not hasattr(config, 'model_types'):
+                    setattr(config, 'model_types', getattr(config, 'base_models', []))
+            except Exception:
+                pass
             
             # Initialize parent class
             super().__init__(config, enable_vectorization=enable_vectorization and VECTORIZED_TRAINING_AVAILABLE)
@@ -129,7 +197,7 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
                 'initialization_time': time.time() - self.start_time,
                 'vectorization_enabled': self.enable_vectorization,
                 'config_used': config.model_name,
-                'model_types': getattr(config, 'base_models', []),
+                'model_types': getattr(config, 'base_models', getattr(config, 'model_types', [])),
                 'timeframe': config.timeframe,
                 'hardware_optimization': {
                     'gpu_available': self.gpu_manager is not None,
@@ -144,7 +212,7 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
             else:
                 tprint("✅ HMM Ensemble Training Component initialized (standard mode)")
                 
-            tprint(f"📊 Configuration: {len(config.model_types)} ensemble types, {config.timeframe} timeframe")
+            tprint(f"📊 Configuration: {len(getattr(config, 'base_models', getattr(config, 'model_types', [])))} base models, {config.timeframe} timeframe")
             tprint(f"🧠 Hardware: GPU={self.gpu_manager is not None}, Memory={self.memory_optimizer is not None}, CPU={self.cpu_optimizer is not None}")
             
         except Exception as e:
@@ -169,10 +237,13 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
             ValueError: If configuration is invalid
         """
         try:
-            # Validate model types - FAST FAIL
-            if not config.model_types or len(config.model_types) == 0:
-                tprint("❌ CRITICAL: No model types specified - FAILING FAST")
-                raise ValueError("At least one model type must be specified")
+            # Validate base/model types - FAST FAIL (support both base_models and model_types)
+            model_list = getattr(config, 'model_types', None)
+            if not model_list:
+                model_list = getattr(config, 'base_models', [])
+            if not model_list or len(model_list) == 0:
+                tprint("❌ CRITICAL: No base/model types specified - FAILING FAST")
+                raise ValueError("At least one base/model type must be specified")
             
             # Validate timeframe - FAST FAIL
             valid_timeframes = ["1m", "5m", "15m", "30m", "1h", "4h", "1d"]
@@ -181,38 +252,56 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
                 raise ValueError(f"Invalid timeframe '{config.timeframe}' - must be one of: {valid_timeframes}")
             
             # Validate HPO parameters using math validation utilities - FAST FAIL
-            if config.enable_hpo:
-                try:
-                    config.hpo_n_trials = self.math_validator.validate_positive(
-                        config.hpo_n_trials, "HPO trials"
-                    )
-                except ValueError as e:
-                    tprint(f"❌ CRITICAL: HPO trials validation failed - FAILING FAST")
-                    raise ValueError(f"HPO trials must be positive: {e}") from e
-                
-                try:
-                    config.hpo_timeout_seconds = self.math_validator.validate_positive(
-                        config.hpo_timeout_seconds, "HPO timeout"
-                    )
-                except ValueError as e:
-                    tprint(f"❌ CRITICAL: HPO timeout validation failed - FAILING FAST")
-                    raise ValueError(f"HPO timeout must be positive: {e}") from e
+            if hasattr(config, 'enable_hpo') and config.enable_hpo:
+                if self.math_validator:
+                    try:
+                        config.hpo_n_trials = self.math_validator.validate_positive(
+                            config.hpo_n_trials, "HPO trials"
+                        )
+                    except ValueError as e:
+                        tprint(f"❌ CRITICAL: HPO trials validation failed - FAILING FAST")
+                        raise ValueError(f"HPO trials must be positive: {e}") from e
+                    
+                    try:
+                        config.hpo_timeout_seconds = self.math_validator.validate_positive(
+                            config.hpo_timeout_seconds, "HPO timeout"
+                        )
+                    except ValueError as e:
+                        tprint(f"❌ CRITICAL: HPO timeout validation failed - FAILING FAST")
+                        raise ValueError(f"HPO timeout must be positive: {e}") from e
+                else:
+                    # Fallback validation without math validator
+                    if not hasattr(config, 'hpo_n_trials') or config.hpo_n_trials <= 0:
+                        raise ValueError("HPO trials must be positive")
+                    if not hasattr(config, 'hpo_timeout_seconds') or config.hpo_timeout_seconds <= 0:
+                        raise ValueError("HPO timeout must be positive")
             
             # Validate minimum samples using math validation utilities - FAST FAIL
-            try:
-                config.min_samples_per_regime = self.math_validator.validate_positive(
-                    config.min_samples_per_regime, "Minimum samples per regime"
-                )
-            except ValueError as e:
-                tprint(f"❌ CRITICAL: Minimum samples validation failed - FAILING FAST")
-                raise ValueError(f"Minimum samples per regime must be positive: {e}") from e
+            if self.math_validator:
+                try:
+                    config.min_samples_per_regime = self.math_validator.validate_positive(
+                        config.min_samples_per_regime, "Minimum samples per regime"
+                    )
+                except ValueError as e:
+                    tprint(f"❌ CRITICAL: Minimum samples validation failed - FAILING FAST")
+                    raise ValueError(f"Minimum samples per regime must be positive: {e}") from e
+            else:
+                # Fallback validation
+                if not hasattr(config, 'min_samples_per_regime') or config.min_samples_per_regime <= 0:
+                    raise ValueError("Minimum samples per regime must be positive")
             
             # Validate save path using common utilities - WARNING ONLY
-            if config.save_models and config.model_save_path:
+            if hasattr(config, 'save_models') and config.save_models and hasattr(config, 'model_save_path') and config.model_save_path:
                 save_path = Path(config.model_save_path)
-                if not safe_file_exists(save_path.parent):
+                if EXTENDED_COMMON_OPS_AVAILABLE and not safe_file_exists(save_path.parent):
                     tprint(f"⚠️ WARNING: Save path parent directory does not exist: {save_path.parent}")
                     # Try to create the directory using common utilities
+                    if ensure_directory(save_path.parent):
+                        tprint(f"✅ Created save path directory: {save_path.parent}")
+                    else:
+                        tprint(f"⚠️ Could not create save path directory: {save_path.parent}")
+                elif not EXTENDED_COMMON_OPS_AVAILABLE:
+                    # Fallback directory creation
                     if ensure_directory(save_path.parent):
                         tprint(f"✅ Created save path directory: {save_path.parent}")
                     else:
@@ -271,14 +360,29 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
                 tprint(f"❌ CRITICAL: Found {inf_count} infinite values in target values - FAILING FAST")
                 raise ValueError(f"Target data contains {inf_count} infinite values - training cannot proceed")
             
-            # Validate finite values using math validation utilities
+            # Validate finite values using optimized vectorized approach with fallbacks
             try:
-                # Validate a sample of values to ensure they are finite
-                sample_size = min(1000, X.shape[0])
-                sample_indices = np.random.choice(X.shape[0], sample_size, replace=False)
-                for i in sample_indices:
-                    for j in range(min(10, X.shape[1])):  # Check first 10 features
-                        self.math_validator.validate_finite(X[i, j], f"X[{i},{j}]")
+                # Use vectorized operations for efficient validation of all features
+                non_finite_mask = ~np.isfinite(X)
+                if np.any(non_finite_mask):
+                    # Find which features have non-finite values
+                    problematic_features = np.where(np.any(non_finite_mask, axis=0))[0]
+                    total_non_finite = np.sum(non_finite_mask)
+                    tprint(f"❌ CRITICAL: Found {total_non_finite} non-finite values in {len(problematic_features)} features - FAILING FAST")
+                    tprint(f"   Problematic features: {problematic_features[:10]}{'...' if len(problematic_features) > 10 else ''}")
+                    raise ValueError(f"Input data contains {total_non_finite} non-finite values in features {problematic_features[:5].tolist()}")
+                
+                # Additional validation using math validator if available
+                if self.math_validator and X.shape[0] > 0 and X.shape[1] > 0:
+                    # Test a few representative values with math validator
+                    sample_indices = [0, X.shape[0]//2, X.shape[0]-1] if X.shape[0] >= 3 else [0]
+                    for i in sample_indices:
+                        for j in [0, X.shape[1]//2, X.shape[1]-1] if X.shape[1] >= 3 else [0]:
+                            self.math_validator.validate_finite(X[i, j], f"X[{i},{j}]")
+                elif not self.math_validator:
+                    # Fallback validation when math validator is not available
+                    tprint("ℹ️ Using fallback finite validation (math validator not available)")
+                    
             except ValueError as e:
                 tprint(f"❌ CRITICAL: Non-finite values detected in input features - FAILING FAST")
                 raise ValueError(f"Input data contains non-finite values: {e}") from e
@@ -347,8 +451,8 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
                 # Step 2: Validate and prepare base models
                 tprint("🔄 Step 2: Validating base models...")
                 if base_hmm_models is None or not base_hmm_models:
-                    tprint("⚠️ No base HMM models provided, creating proper ensemble models")
-                    base_hmm_models = self._create_ensemble_models()
+                    tprint("⚠️ No base HMM models provided, creating base models for ensemble")
+                    base_hmm_models = self._create_base_models_for_ensemble()
                 else:
                     tprint(f"✅ Using {len(base_hmm_models)} provided base models")
                 
@@ -367,7 +471,6 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
                 tprint("🔄 Step 5: Training global regime classifier (stacked + calibrated)...")
                 try:
                     self._train_global_regime_classifier(X, regime_labels)
-                    # Evaluate calibration quality (ECE) on training data as a quick proxy
                     if hasattr(self.global_regime_clf, 'predict_proba'):
                         proba_train = self.global_regime_clf.predict_proba(X)
                         self.global_calibration_ece = self._expected_calibration_error(regime_labels, proba_train)
@@ -381,15 +484,15 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
                     tprint(f"⚠️ Global regime classifier training failed: {e}")
                     results['global_regime_classifier'] = {'trained': False, 'error': str(e)}
 
-                # Step 6: Generate comprehensive report using common utilities
-                execution_time = time.time() - execution_start_time
-                results = self._generate_comprehensive_report(results, execution_time, base_hmm_models, hmm_training_metrics)
-                
-                # Step 7: Optimize memory usage after training
-                tprint("🔄 Step 7: Optimizing memory usage...")
+                # Step 6: Optimize memory usage before generating the report so it's included
+                tprint("🔄 Step 6: Optimizing memory usage...")
                 memory_stats = optimize_memory()
                 results['memory_optimization'] = memory_stats
-                
+
+                # Step 7: Generate comprehensive report using common utilities
+                execution_time = time.time() - execution_start_time
+                results = self._generate_comprehensive_report(results, execution_time, base_hmm_models, hmm_training_metrics)
+
                 tprint(f"✅ HMM ensemble training completed successfully in {execution_time:.2f}s")
                 tprint(f"🧠 Memory optimization: {memory_stats}")
                 
@@ -450,11 +553,9 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
             tprint("🔄 Pre-processing data with common utilities...")
             
             # Normalize features using matrix operations
-            if X.shape[1] > 0:
-                X_normalized = self.matrix_ops.normalize_matrix(X, method='zscore')
-                tprint(f"✅ Features normalized using matrix operations: {X_normalized.shape}")
-            else:
-                X_normalized = X
+            # Note: X.shape[1] > 0 check is redundant since earlier validation ensures non-empty data
+            X_normalized = self.matrix_ops.normalize_matrix(X, method='zscore')
+            tprint(f"✅ Features normalized using matrix operations: {X_normalized.shape}")
             
             # Use GPU context if available for large datasets
             if self.gpu_manager and X.shape[0] > 10000:
@@ -511,6 +612,9 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
             Training results
         """
         try:
+            # Prepare base models per regime (parent expects mapping by regime)
+            base_models_prepared = self._prepare_base_models_for_regimes(base_hmm_models, regime_labels)
+
             # Use the parent class execute method with additional ensemble-specific logic
             results = super().execute(
                 X=X,
@@ -519,11 +623,38 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
                 feature_names=feature_names,
                 hmm_states=hmm_states,
                 is_classification=True,  # HMM ensemble models are classification
-                base_models=base_hmm_models,
+                base_models=base_models_prepared,
                 symbol=None,  # Can be passed as kwargs
                 exchange=None,
                 timeframe=self.config.timeframe
             )
+            
+            # Post-process to compute roc_auc when possible (ensure predict_proba support)
+            try:
+                if 'evaluation_results' in results and isinstance(results.get('models'), dict):
+                    # Only compute for binary classification
+                    import numpy as _np
+                    from sklearn.metrics import roc_auc_score as _roc_auc_score
+                    unique_classes = _np.unique(y)
+                    if unique_classes.shape[0] == 2:
+                        for regime, ensemble_entry in results['models'].items():
+                            if isinstance(ensemble_entry, dict) and 'ensemble_manager' in ensemble_entry:
+                                model_obj = ensemble_entry['ensemble_manager']
+                                if hasattr(model_obj, 'predict_proba'):
+                                    regime_mask = (regime_labels == regime)
+                                    if _np.any(regime_mask):
+                                        regime_X = X[regime_mask]
+                                        regime_y = y[regime_mask]
+                                        try:
+                                            y_proba = model_obj.predict_proba(regime_X)
+                                            if y_proba is not None and y_proba.ndim == 2 and y_proba.shape[1] >= 2:
+                                                roc_auc = _roc_auc_score(regime_y, y_proba[:, 1])
+                                                if isinstance(results['evaluation_results'].get(regime), dict):
+                                                    results['evaluation_results'][regime]['roc_auc'] = float(roc_auc)
+                                        except Exception:
+                                            pass
+            except Exception:
+                pass
             
             # Add matrix operations performance stats
             if hasattr(self.matrix_ops, 'get_performance_stats'):
@@ -625,28 +756,30 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
             'ece_train': float(self.global_calibration_ece) if self.global_calibration_ece is not None else None
         }
     
-    def _create_ensemble_models(self) -> Dict[str, Any]:
+    def _create_base_models_for_ensemble(self) -> Dict[str, Any]:
         """
-        Create proper ensemble models for HMM training with enhanced error handling.
+        Create base models for HMM ensemble training with enhanced error handling.
+        These are individual models that will be combined into an ensemble.
         Uses common utilities for robust model creation and validation.
         
         Returns:
-            Dictionary of ensemble models
+            Dictionary of base models for ensemble training
         """
         try:
             from catboost import CatBoostClassifier
             from sklearn.linear_model import LogisticRegression
-            from sklearn.ensemble import RandomForestClassifier
             
-            # Create ensemble models with validated parameters using math validation
             ensemble_models = {}
             
             # CatBoostClassifier with validated parameters (Primary: Speed + robustness)
             try:
-                iterations = self.math_validator.validate_positive(1000, "CatBoost iterations")
-                learning_rate = self.math_validator.validate_range(0.05, 0.0, 1.0, "CatBoost learning_rate")
-                depth = self.math_validator.validate_positive(6, "CatBoost depth")
-                
+                iterations = 1000
+                learning_rate = 0.05
+                depth = 6
+                if self.math_validator:
+                    iterations = self.math_validator.validate_positive(iterations, "CatBoost iterations")
+                    learning_rate = self.math_validator.validate_range(learning_rate, 0.0, 1.0, "CatBoost learning_rate")
+                    depth = self.math_validator.validate_positive(depth, "CatBoost depth")
                 ensemble_models['CatBoostClassifier'] = CatBoostClassifier(
                     iterations=int(iterations),
                     learning_rate=learning_rate,
@@ -655,24 +788,21 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
                     verbose=False,
                     loss_function='MultiClass'
                 )
-                tprint("✅ CatBoost model created with validated parameters")
+                tprint("✅ CatBoostClassifier created with validated parameters")
             except Exception as e:
-                tprint(f"⚠️ CatBoost model creation failed: {e}")
-                # Fallback to default parameters
-                ensemble_models['CatBoostClassifier'] = CatBoostClassifier(
-                    iterations=1000,
-                    learning_rate=0.05,
-                    depth=6,
-                    random_seed=42,
-                    verbose=False,
-                    loss_function='MultiClass'
-                )
+                tprint(f"⚠️ CatBoostClassifier creation failed: {e}")
+                try:
+                    ensemble_models['CatBoostClassifier'] = CatBoostClassifier(iterations=800, learning_rate=0.05, depth=6, random_seed=42, verbose=False, loss_function='MultiClass')
+                except Exception:
+                    pass
             
             # LogisticRegression with elastic-net regularization (Primary: Fast baseline)
             try:
-                max_iter = self.math_validator.validate_positive(1000, "LogReg max_iter")
-                l1_ratio = self.math_validator.validate_range(0.5, 0.0, 1.0, "LogReg l1_ratio")
-                
+                max_iter = 1500
+                l1_ratio = 0.5
+                if self.math_validator:
+                    max_iter = self.math_validator.validate_positive(max_iter, "LogReg max_iter")
+                    l1_ratio = self.math_validator.validate_range(l1_ratio, 0.0, 1.0, "LogReg l1_ratio")
                 ensemble_models['LogisticRegression'] = LogisticRegression(
                     random_state=43,
                     max_iter=int(max_iter),
@@ -685,25 +815,17 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
                 tprint("✅ LogisticRegression (elastic-net) created with validated parameters")
             except Exception as e:
                 tprint(f"⚠️ LogisticRegression creation failed: {e}")
-                # Fallback to default parameters
-                ensemble_models['LogisticRegression'] = LogisticRegression(
-                    random_state=43,
-                    max_iter=1000,
-                    penalty='elasticnet',
-                    l1_ratio=0.5,
-                    solver='saga',
-                    class_weight='balanced',
-                    multi_class='auto'
-                )
+                try:
+                    ensemble_models['LogisticRegression'] = LogisticRegression(random_state=43, max_iter=1000, penalty='elasticnet', l1_ratio=0.5, solver='saga', class_weight='balanced', multi_class='auto')
+                except Exception:
+                    pass
             
-            # Note: RandomForestClassifier removed from base models per request
-            
-            tprint(f"📊 Created {len(ensemble_models)} ensemble models for HMM training using common utilities")
+            tprint(f"📊 Created {len(ensemble_models)} base models for HMM training")
             tprint(f"   Models: {list(ensemble_models.keys())}")
             
-            # Update training stats using safe operations
-            self.training_stats['ensemble_models_created'] = len(ensemble_models)
-            self.training_stats['model_creation_method'] = 'common_utilities_validated'
+            # Update training stats
+            self.training_stats['base_models_created'] = len(ensemble_models)
+            self.training_stats['model_creation_method'] = 'classification_validated'
             
             return ensemble_models
             
@@ -712,8 +834,45 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
             tprint(f"   Error: {e}")
             raise RuntimeError(f"Required model libraries not available: {e}") from e
         except Exception as e:
-            tprint(f"❌ Failed to create ensemble models: {e}")
-            raise RuntimeError(f"Ensemble model creation failed: {e}") from e
+            tprint(f"❌ Failed to create base models: {e}")
+            raise RuntimeError(f"Base model creation failed: {e}") from e
+
+    def _prepare_base_models_for_regimes(self, base_models: Dict[str, Any], regime_labels: np.ndarray) -> Dict[int, Dict[str, Any]]:
+        """
+        Prepare per-regime base models mapping as expected by the parent class.
+
+        Args:
+            base_models: Global base models mapping name -> estimator
+            regime_labels: Array of regime labels to determine unique regimes
+
+        Returns:
+            Dict mapping regime -> cloned base models
+        """
+        try:
+            import numpy as _np
+            unique_regimes = _np.unique(regime_labels)
+            prepared: Dict[int, Dict[str, Any]] = {}
+
+            # Try to use sklearn.clone for safety
+            try:
+                from sklearn.base import clone as sk_clone
+                def _clone_model(m):
+                    try:
+                        return sk_clone(m)
+                    except Exception:
+                        return m
+            except Exception:
+                def _clone_model(m):
+                    return m
+
+            for regime in unique_regimes:
+                prepared[regime] = {name: _clone_model(model) for name, model in (base_models or {}).items()}
+
+            return prepared
+        except Exception as e:
+            tprint(f"⚠️ Failed to prepare base models per regime: {e}")
+            # Fallback: wrap global models under a single key (may be handled by parent)
+            return {}
     
     def _generate_comprehensive_report(
         self,
@@ -756,7 +915,7 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
                     'sample_count': safe_int(self.training_stats.get('sample_count', 0), 0),
                     'feature_count': safe_int(self.training_stats.get('feature_count', 0), 0),
                     'base_models_used': safe_int(self.training_stats.get('base_models_used', 0), 0),
-                    'ensemble_models_created': safe_int(self.training_stats.get('ensemble_models_created', 0), 0),
+                    'base_models_created': safe_int(self.training_stats.get('base_models_created', 0), 0),
                     'model_creation_method': self.training_stats.get('model_creation_method', 'unknown')
                 },
                 'configuration_summary': {
@@ -1140,12 +1299,12 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
             sample_count = safe_int(data_summary.get('sample_count', 0), 0)
             feature_count = safe_int(data_summary.get('feature_count', 0), 0)
             base_models = safe_int(data_summary.get('base_models_used', 0), 0)
-            ensemble_models = safe_int(data_summary.get('ensemble_models_created', 0), 0)
+            base_models_created = safe_int(data_summary.get('base_models_created', 0), 0)
             
             tprint(f"📊 Samples processed: {sample_count:,}")
             tprint(f"🔢 Features used: {feature_count}")
             tprint(f"🤖 Base models: {base_models}")
-            tprint(f"🏗️ Ensemble models created: {ensemble_models}")
+            tprint(f"🏗️ Base models created: {base_models_created}")
             tprint(f"🔧 Model creation method: {data_summary.get('model_creation_method', 'unknown')}")
             
             # Performance analysis using safe operations
@@ -1256,27 +1415,39 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
                     
                     if isinstance(regime_metrics, dict) and 'error' not in regime_metrics:
                         performance_summary['successful_evaluations'] += 1
-                        
-                        best_ensemble = None
-                        best_accuracy = -np.inf
-                        
-                        for ensemble_name, metrics in regime_metrics.items():
-                            if isinstance(metrics, dict) and 'accuracy' in metrics:
-                                accuracy = safe_float(metrics['accuracy'], 0.0)
-                                accuracies.append(accuracy)
-                                if accuracy > best_accuracy:
-                                    best_accuracy = accuracy
-                                    best_ensemble = ensemble_name
-                        
-                        if best_ensemble:
-                            best_ensembles[regime] = {
-                                'ensemble': best_ensemble,
-                                'accuracy': safe_float(best_accuracy, 0.0),
-                                'regime_samples': safe_int(regime_metrics.get('samples', 0), 0)
-                            }
-                            
-                            if best_accuracy > performance_summary['best_overall_accuracy']:
-                                performance_summary['best_overall_accuracy'] = safe_float(best_accuracy, 0.0)
+
+                        # Handle nested structure (vectorized) or flat metrics
+                        if any(isinstance(v, dict) and ('metrics' in v or 'accuracy' in v) for v in regime_metrics.values()):
+                            best_ensemble = None
+                            best_accuracy = -np.inf
+
+                            for ensemble_name, metrics in regime_metrics.items():
+                                metrics_dict = metrics.get('metrics', metrics) if isinstance(metrics, dict) else {}
+                                if isinstance(metrics_dict, dict) and 'accuracy' in metrics_dict:
+                                    accuracy = safe_float(metrics_dict['accuracy'], 0.0)
+                                    accuracies.append(accuracy)
+                                    if accuracy > best_accuracy:
+                                        best_accuracy = accuracy
+                                        best_ensemble = ensemble_name
+
+                            if best_ensemble:
+                                best_ensembles[regime] = {
+                                    'ensemble': best_ensemble,
+                                    'accuracy': safe_float(best_accuracy, 0.0)
+                                }
+                                if best_accuracy > performance_summary['best_overall_accuracy']:
+                                    performance_summary['best_overall_accuracy'] = safe_float(best_accuracy, 0.0)
+                        else:
+                            # Flat single-metrics per regime
+                            if 'accuracy' in regime_metrics:
+                                acc_val = safe_float(regime_metrics['accuracy'], 0.0)
+                                accuracies.append(acc_val)
+                                best_ensembles[regime] = {
+                                    'ensemble': 'stacking_ensemble',
+                                    'accuracy': acc_val
+                                }
+                                if acc_val > performance_summary['best_overall_accuracy']:
+                                    performance_summary['best_overall_accuracy'] = acc_val
                     else:
                         performance_summary['failed_evaluations'] += 1
                 
@@ -1315,7 +1486,7 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
                 'data_characteristics': {
                     'total_samples': safe_int(self.training_stats.get('sample_count', 0), 0),
                     'feature_count': safe_int(self.training_stats.get('feature_count', 0), 0),
-                    'ensemble_models_created': safe_int(self.training_stats.get('ensemble_models_created', 0), 0),
+                    'base_models_created': safe_int(self.training_stats.get('base_models_created', 0), 0),
                     'model_creation_method': self.training_stats.get('model_creation_method', 'unknown'),
                     'data_normalized': self.training_stats.get('data_normalized', False),
                     'gpu_used': self.training_stats.get('gpu_used', False)

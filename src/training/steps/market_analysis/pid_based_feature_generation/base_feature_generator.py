@@ -8,6 +8,7 @@ integration, eliminating code duplication and providing consistent functionality
 import asyncio
 import logging
 import time
+import math
 from typing import Any, Dict, List, Optional, Tuple, Union
 from dataclasses import dataclass, field
 from abc import ABC, abstractmethod
@@ -62,11 +63,40 @@ except ImportError as e:
     COMMON_OPERATIONS_AVAILABLE = False
     logging.warning(f"Common operations not available: {e}")
     # Fallback functions
-    def safe_divide(a, b, default=0.0): return a / b if b != 0 else default
-    def safe_log(x, default=0.0): return np.log(x) if x > 0 else default
-    def safe_sqrt(x, default=0.0): return np.sqrt(x) if x >= 0 else default
-    def safe_power(x, y, default=0.0): return x ** y if np.isfinite(x) and np.isfinite(y) else default
-    def validate_finite(value, name="value"): return float(value) if np.isfinite(value) else 0.0
+    def _is_finite_scalar(v):
+        try:
+            return math.isfinite(float(v))
+        except Exception:
+            return False
+    def safe_divide(a, b, default=0.0):
+        try:
+            return a / b if b not in (0, 0.0) else default
+        except Exception:
+            return default
+    def safe_log(x, default=0.0):
+        try:
+            xv = float(x)
+            return math.log(xv) if xv > 0 else default
+        except Exception:
+            return default
+    def safe_sqrt(x, default=0.0):
+        try:
+            xv = float(x)
+            return math.sqrt(xv) if xv >= 0 else default
+        except Exception:
+            return default
+    def safe_power(x, y, default=0.0):
+        try:
+            if _is_finite_scalar(x) and _is_finite_scalar(y):
+                return float(x) ** float(y)
+            return default
+        except Exception:
+            return default
+    def validate_finite(value, name="value"):
+        try:
+            return float(value) if _is_finite_scalar(value) else 0.0
+        except Exception:
+            return 0.0
 
 # Import serialization utilities
 try:
@@ -242,7 +272,7 @@ class BaseFeatureGenerator(ABC):
         }
         
         try:
-            if COMMON_OPERATIONS_AVAILABLE and self.config.enable_data_validation:
+            if COMMON_OPERATIONS_AVAILABLE and self.config.enable_data_validation and PANDAS_AVAILABLE:
                 # Convert to DataFrame for validation
                 if isinstance(data, np.ndarray):
                     if feature_names is None:
@@ -299,7 +329,7 @@ class BaseFeatureGenerator(ABC):
         start_time = time.time()
         
         try:
-            if COMMON_OPERATIONS_AVAILABLE:
+            if COMMON_OPERATIONS_AVAILABLE and PANDAS_AVAILABLE:
                 # Get initial memory usage
                 optimization_info['memory_usage_before'] = get_memory_usage()
                 
@@ -350,7 +380,7 @@ class BaseFeatureGenerator(ABC):
         }
         
         try:
-            if COMMON_OPERATIONS_AVAILABLE:
+            if COMMON_OPERATIONS_AVAILABLE and PANDAS_AVAILABLE:
                 # Convert to DataFrame for quality assessment
                 df = pd.DataFrame(X, columns=feature_names)
                 

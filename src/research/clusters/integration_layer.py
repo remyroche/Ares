@@ -41,6 +41,7 @@ from .dimension_analyzer import MarketDimensionAnalyzer, DimensionAnalysisConfig
 from .regime_clusterer import RegimeClusterer, ClusteringConfig
 from .feature_importance import RegimeFeatureImportance, ImportanceConfig
 from .validation_metrics import RegimeValidationMetrics, ValidationConfig
+from .dimension_discovery_pipeline import DimensionDiscoveryPipeline, DiscoveryConfig
 
 
 class IntegrationMethod(Enum):
@@ -227,6 +228,7 @@ class HMMIntegrationLayer:
         self.regime_clusterer = RegimeClusterer(ClusteringConfig(n_clusters=self.config.clustering_n_clusters))
         self.feature_importance = RegimeFeatureImportance(ImportanceConfig())
         self.validation_metrics = RegimeValidationMetrics(ValidationConfig())
+        self.dimension_discovery = DimensionDiscoveryPipeline(discovery_config=DiscoveryConfig())
         
         # Initialize HMM components if available
         if HMM_AVAILABLE:
@@ -291,7 +293,31 @@ class HMMIntegrationLayer:
             # Step 3: Run dimension analysis
             if self.config.analyze_dimensions:
                 self.logger.info("📈 Analyzing market dimensions")
-                dimension_analysis = await self._run_dimension_analysis(market_data, target)
+                # First, try the new discovery pipeline (dynamic targets + mRMR+PID aggregation)
+                try:
+                    feature_data = self._prepare_clustering_features(market_data)
+                    discovery = self.dimension_discovery.run(market_data, feature_data)
+                    dimension_analysis = {
+                        'discovery_dimensions': discovery.get('dimensions'),
+                        'feature_dynamic_matrix_shape': discovery.get('aggregation', {}).get('feature_dynamic_matrix', pd.DataFrame()).shape,
+                        'dimension_scores_head': discovery.get('dimension_scores', pd.DataFrame()).head(3).to_dict() if isinstance(discovery.get('dimension_scores'), pd.DataFrame) else {},
+                    }
+                    # Optional: cluster on dimension scores
+                    dim_scores = discovery.get('dimension_scores', None)
+                    if isinstance(dim_scores, pd.DataFrame) and not dim_scores.empty:
+                        self.logger.info("🔁 Clustering on dimension scores")
+                        dim_cluster_results = self.regime_clusterer.run_all_methods(dim_scores.fillna(0).values)
+                        best = self.regime_clusterer.get_best_method()
+                        if best:
+                            best_m, best_r = best
+                            dimension_analysis['dimension_scores_clustering'] = {
+                                'best_method': best_m.value,
+                                'n_clusters': best_r.n_clusters,
+                                'metrics': best_r.metrics,
+                            }
+                except Exception as e:
+                    self.logger.warning(f"New discovery pipeline failed ({e}); falling back to legacy analysis")
+                    dimension_analysis = await self._run_dimension_analysis(market_data, target)
             
             # Step 4: Run feature importance analysis
             if self.config.analyze_feature_importance and clustering_results:

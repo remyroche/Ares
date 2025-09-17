@@ -35,6 +35,7 @@ tactician_triple_barrier:
   max_risk_per_trade: 0.001  # 0.1% max risk per trade
   position_size_multiplier: 0.5  # Reduce position size for precision
   leverage_multiplier: 0.75  # Reduce leverage for precision
+  global_transaction_cost: 0.0008  # 0.08% global standard transaction cost (entry + exit combined)
   
   # Quality Filters
   enable_quality_filters: true

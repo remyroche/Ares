@@ -38,12 +38,65 @@ except ImportError:
     PANDAS_AVAILABLE = False
     pd = None
 
-# Import feature generators
-from .interaction_feature_generator import InteractionFeatureGenerator, InteractionConfig, InteractionResult
-from .polynomial_feature_generator import PolynomialFeatureGenerator, PolynomialConfig, PolynomialResult
-from .cross_timeframe_feature_generator import CrossTimeframeFeatureGenerator, CrossTimeframeConfig, CrossTimeframeResult
-from .optimized_lookback_integration import OptimizedLookbackIntegration, LookbackIntegrationResult
-from .feature_selection_mechanism import FeatureSelectionMechanism, FeatureSelectionConfig, FeatureSelectionResult
+# Import feature generators with fallbacks
+try:
+    from .interaction_feature_generator import InteractionFeatureGenerator, InteractionConfig, InteractionResult
+    INTERACTION_GENERATOR_AVAILABLE = True
+except ImportError as e:
+    logging.warning(f"Interaction feature generator not available: {e}")
+    INTERACTION_GENERATOR_AVAILABLE = False
+    InteractionFeatureGenerator = None
+    InteractionConfig = None
+    InteractionResult = None
+
+try:
+    from .polynomial_feature_generator import PolynomialFeatureGenerator, PolynomialConfig, PolynomialResult
+    POLYNOMIAL_GENERATOR_AVAILABLE = True
+except ImportError as e:
+    logging.warning(f"Polynomial feature generator not available: {e}")
+    POLYNOMIAL_GENERATOR_AVAILABLE = False
+    PolynomialFeatureGenerator = None
+    PolynomialConfig = None
+    PolynomialResult = None
+
+try:
+    from .cross_timeframe_feature_generator import CrossTimeframeFeatureGenerator, CrossTimeframeConfig, CrossTimeframeResult
+    CROSS_TIMEFRAME_GENERATOR_AVAILABLE = True
+except ImportError as e:
+    logging.warning(f"Cross timeframe feature generator not available: {e}")
+    CROSS_TIMEFRAME_GENERATOR_AVAILABLE = False
+    CrossTimeframeFeatureGenerator = None
+    CrossTimeframeConfig = None
+    CrossTimeframeResult = None
+
+try:
+    from .optimized_lookback_integration import OptimizedLookbackIntegration, LookbackIntegrationResult
+    LOOKBACK_INTEGRATION_AVAILABLE = True
+except ImportError as e:
+    logging.warning(f"Lookback integration not available: {e}")
+    LOOKBACK_INTEGRATION_AVAILABLE = False
+    OptimizedLookbackIntegration = None
+    LookbackIntegrationResult = None
+
+try:
+    from .feature_selection_mechanism import FeatureSelectionMechanism, FeatureSelectionConfig, FeatureSelectionResult
+    FEATURE_SELECTION_AVAILABLE = True
+except ImportError as e:
+    logging.warning(f"Feature selection mechanism not available: {e}")
+    FEATURE_SELECTION_AVAILABLE = False
+    FeatureSelectionMechanism = None
+    FeatureSelectionConfig = None
+    FeatureSelectionResult = None
+
+# Import simple feature generator as fallback
+try:
+    from .simple_feature_generator import SimpleFeatureGenerator, SimpleFeatureResult
+    SIMPLE_GENERATOR_AVAILABLE = True
+except ImportError as e:
+    logging.warning(f"Simple feature generator not available: {e}")
+    SIMPLE_GENERATOR_AVAILABLE = False
+    SimpleFeatureGenerator = None
+    SimpleFeatureResult = None
 
 # Import matrix operations
 try:
@@ -323,64 +376,96 @@ class PIDBasedFeatureOrchestrator:
         tprint_info(f"Utility integration status: {self.utility_integration_status}")
     
     def _initialize_components(self):
-        """Initialize required components."""
-        # Initialize feature generators
-        if self.config.enable_interaction_features:
-            interaction_config = InteractionConfig(
-                synergy_threshold=self.config.synergy_threshold,
-                redundancy_threshold=self.config.redundancy_threshold,
-                unique_info_threshold=self.config.unique_info_threshold,
-                max_interaction_features=self.config.max_interaction_features,
-                enable_parallel_processing=self.config.enable_parallel_processing,
-                enable_gpu_acceleration=self.config.enable_gpu_acceleration,
-                memory_limit_gb=self.config.memory_limit_gb
-            )
-            self.interaction_generator = InteractionFeatureGenerator(interaction_config)
-            self.logger.info("✅ Interaction Feature Generator initialized")
+        """Initialize required components with availability checks."""
+        # Initialize interaction feature generator
+        if self.config.enable_interaction_features and INTERACTION_GENERATOR_AVAILABLE:
+            try:
+                interaction_config = InteractionConfig(
+                    synergy_threshold=self.config.synergy_threshold,
+                    redundancy_threshold=self.config.redundancy_threshold,
+                    unique_info_threshold=self.config.unique_info_threshold,
+                    max_interaction_features=self.config.max_interaction_features,
+                    enable_parallel_processing=self.config.enable_parallel_processing,
+                    enable_gpu_acceleration=self.config.enable_gpu_acceleration,
+                    memory_limit_gb=self.config.memory_limit_gb
+                )
+                self.interaction_generator = InteractionFeatureGenerator(interaction_config)
+                self.logger.info("✅ Interaction Feature Generator initialized")
+            except Exception as e:
+                self.logger.error(f"❌ Failed to initialize Interaction Feature Generator: {e}")
+                self.interaction_generator = None
         else:
             self.interaction_generator = None
+            if self.config.enable_interaction_features:
+                self.logger.warning("⚠️ Interaction features requested but generator not available")
         
-        if self.config.enable_polynomial_features:
-            polynomial_config = PolynomialConfig(
-                synergy_threshold=self.config.synergy_threshold,
-                redundancy_threshold=self.config.redundancy_threshold,
-                unique_info_threshold=self.config.unique_info_threshold,
-                max_polynomial_features=self.config.max_polynomial_features,
-                enable_parallel_processing=self.config.enable_parallel_processing,
-                enable_gpu_acceleration=self.config.enable_gpu_acceleration,
-                memory_limit_gb=self.config.memory_limit_gb
-            )
-            self.polynomial_generator = PolynomialFeatureGenerator(polynomial_config)
-            self.logger.info("✅ Polynomial Feature Generator initialized")
+        # Initialize polynomial feature generator
+        if self.config.enable_polynomial_features and POLYNOMIAL_GENERATOR_AVAILABLE:
+            try:
+                polynomial_config = PolynomialConfig(
+                    synergy_threshold=self.config.synergy_threshold,
+                    redundancy_threshold=self.config.redundancy_threshold,
+                    unique_info_threshold=self.config.unique_info_threshold,
+                    max_polynomial_features=self.config.max_polynomial_features,
+                    enable_parallel_processing=self.config.enable_parallel_processing,
+                    enable_gpu_acceleration=self.config.enable_gpu_acceleration,
+                    memory_limit_gb=self.config.memory_limit_gb
+                )
+                self.polynomial_generator = PolynomialFeatureGenerator(polynomial_config)
+                self.logger.info("✅ Polynomial Feature Generator initialized")
+            except Exception as e:
+                self.logger.error(f"❌ Failed to initialize Polynomial Feature Generator: {e}")
+                self.polynomial_generator = None
         else:
             self.polynomial_generator = None
+            if self.config.enable_polynomial_features:
+                self.logger.warning("⚠️ Polynomial features requested but generator not available")
         
-        if self.config.enable_cross_timeframe_features:
-            cross_timeframe_config = CrossTimeframeConfig(
-                synergy_threshold=self.config.synergy_threshold,
-                redundancy_threshold=self.config.redundancy_threshold,
-                unique_info_threshold=self.config.unique_info_threshold,
-                max_cross_timeframe_features=self.config.max_cross_timeframe_features,
-                enable_parallel_processing=self.config.enable_parallel_processing,
-                enable_gpu_acceleration=self.config.enable_gpu_acceleration,
-                memory_limit_gb=self.config.memory_limit_gb
-            )
-            self.cross_timeframe_generator = CrossTimeframeFeatureGenerator(cross_timeframe_config)
-            self.logger.info("✅ Cross Timeframe Feature Generator initialized")
+        # Initialize cross-timeframe feature generator
+        if self.config.enable_cross_timeframe_features and CROSS_TIMEFRAME_GENERATOR_AVAILABLE:
+            try:
+                cross_timeframe_config = CrossTimeframeConfig(
+                    synergy_threshold=self.config.synergy_threshold,
+                    redundancy_threshold=self.config.redundancy_threshold,
+                    unique_info_threshold=self.config.unique_info_threshold,
+                    max_cross_timeframe_features=self.config.max_cross_timeframe_features,
+                    enable_parallel_processing=self.config.enable_parallel_processing,
+                    enable_gpu_acceleration=self.config.enable_gpu_acceleration,
+                    memory_limit_gb=self.config.memory_limit_gb
+                )
+                self.cross_timeframe_generator = CrossTimeframeFeatureGenerator(cross_timeframe_config)
+                self.logger.info("✅ Cross Timeframe Feature Generator initialized")
+            except Exception as e:
+                self.logger.error(f"❌ Failed to initialize Cross Timeframe Feature Generator: {e}")
+                self.cross_timeframe_generator = None
         else:
             self.cross_timeframe_generator = None
+            if self.config.enable_cross_timeframe_features:
+                self.logger.warning("⚠️ Cross-timeframe features requested but generator not available")
         
         # Initialize matrix operations
         if MATRIX_OPS_AVAILABLE:
-            self.matrix_ops = get_unified_matrix_operations(
-                enable_gpu=self.config.enable_gpu_acceleration,
-                enable_memory_optimization=True,
-                enable_parallel=self.config.enable_parallel_processing
-            )
-            self.logger.info("✅ Matrix Operations initialized")
+            try:
+                self.matrix_ops = get_unified_matrix_operations(
+                    enable_gpu=self.config.enable_gpu_acceleration,
+                    enable_memory_optimization=True,
+                    enable_parallel=self.config.enable_parallel_processing
+                )
+                self.logger.info("✅ Matrix Operations initialized")
+            except Exception as e:
+                self.logger.error(f"❌ Failed to initialize Matrix Operations: {e}")
+                self.matrix_ops = None
         else:
             self.matrix_ops = None
             self.logger.warning("⚠️ Matrix Operations not available")
+        
+        # Initialize simple generator as fallback
+        if SIMPLE_GENERATOR_AVAILABLE:
+            self.simple_generator = SimpleFeatureGenerator(max_features=50)
+            self.logger.info("✅ Simple Feature Generator initialized as fallback")
+        else:
+            self.simple_generator = None
+            self.logger.warning("⚠️ Simple Feature Generator not available")
     
     async def orchestrate_feature_generation(
         self, 
@@ -471,98 +556,92 @@ class PIDBasedFeatureOrchestrator:
             else:
                 tprint_info("No optimized lookback periods provided - using defaults")
             
-            # Generate features in parallel if possible
-            generation_tasks = []
+            # Generate features - use synchronous calls for reliability
+            generation_results = []
             
             # Interaction features
             if self.interaction_generator:
                 try:
-                    tprint_info("Creating interaction feature generation task...")
-                    task = asyncio.create_task(
-                        self.interaction_generator.generate_interaction_features(
-                            X, feature_names, optimized_lookback_periods, target
-                        )
+                    tprint_info("Generating interaction features...")
+                    interaction_result = await self._generate_interaction_features_safe(
+                        X, feature_names, optimized_lookback_periods, target
                     )
-                    generation_tasks.append(('interaction', task))
-                    tprint_success("Interaction feature generation task created")
+                    generation_results.append(('interaction', interaction_result))
+                    tprint_success("Interaction feature generation completed")
                 except Exception as e:
-                    tprint_error(f"Failed to create interaction feature generation task: {e}")
-                    raise
+                    tprint_error(f"Interaction feature generation failed: {e}")
+                    generation_results.append(('interaction', e))
             
             # Polynomial features
             if self.polynomial_generator:
                 try:
-                    tprint_info("Creating polynomial feature generation task...")
-                    task = asyncio.create_task(
-                        self.polynomial_generator.generate_polynomial_features(
-                            X, feature_names, optimized_lookback_periods, target
-                        )
+                    tprint_info("Generating polynomial features...")
+                    polynomial_result = await self._generate_polynomial_features_safe(
+                        X, feature_names, optimized_lookback_periods, target
                     )
-                    generation_tasks.append(('polynomial', task))
-                    tprint_success("Polynomial feature generation task created")
+                    generation_results.append(('polynomial', polynomial_result))
+                    tprint_success("Polynomial feature generation completed")
                 except Exception as e:
-                    tprint_error(f"Failed to create polynomial feature generation task: {e}")
-                    raise
+                    tprint_error(f"Polynomial feature generation failed: {e}")
+                    generation_results.append(('polynomial', e))
             
             # Cross-timeframe features
             if self.cross_timeframe_generator:
                 try:
-                    tprint_info("Creating cross-timeframe feature generation task...")
-                    task = asyncio.create_task(
-                        self.cross_timeframe_generator.generate_cross_timeframe_features(
-                            X, feature_names, optimized_lookback_periods, target
-                        )
+                    tprint_info("Generating cross-timeframe features...")
+                    cross_timeframe_result = await self._generate_cross_timeframe_features_safe(
+                        X, feature_names, optimized_lookback_periods, target
                     )
-                    generation_tasks.append(('cross_timeframe', task))
-                    tprint_success("Cross-timeframe feature generation task created")
+                    generation_results.append(('cross_timeframe', cross_timeframe_result))
+                    tprint_success("Cross-timeframe feature generation completed")
                 except Exception as e:
-                    tprint_error(f"Failed to create cross-timeframe feature generation task: {e}")
-                    raise
+                    tprint_error(f"Cross-timeframe feature generation failed: {e}")
+                    generation_results.append(('cross_timeframe', e))
             
-            # Wait for all tasks to complete
-            tprint_info(f"Executing {len(generation_tasks)} feature generation tasks...")
-            try:
-                completed_tasks = await asyncio.gather(*[task for _, task in generation_tasks], return_exceptions=True)
-                tprint_success("All feature generation tasks completed")
-            except Exception as e:
-                tprint_error(f"Failed to execute feature generation tasks: {e}")
-                raise
+            # Process completed results
+            completed_tasks = [result for _, result in generation_results]
+            tprint_info(f"Processed {len(generation_results)} feature generation tasks")
             
             # Process results
             successful_generations = 0
             failed_generations = 0
             
             tprint_info("Processing feature generation results...")
-            for (generation_type, _), task_result in zip(generation_tasks, completed_tasks):
-                try:
-                    if isinstance(task_result, Exception):
-                        tprint_error(f"{generation_type} feature generation failed: {task_result}")
-                        failed_generations += 1
-                        continue
-                    
-                    # Validate task result
-                    if task_result is None:
-                        tprint_warning(f"{generation_type} feature generation returned None")
-                        failed_generations += 1
-                        continue
-                    
-                    # Store result based on type
-                    if generation_type == 'interaction':
-                        result.interaction_result = task_result
-                        tprint_success(f"Interaction features: {getattr(task_result, 'total_features_generated', 0)} features")
-                    elif generation_type == 'polynomial':
-                        result.polynomial_result = task_result
-                        tprint_success(f"Polynomial features: {getattr(task_result, 'total_features_generated', 0)} features")
-                    elif generation_type == 'cross_timeframe':
-                        result.cross_timeframe_result = task_result
-                        tprint_success(f"Cross-timeframe features: {getattr(task_result, 'total_features_generated', 0)} features")
-                    
-                    successful_generations += 1
-                    tprint_success(f"{generation_type} feature generation completed successfully")
-                    
-                except Exception as e:
-                    tprint_error(f"Error processing {generation_type} result: {e}")
+            for generation_type, task_result in generation_results:
+                if isinstance(task_result, Exception):
+                    tprint_error(f"{generation_type} feature generation failed: {task_result}")
                     failed_generations += 1
+                    continue
+                
+                # Validate task result
+                if task_result is None:
+                    tprint_error(f"{generation_type} feature generation returned None - this indicates a critical failure")
+                    failed_generations += 1
+                    continue
+                
+                # Extract feature count for validation
+                feature_count = 0
+                if hasattr(task_result, 'total_features_generated'):
+                    feature_count = task_result.total_features_generated
+                elif isinstance(task_result, dict) and 'total_features_generated' in task_result:
+                    feature_count = task_result['total_features_generated']
+                
+                # Store result based on type
+                if generation_type == 'interaction':
+                    result.interaction_result = task_result
+                    tprint_success(f"Interaction features: {feature_count} features generated")
+                elif generation_type == 'polynomial':
+                    result.polynomial_result = task_result
+                    tprint_success(f"Polynomial features: {feature_count} features generated")
+                elif generation_type == 'cross_timeframe':
+                    result.cross_timeframe_result = task_result
+                    tprint_success(f"Cross-timeframe features: {feature_count} features generated")
+                
+                # Check if any features were actually generated
+                if feature_count == 0:
+                    tprint_warning(f"{generation_type} generator completed but produced 0 features - check thresholds and data quality")
+                
+                successful_generations += 1
             
             tprint_info(f"Feature generation summary: {successful_generations} successful, {failed_generations} failed")
             
@@ -1147,13 +1226,13 @@ class PIDBasedFeatureOrchestrator:
         }
         
         try:
-            if SERIALIZATION_AVAILABLE and self.config.enable_serialization:
+            if SERIALIZATION_AVAILABLE and COMMON_OPERATIONS_AVAILABLE and self.config.enable_serialization:
                 # Create artifacts directory
                 artifacts_dir = Path(self.config.artifacts_directory)
                 ensure_directory(artifacts_dir)
                 
                 # Save features as parquet
-                if result.combined_features:
+                if result.combined_features and PANDAS_AVAILABLE:
                     features_df = pd.DataFrame(result.combined_features)
                     features_path = artifacts_dir / "features.parquet"
                     if safe_to_parquet(features_df, features_path):
@@ -1161,6 +1240,8 @@ class PIDBasedFeatureOrchestrator:
                         serialization_result['paths']['features'] = str(features_path)
                     else:
                         serialization_result['status']['features'] = False
+                else:
+                    tprint_warning("Skipping feature parquet save: pandas/common ops not available or no features")
                 
                 # Save metadata as JSON
                 metadata = {
@@ -1187,6 +1268,8 @@ class PIDBasedFeatureOrchestrator:
                         serialization_result['paths']['performance'] = str(metrics_path)
                     else:
                         serialization_result['status']['performance'] = False
+            else:
+                tprint_warning("Serialization/Common operations unavailable or disabled - skipping artifact saving")
             
             return serialization_result
             
@@ -1225,3 +1308,173 @@ class PIDBasedFeatureOrchestrator:
         except Exception as e:
             tprint_warning(f"Performance metrics collection failed: {e}")
             return metrics
+    
+    async def _generate_interaction_features_safe(
+        self, 
+        X: np.ndarray, 
+        feature_names: List[str], 
+        optimized_lookback_periods: Optional[Dict[str, int]], 
+        target: Optional[np.ndarray]
+    ):
+        """Safe wrapper for interaction feature generation."""
+        try:
+            # Check if the method is async or sync
+            if hasattr(self.interaction_generator, 'generate_interaction_features'):
+                method = self.interaction_generator.generate_interaction_features
+                if asyncio.iscoroutinefunction(method):
+                    return await method(X, feature_names, optimized_lookback_periods, target)
+                else:
+                    return method(X, feature_names, optimized_lookback_periods, target)
+            else:
+                raise AttributeError("Interaction generator missing generate_interaction_features method")
+        except Exception as e:
+            tprint_error(f"Interaction feature generation failed: {e}")
+            # Try simple generator as fallback
+            if self.simple_generator:
+                tprint_info("Attempting fallback to simple interaction feature generator...")
+                try:
+                    return self.simple_generator.generate_interaction_features(X, feature_names, optimized_lookback_periods, target)
+                except Exception as fallback_error:
+                    tprint_error(f"Simple generator fallback also failed: {fallback_error}")
+            # Return a minimal result to prevent pipeline failure
+            return self._create_empty_interaction_result()
+    
+    async def _generate_polynomial_features_safe(
+        self, 
+        X: np.ndarray, 
+        feature_names: List[str], 
+        optimized_lookback_periods: Optional[Dict[str, int]], 
+        target: Optional[np.ndarray]
+    ):
+        """Safe wrapper for polynomial feature generation."""
+        try:
+            # Check if the method is async or sync
+            if hasattr(self.polynomial_generator, 'generate_polynomial_features'):
+                method = self.polynomial_generator.generate_polynomial_features
+                if asyncio.iscoroutinefunction(method):
+                    return await method(X, feature_names, optimized_lookback_periods, target)
+                else:
+                    return method(X, feature_names, optimized_lookback_periods, target)
+            else:
+                raise AttributeError("Polynomial generator missing generate_polynomial_features method")
+        except Exception as e:
+            tprint_error(f"Polynomial feature generation failed: {e}")
+            # Try simple generator as fallback
+            if self.simple_generator:
+                tprint_info("Attempting fallback to simple polynomial feature generator...")
+                try:
+                    return self.simple_generator.generate_polynomial_features(X, feature_names, optimized_lookback_periods, target)
+                except Exception as fallback_error:
+                    tprint_error(f"Simple generator fallback also failed: {fallback_error}")
+            # Return a minimal result to prevent pipeline failure
+            return self._create_empty_polynomial_result()
+    
+    async def _generate_cross_timeframe_features_safe(
+        self, 
+        X: np.ndarray, 
+        feature_names: List[str], 
+        optimized_lookback_periods: Optional[Dict[str, int]], 
+        target: Optional[np.ndarray]
+    ):
+        """Safe wrapper for cross-timeframe feature generation."""
+        try:
+            # Check if the method is async or sync
+            if hasattr(self.cross_timeframe_generator, 'generate_cross_timeframe_features'):
+                method = self.cross_timeframe_generator.generate_cross_timeframe_features
+                if asyncio.iscoroutinefunction(method):
+                    return await method(X, feature_names, optimized_lookback_periods, target)
+                else:
+                    return method(X, feature_names, optimized_lookback_periods, target)
+            else:
+                raise AttributeError("Cross-timeframe generator missing generate_cross_timeframe_features method")
+        except Exception as e:
+            tprint_error(f"Cross-timeframe feature generation failed: {e}")
+            # Try simple generator as fallback
+            if self.simple_generator:
+                tprint_info("Attempting fallback to simple cross-timeframe feature generator...")
+                try:
+                    return self.simple_generator.generate_cross_timeframe_features(X, feature_names, optimized_lookback_periods, target)
+                except Exception as fallback_error:
+                    tprint_error(f"Simple generator fallback also failed: {fallback_error}")
+            # Return a minimal result to prevent pipeline failure
+            return self._create_empty_cross_timeframe_result()
+    
+    def _create_empty_interaction_result(self):
+        """Create empty interaction result for fallback."""
+        if InteractionResult:
+            return InteractionResult(
+                interaction_features={},
+                feature_names=[],
+                interaction_scores={},
+                total_features_generated=0,
+                execution_time=0.0,
+                optimization_used=False,
+                matrix_ops_used=False,
+                feature_stability_score=0.0,
+                redundancy_score=0.0
+            )
+        else:
+            # Fallback dict structure
+            return {
+                'interaction_features': {},
+                'feature_names': [],
+                'interaction_scores': {},
+                'total_features_generated': 0,
+                'execution_time': 0.0,
+                'optimization_used': False,
+                'matrix_ops_used': False,
+                'feature_stability_score': 0.0,
+                'redundancy_score': 0.0
+            }
+    
+    def _create_empty_polynomial_result(self):
+        """Create empty polynomial result for fallback."""
+        if PolynomialResult:
+            return PolynomialResult(
+                polynomial_features={},
+                feature_names=[],
+                polynomial_scores={},
+                total_features_generated=0,
+                execution_time=0.0,
+                optimization_used=False,
+                matrix_ops_used=False,
+                feature_stability_score=0.0
+            )
+        else:
+            # Fallback dict structure
+            return {
+                'polynomial_features': {},
+                'feature_names': [],
+                'polynomial_scores': {},
+                'total_features_generated': 0,
+                'execution_time': 0.0,
+                'optimization_used': False,
+                'matrix_ops_used': False,
+                'feature_stability_score': 0.0
+            }
+    
+    def _create_empty_cross_timeframe_result(self):
+        """Create empty cross-timeframe result for fallback."""
+        if CrossTimeframeResult:
+            return CrossTimeframeResult(
+                cross_timeframe_features={},
+                feature_names=[],
+                cross_timeframe_scores={},
+                total_features_generated=0,
+                execution_time=0.0,
+                optimization_used=False,
+                matrix_ops_used=False,
+                feature_stability_score=0.0
+            )
+        else:
+            # Fallback dict structure
+            return {
+                'cross_timeframe_features': {},
+                'feature_names': [],
+                'cross_timeframe_scores': {},
+                'total_features_generated': 0,
+                'execution_time': 0.0,
+                'optimization_used': False,
+                'matrix_ops_used': False,
+                'feature_stability_score': 0.0
+            }

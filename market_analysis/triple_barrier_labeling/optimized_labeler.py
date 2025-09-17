@@ -133,7 +133,7 @@ class OptimizedBarrierParams:
     sl_mult: float
     time_barrier_minutes: int
     max_lookahead: int
-    transaction_cost: float = 0.0008  # 0.08% fee per trade
+    transaction_cost: float = 0.0008  # 0.08% global standard transaction cost (entry + exit combined)
     optimization_score: float = 0.0
     optimization_timestamp: str = field(default_factory=lambda: datetime.now().isoformat())
     

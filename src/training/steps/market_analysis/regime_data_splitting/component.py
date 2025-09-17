@@ -38,6 +38,10 @@ from ..components.base_component import BaseMarketAnalysisComponent, ComponentCo
 from src.utils.logger import system_logger
 from src.utils.tprint import tprint
 
+# Import our standardized utilities
+from .validation_utils import get_validator, ValidationErrorType, ValidationResult, create_standardized_error
+from .config_utils import get_config_manager, get_path_manager
+
 # Import common utilities
 from src.utils.common_operations import (
     safe_dataframe_operation, validate_dataframe_columns, safe_convert_dtypes,
@@ -49,8 +53,7 @@ from src.utils.common_operations import (
     optimize_dataframe_dtypes, safe_fillna, safe_float, safe_int,
     validate_finite, validate_positive, validate_range, safe_divide,
     safe_log, safe_sqrt, safe_power, safe_mean, safe_std, safe_percentage_change,
-    safe_kelly_calculation, safe_weighted_average, safe_correlation,
-    safe_covariance, safe_percentile, validate_correlation_matrix,
+    safe_kelly_calculation, safe_weighted_average, validate_correlation_matrix,
     safe_matrix_inverse, math_safe, timed_operation, format_bytes,
     chunked_iterable, parallel_map, get_m1_gpu_manager, get_m1_memory_optimizer,
     get_m1_cpu_optimizer, cleanup_m1_optimizers, integrate_with_m1_optimizers,
@@ -170,6 +173,11 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
         self.gpu_manager = get_gpu_manager()
         self.memory_optimizer = get_memory_optimizer()
         self.cpu_optimizer = get_cpu_optimizer()
+        
+        # Initialize standardized validation and configuration
+        self.validator = get_validator(self.logger)
+        self.config_manager = get_config_manager()
+        self.path_manager = get_path_manager()
         
     def _validate_dependencies(self) -> None:
         """Validate required dependencies and fail fast if missing."""
@@ -426,8 +434,8 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
             
             # Handle different data types with memory optimization
             if isinstance(data, pd.DataFrame):
-                # Use view instead of copy when possible to save memory
-                market_data = data.copy() if data.is_copy is None else data
+                # Create a shallow copy to avoid unintended mutations
+                market_data = data.copy()
             elif isinstance(data, dict) and 'data' in data:
                 market_data = data['data']
             else:
@@ -519,7 +527,7 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                     self.logger.error("❌ Regime discovery results are empty")
                     return None
             elif isinstance(regime_discovery, list):
-                if len(regime_discovery) == 0:
+                if not regime_discovery:
                     self.logger.error("❌ Regime discovery results list is empty")
                     return None
             
@@ -575,11 +583,11 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                 market_data_aligned['regime_state'] = regime_states_aligned
                 if regime_probabilities_aligned is not None:
                     market_data_aligned['regime_probability'] = regime_probabilities_aligned
-                    # Use safe math operations for confidence calculation
-                    market_data_aligned['regime_confidence'] = safe_apply_function(
-                        market_data_aligned, 
-                        lambda row: math_safe_func(np.max, regime_probabilities_aligned[row.name], default=1.0)
-                    )
+                    # Compute max probability per row robustly, independent of DataFrame index
+                    try:
+                        market_data_aligned['regime_confidence'] = np.max(regime_probabilities_aligned, axis=1)
+                    except Exception:
+                        market_data_aligned['regime_confidence'] = 1.0
                 else:
                     market_data_aligned['regime_confidence'] = 1.0
                 
@@ -810,7 +818,7 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
             
             # Validate regime states
             regime_states = regime_data['regime_states']
-            if regime_states is None or len(regime_states) == 0:
+            if regime_states is None or not regime_states:
                 validation_result['valid'] = False
                 validation_result['errors'].append("No regime states found")
                 return validation_result

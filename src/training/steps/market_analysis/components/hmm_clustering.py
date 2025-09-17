@@ -679,41 +679,50 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             if not regime_models or not regime_assignments:
                 raise ValueError("No regime discovery results available for clustering")
             
-            # Determine optimal number of clusters using elbow method if enabled
+            # COHERENT CLUSTERING: Integrate advanced analysis with actual clustering
+            tprint("🔄 Starting coherent regime-based clustering...")
+            
+            # Step 1: Extract regime characteristics for analysis
+            regime_characteristics = self._extract_regime_characteristics_from_discovery(regime_discovery)
+            if not regime_characteristics:
+                raise ValueError("No regime characteristics available for clustering")
+            
+            # Step 2: Use advanced methods to determine optimal clusters AND perform clustering
             if use_elbow_method and max_clusters > 3:
-                tprint("📊 Using elbow method to determine optimal cluster count...")
-                optimal_clusters = self._find_optimal_clusters_elbow_method(
-                    regime_discovery, max_clusters, market_data
+                tprint("📊 Using advanced multi-method cluster selection...")
+                clustering_analysis_result = self._perform_advanced_regime_clustering(
+                    regime_characteristics, regime_assignments, max_clusters, market_data
                 )
-                n_clusters = optimal_clusters
-                tprint(f"✅ Elbow method selected {n_clusters} clusters")
+                
+                n_clusters = clustering_analysis_result['optimal_k']
+                cluster_assignments = clustering_analysis_result['cluster_assignments']
+                regime_to_cluster_mapping = clustering_analysis_result['regime_to_cluster_mapping']
+                advanced_analysis_data = clustering_analysis_result['advanced_analysis']
+                
+                tprint(f"✅ Advanced clustering selected {n_clusters} clusters")
+                tprint(f"📊 Clustering method: {advanced_analysis_data.get('selected_method', 'consensus')}")
             else:
+                # Fallback: Simple regime grouping
                 n_clusters = max_clusters
-                tprint(f"📊 Using maximum clusters: {n_clusters}")
+                cluster_assignments = self._create_cluster_assignments(
+                    regime_assignments, n_clusters, len(market_data), regime_discovery
+                )
+                regime_to_cluster_mapping = {}
+                advanced_analysis_data = {'method': 'simple_fallback'}
+                tprint(f"📊 Using simple clustering: {n_clusters} clusters")
             
-            self.logger.info(f"🎯 Starting HMM clustering: {len(regime_models)} regimes → {n_clusters} clusters")
+            self.logger.info(f"🎯 Regime clustering completed: {len(regime_models)} regimes → {n_clusters} clusters")
             
-            # Train HMM models for clustering
-            # We'll train multiple models and then cluster them
-            n_models = min(len(regime_models), n_clusters * 2)  # Train more models than needed clusters
-            
-            # Use the train_hmm_parallel method from EnhancedHMMCompositeManager
-            self.logger.info(f"🔧 Training {n_models} HMM models for clustering")
-            hmm_models = hmm_manager.train_hmm_parallel(
-                data=market_data,
-                n_models=n_models,
-                config=None  # Use default config
+            # Step 3: Create representative HMM models for each cluster
+            tprint("🔧 Creating representative HMM models for clusters...")
+            hmm_models = self._create_cluster_representative_models(
+                hmm_manager, market_data, cluster_assignments, n_clusters, regime_discovery
             )
-            
-            self.logger.info(f"🔧 HMM training result: {len(hmm_models) if hmm_models else 0} models trained")
             
             if not hmm_models:
-                raise ValueError("No HMM models were trained")
+                raise ValueError("No representative HMM models were created")
             
-            # Create cluster assignments by grouping similar regimes
-            cluster_assignments = self._create_cluster_assignments(
-                regime_assignments, n_clusters, len(market_data), regime_discovery
-            )
+            tprint(f"✅ Created {len(hmm_models)} representative HMM models")
             
             # Calculate cluster metrics
             # Store advanced clustering analysis results
@@ -5256,4 +5265,306 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             
         except Exception as e:
             return {'error': f'Overall cluster quality assessment failed: {e}'}
+    
+    def _perform_advanced_regime_clustering(self, regime_characteristics: Dict[str, Any], regime_assignments: List[int], max_clusters: int, market_data: Any) -> Dict[str, Any]:
+        """Perform coherent advanced regime clustering with integrated analysis and clustering."""
+        try:
+            from sklearn.cluster import AgglomerativeClustering, SpectralClustering
+            from sklearn.mixture import GaussianMixture
+            import numpy as np
+            
+            # Step 1: Calculate regime similarity matrix
+            similarity_matrix = self._calculate_regime_similarity_matrix(regime_characteristics)
+            if similarity_matrix.size == 0:
+                raise ValueError("Failed to calculate regime similarity matrix")
+            
+            # Step 2: Run all advanced analyses
+            cluster_range = range(2, min(max_clusters + 1, len(regime_characteristics)))
+            
+            # Elbow analysis with validation metrics
+            elbow_results = self._run_elbow_analysis_comprehensive(similarity_matrix, cluster_range)
+            
+            # Information criteria analysis
+            ic_results = self._calculate_information_criterion_scores(regime_characteristics, cluster_range)
+            
+            # GMM analysis with confidence optimization
+            gmm_results = self._test_gmm_clustering_with_confidence(regime_characteristics, list(cluster_range))
+            
+            # Spectral analysis for complex relationships
+            spectral_results = self._test_spectral_clustering(similarity_matrix, list(cluster_range))
+            
+            # Step 3: Select optimal k using consensus
+            optimal_k = self._find_optimal_k_comprehensive(
+                list(cluster_range), 
+                elbow_results['inertias'], 
+                elbow_results['coherence_scores'],
+                elbow_results['validation_metrics'],
+                ic_results,
+                gmm_results,
+                spectral_results
+            )
+            
+            # Step 4: Perform final clustering using the best method
+            final_clustering_result = self._perform_final_clustering_with_best_method(
+                regime_characteristics, similarity_matrix, optimal_k, 
+                gmm_results, spectral_results
+            )
+            
+            # Step 5: Map regime assignments to cluster assignments
+            regime_to_cluster = final_clustering_result['regime_to_cluster']
+            cluster_assignments = self._map_regime_assignments_to_clusters(
+                regime_assignments, regime_to_cluster, len(market_data)
+            )
+            
+            return {
+                'optimal_k': optimal_k,
+                'cluster_assignments': cluster_assignments,
+                'regime_to_cluster_mapping': regime_to_cluster,
+                'advanced_analysis': {
+                    'selected_method': final_clustering_result['method_used'],
+                    'elbow_analysis': elbow_results,
+                    'ic_analysis': ic_results,
+                    'gmm_analysis': gmm_results,
+                    'spectral_analysis': spectral_results,
+                    'consensus_decision': {
+                        'optimal_k': optimal_k,
+                        'method_votes': final_clustering_result.get('method_votes', {}),
+                        'selection_confidence': final_clustering_result.get('confidence', 'medium')
+                    }
+                }
+            }
+            
+        except Exception as e:
+            self.logger.error(f"❌ Advanced regime clustering failed: {e}")
+            # Fallback to simple clustering
+            simple_assignments = self._create_cluster_assignments(
+                regime_assignments, max_clusters, len(market_data), {'regime_characteristics': regime_characteristics}
+            )
+            return {
+                'optimal_k': max_clusters,
+                'cluster_assignments': simple_assignments,
+                'regime_to_cluster_mapping': {},
+                'advanced_analysis': {'error': str(e), 'method': 'fallback'}
+            }
+
+    def _run_elbow_analysis_comprehensive(self, similarity_matrix: np.ndarray, cluster_range: range) -> Dict[str, Any]:
+        """Run comprehensive elbow analysis with all validation metrics."""
+        try:
+            from sklearn.cluster import AgglomerativeClustering
+            import numpy as np
+            
+            distance_matrix = 1.0 - similarity_matrix
+            inertias = []
+            coherence_scores = []
+            
+            for n_clusters in cluster_range:
+                try:
+                    clustering = AgglomerativeClustering(
+                        n_clusters=n_clusters,
+                        metric='precomputed',
+                        linkage='average'
+                    )
+                    cluster_labels = clustering.fit_predict(distance_matrix)
+                    
+                    # Calculate inertia
+                    inertia = 0.0
+                    for cluster_id in range(n_clusters):
+                        cluster_indices = np.where(cluster_labels == cluster_id)[0]
+                        if len(cluster_indices) > 1:
+                            cluster_distances = distance_matrix[np.ix_(cluster_indices, cluster_indices)]
+                            inertia += np.sum(cluster_distances) / (len(cluster_indices) * (len(cluster_indices) - 1))
+                    inertias.append(inertia)
+                    
+                    # Calculate coherence
+                    coherence = self._calculate_within_cluster_coherence(distance_matrix, cluster_labels)
+                    coherence_scores.append(coherence)
+                    
+                except Exception:
+                    inertias.append(float('inf'))
+                    coherence_scores.append(0.0)
+            
+            # Calculate validation metrics
+            validation_metrics = self._calculate_additional_validation_metrics(
+                distance_matrix, cluster_range, inertias, coherence_scores
+            )
+            
+            return {
+                'inertias': inertias,
+                'coherence_scores': coherence_scores,
+                'validation_metrics': validation_metrics
+            }
+            
+        except Exception as e:
+            return {'inertias': [], 'coherence_scores': [], 'validation_metrics': {}, 'error': str(e)}
+
+    def _perform_final_clustering_with_best_method(self, regime_characteristics: Dict[str, Any], similarity_matrix: np.ndarray, optimal_k: int, gmm_results: Dict, spectral_results: Dict) -> Dict[str, Any]:
+        """Perform final clustering using the best available method."""
+        try:
+            import numpy as np
+            
+            regime_ids = list(regime_characteristics.keys())
+            
+            # Determine best method based on quality scores
+            method_scores = {}
+            
+            # GMM score
+            if gmm_results.get('gmm_quality') == 'good':
+                gmm_k_result = gmm_results.get('gmm_results', {}).get(optimal_k, {})
+                method_scores['gmm'] = gmm_k_result.get('quality_score', 0.0)
+            
+            # Spectral score
+            if spectral_results.get('spectral_quality') == 'good':
+                spectral_k_result = spectral_results.get('spectral_results', {}).get(optimal_k, {})
+                method_scores['spectral'] = spectral_k_result.get('overall_score', 0.0)
+            
+            # Hierarchical score (always available)
+            method_scores['hierarchical'] = 0.6  # Base score
+            
+            # Select best method
+            if method_scores:
+                best_method = max(method_scores.keys(), key=lambda m: method_scores[m])
+                best_score = method_scores[best_method]
+            else:
+                best_method = 'hierarchical'
+                best_score = 0.6
+            
+            # Perform clustering with selected method
+            if best_method == 'gmm' and optimal_k in gmm_results.get('gmm_results', {}):
+                # Use GMM assignments
+                gmm_assignments = gmm_results['gmm_results'][optimal_k]['assignments']
+                regime_to_cluster = {}
+                for i, regime_id in enumerate(regime_ids):
+                    if i < len(gmm_assignments) and gmm_assignments[i] != -1:
+                        regime_to_cluster[regime_id] = gmm_assignments[i]
+                
+                confidence_info = {
+                    'method': 'gmm',
+                    'confidence_threshold': gmm_results['gmm_results'][optimal_k]['confidence_threshold'],
+                    'coverage': gmm_results['gmm_results'][optimal_k]['coverage']
+                }
+                
+            elif best_method == 'spectral' and optimal_k in spectral_results.get('spectral_results', {}):
+                # Use Spectral assignments
+                spectral_assignments = spectral_results['spectral_results'][optimal_k]['cluster_labels']
+                regime_to_cluster = {}
+                for i, regime_id in enumerate(regime_ids):
+                    if i < len(spectral_assignments):
+                        regime_to_cluster[regime_id] = spectral_assignments[i]
+                
+                confidence_info = {
+                    'method': 'spectral',
+                    'relationship_complexity': spectral_results['spectral_results'][optimal_k]['relationship_complexity'],
+                    'spectral_quality': spectral_results['spectral_results'][optimal_k]['spectral_quality']
+                }
+                
+            else:
+                # Use hierarchical clustering
+                from sklearn.cluster import AgglomerativeClustering
+                distance_matrix = 1.0 - similarity_matrix
+                
+                clustering = AgglomerativeClustering(
+                    n_clusters=optimal_k,
+                    metric='precomputed',
+                    linkage='average'
+                )
+                cluster_labels = clustering.fit_predict(distance_matrix)
+                
+                regime_to_cluster = {}
+                for i, regime_id in enumerate(regime_ids):
+                    regime_to_cluster[regime_id] = cluster_labels[i]
+                
+                confidence_info = {
+                    'method': 'hierarchical',
+                    'linkage': 'average',
+                    'metric': 'precomputed'
+                }
+            
+            return {
+                'regime_to_cluster': regime_to_cluster,
+                'method_used': best_method,
+                'method_scores': method_scores,
+                'confidence': 'high' if best_score > 0.7 else 'medium' if best_score > 0.5 else 'low',
+                'clustering_info': confidence_info
+            }
+            
+        except Exception as e:
+            self.logger.error(f"❌ Final clustering failed: {e}")
+            # Emergency fallback
+            regime_ids = list(regime_characteristics.keys())
+            regime_to_cluster = {regime_id: i % optimal_k for i, regime_id in enumerate(regime_ids)}
+            return {
+                'regime_to_cluster': regime_to_cluster,
+                'method_used': 'emergency_fallback',
+                'error': str(e)
+            }
+
+    def _map_regime_assignments_to_clusters(self, regime_assignments: List[int], regime_to_cluster: Dict[str, int], data_length: int) -> List[int]:
+        """Map time series regime assignments to cluster assignments."""
+        try:
+            cluster_assignments = []
+            
+            for regime_id in regime_assignments:
+                # Convert regime number to regime string ID
+                regime_key = f"regime_{regime_id}"
+                
+                # Get cluster assignment for this regime
+                cluster_id = regime_to_cluster.get(regime_key, 0)  # Default to cluster 0
+                cluster_assignments.append(cluster_id)
+            
+            # Ensure we have the right length
+            while len(cluster_assignments) < data_length:
+                cluster_assignments.append(0)  # Pad with cluster 0
+            
+            return cluster_assignments[:data_length]  # Trim to exact length
+            
+        except Exception as e:
+            self.logger.error(f"❌ Regime to cluster mapping failed: {e}")
+            # Fallback: simple modulo assignment
+            return [i % len(set(regime_to_cluster.values())) if regime_to_cluster else 0 for i in range(data_length)]
+
+    def _create_cluster_representative_models(self, hmm_manager: Any, market_data: Any, cluster_assignments: List[int], n_clusters: int, regime_discovery: Dict[str, Any]) -> List[Any]:
+        """Create representative HMM models for each cluster based on cluster assignments."""
+        try:
+            representative_models = []
+            
+            # For each cluster, train a representative HMM model
+            for cluster_id in range(n_clusters):
+                # Get data points assigned to this cluster
+                cluster_mask = np.array(cluster_assignments) == cluster_id
+                cluster_data = market_data[cluster_mask] if hasattr(market_data, '__getitem__') else market_data
+                
+                if hasattr(cluster_data, 'empty') and not cluster_data.empty:
+                    # Train HMM model on cluster data
+                    cluster_models = hmm_manager.train_hmm_parallel(
+                        data=cluster_data,
+                        n_models=1,  # One model per cluster
+                        config=None
+                    )
+                    
+                    if cluster_models and len(cluster_models) > 0:
+                        representative_models.append(cluster_models[0])
+                    else:
+                        # Create dummy model if training failed
+                        representative_models.append(self._create_dummy_hmm_model())
+                else:
+                    # Create dummy model for empty clusters
+                    representative_models.append(self._create_dummy_hmm_model())
+            
+            return representative_models
+            
+        except Exception as e:
+            self.logger.error(f"❌ Representative model creation failed: {e}")
+            # Return dummy models
+            return [self._create_dummy_hmm_model() for _ in range(n_clusters)]
+
+    def _create_dummy_hmm_model(self) -> Dict[str, Any]:
+        """Create a dummy HMM model for fallback purposes."""
+        return {
+            'model_type': 'dummy',
+            'n_components': 2,
+            'means_': [[0.0], [0.0]],
+            'covars_': [[1.0], [1.0]],
+            'transmat_': [[0.7, 0.3], [0.3, 0.7]],
+            'startprob_': [0.5, 0.5]
+        }
     

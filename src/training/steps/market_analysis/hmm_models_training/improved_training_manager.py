@@ -243,10 +243,11 @@ class ImprovedHMMTrainingManager(BaseTrainingStep):
             except Exception as e:
                 self.logger.debug(f"Could not get hyperparameters: {e}")
             
-            # Record performance metrics
-            self.performance_collector.record_model_performance(
-                metrics.accuracy, training_time, metrics.memory_usage_mb
-            )
+            # Record performance metrics if available
+            if hasattr(self, 'performance_collector') and self.performance_collector:
+                self.performance_collector.record_model_performance(
+                    metrics.accuracy, training_time, metrics.memory_usage_mb
+                )
             
             self.logger.info(f"✅ {model_type} trained successfully (accuracy: {metrics.accuracy:.4f}, time: {training_time:.2f}s)")
             
@@ -280,8 +281,10 @@ class ImprovedHMMTrainingManager(BaseTrainingStep):
             Enhanced report dictionary
         """
         try:
-            # Get performance summary
-            perf_summary = self.performance_collector.get_summary_stats()
+            # Get performance summary if available
+            perf_summary = {}
+            if hasattr(self, 'performance_collector') and self.performance_collector:
+                perf_summary = self.performance_collector.get_summary_stats()
             
             report = {
                 "report_metadata": {
@@ -475,7 +478,7 @@ class ImprovedHMMTrainingManager(BaseTrainingStep):
                     'execution_time': execution_time,
                     'config': asdict(self.config) if hasattr(self.config, '__dataclass_fields__') else str(self.config),
                     'circuit_breaker_state': self.circuit_breaker.state,
-                    'performance_summary': self.performance_collector.get_summary_stats()
+                    'performance_summary': perf_summary
                 },
                 'training_time': execution_time
             }

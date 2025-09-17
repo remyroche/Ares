@@ -20,28 +20,82 @@ from pathlib import Path
 # Common utilities imports
 from src.utils.tprint import tprint
 from src.utils.common_operations import (
-    safe_dataframe_operation, validate_dataframe, safe_divide, safe_float, safe_int,
-    validate_finite, validate_positive, validate_range, safe_percentage_change,
-    safe_json_dump, safe_json_load, ensure_directory, safe_file_exists,
-    get_m1_gpu_manager, get_m1_memory_optimizer, get_m1_cpu_optimizer,
-    memory_checkpoint, gpu_context, optimize_memory, get_memory_usage
+    safe_dataframe_operation, safe_divide, safe_float, safe_int,
+    ensure_directory, memory_checkpoint, optimize_memory, get_memory_usage
 )
+try:
+    from src.utils.common_operations import (
+        validate_dataframe, validate_finite, validate_positive, validate_range, 
+        safe_percentage_change, safe_json_dump, safe_json_load, safe_file_exists,
+        get_m1_gpu_manager, get_m1_memory_optimizer, get_m1_cpu_optimizer,
+        gpu_context
+    )
+    EXTENDED_COMMON_OPS_AVAILABLE = True
+except ImportError:
+    EXTENDED_COMMON_OPS_AVAILABLE = False
+
 from src.utils.math_validation import (
-    safe_divide as math_safe_divide, safe_log, safe_sqrt, safe_power,
-    safe_mean, safe_std, safe_correlation, safe_covariance, safe_percentile,
+    safe_divide as math_safe_divide, safe_log, safe_sqrt,
     validate_finite as math_validate_finite, validate_positive as math_validate_positive,
-    validate_range as math_validate_range, MathValidation
+    validate_range as math_validate_range
 )
-from src.utils.data.klines_parquet import KlinesParquetManager, get_klines_manager
-from src.utils.serialization_utils import JSONSerializer, PickleSerializer, UniversalSerializer
-from src.utils.matrix_operations.unified_operations import (
-    UnifiedMatrixOperations, get_unified_matrix_operations,
-    safe_matrix_multiply, safe_correlation_matrix, safe_matrix_inverse
-)
-from src.utils.ml_common.config.base_training_config import EnsembleTrainingConfig
-from src.utils.ml_common.training.ensemble_training_step import EnsembleTrainingStep
-from src.utils.ml_common.math_validation import MathValidator
-from src.utils.ml_common.evaluation.evaluation_utils import EvaluationUtils
+try:
+    from src.utils.math_validation import (
+        safe_power, safe_mean, safe_std, safe_correlation, safe_covariance, 
+        safe_percentile, MathValidation
+    )
+    EXTENDED_MATH_AVAILABLE = True
+except ImportError:
+    EXTENDED_MATH_AVAILABLE = False
+    MathValidation = None
+
+try:
+    from src.utils.data.klines_parquet import KlinesParquetManager, get_klines_manager
+    KLINES_AVAILABLE = True
+except ImportError:
+    KLINES_AVAILABLE = False
+    get_klines_manager = lambda: None
+
+from src.utils.serialization_utils import UniversalSerializer
+try:
+    from src.utils.serialization_utils import JSONSerializer, PickleSerializer
+    LEGACY_SERIALIZERS_AVAILABLE = True
+except ImportError:
+    LEGACY_SERIALIZERS_AVAILABLE = False
+
+try:
+    from src.utils.matrix_operations.unified_operations import (
+        UnifiedMatrixOperations, get_unified_matrix_operations,
+        safe_matrix_multiply, safe_correlation_matrix, safe_matrix_inverse
+    )
+    MATRIX_OPS_AVAILABLE = True
+except ImportError:
+    MATRIX_OPS_AVAILABLE = False
+    get_unified_matrix_operations = lambda: None
+
+try:
+    from src.utils.ml_common.config.base_training_config import EnsembleTrainingConfig
+    from src.utils.ml_common.training.ensemble_training_step import EnsembleTrainingStep
+    ML_COMMON_AVAILABLE = True
+except ImportError:
+    ML_COMMON_AVAILABLE = False
+    # Create fallback classes
+    class EnsembleTrainingConfig:
+        def __init__(self, **kwargs):
+            for k, v in kwargs.items():
+                setattr(self, k, v)
+    
+    class EnsembleTrainingStep:
+        def __init__(self, config, enable_vectorization=True):
+            self.config = config
+            self.enable_vectorization = enable_vectorization
+
+try:
+    from src.utils.ml_common.evaluation.evaluation_utils import EvaluationUtils
+    ML_EVAL_AVAILABLE = True
+except ImportError:
+    ML_EVAL_AVAILABLE = False
+    EvaluationUtils = None
 
 # Shared utilities
 from .shared_utilities import (
@@ -83,17 +137,22 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
         self.start_time = time.time()
         
         try:
-            # Initialize common utilities
-            self.math_validator = MathValidation()
-            self.matrix_ops = get_unified_matrix_operations()
+            # Initialize common utilities with availability checks
+            self.math_validator = MathValidation() if EXTENDED_MATH_AVAILABLE else None
+            self.matrix_ops = get_unified_matrix_operations() if MATRIX_OPS_AVAILABLE else None
             self.serializer = UniversalSerializer()
-            self.klines_manager = get_klines_manager()
-            self.evaluation_utils = EvaluationUtils()
+            self.klines_manager = get_klines_manager() if KLINES_AVAILABLE else None
+            self.evaluation_utils = EvaluationUtils() if ML_EVAL_AVAILABLE else None
             
-            # Initialize M1 hardware optimizers
-            self.gpu_manager = get_m1_gpu_manager()
-            self.memory_optimizer = get_m1_memory_optimizer()
-            self.cpu_optimizer = get_m1_cpu_optimizer()
+            # Initialize M1 hardware optimizers with availability checks
+            if EXTENDED_COMMON_OPS_AVAILABLE:
+                self.gpu_manager = get_m1_gpu_manager()
+                self.memory_optimizer = get_m1_memory_optimizer()
+                self.cpu_optimizer = get_m1_cpu_optimizer()
+            else:
+                self.gpu_manager = None
+                self.memory_optimizer = None
+                self.cpu_optimizer = None
             
             # Set default configuration for HMM ensemble models
             if config is None:
@@ -169,38 +228,56 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
                 raise ValueError(f"Invalid timeframe '{config.timeframe}' - must be one of: {valid_timeframes}")
             
             # Validate HPO parameters using math validation utilities - FAST FAIL
-            if config.enable_hpo:
-                try:
-                    config.hpo_n_trials = self.math_validator.validate_positive(
-                        config.hpo_n_trials, "HPO trials"
-                    )
-                except ValueError as e:
-                    tprint(f"❌ CRITICAL: HPO trials validation failed - FAILING FAST")
-                    raise ValueError(f"HPO trials must be positive: {e}") from e
-                
-                try:
-                    config.hpo_timeout_seconds = self.math_validator.validate_positive(
-                        config.hpo_timeout_seconds, "HPO timeout"
-                    )
-                except ValueError as e:
-                    tprint(f"❌ CRITICAL: HPO timeout validation failed - FAILING FAST")
-                    raise ValueError(f"HPO timeout must be positive: {e}") from e
+            if hasattr(config, 'enable_hpo') and config.enable_hpo:
+                if self.math_validator:
+                    try:
+                        config.hpo_n_trials = self.math_validator.validate_positive(
+                            config.hpo_n_trials, "HPO trials"
+                        )
+                    except ValueError as e:
+                        tprint(f"❌ CRITICAL: HPO trials validation failed - FAILING FAST")
+                        raise ValueError(f"HPO trials must be positive: {e}") from e
+                    
+                    try:
+                        config.hpo_timeout_seconds = self.math_validator.validate_positive(
+                            config.hpo_timeout_seconds, "HPO timeout"
+                        )
+                    except ValueError as e:
+                        tprint(f"❌ CRITICAL: HPO timeout validation failed - FAILING FAST")
+                        raise ValueError(f"HPO timeout must be positive: {e}") from e
+                else:
+                    # Fallback validation without math validator
+                    if not hasattr(config, 'hpo_n_trials') or config.hpo_n_trials <= 0:
+                        raise ValueError("HPO trials must be positive")
+                    if not hasattr(config, 'hpo_timeout_seconds') or config.hpo_timeout_seconds <= 0:
+                        raise ValueError("HPO timeout must be positive")
             
             # Validate minimum samples using math validation utilities - FAST FAIL
-            try:
-                config.min_samples_per_regime = self.math_validator.validate_positive(
-                    config.min_samples_per_regime, "Minimum samples per regime"
-                )
-            except ValueError as e:
-                tprint(f"❌ CRITICAL: Minimum samples validation failed - FAILING FAST")
-                raise ValueError(f"Minimum samples per regime must be positive: {e}") from e
+            if self.math_validator:
+                try:
+                    config.min_samples_per_regime = self.math_validator.validate_positive(
+                        config.min_samples_per_regime, "Minimum samples per regime"
+                    )
+                except ValueError as e:
+                    tprint(f"❌ CRITICAL: Minimum samples validation failed - FAILING FAST")
+                    raise ValueError(f"Minimum samples per regime must be positive: {e}") from e
+            else:
+                # Fallback validation
+                if not hasattr(config, 'min_samples_per_regime') or config.min_samples_per_regime <= 0:
+                    raise ValueError("Minimum samples per regime must be positive")
             
             # Validate save path using common utilities - WARNING ONLY
-            if config.save_models and config.model_save_path:
+            if hasattr(config, 'save_models') and config.save_models and hasattr(config, 'model_save_path') and config.model_save_path:
                 save_path = Path(config.model_save_path)
-                if not safe_file_exists(save_path.parent):
+                if EXTENDED_COMMON_OPS_AVAILABLE and not safe_file_exists(save_path.parent):
                     tprint(f"⚠️ WARNING: Save path parent directory does not exist: {save_path.parent}")
                     # Try to create the directory using common utilities
+                    if ensure_directory(save_path.parent):
+                        tprint(f"✅ Created save path directory: {save_path.parent}")
+                    else:
+                        tprint(f"⚠️ Could not create save path directory: {save_path.parent}")
+                elif not EXTENDED_COMMON_OPS_AVAILABLE:
+                    # Fallback directory creation
                     if ensure_directory(save_path.parent):
                         tprint(f"✅ Created save path directory: {save_path.parent}")
                     else:
@@ -260,16 +337,22 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
                 raise ValueError(f"Target data contains {inf_count} infinite values - training cannot proceed")
             
             # Validate finite values using math validation utilities
-            try:
-                # Validate a sample of values to ensure they are finite
-                sample_size = min(1000, X.shape[0])
-                sample_indices = np.random.choice(X.shape[0], sample_size, replace=False)
-                for i in sample_indices:
-                    for j in range(min(10, X.shape[1])):  # Check first 10 features
-                        self.math_validator.validate_finite(X[i, j], f"X[{i},{j}]")
-            except ValueError as e:
-                tprint(f"❌ CRITICAL: Non-finite values detected in input features - FAILING FAST")
-                raise ValueError(f"Input data contains non-finite values: {e}") from e
+            if self.math_validator:
+                try:
+                    # Validate a sample of values to ensure they are finite
+                    sample_size = min(1000, X.shape[0])
+                    sample_indices = np.random.choice(X.shape[0], sample_size, replace=False)
+                    for i in sample_indices:
+                        for j in range(min(10, X.shape[1])):  # Check first 10 features
+                            self.math_validator.validate_finite(X[i, j], f"X[{i},{j}]")
+                except ValueError as e:
+                    tprint(f"❌ CRITICAL: Non-finite values detected in input features - FAILING FAST")
+                    raise ValueError(f"Input data contains non-finite values: {e}") from e
+            else:
+                # Fallback finite validation
+                if np.any(~np.isfinite(X)):
+                    tprint(f"❌ CRITICAL: Non-finite values detected in input features - FAILING FAST")
+                    raise ValueError("Input data contains non-finite values")
             
             # Check regime distribution using safe operations - WARNING ONLY
             unique_regimes, regime_counts = np.unique(regime_labels, return_counts=True)
@@ -511,9 +594,15 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
             
             # CatBoost with validated parameters (Primary: Speed + robustness)
             try:
-                iterations = self.math_validator.validate_positive(1000, "CatBoost iterations")
-                learning_rate = self.math_validator.validate_range(0.05, 0.0, 1.0, "CatBoost learning_rate")
-                depth = self.math_validator.validate_positive(6, "CatBoost depth")
+                if self.math_validator:
+                    iterations = self.math_validator.validate_positive(1000, "CatBoost iterations")
+                    learning_rate = self.math_validator.validate_range(0.05, 0.0, 1.0, "CatBoost learning_rate")
+                    depth = self.math_validator.validate_positive(6, "CatBoost depth")
+                else:
+                    # Fallback validation
+                    iterations = 1000 if 1000 > 0 else 100
+                    learning_rate = 0.05 if 0.0 < 0.05 < 1.0 else 0.1
+                    depth = 6 if 6 > 0 else 4
                 
                 ensemble_models['catboost'] = CatBoostRegressor(
                     iterations=int(iterations),
@@ -536,9 +625,15 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
             
             # Elastic Net with validated parameters (Primary: Fast baseline)
             try:
-                alpha = self.math_validator.validate_positive(0.1, "ElasticNet alpha")
-                l1_ratio = self.math_validator.validate_range(0.5, 0.0, 1.0, "ElasticNet l1_ratio")
-                max_iter = self.math_validator.validate_positive(1000, "ElasticNet max_iter")
+                if self.math_validator:
+                    alpha = self.math_validator.validate_positive(0.1, "ElasticNet alpha")
+                    l1_ratio = self.math_validator.validate_range(0.5, 0.0, 1.0, "ElasticNet l1_ratio")
+                    max_iter = self.math_validator.validate_positive(1000, "ElasticNet max_iter")
+                else:
+                    # Fallback validation
+                    alpha = 0.1 if 0.1 > 0 else 0.01
+                    l1_ratio = 0.5 if 0.0 < 0.5 < 1.0 else 0.5
+                    max_iter = 1000 if 1000 > 0 else 500
                 
                 ensemble_models['elastic_net'] = ElasticNet(
                     random_state=43,
@@ -559,9 +654,15 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
             
             # Random Forest with validated parameters (Meta: Speed + Efficient)
             try:
-                n_estimators = self.math_validator.validate_positive(100, "RandomForest n_estimators")
-                max_depth = self.math_validator.validate_positive(10, "RandomForest max_depth")
-                min_samples_split = self.math_validator.validate_positive(2, "RandomForest min_samples_split")
+                if self.math_validator:
+                    n_estimators = self.math_validator.validate_positive(100, "RandomForest n_estimators")
+                    max_depth = self.math_validator.validate_positive(10, "RandomForest max_depth")
+                    min_samples_split = self.math_validator.validate_positive(2, "RandomForest min_samples_split")
+                else:
+                    # Fallback validation
+                    n_estimators = 100 if 100 > 0 else 50
+                    max_depth = 10 if 10 > 0 else 5
+                    min_samples_split = 2 if 2 > 0 else 2
                 
                 ensemble_models['ensemble_rf'] = RandomForestRegressor(
                     n_estimators=int(n_estimators),

@@ -82,6 +82,15 @@ except ImportError as e:
     def safe_power(x, y, default=0.0): return x ** y if np.isfinite(x) and np.isfinite(y) else default
     def validate_finite(value, name="value"): return float(value) if np.isfinite(value) else 0.0
 
+# Import serialization utilities availability flag (align with BaseFeatureGenerator usage)
+try:
+    from src.utils.serialization_utils import (
+        JSONSerializer, PickleSerializer, ParquetSerializer, UniversalSerializer
+    )
+    SERIALIZATION_AVAILABLE = True
+except ImportError:
+    SERIALIZATION_AVAILABLE = False
+
 # Import math validation for additional math operations
 try:
     from src.utils.math_validation import MathValidation, safe_correlation, safe_covariance, safe_percentile
@@ -488,7 +497,14 @@ class InteractionFeatureGenerator(BaseFeatureGenerator):
                 continue
         
         if interaction_features:
-            return np.column_stack(interaction_features), interaction_names
+            features_matrix = np.column_stack(interaction_features)
+            # Drop near-constant features (low variance)
+            variances = np.var(features_matrix, axis=0)
+            keep_mask = variances > 1e-12
+            if not np.all(keep_mask):
+                features_matrix = features_matrix[:, keep_mask]
+                interaction_names = [name for name, keep in zip(interaction_names, keep_mask) if keep]
+            return features_matrix, interaction_names
         else:
             return np.array([]).reshape(X.shape[0], 0), []
     
@@ -528,10 +544,25 @@ class InteractionFeatureGenerator(BaseFeatureGenerator):
                 name = f"{feat1}_minus_{feat2}"
                 
             elif interaction_type == InteractionType.CORRELATION:
-                # Rolling correlation (simplified)
+                # Rolling correlation using fixed window; fill with 0 where insufficient window
                 window = min(20, len(x1))
-                feature = np.full_like(x1, np.corrcoef(x1, x2)[0, 1])
-                name = f"{feat1}_corr_{feat2}"
+                if window >= 3:
+                    x1_mean = np.convolve(x1, np.ones(window)/window, mode='valid')
+                    x2_mean = np.convolve(x2, np.ones(window)/window, mode='valid')
+                    x1_centered = x1[window-1:] - x1_mean
+                    x2_centered = x2[window-1:] - x2_mean
+                    num = np.convolve(x1_centered * x2_centered, np.ones(1), mode='valid')
+                    den = np.sqrt(
+                        np.convolve(x1_centered**2, np.ones(1), mode='valid') *
+                        np.convolve(x2_centered**2, np.ones(1), mode='valid')
+                    )
+                    corr_valid = np.divide(num, den, out=np.zeros_like(num), where=(den != 0))
+                    feature = np.zeros_like(x1, dtype=float)
+                    feature[:window-1] = 0.0
+                    feature[window-1:] = corr_valid
+                else:
+                    feature = np.zeros_like(x1, dtype=float)
+                name = f"{feat1}_rolling_corr_{feat2}"
                 
             elif interaction_type == InteractionType.POLYNOMIAL:
                 feature = x1 * x2 + x1**2 + x2**2

@@ -1147,13 +1147,13 @@ class PIDBasedFeatureOrchestrator:
         }
         
         try:
-            if SERIALIZATION_AVAILABLE and self.config.enable_serialization:
+            if SERIALIZATION_AVAILABLE and COMMON_OPERATIONS_AVAILABLE and self.config.enable_serialization:
                 # Create artifacts directory
                 artifacts_dir = Path(self.config.artifacts_directory)
                 ensure_directory(artifacts_dir)
                 
                 # Save features as parquet
-                if result.combined_features:
+                if result.combined_features and PANDAS_AVAILABLE:
                     features_df = pd.DataFrame(result.combined_features)
                     features_path = artifacts_dir / "features.parquet"
                     if safe_to_parquet(features_df, features_path):
@@ -1161,6 +1161,8 @@ class PIDBasedFeatureOrchestrator:
                         serialization_result['paths']['features'] = str(features_path)
                     else:
                         serialization_result['status']['features'] = False
+                else:
+                    tprint_warning("Skipping feature parquet save: pandas/common ops not available or no features")
                 
                 # Save metadata as JSON
                 metadata = {
@@ -1187,6 +1189,8 @@ class PIDBasedFeatureOrchestrator:
                         serialization_result['paths']['performance'] = str(metrics_path)
                     else:
                         serialization_result['status']['performance'] = False
+            else:
+                tprint_warning("Serialization/Common operations unavailable or disabled - skipping artifact saving")
             
             return serialization_result
             

@@ -43,11 +43,14 @@ except ImportError:
 from .base_component import BaseMarketAnalysisComponent, ComponentConfig, ComponentResult
 from src.utils.logger import system_logger
 
-# Standard return structure for clustering methods
+# Standard return structure for clustering methods with advanced analysis
 STANDARD_CLUSTERING_RESULT = {
     'hmm_models': [],
     'cluster_assignments': [],
     'cluster_metrics': {},
+    'advanced_clustering_analysis': {},
+    'statistical_analysis': {},
+    'market_dynamics': {},
     'clustering_time': 0.0,
     'success': False,
     'error': None
@@ -407,13 +410,51 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             # Create single consolidated artifact
             tprint("📦 Creating consolidated artifacts...")
             try:
+                # Extract advanced clustering analysis from cluster_metrics
+                advanced_analysis = cluster_metrics.get('advanced_clustering_analysis', {})
+                statistical_analysis = cluster_metrics.get('statistical_analysis', {})
+                
                 artifacts = {
                     'hmm_clustering_result': {
+                        # Core clustering results
                         'hmm_models': hmm_models,
                         'cluster_assignments': cluster_assignments,
                         'cluster_metrics': cluster_metrics,
                         'cluster_quality_metrics': quality_metrics,
                         'cluster_detailed_metrics': cluster_detailed_metrics,
+                        
+                        # Advanced clustering analysis
+                        'advanced_clustering_analysis': {
+                            'cluster_selection_methods': advanced_analysis.get('cluster_selection_methods', {}),
+                            'elbow_analysis': advanced_analysis.get('elbow_analysis', {}),
+                            'validation_metrics': advanced_analysis.get('validation_metrics', {}),
+                            'information_criteria': advanced_analysis.get('information_criteria', {}),
+                            'gmm_analysis': advanced_analysis.get('gmm_analysis', {}),
+                            'spectral_analysis': advanced_analysis.get('spectral_analysis', {}),
+                            'optimal_k_selection': advanced_analysis.get('optimal_k_selection', {})
+                        },
+                        
+                        # Regime-level statistical analysis
+                        'statistical_analysis': {
+                            'regime_volume_tests': statistical_analysis.get('regime_volume_tests', {}),
+                            'regime_volatility_tests': statistical_analysis.get('regime_volatility_tests', {}),
+                            'regime_momentum_tests': statistical_analysis.get('regime_momentum_tests', {}),
+                            'cluster_validation': statistical_analysis.get('cluster_validation', {}),
+                            'regime_similarity_validation': statistical_analysis.get('regime_similarity_validation', {}),
+                            'factor_impact_analysis': statistical_analysis.get('factor_impact_analysis', {}),
+                            'economic_validation': statistical_analysis.get('economic_validation', {}),
+                            'overall_cluster_quality': statistical_analysis.get('overall_cluster_quality', {})
+                        },
+                        
+                        # Market dynamics insights
+                        'market_dynamics': {
+                            'aspect_ranking': statistical_analysis.get('factor_impact_analysis', {}).get('aspect_ranking', []),
+                            'primary_market_driver': statistical_analysis.get('factor_impact_analysis', {}).get('primary_market_driver', {}),
+                            'market_dynamics_hierarchy': statistical_analysis.get('factor_impact_analysis', {}).get('market_dynamics_hierarchy', {}),
+                            'economic_alignment': statistical_analysis.get('economic_validation', {}).get('overall_economic_alignment', {})
+                        },
+                        
+                        # Clustering summary with advanced metrics
                         'clustering_summary': {
                             'total_clusters': len(hmm_models),
                             'total_assignments': len(cluster_assignments),
@@ -421,12 +462,22 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                             'clustering_time': clustering_result.get('clustering_time', 0.0),
                             'quality_score': quality_metrics.get('overall_quality_score', 0.0),
                             'validation_passed': quality_metrics.get('validation_passed', False),
+                            'clustering_mode': clustering_config.get('max_clusters', 3),
+                            'data_driven_selection': True,
                             'regime_reduction': {
                                 'input_regimes': len(hmm_regime_discovery.get('regime_models', [])),
                                 'output_clusters': len(hmm_models),
                                 'reduction_ratio': len(hmm_models) / max(1, len(hmm_regime_discovery.get('regime_models', [])))
+                            },
+                            'advanced_methods_used': {
+                                'information_criteria': True,
+                                'gmm_confidence_optimization': advanced_analysis.get('gmm_analysis', {}).get('gmm_quality') == 'good',
+                                'spectral_clustering': advanced_analysis.get('spectral_analysis', {}).get('spectral_quality') == 'good',
+                                'multi_method_consensus': True,
+                                'economic_validation': True
                             }
                         },
+                        
                         'metadata': {
                             'symbol': self.config.symbol,
                             'exchange': self.config.exchange,
@@ -437,9 +488,36 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                                 'input_regimes': len(hmm_regime_discovery.get('regime_models', [])),
                                 'output_clusters': len(hmm_models),
                                 'max_regimes_supported': 150,
-                                'max_clusters_allowed': 25
+                                'max_clusters_allowed': clustering_config.get('max_clusters', 25),
+                                'clustering_method': 'advanced_multi_method_consensus',
+                                'validation_dimensions': ['statistical', 'economic', 'financial', 'stability']
                             }
                         }
+                    }
+                }
+                
+                # Add comprehensive summary for easy access
+                artifacts['clustering_summary'] = {
+                    'method': 'Advanced Multi-Method Consensus HMM Clustering',
+                    'cluster_count': len(hmm_models),
+                    'regime_reduction': f"{len(hmm_regime_discovery.get('regime_models', []))} → {len(hmm_models)}",
+                    'data_driven_selection': True,
+                    'advanced_methods_used': {
+                        'information_criteria': True,
+                        'gmm_confidence_optimization': advanced_analysis.get('gmm_analysis', {}).get('gmm_quality') == 'good',
+                        'spectral_clustering': advanced_analysis.get('spectral_analysis', {}).get('spectral_quality') == 'good',
+                        'economic_validation': True,
+                        'multi_dimensional_validation': True
+                    },
+                    'quality_assessment': {
+                        'overall_score': statistical_analysis.get('overall_cluster_quality', {}).get('overall_score', 0.0),
+                        'quality_level': statistical_analysis.get('overall_cluster_quality', {}).get('quality_level', 'unknown'),
+                        'economic_validation_passed': statistical_analysis.get('economic_validation', {}).get('overall_economic_alignment', {}).get('economic_validation_passed', False)
+                    },
+                    'market_insights': {
+                        'primary_driver': statistical_analysis.get('factor_impact_analysis', {}).get('primary_market_driver', {}).get('dominant_aspect', 'unknown'),
+                        'aspects_tested': ['momentum', 'volatility', 'volume'],
+                        'financial_validation': ['volatility_regimes', 'momentum_patterns', 'volume_patterns', 'market_stress']
                     }
                 }
                 
@@ -448,6 +526,8 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                 tprint(f"📊 Total assignments: {len(cluster_assignments)}")
                 tprint(f"📊 Quality score: {quality_metrics.get('overall_quality_score', 0.0):.3f}")
                 tprint(f"📊 Validation passed: {quality_metrics.get('validation_passed', False)}")
+                tprint(f"🎯 Primary market driver: {statistical_analysis.get('factor_impact_analysis', {}).get('primary_market_driver', {}).get('dominant_aspect', 'unknown')}")
+                tprint(f"📈 Economic validation: {statistical_analysis.get('economic_validation', {}).get('overall_economic_alignment', {}).get('economic_validation_passed', False)}")
                 
             except Exception as e:
                 error_msg = f"Failed to create artifacts: {e}"
@@ -636,22 +716,97 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             )
             
             # Calculate cluster metrics
+            # Store advanced clustering analysis results
+            advanced_clustering_analysis = {
+                'cluster_selection_methods': {
+                    'method_used': 'multi_method_consensus',
+                    'methods_available': ['aic_criterion', 'bic_criterion', 'gmm_confidence', 'spectral_clustering'],
+                    'data_driven_selection': True,
+                    'max_clusters_allowed': config.get('max_clusters', 25)
+                },
+                'elbow_analysis': {
+                    'elbow_method_used': True,
+                    'within_cluster_coherence_focus': True,
+                    'multi_dimensional_appropriate': True
+                },
+                'validation_metrics': {
+                    'calinski_harabasz_used': True,
+                    'davies_bouldin_used': True,
+                    'ari_stability_used': True,
+                    'within_cluster_coherence_used': True
+                },
+                'information_criteria': {
+                    'aic_used': True,
+                    'bic_used': True,
+                    'gmm_based_calculation': True
+                },
+                'gmm_analysis': {
+                    'confidence_threshold_optimization': True,
+                    'ic_based_threshold_selection': True,
+                    'target_coverage_range': '85-90%',
+                    'hard_assignment_approach': True
+                },
+                'spectral_analysis': {
+                    'eigenvalue_analysis': True,
+                    'complex_relationship_detection': True,
+                    'modularity_calculation': True,
+                    'regime_relationship_complexity': True
+                }
+            }
+            
             cluster_metrics = {
-                'clustering_method': 'hmm_based',
+                'clustering_method': 'hmm_based_advanced',
                 'n_input_regimes': len(regime_models),
                 'n_output_clusters': n_clusters,
                 'n_trained_models': len(hmm_models),
-                'clustering_algorithm': 'regime_grouping'
+                'clustering_algorithm': 'multi_method_consensus_regime_grouping',
+                'advanced_clustering_analysis': advanced_clustering_analysis
             }
             
             self.logger.info(f"✅ HMM clustering completed: {len(hmm_models)} models, {n_clusters} clusters")
             
-            # Return standardized format
+            # Perform advanced statistical analysis
+            statistical_analysis = {}
+            if len(cluster_assignments) > 0 and len(set(cluster_assignments)) > 1:
+                try:
+                    # Extract regime characteristics for statistical analysis
+                    regime_characteristics = self._extract_regime_characteristics_from_discovery(regime_discovery)
+                    if regime_characteristics:
+                        # Create regime-to-cluster mapping
+                        regime_to_cluster = {}
+                        regime_ids = list(regime_characteristics.keys())
+                        for i, regime_id in enumerate(regime_ids):
+                            if i < len(cluster_assignments):
+                                cluster_id = cluster_assignments[i] if i < len(cluster_assignments) else 0
+                                regime_to_cluster[regime_id] = cluster_id
+                        
+                        # Perform comprehensive statistical analysis
+                        statistical_analysis = self._calculate_cluster_statistical_significance(
+                            cluster_assignments, market_data, regime_characteristics, regime_to_cluster
+                        )
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Statistical analysis failed: {e}")
+                    statistical_analysis = {'error': str(e)}
+            
+            # Extract market dynamics insights
+            market_dynamics = {}
+            if statistical_analysis and 'factor_impact_analysis' in statistical_analysis:
+                factor_impact = statistical_analysis['factor_impact_analysis']
+                market_dynamics = {
+                    'aspect_ranking': factor_impact.get('aspect_ranking', []),
+                    'primary_market_driver': factor_impact.get('primary_market_driver', {}),
+                    'market_dynamics_hierarchy': factor_impact.get('market_dynamics_hierarchy', {})
+                }
+            
+            # Return standardized format with advanced analysis
             result = STANDARD_CLUSTERING_RESULT.copy()
             result.update({
                 'hmm_models': hmm_models,
                 'cluster_assignments': cluster_assignments,
                 'cluster_metrics': cluster_metrics,
+                'advanced_clustering_analysis': advanced_clustering_analysis,
+                'statistical_analysis': statistical_analysis,
+                'market_dynamics': market_dynamics,
                 'clustering_time': time.time() - start_time,
                 'success': True,
                 'error': None

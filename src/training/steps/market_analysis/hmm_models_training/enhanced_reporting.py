@@ -338,11 +338,25 @@ class HMMTrainingReporter:
         
         total_regimes = len(regime_distribution)
         
-        # Calculate regime balance score using safe operations
-        if regime_distribution:
-            regime_counts = [safe_int(info.get('count', 0), 0) for info in regime_distribution.values()]
-            if regime_counts:
-                regime_balance_score = safe_divide(min(regime_counts), max(regime_counts), 0.0)
+        # Enhanced: Calculate regime balance score with proper boundary checks
+        regime_balance_score = 0.0
+        if regime_distribution and len(regime_distribution) > 0:
+            regime_counts = []
+            for info in regime_distribution.values():
+                if isinstance(info, dict):
+                    count = safe_int(info.get('count', 0), 0)
+                else:
+                    count = safe_int(info, 0)
+                regime_counts.append(count)
+            
+            if regime_counts and all(count >= 0 for count in regime_counts):
+                min_count = min(regime_counts)
+                max_count = max(regime_counts)
+                
+                if max_count > 0:
+                    regime_balance_score = safe_divide(min_count, max_count, 0.0)
+                else:
+                    regime_balance_score = 0.0
             else:
                 regime_balance_score = 0.0
         else:

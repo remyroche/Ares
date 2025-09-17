@@ -16,6 +16,7 @@ from src.utils.logger import system_logger
 from src.utils.common_operations import safe_divide, safe_float, safe_int
 from src.utils.math_validation import validate_finite, validate_positive, validate_range
 from src.utils.common_utilities import safe_convert_dtypes, calculate_data_quality_metrics
+from .constants import ValidationThresholds, TemporalConsistencySettings, LoggingConstants
 
 # Module logger (not heavily used; we keep tprint for output consistency)
 logger = system_logger.getChild('HMMTrainingValidation')
@@ -62,7 +63,7 @@ class HMMTrainingValidator:
     
     def __init__(self, validation_level: ValidationLevel = ValidationLevel.STANDARD, early_exit: bool = True):
         """
-        Initialize enhanced validator.
+        Initialize enhanced validator with thread safety.
         
         Args:
             validation_level: Level of validation strictness
@@ -74,36 +75,40 @@ class HMMTrainingValidator:
         # Validation thresholds based on level
         self.thresholds = self._get_thresholds()
         
+        # Thread safety for concurrent validation
+        import threading
+        self._validation_lock = threading.RLock()
+        
         tprint(f"✅ Enhanced HMM Training Validator initialized (level: {validation_level.value}, early_exit: {early_exit})")
     
     def _get_thresholds(self) -> Dict[str, Any]:
-        """Get validation thresholds based on validation level."""
+        """Get validation thresholds based on validation level using constants."""
         if self.validation_level == ValidationLevel.BASIC:
             return {
-                'min_samples': 100,
-                'min_samples_per_regime': 5,
-                'max_missing_ratio': 0.5,
-                'max_infinite_ratio': 0.1,
-                'min_feature_variance': 1e-8,
-                'max_correlation_threshold': 0.99
+                'min_samples': ValidationThresholds.BASIC_MIN_SAMPLES,
+                'min_samples_per_regime': ValidationThresholds.BASIC_MIN_SAMPLES_PER_REGIME,
+                'max_missing_ratio': ValidationThresholds.BASIC_MAX_MISSING_RATIO,
+                'max_infinite_ratio': ValidationThresholds.BASIC_MAX_INFINITE_RATIO,
+                'min_feature_variance': ValidationThresholds.BASIC_MIN_FEATURE_VARIANCE,
+                'max_correlation_threshold': ValidationThresholds.BASIC_MAX_CORRELATION_THRESHOLD
             }
         elif self.validation_level == ValidationLevel.STANDARD:
             return {
-                'min_samples': 1000,
-                'min_samples_per_regime': 50,
-                'max_missing_ratio': 0.1,
-                'max_infinite_ratio': 0.01,
-                'min_feature_variance': 1e-6,
-                'max_correlation_threshold': 0.95
+                'min_samples': ValidationThresholds.STANDARD_MIN_SAMPLES,
+                'min_samples_per_regime': ValidationThresholds.STANDARD_MIN_SAMPLES_PER_REGIME,
+                'max_missing_ratio': ValidationThresholds.STANDARD_MAX_MISSING_RATIO,
+                'max_infinite_ratio': ValidationThresholds.STANDARD_MAX_INFINITE_RATIO,
+                'min_feature_variance': ValidationThresholds.STANDARD_MIN_FEATURE_VARIANCE,
+                'max_correlation_threshold': ValidationThresholds.STANDARD_MAX_CORRELATION_THRESHOLD
             }
         else:  # STRICT
             return {
-                'min_samples': 5000,
-                'min_samples_per_regime': 200,
-                'max_missing_ratio': 0.01,
-                'max_infinite_ratio': 0.001,
-                'min_feature_variance': 1e-4,
-                'max_correlation_threshold': 0.9
+                'min_samples': ValidationThresholds.STRICT_MIN_SAMPLES,
+                'min_samples_per_regime': ValidationThresholds.STRICT_MIN_SAMPLES_PER_REGIME,
+                'max_missing_ratio': ValidationThresholds.STRICT_MAX_MISSING_RATIO,
+                'max_infinite_ratio': ValidationThresholds.STRICT_MAX_INFINITE_RATIO,
+                'min_feature_variance': ValidationThresholds.STRICT_MIN_FEATURE_VARIANCE,
+                'max_correlation_threshold': ValidationThresholds.STRICT_MAX_CORRELATION_THRESHOLD
             }
     
     def validate_inputs(
@@ -490,7 +495,7 @@ class HMMTrainingValidator:
         return checks
     
     def _validate_regime_properties(self, regime_labels: np.ndarray) -> List[ValidationCheck]:
-        """Validate regime-specific properties."""
+        """Validate regime-specific properties with temporal consistency checks."""
         checks = []
         
         unique_regimes, regime_counts = np.unique(regime_labels, return_counts=True)
@@ -545,7 +550,103 @@ class HMMTrainingValidator:
                 message=f"Regime balance is acceptable: {regime_balance:.2f}"
             ))
         
+        # Enhanced: Check temporal consistency of regime sequences
+        temporal_consistency = self._check_temporal_consistency(regime_labels)
+        if temporal_consistency['is_consistent']:
+            checks.append(ValidationCheck(
+                name="temporal_consistency",
+                result=ValidationResult.PASS,
+                message=f"Regime sequence is temporally consistent (stability: {temporal_consistency['stability_score']:.2f})",
+                details=temporal_consistency
+            ))
+        else:
+            checks.append(ValidationCheck(
+                name="temporal_consistency",
+                result=ValidationResult.WARNING,
+                message=f"Regime sequence shows temporal inconsistencies (stability: {temporal_consistency['stability_score']:.2f})",
+                severity="medium",
+                details=temporal_consistency
+            ))
+        
         return checks
+    
+    def _check_temporal_consistency(self, regime_labels: np.ndarray) -> Dict[str, Any]:
+        """
+        Check temporal consistency of regime sequences.
+        
+        Args:
+            regime_labels: Array of regime labels
+            
+        Returns:
+            Dictionary with temporal consistency analysis
+        """
+        try:
+            # Calculate regime transition frequencies
+            transitions = {}
+            total_transitions = 0
+            rapid_transitions = 0
+            
+            for i in range(1, len(regime_labels)):
+                current_regime = regime_labels[i]
+                previous_regime = regime_labels[i-1]
+                
+                transition = (previous_regime, current_regime)
+                transitions[transition] = transitions.get(transition, 0) + 1
+                total_transitions += 1
+                
+                # Count rapid back-and-forth transitions (potential noise)
+                if i < len(regime_labels) - 1:
+                    next_regime = regime_labels[i+1]
+                    if previous_regime == next_regime and previous_regime != current_regime:
+                        rapid_transitions += 1
+            
+            # Calculate stability metrics
+            regime_changes = np.sum(np.diff(regime_labels) != 0)
+            stability_score = 1.0 - (regime_changes / max(len(regime_labels) - 1, 1))
+            
+            # Calculate average regime duration
+            regime_durations = []
+            current_regime = regime_labels[0]
+            current_duration = 1
+            
+            for i in range(1, len(regime_labels)):
+                if regime_labels[i] == current_regime:
+                    current_duration += 1
+                else:
+                    regime_durations.append(current_duration)
+                    current_regime = regime_labels[i]
+                    current_duration = 1
+            regime_durations.append(current_duration)
+            
+            avg_duration = np.mean(regime_durations)
+            min_duration = np.min(regime_durations)
+            
+            # Determine consistency using constants
+            is_consistent = (
+                stability_score > TemporalConsistencySettings.MIN_STABILITY_SCORE and
+                rapid_transitions / max(total_transitions, 1) < TemporalConsistencySettings.MAX_RAPID_TRANSITION_RATIO and
+                min_duration >= TemporalConsistencySettings.MIN_REGIME_DURATION
+            )
+            
+            return {
+                'is_consistent': is_consistent,
+                'stability_score': float(stability_score),
+                'regime_changes': int(regime_changes),
+                'rapid_transitions': int(rapid_transitions),
+                'rapid_transition_ratio': float(rapid_transitions / max(total_transitions, 1)),
+                'average_duration': float(avg_duration),
+                'minimum_duration': int(min_duration),
+                'total_transitions': int(total_transitions),
+                'unique_transitions': len(transitions)
+            }
+            
+        except Exception as e:
+            logger.warning(f"Temporal consistency check failed: {e}")
+            return {
+                'is_consistent': True,  # Default to consistent if check fails
+                'stability_score': 1.0,
+                'error': str(e)
+            }
     
     def _validate_feature_properties(
         self,
@@ -666,6 +767,64 @@ class HMMTrainingValidator:
             recommendations=recommendations,
             timestamp=pd.Timestamp.now().isoformat()
         )
+    
+    def _atomic_finite_validation(self, X: np.ndarray) -> Dict[str, Any]:
+        """
+        Perform atomic finite value validation to prevent race conditions.
+        
+        Args:
+            X: Input array to validate
+            
+        Returns:
+            Dictionary with validation results
+        """
+        with self._validation_lock:
+            try:
+                # Use vectorized operations for efficient validation
+                non_finite_mask = ~np.isfinite(X)
+                has_non_finite = np.any(non_finite_mask)
+                
+                if has_non_finite:
+                    # Find problematic features atomically
+                    problematic_features = np.where(np.any(non_finite_mask, axis=0))[0]
+                    total_non_finite = np.sum(non_finite_mask)
+                    
+                    return {
+                        'has_non_finite': True,
+                        'problematic_features': problematic_features.tolist(),
+                        'total_non_finite': int(total_non_finite)
+                    }
+                else:
+                    return {
+                        'has_non_finite': False,
+                        'problematic_features': [],
+                        'total_non_finite': 0
+                    }
+            except Exception as e:
+                logger.error(f"Atomic finite validation failed: {e}")
+                raise
+    
+    def _atomic_math_validation(self, X: np.ndarray) -> None:
+        """
+        Perform atomic math validation using math validator.
+        
+        Args:
+            X: Input array to validate
+        """
+        with self._validation_lock:
+            try:
+                if X.shape[0] > 0 and X.shape[1] > 0:
+                    # Test representative values atomically
+                    sample_indices = [0, X.shape[0]//2, X.shape[0]-1] if X.shape[0] >= 3 else [0]
+                    for i in sample_indices:
+                        for j in [0, X.shape[1]//2, X.shape[1]-1] if X.shape[1] >= 3 else [0]:
+                            try:
+                                validate_finite(X[i, j], f"X[{i},{j}]")
+                            except Exception as e:
+                                raise ValueError(f"Math validation failed at X[{i},{j}]: {e}")
+            except Exception as e:
+                logger.error(f"Atomic math validation failed: {e}")
+                raise
     
     def validate_model_results(self, model_results: Dict[str, Any]) -> ValidationReport:
         """

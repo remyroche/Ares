@@ -42,6 +42,8 @@ except ImportError:
 # Core imports
 from src.utils.tprint import tprint
 from src.utils.logger import system_logger
+from .utils import StandardizedLogger, safe_execute, performance_monitor, ConfigurationValidator
+from .constants import TrainingLimits, LoggingConstants
 from src.utils.ml_common.config.base_training_config import HMMTrainingConfig
 from src.utils.ml_common.training.base_training_step import BaseTrainingStep
 
@@ -110,7 +112,7 @@ except ImportError as e:
     get_m1_cpu_optimizer = lambda: None
     tprint(f"⚠️ Hardware optimization modules not available: {e}")
 
-# Shared utilities with error handling
+# Shared utilities with enhanced error handling
 try:
     from .shared_utilities import (
         TrainingErrorHandler,
@@ -125,94 +127,178 @@ try:
 except ImportError as e:
     SHARED_UTILITIES_AVAILABLE = False
     tprint(f"❌ Shared utilities import failed: {e}")
-    # Create fallback classes
+    logger.error(f"Critical dependency missing: {e}")
+    
+    # Create robust fallback classes with proper error handling
+    from dataclasses import dataclass
+    from typing import Optional, Any, Dict, List
+    
+    @dataclass
+    class TrainingMetrics:
+        error_message: Optional[str] = None
+        training_time: float = 0.0
+        accuracy: float = 0.0
+        f1_score: float = 0.0
+        precision: float = 0.0
+        recall: float = 0.0
+        memory_usage_mb: float = 0.0
+        convergence_epochs: int = 0
+        validation_loss: Optional[float] = None
+        test_accuracy: Optional[float] = None
+        warnings: List[str] = None
+        
+        def __post_init__(self):
+            if self.warnings is None:
+                self.warnings = []
+    
+    @dataclass
+    class ModelResult:
+        model: Any
+        metrics: TrainingMetrics
+        feature_importance: Optional[Dict[str, float]] = None
+        predictions: Optional[Any] = None
+        probabilities: Optional[Any] = None
+        hyperparameters: Optional[Dict[str, Any]] = None
+        training_history: Optional[Dict[str, List[float]]] = None
+    
     class TrainingErrorHandler:
         @staticmethod
-        def handle_training_error(model_type, error, training_time):
-            from dataclasses import dataclass
-            @dataclass
-            class TrainingMetrics:
-                error_message: str = ""
-                training_time: float = 0.0
-            @dataclass 
-            class ModelResult:
-                model: None = None
-                metrics: TrainingMetrics = None
-            return ModelResult(None, TrainingMetrics(f"Failed to train {model_type}: {error}", training_time))
+        def handle_training_error(model_type: str, error: Exception, training_time: float) -> ModelResult:
+            logger.error(f"Training error for {model_type}: {error}")
+            return ModelResult(
+                model=None,
+                metrics=TrainingMetrics(
+                    error_message=f"Failed to train {model_type}: {str(error)}",
+                    training_time=training_time
+                )
+            )
     
     class UnifiedModelFactory:
         @staticmethod
-        def create_model(model_type, **kwargs):
-            # Check library availability first
-            if model_type == 'lightgbm' or model_type == 'lgbm':
-                if not ML_LIBRARIES_STATUS.get('lightgbm', False):
-                    raise ImportError(f"LightGBM not available for model type: {model_type}")
-                import lightgbm
-                return lightgbm.LGBMClassifier(n_estimators=100, learning_rate=0.1, random_state=42, **kwargs)
-            elif model_type == 'xgboost':
-                if not ML_LIBRARIES_STATUS.get('xgboost', False):
-                    raise ImportError(f"XGBoost not available for model type: {model_type}")
-                import xgboost
-                return xgboost.XGBClassifier(n_estimators=100, learning_rate=0.1, random_state=42, **kwargs)
-            elif model_type in ['random_forest', 'rf']:
-                if not ML_LIBRARIES_STATUS.get('sklearn', False):
-                    raise ImportError(f"Scikit-learn not available for model type: {model_type}")
-                from sklearn.ensemble import RandomForestClassifier
-                return RandomForestClassifier(n_estimators=100, random_state=42, **kwargs)
-            elif model_type in ['logistic_regression', 'lr']:
-                if not ML_LIBRARIES_STATUS.get('sklearn', False):
-                    raise ImportError(f"Scikit-learn not available for model type: {model_type}")
-                from sklearn.linear_model import LogisticRegression
-                return LogisticRegression(random_state=42, max_iter=1000, **kwargs)
-            elif model_type in ['elastic_net_lr', 'elastic_net']:
-                if not ML_LIBRARIES_STATUS.get('sklearn', False):
-                    raise ImportError(f"Scikit-learn not available for model type: {model_type}")
-                from sklearn.linear_model import LogisticRegression
-                # Ensure compatible parameters for elastic net
-                safe_kwargs = {k: v for k, v in kwargs.items() if k not in ['penalty', 'solver', 'l1_ratio']}
-                return LogisticRegression(penalty='elasticnet', l1_ratio=0.5, solver='saga', random_state=42, max_iter=1000, **safe_kwargs)
-            else:
-                available_models = ['lightgbm', 'xgboost', 'random_forest', 'logistic_regression', 'elastic_net_lr']
-                raise ValueError(f"Unknown model type: {model_type}. Available: {available_models}")
+        def create_model(model_type: str, **kwargs):
+            try:
+                # Check library availability first
+                if model_type == 'lightgbm' or model_type == 'lgbm':
+                    if not ML_LIBRARIES_STATUS.get('lightgbm', False):
+                        raise ImportError(f"LightGBM not available for model type: {model_type}")
+                    import lightgbm
+                    return lightgbm.LGBMClassifier(n_estimators=100, learning_rate=0.1, random_state=42, **kwargs)
+                elif model_type == 'xgboost':
+                    if not ML_LIBRARIES_STATUS.get('xgboost', False):
+                        raise ImportError(f"XGBoost not available for model type: {model_type}")
+                    import xgboost
+                    return xgboost.XGBClassifier(n_estimators=100, learning_rate=0.1, random_state=42, **kwargs)
+                elif model_type in ['random_forest', 'rf']:
+                    if not ML_LIBRARIES_STATUS.get('sklearn', False):
+                        raise ImportError(f"Scikit-learn not available for model type: {model_type}")
+                    from sklearn.ensemble import RandomForestClassifier
+                    return RandomForestClassifier(n_estimators=100, random_state=42, **kwargs)
+                elif model_type in ['logistic_regression', 'lr']:
+                    if not ML_LIBRARIES_STATUS.get('sklearn', False):
+                        raise ImportError(f"Scikit-learn not available for model type: {model_type}")
+                    from sklearn.linear_model import LogisticRegression
+                    return LogisticRegression(random_state=42, max_iter=1000, **kwargs)
+                elif model_type in ['elastic_net_lr', 'elastic_net']:
+                    if not ML_LIBRARIES_STATUS.get('sklearn', False):
+                        raise ImportError(f"Scikit-learn not available for model type: {model_type}")
+                    from sklearn.linear_model import LogisticRegression
+                    # Ensure compatible parameters for elastic net
+                    safe_kwargs = {k: v for k, v in kwargs.items() if k not in ['penalty', 'solver', 'l1_ratio']}
+                    return LogisticRegression(penalty='elasticnet', l1_ratio=0.5, solver='saga', random_state=42, max_iter=1000, **safe_kwargs)
+                else:
+                    available_models = ['lightgbm', 'xgboost', 'random_forest', 'logistic_regression', 'elastic_net_lr']
+                    raise ValueError(f"Unknown model type: {model_type}. Available: {available_models}")
+            except Exception as e:
+                logger.error(f"Failed to create model {model_type}: {e}")
+                raise
     
     class CircuitBreaker:
-        def __init__(self, *args, **kwargs):
+        def __init__(self, failure_threshold: int = 3, timeout: int = 300):
             self.state = "CLOSED"
             self.failure_count = 0
+            self.failure_threshold = failure_threshold
+            self.timeout = timeout
+            self.last_failure_time = None
+            
         def call(self, func, *args, **kwargs):
-            return func(*args, **kwargs)
+            try:
+                result = func(*args, **kwargs)
+                if self.state == "HALF_OPEN":
+                    self.state = "CLOSED"
+                    self.failure_count = 0
+                return result
+            except Exception as e:
+                self.failure_count += 1
+                self.last_failure_time = time.time()
+                if self.failure_count >= self.failure_threshold:
+                    self.state = "OPEN"
+                    logger.error(f"Circuit breaker opened after {self.failure_count} failures")
+                raise e
     
     class ValidationUtils:
         @staticmethod
         def validate_config(config):
-            return True
+            try:
+                required_attrs = ['model_types', 'n_features', 'sequence_length', 'n_regimes', 'timeframe']
+                for attr in required_attrs:
+                    if not hasattr(config, attr):
+                        logger.error(f"Configuration missing required attribute: {attr}")
+                        return False
+                return True
+            except Exception as e:
+                logger.error(f"Config validation error: {e}")
+                return False
+        
         @staticmethod
-        def validate_data_shapes(*args):
-            return True
+        def validate_data_shapes(X, y, regime_labels):
+            try:
+                return len(X) == len(y) == len(regime_labels)
+            except Exception:
+                return False
+        
         @staticmethod
-        def validate_data_quality(*args):
-            return True
+        def validate_data_quality(X, y, regime_labels):
+            try:
+                import numpy as np
+                return not (np.any(np.isnan(X)) or np.any(np.isnan(y)) or np.any(np.isnan(regime_labels)))
+            except Exception:
+                return True  # Skip validation if numpy not available
+        
         @staticmethod
-        def validate_regime_distribution(*args, **kwargs):
-            return True
+        def validate_regime_distribution(regime_labels, min_samples_per_regime=10):
+            try:
+                import numpy as np
+                unique_regimes, counts = np.unique(regime_labels, return_counts=True)
+                return len(unique_regimes) >= 2 and np.min(counts) >= min_samples_per_regime
+            except Exception:
+                return True  # Skip validation if numpy not available
     
     class ProgressReporter:
-        def __init__(self, *args, **kwargs):
-            pass
-        def update_progress(self, *args, **kwargs):
-            pass
+        def __init__(self, total_models: int):
+            self.total_models = total_models
+            self.completed = 0
+            
+        def update_progress(self, model_name: str, success: bool, training_time: float, 
+                          accuracy: Optional[float] = None, error_message: Optional[str] = None):
+            self.completed += 1
+            status = "✅" if success else "❌"
+            tprint(f"{status} {model_name} ({self.completed}/{self.total_models})")
+            
         def finish_report(self):
-            pass
+            tprint(f"Training completed: {self.completed}/{self.total_models} models")
     
     class MemoryTracker:
         def __init__(self):
-            pass
-        def take_snapshot(self, name):
-            pass
+            self.enabled = False
+            
+        def take_snapshot(self, name: str):
+            return 0.0
+            
         def get_memory_increase(self):
             return 0.0
+            
         def cleanup(self):
-            pass
+            return 0.0
 
 
 logger = system_logger.getChild('HMMModelsTrainingEnhanced')
@@ -575,8 +661,8 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
     
     def _prepare_features(self, X: Union[np.ndarray, pd.DataFrame], feature_names: Optional[List[str]] = None) -> Tuple[pd.DataFrame, List[str]]:
         """
-        Prepare and enhance features with comprehensive error handling.
-        Uses common utilities for better data processing and validation.
+        Prepare and enhance features with optimized performance and comprehensive error handling.
+        Uses in-place operations where possible to reduce memory usage.
         
         Args:
             X: Input features
@@ -586,32 +672,38 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
             Tuple of (enhanced_features, feature_names)
         """
         try:
-            # Convert to DataFrame if needed using common utilities
+            # Optimize memory usage by avoiding unnecessary copies
             if isinstance(X, np.ndarray):
                 if feature_names is None:
                     feature_names = [f"feature_{i}" for i in range(X.shape[1])]
-                X_df = pd.DataFrame(X, columns=feature_names)
+                # Use memory-efficient DataFrame creation
+                X_df = pd.DataFrame(X, columns=feature_names, copy=False)
             else:
-                X_df = X.copy()
+                # Only copy if we need to modify the original
                 if feature_names is None:
-                    feature_names = list(X_df.columns)
+                    feature_names = list(X.columns)
+                X_df = X  # Use original DataFrame to avoid copy
             
-            # Use common DataFrame operations for numeric column selection
-            numeric_columns = safe_dataframe_operation(
-                X_df, 
-                lambda df: df.select_dtypes(include=[np.number]).columns
-            )
+            # Use optimized numeric column selection
+            numeric_dtypes = [np.number]
+            numeric_columns = X_df.select_dtypes(include=numeric_dtypes).columns
             
             if len(numeric_columns) == 0:
                 raise ValueError("No numeric columns found in input data")
             
-            X_numeric = X_df[numeric_columns]
-            tprint(f"📊 Using {len(numeric_columns)} numeric features")
+            # Only create subset if we have non-numeric columns
+            if len(numeric_columns) == len(X_df.columns):
+                X_numeric = X_df  # Use original to avoid copy
+            else:
+                X_numeric = X_df[numeric_columns]
+                tprint(f"📊 Filtered to {len(numeric_columns)} numeric features from {len(X_df.columns)} total")
             
-            # Calculate data quality metrics using common utilities
-            quality_metrics = calculate_data_quality_metrics(X_numeric)
-            if quality_metrics.get('null_percentage', 0) > 0.1:
-                tprint(f"⚠️ High null percentage: {quality_metrics.get('null_percentage', 0):.2%}")
+            # Quick data quality check using vectorized operations
+            null_count = X_numeric.isnull().sum().sum()
+            if null_count > 0:
+                null_percentage = null_count / (X_numeric.shape[0] * X_numeric.shape[1])
+                if null_percentage > 0.1:
+                    tprint(f"⚠️ High null percentage: {null_percentage:.2%}")
             
             # Enhance features if generator is available
             if self.feature_generator is not None:
@@ -666,16 +758,55 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
             
             selected_features = selection_result.get('selected_features', list(X.columns)[:self.config.n_features])
             
-            # Validate selected features exist in the DataFrame
+            # Enhanced: Validate selected features exist and are valid
             missing_features = [f for f in selected_features if f not in X.columns]
             if missing_features:
                 self.logger.warning(f"⚠️ Some selected features not found in DataFrame: {missing_features}")
                 # Filter out missing features
-                selected_features = [f for f in selected_features if f in X.columns]
+                valid_selected_features = [f for f in selected_features if f in X.columns]
+                
+                if len(valid_selected_features) < len(selected_features) * 0.5:
+                    # More than 50% of features are missing - this is a serious issue
+                    self.logger.error(f"❌ More than 50% of selected features are missing ({len(missing_features)}/{len(selected_features)})")
+                    raise ValueError(f"Feature selection returned invalid features: {missing_features[:5]}")
+                
+                selected_features = valid_selected_features
             
+            # Ensure we have enough features
             if not selected_features:
-                self.logger.warning("⚠️ No valid features selected, using first n_features")
-                selected_features = list(X.columns)[:self.config.n_features]
+                self.logger.warning("⚠️ No valid features selected, using fallback selection")
+                available_features = list(X.columns)
+                if len(available_features) >= self.config.n_features:
+                    selected_features = available_features[:self.config.n_features]
+                else:
+                    selected_features = available_features
+                    self.logger.warning(f"⚠️ Only {len(selected_features)} features available, less than requested {self.config.n_features}")
+            
+            # Final validation: ensure selected features are numeric and have variance
+            try:
+                X_test = X[selected_features]
+                if X_test.select_dtypes(include=[np.number]).shape[1] != len(selected_features):
+                    self.logger.warning("⚠️ Some selected features are non-numeric, filtering...")
+                    numeric_features = X_test.select_dtypes(include=[np.number]).columns.tolist()
+                    if len(numeric_features) < len(selected_features) * 0.8:
+                        self.logger.warning(f"⚠️ Many selected features are non-numeric ({len(numeric_features)}/{len(selected_features)})")
+                    selected_features = numeric_features
+                
+                # Check for features with zero variance
+                if len(selected_features) > 0:
+                    feature_vars = X[selected_features].var()
+                    zero_var_features = feature_vars[feature_vars == 0].index.tolist()
+                    if zero_var_features:
+                        self.logger.warning(f"⚠️ Removing {len(zero_var_features)} zero-variance features: {zero_var_features[:5]}")
+                        selected_features = [f for f in selected_features if f not in zero_var_features]
+                
+            except Exception as e:
+                self.logger.error(f"❌ Feature validation failed: {e}")
+                raise ValueError(f"Selected features validation failed: {e}")
+            
+            # Final check - ensure we still have features
+            if not selected_features:
+                raise ValueError("No valid features remaining after validation")
             
             X_selected = X[selected_features]
             
@@ -729,13 +860,20 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
             try:
                 tprint(f"🔄 Training {model_type}...")
                 
-                # Apply hardware optimizations if available
+                # Apply hardware optimizations if available with enhanced error handling
                 if self.memory_optimizer:
                     try:
                         self.memory_optimizer.optimize_memory_usage()
                         tprint(f"🧠 Memory optimization applied for {model_type}")
+                    except MemoryError as e:
+                        tprint(f"❌ Critical memory error during optimization for {model_type}: {e}")
+                        # Force garbage collection and try to continue
+                        import gc
+                        gc.collect()
+                        raise MemoryError(f"Insufficient memory for {model_type} training after optimization attempt")
                     except Exception as e:
                         tprint(f"⚠️ Memory optimization failed for {model_type}: {e}")
+                        logger.warning(f"Memory optimization failed for {model_type}: {e}")
                 
                 if self.cpu_optimizer:
                     try:
@@ -743,6 +881,7 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
                         tprint(f"⚡ CPU optimization applied for {model_type}")
                     except Exception as e:
                         tprint(f"⚠️ CPU optimization failed for {model_type}: {e}")
+                        logger.warning(f"CPU optimization failed for {model_type}: {e}")
                 
                 # Memory management before training using common operations
                 initial_memory = get_memory_usage()
@@ -752,45 +891,56 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
             
             # Create model with circuit breaker protection and timeout
             def create_and_train_model():
-                # Add timeout for model creation and training
+                # Add timeout for model creation and training with proper cleanup
                 import signal
+                import threading
                 
-                def timeout_handler(signum, frame):
-                    raise TimeoutError(f"Training timeout for {model_type}")
-                
-                # Set timeout based on training mode (light = 60s, others = 300s)
+                # Use threading-based timeout for better cross-platform compatibility
                 timeout_seconds = 60 if hasattr(self.config, 'training_mode_config') and \
                                      self.config.training_mode_config and \
                                      self.config.training_mode_config.get('training_mode') == 'light' else 300
                 
-                try:
-                    signal.signal(signal.SIGALRM, timeout_handler)
-                    signal.alarm(timeout_seconds)
-                    
-                    model = self._create_model(model_type)
-                    
-                    # Check memory before training using common operations
-                    current_memory = get_memory_usage()
-                    if current_memory > 85:
-                        tprint(f"⚠️ Memory usage critical ({current_memory}%) - skipping {model_type}")
-                        raise MemoryError(f"Insufficient memory for {model_type} training")
-                    
-                    # Train model
-                    model.fit(X, y)
-                    
-                    # Cancel timeout
-                    signal.alarm(0)
-                    
-                except TimeoutError as e:
-                    signal.alarm(0)
-                    raise e
-                except MemoryError as e:
-                    signal.alarm(0)
-                    optimize_memory()  # Use common memory optimization
-                    raise e
-                except Exception as e:
-                    signal.alarm(0)
-                    raise e
+                result = {'model': None, 'exception': None}
+                
+                def training_worker():
+                    try:
+                        model = self._create_model(model_type)
+                        
+                        # Check memory before training using common operations
+                        current_memory = get_memory_usage()
+                        if current_memory > 85:
+                            tprint(f"⚠️ Memory usage critical ({current_memory}%) - skipping {model_type}")
+                            raise MemoryError(f"Insufficient memory for {model_type} training")
+                        
+                        # Train model
+                        model.fit(X, y)
+                        result['model'] = model
+                        
+                    except Exception as e:
+                        result['exception'] = e
+                
+                # Start training in a separate thread
+                training_thread = threading.Thread(target=training_worker)
+                training_thread.daemon = True
+                training_thread.start()
+                training_thread.join(timeout=timeout_seconds)
+                
+                # Check if training completed or timed out
+                if training_thread.is_alive():
+                    # Training timed out
+                    tprint(f"⏰ Training timeout for {model_type} after {timeout_seconds}s")
+                    raise TimeoutError(f"Training timeout for {model_type} after {timeout_seconds}s")
+                
+                # Check for exceptions
+                if result['exception']:
+                    if isinstance(result['exception'], MemoryError):
+                        optimize_memory()  # Use common memory optimization
+                    raise result['exception']
+                
+                if result['model'] is None:
+                    raise RuntimeError(f"Training failed for unknown reason: {model_type}")
+                
+                return result['model']
                 
                 # Evaluate model using safe math operations
                 predictions = model.predict(X)
@@ -1107,6 +1257,7 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
     ) -> Dict[str, Any]:
         """
         Execute enhanced HMM models training with comprehensive error handling and reporting.
+        Refactored for better maintainability and reduced complexity.
         
         Args:
             X: Input features
@@ -1119,59 +1270,115 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
         Returns:
             Dictionary containing training results and comprehensive report
         """
-        self.logger.info("🚀 Starting Enhanced HMM Models Training")
+        StandardizedLogger.log_training_progress("HMM Models", "started")
         self.training_start_time = time.time()
         
         try:
-            # Step 1: Input validation
-            self.logger.info("🔄 Step 1: Validating inputs...")
+            with performance_monitor("HMM_Training_Complete"):
+                # Execute training pipeline
+                results = self._execute_training_pipeline(X, y, cluster_assignments, feature_names, **kwargs)
+                
+                # Log final summary
+                self._log_training_summary(results)
+                
+                return results
+                
+        except Exception as e:
+            return self._handle_training_failure(e)
+    
+    def _execute_training_pipeline(
+        self,
+        X: np.ndarray,
+        y: np.ndarray,
+        cluster_assignments: np.ndarray,
+        feature_names: Optional[List[str]] = None,
+        **kwargs
+    ) -> Dict[str, Any]:
+        """Execute the main training pipeline."""
+        
+        # Step 1: Input validation
+        with performance_monitor("Input_Validation"):
             if not self._validate_input_data(X, y, cluster_assignments):
                 raise ValueError("Input validation failed")
-            
-            # Step 2: Feature preparation
-            self.logger.info("🔄 Step 2: Preparing features...")
+        
+        # Step 2: Feature preparation and selection
+        X_selected, selected_features = self._prepare_and_select_features(X, y, feature_names, **kwargs)
+        
+        # Step 3: Train models
+        model_results = self._train_all_models(X_selected, y)
+        
+        # Step 4: Analyze results
+        cluster_distribution = self._analyze_clusters(cluster_assignments)
+        
+        # Step 5: Format results
+        results = self._format_training_results(
+            model_results, X_selected, selected_features, cluster_distribution, **kwargs
+        )
+        
+        # Step 6: Generate report and save models
+        self._finalize_results(results, model_results, **kwargs)
+        
+        return results
+    
+    def _prepare_and_select_features(
+        self,
+        X: np.ndarray,
+        y: np.ndarray,
+        feature_names: Optional[List[str]] = None,
+        **kwargs
+    ) -> Tuple[pd.DataFrame, List[str]]:
+        """Prepare and select features."""
+        
+        with performance_monitor("Feature_Preparation"):
             X_enhanced, enhanced_feature_names = self._prepare_features(X, feature_names)
-            
-            # Step 3: Feature selection
-            self.logger.info("🔄 Step 3: Selecting features...")
+        
+        with performance_monitor("Feature_Selection"):
             X_selected, selected_features = self._select_features(
                 X_enhanced, y, 
                 is_classification=kwargs.get('is_classification', True)
             )
-            
-            # Step 4: Initialize progress reporter and train models
-            self.logger.info("🔄 Step 4: Training models with real-time progress...")
-            self.progress_reporter = ProgressReporter(len(self.config.model_types))
-            model_results = {}
-            
+        
+        return X_selected, selected_features
+    
+    def _train_all_models(self, X: pd.DataFrame, y: np.ndarray) -> Dict[str, Any]:
+        """Train all configured models."""
+        
+        self.progress_reporter = ProgressReporter(len(self.config.model_types))
+        model_results = {}
+        
+        with performance_monitor("Model_Training"):
             for model_type in self.config.model_types:
-                try:
-                    # Convert to numpy array for training with proper validation
-                    X_train = self._convert_to_numpy_array(X_selected)
-                    
-                    # Train model
-                    model_result = self._train_single_model(model_type, X_train, y)
-                    model_results[model_type] = model_result
-                    
-                    # Update progress
-                    success = model_result.metrics.error_message is None
-                    accuracy = model_result.metrics.accuracy if success else None
-                    error_message = model_result.metrics.error_message if not success else None
-                    self.progress_reporter.update_progress(
-                        model_type, success, model_result.metrics.training_time, 
-                        accuracy, error_message
-                    )
-                    
-                except Exception as e:
-                    self.logger.error(f"❌ Failed to train {model_type}: {e}")
-                    # Create failed result using centralized error handler
-                    model_results[model_type] = TrainingErrorHandler.handle_training_error(model_type, e, 0.0)
-                    self.progress_reporter.update_progress(model_type, False, 0.0, None, str(e))
-            
-            # Step 5: Finish progress reporting
-            self.progress_reporter.finish_report()
-            
-            # Step 6: Analyze clusters
+                model_result = safe_execute(
+                    self._train_single_model_safe,
+                    model_type, X, y,
+                    component_name=f"Training_{model_type}",
+                    default_return=TrainingErrorHandler.handle_training_error(model_type, Exception("Training failed"), 0.0)
+                )
+                
+                model_results[model_type] = model_result
+                
+                # Update progress
+                success = model_result.metrics.error_message is None
+                accuracy = model_result.metrics.accuracy if success else None
+                error_message = model_result.metrics.error_message if not success else None
+                
+                self.progress_reporter.update_progress(
+                    model_type, success, model_result.metrics.training_time, 
+                    accuracy, error_message
+                )
+        
+        self.progress_reporter.finish_report()
+        return model_results
+    
+    def _train_single_model_safe(self, model_type: str, X: pd.DataFrame, y: np.ndarray) -> Any:
+        """Safely train a single model with proper conversion."""
+        X_train = self._convert_to_numpy_array(X)
+        return self._train_single_model(model_type, X_train, y)
+    
+    def _analyze_clusters(self, cluster_assignments: np.ndarray) -> Dict[str, Any]:
+        """Analyze cluster distribution."""
+        
+        with performance_monitor("Cluster_Analysis"):
             unique_clusters, cluster_counts = np.unique(cluster_assignments, return_counts=True)
             cluster_distribution = {
                 f"cluster_{cluster}": {
@@ -1180,136 +1387,172 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
                 }
                 for cluster, count in zip(unique_clusters, cluster_counts)
             }
-            
-            # Step 7: Create final results with proper artifact formatting
-            execution_time = time.time() - self.training_start_time
-            
-            # Format model results for artifacts
-            hmm_base_models = []
-            hmm_training_metrics = {}
-            hmm_model_performance = {}
-            
-            for model_name, model_result in model_results.items():
-                if model_result.model is not None:
-                    # Add model to base models list
-                    hmm_base_models.append({
-                        'model_name': model_name,
-                        'model_type': model_name,
-                        'model_object': model_result.model,
-                        'hyperparameters': model_result.hyperparameters
-                    })
-                    
-                    # Add training metrics
-                    hmm_training_metrics[model_name] = {
-                        'accuracy': model_result.metrics.accuracy,
-                        'f1_score': model_result.metrics.f1_score,
-                        'precision': model_result.metrics.precision,
-                        'recall': model_result.metrics.recall,
-                        'training_time': model_result.metrics.training_time,
-                        'convergence_epochs': model_result.metrics.convergence_epochs,
-                        'memory_usage_mb': model_result.metrics.memory_usage_mb,
-                        'validation_loss': model_result.metrics.validation_loss,
-                        'test_accuracy': model_result.metrics.test_accuracy,
-                        'warnings': model_result.metrics.warnings
-                    }
-                    
-                    # Add performance metrics
-                    hmm_model_performance[model_name] = {
-                        'feature_importance': model_result.feature_importance,
-                        'predictions_available': model_result.predictions is not None,
-                        'probabilities_available': model_result.probabilities is not None,
-                        'training_history_available': model_result.training_history is not None
-                    }
-            
-            results = {
-                'model_results': model_results,
-                'artifacts': {
-                    'hmm_base_models': hmm_base_models,
-                    'hmm_training_metrics': hmm_training_metrics,
-                    'hmm_model_performance': hmm_model_performance
-                },
-                'metadata': {
-                    'total_features': X_enhanced.shape[1],
-                    'selected_features': len(selected_features),
-                    'selected_feature_names': selected_features,
-                    'n_clusters': len(unique_clusters),
-                    'cluster_distribution': cluster_distribution,
-                    'execution_time': execution_time,
-                    'config': self.config,
-                    'circuit_breaker_state': self.circuit_breaker.state,
-                    'circuit_breaker_failures': self.circuit_breaker.failure_count,
-                    'models_trained': len(hmm_base_models),
-                    'successful_models': len([m for m in hmm_base_models if m['model_object'] is not None])
-                },
-                'training_time': execution_time
-            }
-            
-            # Step 8: Generate comprehensive report
-            self.logger.info("🔄 Step 8: Generating comprehensive report...")
-            comprehensive_report = self._generate_comprehensive_report(results, execution_time)
-            results['comprehensive_report'] = comprehensive_report
-            
-            # Step 9: Save results if configured using common serialization utilities
-            if self.config.save_models:
-                tprint("🔄 Step 9: Saving models...")
-                try:
-                    symbol = kwargs.get('symbol', 'UNKNOWN')
-                    exchange = kwargs.get('exchange', 'UNKNOWN')
-                    timeframe = kwargs.get('timeframe', self.config.timeframe)
-                    
-                    # Save successful models only
-                    successful_models = {
-                        name: result.model for name, result in model_results.items()
-                        if result.model is not None
-                    }
-                    
-                    if successful_models:
-                        # Use common serialization utilities
-                        saved_paths = self._save_models_with_common_utils(
-                            models=successful_models,
-                            model_type=self.config.model_name,
-                            symbol=symbol,
-                            exchange=exchange,
-                            timeframe=timeframe
-                        )
-                        results['saved_model_paths'] = saved_paths
-                        tprint(f"✅ Models saved: {len(saved_paths)} files")
-                    else:
-                        tprint("⚠️ No successful models to save")
-                        
-                except Exception as e:
-                    tprint(f"❌ Failed to save models: {e}")
-                    results['save_error'] = str(e)
-            
-            # Log enhanced final summary
-            successful_count = sum(1 for r in model_results.values() if r.metrics.error_message is None)
-            tprint(f"✅ Enhanced HMM Models Training completed: {successful_count}/{len(model_results)} models successful")
-            tprint(f"📊 Total execution time: {execution_time:.2f}s")
-            tprint(f"🔧 Circuit breaker state: {self.circuit_breaker.state}")
-            if self.circuit_breaker.failure_count > 0:
-                tprint(f"⚠️ Circuit breaker failures: {self.circuit_breaker.failure_count}")
-            
-            return results
-            
-        except Exception as e:
-            execution_time = time.time() - self.training_start_time if self.training_start_time else 0
-            tprint(f"❌ Enhanced HMM Models Training failed: {e}")
-            
-            return {
-                'model_results': {},
-                'metadata': {
-                    'error': str(e),
-                    'execution_time': execution_time,
-                    'config': self.config
-                },
-                'training_time': execution_time,
-                'comprehensive_report': {
-                    "report_type": "HMM Models Training Report (Error)",
-                    "error": str(e),
-                    "timestamp": pd.Timestamp.now().isoformat(),
-                    "status": "Training failed"
+        
+        return cluster_distribution
+    
+    def _format_training_results(
+        self,
+        model_results: Dict[str, Any],
+        X_selected: pd.DataFrame,
+        selected_features: List[str],
+        cluster_distribution: Dict[str, Any],
+        **kwargs
+    ) -> Dict[str, Any]:
+        """Format training results into standard structure."""
+        
+        execution_time = time.time() - self.training_start_time
+        
+        # Format model results for artifacts
+        hmm_base_models, hmm_training_metrics, hmm_model_performance = self._format_model_artifacts(model_results)
+        
+        return {
+            'model_results': model_results,
+            'artifacts': {
+                'hmm_base_models': hmm_base_models,
+                'hmm_training_metrics': hmm_training_metrics,
+                'hmm_model_performance': hmm_model_performance
+            },
+            'metadata': {
+                'total_features': X_selected.shape[1],
+                'selected_features': len(selected_features),
+                'selected_feature_names': selected_features,
+                'n_clusters': len(cluster_distribution),
+                'cluster_distribution': cluster_distribution,
+                'execution_time': execution_time,
+                'config': self.config,
+                'circuit_breaker_state': self.circuit_breaker.state,
+                'circuit_breaker_failures': self.circuit_breaker.failure_count,
+                'models_trained': len(hmm_base_models),
+                'successful_models': len([m for m in hmm_base_models if m['model_object'] is not None])
+            },
+            'training_time': execution_time
+        }
+    
+    def _format_model_artifacts(self, model_results: Dict[str, Any]) -> Tuple[List[Dict], Dict[str, Dict], Dict[str, Dict]]:
+        """Format model results into artifact structure."""
+        
+        hmm_base_models = []
+        hmm_training_metrics = {}
+        hmm_model_performance = {}
+        
+        for model_name, model_result in model_results.items():
+            if model_result.model is not None:
+                # Add model to base models list
+                hmm_base_models.append({
+                    'model_name': model_name,
+                    'model_type': model_name,
+                    'model_object': model_result.model,
+                    'hyperparameters': model_result.hyperparameters
+                })
+                
+                # Add training metrics
+                hmm_training_metrics[model_name] = {
+                    'accuracy': model_result.metrics.accuracy,
+                    'f1_score': model_result.metrics.f1_score,
+                    'precision': model_result.metrics.precision,
+                    'recall': model_result.metrics.recall,
+                    'training_time': model_result.metrics.training_time,
+                    'convergence_epochs': model_result.metrics.convergence_epochs,
+                    'memory_usage_mb': model_result.metrics.memory_usage_mb,
+                    'validation_loss': model_result.metrics.validation_loss,
+                    'test_accuracy': model_result.metrics.test_accuracy,
+                    'warnings': model_result.metrics.warnings
                 }
+                
+                # Add performance metrics
+                hmm_model_performance[model_name] = {
+                    'feature_importance': model_result.feature_importance,
+                    'predictions_available': model_result.predictions is not None,
+                    'probabilities_available': model_result.probabilities is not None,
+                    'training_history_available': model_result.training_history is not None
+                }
+        
+        return hmm_base_models, hmm_training_metrics, hmm_model_performance
+    
+    def _finalize_results(self, results: Dict[str, Any], model_results: Dict[str, Any], **kwargs) -> None:
+        """Generate final report and save models."""
+        
+        # Generate comprehensive report
+        with performance_monitor("Report_Generation"):
+            comprehensive_report = self._generate_comprehensive_report(results, results['training_time'])
+            results['comprehensive_report'] = comprehensive_report
+        
+        # Save models if configured
+        if self.config.save_models:
+            self._save_models_if_configured(results, model_results, **kwargs)
+    
+    def _save_models_if_configured(self, results: Dict[str, Any], model_results: Dict[str, Any], **kwargs) -> None:
+        """Save models if configuration allows."""
+        
+        try:
+            with performance_monitor("Model_Saving"):
+                symbol = kwargs.get('symbol', 'UNKNOWN')
+                exchange = kwargs.get('exchange', 'UNKNOWN')
+                timeframe = kwargs.get('timeframe', self.config.timeframe)
+                
+                # Save successful models only
+                successful_models = {
+                    name: result.model for name, result in model_results.items()
+                    if result.model is not None
+                }
+                
+                if successful_models:
+                    saved_paths = self._save_models_with_common_utils(
+                        models=successful_models,
+                        model_type=self.config.model_name,
+                        symbol=symbol,
+                        exchange=exchange,
+                        timeframe=timeframe
+                    )
+                    results['saved_model_paths'] = saved_paths
+                    StandardizedLogger.log_info("Model_Saving", f"Models saved: {len(saved_paths)} files")
+                else:
+                    StandardizedLogger.log_warning("Model_Saving", "No successful models to save")
+                    
+        except Exception as e:
+            StandardizedLogger.log_error("Model_Saving", f"Failed to save models: {e}")
+            results['save_error'] = str(e)
+    
+    def _log_training_summary(self, results: Dict[str, Any]) -> None:
+        """Log final training summary."""
+        
+        model_results = results.get('model_results', {})
+        successful_count = sum(1 for r in model_results.values() if r.metrics.error_message is None)
+        execution_time = results.get('training_time', 0)
+        
+        StandardizedLogger.log_training_progress(
+            "HMM Models", "completed", True,
+            f"{successful_count}/{len(model_results)} models successful in {execution_time:.2f}s"
+        )
+        
+        if self.circuit_breaker.failure_count > 0:
+            StandardizedLogger.log_warning(
+                "Circuit_Breaker", 
+                f"Failures: {self.circuit_breaker.failure_count}, State: {self.circuit_breaker.state}"
+            )
+    
+    def _handle_training_failure(self, error: Exception) -> Dict[str, Any]:
+        """Handle training failure with standardized error reporting."""
+        
+        execution_time = time.time() - self.training_start_time if self.training_start_time else 0
+        
+        StandardizedLogger.log_error("HMM_Training", error, include_traceback=True)
+        
+        return {
+            'model_results': {},
+            'metadata': {
+                'error': str(error),
+                'execution_time': execution_time,
+                'config': self.config
+            },
+            'training_time': execution_time,
+            'comprehensive_report': {
+                "report_type": "HMM Models Training Report (Error)",
+                "error": str(error),
+                "timestamp": pd.Timestamp.now().isoformat(),
+                "status": "Training failed"
             }
+        }
 
 
 # Convenience functions

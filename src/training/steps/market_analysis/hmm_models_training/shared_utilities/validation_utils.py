@@ -148,7 +148,7 @@ class ValidationUtils:
     @staticmethod
     def validate_config(config: Any) -> bool:
         """
-        Validate configuration parameters.
+        Validate configuration parameters with range checks.
         
         Args:
             config: Configuration object to validate
@@ -169,24 +169,58 @@ class ValidationUtils:
                 logger.error("No model types specified")
                 return False
             
-            # Validate numeric parameters
+            # Enhanced: Validate numeric parameters with ranges
             if config.n_features <= 0:
                 logger.error("n_features must be positive")
                 return False
+            elif config.n_features > 10000:
+                logger.warning(f"n_features is very large ({config.n_features}), may cause performance issues")
             
             if config.sequence_length <= 0:
                 logger.error("sequence_length must be positive")
                 return False
+            elif config.sequence_length > 1000:
+                logger.warning(f"sequence_length is very large ({config.sequence_length}), may cause memory issues")
             
             if config.n_regimes < 2:
                 logger.error("n_regimes must be at least 2")
                 return False
+            elif config.n_regimes > 20:
+                logger.warning(f"n_regimes is very large ({config.n_regimes}), may cause overfitting")
+            
+            # Enhanced: Validate HPO parameters if present
+            if hasattr(config, 'hpo_trials'):
+                if config.hpo_trials < 0:
+                    logger.error("hpo_trials must be non-negative")
+                    return False
+                elif config.hpo_trials > 1000:
+                    logger.warning(f"hpo_trials is very large ({config.hpo_trials}), may take very long")
+            
+            # Enhanced: Validate learning rate if present
+            if hasattr(config, 'learning_rate'):
+                if config.learning_rate <= 0 or config.learning_rate > 1:
+                    logger.error("learning_rate must be between 0 and 1")
+                    return False
+            
+            # Enhanced: Validate batch size if present
+            if hasattr(config, 'batch_size'):
+                if config.batch_size <= 0:
+                    logger.error("batch_size must be positive")
+                    return False
+                elif config.batch_size > 10000:
+                    logger.warning(f"batch_size is very large ({config.batch_size}), may cause memory issues")
             
             # Validate timeframe
             valid_timeframes = ['1m', '5m', '15m', '30m', '1h', '4h', '1d']
             if config.timeframe not in valid_timeframes:
                 logger.error(f"Invalid timeframe: {config.timeframe}. Valid timeframes: {valid_timeframes}")
                 return False
+            
+            # Enhanced: Cross-parameter validation
+            if hasattr(config, 'n_features') and hasattr(config, 'sequence_length'):
+                total_params = config.n_features * config.sequence_length
+                if total_params > 1000000:
+                    logger.warning(f"Total parameter space is very large ({total_params}), may cause memory issues")
             
             return True
         except Exception as e:

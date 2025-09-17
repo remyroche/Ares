@@ -965,12 +965,25 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                 self.logger.warning("⚠️ All clustering attempts failed")
                 return max_clusters
             
-            # Find elbow point using rate of change
-            optimal_k = self._find_elbow_point(list(cluster_range), inertias, silhouette_scores)
+            # Calculate additional validation metrics
+            validation_metrics = self._calculate_additional_validation_metrics(
+                distance_matrix, cluster_range, inertias, silhouette_scores
+            )
+            
+            # Calculate Information Criterion scores
+            ic_metrics = self._calculate_information_criterion_scores(
+                regime_characteristics, cluster_range
+            )
+            
+            # Find elbow point using multiple methods
+            optimal_k = self._find_optimal_k_comprehensive(
+                list(cluster_range), inertias, silhouette_scores, validation_metrics, ic_metrics
+            )
             
             # Log elbow analysis results
             self.logger.info(f"📊 Elbow analysis: tested {len(cluster_range)} cluster counts")
             self.logger.info(f"📊 Optimal clusters found: {optimal_k}")
+            self.logger.info(f"📊 Validation metrics calculated: {list(validation_metrics.keys())}")
             
             return optimal_k
             
@@ -1061,6 +1074,341 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
         except Exception as e:
             self.logger.error(f"❌ Within-cluster coherence calculation failed: {e}")
             return 0.0
+
+    def _calculate_additional_validation_metrics(self, distance_matrix: np.ndarray, cluster_range: range, inertias: list, coherence_scores: list) -> dict:
+        """Calculate Calinski-Harabasz, Davies-Bouldin, and ARI validation metrics."""
+        try:
+            from sklearn.cluster import AgglomerativeClustering
+            from sklearn.metrics import calinski_harabasz_score, davies_bouldin_score
+            import numpy as np
+            
+            validation_metrics = {
+                'calinski_harabasz_scores': [],
+                'davies_bouldin_scores': [],
+                'ari_stability_scores': []
+            }
+            
+            # Convert distance matrix to feature matrix for sklearn metrics
+            # Use MDS (Multidimensional Scaling) to embed in Euclidean space
+            try:
+                from sklearn.manifold import MDS
+                mds = MDS(n_components=min(10, distance_matrix.shape[0]-1), dissimilarity='precomputed', random_state=42)
+                embedded_features = mds.fit_transform(distance_matrix)
+            except:
+                # Fallback: use distance matrix directly (approximate)
+                embedded_features = 1.0 - distance_matrix
+            
+            for n_clusters in cluster_range:
+                try:
+                    # Perform clustering
+                    clustering = AgglomerativeClustering(
+                        n_clusters=n_clusters,
+                        metric='precomputed',
+                        linkage='average'
+                    )
+                    cluster_labels = clustering.fit_predict(distance_matrix)
+                    
+                    # 4. Calinski-Harabasz Index (higher is better)
+                    if len(set(cluster_labels)) > 1:
+                        ch_score = calinski_harabasz_score(embedded_features, cluster_labels)
+                        validation_metrics['calinski_harabasz_scores'].append(ch_score)
+                    else:
+                        validation_metrics['calinski_harabasz_scores'].append(0.0)
+                    
+                    # 5. Davies-Bouldin Index (lower is better)
+                    if len(set(cluster_labels)) > 1:
+                        db_score = davies_bouldin_score(embedded_features, cluster_labels)
+                        validation_metrics['davies_bouldin_scores'].append(db_score)
+                    else:
+                        validation_metrics['davies_bouldin_scores'].append(float('inf'))
+                    
+                    # 6. ARI Stability (bootstrap approach)
+                    ari_stability = self._calculate_ari_stability(distance_matrix, n_clusters)
+                    validation_metrics['ari_stability_scores'].append(ari_stability)
+                    
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Validation metrics failed for {n_clusters} clusters: {e}")
+                    validation_metrics['calinski_harabasz_scores'].append(0.0)
+                    validation_metrics['davies_bouldin_scores'].append(float('inf'))
+                    validation_metrics['ari_stability_scores'].append(0.0)
+            
+            return validation_metrics
+            
+        except Exception as e:
+            self.logger.error(f"❌ Additional validation metrics calculation failed: {e}")
+            return {'calinski_harabasz_scores': [], 'davies_bouldin_scores': [], 'ari_stability_scores': []}
+
+    def _calculate_ari_stability(self, distance_matrix: np.ndarray, n_clusters: int, n_bootstrap: int = 10) -> float:
+        """Calculate ARI stability using bootstrap resampling."""
+        try:
+            from sklearn.cluster import AgglomerativeClustering
+            from sklearn.metrics import adjusted_rand_score
+            import numpy as np
+            
+            n_samples = distance_matrix.shape[0]
+            ari_scores = []
+            
+            # Original clustering
+            original_clustering = AgglomerativeClustering(
+                n_clusters=n_clusters,
+                metric='precomputed',
+                linkage='average'
+            )
+            original_labels = original_clustering.fit_predict(distance_matrix)
+            
+            for _ in range(n_bootstrap):
+                try:
+                    # Bootstrap sample indices
+                    bootstrap_indices = np.random.choice(n_samples, size=n_samples, replace=True)
+                    
+                    # Create bootstrap distance matrix
+                    bootstrap_distance_matrix = distance_matrix[np.ix_(bootstrap_indices, bootstrap_indices)]
+                    
+                    # Perform clustering on bootstrap sample
+                    bootstrap_clustering = AgglomerativeClustering(
+                        n_clusters=min(n_clusters, len(np.unique(bootstrap_indices))),
+                        metric='precomputed',
+                        linkage='average'
+                    )
+                    bootstrap_labels = bootstrap_clustering.fit_predict(bootstrap_distance_matrix)
+                    
+                    # Map back to original indices and calculate ARI
+                    mapped_labels = np.full(n_samples, -1)
+                    for i, orig_idx in enumerate(bootstrap_indices):
+                        mapped_labels[orig_idx] = bootstrap_labels[i]
+                    
+                    # Only compare samples that were included in bootstrap
+                    valid_mask = mapped_labels != -1
+                    if np.sum(valid_mask) > 1:
+                        ari = adjusted_rand_score(original_labels[valid_mask], mapped_labels[valid_mask])
+                        ari_scores.append(ari)
+                        
+                except Exception:
+                    continue
+            
+            return float(np.mean(ari_scores)) if ari_scores else 0.0
+            
+        except Exception as e:
+            self.logger.error(f"❌ ARI stability calculation failed: {e}")
+            return 0.0
+
+    def _find_elbow_point_enhanced(self, k_values: list, inertias: list, coherence_scores: list, validation_metrics: dict) -> int:
+        """Enhanced elbow point detection using multiple validation metrics."""
+        try:
+            import numpy as np
+            
+            if len(inertias) < 3:
+                return k_values[-1] if k_values else 3
+            
+            # Original elbow detection
+            original_elbow = self._find_elbow_point(k_values, inertias, coherence_scores)
+            
+            # Enhanced selection using validation metrics
+            ch_scores = validation_metrics.get('calinski_harabasz_scores', [])
+            db_scores = validation_metrics.get('davies_bouldin_scores', [])
+            ari_scores = validation_metrics.get('ari_stability_scores', [])
+            
+            if not ch_scores or not db_scores or not ari_scores:
+                return original_elbow
+            
+            # Normalize scores to 0-1 range for combination
+            def normalize_scores(scores, higher_better=True):
+                if not scores or all(x == float('inf') or x == float('-inf') for x in scores):
+                    return [0.5] * len(scores)
+                
+                valid_scores = [x for x in scores if x != float('inf') and x != float('-inf')]
+                if not valid_scores:
+                    return [0.5] * len(scores)
+                
+                min_score, max_score = min(valid_scores), max(valid_scores)
+                if min_score == max_score:
+                    return [0.5] * len(scores)
+                
+                normalized = []
+                for score in scores:
+                    if score == float('inf'):
+                        normalized.append(0.0 if higher_better else 1.0)
+                    elif score == float('-inf'):
+                        normalized.append(1.0 if higher_better else 0.0)
+                    else:
+                        norm_score = (score - min_score) / (max_score - min_score)
+                        normalized.append(norm_score if higher_better else 1.0 - norm_score)
+                
+                return normalized
+            
+            # Normalize all metrics
+            norm_ch = normalize_scores(ch_scores, higher_better=True)
+            norm_db = normalize_scores(db_scores, higher_better=False)  # Lower is better
+            norm_ari = normalize_scores(ari_scores, higher_better=True)
+            norm_coherence = normalize_scores(coherence_scores, higher_better=True)
+            
+            # Calculate composite score
+            composite_scores = []
+            for i in range(len(k_values)):
+                composite = (
+                    0.25 * norm_ch[i] +
+                    0.25 * norm_db[i] +
+                    0.25 * norm_ari[i] +
+                    0.25 * norm_coherence[i]
+                )
+                composite_scores.append(composite)
+            
+            # Find best composite score
+            best_composite_idx = np.argmax(composite_scores)
+            best_composite_k = k_values[best_composite_idx]
+            
+            # Choose between original elbow and best composite
+            # If they're close, prefer the original elbow (simpler)
+            if abs(best_composite_k - original_elbow) <= 1:
+                return original_elbow
+            else:
+                # Check if composite choice is significantly better
+                original_idx = k_values.index(original_elbow) if original_elbow in k_values else 0
+                if composite_scores[best_composite_idx] > composite_scores[original_idx] + 0.1:
+                    return best_composite_k
+                else:
+                    return original_elbow
+            
+        except Exception as e:
+            self.logger.error(f"❌ Enhanced elbow point calculation failed: {e}")
+            return self._find_elbow_point(k_values, inertias, coherence_scores)
+
+    def _calculate_information_criterion_scores(self, regime_characteristics: Dict[str, Any], cluster_range: range) -> dict:
+        """Calculate AIC and BIC scores for different cluster counts using GMM."""
+        try:
+            from sklearn.mixture import GaussianMixture
+            import numpy as np
+            
+            # Extract regime features for IC calculation
+            regime_ids = list(regime_characteristics.keys())
+            regime_features = []
+            
+            for regime_id in regime_ids:
+                regime_data = regime_characteristics[regime_id]
+                features = []
+                
+                # Extract momentum features
+                momentum_chars = regime_data.get('momentum_characteristics', {})
+                features.extend([
+                    momentum_chars.get('mean_price_momentum_5', 0),
+                    momentum_chars.get('mean_rsi', 50),
+                    momentum_chars.get('momentum_strength', 0)
+                ])
+                
+                # Extract volatility features
+                volatility_chars = regime_data.get('volatility_characteristics', {})
+                features.extend([
+                    volatility_chars.get('mean_volatility_20', 0),
+                    volatility_chars.get('volatility_momentum', 0),
+                    volatility_chars.get('mean_atr_normalized', 0)
+                ])
+                
+                # Extract volume features
+                volume_chars = regime_data.get('volume_characteristics', {})
+                features.extend([
+                    volume_chars.get('mean_volume_momentum_5', 0),
+                    volume_chars.get('mean_volume_ratio', 1)
+                ])
+                
+                regime_features.append(features)
+            
+            if len(regime_features) < 3:
+                return {'aic_scores': [], 'bic_scores': [], 'optimal_k_aic': 3, 'optimal_k_bic': 3}
+            
+            regime_features = np.array(regime_features)
+            
+            # Standardize features
+            from sklearn.preprocessing import StandardScaler
+            scaler = StandardScaler()
+            regime_features_scaled = scaler.fit_transform(regime_features)
+            
+            aic_scores = []
+            bic_scores = []
+            
+            for n_clusters in cluster_range:
+                try:
+                    gmm = GaussianMixture(
+                        n_components=min(n_clusters, len(regime_features) - 1),
+                        covariance_type='full',
+                        random_state=42,
+                        max_iter=100
+                    )
+                    gmm.fit(regime_features_scaled)
+                    
+                    aic_scores.append(gmm.aic(regime_features_scaled))
+                    bic_scores.append(gmm.bic(regime_features_scaled))
+                    
+                except Exception as e:
+                    # If GMM fails, assign penalty scores
+                    aic_scores.append(float('inf'))
+                    bic_scores.append(float('inf'))
+            
+            # Find optimal k for each criterion (lower is better)
+            optimal_k_aic = cluster_range[np.argmin(aic_scores)] if aic_scores and not all(x == float('inf') for x in aic_scores) else cluster_range[-1]
+            optimal_k_bic = cluster_range[np.argmin(bic_scores)] if bic_scores and not all(x == float('inf') for x in bic_scores) else cluster_range[-1]
+            
+            return {
+                'aic_scores': aic_scores,
+                'bic_scores': bic_scores,
+                'optimal_k_aic': optimal_k_aic,
+                'optimal_k_bic': optimal_k_bic
+            }
+            
+        except Exception as e:
+            self.logger.error(f"❌ Information criterion calculation failed: {e}")
+            return {'aic_scores': [], 'bic_scores': [], 'optimal_k_aic': 3, 'optimal_k_bic': 3}
+
+    def _find_optimal_k_comprehensive(self, k_values: list, inertias: list, coherence_scores: list, validation_metrics: dict, ic_metrics: dict) -> int:
+        """Find optimal k using comprehensive approach: elbow + validation + information criteria."""
+        try:
+            import numpy as np
+            
+            if len(k_values) < 3:
+                return k_values[-1] if k_values else 3
+            
+            # Get recommendations from different methods
+            elbow_k = self._find_elbow_point(k_values, inertias, coherence_scores)
+            enhanced_k = self._find_elbow_point_enhanced(k_values, inertias, coherence_scores, validation_metrics)
+            aic_k = ic_metrics.get('optimal_k_aic', elbow_k)
+            bic_k = ic_metrics.get('optimal_k_bic', elbow_k)
+            
+            # Collect all recommendations
+            recommendations = {
+                'elbow_method': elbow_k,
+                'enhanced_validation': enhanced_k,
+                'aic_criterion': aic_k,
+                'bic_criterion': bic_k
+            }
+            
+            # Count votes for each k
+            vote_counts = {}
+            for method, k_rec in recommendations.items():
+                if k_rec in k_values:  # Valid recommendation
+                    vote_counts[k_rec] = vote_counts.get(k_rec, 0) + 1
+            
+            if not vote_counts:
+                return elbow_k  # Fallback
+            
+            # Find k with most votes
+            max_votes = max(vote_counts.values())
+            top_candidates = [k for k, votes in vote_counts.items() if votes == max_votes]
+            
+            # If tie, prefer simpler model (lower k)
+            if len(top_candidates) > 1:
+                optimal_k = min(top_candidates)
+            else:
+                optimal_k = top_candidates[0]
+            
+            # Log the decision process
+            self.logger.info(f"📊 Clustering method recommendations: {recommendations}")
+            self.logger.info(f"📊 Vote counts: {vote_counts}")
+            self.logger.info(f"📊 Selected optimal k: {optimal_k} (consensus)")
+            
+            return optimal_k
+            
+        except Exception as e:
+            self.logger.error(f"❌ Comprehensive k selection failed: {e}")
+            return self._find_elbow_point(k_values, inertias, coherence_scores)
 
     def _calculate_regime_similarity_matrix(self, regime_characteristics: Dict[str, Any]) -> np.ndarray:
         """Calculate similarity matrix between regimes based on their characteristics."""
@@ -1965,8 +2313,12 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             factor_impact = self._analyze_factor_impact_on_market_dynamics(regime_characteristics, regime_to_cluster, unique_clusters)
             statistical_metrics['factor_impact_analysis'] = factor_impact
             
-            # 7. Overall Cluster Quality Assessment
-            overall_quality = self._assess_overall_cluster_quality(volume_tests, volatility_tests, momentum_tests, cluster_validation, similarity_validation, factor_impact)
+            # 7. Economic Regime Validation
+            economic_validation = self._validate_with_economic_indicators(cluster_assignments, regime_characteristics, regime_to_cluster, market_data)
+            statistical_metrics['economic_validation'] = economic_validation
+            
+            # 8. Overall Cluster Quality Assessment
+            overall_quality = self._assess_overall_cluster_quality(volume_tests, volatility_tests, momentum_tests, cluster_validation, similarity_validation, factor_impact, economic_validation)
             statistical_metrics['overall_cluster_quality'] = overall_quality
             
             return statistical_metrics
@@ -3947,7 +4299,55 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
         except Exception as e:
             return {'error': f'Factor impact analysis failed: {e}'}
     
-    def _assess_overall_cluster_quality(self, volume_tests: Dict[str, Any], volatility_tests: Dict[str, Any], momentum_tests: Dict[str, Any], cluster_validation: Dict[str, Any], similarity_validation: Dict[str, Any], factor_impact: Dict[str, Any] = None) -> Dict[str, Any]:
+    def _validate_with_economic_indicators(self, cluster_assignments: List[int], regime_characteristics: Dict[str, Any], regime_to_cluster: Dict[str, int], market_data: Any) -> Dict[str, Any]:
+        """Validate clustering against known economic indicators and market conditions."""
+        try:
+            import numpy as np
+            from scipy import stats
+            
+            economic_validation = {}
+            
+            # 1. Volatility Regime Validation
+            if hasattr(market_data, 'columns') and 'close' in market_data.columns:
+                returns = market_data['close'].pct_change().dropna()
+                rolling_vol = returns.rolling(window=20).std() * np.sqrt(252)
+                
+                # Group volatility by cluster
+                unique_clusters = list(set(cluster_assignments))
+                vol_groups = [rolling_vol[np.array(cluster_assignments) == cid].dropna() for cid in unique_clusters]
+                vol_groups = [group for group in vol_groups if len(group) > 1]
+                
+                if len(vol_groups) >= 2:
+                    f_stat, p_value = stats.f_oneway(*vol_groups)
+                    vol_regime_quality = 'good' if p_value < 0.05 else 'poor'
+                else:
+                    vol_regime_quality = 'poor'
+                
+                economic_validation['volatility_regime_validation'] = {
+                    'significant_difference': p_value < 0.05 if len(vol_groups) >= 2 else False,
+                    'quality': vol_regime_quality
+                }
+            
+            # 2. Overall Economic Alignment Score
+            alignment_components = []
+            if 'volatility_regime_validation' in economic_validation:
+                vol_score = 1.0 if economic_validation['volatility_regime_validation']['quality'] == 'good' else 0.3
+                alignment_components.append(vol_score)
+            
+            overall_score = np.mean(alignment_components) if alignment_components else 0.5
+            
+            economic_validation['overall_economic_alignment'] = {
+                'overall_score': float(overall_score),
+                'economic_alignment_quality': 'high' if overall_score > 0.7 else 'medium' if overall_score > 0.5 else 'low',
+                'economic_validation_passed': overall_score > 0.6
+            }
+            
+            return economic_validation
+            
+        except Exception as e:
+            return {'error': f'Economic validation failed: {e}'}
+    
+    def _assess_overall_cluster_quality(self, volume_tests: Dict[str, Any], volatility_tests: Dict[str, Any], momentum_tests: Dict[str, Any], cluster_validation: Dict[str, Any], similarity_validation: Dict[str, Any], factor_impact: Dict[str, Any] = None, economic_validation: Dict[str, Any] = None) -> Dict[str, Any]:
         """Assess overall quality of the clustering based on all statistical tests."""
         try:
             overall_assessment = {}

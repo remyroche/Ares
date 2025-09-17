@@ -40,7 +40,7 @@ from src.utils.matrix_operations.unified_operations import (
 )
 from src.utils.ml_common.config.base_training_config import EnsembleTrainingConfig
 from src.utils.ml_common.training.ensemble_training_step import EnsembleTrainingStep
-from src.utils.ml_common.math_validation import MathValidator
+from src.utils.math_validation import MathValidation
 from src.utils.ml_common.evaluation.evaluation_utils import EvaluationUtils
 
 # Shared utilities
@@ -259,14 +259,25 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
                 tprint(f"❌ CRITICAL: Found {inf_count} infinite values in target values - FAILING FAST")
                 raise ValueError(f"Target data contains {inf_count} infinite values - training cannot proceed")
             
-            # Validate finite values using math validation utilities
+            # Validate finite values using optimized approach for all features
             try:
-                # Validate a sample of values to ensure they are finite
-                sample_size = min(1000, X.shape[0])
-                sample_indices = np.random.choice(X.shape[0], sample_size, replace=False)
-                for i in sample_indices:
-                    for j in range(min(10, X.shape[1])):  # Check first 10 features
-                        self.math_validator.validate_finite(X[i, j], f"X[{i},{j}]")
+                # Use vectorized operations for efficient validation of all features
+                non_finite_mask = ~np.isfinite(X)
+                if np.any(non_finite_mask):
+                    # Find which features have non-finite values
+                    problematic_features = np.where(np.any(non_finite_mask, axis=0))[0]
+                    total_non_finite = np.sum(non_finite_mask)
+                    tprint(f"❌ CRITICAL: Found {total_non_finite} non-finite values in {len(problematic_features)} features - FAILING FAST")
+                    tprint(f"   Problematic features: {problematic_features[:10]}{'...' if len(problematic_features) > 10 else ''}")
+                    raise ValueError(f"Input data contains {total_non_finite} non-finite values in features {problematic_features[:5].tolist()}")
+                
+                # Additional validation for a representative sample to ensure math validation works
+                if X.shape[0] > 0 and X.shape[1] > 0:
+                    # Test a few representative values with math validator
+                    sample_indices = [0, X.shape[0]//2, X.shape[0]-1] if X.shape[0] >= 3 else [0]
+                    for i in sample_indices:
+                        for j in [0, X.shape[1]//2, X.shape[1]-1] if X.shape[1] >= 3 else [0]:
+                            self.math_validator.validate_finite(X[i, j], f"X[{i},{j}]")
             except ValueError as e:
                 tprint(f"❌ CRITICAL: Non-finite values detected in input features - FAILING FAST")
                 raise ValueError(f"Input data contains non-finite values: {e}") from e
@@ -335,8 +346,8 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
                 # Step 2: Validate and prepare base models
                 tprint("🔄 Step 2: Validating base models...")
                 if base_hmm_models is None or not base_hmm_models:
-                    tprint("⚠️ No base HMM models provided, creating proper ensemble models")
-                    base_hmm_models = self._create_ensemble_models()
+                    tprint("⚠️ No base HMM models provided, creating base models for ensemble")
+                    base_hmm_models = self._create_base_models_for_ensemble()
                 else:
                     tprint(f"✅ Using {len(base_hmm_models)} provided base models")
                 
@@ -406,11 +417,9 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
             tprint("🔄 Pre-processing data with common utilities...")
             
             # Normalize features using matrix operations
-            if X.shape[1] > 0:
-                X_normalized = self.matrix_ops.normalize_matrix(X, method='zscore')
-                tprint(f"✅ Features normalized using matrix operations: {X_normalized.shape}")
-            else:
-                X_normalized = X
+            # Note: X.shape[1] > 0 check is redundant since earlier validation ensures non-empty data
+            X_normalized = self.matrix_ops.normalize_matrix(X, method='zscore')
+            tprint(f"✅ Features normalized using matrix operations: {X_normalized.shape}")
             
             # Use GPU context if available for large datasets
             if self.gpu_manager and X.shape[0] > 10000:
@@ -493,21 +502,22 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
             tprint(f"❌ Core training execution failed: {e}")
             raise
     
-    def _create_ensemble_models(self) -> Dict[str, Any]:
+    def _create_base_models_for_ensemble(self) -> Dict[str, Any]:
         """
-        Create proper ensemble models for HMM training with enhanced error handling.
+        Create base models for HMM ensemble training with enhanced error handling.
+        These are individual models that will be combined into an ensemble.
         Uses common utilities for robust model creation and validation.
         
         Returns:
-            Dictionary of ensemble models
+            Dictionary of base models for ensemble training
         """
         try:
             from catboost import CatBoostRegressor
             from sklearn.linear_model import ElasticNet
             from sklearn.ensemble import RandomForestRegressor
             
-            # Create ensemble models with validated parameters using math validation
-            ensemble_models = {}
+            # Create base models with validated parameters using math validation
+            base_models = {}
             
             # CatBoost with validated parameters (Primary: Speed + robustness)
             try:
@@ -515,7 +525,7 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
                 learning_rate = self.math_validator.validate_range(0.05, 0.0, 1.0, "CatBoost learning_rate")
                 depth = self.math_validator.validate_positive(6, "CatBoost depth")
                 
-                ensemble_models['catboost'] = CatBoostRegressor(
+                base_models['catboost'] = CatBoostRegressor(
                     iterations=int(iterations),
                     learning_rate=learning_rate,
                     depth=int(depth),
@@ -526,13 +536,18 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
             except Exception as e:
                 tprint(f"⚠️ CatBoost model creation failed: {e}")
                 # Fallback to default parameters
-                ensemble_models['catboost'] = CatBoostRegressor(
-                    iterations=1000,
-                    learning_rate=0.05,
-                    depth=6,
-                    random_seed=42,
-                    verbose=False
-                )
+                try:
+                    base_models['catboost'] = CatBoostRegressor(
+                        iterations=1000,
+                        learning_rate=0.05,
+                        depth=6,
+                        random_seed=42,
+                        verbose=False
+                    )
+                    tprint("✅ CatBoost fallback model created successfully")
+                except Exception as fallback_error:
+                    tprint(f"❌ CatBoost fallback also failed: {fallback_error}")
+                    raise RuntimeError(f"Both primary and fallback CatBoost creation failed: {e}, {fallback_error}") from fallback_error
             
             # Elastic Net with validated parameters (Primary: Fast baseline)
             try:
@@ -540,7 +555,7 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
                 l1_ratio = self.math_validator.validate_range(0.5, 0.0, 1.0, "ElasticNet l1_ratio")
                 max_iter = self.math_validator.validate_positive(1000, "ElasticNet max_iter")
                 
-                ensemble_models['elastic_net'] = ElasticNet(
+                base_models['elastic_net'] = ElasticNet(
                     random_state=43,
                     max_iter=int(max_iter),
                     alpha=alpha,
@@ -550,12 +565,17 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
             except Exception as e:
                 tprint(f"⚠️ Elastic Net model creation failed: {e}")
                 # Fallback to default parameters
-                ensemble_models['elastic_net'] = ElasticNet(
-                    random_state=43,
-                    max_iter=1000,
-                    alpha=0.1,
-                    l1_ratio=0.5
-                )
+                try:
+                    base_models['elastic_net'] = ElasticNet(
+                        random_state=43,
+                        max_iter=1000,
+                        alpha=0.1,
+                        l1_ratio=0.5
+                    )
+                    tprint("✅ Elastic Net fallback model created successfully")
+                except Exception as fallback_error:
+                    tprint(f"❌ Elastic Net fallback also failed: {fallback_error}")
+                    raise RuntimeError(f"Both primary and fallback Elastic Net creation failed: {e}, {fallback_error}") from fallback_error
             
             # Random Forest with validated parameters (Meta: Speed + Efficient)
             try:
@@ -563,7 +583,7 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
                 max_depth = self.math_validator.validate_positive(10, "RandomForest max_depth")
                 min_samples_split = self.math_validator.validate_positive(2, "RandomForest min_samples_split")
                 
-                ensemble_models['ensemble_rf'] = RandomForestRegressor(
+                base_models['ensemble_rf'] = RandomForestRegressor(
                     n_estimators=int(n_estimators),
                     max_depth=int(max_depth),
                     min_samples_split=int(min_samples_split),
@@ -574,22 +594,27 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
             except Exception as e:
                 tprint(f"⚠️ Random Forest model creation failed: {e}")
                 # Fallback to default parameters
-                ensemble_models['ensemble_rf'] = RandomForestRegressor(
-                    n_estimators=100,
-                    max_depth=10,
-                    min_samples_split=2,
-                    random_state=44,
-                    n_jobs=-1
-                )
+                try:
+                    base_models['ensemble_rf'] = RandomForestRegressor(
+                        n_estimators=100,
+                        max_depth=10,
+                        min_samples_split=2,
+                        random_state=44,
+                        n_jobs=-1
+                    )
+                    tprint("✅ Random Forest fallback model created successfully")
+                except Exception as fallback_error:
+                    tprint(f"❌ Random Forest fallback also failed: {fallback_error}")
+                    raise RuntimeError(f"Both primary and fallback Random Forest creation failed: {e}, {fallback_error}") from fallback_error
             
-            tprint(f"📊 Created {len(ensemble_models)} ensemble models for HMM training using common utilities")
-            tprint(f"   Models: {list(ensemble_models.keys())}")
+            tprint(f"📊 Created {len(base_models)} base models for HMM ensemble training using common utilities")
+            tprint(f"   Models: {list(base_models.keys())}")
             
             # Update training stats using safe operations
-            self.training_stats['ensemble_models_created'] = len(ensemble_models)
+            self.training_stats['base_models_created'] = len(base_models)
             self.training_stats['model_creation_method'] = 'common_utilities_validated'
             
-            return ensemble_models
+            return base_models
             
         except ImportError as e:
             tprint(f"❌ CRITICAL: Failed to import required model libraries - FAILING FAST")
@@ -640,7 +665,7 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
                     'sample_count': safe_int(self.training_stats.get('sample_count', 0), 0),
                     'feature_count': safe_int(self.training_stats.get('feature_count', 0), 0),
                     'base_models_used': safe_int(self.training_stats.get('base_models_used', 0), 0),
-                    'ensemble_models_created': safe_int(self.training_stats.get('ensemble_models_created', 0), 0),
+                    'base_models_created': safe_int(self.training_stats.get('base_models_created', 0), 0),
                     'model_creation_method': self.training_stats.get('model_creation_method', 'unknown')
                 },
                 'configuration_summary': {
@@ -977,12 +1002,12 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
             sample_count = safe_int(data_summary.get('sample_count', 0), 0)
             feature_count = safe_int(data_summary.get('feature_count', 0), 0)
             base_models = safe_int(data_summary.get('base_models_used', 0), 0)
-            ensemble_models = safe_int(data_summary.get('ensemble_models_created', 0), 0)
+            base_models_created = safe_int(data_summary.get('base_models_created', 0), 0)
             
             tprint(f"📊 Samples processed: {sample_count:,}")
             tprint(f"🔢 Features used: {feature_count}")
             tprint(f"🤖 Base models: {base_models}")
-            tprint(f"🏗️ Ensemble models created: {ensemble_models}")
+            tprint(f"🏗️ Base models created: {base_models_created}")
             tprint(f"🔧 Model creation method: {data_summary.get('model_creation_method', 'unknown')}")
             
             # Performance analysis using safe operations
@@ -1152,7 +1177,7 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
                 'data_characteristics': {
                     'total_samples': safe_int(self.training_stats.get('sample_count', 0), 0),
                     'feature_count': safe_int(self.training_stats.get('feature_count', 0), 0),
-                    'ensemble_models_created': safe_int(self.training_stats.get('ensemble_models_created', 0), 0),
+                    'base_models_created': safe_int(self.training_stats.get('base_models_created', 0), 0),
                     'model_creation_method': self.training_stats.get('model_creation_method', 'unknown'),
                     'data_normalized': self.training_stats.get('data_normalized', False),
                     'gpu_used': self.training_stats.get('gpu_used', False)

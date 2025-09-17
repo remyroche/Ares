@@ -9,7 +9,7 @@ that combines predictions from HMM clusters across multiple timeframes.
 """
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, List, Dict
 import numpy as np
 
 @dataclass
@@ -28,7 +28,7 @@ class TimeframeConfig:
 class EnsembleConfig:
     """Configuration for the multi-timeframe ensemble."""
 
-    timeframes: list[TimeframeConfig]
+    timeframes: List[TimeframeConfig]
     meta_learner_type: str = "lgbm"  # "lgbm", "random_forest", "logistic"
     enable_dynamic_weighting: bool = True
     weight_update_frequency: int = 100  # Update weights every N predictions
@@ -37,7 +37,7 @@ class EnsembleConfig:
         "meta_learner"  # "weighted_average", "meta_learner", "stacking"
     )
 
-def get_multi_timeframe_hmm_ensemble_config() -> dict[str, Any]:
+def get_multi_timeframe_hmm_ensemble_config() -> Dict[str, Any]:
     """
     Get multi-timeframe HMM ensemble configuration.
 
@@ -122,7 +122,7 @@ def get_multi_timeframe_hmm_ensemble_config() -> dict[str, Any]:
         },
     }
 
-def get_default_timeframe_configs() -> list[TimeframeConfig]:
+def get_default_timeframe_configs() -> List[TimeframeConfig]:
     """
     Get default timeframe configurations.
 
@@ -175,7 +175,7 @@ def get_default_ensemble_config() -> EnsembleConfig:
         ensemble_method="meta_learner",
     )
 
-def validate_ensemble_config(config: dict[str, Any]) -> bool:
+def validate_ensemble_config(config: Dict[str, Any]) -> bool:
     """
     Validate ensemble configuration.
 
@@ -183,7 +183,7 @@ def validate_ensemble_config(config: dict[str, Any]) -> bool:
         config: Configuration dictionary
 
     Returns:
-        bool: True if valid = False otherwise
+        bool: True if valid, False otherwise
     """
     try:
         ensemble_config = config.get("MULTI_TIMEFRAME_HMM_ENSEMBLE", {})
@@ -216,7 +216,7 @@ def validate_ensemble_config(config: dict[str, Any]) -> bool:
     except Exception:
         return False
 
-def get_optimized_timeframe_weights() -> dict[str, float]:
+def get_optimized_timeframe_weights() -> Dict[str, float]:
     """
     Get optimized timeframe weights based on typical market behavior.
 
@@ -230,12 +230,12 @@ def get_optimized_timeframe_weights() -> dict[str, float]:
         "30m": 0.25,  # Good for longer-term regime changes
     }
 
-def get_adaptive_weighting_config() -> dict[str, Any]:
+def get_adaptive_weighting_config() -> Dict[str, Any]:
     """
     Get adaptive weighting configuration for dynamic weight updates.
 
     Returns:
-        Dict[str = Any]: Adaptive weighting configuration
+        Dict[str, Any]: Adaptive weighting configuration
     """
     return {
         "enabled": True,

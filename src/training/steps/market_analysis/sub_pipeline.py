@@ -369,9 +369,11 @@ class MarketAnalysisSubPipeline:
             results['hmm_clusters'] = hmm_clustering_data.get('hmm_clusters', {})
             results['hmm_clustering_metrics'] = hmm_clustering_data.get('hmm_clustering_metrics', {})
             
-            # Update pipeline state for next components - store the full clustering result
+            # Update pipeline state for next components
+            cluster_assignments = hmm_clustering_data.get('cluster_assignments', [])
             self._current_pipeline_state.update({
-                'hmm_clusters': hmm_clustering_data  # Store the full result including cluster_assignments
+                'hmm_clusters': hmm_clustering_data,  # Store the full result
+                'cluster_assignments': cluster_assignments  # Make cluster_assignments directly accessible
             })
             
             # Stage 6: HMM Models Training

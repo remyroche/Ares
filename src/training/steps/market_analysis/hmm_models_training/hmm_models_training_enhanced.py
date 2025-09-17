@@ -438,7 +438,7 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
     
 # Model registration now handled by shared UnifiedModelFactory
     
-    def _validate_input_data(self, X: np.ndarray, y: np.ndarray, regime_labels: np.ndarray) -> bool:
+    def _validate_input_data(self, X: np.ndarray, y: np.ndarray, cluster_assignments: np.ndarray) -> bool:
         """
         Enhanced input validation with early exit on critical failures.
         Uses common utilities for better validation and error handling.
@@ -446,29 +446,29 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
         Args:
             X: Input features
             y: Target values
-            regime_labels: Regime labels
+            cluster_assignments: Cluster assignments
             
         Returns:
             True if validation passes, False otherwise
         """
         try:
             # Use common validation utilities
-            if not ValidationUtils.validate_data_shapes(X, y, regime_labels):
+            if not ValidationUtils.validate_data_shapes(X, y, cluster_assignments):
                 return False
             
-            if not ValidationUtils.validate_data_quality(X, y, regime_labels):
+            if not ValidationUtils.validate_data_quality(X, y, cluster_assignments):
                 return False
             
-            if not ValidationUtils.validate_regime_distribution(regime_labels, min_samples_per_regime=10):
+            if not ValidationUtils.validate_regime_distribution(cluster_assignments, min_samples_per_regime=10):
                 return False
             
             # Additional HMM-specific validations using common math validation
             critical_failures = []
             warnings = []
-            unique_regimes = np.unique(regime_labels)
+            unique_clusters = np.unique(cluster_assignments)
             
-            if len(unique_regimes) < 2:
-                critical_failures.append(f"Need at least 2 regimes, found {len(unique_regimes)}")
+            if len(unique_clusters) < 2:
+                critical_failures.append(f"Need at least 2 clusters, found {len(unique_clusters)}")
             
             # Early exit on critical failures
             if critical_failures:
@@ -479,18 +479,18 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
             if len(X) < 1000:
                 warnings.append(f"Small dataset: {len(X)} samples (recommended: >1000)")
             
-            # Check minimum samples per regime
-            for regime in unique_regimes:
-                regime_count = np.sum(regime_labels == regime)
-                if regime_count < 10:  # Minimum samples per regime
-                    warnings.append(f"Regime {regime} has only {regime_count} samples (minimum: 10)")
+            # Check minimum samples per cluster
+            for cluster in unique_clusters:
+                cluster_count = np.sum(cluster_assignments == cluster)
+                if cluster_count < 10:  # Minimum samples per cluster
+                    warnings.append(f"Cluster {cluster} has only {cluster_count} samples (minimum: 10)")
             
             # Log warnings
             if warnings:
                 for warning in warnings:
                     tprint(f"⚠️ {warning}")
             
-            tprint(f"✅ Enhanced validation passed: {len(X)} samples, {len(unique_regimes)} regimes")
+            tprint(f"✅ Enhanced validation passed: {len(X)} samples, {len(unique_clusters)} clusters")
             return True
             
         except Exception as e:
@@ -969,7 +969,7 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
         self,
         X: np.ndarray,
         y: np.ndarray,
-        regime_labels: np.ndarray,
+        cluster_assignments: np.ndarray,
         feature_names: Optional[List[str]] = None,
         hmm_states: Optional[np.ndarray] = None,
         **kwargs
@@ -980,7 +980,7 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
         Args:
             X: Input features
             y: Target values
-            regime_labels: Regime labels for each sample
+            cluster_assignments: Cluster assignments for each sample
             feature_names: Names of input features
             hmm_states: HMM cluster/regime states
             **kwargs: Additional arguments
@@ -994,7 +994,7 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
         try:
             # Step 1: Input validation
             self.logger.info("🔄 Step 1: Validating inputs...")
-            if not self._validate_input_data(X, y, regime_labels):
+            if not self._validate_input_data(X, y, cluster_assignments):
                 raise ValueError("Input validation failed")
             
             # Step 2: Feature preparation
@@ -1040,14 +1040,14 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
             # Step 5: Finish progress reporting
             self.progress_reporter.finish_report()
             
-            # Step 6: Analyze regimes
-            unique_regimes, regime_counts = np.unique(regime_labels, return_counts=True)
-            regime_distribution = {
-                f"regime_{regime}": {
+            # Step 6: Analyze clusters
+            unique_clusters, cluster_counts = np.unique(cluster_assignments, return_counts=True)
+            cluster_distribution = {
+                f"cluster_{cluster}": {
                     "count": int(count),
-                    "percentage": float(count / len(regime_labels) * 100)
+                    "percentage": float(count / len(cluster_assignments) * 100)
                 }
-                for regime, count in zip(unique_regimes, regime_counts)
+                for cluster, count in zip(unique_clusters, cluster_counts)
             }
             
             # Step 7: Create final results with proper artifact formatting
@@ -1101,8 +1101,8 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
                     'total_features': X_enhanced.shape[1],
                     'selected_features': len(selected_features),
                     'selected_feature_names': selected_features,
-                    'n_regimes': len(unique_regimes),
-                    'regime_distribution': regime_distribution,
+                    'n_clusters': len(unique_clusters),
+                    'cluster_distribution': cluster_distribution,
                     'execution_time': execution_time,
                     'config': self.config,
                     'circuit_breaker_state': self.circuit_breaker.state,
@@ -1192,14 +1192,14 @@ def create_enhanced_hmm_models_training(
 def execute_enhanced_hmm_models_training(
     X: np.ndarray,
     y: np.ndarray,
-    regime_labels: np.ndarray,
+    cluster_assignments: np.ndarray,
     config: Optional[HMMTrainingConfig] = None,
     feature_names: Optional[List[str]] = None,
     hmm_states: Optional[np.ndarray] = None
 ) -> Dict[str, Any]:
     """Execute enhanced HMM models training step."""
     step = create_enhanced_hmm_models_training(config)
-    return step.execute(X, y, regime_labels, feature_names, hmm_states)
+    return step.execute(X, y, cluster_assignments, feature_names, hmm_states)
 
 
 # Example usage

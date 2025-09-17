@@ -904,7 +904,7 @@ class TacticianLookbackOptimizer:
         analyst_signals: np.ndarray,
         market_data: pd.DataFrame
     ) -> float:
-        """Calculate entry timing accuracy when Analyst gives green light (optimized for 0.3% movements)."""
+        """Calculate entry timing accuracy when Analyst gives green light (optimized for 0.4% movements)."""
         try:
             if features.empty or len(analyst_signals) == 0:
                 return 0.5
@@ -921,12 +921,12 @@ class TacticianLookbackOptimizer:
             # Focus on green light periods
             green_light_returns = future_returns[green_light_periods]
             
-            # Calculate accuracy optimized for 0.3% target movements
+            # Calculate accuracy optimized for 0.4% target movements
             if len(green_light_returns) > 0:
-                # Weight accuracy by proximity to 0.3% target
-                target_return = 0.003  # 0.3% target movement
+                # Weight accuracy by proximity to 0.4% target
+                target_return = 0.004  # 0.4% target movement
                 
-                # Score returns based on achieving target (0.3% or more is good)
+                # Score returns based on achieving target (0.4% or more is good)
                 target_achieved = (green_light_returns >= target_return).sum()
                 small_positive = ((green_light_returns > 0) & (green_light_returns < target_return)).sum()
                 negative = (green_light_returns < 0).sum()
@@ -946,7 +946,7 @@ class TacticianLookbackOptimizer:
         features: pd.DataFrame,
         market_data: pd.DataFrame
     ) -> float:
-        """Calculate exit timing accuracy for risk management (optimized for 0.3% movements)."""
+        """Calculate exit timing accuracy for risk management (optimized for 0.4% movements)."""
         try:
             if features.empty:
                 return 0.5
@@ -955,7 +955,7 @@ class TacticianLookbackOptimizer:
             returns = market_data['close'].pct_change()
             volatility = returns.rolling(window=10).std()  # Shorter window for 1m data
             
-            # Identify high-risk periods for 0.3% target movements
+            # Identify high-risk periods for 0.4% target movements
             # More sensitive thresholds for short-term trading
             high_risk_periods = (
                 (volatility > volatility.quantile(0.75)) |  # Lower threshold for 1m
@@ -1012,7 +1012,7 @@ class TacticianLookbackOptimizer:
         features: pd.DataFrame,
         market_data: pd.DataFrame
     ) -> float:
-        """Calculate signal-to-noise ratio of features (optimized for 0.3% movements)."""
+        """Calculate signal-to-noise ratio of features (optimized for 0.4% movements)."""
         try:
             if features.empty:
                 return 0.5
@@ -1031,7 +1031,7 @@ class TacticianLookbackOptimizer:
                         corr_3min = safe_correlation(features[column], returns_3min)
                         corr_5min = safe_correlation(features[column], returns_5min)
                         
-                        # Weight short-term correlations more heavily for 0.3% targets
+                        # Weight short-term correlations more heavily for 0.4% targets
                         valid_corrs = []
                         if validate_finite(corr_1min):
                             valid_corrs.append(abs(corr_1min) * 0.5)  # 50% weight for 1-minute
@@ -1117,24 +1117,24 @@ class TacticianLookbackOptimizer:
             return 0.5
     
     def _calculate_lookback_penalty(self, lookback_params: Dict[str, int]) -> float:
-        """Calculate penalty for extreme lookback values (optimized for 0.3% movements)."""
+        """Calculate penalty for extreme lookback values (optimized for 0.4% movements)."""
         try:
             penalties = []
             
             for indicator, lookback in lookback_params.items():
-                # Penalty for very short lookbacks (too noisy, even for 0.3% targets)
+                # Penalty for very short lookbacks (too noisy, even for 0.4% targets)
                 if lookback < 5:
                     penalties.append(0.15)  # Higher penalty for very short lookbacks
                 
-                # Penalty for very long lookbacks (too slow for 0.3% short-term targets)
-                elif lookback > 30:  # Shorter threshold for 0.3% movements
+                # Penalty for very long lookbacks (too slow for 0.4% short-term targets)
+                elif lookback > 30:  # Shorter threshold for 0.4% movements
                     penalties.append(0.1)
                 
                 # Slight penalty for moderately long lookbacks (not optimal for short-term)
                 elif lookback > 20:
                     penalties.append(0.05)
                 
-                # Sweet spot for 0.3% movements: 5-20 periods
+                # Sweet spot for 0.4% movements: 5-20 periods
                 else:
                     penalties.append(0.0)
             
@@ -1429,7 +1429,7 @@ class TacticianLookbackOptimizer:
             # Score-based insights
             best_score = results.get('best_score', 0.0)
             if best_score > 0.8:
-                insights.append("Excellent optimization score achieved - lookback periods are well-tuned for 0.3% movements")
+                insights.append("Excellent optimization score achieved - lookback periods are well-tuned for 0.4% movements")
             elif best_score > 0.6:
                 insights.append("Good optimization score - lookback periods should improve Tactician performance")
             elif best_score > 0.4:
@@ -1443,11 +1443,11 @@ class TacticianLookbackOptimizer:
                 mean_lookback = np.mean(lookback_values)
                 
                 if mean_lookback < 10:
-                    insights.append("Very short average lookback periods - optimized for high-frequency 0.3% movements")
+                    insights.append("Very short average lookback periods - optimized for high-frequency 0.4% movements")
                 elif mean_lookback < 20:
                     insights.append("Short average lookback periods - good balance for 1m timeframe trading")
                 else:
-                    insights.append("Longer average lookback periods - may be better for trend following than 0.3% scalping")
+                    insights.append("Longer average lookback periods - may be better for trend following than 0.4% scalping")
             
             # Method-specific insights
             method = results.get('optimization_method', 'unknown')
@@ -1727,11 +1727,11 @@ class TacticianLookbackOptimizer:
             if mean_lookback < 10:
                 analysis['optimization_insights'].append("Very short average lookback - optimized for high-frequency trading")
             elif mean_lookback < 20:
-                analysis['optimization_insights'].append("Short average lookback - good for 1m timeframe and 0.3% targets")
+                analysis['optimization_insights'].append("Short average lookback - good for 1m timeframe and 0.4% targets")
             elif mean_lookback < 30:
                 analysis['optimization_insights'].append("Medium average lookback - balanced approach")
             else:
-                analysis['optimization_insights'].append("Long average lookback - may be too slow for 0.3% targets")
+                analysis['optimization_insights'].append("Long average lookback - may be too slow for 0.4% targets")
             
             # Check distribution balance
             dist = analysis['lookback_distribution']

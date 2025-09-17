@@ -138,9 +138,10 @@ class FinalParametersOptimizer:
                 'analyst_weight': {'type': 'float', 'min': 0.2, 'max': 0.5},
                 'tactician_weight': {'type': 'float', 'min': 0.2, 'max': 0.5},
                 'strategist_weight': {'type': 'float', 'min': 0.1, 'max': 0.3},
-                # New ensemble method parameters for updated models
+                # Ensemble method parameters for Analyst (Elastic Net meta) & Tactician (LightGBM meta)
                 'ensemble_method': {'type': 'categorical', 'choices': ['stacking', 'weighted_average', 'voting', 'meta_learner']},
-                'meta_model_type': {'type': 'categorical', 'choices': ['ElasticNetCV', 'LightGBM', 'XGBoost', 'Ridge']},
+                'analyst_meta_model_type': {'type': 'categorical', 'choices': ['elastic_net']},
+                'tactician_meta_model_type': {'type': 'categorical', 'choices': ['lightgbm']},
                 'stacking_cv_folds': {'type': 'int', 'min': 3, 'max': 10},
                 'meta_learner_weight': {'type': 'float', 'min': 0.1, 'max': 0.4}
             },
@@ -208,8 +209,8 @@ class FinalParametersOptimizer:
                 'round_trip_multiplier': {'type': 'float', 'min': 1.5, 'max': 3.0}
             },
             'entry_timing_optimization': {
-                # Entry timing parameters for updated Tactician models
-                'entry_timing_range': {'type': 'float', 'min': 0.001, 'max': 0.005},  # 0.1% to 0.5%
+                # Entry timing parameters - Tactician naturally optimizes for 0-0.4% range
+                'entry_timing_range': {'type': 'float', 'min': 0.002, 'max': 0.004},  # 0.2% to 0.4%
                 'early_entry_penalty_weight': {'type': 'float', 'min': 0.1, 'max': 0.5},
                 'late_entry_penalty_weight': {'type': 'float', 'min': 0.1, 'max': 0.5},
                 'optimal_entry_reward_weight': {'type': 'float', 'min': 0.3, 'max': 0.7},
@@ -230,12 +231,22 @@ class FinalParametersOptimizer:
                 'meta_model_confidence_weight': {'type': 'float', 'min': 0.2, 'max': 0.6}
             },
             'model_specific_parameters': {
-                # Parameters specific to new model types
-                'temporal_fusion_transformer_weight': {'type': 'float', 'min': 0.15, 'max': 0.35},
-                'tabnet_weight': {'type': 'float', 'min': 0.15, 'max': 0.35},
-                'neural_oblivious_decision_ensembles_weight': {'type': 'float', 'min': 0.2, 'max': 0.4},
-                'hist_gradient_boosting_weight': {'type': 'float', 'min': 0.15, 'max': 0.35},
-                'extra_trees_weight': {'type': 'float', 'min': 0.1, 'max': 0.3},
+                # Analyst model weights (Base models)
+                'analyst_tcn_weight': {'type': 'float', 'min': 0.2, 'max': 0.4},
+                'analyst_catboost_weight': {'type': 'float', 'min': 0.2, 'max': 0.4},
+                'analyst_lightgbm_weight': {'type': 'float', 'min': 0.2, 'max': 0.4},
+                # Analyst meta-learner weight
+                'analyst_elastic_net_weight': {'type': 'float', 'min': 0.1, 'max': 0.3},
+                
+                # Tactician model weights (Base models)
+                'tactician_xgboost_weight': {'type': 'float', 'min': 0.2, 'max': 0.35},
+                'tactician_randomforest_weight': {'type': 'float', 'min': 0.15, 'max': 0.3},
+                'tactician_catboost_weight': {'type': 'float', 'min': 0.2, 'max': 0.35},
+                'tactician_elastic_net_weight': {'type': 'float', 'min': 0.15, 'max': 0.3},
+                # Tactician meta-learner weight
+                'tactician_lightgbm_weight': {'type': 'float', 'min': 0.1, 'max': 0.3},
+                
+                # General model parameters
                 'model_diversity_bonus': {'type': 'float', 'min': 0.05, 'max': 0.15},
                 'model_complexity_penalty': {'type': 'float', 'min': 0.01, 'max': 0.1}
             }
@@ -1575,10 +1586,10 @@ class FinalParametersOptimizer:
         
         if 'entry_timing_range' in params:
             range_val = params['entry_timing_range']
-            # Optimal range is around 0.002-0.003 (0.2%-0.3%)
-            if 0.002 <= range_val <= 0.003:
+            # Optimal range is around 0.003-0.004 (0.3%-0.4%)
+            if 0.003 <= range_val <= 0.004:
                 score += 0.3
-            elif 0.001 <= range_val <= 0.005:
+            elif 0.002 <= range_val <= 0.004:
                 score += 0.2
             else:
                 score += 0.1
@@ -1639,29 +1650,53 @@ class FinalParametersOptimizer:
         score = 0.0
         
         # Check if weights are balanced for different model types
-        model_weights = []
-        model_weight_keys = [
-            'temporal_fusion_transformer_weight', 'tabnet_weight', 
-            'neural_oblivious_decision_ensembles_weight', 'hist_gradient_boosting_weight',
-            'extra_trees_weight'
+        analyst_weights = []
+        tactician_weights = []
+        
+        # Analyst model weights
+        analyst_weight_keys = [
+            'analyst_tcn_weight', 'analyst_catboost_weight', 'analyst_lightgbm_weight'
         ]
         
-        for key in model_weight_keys:
-            if key in params:
-                model_weights.append(params[key])
+        # Tactician model weights  
+        tactician_weight_keys = [
+            'tactician_xgboost_weight', 'tactician_randomforest_weight', 
+            'tactician_catboost_weight', 'tactician_elastic_net_weight'
+        ]
         
-        if model_weights:
-            # Check if weights are reasonably balanced (no single model dominates)
-            max_weight = max(model_weights)
-            min_weight = min(model_weights)
+        for key in analyst_weight_keys:
+            if key in params:
+                analyst_weights.append(params[key])
+                
+        for key in tactician_weight_keys:
+            if key in params:
+                tactician_weights.append(params[key])
+        
+        # Evaluate Analyst model balance
+        if analyst_weights:
+            max_weight = max(analyst_weights)
+            min_weight = min(analyst_weights)
             weight_balance = min_weight / max_weight if max_weight > 0 else 0
             
-            if weight_balance >= 0.5:  # Well balanced
-                score += 0.3
-            elif weight_balance >= 0.3:  # Moderately balanced
-                score += 0.2
-            else:
+            if weight_balance >= 0.6:  # Well balanced
+                score += 0.15
+            elif weight_balance >= 0.4:  # Moderately balanced
                 score += 0.1
+            else:
+                score += 0.05
+        
+        # Evaluate Tactician model balance
+        if tactician_weights:
+            max_weight = max(tactician_weights)
+            min_weight = min(tactician_weights)
+            weight_balance = min_weight / max_weight if max_weight > 0 else 0
+            
+            if weight_balance >= 0.6:  # Well balanced
+                score += 0.15
+            elif weight_balance >= 0.4:  # Moderately balanced
+                score += 0.1
+            else:
+                score += 0.05
         
         if 'model_diversity_bonus' in params:
             bonus = params['model_diversity_bonus']

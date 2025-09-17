@@ -11,6 +11,13 @@ Key Features:
 - Enhanced reporting and metrics
 - Performance optimization with proper fallbacks
 - Regime-aware labeling support
+
+Transaction cost semantics:
+- We assume 0.08% per trade (round-trip) via transaction_cost=0.0008
+- The transaction cost is applied consistently to all exits:
+  - Profit-take exit: net = +pt_mult - transaction_cost
+  - Stop-loss exit:  net = -sl_mult - transaction_cost
+  - Time-barrier exit (no barrier touched): net = -transaction_cost
 """
 
 import time
@@ -475,13 +482,15 @@ if NUMBA_AVAILABLE:
             
             if end_idx <= i:
                 labels[i] = 0
-                profit_pcts[i] = 0.0
-                transaction_costs[i] = 0.0
+                # Time-barrier exit: apply transaction cost per trade
+                profit_pcts[i] = -transaction_cost
+                transaction_costs[i] = transaction_cost
                 continue
                 
+            # Default to time-barrier outcome unless a barrier is hit
             lab = 0
-            profit_pct = 0.0
-            tx_cost = 0.0
+            profit_pct = -transaction_cost
+            tx_cost = transaction_cost
             
             for j in range(i + 1, end_idx):
                 if high[j] >= profit_barrier:
@@ -875,6 +884,7 @@ class UnifiedTripleBarrierLabeler:
             # Numerical stability check
             if entry_price <= EPSILON:
                 labels[i] = 0
+                # Time-barrier implied because we cannot trade; no transaction occurs
                 profit_pcts[i] = 0.0
                 transaction_costs[i] = 0.0
                 continue
@@ -885,8 +895,9 @@ class UnifiedTripleBarrierLabeler:
             
             if end_idx <= i:
                 labels[i] = 0
-                profit_pcts[i] = 0.0
-                transaction_costs[i] = 0.0
+                # Time-barrier exit at the same timestamp: apply trade cost
+                profit_pcts[i] = -tx_cost
+                transaction_costs[i] = tx_cost
                 continue
                 
             # Get window data
@@ -901,8 +912,8 @@ class UnifiedTripleBarrierLabeler:
             if profit_hits.size == 0 and stop_hits.size == 0:
                 # No barriers hit - time barrier
                 labels[i] = 0
-                profit_pcts[i] = 0.0
-                transaction_costs[i] = 0.0
+                profit_pcts[i] = -tx_cost
+                transaction_costs[i] = tx_cost
             elif profit_hits.size == 0:
                 # Only stop loss hit
                 labels[i] = -1

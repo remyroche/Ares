@@ -166,7 +166,7 @@ class TripleBarrierLabelingStep:
             profit_take_multiplier=self.config.get('profit_take_multiplier', 0.002),
             stop_loss_multiplier=self.config.get('stop_loss_multiplier', 0.001),
             transaction_cost=self.config.get('transaction_cost', 0.0008),
-            regime_aware=self.config.get('regime_aware', True),
+            regime_aware=self.config.get('regime_aware', False),
             enable_hardware_optimizations=self.config.get('enable_hardware_optimizations', True)
         )
     

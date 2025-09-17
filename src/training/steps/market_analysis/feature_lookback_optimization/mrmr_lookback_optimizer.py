@@ -277,10 +277,8 @@ class MRMRLookbackOptimizer:
         # Initialize advanced feature selection tools
         self._initialize_advanced_feature_selection()
         
-        self.logger.info("🔧 BayesianLookbackOptimizer initialized")
+        self.logger.info("🔧 MRMRLookbackOptimizer initialized")
         self.logger.info(f"📊 Optimization method: {self.config.optimization_method}")
-        self.logger.info(f"📊 Sampler type: {self.config.sampler_type}")
-        self.logger.info(f"📊 Pruner type: {self.config.pruner_type}")
         self.logger.info(f"📊 Lookback range: {self.config.min_lookback}-{self.config.max_lookback}")
         self.logger.info(f"📊 First lookback method: {self.config.first_lookback_method}")
         self.logger.info(f"📊 Second lookback method: {self.config.second_lookback_method}")
@@ -288,32 +286,20 @@ class MRMRLookbackOptimizer:
     
     def _initialize_optuna(self):
         """Initialize Optuna study with TPE sampler and intelligent pruning."""
-        # Create TPE sampler
-        if self.config.sampler_type == "tpe":
-            sampler = TPESampler(
-                n_startup_trials=self.config.n_startup_trials,
-                n_ei_candidates=24,
-                seed=self.config.random_state
-            )
-        else:
-            sampler = TPESampler(seed=self.config.random_state)
+        # Create TPE sampler with optimal settings
+        sampler = TPESampler(
+            n_startup_trials=self.config.n_startup_trials,
+            n_ei_candidates=24,
+            seed=self.config.random_state
+        )
         
-        # Create pruner
-        if self.config.enable_pruning and self.config.pruner_type != "none":
-            if self.config.pruner_type == "median":
-                pruner = MedianPruner(
-                    n_startup_trials=self.config.n_startup_trials,
-                    n_warmup_steps=self.config.n_warmup_steps,
-                    interval_steps=self.config.interval_steps
-                )
-            elif self.config.pruner_type == "successive_halving":
-                pruner = SuccessiveHalvingPruner(
-                    min_resource=1,
-                    reduction_factor=3,
-                    min_early_stopping_rate=0
-                )
-            else:
-                pruner = MedianPruner()
+        # Create pruner if enabled
+        if self.config.enable_pruning:
+            pruner = MedianPruner(
+                n_startup_trials=self.config.n_startup_trials,
+                n_warmup_steps=self.config.n_warmup_steps,
+                interval_steps=self.config.interval_steps
+            )
         else:
             pruner = None
         
@@ -400,9 +386,13 @@ class MRMRLookbackOptimizer:
         coarse_results = self._coarse_grid_search_5x5(data, feature_name, target_column)
         
         # Step 2: Fine 5x5 Grid Search
+        if not coarse_results or not coarse_results.get('top_candidates'):
+            raise ValueError("Coarse grid search failed to produce valid candidates")
         fine_results = self._fine_grid_search_5x5(data, feature_name, target_column, coarse_results)
         
         # Step 3: TPE Fine-tuning
+        if not fine_results or not fine_results.get('top_candidates'):
+            raise ValueError("Fine grid search failed to produce valid candidates")
         result = self._tpe_fine_tuning(data, feature_name, target_column, fine_results, start_time)
         
         # Update performance metrics
@@ -499,7 +489,7 @@ class MRMRLookbackOptimizer:
         trial.set_user_attr("second_lookback", second_lookback)
         trial.set_user_attr("first_relevance_score", first_relevance_score)
         trial.set_user_attr("second_relevance_score", second_relevance_score)
-        trial.set_user_attr("redundancy_penalty", redundancy_penalty)
+        trial.set_user_attr("correlation_penalty", correlation_penalty)
         trial.set_user_attr("quality_score", quality_score)
         trial.set_user_attr("combined_score", combined_score)
         trial.set_user_attr("penalty_score", penalty_score)
@@ -1351,12 +1341,23 @@ class MRMRLookbackOptimizer:
         return result
     
     def _calculate_refined_range(self, center: int, min_val: int, max_val: int, refinement_factor: float) -> Tuple[int, int]:
-        """Calculate refined range around center point."""
+        """Calculate refined range around center point with validation."""
         range_size = max_val - min_val
-        refined_size = range_size * refinement_factor
+        refined_size = max(1, range_size * refinement_factor)  # Ensure minimum size of 1
         
         new_min = max(min_val, int(center - refined_size / 2))
         new_max = min(max_val, int(center + refined_size / 2))
+        
+        # Ensure we have a valid range
+        if new_min >= new_max:
+            # Fallback to a small range around the center
+            new_min = max(min_val, center - 2)
+            new_max = min(max_val, center + 2)
+        
+        # Final validation
+        if new_min >= new_max:
+            new_min = min_val
+            new_max = max_val
         
         return (new_min, new_max)
     

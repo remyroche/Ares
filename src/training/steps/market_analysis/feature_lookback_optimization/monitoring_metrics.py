@@ -169,16 +169,31 @@ class MonitoringMetrics:
     
     def _cleanup_old_metrics(self) -> None:
         """Clean up old metrics to prevent memory leaks."""
-        if len(self.metrics) > self.max_metrics_memory:
+        initial_count = len(self.metrics)
+        
+        if initial_count > self.max_metrics_memory:
             # Keep only the most recent metrics
-            self.metrics = self.metrics[-self.max_metrics_memory:]
-            tprint(f"🧹 Cleaned up old metrics, keeping {len(self.metrics)} most recent")
+            keep_count = int(self.max_metrics_memory * 0.8)  # Keep 80% after cleanup
+            self.metrics = self.metrics[-keep_count:]
+            tprint(f"🧹 Cleaned up {initial_count - len(self.metrics)} old metrics, keeping {len(self.metrics)} most recent")
             
-            # Also cleanup performance metrics
-            if len(self.performance_metrics['memory_usage']) > 1000:
-                self.performance_metrics['memory_usage'] = self.performance_metrics['memory_usage'][-1000:]
-            if len(self.performance_metrics['cpu_usage']) > 1000:
-                self.performance_metrics['cpu_usage'] = self.performance_metrics['cpu_usage'][-1000:]
+            # Also cleanup performance metrics arrays
+            max_perf_metrics = 1000
+            if len(self.performance_metrics['memory_usage']) > max_perf_metrics:
+                keep_perf = int(max_perf_metrics * 0.8)
+                self.performance_metrics['memory_usage'] = self.performance_metrics['memory_usage'][-keep_perf:]
+            if len(self.performance_metrics['cpu_usage']) > max_perf_metrics:
+                keep_perf = int(max_perf_metrics * 0.8)
+                self.performance_metrics['cpu_usage'] = self.performance_metrics['cpu_usage'][-keep_perf:]
+            
+            # Cleanup execution times that are too old
+            for operation_name, times in self.performance_metrics['execution_times'].items():
+                if len(times) > 100:  # Keep only last 100 execution times per operation
+                    self.performance_metrics['execution_times'][operation_name] = times[-100:]
+            
+            # Force garbage collection after cleanup
+            import gc
+            gc.collect()
     
     def start_monitoring(self) -> None:
         """Start monitoring session."""
@@ -254,8 +269,8 @@ class MonitoringMetrics:
         if level in [MetricLevel.WARNING, MetricLevel.ERROR, MetricLevel.CRITICAL]:
             tprint(f"📊 {name}: {value} ({metric_type.value})")
         
-        # Periodic cleanup
-        if len(self.metrics) % self.cleanup_interval == 0:
+        # Periodic cleanup - also check if we're approaching memory limits
+        if len(self.metrics) % self.cleanup_interval == 0 or len(self.metrics) > self.max_metrics_memory * 0.9:
             self._cleanup_old_metrics()
     
     def record_performance_metric(self, operation_name: str, duration: float) -> None:

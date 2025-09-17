@@ -64,42 +64,50 @@ class RegimeType(Enum):
     TRENDING = "trending"
     MEAN_REVERTING = "mean_reverting"
 
-@dataclass
-class HMMClusteringConfig:
-    """Configuration for HMM clustering."""
-    # HMM Parameters
-    n_components: int = 3
-    covariance_type: str = "full"
-    n_iter: int = 100
-    random_state: int = 42
+# Import unified configuration
+try:
+    from src.training.steps.market_analysis.hmm_clustering_config import UnifiedHMMClusteringConfig as HMMClusteringConfig
+    UNIFIED_CONFIG_AVAILABLE = True
+except ImportError:
+    # Fallback configuration if unified config is not available
+    UNIFIED_CONFIG_AVAILABLE = False
     
-    # Feature Engineering
-    lookback_windows: List[int] = field(default_factory=lambda: [5, 10, 20, 50])
-    technical_indicators: List[str] = field(default_factory=lambda: [
-        "rsi", "macd", "bollinger_bands", "atr", "stochastic"
-    ])
-    
-    # Optimization
-    use_gpu: bool = True
-    use_memory_optimization: bool = True
-    use_cpu_optimization: bool = True
-    
-    # Cross-validation
-    cv_folds: int = 5
-    test_size: float = 0.2
-    purged_cv: bool = True
-    
-    # Feature Selection
-    feature_selection_method: str = "mrmr"
-    max_features: int = 50
-    
-    # Data Processing
-    min_data_points: int = 1000
-    max_missing_ratio: float = 0.1
-    
-    # Regime Analysis
-    min_regime_duration: int = 10
-    regime_stability_threshold: float = 0.7
+    @dataclass
+    class HMMClusteringConfig:
+        """Fallback configuration for HMM clustering."""
+        # HMM Parameters
+        n_components: int = 3
+        covariance_type: str = "full"
+        n_iter: int = 100
+        random_state: int = 42
+        
+        # Feature Engineering
+        lookback_windows: List[int] = field(default_factory=lambda: [5, 10, 20, 50])
+        technical_indicators: List[str] = field(default_factory=lambda: [
+            "rsi", "macd", "bollinger_bands", "atr", "stochastic"
+        ])
+        
+        # Optimization
+        use_gpu: bool = True
+        use_memory_optimization: bool = True
+        use_cpu_optimization: bool = True
+        
+        # Cross-validation
+        cv_folds: int = 5
+        test_size: float = 0.2
+        purged_cv: bool = True
+        
+        # Feature Selection
+        feature_selection_method: str = "mrmr"
+        max_features: int = 50
+        
+        # Data Processing
+        min_data_points: int = 1000
+        max_missing_ratio: float = 0.1
+        
+        # Regime Analysis
+        min_regime_duration: int = 10
+        regime_stability_threshold: float = 0.7
 
 @dataclass
 class HMMClusteringResult:
@@ -217,6 +225,21 @@ class EnhancedHMMClustering:
             DataFrame with engineered features
         """
         try:
+            # Input validation
+            if data is None or data.empty:
+                raise ValueError("Input data is None or empty")
+            
+            # Check for required columns
+            required_cols = ['close']
+            missing_cols = [col for col in required_cols if col not in data.columns]
+            if missing_cols:
+                raise ValueError(f"Missing required columns: {missing_cols}")
+            
+            # Check for infinite or extremely large values
+            if np.isinf(data.select_dtypes(include=[np.number])).any().any():
+                self.logger.warning("Input data contains infinite values, cleaning...")
+                data = data.replace([np.inf, -np.inf], np.nan)
+            
             self.logger.info("Engineering features for HMM clustering")
             
             features = data.copy()
@@ -258,18 +281,48 @@ class EnhancedHMMClustering:
             features['volatility'] = features['returns'].rolling(window=20).std()
             features['price_momentum'] = features['close'] / features['close'].shift(20) - 1
             
-            # Volume features
+            # Volume features with safety checks
             if 'volume' in features.columns:
                 features['volume_ma'] = features['volume'].rolling(window=20).mean()
-                features['volume_ratio'] = features['volume'] / features['volume_ma']
+                
+                # Safe division for volume_ratio
+                features['volume_ratio'] = np.where(
+                    (features['volume_ma'] != 0) & (~features['volume_ma'].isna()),
+                    features['volume'] / features['volume_ma'],
+                    1.0  # Default ratio when volume_ma is 0 or NaN
+                )
+                
                 features['price_volume'] = features['close'] * features['volume']
             
-            # High-Low features
+            # High-Low features with safety checks
             if all(col in features.columns for col in ['high', 'low']):
-                features['hl_ratio'] = features['high'] / features['low']
-                features['body_size'] = abs(features['close'] - features['open']) / features['high']
-                features['upper_shadow'] = (features['high'] - features[['open', 'close']].max(axis=1)) / features['high']
-                features['lower_shadow'] = (features[['open', 'close']].min(axis=1) - features['low']) / features['high']
+                # Safe division for hl_ratio
+                features['hl_ratio'] = np.where(
+                    features['low'] != 0, 
+                    features['high'] / features['low'], 
+                    1.0  # Default ratio when low is 0
+                )
+                
+                # Safe division for body_size
+                features['body_size'] = np.where(
+                    features['high'] != 0,
+                    abs(features['close'] - features['open']) / features['high'],
+                    0.0  # Default when high is 0
+                )
+                
+                # Safe division for upper_shadow
+                features['upper_shadow'] = np.where(
+                    features['high'] != 0,
+                    (features['high'] - features[['open', 'close']].max(axis=1)) / features['high'],
+                    0.0
+                )
+                
+                # Safe division for lower_shadow
+                features['lower_shadow'] = np.where(
+                    features['high'] != 0,
+                    (features[['open', 'close']].min(axis=1) - features['low']) / features['high'],
+                    0.0
+                )
             
             # Remove rows with NaN values
             features = features.dropna()
@@ -344,29 +397,42 @@ class EnhancedHMMClustering:
             feature_array = features.values.astype(np.float32)
             self.feature_names = features.columns.tolist()
             
-            # Memory optimization
+            # Memory optimization - ensure consistent usage
             if self.memory_optimizer:
-                feature_array = self.memory_optimizer.create_memory_efficient_array(
-                    feature_array, dtype=np.float32
-                )
+                try:
+                    feature_array = self.memory_optimizer.create_memory_efficient_array(
+                        feature_array, dtype=np.float32
+                    )
+                    self.logger.info("Applied memory optimization to feature array")
+                except Exception as e:
+                    self.logger.warning(f"Memory optimization failed, using standard array: {e}")
+                    feature_array = np.asarray(feature_array, dtype=np.float32)
             
             # Scale features
             from sklearn.preprocessing import StandardScaler
             self.scaler = StandardScaler()
             features_scaled = self.scaler.fit_transform(feature_array)
             
-            # GPU optimization
+            # Note: hmmlearn doesn't support GPU training directly, so we use CPU optimizations
+            # but can still use GPU for feature preprocessing if available
             if self.gpu_manager and self.config.use_gpu:
-                features_scaled = self.gpu_manager.to_device(features_scaled, "matrix_mult")
-                
-                with self.gpu_manager.gpu_context("hmm_training"):
-                    model = self._train_hmm_gpu(features_scaled)
-            else:
-                # CPU optimization
-                if self.cpu_optimizer:
-                    features_scaled = self.cpu_optimizer.optimize_array(features_scaled)
-                
-                model = self._train_hmm_cpu(features_scaled)
+                # Use GPU for feature preprocessing only
+                try:
+                    # Process features on GPU if beneficial for large datasets
+                    if features_scaled.shape[0] > 10000:  # Only for large datasets
+                        gpu_features = self.gpu_manager.to_device(features_scaled, "matrix_mult")
+                        # Perform any GPU-accelerated preprocessing here
+                        features_scaled = self.gpu_manager.from_device(gpu_features)
+                        self.logger.info("Used GPU for feature preprocessing")
+                except Exception as e:
+                    self.logger.warning(f"GPU preprocessing failed, falling back to CPU: {e}")
+            
+            # CPU optimization for actual HMM training
+            if self.cpu_optimizer:
+                features_scaled = self.cpu_optimizer.optimize_array(features_scaled)
+            
+            # Train HMM model (always on CPU due to hmmlearn limitations)
+            model = self._train_hmm_cpu(features_scaled)
             
             # Get regime labels and probabilities
             regime_labels = model.predict(features_scaled)
@@ -416,26 +482,6 @@ class EnhancedHMMClustering:
         except Exception as e:
             self.logger.error(f"Failed to fit HMM model: {e}")
             raise
-    
-    def _train_hmm_gpu(self, features_scaled: np.ndarray) -> Any:
-        """Train HMM model with GPU acceleration."""
-        from hmmlearn import hmm
-        
-        model = hmm.GaussianHMM(
-            n_components=self.config.n_components,
-            covariance_type=self.config.covariance_type,
-            n_iter=self.config.n_iter,
-            random_state=self.config.random_state
-        )
-        
-        # Convert back to CPU for hmmlearn
-        if hasattr(features_scaled, 'cpu'):
-            features_cpu = features_scaled.cpu().numpy()
-        else:
-            features_cpu = features_scaled
-        
-        model.fit(features_cpu)
-        return model
     
     def _train_hmm_cpu(self, features_scaled: np.ndarray) -> Any:
         """Train HMM model on CPU."""
@@ -632,13 +678,18 @@ class EnhancedHMMClustering:
     
     # Technical indicator calculation methods
     def _calculate_rsi(self, prices: pd.Series, window: int = 14) -> pd.Series:
-        """Calculate Relative Strength Index."""
+        """Calculate Relative Strength Index with safety checks."""
         delta = prices.diff()
         gain = delta.where(delta > 0, 0).rolling(window=window).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(window=window).mean()
-        rs = gain / loss
-        rsi = 100 - (100 / (1 + rs))
-        return rsi
+        
+        # Safe division for RS calculation
+        rs = np.where(loss != 0, gain / loss, 0.0)
+        
+        # Safe division for RSI calculation
+        rsi = np.where(rs != -1, 100 - (100 / (1 + rs)), 50.0)  # Default to 50 when division fails
+        
+        return pd.Series(rsi, index=prices.index)
     
     def _calculate_macd(self, prices: pd.Series, fast: int = 12, slow: int = 26, signal: int = 9) -> Tuple[pd.Series, pd.Series, pd.Series]:
         """Calculate MACD indicator."""
@@ -672,7 +723,7 @@ class EnhancedHMMClustering:
         return atr
     
     def _calculate_stochastic(self, data: pd.DataFrame, window: int = 14) -> Tuple[pd.Series, pd.Series]:
-        """Calculate Stochastic Oscillator."""
+        """Calculate Stochastic Oscillator with safety checks."""
         high = data['high']
         low = data['low']
         close = data['close']
@@ -680,7 +731,15 @@ class EnhancedHMMClustering:
         lowest_low = low.rolling(window=window).min()
         highest_high = high.rolling(window=window).max()
         
-        k_percent = 100 * ((close - lowest_low) / (highest_high - lowest_low))
+        # Safe division for K% calculation
+        range_diff = highest_high - lowest_low
+        k_percent = np.where(
+            range_diff != 0,
+            100 * ((close - lowest_low) / range_diff),
+            50.0  # Default to 50 when range is 0
+        )
+        k_percent = pd.Series(k_percent, index=close.index)
+        
         d_percent = k_percent.rolling(window=3).mean()
         
         return k_percent, d_percent

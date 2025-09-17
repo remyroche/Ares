@@ -43,6 +43,23 @@ from .validator import (
     run_validator
 )
 
+from .validation_utils import (
+    StandardizedValidator,
+    ValidationResult,
+    ValidationErrorType,
+    get_validator,
+    validate_training_input,
+    validate_pipeline_state
+)
+
+from .config_utils import (
+    RegimeDataSplittingConfig,
+    PathManager,
+    ConfigManager,
+    get_config_manager,
+    get_path_manager
+)
+
 __all__ = [
     # Component classes
     'RegimeDataSplittingComponent',
@@ -63,7 +80,22 @@ __all__ = [
     
     # Functions
     'execute_enhanced_regime_data_splitting',
-    'run_validator'
+    'run_validator',
+    
+    # Validation utilities
+    'StandardizedValidator',
+    'ValidationResult',
+    'ValidationErrorType',
+    'get_validator',
+    'validate_training_input',
+    'validate_pipeline_state',
+    
+    # Configuration utilities
+    'RegimeDataSplittingConfig',
+    'PathManager',
+    'ConfigManager',
+    'get_config_manager',
+    'get_path_manager'
 ]
 
 __version__ = "1.0.0"

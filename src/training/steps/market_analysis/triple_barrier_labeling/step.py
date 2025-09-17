@@ -166,7 +166,7 @@ class TripleBarrierLabelingStep:
             profit_take_multiplier=self.config.get('profit_take_multiplier', 0.002),
             stop_loss_multiplier=self.config.get('stop_loss_multiplier', 0.001),
             transaction_cost=self.config.get('transaction_cost', 0.0008),
-            regime_aware=self.config.get('regime_aware', True),
+            regime_aware=self.config.get('regime_aware', False),
             enable_hardware_optimizations=self.config.get('enable_hardware_optimizations', True)
         )
     
@@ -208,9 +208,11 @@ class TripleBarrierLabelingStep:
                         'execution_duration': labeling_result.execution_duration
                     },
                     'barrier_config': {
-                        'profit_take_multiplier': labeling_result.labeled_data.get('potential_profit_pct', {}).mean() if labeling_result.labeled_data is not None else 0,
-                        'stop_loss_multiplier': self.config.get('stop_loss_multiplier', 0.001),
-                        'transaction_cost': self.config.get('transaction_cost', 0.0008)
+                        'profit_take_multiplier': labeler.config.profit_take_multiplier,
+                        'stop_loss_multiplier': labeler.config.stop_loss_multiplier,
+                        'transaction_cost': labeler.config.transaction_cost,
+                        'time_barrier_minutes': labeler.config.time_barrier_minutes,
+                        'max_lookahead': labeler.config.max_lookahead
                     },
                     'regime_analysis': {
                         'regimes_processed': len(set(regime_assignments)) if regime_assignments else 0,

@@ -393,7 +393,7 @@ class MonitoringMetrics:
             self.performance_metrics['memory_usage'].append(memory_mb)
             
             # CPU usage
-            cpu_percent = process.cpu_percent()
+            cpu_percent = process.cpu_percent(interval=0.1)
             
             self.record_metric(
                 name="system_cpu_usage",

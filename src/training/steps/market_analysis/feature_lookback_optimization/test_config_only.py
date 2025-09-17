@@ -18,7 +18,7 @@ def test_configuration():
     
     try:
         # Import the configuration class
-        from mrmr_lookback_optimizer import LookbackOptimizationConfig
+        from src.training.steps.market_analysis.feature_lookback_optimization.mrmr_lookback_optimizer import LookbackOptimizationConfig
         
         # Test default configuration
         config = LookbackOptimizationConfig()

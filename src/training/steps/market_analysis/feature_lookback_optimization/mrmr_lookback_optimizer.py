@@ -35,15 +35,22 @@ except ImportError:
     OPTUNA_AVAILABLE = False
     logging.warning("Optuna not available - using fallback optimization")
 
-# Import mutual information and correlation utilities
+# Import mutual information utilities (sklearn)
 try:
     from sklearn.feature_selection import mutual_info_regression, mutual_info_classif
     from sklearn.metrics import mutual_info_score
-    from scipy.stats import pearsonr, spearmanr
     SKLEARN_AVAILABLE = True
 except ImportError:
     SKLEARN_AVAILABLE = False
-    logging.warning("Sklearn not available - using fallback correlation methods")
+    logging.warning("Sklearn not available - using fallback methods")
+
+# Import correlation utilities (scipy)
+try:
+    from scipy.stats import pearsonr, spearmanr
+    SCIPY_AVAILABLE = True
+except ImportError:
+    SCIPY_AVAILABLE = False
+    logging.warning("SciPy not available - using numpy correlation fallback")
 
 # Import advanced feature selection tools
 try:
@@ -104,6 +111,10 @@ class LookbackOptimizationConfig:
     n_startup_trials: int = 10
     n_warmup_steps: int = 5
     interval_steps: int = 1
+    
+    # Sampler/Pruner configuration
+    sampler_type: str = "tpe"  # currently supports 'tpe'
+    pruner_type: str = "median"  # 'median', 'successive_halving', or 'none'
     
     # Lookback Period Constraints
     min_lookback: int = 5
@@ -467,6 +478,11 @@ class MRMRLookbackOptimizer:
         
         # Calculate penalty score (correlation penalty)
         penalty_score = self.config.correlation_weight * correlation_penalty
+        
+        # Advanced redundancy penalty (for diagnostics)
+        redundancy_penalty = self._calculate_advanced_redundancy_penalty(
+            data, feature_name, first_lookback, second_lookback, parameter_type
+        )
         
         # Set user attributes for analysis
         trial.set_user_attr("first_lookback", first_lookback)
@@ -915,10 +931,13 @@ class MRMRLookbackOptimizer:
                 return 1.0  # High correlation penalty for insufficient data
             
             # Calculate correlation
-            if self.config.correlation_method == "pearson":
-                correlation, _ = pearsonr(first_feature, second_feature)
-            elif self.config.correlation_method == "spearman":
-                correlation, _ = spearmanr(first_feature, second_feature)
+            if SCIPY_AVAILABLE:
+                if self.config.correlation_method == "pearson":
+                    correlation, _ = pearsonr(first_feature, second_feature)
+                elif self.config.correlation_method == "spearman":
+                    correlation, _ = spearmanr(first_feature, second_feature)
+                else:
+                    correlation = np.corrcoef(first_feature, second_feature)[0, 1]
             else:
                 correlation = np.corrcoef(first_feature, second_feature)[0, 1]
             

@@ -241,6 +241,18 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
             'error_counts': 0
         }
         
+        # Initialize optional attributes to avoid AttributeError at runtime
+        self.m1_gpu_manager = None
+        self.m1_memory_optimizer = None
+        self.matrix_ops = None
+        self.vectorized_ops = None
+        self.hardware_ops = None
+        self.performance_monitor_ml = None
+        self.hyperparameter_optimizer = None
+        self.cross_validator = None
+        self.data_quality_checker = None
+        self.feature_preparator = None
+        
         # Initialize common utilities
         self.common_utils = CommonUtilities()
         self.math_validator = MathValidation()
@@ -275,6 +287,16 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
             self.hardware_manager = None
             self.memory_optimizer = None
         
+        # Initialize Apple M1 specific managers if available in utilities
+        try:
+            self.m1_gpu_manager = get_m1_gpu_manager()
+        except Exception:
+            self.m1_gpu_manager = None
+        try:
+            self.m1_memory_optimizer = get_m1_memory_optimizer()
+        except Exception:
+            self.m1_memory_optimizer = None
+        
         # Initialize matrix operations components
         self.enhanced_matrix_ops = None
         self.vectorized_core = None
@@ -298,7 +320,16 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
                 self.matrix_ops = get_unified_matrix_operations()
                 self.vectorized_ops = get_vectorized_processing_core()
                 self.batch_processor = get_batch_matrix_processor()
-                self.hardware_ops = get_hardware_optimized_processor()
+                # Unify naming for downstream usage
+                try:
+                    self.matrix_ops = get_unified_matrix_operations()
+                except Exception:
+                    self.matrix_ops = None
+                self.vectorized_ops = self.vectorized_core
+                try:
+                    self.hardware_ops = get_hardware_optimized_processor()
+                except Exception:
+                    self.hardware_ops = None
                 tprint("✅ Advanced matrix operations initialized for feature lookback optimization")
             except Exception as e:
                 tprint(f"⚠️ Matrix operations initialization failed: {e}")
@@ -325,6 +356,17 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
                 tprint("✅ MRMR lookback optimizer initialized")
             except Exception as e:
                 tprint(f"⚠️ Failed to initialize MRMR optimizer: {e}")
+        
+        # Initialize ML common utilities if available
+        if ML_COMMON_AVAILABLE:
+            try:
+                self.data_quality_checker = DataQualityUtilities()
+            except Exception:
+                self.data_quality_checker = None
+            try:
+                self.feature_preparator = FeaturePreparator()
+            except Exception:
+                self.feature_preparator = None
         
         # Initialize reporter
         self.reporter = OptimizationReporter(

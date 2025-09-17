@@ -81,16 +81,33 @@ try:
     ML_COMMON_AVAILABLE = True
 except ImportError:
     ML_COMMON_AVAILABLE = False
-    # Create fallback classes
+    # Create robust fallback classes with essential methods
     class EnsembleTrainingConfig:
         def __init__(self, **kwargs):
+            # Set default values for critical attributes
+            self.model_name = kwargs.get('model_name', 'hmm_ensemble_fallback')
+            self.timeframe = kwargs.get('timeframe', '1h')
+            self.base_models = kwargs.get('base_models', ['CatBoostClassifier', 'LogisticRegression'])
+            self.meta_model = kwargs.get('meta_model', 'LogisticRegression')
+            self.hpo_n_trials = kwargs.get('hpo_n_trials', 100)
+            self.hpo_timeout_seconds = kwargs.get('hpo_timeout_seconds', 3600)
+            self.min_samples_per_regime = kwargs.get('min_samples_per_regime', 1000)
+            self.enable_hpo = kwargs.get('enable_hpo', False)
+            self.model_save_path = kwargs.get('model_save_path', './models/hmm_ensemble_fallback')
+            self.evaluation_metrics = kwargs.get('evaluation_metrics', ['accuracy', 'f1_score'])
+            # Set all other kwargs as attributes
             for k, v in kwargs.items():
-                setattr(self, k, v)
+                if not hasattr(self, k):
+                    setattr(self, k, v)
     
     class EnsembleTrainingStep:
         def __init__(self, config, enable_vectorization=True):
             self.config = config
             self.enable_vectorization = enable_vectorization
+            
+        def execute(self, *args, **kwargs):
+            """Fallback execute method that raises informative error"""
+            raise ImportError("ML Common utilities not available. Please install required dependencies.")
 
 try:
     from src.utils.ml_common.evaluation.evaluation_utils import EvaluationUtils
@@ -99,16 +116,49 @@ except ImportError:
     ML_EVAL_AVAILABLE = False
     EvaluationUtils = None
 
-# Shared utilities
-from .shared_utilities import (
-    TrainingErrorHandler,
-    UnifiedModelFactory,
-    CircuitBreaker,
-    ValidationUtils,
-    ProgressReporter,
-    MemoryTracker
-)
-from .shared_utilities.training_error_handler import TrainingMetrics, ModelResult
+# Shared utilities with validation
+try:
+    from .shared_utilities import (
+        TrainingErrorHandler,
+        UnifiedModelFactory,
+        CircuitBreaker,
+        ValidationUtils,
+        ProgressReporter,
+        MemoryTracker
+    )
+    from .shared_utilities.training_error_handler import TrainingMetrics, ModelResult
+    SHARED_UTILITIES_AVAILABLE = True
+    tprint("✅ Shared utilities loaded successfully")
+except ImportError as e:
+    tprint(f"⚠️ Shared utilities not available: {e}")
+    SHARED_UTILITIES_AVAILABLE = False
+    
+    # Create fallback classes
+    class TrainingErrorHandler:
+        @staticmethod
+        def handle_model_creation_error(model_type: str, error: Exception):
+            return {'model': None, 'error': f"Failed to create {model_type}: {str(error)}"}
+        
+        @staticmethod
+        def handle_training_error(model_type: str, error: Exception, training_time: float):
+            return {'model': None, 'error': f"Failed to train {model_type}: {str(error)}", 'training_time': training_time}
+    
+    class TrainingMetrics:
+        def __init__(self, **kwargs):
+            for k, v in kwargs.items():
+                setattr(self, k, v)
+    
+    class ModelResult:
+        def __init__(self, **kwargs):
+            for k, v in kwargs.items():
+                setattr(self, k, v)
+    
+    # Minimal fallback implementations for other utilities
+    UnifiedModelFactory = None
+    CircuitBreaker = None
+    ValidationUtils = None
+    ProgressReporter = None
+    MemoryTracker = None
 
 # Import vectorized training manager
 try:
@@ -175,19 +225,42 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
                     enable_data_augmentation=True,
                     augmentation_method="smote",
                     model_save_path="./models/hmm_ensemble_models",
-                    evaluation_metrics=["accuracy", "precision", "recall", "f1_score", "log_loss"]
+                    evaluation_metrics=["accuracy", "precision", "recall", "f1_score", "log_loss"],
+                    # Configuration for previously hard-coded values
+                    gpu_threshold_samples=10000,  # Threshold for GPU usage
+                    min_confidence_threshold=0.6,  # Minimum confidence threshold
+                    catboost_iterations=800,  # CatBoost iterations
+                    catboost_learning_rate=0.05,  # CatBoost learning rate
+                    catboost_depth=6,  # CatBoost depth
+                    logreg_max_iter=1500,  # LogisticRegression max iterations
+                    logreg_l1_ratio=0.5,  # LogisticRegression L1 ratio
+                    rf_n_estimators=300,  # RandomForest n_estimators for meta learner
+                    rf_max_depth=10  # RandomForest max_depth for meta learner
                 )
                 tprint("📋 Using default configuration for HMM ensemble training (classification)")
 
             # Validate configuration with fast-fail using common utilities
             self._validate_config(config)
             
-            # Backward-compat: ensure model_types exists (used by parent/vectorized paths)
+            # Ensure both base_models and model_types exist for compatibility
             try:
-                if not hasattr(config, 'model_types'):
-                    setattr(config, 'model_types', getattr(config, 'base_models', []))
-            except Exception:
-                pass
+                base_models = getattr(config, 'base_models', [])
+                model_types = getattr(config, 'model_types', [])
+                
+                # If base_models exists but model_types doesn't, sync them
+                if base_models and not model_types:
+                    setattr(config, 'model_types', base_models)
+                # If model_types exists but base_models doesn't, sync them
+                elif model_types and not base_models:
+                    setattr(config, 'base_models', model_types)
+                # Ensure at least one exists
+                elif not base_models and not model_types:
+                    default_models = ["CatBoostClassifier", "LogisticRegression"]
+                    setattr(config, 'base_models', default_models)
+                    setattr(config, 'model_types', default_models)
+                    tprint("⚠️ No model types specified, using defaults: CatBoostClassifier, LogisticRegression")
+            except Exception as e:
+                tprint(f"⚠️ Error in model type configuration: {e}")
             
             # Initialize parent class
             super().__init__(config, enable_vectorization=enable_vectorization and VECTORIZED_TRAINING_AVAILABLE)
@@ -237,13 +310,19 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
             ValueError: If configuration is invalid
         """
         try:
-            # Validate base/model types - FAST FAIL (support both base_models and model_types)
-            model_list = getattr(config, 'model_types', None)
+            # Validate base/model types - FAST FAIL (standardize on base_models)
+            model_list = getattr(config, 'base_models', None)
             if not model_list:
-                model_list = getattr(config, 'base_models', [])
+                # Fallback to model_types for backward compatibility
+                model_list = getattr(config, 'model_types', [])
+                if model_list:
+                    tprint("⚠️ Using deprecated 'model_types' attribute, please use 'base_models'")
+                    # Standardize by setting base_models
+                    setattr(config, 'base_models', model_list)
+            
             if not model_list or len(model_list) == 0:
-                tprint("❌ CRITICAL: No base/model types specified - FAILING FAST")
-                raise ValueError("At least one base/model type must be specified")
+                tprint("❌ CRITICAL: No base models specified - FAILING FAST")
+                raise ValueError("At least one base model type must be specified in 'base_models' attribute")
             
             # Validate timeframe - FAST FAIL
             valid_timeframes = ["1m", "5m", "15m", "30m", "1h", "4h", "1d"]
@@ -441,12 +520,22 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
         execution_start_time = time.time()
         tprint("🚀 Starting HMM ensemble training component with common utilities")
         
-        # Use memory checkpoint for large operations
-        with memory_checkpoint("hmm_ensemble_training"):
+        # Step 1: Validate inputs BEFORE resource allocation
+        tprint("🔄 Step 1: Validating inputs with common utilities...")
+        try:
+            self._validate_input_data(X, y, regime_labels)
+        except Exception as e:
+            error_msg = f"Input validation failed: {e}"
+            tprint(f"❌ {error_msg}")
+            return {
+                'error': error_msg,
+                'execution_time': time.time() - execution_start_time,
+                'validation_failed': True
+            }
+        
+        # Use memory checkpoint for large operations AFTER validation
+        with memory_checkpoint("hmm_ensemble_training_main"):
             try:
-                # Step 1: Validate inputs using common utilities
-                tprint("🔄 Step 1: Validating inputs with common utilities...")
-                self._validate_input_data(X, y, regime_labels)
                 
                 # Step 2: Validate and prepare base models
                 tprint("🔄 Step 2: Validating base models...")
@@ -552,10 +641,18 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
             # Pre-process data using common utilities
             tprint("🔄 Pre-processing data with common utilities...")
             
-            # Normalize features using matrix operations
+            # Normalize features using matrix operations with fallback
             # Note: X.shape[1] > 0 check is redundant since earlier validation ensures non-empty data
-            X_normalized = self.matrix_ops.normalize_matrix(X, method='zscore')
-            tprint(f"✅ Features normalized using matrix operations: {X_normalized.shape}")
+            if self.matrix_ops is not None:
+                X_normalized = self.matrix_ops.normalize_matrix(X, method='zscore')
+                tprint(f"✅ Features normalized using matrix operations: {X_normalized.shape}")
+            else:
+                # Fallback normalization using sklearn
+                tprint("⚠️ Matrix operations not available, using fallback normalization")
+                from sklearn.preprocessing import StandardScaler
+                scaler = StandardScaler()
+                X_normalized = scaler.fit_transform(X)
+                tprint(f"✅ Features normalized using fallback StandardScaler: {X_normalized.shape}")
             
             # Use GPU context if available for large datasets with proper cleanup
             if self.gpu_manager and X.shape[0] > 10000:
@@ -572,6 +669,7 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
                         )
                 except Exception as e:
                     tprint(f"⚠️ GPU context failed, falling back to CPU: {e}")
+
                     results = self._execute_training_core(
                         X_normalized, y, regime_labels, feature_names, hmm_states, base_hmm_models
                     )
@@ -643,9 +741,10 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
                 regime_labels=regime_labels,
                 feature_names=feature_names,
                 hmm_states=hmm_states,
+                # Pass additional parameters as kwargs
                 is_classification=True,  # HMM ensemble models are classification
                 base_models=base_models_prepared,
-                symbol=None,  # Can be passed as kwargs
+                symbol=None,
                 exchange=None,
                 timeframe=self.config.timeframe
             )
@@ -678,10 +777,12 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
                 pass
             
             # Add matrix operations performance stats
-            if hasattr(self.matrix_ops, 'get_performance_stats'):
+            if self.matrix_ops is not None and hasattr(self.matrix_ops, 'get_performance_stats'):
                 matrix_stats = self.matrix_ops.get_performance_stats()
                 results['matrix_operations_stats'] = matrix_stats
                 tprint(f"📊 Matrix operations: {matrix_stats['total_operations']} operations, avg time: {matrix_stats['average_execution_time']:.3f}s")
+            else:
+                results['matrix_operations_stats'] = {'status': 'not_available', 'reason': 'matrix_ops_unavailable'}
             
             return results
             
@@ -715,8 +816,10 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
         # RandomForestClassifier removed from base estimators per request
 
         # Meta learner: RF with calibration
+        n_estimators = getattr(self.config, 'rf_n_estimators', 300)
+        max_depth = getattr(self.config, 'rf_max_depth', 10)
         meta = RandomForestClassifier(
-            n_estimators=300, max_depth=10, min_samples_split=2, random_state=123, n_jobs=-1, class_weight='balanced'
+            n_estimators=n_estimators, max_depth=max_depth, min_samples_split=2, random_state=123, n_jobs=-1, class_weight='balanced'
         )
         meta_calibrated = CalibratedClassifierCV(base_estimator=meta, method='isotonic', cv=3)
 
@@ -794,9 +897,9 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
             
             # CatBoostClassifier with validated parameters (Primary: Speed + robustness)
             try:
-                iterations = 1000
-                learning_rate = 0.05
-                depth = 6
+                iterations = getattr(self.config, 'catboost_iterations', 800)
+                learning_rate = getattr(self.config, 'catboost_learning_rate', 0.05)
+                depth = getattr(self.config, 'catboost_depth', 6)
                 if self.math_validator:
                     iterations = self.math_validator.validate_positive(iterations, "CatBoost iterations")
                     learning_rate = self.math_validator.validate_range(learning_rate, 0.0, 1.0, "CatBoost learning_rate")
@@ -819,8 +922,8 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
             
             # LogisticRegression with elastic-net regularization (Primary: Fast baseline)
             try:
-                max_iter = 1500
-                l1_ratio = 0.5
+                max_iter = getattr(self.config, 'logreg_max_iter', 1500)
+                l1_ratio = getattr(self.config, 'logreg_l1_ratio', 0.5)
                 if self.math_validator:
                     max_iter = self.math_validator.validate_positive(max_iter, "LogReg max_iter")
                     l1_ratio = self.math_validator.validate_range(l1_ratio, 0.0, 1.0, "LogReg l1_ratio")
@@ -995,7 +1098,6 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
                             ensure_directory(preview_path.parent)
                             if self.serializer.save(preview, str(preview_path), format='json'):
                                 comprehensive_report['regime_probability_preview_path'] = str(preview_path)
-                        } 
                         except Exception:
                             pass
                 except Exception as e:

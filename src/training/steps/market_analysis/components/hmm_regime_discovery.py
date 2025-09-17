@@ -115,12 +115,20 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
 
             # Extract and validate regime assignments
             regime_assignments = regime_dataframe['regime'].tolist()
-            try:
-                regime_assignments = [int(assignment) for assignment in regime_assignments]
-            except (ValueError, TypeError) as e:
-                raise ValueError(f"Invalid regime assignments: {e}")
-            if any(assignment < 0 for assignment in regime_assignments):
-                raise ValueError("Regime assignments contain negative values")
+            
+            # Validate assignments before conversion
+            validated_assignments = []
+            for i, assignment in enumerate(regime_assignments):
+                try:
+                    # Check if assignment can be converted to int and is non-negative
+                    int_assignment = int(assignment)
+                    if int_assignment < 0:
+                        raise ValueError(f"Negative regime assignment at index {i}: {int_assignment}")
+                    validated_assignments.append(int_assignment)
+                except (ValueError, TypeError) as e:
+                    raise ValueError(f"Invalid regime assignment at index {i}: '{assignment}' - {e}")
+            
+            regime_assignments = validated_assignments
 
             # Calculate regime metrics with validation
             unique_regimes = set(regime_assignments)
@@ -161,7 +169,7 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
                     },
                     'configuration': {
                         'symbol': symbol,
-                        'timeframe': '1h',
+                        'timeframe': timeframe,
                         'optimization_mode': optimization_mode,
                         'max_regimes_for_mode': max_regimes,
                         'min_regime_samples': hmm_config.min_regime_samples,
@@ -182,7 +190,7 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
                 artifacts=artifacts,
                 metadata={
                     'symbol': symbol,
-                    'timeframe': '1h',
+                    'timeframe': timeframe,
                     'data_points_processed': len(market_data),
                     'regime_count': len(regime_models),
                     'optimization_mode': optimization_mode,
@@ -217,8 +225,8 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
                 
                 manager = get_klines_manager()
                 
-                # Use provided symbol and hardcoded timeframe for HMM regime discovery
-                timeframe = "1h"    # Hardcoded timeframe for HMM regime discovery
+                # Use provided symbol and configured timeframe for HMM regime discovery
+                timeframe = getattr(self.config, 'timeframe', "1h")  # Default to 1h if not configured
                 
                 self.logger.info(f"📊 Loading {symbol} {timeframe} data using klines_parquet manager")
                 

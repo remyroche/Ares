@@ -4,7 +4,7 @@ import asyncio
 import sys
 import time
 from pathlib import Path
-from typing import Any, Dict, Optional, List
+from typing import Any, Dict, Optional, List, Tuple
 import pandas as pd
 import numpy as np
 from datetime import datetime
@@ -38,7 +38,8 @@ from src.utils.ml_common.parallel_processing import ParallelProcessingCoordinato
 
 import torch
 
-project_root = Path(__file__).parent.parent.parent.parent
+# Ensure repository root (parent of 'src') is on sys.path
+project_root = Path(__file__).resolve().parents[5]
 sys.path.insert(0, str(project_root))
 from src.training.base_step import BaseStep
 from src.utils.graceful_module_handler import graceful_handler
@@ -270,7 +271,7 @@ class Step03HMMRegimeDiscovery(BaseStep):
                     'pipeline_id': pipeline_id
                 }
 
-            except Exception as e:
+        except Exception as e:
             execution_time = time.time() - step_start
             self.logger.exception(f'❌ HMM regime discovery failed with error: {e}')
             return {
@@ -493,9 +494,30 @@ class Step03HMMRegimeDiscovery(BaseStep):
 
 
     def _prepare_regime_features(self, data: pd.DataFrame) -> np.ndarray:
-        """Legacy method for backward compatibility."""
-        import asyncio
-        return asyncio.run(self._advanced_feature_engineering(data))
+        """Legacy method for backward compatibility. Uses basic features synchronously."""
+        return self._basic_feature_engineering(data)
+
+    def _basic_feature_engineering(self, data: pd.DataFrame) -> np.ndarray:
+        """Synchronous basic feature engineering as a robust fallback."""
+        features: List[np.ndarray] = []
+        if 'close' in data.columns:
+            close_prices = data['close'].astype(np.float32).values
+            if len(close_prices) > 1:
+                returns = np.diff(close_prices) / (close_prices[:-1] + 1e-8)
+                features.append(returns)
+                if len(close_prices) > 20:
+                    rolling_mean = pd.Series(close_prices).rolling(20).mean().values[19:]
+                    rolling_std = pd.Series(close_prices).rolling(20).std().values[19:]
+                    features.extend([rolling_mean, rolling_std])
+        if 'volume' in data.columns:
+            vol = data['volume'].astype(np.float32).values
+            if len(vol) > 1:
+                vol_ret = np.diff(vol) / (vol[:-1] + 1e-8)
+                features.append(vol_ret)
+        if features:
+            min_len = min(len(f) for f in features)
+            return np.column_stack([f[:min_len] for f in features])
+        return np.zeros((len(data), 1), dtype=np.float32)
 
     @optimized_step(operation_type="matrix_operations", enable_gpu=True, enable_parallel=True)
     async def _discover_regimes_optimized(self, features: np.ndarray, data: pd.DataFrame) -> Dict[str, Any]:
@@ -615,11 +637,8 @@ class Step03HMMRegimeDiscovery(BaseStep):
                     end_idx = min(i + chunk_size, len(features))
                     chunks.append(features[i:end_idx])
 
-                # Predict in parallel
-                async def predict_chunk(chunk):
-                    return model.predict(chunk)
-
-                tasks = [predict_chunk(chunk) for chunk in chunks]
+                # Predict in background threads
+                tasks = [asyncio.to_thread(model.predict, chunk) for chunk in chunks]
                 results = await asyncio.gather(*tasks)
 
                 # Combine results
@@ -724,6 +743,14 @@ class Step03HMMRegimeDiscovery(BaseStep):
                 sharpe_ratio = 0.0
 
             # Additional metrics
+            try:
+                from scipy import stats as scipy_stats
+                skew_val = float(scipy_stats.skew(regime_features[:, 0])) if regime_features.shape[1] > 0 else 0.0
+                kurt_val = float(scipy_stats.kurtosis(regime_features[:, 0])) if regime_features.shape[1] > 0 else 0.0
+            except Exception:
+                skew_val = 0.0
+                kurt_val = 0.0
+
             stats = {
                 'count': count,
                 'percentage': percentage,
@@ -732,8 +759,8 @@ class Step03HMMRegimeDiscovery(BaseStep):
                 'sharpe_ratio': sharpe_ratio,
                 'min_return': float(np.min(regime_features[:, 0])) if regime_features.shape[1] > 0 else 0.0,
                 'max_return': float(np.max(regime_features[:, 0])) if regime_features.shape[1] > 0 else 0.0,
-                'skewness': float(stats.skew(regime_features[:, 0])) if regime_features.shape[1] > 0 else 0.0,
-                'kurtosis': float(stats.kurtosis(regime_features[:, 0])) if regime_features.shape[1] > 0 else 0.0
+                'skewness': skew_val,
+                'kurtosis': kurt_val
             }
 
             return {
@@ -1057,7 +1084,7 @@ class Step03HMMRegimeDiscovery(BaseStep):
         except Exception as e:
             self.logger.warning(f'⚠️ Advanced feature engineering failed: {e}, falling back to basic features')
             # Fallback to basic feature engineering using legacy method
-            return await self._prepare_regime_features(data)
+            return self._basic_feature_engineering(data)
 
     async def _generate_comprehensive_features(self, data: pd.DataFrame) -> np.ndarray:
         """Generate comprehensive feature set using parallel processing."""
@@ -1093,11 +1120,11 @@ class Step03HMMRegimeDiscovery(BaseStep):
                 return aligned_features
             else:
                 self.logger.warning('⚠️ No features generated, falling back to basic features')
-                return await self._prepare_regime_features(data)
+                return self._basic_feature_engineering(data)
 
         except Exception as e:
             self.logger.warning(f'⚠️ Comprehensive feature generation failed: {e}, falling back to basic features')
-            return await self._prepare_regime_features(data)
+            return self._basic_feature_engineering(data)
 
     def _generate_price_features(self, data: pd.DataFrame) -> Dict[str, Any]:
         """Generate price-based features."""
@@ -1225,9 +1252,9 @@ class Step03HMMRegimeDiscovery(BaseStep):
             if len(prices) <= period:
                 return None
 
-            gains = np.diff(prices)
-            gains = np.where(gains > 0, gains, 0)
-            losses = np.where(gains == 0, -gains, 0)
+            delta = np.diff(prices)
+            gains = np.where(delta > 0, delta, 0)
+            losses = np.where(delta < 0, -delta, 0)
 
             avg_gain = pd.Series(gains).rolling(period).mean().values[period-1:]
             avg_loss = pd.Series(losses).rolling(period).mean().values[period-1:]

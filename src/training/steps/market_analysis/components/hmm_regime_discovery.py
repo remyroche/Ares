@@ -12,6 +12,7 @@ import pandas as pd
 from typing import Any, Dict, List, Optional, Tuple
 from datetime import datetime
 from pathlib import Path
+import time
 
 from .base_component import BaseMarketAnalysisComponent, ComponentConfig, ComponentResult
 from src.utils.logger import system_logger
@@ -77,9 +78,11 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             self.logger.info(f'🔧 HMM Regime Discovery mode: {optimization_mode} (range: 2-150 regimes)')
             
             # Perform regime discovery
+            discovery_start_time = time.time()
             regime_dataframe = await self._perform_regime_discovery(
                 regime_detector, market_data, hmm_config, optimization_mode
             )
+            discovery_time = time.time() - discovery_start_time
             
             # Extract results from DataFrame
             if regime_dataframe is None or regime_dataframe.empty:
@@ -87,11 +90,15 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             
             # Extract regime information from the DataFrame
             regime_assignments = regime_dataframe['regime'].tolist() if 'regime' in regime_dataframe.columns else []
-            regime_models = [f"regime_{i}" for i in range(len(set(regime_assignments)))]
+            unique_labels = sorted(set(regime_assignments)) if regime_assignments else []
+            label_name_mapping = {label: f"regime_{i}" for i, label in enumerate(unique_labels)}
+            regime_models = [label_name_mapping[label] for label in unique_labels]
+            raw_distribution = regime_dataframe['regime'].value_counts().to_dict() if 'regime' in regime_dataframe.columns else {}
+            named_distribution = {label_name_mapping.get(lbl, str(lbl)): count for lbl, count in raw_distribution.items()}
             regime_metrics = {
-                'total_regimes': len(set(regime_assignments)),
+                'total_regimes': len(unique_labels),
                 'total_samples': len(regime_dataframe),
-                'regime_distribution': regime_dataframe['regime'].value_counts().to_dict() if 'regime' in regime_dataframe.columns else {}
+                'regime_distribution': named_distribution
             }
             
             # Validate that we have regime models and assignments
@@ -107,8 +114,8 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
                     'regime_discovery_summary': {
                         'total_regimes': len(regime_models),
                         'total_assignments': len(regime_assignments),
-                        'regime_distribution': self._calculate_regime_distribution(regime_assignments),
-                        'discovery_time': 0.0  # Discovery time not available from DataFrame
+                        'regime_distribution': self._calculate_regime_distribution(regime_assignments, label_name_mapping),
+                        'discovery_time': discovery_time
                     },
                     'metadata': {
                         'symbol': self.config.symbol,
@@ -116,6 +123,7 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
                         'timeframe': self.config.timeframe,
                         'data_points': len(market_data) if market_data is not None else 0,
                         'execution_timestamp': datetime.now().isoformat(),
+                        'label_name_mapping': label_name_mapping,
                         'regime_limits': {
                             'light_mode_max': 2,
                             'blank_mode_max': 5,
@@ -213,29 +221,36 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             return regime_dataframe
             
         except Exception as e:
-            self.logger.error(f"Regime discovery process failed: {e}")
-            # Return None to indicate failure
-            return None
+            # Propagate the error with context for higher-level handling
+            raise RuntimeError(f"Regime discovery process failed: {e}")
     
     def _prepare_data_for_regime_detection(self, data: pd.DataFrame) -> pd.DataFrame:
         """Prepare market data for regime detection."""
+        # Work on a copy to avoid mutating the caller's DataFrame
+        data_copy = data.copy()
+        
         # Ensure we have required columns
         required_columns = ['open', 'high', 'low', 'close', 'volume']
-        missing_columns = [col for col in required_columns if col not in data.columns]
+        missing_columns = [col for col in required_columns if col not in data_copy.columns]
         
         if missing_columns:
             self.logger.warning(f"Missing columns for regime detection: {missing_columns}")
             # Use available columns or create fallback data
             for col in missing_columns:
                 if col == 'volume':
-                    data[col] = 1000  # Default volume
+                    data_copy[col] = 1000  # Default volume
                 else:
-                    data[col] = data.get('close', 100.0)  # Use close price as fallback
+                    if 'close' in data_copy.columns:
+                        data_copy[col] = data_copy['close']
+                    else:
+                        data_copy[col] = 100.0  # Conservative fallback
         
-        return data
+        return data_copy
     
-    def _calculate_regime_distribution(self, regime_assignments: List[int]) -> Dict[str, float]:
-        """Calculate the distribution of regime assignments."""
+    def _calculate_regime_distribution(self, regime_assignments: List[int], label_name_mapping: Optional[Dict[int, str]] = None) -> Dict[str, float]:
+        """Calculate the distribution of regime assignments.
+        Optionally remap numeric labels to stable regime names.
+        """
         if not regime_assignments:
             return {}
         
@@ -248,6 +263,10 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
         # Convert to percentages
         regime_distribution = {}
         for regime, count in regime_counts.items():
-            regime_distribution[f'regime_{regime}'] = (count / total_assignments) * 100
+            if label_name_mapping and regime in label_name_mapping:
+                key = label_name_mapping[regime]
+            else:
+                key = f'regime_{regime}'
+            regime_distribution[key] = (count / total_assignments) * 100
         
         return regime_distribution

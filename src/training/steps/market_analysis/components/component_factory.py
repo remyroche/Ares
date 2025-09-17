@@ -51,6 +51,14 @@ class HMMModelsTrainingComponentWrapper(BaseMarketAnalysisComponent):
             regime_labels = pipeline_state.get('regime_labels')
             feature_names = pipeline_state.get('feature_names')
             
+            # If regime_labels is missing, try to get cluster_assignments from HMM clustering
+            if regime_labels is None:
+                hmm_clusters = pipeline_state.get('hmm_clusters', {})
+                cluster_assignments = hmm_clusters.get('cluster_assignments')
+                if cluster_assignments is not None:
+                    regime_labels = cluster_assignments
+                    print(f"✅ Using cluster_assignments as regime_labels: {len(regime_labels)} samples")
+            
             # If we don't have features/targets, try to extract from dataframe
             if X is None or y is None:
                 dataframe = pipeline_state.get('dataframe')
@@ -83,7 +91,7 @@ class HMMModelsTrainingComponentWrapper(BaseMarketAnalysisComponent):
                 missing_items = []
                 if X is None: missing_items.append("features")
                 if y is None: missing_items.append("targets")
-                if regime_labels is None: missing_items.append("regime_labels")
+                if regime_labels is None: missing_items.append("regime_labels (or cluster_assignments)")
                 raise ValueError(f"Missing required data: {', '.join(missing_items)}")
             
             # Execute training
@@ -143,6 +151,14 @@ class HMMEnsembleTrainingComponentWrapper(BaseMarketAnalysisComponent):
             base_hmm_models = pipeline_state.get('hmm_models', {}).get('hmm_models', {})
             hmm_training_metrics = pipeline_state.get('hmm_models', {}).get('hmm_training_metrics', {})
             
+            # If regime_labels is missing, try to get cluster_assignments from HMM clustering
+            if regime_labels is None:
+                hmm_clusters = pipeline_state.get('hmm_clusters', {})
+                cluster_assignments = hmm_clusters.get('cluster_assignments')
+                if cluster_assignments is not None:
+                    regime_labels = cluster_assignments
+                    print(f"✅ Using cluster_assignments as regime_labels: {len(regime_labels)} samples")
+            
             # If we don't have features/targets, try to extract from dataframe
             if X is None or y is None:
                 dataframe = pipeline_state.get('dataframe')
@@ -175,7 +191,7 @@ class HMMEnsembleTrainingComponentWrapper(BaseMarketAnalysisComponent):
                 missing_items = []
                 if X is None: missing_items.append("features")
                 if y is None: missing_items.append("targets")
-                if regime_labels is None: missing_items.append("regime_labels")
+                if regime_labels is None: missing_items.append("regime_labels (or cluster_assignments)")
                 raise ValueError(f"Missing required data: {', '.join(missing_items)}")
             
             # Execute training

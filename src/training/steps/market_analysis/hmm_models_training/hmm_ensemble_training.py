@@ -68,7 +68,6 @@ from sklearn.ensemble import StackingClassifier, RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.metrics import log_loss
-import numpy as np
 
 
 class HMMEnsembleTrainingComponent(EnsembleTrainingStep):

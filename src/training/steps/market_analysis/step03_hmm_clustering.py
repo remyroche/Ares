@@ -64,7 +64,7 @@ class HMMClusteringStep:
     @monitor_step03_functions
     @validates()
     @traced(span_name='execute_hmm_clustering_step')
-    async def execute(self, training_input: dict[str, Any], pipeline_state: dict[str, Any]) -> dict[str, Any]:
+    async def execute(self, training_input: dict[str, Any], pipeline_state: dict[str, Any], **kwargs: Any) -> dict[str, Any]:
         """Execute enhanced HMM regime discovery with full pipeline integration."""
         step_start = time.time()
         self.logger.info('🎯 Starting Enhanced HMM Clustering execution...')
@@ -115,7 +115,37 @@ class HMMClusteringStep:
                 raise ValueError(f"Data quality validation failed: {validation_result.message}")
             
             self.logger.info(f'✅ Data validation passed: {len(data)} rows, {len(data.columns)} columns')
-            enhanced_config = {'n_trials': 50, 'timeout_minutes': 15, 'cv_folds': 3, 'random_state': 42, 'ensemble_weights': {'hmm': 0.4, 'kmeans': 0.3, 'dbscan': 0.3}, 'initial_features': 20, 'feature_increment': 10, 'max_features': 100, 'min_improvement': 0.001, 'patience': 3}
+            
+            # Create enhanced config by merging defaults with user config
+            default_config = {
+                'n_trials': 50, 
+                'timeout_minutes': 15, 
+                'cv_folds': 3, 
+                'random_state': 42, 
+                'ensemble_weights': {'hmm': 0.4, 'kmeans': 0.3, 'dbscan': 0.3}, 
+                'initial_features': 20, 
+                'feature_increment': 10, 
+                'max_features': 100, 
+                'min_improvement': 0.001, 
+                'patience': 3
+            }
+            
+            # Merge with user-provided kwargs, giving precedence to user values
+            enhanced_config = default_config.copy()
+            if hasattr(self, 'config') and self.config:
+                # Extract relevant config parameters
+                user_config = {}
+                for key in default_config.keys():
+                    if hasattr(self.config, key):
+                        user_config[key] = getattr(self.config, key)
+                    elif isinstance(self.config, dict) and key in self.config:
+                        user_config[key] = self.config[key]
+                enhanced_config.update(user_config)
+            
+            # Also merge any additional kwargs passed to the function
+            enhanced_config.update(kwargs)
+            
+            self.logger.info(f'🔧 Enhanced config: {enhanced_config}')
             self.logger.info('=' * 60)
             self.logger.info('STEP 1: Enhanced HMM Regime Discovery')
             self.logger.info('=' * 60)
@@ -225,23 +255,24 @@ class HMMClusteringStep:
             pipeline_state['hmm_clustering_completed'] = False
             pipeline_state['hmm_clustering_error'] = str(e)
             
-            # Convert to RuntimeError for fail-fast behavior
-            raise RuntimeError(
-                f"HMM clustering failed with critical error: {e}",
-                ErrorRecord(
-                    error_id=f"hmm_clustering_critical_error_{int(time.time())}",
-                    error_type=type(e).__name__,
-                    error_message=str(e),
-                    severity=ErrorSeverity.CRITICAL,
-                    category=ErrorCategory.BUSINESS_LOGIC,
-                    context=ErrorContext(
-                        function_name="execute_hmm_clustering",
-                        step_name="hmm_clustering"
-                    ),
-                    stack_trace="",
-                    should_fail_fast=True
-                )
+            # Log error details but preserve original exception type
+            error_record = ErrorRecord(
+                error_id=f"hmm_clustering_critical_error_{int(time.time())}",
+                error_type=type(e).__name__,
+                error_message=str(e),
+                severity=ErrorSeverity.CRITICAL,
+                category=ErrorCategory.BUSINESS_LOGIC,
+                context=ErrorContext(
+                    function_name="execute_hmm_clustering",
+                    step_name="hmm_clustering"
+                ),
+                stack_trace="",
+                should_fail_fast=True
             )
+            self.logger.error(f'Error record: {error_record}')
+            
+            # Re-raise original exception to preserve error context
+            raise
 
     @monitor_step03_functions
     @handle_step03_errors
@@ -258,6 +289,84 @@ class HMMClusteringStep:
             self.logger.info('✅ Step 3 artifacts logged to MLflow successfully')
         except Exception as e:
             self.logger.error(f'❌ Failed to log step 3 artifacts to MLflow: {e}')
+
+
+async def _run_basic_validation(symbol: str, exchange: str, data_dir: str) -> dict[str, Any]:
+    """
+    Run basic validation when enhanced validator is not available.
+    
+    Args:
+        symbol: Trading symbol
+        exchange: Exchange name
+        data_dir: Data directory path
+        
+    Returns:
+        Dictionary with validation results
+    """
+    try:
+        logger = system_logger.getChild('BasicValidation')
+        data_path = Path(data_dir)
+        
+        # Check if data directory exists
+        if not data_path.exists():
+            return {
+                'validation_passed': False,
+                'error': f'Data directory does not exist: {data_dir}'
+            }
+        
+        # Check for expected output files
+        expected_files = [
+            f'{symbol}_{exchange}_hmm_model.pkl',
+            f'{symbol}_{exchange}_regime_data.parquet', 
+            f'{symbol}_{exchange}_hmm_metrics.json'
+        ]
+        
+        missing_files = []
+        for file_name in expected_files:
+            file_path = data_path / file_name
+            if not file_path.exists():
+                missing_files.append(file_name)
+        
+        if missing_files:
+            return {
+                'validation_passed': False,
+                'error': f'Missing expected output files: {missing_files}'
+            }
+        
+        # Basic file size validation
+        for file_name in expected_files:
+            file_path = data_path / file_name
+            if file_path.stat().st_size == 0:
+                return {
+                    'validation_passed': False,
+                    'error': f'Output file is empty: {file_name}'
+                }
+        
+        # Try to load and validate the metrics file
+        try:
+            metrics_file = data_path / f'{symbol}_{exchange}_hmm_metrics.json'
+            with open(metrics_file, 'r') as f:
+                metrics = json.load(f)
+            
+            # Basic metrics validation
+            required_metrics = ['total_regimes', 'total_samples']
+            for metric in required_metrics:
+                if metric not in metrics:
+                    logger.warning(f'Missing metric in validation: {metric}')
+                    
+        except Exception as e:
+            logger.warning(f'Could not validate metrics file: {e}')
+        
+        return {
+            'validation_passed': True,
+            'note': f'Basic validation passed for {len(expected_files)} output files'
+        }
+        
+    except Exception as e:
+        return {
+            'validation_passed': False,
+            'error': f'Basic validation failed with exception: {str(e)}'
+        }
 
 @handle_step03_errors
 @monitor_step03_functions
@@ -301,20 +410,19 @@ async def run_step(symbol: str, exchange: str, timeframe: str='1m', data_dir: st
         result = await step.execute(training_input, pipeline_state)
         if result.get('hmm_clustering_completed', False):
             logger.info('✅ Step 3: Enhanced HMM Clustering completed successfully')
-            logger.info('🔍 Validation skipped (validator not available)...')
-            # Note: Validation removed as validator doesn't exist
-            # Validation implemented using standardized utilities
-            validation_result = {'validation_passed': True, 'note': 'Validator not available'}
-            if validation_result.get('validation_passed', False):
-                logger.info('✅ Validation passed (skipped)')
-            else:
-                logger.critical('🚨 CRITICAL: Validation failed for completed step')
+            logger.info('🔍 Running basic validation (enhanced validator not available)...')
+            # Implement basic validation when enhanced validator is not available
+            validation_result = await _run_basic_validation(symbol, exchange, data_dir)
+            
+            if not validation_result.get('validation_passed', False):
+                error_msg = validation_result.get('error', 'Basic validation failed')
+                logger.critical(f'🚨 CRITICAL: Basic validation failed: {error_msg}')
                 raise RuntimeError(
-                    f"HMM clustering validation failed: {validation_result.get('error', 'Unknown validation error')}",
+                    f"HMM clustering validation failed: {error_msg}",
                     ErrorRecord(
                         error_id=f"hmm_clustering_validation_failure_{int(time.time())}",
                         error_type="ValidationError",
-                        error_message=validation_result.get('error', 'Unknown validation error'),
+                        error_message=error_msg,
                         severity=ErrorSeverity.CRITICAL,
                         category=ErrorCategory.VALIDATION,
                         context=ErrorContext(
@@ -325,6 +433,8 @@ async def run_step(symbol: str, exchange: str, timeframe: str='1m', data_dir: st
                         should_fail_fast=True
                     )
                 )
+            else:
+                logger.info(f'✅ Basic validation passed: {validation_result.get("note", "")}')
             total_elapsed = time.time() - start_time
             logger.info('=' * 80)
             logger.info('🎉 STEP 3 EXECUTION SUMMARY')
@@ -348,23 +458,24 @@ async def run_step(symbol: str, exchange: str, timeframe: str='1m', data_dir: st
             logger.info(f'   Error: {error}')
             logger.info('=' * 80)
             
-            # Raise RuntimeError for fail-fast behavior
-            raise RuntimeError(
-                f"HMM clustering step failed: {error}",
-                ErrorRecord(
-                    error_id=f"hmm_clustering_step_failure_{int(time.time())}",
-                    error_type="StepFailureError",
-                    error_message=error,
-                    severity=ErrorSeverity.CRITICAL,
-                    category=ErrorCategory.BUSINESS_LOGIC,
-                    context=ErrorContext(
-                        function_name="run_step03_hmm_clustering",
-                        step_name="hmm_clustering"
-                    ),
-                    stack_trace="",
-                    should_fail_fast=True
-                )
+            # Log error details and raise appropriate exception
+            error_record = ErrorRecord(
+                error_id=f"hmm_clustering_step_failure_{int(time.time())}",
+                error_type="StepFailureError", 
+                error_message=error,
+                severity=ErrorSeverity.CRITICAL,
+                category=ErrorCategory.BUSINESS_LOGIC,
+                context=ErrorContext(
+                    function_name="run_step03_hmm_clustering",
+                    step_name="hmm_clustering"
+                ),
+                stack_trace="",
+                should_fail_fast=True
             )
+            logger.error(f'Error record: {error_record}')
+            
+            # Raise ValueError for step failure (more specific than RuntimeError)
+            raise ValueError(f"HMM clustering step failed: {error}")
     except RuntimeError as e:
         logger.critical(f'🚨 CRITICAL PROCESS ERROR: Step 3: Enhanced HMM Clustering failed: {e}')
         total_elapsed = time.time() - start_time
@@ -390,23 +501,24 @@ async def run_step(symbol: str, exchange: str, timeframe: str='1m', data_dir: st
         logger.info(f'   Exception: {e}')
         logger.info('=' * 80)
         
-        # Convert to RuntimeError for fail-fast behavior
-        raise RuntimeError(
-            f"HMM clustering step failed with critical exception: {e}",
-            ErrorRecord(
-                error_id=f"hmm_clustering_critical_exception_{int(time.time())}",
-                error_type=type(e).__name__,
-                error_message=str(e),
-                severity=ErrorSeverity.CRITICAL,
-                category=ErrorCategory.BUSINESS_LOGIC,
-                context=ErrorContext(
-                    function_name="run_step03_hmm_clustering",
-                    step_name="hmm_clustering"
-                ),
-                stack_trace="",
-                should_fail_fast=True
-            )
+        # Log error details but preserve original exception type
+        error_record = ErrorRecord(
+            error_id=f"hmm_clustering_critical_exception_{int(time.time())}",
+            error_type=type(e).__name__,
+            error_message=str(e),
+            severity=ErrorSeverity.CRITICAL,
+            category=ErrorCategory.BUSINESS_LOGIC,
+            context=ErrorContext(
+                function_name="run_step03_hmm_clustering",
+                step_name="hmm_clustering"
+            ),
+            stack_trace="",
+            should_fail_fast=True
         )
+        logger.error(f'Error record: {error_record}')
+        
+        # Re-raise original exception to preserve error context
+        raise
 
 async def main() -> None:
     """Main function to run enhanced step 3."""

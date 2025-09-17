@@ -38,6 +38,10 @@ from ..components.base_component import BaseMarketAnalysisComponent, ComponentCo
 from src.utils.logger import system_logger
 from src.utils.tprint import tprint
 
+# Import our standardized utilities
+from .validation_utils import get_validator, ValidationErrorType, ValidationResult, create_standardized_error
+from .config_utils import get_config_manager, get_path_manager
+
 # Import common utilities
 from src.utils.common_operations import (
     safe_dataframe_operation, validate_dataframe_columns, safe_convert_dtypes,
@@ -169,6 +173,11 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
         self.gpu_manager = get_gpu_manager()
         self.memory_optimizer = get_memory_optimizer()
         self.cpu_optimizer = get_cpu_optimizer()
+        
+        # Initialize standardized validation and configuration
+        self.validator = get_validator(self.logger)
+        self.config_manager = get_config_manager()
+        self.path_manager = get_path_manager()
         
     def _validate_dependencies(self) -> None:
         """Validate required dependencies and fail fast if missing."""
@@ -518,7 +527,7 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                     self.logger.error("❌ Regime discovery results are empty")
                     return None
             elif isinstance(regime_discovery, list):
-                if len(regime_discovery) == 0:
+                if not regime_discovery:
                     self.logger.error("❌ Regime discovery results list is empty")
                     return None
             
@@ -809,7 +818,7 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
             
             # Validate regime states
             regime_states = regime_data['regime_states']
-            if regime_states is None or len(regime_states) == 0:
+            if regime_states is None or not regime_states:
                 validation_result['valid'] = False
                 validation_result['errors'].append("No regime states found")
                 return validation_result

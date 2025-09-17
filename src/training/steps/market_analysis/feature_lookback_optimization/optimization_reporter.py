@@ -207,7 +207,7 @@ class OptimizationReporter:
                 },
                 'efficiency_metrics': {
                     'convergence_iterations': getattr(metrics, 'convergence_iterations', 0),
-                    'features_per_second': len(performance_metrics.get('execution_times', {})) / max(1, getattr(metrics, 'optimization_time', 1.0)),
+                    'features_per_second': getattr(metrics, 'total_features_optimized', 0) / max(1.0, float(getattr(metrics, 'optimization_time', 0.0) or 0.0) or 1.0),
                     'memory_efficiency': getattr(metrics, 'memory_usage_mb', 0.0) / max(1, getattr(metrics, 'total_features_optimized', 1))
                 },
                 'performance_trends': self._analyze_performance_trends(performance_metrics),
@@ -237,23 +237,47 @@ class OptimizationReporter:
         try:
             data_validation = validation_results.get('data_validation', {})
             pipeline_validation = validation_results.get('pipeline_validation', {})
-            
+
+            dv_summary = data_validation.get('summary')
+            pv_summary = pipeline_validation.get('summary')
+            dv_results = data_validation.get('results', [])
+            pv_results = pipeline_validation.get('results', [])
+
+            def _is_passed_status(summary_obj: Any) -> bool:
+                if summary_obj is None:
+                    return False
+                status = getattr(summary_obj, 'overall_status', None)
+                value = getattr(status, 'value', None)
+                text = (value or str(status) or '').lower()
+                return 'passed' in text
+
+            def _extract_warnings(results_list: List[Any]) -> List[str]:
+                warnings = []
+                for r in results_list:
+                    status = getattr(r, 'status', None)
+                    value = getattr(status, 'value', None)
+                    text = (value or str(status) or '').lower()
+                    if 'warning' in text:
+                        warnings.append(getattr(r, 'message', ''))
+                return warnings
+
+            overall_quality_score = getattr(dv_summary, 'quality_score', 0.0) if dv_summary else 0.0
+
             assessment = {
-                'overall_quality_score': data_validation.get('data_quality_score', 0.0),
-                'data_completeness': data_validation.get('data_completeness', 0.0),
+                'overall_quality_score': overall_quality_score,
                 'validation_status': {
-                    'data_valid': data_validation.get('is_valid', False),
-                    'pipeline_valid': pipeline_validation.get('is_valid', False)
+                    'data_valid': _is_passed_status(dv_summary),
+                    'pipeline_valid': _is_passed_status(pv_summary)
                 },
                 'quality_issues': {
-                    'data_warnings': data_validation.get('warnings', []),
-                    'pipeline_warnings': pipeline_validation.get('warnings', [])
+                    'data_warnings': _extract_warnings(dv_results),
+                    'pipeline_warnings': _extract_warnings(pv_results)
                 },
-                'quality_rating': self._calculate_quality_rating(data_validation)
+                'quality_rating': self._calculate_quality_rating({'data_quality_score': overall_quality_score})
             }
-            
+
             return assessment
-            
+
         except Exception as e:
             tprint(f"❌ Data quality assessment failed: {e}")
             return {'error': str(e)}

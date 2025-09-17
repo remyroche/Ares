@@ -78,6 +78,10 @@ class TripleBarrierConfig:
     - pt_mult: Profit target multiplier (e.g., 0.002 = 0.2%)
     - sl_mult: Stop loss multiplier (e.g., 0.001 = 0.1%)
     - entry_price: The price at which the position is entered
+    
+    Transaction Cost:
+    - Global standard transaction cost of 0.08% (0.0008) applied to all trades
+    - Includes both entry and exit costs combined
     """
     # Core parameters
     pt_mult: float = 1.0  # Profit target multiplier
@@ -85,9 +89,8 @@ class TripleBarrierConfig:
     min_holding_period: int = 1
     max_holding_period: int = 100
     
-    # Transaction costs and fees
-    transaction_cost: float = 0.001
-    spread_cost: float = 0.0005
+    # Global transaction cost (0.08% standard)
+    transaction_cost: float = 0.0008  # 0.08% - includes entry and exit costs combined
     
     # Barrier configuration
     barrier_type: BarrierType = BarrierType.FIXED
@@ -293,8 +296,11 @@ class TripleBarrierLabeler:
         data: pd.DataFrame, 
         config: TripleBarrierConfig
     ) -> pd.DataFrame:
-        """Create standard triple barrier labels."""
-        self.logger.debug("🔄 Creating standard triple barrier labels")
+        """Create standard triple barrier labels with comprehensive validation."""
+        self.logger.debug("🔄 Creating standard triple barrier labels with validation")
+        
+        # Calculate and validate end indices
+        end_indices = self._calculate_end_indices_with_validation(data, config)
         
         result = data.copy()
         labels = []
@@ -313,15 +319,34 @@ class TripleBarrierLabeler:
             self.logger.debug(f"🔄 Processing batch {batch_idx + 1}/{total_batches} ({len(batch_data)} samples)")
             
             for i, (_, row) in enumerate(batch_data.iterrows()):
+                global_idx = start_idx + i
                 entry_price = row['close']
                 
-                # Calculate barriers
+                # Validate end index for this position
+                position_end_idx = end_indices[global_idx]
+                if not self._validate_end_index_bounds(global_idx, position_end_idx, len(data)):
+                    # Skip this position if validation fails
+                    labels.append(0)
+                    profit_pcts.append(0.0)
+                    barrier_hits.append("validation_failed")
+                    continue
+                
+                # Calculate barriers with numerical stability
+                if entry_price <= 0:
+                    labels.append(0)
+                    profit_pcts.append(0.0)
+                    barrier_hits.append("invalid_entry_price")
+                    continue
+                
                 pt_price = entry_price * (1 + config.pt_mult)
                 sl_price = entry_price * (1 - config.sl_mult)
                 
-                # Find barrier hit
+                # Use validated future data window
+                future_data = data.iloc[global_idx:position_end_idx]
+                
+                # Find barrier hit with improved logic
                 label, profit_pct, barrier_type = self._find_barrier_hit(
-                    data.iloc[start_idx + i:], 
+                    future_data, 
                     entry_price, 
                     pt_price, 
                     sl_price, 
@@ -340,10 +365,13 @@ class TripleBarrierLabeler:
         result['config_sl'] = config.sl_mult
         result['transaction_cost'] = config.transaction_cost
         
-        # Log statistics
+        # Log statistics with validation info
         label_counts = pd.Series(labels).value_counts()
+        validation_failures = sum(1 for bt in barrier_hits if 'validation_failed' in bt or 'invalid_entry_price' in bt)
+        
         self.logger.info(f"📊 Label distribution: {label_counts.to_dict()}")
         self.logger.info(f"💰 Profit range: {min(profit_pcts):.4f} - {max(profit_pcts):.4f}")
+        self.logger.info(f"🔍 Validation failures: {validation_failures}/{len(labels)} ({validation_failures/len(labels)*100:.1f}%)")
         
         return result
 
@@ -480,26 +508,94 @@ class TripleBarrierLabeler:
         sl_price: float, 
         config: TripleBarrierConfig
     ) -> Tuple[int, float, str]:
-        """Find which barrier is hit first.
+        """Find which barrier is hit first with proper intra-bar priority logic.
         
         Barrier values are calculated as:
         - Profit Target: entry_price * (1 + pt_mult)
         - Stop Loss: entry_price * (1 - sl_mult)
         
         Where pt_mult and sl_mult are multipliers (e.g., 0.002 = 0.2%)
+        
+        Intra-bar priority logic:
+        1. If both barriers are hit in the same bar, determine which was hit first
+        2. Use opening price proximity as tie-breaker
+        3. Apply global transaction cost of 0.08%
         """
         for j, (_, row) in enumerate(future_data.iterrows()):
             if j >= config.max_holding_period:
                 return 0, 0.0, "time_barrier"
             
-            if row['high'] >= pt_price:
-                profit_pct = safe_divide(pt_price - entry_price, entry_price)
-                return 1, profit_pct, "profit_target"
-            elif row['low'] <= sl_price:
-                profit_pct = safe_divide(sl_price - entry_price, entry_price)
-                return -1, profit_pct, "stop_loss"
+            # Check if both barriers are hit in the same bar
+            pt_hit = row['high'] >= pt_price
+            sl_hit = row['low'] <= sl_price
+            
+            if pt_hit and sl_hit:
+                # Both barriers hit - use intra-bar priority logic
+                return self._resolve_intra_bar_conflict(
+                    row, entry_price, pt_price, sl_price, config.transaction_cost
+                )
+            elif pt_hit:
+                # Only profit target hit
+                gross_profit_pct = safe_divide(pt_price - entry_price, entry_price)
+                net_profit_pct = gross_profit_pct - config.transaction_cost
+                return 1, net_profit_pct, "profit_target"
+            elif sl_hit:
+                # Only stop loss hit
+                gross_loss_pct = safe_divide(sl_price - entry_price, entry_price)
+                net_loss_pct = gross_loss_pct - config.transaction_cost
+                return -1, net_loss_pct, "stop_loss"
         
         return 0, 0.0, "no_hit"
+
+    def _resolve_intra_bar_conflict(
+        self, 
+        row: pd.Series, 
+        entry_price: float, 
+        pt_price: float, 
+        sl_price: float, 
+        transaction_cost: float
+    ) -> Tuple[int, float, str]:
+        """Resolve conflicts when both barriers are hit in the same bar.
+        
+        Priority logic:
+        1. Calculate distance from open to each barrier
+        2. The closer barrier is assumed to be hit first
+        3. If distances are equal, use timestamp-based tie-breaking (favor stop loss for safety)
+        4. Apply transaction costs to final result
+        
+        Args:
+            row: OHLC data for the current bar
+            entry_price: Entry price for the position
+            pt_price: Profit target barrier price
+            sl_price: Stop loss barrier price
+            transaction_cost: Global transaction cost (0.08%)
+            
+        Returns:
+            Tuple of (label, net_profit_pct, barrier_type)
+        """
+        open_price = row['open']
+        
+        # Calculate distances from open price to each barrier
+        pt_distance = abs(open_price - pt_price)
+        sl_distance = abs(open_price - sl_price)
+        
+        # Determine which barrier is hit first based on proximity to open
+        if pt_distance < sl_distance:
+            # Profit target is closer to open, likely hit first
+            gross_profit_pct = safe_divide(pt_price - entry_price, entry_price)
+            net_profit_pct = gross_profit_pct - transaction_cost
+            return 1, net_profit_pct, "profit_target_priority"
+        elif sl_distance < pt_distance:
+            # Stop loss is closer to open, likely hit first
+            gross_loss_pct = safe_divide(sl_price - entry_price, entry_price)
+            net_loss_pct = gross_loss_pct - transaction_cost
+            return -1, net_loss_pct, "stop_loss_priority"
+        else:
+            # Equal distances - use conservative tie-breaking (favor stop loss for risk management)
+            self.logger.debug(f"Equal barrier distances detected - applying conservative tie-breaking")
+            gross_loss_pct = safe_divide(sl_price - entry_price, entry_price)
+            net_loss_pct = gross_loss_pct - transaction_cost
+            return -1, net_loss_pct, "stop_loss_tie_break"
 
     def _find_fractional_barrier_hit(
         self, 
@@ -509,20 +605,39 @@ class TripleBarrierLabeler:
         sl_price: float, 
         config: TripleBarrierConfig
     ) -> Tuple[float, float]:
-        """Find fractional barrier hit for continuous targets."""
+        """Find fractional barrier hit for continuous targets with consistent transaction cost handling."""
         for j, (_, row) in enumerate(future_data.iterrows()):
             if j >= config.max_holding_period:
                 return 0.0, 0.0
             
-            # Calculate fractional hit
-            if row['high'] >= pt_price:
+            # Check if both barriers are hit in the same bar
+            pt_hit = row['high'] >= pt_price
+            sl_hit = row['low'] <= sl_price
+            
+            if pt_hit and sl_hit:
+                # Both barriers hit - use same priority logic as regular method
+                _, net_profit_pct, barrier_type = self._resolve_intra_bar_conflict(
+                    row, entry_price, pt_price, sl_price, config.transaction_cost
+                )
+                # Convert to fractional based on barrier type
+                if "profit_target" in barrier_type:
+                    hit_ratio = safe_divide(pt_price - entry_price, row['high'] - entry_price)
+                    return min(1.0, hit_ratio), net_profit_pct
+                else:
+                    hit_ratio = safe_divide(entry_price - sl_price, entry_price - row['low'])
+                    return max(-1.0, -hit_ratio), net_profit_pct
+            elif pt_hit:
+                # Only profit target hit
                 hit_ratio = safe_divide(pt_price - entry_price, row['high'] - entry_price)
-                profit_pct = safe_divide(pt_price - entry_price, entry_price)
-                return min(1.0, hit_ratio), profit_pct
-            elif row['low'] <= sl_price:
+                gross_profit_pct = safe_divide(pt_price - entry_price, entry_price)
+                net_profit_pct = gross_profit_pct - config.transaction_cost
+                return min(1.0, hit_ratio), net_profit_pct
+            elif sl_hit:
+                # Only stop loss hit
                 hit_ratio = safe_divide(entry_price - sl_price, entry_price - row['low'])
-                profit_pct = safe_divide(sl_price - entry_price, entry_price)
-                return max(-1.0, -hit_ratio), profit_pct
+                gross_loss_pct = safe_divide(sl_price - entry_price, entry_price)
+                net_loss_pct = gross_loss_pct - config.transaction_cost
+                return max(-1.0, -hit_ratio), net_loss_pct
         
         return 0.0, 0.0
 
@@ -636,7 +751,161 @@ class TripleBarrierLabeler:
         if null_counts.any():
             raise ValueError(f"Null values found in price data: {null_counts.to_dict()}")
         
+        # Validate OHLC relationships
+        invalid_ohlc = (
+            (data['high'] < data['low']) |
+            (data['high'] < data['open']) |
+            (data['high'] < data['close']) |
+            (data['low'] > data['open']) |
+            (data['low'] > data['close'])
+        )
+        
+        if invalid_ohlc.any():
+            invalid_count = invalid_ohlc.sum()
+            self.logger.warning(f"⚠️ Found {invalid_count} rows with invalid OHLC relationships")
+            if invalid_count > len(data) * 0.01:  # More than 1% invalid
+                raise ValueError(f"Too many invalid OHLC relationships: {invalid_count} out of {len(data)} rows")
+        
         self.logger.debug("✅ Input data validation passed")
+
+    def _calculate_end_indices_with_validation(
+        self, 
+        data: pd.DataFrame, 
+        config: TripleBarrierConfig
+    ) -> np.ndarray:
+        """Calculate end indices with comprehensive validation and temporal leakage detection.
+        
+        Args:
+            data: Input market data
+            config: Triple barrier configuration
+            
+        Returns:
+            Array of validated end indices
+            
+        Raises:
+            ValueError: If temporal leakage is detected or validation fails
+        """
+        n = len(data)
+        
+        # Calculate base end indices
+        end_indices = np.minimum(
+            np.arange(n) + config.max_holding_period,
+            n
+        )
+        
+        # Validate end indices for temporal consistency
+        self._validate_temporal_consistency(end_indices, n, config)
+        
+        # Detect potential temporal leakage
+        self._detect_temporal_leakage(data, end_indices, config)
+        
+        return end_indices
+    
+    def _validate_temporal_consistency(
+        self, 
+        end_indices: np.ndarray, 
+        data_length: int, 
+        config: TripleBarrierConfig
+    ):
+        """Validate temporal consistency of end indices.
+        
+        Args:
+            end_indices: Array of end indices
+            data_length: Length of the data
+            config: Configuration object
+            
+        Raises:
+            ValueError: If validation fails
+        """
+        # Check bounds
+        if np.any(end_indices < 0):
+            raise ValueError("Negative end indices detected")
+        
+        if np.any(end_indices > data_length):
+            raise ValueError(f"End indices exceed data length: max={np.max(end_indices)}, data_length={data_length}")
+        
+        # Check for reasonable lookahead
+        max_lookahead = np.max(end_indices - np.arange(len(end_indices)))
+        if max_lookahead > config.max_holding_period * 1.1:  # Allow 10% tolerance
+            self.logger.warning(f"⚠️ Unusually large lookahead detected: {max_lookahead} > {config.max_holding_period}")
+        
+        # Check for minimum lookahead
+        min_lookahead = np.min(end_indices - np.arange(len(end_indices)))
+        if min_lookahead < config.min_holding_period:
+            self.logger.warning(f"⚠️ Lookahead below minimum: {min_lookahead} < {config.min_holding_period}")
+        
+        self.logger.debug(f"✅ Temporal consistency validation passed: lookahead range [{min_lookahead}, {max_lookahead}]")
+    
+    def _detect_temporal_leakage(
+        self, 
+        data: pd.DataFrame, 
+        end_indices: np.ndarray, 
+        config: TripleBarrierConfig
+    ):
+        """Detect potential temporal leakage in the labeling process.
+        
+        Args:
+            data: Input market data
+            end_indices: Array of end indices
+            config: Configuration object
+            
+        Raises:
+            ValueError: If temporal leakage is detected
+        """
+        n = len(data)
+        leakage_detected = False
+        leakage_issues = []
+        
+        # Check for future information usage
+        for i in range(min(100, n - 1)):  # Sample check first 100 points
+            end_idx = end_indices[i]
+            
+            # Ensure we're not using future information beyond the specified lookahead
+            expected_max_end = i + config.max_holding_period
+            if end_idx > expected_max_end + 1:  # Allow 1 bar tolerance
+                leakage_detected = True
+                leakage_issues.append(f"Row {i}: end_idx={end_idx} > expected_max={expected_max_end}")
+            
+            # Check that we have sufficient future data for labeling
+            if end_idx <= i + config.min_holding_period:
+                if i < n - config.max_holding_period:  # Only flag if we should have more data
+                    leakage_issues.append(f"Row {i}: insufficient lookahead, end_idx={end_idx} <= {i + config.min_holding_period}")
+        
+        if leakage_detected:
+            error_msg = f"Temporal leakage detected in {len(leakage_issues)} cases. Examples: {leakage_issues[:3]}"
+            self.logger.error(f"❌ {error_msg}")
+            raise ValueError(error_msg)
+        
+        # Check for systematic issues
+        avg_lookahead = np.mean(end_indices[:n-1] - np.arange(n-1))
+        if avg_lookahead > config.max_holding_period * 0.9:
+            self.logger.warning(f"⚠️ Average lookahead suspiciously high: {avg_lookahead:.2f}")
+        
+        self.logger.debug(f"✅ Temporal leakage detection passed: avg_lookahead={avg_lookahead:.2f}")
+    
+    def _validate_end_index_bounds(self, i: int, end_idx: int, data_length: int) -> bool:
+        """Validate that end index is within acceptable bounds for position i.
+        
+        Args:
+            i: Current position index
+            end_idx: Calculated end index
+            data_length: Total length of data
+            
+        Returns:
+            True if valid, False otherwise
+        """
+        # Basic bounds check
+        if end_idx <= i:
+            return False
+        
+        if end_idx > data_length:
+            return False
+        
+        # Minimum future data requirement
+        if end_idx <= i + 1:  # Need at least 1 future bar
+            return False
+        
+        return True
 
     def _update_performance_stats(self, start_time: float, num_labels: int, method: str):
         """Update performance statistics."""

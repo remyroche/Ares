@@ -6,6 +6,10 @@ import pandas as pd  # noqa: F401
 from src.utils.logger import system_logger
 from src.utils.data.klines_parquet import get_klines_manager
 
+# Import our standardized validation utilities
+from .validation_utils import get_validator, ValidationErrorType, ValidationResult, validate_training_input, validate_pipeline_state
+from .config_utils import get_config_manager, get_path_manager
+
 # Standardized imports from utils
 from src.utils.core.common import (
     safe_read_parquet,
@@ -183,6 +187,7 @@ class Step4RegimeDataSplittingValidator(BaseValidator):
                 return False
             # For processed data validation, use safe parquet reader
             df = safe_read_parquet(regime_file)
+
             df_valid, df_metrics = self.validate_dataframe_quality(df = df, min_rows = 100, required_columns=['timestamp', 'composite_cluster_id'], check_data_types = True, check_value_ranges = True, check_duplicates = True, check_temporal_consistency = True)
             if not df_valid:
                 self.logger.warning(f'⚠️ DataFrame validation failed for {regime_file.name}')

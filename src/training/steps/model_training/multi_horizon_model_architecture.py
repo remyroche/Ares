@@ -17,9 +17,22 @@ from typing import Dict, List, Optional, Any, Tuple, Union
 from dataclasses import dataclass, field
 import logging
 
+# Optimized imports using common utilities
 from src.utils.tprint import tprint
 from src.utils.logger import get_logger
 from src.core.decorators import handles_errors, traced, validates, log_execution_time
+from src.utils.common_operations import (
+    validate_dataframe, validate_dataframe_columns, safe_dataframe_operation,
+    timed_operation, memory_checkpoint, gpu_context,
+    integrate_with_m1_optimizers, create_m1_optimized_array
+)
+from src.utils.math_validation import (
+    validate_finite, validate_positive, validate_range,
+    safe_matrix_inverse, validate_correlation_matrix
+)
+from src.utils.hardware.m1_gpu_utils import get_m1_gpu_manager, create_m1_optimized_array
+from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer
+from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer
 
 # ML Framework imports with fallbacks
 try:
@@ -114,14 +127,23 @@ class MultiHorizonModelBuilder:
     """
     
     def __init__(self, config: MultiHorizonModelConfig):
-        """Initialize the model builder."""
+        """Initialize the model builder with hardware optimizations."""
         self.config = config
         self.logger = get_logger('MultiHorizonModelBuilder')
+        
+        # Initialize hardware optimizers
+        self.gpu_manager = get_m1_gpu_manager()
+        self.memory_optimizer = get_m1_memory_optimizer()
+        self.cpu_optimizer = get_m1_cpu_optimizer()
+        
+        # Optimize CPU for mathematical operations
+        if self.cpu_optimizer:
+            self.cpu_optimizer.optimize_numpy_operations()
         
         # Validate framework availability
         self._check_framework_availability()
         
-        self.logger.info(f'🏗️ Multi-Horizon Model Builder initialized')
+        self.logger.info(f'🏗️ Multi-Horizon Model Builder initialized with M1 optimizations')
         self.logger.info(f'   → Input features: {self.config.input_features}')
         self.logger.info(f'   → Probability outputs: {self.config.num_probability_outputs}')
         self.logger.info(f'   → Total outputs: {self.config.total_outputs}')
@@ -142,6 +164,7 @@ class MultiHorizonModelBuilder:
         
         self.logger.info(f'📦 Available frameworks: {available_frameworks}')
     
+    @timed_operation
     @traced(span_name='build_model')
     @validates()
     @handles_errors(exceptions=(Exception,), default_return=None)
@@ -160,14 +183,19 @@ class MultiHorizonModelBuilder:
         
         self.logger.info(f'🔨 Building {self.config.model_type} model with {framework}')
         
-        if framework == 'tensorflow' and TENSORFLOW_AVAILABLE:
-            return self._build_tensorflow_model()
-        elif framework == 'pytorch' and PYTORCH_AVAILABLE:
-            return self._build_pytorch_model()
-        elif framework == 'sklearn' and SKLEARN_AVAILABLE:
-            return self._build_sklearn_model()
-        else:
-            raise ValueError(f"Framework {framework} not available or supported")
+        # Use memory checkpoint for model building
+        with memory_checkpoint('model_building'):
+            if framework == 'tensorflow' and TENSORFLOW_AVAILABLE:
+                with gpu_context('tensorflow_model') if self.gpu_manager else memory_checkpoint('tensorflow_model'):
+                    return self._build_tensorflow_model()
+            elif framework == 'pytorch' and PYTORCH_AVAILABLE:
+                with gpu_context('pytorch_model') if self.gpu_manager else memory_checkpoint('pytorch_model'):
+                    return self._build_pytorch_model()
+            elif framework == 'sklearn' and SKLEARN_AVAILABLE:
+                with memory_checkpoint('sklearn_model'):
+                    return self._build_sklearn_model()
+            else:
+                raise ValueError(f"Framework {framework} not available or supported")
     
     def _select_best_framework(self) -> str:
         """Select the best available framework for the model type."""

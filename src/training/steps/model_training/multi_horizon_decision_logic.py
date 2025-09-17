@@ -20,9 +20,22 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 import logging
 
+# Optimized imports using common utilities
 from src.utils.tprint import tprint
 from src.utils.logger import get_logger
 from src.core.decorators import handles_errors, traced, validates, log_execution_time
+from src.utils.common_operations import (
+    safe_divide, safe_mean, safe_std, safe_percentage_change,
+    validate_finite, validate_positive, validate_range,
+    timed_operation, memory_checkpoint, gpu_context
+)
+from src.utils.math_validation import (
+    safe_correlation, safe_covariance, safe_weighted_average,
+    safe_kelly_calculation, math_safe
+)
+from src.utils.hardware.m1_gpu_utils import get_m1_gpu_manager
+from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer
+from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer
 
 @dataclass
 class TradingDecisionConfig:
@@ -101,18 +114,28 @@ class MultiHorizonDecisionEngine:
     """
     
     def __init__(self, config: Optional[TradingDecisionConfig] = None):
-        """Initialize the decision engine."""
+        """Initialize the decision engine with hardware optimizations."""
         self.config = config or TradingDecisionConfig()
         self.logger = get_logger('MultiHorizonDecisionEngine')
+        
+        # Initialize hardware optimizers
+        self.gpu_manager = get_m1_gpu_manager()
+        self.memory_optimizer = get_m1_memory_optimizer()
+        self.cpu_optimizer = get_m1_cpu_optimizer()
+        
+        # Optimize CPU for mathematical operations
+        if self.cpu_optimizer:
+            self.cpu_optimizer.optimize_numpy_operations()
         
         # Track active positions for reassessment
         self.active_positions: Dict[str, Dict[str, Any]] = {}
         
-        self.logger.info(f'🎯 Multi-Horizon Decision Engine initialized')
+        self.logger.info(f'🎯 Multi-Horizon Decision Engine initialized with M1 optimizations')
         self.logger.info(f'   → Leverage: {self.config.leverage_multiplier}x')
         self.logger.info(f'   → Max account risk: {self.config.max_account_risk_per_trade*100:.1f}%')
         self.logger.info(f'   → Entry threshold (overall): {self.config.entry_thresholds["overall_opportunity"]*100:.1f}%')
     
+    @timed_operation
     @traced(span_name='make_trading_decision')
     @validates()
     @handles_errors(exceptions=(Exception,), default_return=TradingDecision('hold', 0.0, 0.0, 0.0, 0.0, 0, [], {}))
@@ -136,31 +159,34 @@ class MultiHorizonDecisionEngine:
         """
         self.logger.debug(f'🤔 Making trading decision for price {current_price}')
         
-        # Check if this is for an existing position
-        if position_id and position_id in self.active_positions:
-            return self._reassess_existing_position(position_id, predictions, current_price)
-        
-        # Analyze entry opportunities
-        entry_analysis = self._analyze_entry_opportunities(predictions, current_price)
-        
-        if entry_analysis['should_enter']:
-            decision = self._create_entry_decision(entry_analysis, predictions, current_price)
+        # Use memory checkpoint for decision making
+        with memory_checkpoint('trading_decision'):
+            # Check if this is for an existing position
+            if position_id and position_id in self.active_positions:
+                return self._reassess_existing_position(position_id, predictions, current_price)
             
-            # Track position if entered
-            if decision.action in ['buy', 'sell']:
-                self._track_new_position(position_id or f'pos_{int(datetime.now().timestamp())}', 
-                                       decision, predictions, current_price)
-        else:
-            decision = TradingDecision(
-                action='hold',
-                confidence=entry_analysis['confidence'],
-                position_size=0.0,
-                expected_profit=0.0,
-                max_risk=0.0,
-                time_horizon=0,
-                reasoning=entry_analysis['reasoning'],
-                probabilities=self._extract_key_probabilities(predictions)
-            )
+            # Analyze entry opportunities with GPU acceleration if available
+            with gpu_context('entry_analysis') if self.gpu_manager else memory_checkpoint('entry_analysis'):
+                entry_analysis = self._analyze_entry_opportunities(predictions, current_price)
+        
+            if entry_analysis['should_enter']:
+                decision = self._create_entry_decision(entry_analysis, predictions, current_price)
+                
+                # Track position if entered
+                if decision.action in ['buy', 'sell']:
+                    self._track_new_position(position_id or f'pos_{int(datetime.now().timestamp())}', 
+                                           decision, predictions, current_price)
+            else:
+                decision = TradingDecision(
+                    action='hold',
+                    confidence=entry_analysis['confidence'],
+                    position_size=0.0,
+                    expected_profit=0.0,
+                    max_risk=0.0,
+                    time_horizon=0,
+                    reasoning=entry_analysis['reasoning'],
+                    probabilities=self._extract_key_probabilities(predictions)
+                )
         
         self.logger.debug(f'📊 Decision: {decision.action} (confidence: {decision.confidence:.3f})')
         return decision
@@ -201,18 +227,17 @@ class MultiHorizonDecisionEngine:
         return analysis
     
     def _analyze_immediate_opportunities(self, predictions: Dict[str, float]) -> Dict[str, Any]:
-        """Analyze immediate opportunities (15 minutes)."""
+        """Analyze immediate opportunities (15 minutes) with safe math operations."""
         immediate_probs = {
-            'micro': predictions.get('micro_immediate_prob', 0.0),
-            'small': predictions.get('small_immediate_prob', 0.0),
-            'medium': predictions.get('medium_immediate_prob', 0.0)
+            'micro': validate_finite(predictions.get('micro_immediate_prob', 0.0), 'micro_immediate_prob'),
+            'small': validate_finite(predictions.get('small_immediate_prob', 0.0), 'small_immediate_prob'),
+            'medium': validate_finite(predictions.get('medium_immediate_prob', 0.0), 'medium_immediate_prob')
         }
         
-        # High-leverage strategy: prioritize high-probability small moves
-        weighted_score = (
-            immediate_probs['micro'] * 0.5 +    # 50% weight on micro moves
-            immediate_probs['small'] * 0.3 +    # 30% weight on small moves
-            immediate_probs['medium'] * 0.2     # 20% weight on medium moves
+        # High-leverage strategy: prioritize high-probability small moves using safe operations
+        weighted_score = safe_weighted_average(
+            [immediate_probs['micro'], immediate_probs['small'], immediate_probs['medium']],
+            [0.5, 0.3, 0.2]  # weights: micro=50%, small=30%, medium=20%
         )
         
         reasoning = []
@@ -232,20 +257,18 @@ class MultiHorizonDecisionEngine:
         }
     
     def _analyze_short_term_opportunities(self, predictions: Dict[str, float]) -> Dict[str, Any]:
-        """Analyze short-term opportunities (30 minutes)."""
+        """Analyze short-term opportunities (30 minutes) with safe math operations."""
         short_term_probs = {
-            'micro': predictions.get('micro_short_prob', 0.0),
-            'small': predictions.get('small_short_prob', 0.0),
-            'medium': predictions.get('medium_short_prob', 0.0),
-            'good': predictions.get('good_short_prob', 0.0)
+            'micro': validate_finite(predictions.get('micro_short_prob', 0.0), 'micro_short_prob'),
+            'small': validate_finite(predictions.get('small_short_prob', 0.0), 'small_short_prob'),
+            'medium': validate_finite(predictions.get('medium_short_prob', 0.0), 'medium_short_prob'),
+            'good': validate_finite(predictions.get('good_short_prob', 0.0), 'good_short_prob')
         }
         
-        # Balanced approach for short-term
-        weighted_score = (
-            short_term_probs['micro'] * 0.3 +   # 30% weight on micro moves
-            short_term_probs['small'] * 0.4 +   # 40% weight on small moves  
-            short_term_probs['medium'] * 0.2 +  # 20% weight on medium moves
-            short_term_probs['good'] * 0.1      # 10% weight on good moves
+        # Balanced approach for short-term using safe operations
+        weighted_score = safe_weighted_average(
+            [short_term_probs['micro'], short_term_probs['small'], short_term_probs['medium'], short_term_probs['good']],
+            [0.3, 0.4, 0.2, 0.1]  # weights: micro=30%, small=40%, medium=20%, good=10%
         )
         
         reasoning = []
@@ -272,20 +295,20 @@ class MultiHorizonDecisionEngine:
         for profitable close/reopen positions around minor market movements.
         """
         reversal_probs = {
-            'reversal_capture_score': predictions.get('reversal_capture_score', 0.0),
-            'immediate_micro': predictions.get('micro_immediate_prob', 0.0),
-            'immediate_small': predictions.get('small_immediate_prob', 0.0),
-            'reassessment_freq': predictions.get('reassessment_frequency', 5.0)
+            'reversal_capture_score': validate_finite(predictions.get('reversal_capture_score', 0.0), 'reversal_capture_score'),
+            'immediate_micro': validate_finite(predictions.get('micro_immediate_prob', 0.0), 'immediate_micro'),
+            'immediate_small': validate_finite(predictions.get('small_immediate_prob', 0.0), 'immediate_small'),
+            'reassessment_freq': validate_finite(predictions.get('reassessment_frequency', 5.0), 'reassessment_freq')
         }
         
-        # Calculate reversal opportunity score
+        # Calculate reversal opportunity score with safe operations
         reversal_score = reversal_probs['reversal_capture_score']
-        immediate_strength = (reversal_probs['immediate_micro'] + reversal_probs['immediate_small']) / 2
+        immediate_strength = safe_mean(pd.Series([reversal_probs['immediate_micro'], reversal_probs['immediate_small']]), default=0.0)
         
-        # Weight reversal capture with immediate strength
-        weighted_score = (
-            reversal_score * 0.6 +           # 60% weight on reversal capture score
-            immediate_strength * 0.4         # 40% weight on immediate opportunities
+        # Weight reversal capture with immediate strength using safe operations
+        weighted_score = safe_weighted_average(
+            [reversal_score, immediate_strength],
+            [0.6, 0.4]  # weights: reversal=60%, immediate=40%
         )
         
         reasoning = []
@@ -361,9 +384,10 @@ class MultiHorizonDecisionEngine:
         )
     
     def _calculate_position_size(self, confidence: float, strategy: str) -> float:
-        """Calculate position size based on confidence and strategy."""
-        base_size = self.config.position_sizing['base_size']
-        confidence_multiplier = self.config.position_sizing['confidence_multiplier']
+        """Calculate position size based on confidence and strategy with safe operations."""
+        base_size = validate_finite(self.config.position_sizing['base_size'], 'base_size')
+        confidence_multiplier = validate_finite(self.config.position_sizing['confidence_multiplier'], 'confidence_multiplier')
+        confidence = validate_finite(confidence, 'confidence')
         
         # Adjust base size for strategy
         strategy_multipliers = {
@@ -372,21 +396,22 @@ class MultiHorizonDecisionEngine:
             'medium_term_hold': 0.8    # Smaller for longer holds
         }
         
-        strategy_multiplier = strategy_multipliers.get(strategy, 1.0)
+        strategy_multiplier = validate_finite(strategy_multipliers.get(strategy, 1.0), 'strategy_multiplier')
         
-        # Calculate size
+        # Calculate size using safe operations
         raw_size = base_size * confidence * confidence_multiplier * strategy_multiplier
+        raw_size = validate_finite(raw_size, 'raw_position_size')
         
         # Apply limits
-        min_size = self.config.position_sizing['min_position_size']
-        max_size = self.config.position_sizing['max_position_size']
+        min_size = validate_finite(self.config.position_sizing['min_position_size'], 'min_position_size')
+        max_size = validate_finite(self.config.position_sizing['max_position_size'], 'max_position_size')
         
         position_size = np.clip(raw_size, min_size, max_size)
         
-        return position_size
+        return validate_finite(position_size, 'final_position_size')
     
     def _estimate_expected_profit(self, strategy: str, predictions: Dict[str, float]) -> float:
-        """Estimate expected profit based on strategy and predictions."""
+        """Estimate expected profit based on strategy and predictions with safe operations."""
         # Simplified profit estimation - can be enhanced
         profit_estimates = {
             'immediate_scalp': 0.003,    # 0.3% average for scalping
@@ -394,29 +419,34 @@ class MultiHorizonDecisionEngine:
             'medium_term_hold': 0.008    # 0.8% average for medium hold
         }
         
-        base_profit = profit_estimates.get(strategy, 0.005)
+        base_profit = validate_finite(profit_estimates.get(strategy, 0.005), 'base_profit')
         
         # Adjust based on overall opportunity score
-        overall_opp = predictions.get('overall_opportunity', 0.5)
+        overall_opp = validate_finite(predictions.get('overall_opportunity', 0.5), 'overall_opportunity')
         adjusted_profit = base_profit * overall_opp
+        adjusted_profit = validate_finite(adjusted_profit, 'adjusted_profit')
         
         # Subtract transaction costs
-        net_profit = adjusted_profit - self.config.transaction_cost
+        transaction_cost = validate_finite(self.config.transaction_cost, 'transaction_cost')
+        net_profit = adjusted_profit - transaction_cost
         
-        return max(0.0, net_profit)
+        return validate_finite(max(0.0, net_profit), 'net_profit')
     
     def _calculate_max_risk(self, position_size: float) -> float:
-        """Calculate maximum risk based on position size and leverage."""
+        """Calculate maximum risk based on position size and leverage with safe operations."""
         # Account risk = position_size * leverage * price_risk
         # For high leverage, we use tight stops
-        price_risk_pct = 0.002  # 0.2% typical stop loss
+        price_risk_pct = validate_finite(0.002, 'price_risk_pct')  # 0.2% typical stop loss
+        position_size = validate_finite(position_size, 'position_size')
+        leverage = validate_finite(self.config.leverage_multiplier, 'leverage')
         
-        account_risk = position_size * self.config.leverage_multiplier * price_risk_pct
+        account_risk = position_size * leverage * price_risk_pct
+        account_risk = validate_finite(account_risk, 'account_risk')
         
         # Cap at max account risk
-        max_account_risk = self.config.max_account_risk_per_trade
+        max_account_risk = validate_finite(self.config.max_account_risk_per_trade, 'max_account_risk')
         
-        return min(account_risk, max_account_risk)
+        return validate_finite(min(account_risk, max_account_risk), 'final_max_risk')
     
     def _extract_key_probabilities(self, predictions: Dict[str, float]) -> Dict[str, float]:
         """Extract key probabilities for decision record."""

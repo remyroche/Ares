@@ -1149,7 +1149,7 @@ class PIDBasedFeatureOrchestrator:
         try:
             if SERIALIZATION_AVAILABLE and self.config.enable_serialization:
                 # Create artifacts directory
-                artifacts_dir = Path(self.config.artifacts_directory) / datetime.now().strftime("%Y%m%d_%H%M%S")
+                artifacts_dir = Path(self.config.artifacts_directory)
                 ensure_directory(artifacts_dir)
                 
                 # Save features as parquet

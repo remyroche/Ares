@@ -770,7 +770,7 @@ class ComprehensivePIDIntegrationExample:
                 }
                 
                 # Create artifacts directory
-                artifacts_dir = Path("artifacts") / "common_utilities_demo" / datetime.now().strftime("%Y%m%d_%H%M%S")
+                artifacts_dir = Path("artifacts") / "common_utilities_demo"
                 ensure_directory(artifacts_dir)
                 
                 # Test JSON serialization

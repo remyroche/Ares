@@ -16,7 +16,11 @@ logger = system_logger.getChild('Step03HMMRegimeDiscovery')
 
 # Import optimization utilities
 from src.utils.matrix_operations import get_vectorized_processing_core
-from src.utils.optimized_data_manager import get_optimized_data_manager
+# Fallback for optimized data manager: use step optimization manager's data_manager if available
+try:
+    from src.utils.optimized_data_manager import get_optimized_data_manager  # type: ignore
+except Exception:
+    get_optimized_data_manager = None  # will fallback later
 from src.utils.hardware.m1_gpu_utils import get_m1_gpu_manager
 from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer
 from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer
@@ -30,17 +34,75 @@ from src.utils.enhanced_step_optimizations import (
     optimized_step
 )
 
-# Import ML Common utilities for streamlined processing
-from src.utils.ml_common.data_quality import DataQualityUtilities
-from src.utils.ml_common.pipeline_orchestrator import MLPipelineOrchestrator
-from src.utils.ml_common.feature_selection import FeatureSelectionFramework
-from src.utils.ml_common.parallel_processing import ParallelProcessingCoordinator
+# Import ML Common utilities for streamlined processing (use available utils paths)
+try:
+    from src.utils.ml_common.data_quality import DataQualityUtilities  # type: ignore
+except Exception:
+    from src.utils.ml_common.utils.data_quality import DataQualityUtilities  # type: ignore
+try:
+    from src.utils.ml_common.pipeline_orchestrator import MLPipelineOrchestrator  # type: ignore
+except Exception:
+    # Minimal fallback orchestrator: sequential execution
+    class MLPipelineOrchestrator:  # type: ignore
+        def __init__(self, *_args, **_kwargs):
+            self.active_pipelines = {}
+        def create_training_pipeline(self, steps_config, error_handling='robust', pipeline_id='pipeline'):
+            self.active_pipelines[pipeline_id] = steps_config
+            return pipeline_id
+        async def execute_pipeline(self, pipeline_id, progress_callback=None):
+            steps = self.active_pipelines.get(pipeline_id, [])
+            total = len(steps)
+            for i, step in enumerate(steps, 1):
+                func = step['function']
+                kwargs = step.get('kwargs', {})
+                res = await func(**kwargs)
+                if progress_callback:
+                    await progress_callback({'completed_steps': i, 'total_steps': total})
+                if not res.get('success', False):
+                    return {'success': False, 'errors': [res.get('error')]}
+            return {'success': True}
+try:
+    from src.utils.ml_common.feature_selection import FeatureSelectionFramework  # type: ignore
+except Exception:
+    # Minimal fallback: no-op selection
+    class FeatureSelectionFramework:  # type: ignore
+        def __init__(self, *_args, **_kwargs):
+            pass
+        def mrmr_selection(self, X, y, feature_names, n_features=20):
+            sel = feature_names[: min(n_features, len(feature_names))]
+            return {'selected_features': sel}
+        def correlation_based_filtering(self, X, feature_names, correlation_threshold=0.9):
+            return {'selected_features': feature_names}
+try:
+    from src.utils.ml_common.parallel_processing import ParallelProcessingCoordinator  # type: ignore
+except Exception:
+    class ParallelProcessingCoordinator:  # type: ignore
+        def __init__(self, *_args, **_kwargs):
+            pass
+        def parallel_feature_engineering(self, funcs, args_list):
+            results = []
+            for f, arg in zip(funcs, args_list):
+                try:
+                    results.append(f(arg))
+                except Exception as e:
+                    results.append({'success': False, 'error': str(e), 'features': []})
+            return results
+        def error_handling_parallel_execution(self, task_defs, max_retries=0, error_handling_strategy='retry'):
+            out = []
+            for td in task_defs:
+                try:
+                    res = td['function'](**td.get('kwargs', {}))
+                except Exception as e:
+                    res = {'success': False, 'error': str(e)}
+                out.append(res)
+            return out
 
 import torch
 
 # Ensure repository root (parent of 'src') is on sys.path
 project_root = Path(__file__).resolve().parents[5]
 sys.path.insert(0, str(project_root))
+
 from src.training.base_step import BaseStep
 from src.utils.graceful_module_handler import graceful_handler
 from src.utils.pipeline_standards import PipelineStandards
@@ -59,12 +121,19 @@ class Step03HMMRegimeDiscovery(BaseStep):
 
         # Initialize optimization components
         self.vectorized_core = get_vectorized_processing_core()
-        self.data_manager = get_optimized_data_manager()
+        # Use optimized data manager if available, else fallback to step optimizer's data_manager
+        self.step_optimizer = get_step_optimization_manager()
+        if get_optimized_data_manager is not None:
+            try:
+                self.data_manager = get_optimized_data_manager()
+            except Exception:
+                self.data_manager = getattr(self.step_optimizer, 'data_manager', None)
+        else:
+            self.data_manager = getattr(self.step_optimizer, 'data_manager', None)
         self.gpu_manager = get_m1_gpu_manager()
         self.memory_optimizer = get_m1_memory_optimizer()
         self.cpu_optimizer = get_m1_cpu_optimizer()
         self.matrix_operations = EnhancedMatrixOperations()
-        self.step_optimizer = get_step_optimization_manager()
 
         # Initialize ML Common utilities for streamlined processing
         self.data_quality_utils = DataQualityUtilities({

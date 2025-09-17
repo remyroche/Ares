@@ -351,10 +351,14 @@ class MarketAnalysisSubPipeline:
             results['regime_assignments'] = hmm_regime_data.get('regime_assignments', {})
             results['regime_metrics'] = hmm_regime_data.get('regime_metrics', {})
             
+            # Extract regime assignments for pipeline state
+            regime_assignments = hmm_regime_data.get('regime_assignments', [])
+            
             # Update pipeline state for next components
             self._current_pipeline_state.update({
                 'regime_models': results['regime_models'],
-                'regime_assignments': results['regime_assignments']
+                'regime_assignments': results['regime_assignments'],
+                'hmm_regime_assignments': regime_assignments  # Raw regime assignments before clustering
             })
             
             # Stage 5: HMM Clustering
@@ -369,9 +373,23 @@ class MarketAnalysisSubPipeline:
             results['hmm_clusters'] = hmm_clustering_data.get('hmm_clusters', {})
             results['hmm_clustering_metrics'] = hmm_clustering_data.get('hmm_clustering_metrics', {})
             
+            # Extract cluster_assignments and convert to regime_labels for training components
+            cluster_assignments = hmm_clustering_data.get('cluster_assignments', [])
+            if cluster_assignments:
+                # Convert cluster_assignments to numpy array for regime_labels
+                import numpy as np
+                regime_labels = np.array(cluster_assignments)
+                self.logger.info(f"✅ Converted {len(cluster_assignments)} cluster assignments to regime labels")
+                self.logger.info(f"📊 Unique regimes: {len(np.unique(regime_labels))} ({list(np.unique(regime_labels))})")
+            else:
+                self.logger.warning("⚠️ No cluster assignments found in HMM clustering results")
+                regime_labels = None
+            
             # Update pipeline state for next components
             self._current_pipeline_state.update({
-                'hmm_clusters': results['hmm_clusters']
+                'hmm_clusters': results['hmm_clusters'],
+                'regime_labels': regime_labels,
+                'cluster_assignments': cluster_assignments
             })
             
             # Stage 6: HMM Models Training

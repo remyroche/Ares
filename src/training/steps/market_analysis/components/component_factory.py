@@ -51,8 +51,40 @@ class HMMModelsTrainingComponentWrapper(BaseMarketAnalysisComponent):
             regime_labels = pipeline_state.get('regime_labels')
             feature_names = pipeline_state.get('feature_names')
             
+            # If we don't have features/targets, try to extract from dataframe
+            if X is None or y is None:
+                dataframe = pipeline_state.get('dataframe')
+                if dataframe is not None:
+                    import pandas as pd
+                    import numpy as np
+                    
+                    # Create basic features and targets from OHLCV data
+                    if 'close' in dataframe.columns:
+                        # Simple features: returns, volatility, etc.
+                        returns = dataframe['close'].pct_change().fillna(0)
+                        volatility = returns.rolling(20).std().fillna(0)
+                        volume_ratio = (dataframe['volume'] / dataframe['volume'].rolling(20).mean()).fillna(1) if 'volume' in dataframe.columns else pd.Series([1] * len(dataframe), index=dataframe.index)
+                        
+                        X = np.column_stack([returns.values, volatility.values, volume_ratio.values])
+                        feature_names = ['returns', 'volatility', 'volume_ratio']
+                        
+                        # Create targets (future returns)
+                        y = returns.shift(-1).fillna(0).values
+                        
+                        # Remove last row where target is NaN
+                        X = X[:-1]
+                        y = y[:-1]
+                        
+                        # Adjust regime_labels length if necessary
+                        if regime_labels is not None and len(regime_labels) > len(X):
+                            regime_labels = regime_labels[:len(X)]
+            
             if X is None or y is None or regime_labels is None:
-                raise ValueError("Missing required data: features, targets, or regime_labels")
+                missing_items = []
+                if X is None: missing_items.append("features")
+                if y is None: missing_items.append("targets")
+                if regime_labels is None: missing_items.append("regime_labels")
+                raise ValueError(f"Missing required data: {', '.join(missing_items)}")
             
             # Execute training
             results = self.training_instance.execute(X, y, regime_labels, feature_names)
@@ -111,8 +143,40 @@ class HMMEnsembleTrainingComponentWrapper(BaseMarketAnalysisComponent):
             base_hmm_models = pipeline_state.get('hmm_models', {}).get('hmm_models', {})
             hmm_training_metrics = pipeline_state.get('hmm_models', {}).get('hmm_training_metrics', {})
             
+            # If we don't have features/targets, try to extract from dataframe
+            if X is None or y is None:
+                dataframe = pipeline_state.get('dataframe')
+                if dataframe is not None:
+                    import pandas as pd
+                    import numpy as np
+                    
+                    # Create basic features and targets from OHLCV data
+                    if 'close' in dataframe.columns:
+                        # Simple features: returns, volatility, etc.
+                        returns = dataframe['close'].pct_change().fillna(0)
+                        volatility = returns.rolling(20).std().fillna(0)
+                        volume_ratio = (dataframe['volume'] / dataframe['volume'].rolling(20).mean()).fillna(1) if 'volume' in dataframe.columns else pd.Series([1] * len(dataframe), index=dataframe.index)
+                        
+                        X = np.column_stack([returns.values, volatility.values, volume_ratio.values])
+                        feature_names = ['returns', 'volatility', 'volume_ratio']
+                        
+                        # Create targets (future returns)
+                        y = returns.shift(-1).fillna(0).values
+                        
+                        # Remove last row where target is NaN
+                        X = X[:-1]
+                        y = y[:-1]
+                        
+                        # Adjust regime_labels length if necessary
+                        if regime_labels is not None and len(regime_labels) > len(X):
+                            regime_labels = regime_labels[:len(X)]
+            
             if X is None or y is None or regime_labels is None:
-                raise ValueError("Missing required data: features, targets, or regime_labels")
+                missing_items = []
+                if X is None: missing_items.append("features")
+                if y is None: missing_items.append("targets")
+                if regime_labels is None: missing_items.append("regime_labels")
+                raise ValueError(f"Missing required data: {', '.join(missing_items)}")
             
             # Execute training
             results = self.training_instance.execute(

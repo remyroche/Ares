@@ -636,17 +636,27 @@ class RegimeClusterer:
         
         return result
     
-    def run_all_methods(self, data: np.ndarray) -> Dict[ClusteringMethod, ClusteringResult]:
+    def run_all_methods(self, 
+                       data: np.ndarray,
+                       analyze_dimensions: bool = True,
+                       feature_names: Optional[List[str]] = None) -> Dict[ClusteringMethod, ClusteringResult]:
         """
-        Run all available clustering methods.
+        Run all available clustering methods with optional dimension analysis.
         
         Args:
             data: Input data for clustering
+            analyze_dimensions: Whether to analyze implicit dimensions before clustering
+            feature_names: Optional feature names for dimension analysis
             
         Returns:
             Dictionary mapping methods to results
         """
         self.logger.info("🚀 Running comprehensive clustering analysis")
+        
+        # Analyze implicit dimensions before clustering if requested
+        if analyze_dimensions:
+            dimension_analysis = self._analyze_implicit_dimensions(data, feature_names)
+            self.logger.info(f"📊 Identified {len(dimension_analysis)} implicit dimensions in features")
         
         results = {}
         
@@ -656,6 +666,11 @@ class RegimeClusterer:
         for method in individual_methods:
             try:
                 result = self.run_single_method(data, method)
+                
+                # Add dimension analysis to result metadata if available
+                if analyze_dimensions and 'dimension_analysis' in locals():
+                    result.metadata['dimension_analysis'] = dimension_analysis
+                
                 results[method] = result
             except Exception as e:
                 self.logger.error(f"❌ {method.value} failed: {e}")
@@ -665,12 +680,125 @@ class RegimeClusterer:
         if len(results) >= 2:
             try:
                 ensemble_result = self.run_single_method(data, ClusteringMethod.ENSEMBLE)
+                if analyze_dimensions and 'dimension_analysis' in locals():
+                    ensemble_result.metadata['dimension_analysis'] = dimension_analysis
                 results[ClusteringMethod.ENSEMBLE] = ensemble_result
             except Exception as e:
                 self.logger.error(f"❌ Ensemble clustering failed: {e}")
         
         self.logger.info(f"✅ Completed {len(results)} clustering methods")
         return results
+    
+    def _analyze_implicit_dimensions(self, 
+                                   data: np.ndarray,
+                                   feature_names: Optional[List[str]] = None) -> Dict[str, Any]:
+        """
+        Analyze implicit dimensions in the data before clustering.
+        
+        Args:
+            data: Input data
+            feature_names: Optional feature names
+            
+        Returns:
+            Dictionary with dimension analysis results
+        """
+        self.logger.info("🔍 Analyzing implicit dimensions in feature space")
+        
+        try:
+            from sklearn.decomposition import PCA, FactorAnalysis
+            from sklearn.preprocessing import StandardScaler
+            
+            # Standardize data
+            scaler = StandardScaler()
+            data_scaled = scaler.fit_transform(data)
+            
+            # PCA analysis to identify main dimensions
+            pca = PCA()
+            pca_transformed = pca.fit_transform(data_scaled)
+            
+            # Determine number of significant components (cumulative variance > 95%)
+            cumvar = np.cumsum(pca.explained_variance_ratio_)
+            n_components_95 = np.argmax(cumvar >= 0.95) + 1
+            n_components_90 = np.argmax(cumvar >= 0.90) + 1
+            
+            # Factor analysis to identify latent factors
+            try:
+                fa = FactorAnalysis(n_components=min(10, data.shape[1] // 2))
+                fa.fit(data_scaled)
+                factor_loadings = fa.components_
+            except Exception as e:
+                self.logger.warning(f"Factor analysis failed: {e}")
+                factor_loadings = None
+            
+            # Feature importance in principal components
+            feature_importance_pc1 = abs(pca.components_[0]) if len(pca.components_) > 0 else None
+            feature_importance_pc2 = abs(pca.components_[1]) if len(pca.components_) > 1 else None
+            
+            # Create feature importance mapping
+            if feature_names and feature_importance_pc1 is not None:
+                pc1_importance = dict(zip(feature_names, feature_importance_pc1))
+                pc2_importance = dict(zip(feature_names, feature_importance_pc2)) if feature_importance_pc2 is not None else {}
+            else:
+                pc1_importance = {}
+                pc2_importance = {}
+            
+            dimension_analysis = {
+                'n_features': data.shape[1],
+                'n_samples': data.shape[0],
+                'pca_explained_variance_ratio': pca.explained_variance_ratio_.tolist(),
+                'cumulative_variance': cumvar.tolist(),
+                'n_components_90_var': int(n_components_90),
+                'n_components_95_var': int(n_components_95),
+                'intrinsic_dimensionality_estimate': int(n_components_90),
+                'pc1_importance': pc1_importance,
+                'pc2_importance': pc2_importance,
+                'factor_loadings_available': factor_loadings is not None,
+                'data_variance': float(np.var(data_scaled)),
+                'feature_correlations': self._calculate_feature_correlations(data_scaled, feature_names)
+            }
+            
+            self.logger.info(f"📊 Estimated intrinsic dimensionality: {n_components_90} components (90% variance)")
+            self.logger.info(f"📊 Top PC1 features: {list(pc1_importance.keys())[:5] if pc1_importance else 'N/A'}")
+            
+            return dimension_analysis
+            
+        except Exception as e:
+            self.logger.error(f"❌ Dimension analysis failed: {e}")
+            return {
+                'n_features': data.shape[1],
+                'n_samples': data.shape[0],
+                'analysis_failed': True,
+                'error': str(e)
+            }
+    
+    def _calculate_feature_correlations(self, 
+                                      data: np.ndarray,
+                                      feature_names: Optional[List[str]] = None) -> Dict[str, float]:
+        """Calculate summary statistics about feature correlations."""
+        try:
+            corr_matrix = np.corrcoef(data.T)
+            
+            # Remove diagonal elements
+            mask = np.triu_indices_from(corr_matrix, k=1)
+            correlations = corr_matrix[mask]
+            
+            # Remove NaN values
+            correlations = correlations[~np.isnan(correlations)]
+            
+            if len(correlations) > 0:
+                return {
+                    'mean_correlation': float(np.mean(np.abs(correlations))),
+                    'max_correlation': float(np.max(np.abs(correlations))),
+                    'min_correlation': float(np.min(np.abs(correlations))),
+                    'high_correlation_pairs': int(np.sum(np.abs(correlations) > 0.8)),
+                    'correlation_std': float(np.std(correlations))
+                }
+            else:
+                return {'correlation_analysis_failed': True}
+                
+        except Exception as e:
+            self.logger.warning(f"Feature correlation analysis failed: {e}")
+            return {'correlation_analysis_failed': True, 'error': str(e)}
     
     def optimize_cluster_number(self, 
                                data: np.ndarray,

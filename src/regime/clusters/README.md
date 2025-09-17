@@ -1,36 +1,66 @@
 # Market Regime Clustering Research Framework
 
-A comprehensive research framework for discovering and analyzing market regime dimensions relevant to trading applications. This framework provides advanced clustering algorithms, feature importance analysis, validation metrics, and ML model training specifically designed for market regime identification.
+A comprehensive research framework for discovering **implicit market dimensions** captured by existing features and assessing their **economic significance** for trading regime identification. This framework integrates with your existing feature engineering pipeline to discover which market dynamics are most relevant for regime-based trading.
 
 ## 🎯 Overview
 
-This framework addresses the key research question: **"What are the dimensions relevant to qualifying market dynamics for trading regime identification?"**
+This framework addresses the key research question: **"What implicit market dimensions are captured by our features, and which are most economically significant for trading regime identification?"**
 
-Key areas of investigation:
-- **Liquidity** (bid-ask spreads, order book depth, market impact)
-- **Market Microstructure** (tick size, order flow, trade intensity)
-- **Volume** (trading volume patterns, volume-price relationships)
+## 🔬 Research Approach
+
+### Integration with Existing Feature Engineering
+- **Uses features from** `src/feature_engineering/feature_generators.py`
+- **Leverages** cross-timeframe analysis and microstructure proxies
+- **Discovers** implicit dimensions from existing comprehensive feature set
+- **Maintains** compatibility with current optimization systems
+
+### Key Research Dimensions
+- **Liquidity** (volume-based proxies, spread indicators from OHLCV)
+- **Market Microstructure** (order flow proxies, trade intensity from existing features)
+- **Volume** (volume patterns, volume-price relationships)
 - **Momentum** (price momentum, trend strength, persistence)
 - **Volatility** (realized volatility, volatility clustering, regime changes)
-- **Correlation** (cross-asset correlations, auto-correlations)
-- **Seasonality** (time-based patterns, cyclical behavior)
+- **Correlation** (auto-correlation patterns, cross-timeframe correlations)
+
+### Economic Significance Focus
+- **Information Ratio** analysis for each dimension
+- **Regime Separability** metrics (economic differences between regimes)
+- **Sharpe Ratio** proxies for trading relevance
+- **Feature Coherence** within dimensions
 
 ## 🏗️ Architecture
 
-The framework consists of 8 main components:
+The framework consists of 7 main components:
 
 ```
 src/regime/clusters/
-├── __init__.py                 # Main exports and framework entry point
-├── dimension_analyzer.py       # Market dimension analysis framework
-├── regime_clusterer.py        # Advanced clustering algorithms
-├── feature_importance.py      # Feature importance analysis methods
-├── validation_metrics.py      # Regime quality validation system
-├── ml_training.py             # ML model training framework
-├── integration_layer.py       # HMM integration and comparison
-├── visualization.py           # Visualization and reporting tools
-├── example_usage.py           # Complete usage examples
-└── README.md                  # This documentation
+├── __init__.py                      # Main exports and framework entry point
+├── dimension_analyzer.py            # Implicit dimension discovery from existing features
+├── regime_clusterer.py             # Clustering with dimension analysis
+├── feature_importance.py           # Economic significance analysis
+├── validation_metrics.py           # Regime quality validation system
+├── integration_layer.py            # HMM timing and integration strategies
+├── visualization.py                # Visualization and reporting tools
+├── refined_example.py              # Research workflow examples
+├── correlation_analysis_explanation.md  # Correlation analysis guide
+└── README.md                       # This documentation
+```
+
+## 🔄 Research Workflows
+
+### 1. Dimension-First Approach
+```
+Features → Dimension Discovery → Economic Significance → Clustering → HMM Enhancement
+```
+
+### 2. HMM-First Approach  
+```
+Features → HMM Regime Discovery → Dimension Analysis → Economic Validation
+```
+
+### 3. Comparative Approach
+```
+Both workflows → Compare Results → Identify Best Strategy
 ```
 
 ## 🚀 Quick Start

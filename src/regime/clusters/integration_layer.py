@@ -41,18 +41,17 @@ from .dimension_analyzer import MarketDimensionAnalyzer, DimensionAnalysisConfig
 from .regime_clusterer import RegimeClusterer, ClusteringConfig
 from .feature_importance import RegimeFeatureImportance, ImportanceConfig
 from .validation_metrics import RegimeValidationMetrics, ValidationConfig
-from .ml_training import RegimeMLTrainer, TrainingConfig
 
 
 class IntegrationMethod(Enum):
     """Enumeration of integration methods."""
-    HMM_ONLY = "hmm_only"
-    CLUSTERING_ONLY = "clustering_only"
-    HMM_ENHANCED = "hmm_enhanced"  # HMM + clustering features
-    CLUSTERING_ENHANCED = "clustering_enhanced"  # Clustering + HMM features
-    HYBRID = "hybrid"  # Combined approach
-    ENSEMBLE = "ensemble"  # Ensemble of both methods
-    COMPARATIVE = "comparative"  # Side-by-side comparison
+    DIMENSION_FIRST = "dimension_first"  # Discover dimensions → then HMM
+    HMM_FIRST = "hmm_first"  # HMM → then dimension analysis
+    CLUSTERING_ONLY = "clustering_only"  # Pure clustering approach
+    HMM_ENHANCED = "hmm_enhanced"  # HMM + discovered dimensions
+    CLUSTERING_ENHANCED = "clustering_enhanced"  # Clustering + HMM priors
+    HYBRID = "hybrid"  # Simultaneous dimension discovery and HMM
+    COMPARATIVE = "comparative"  # Compare all approaches
 
 
 @dataclass
@@ -228,7 +227,6 @@ class HMMIntegrationLayer:
         self.regime_clusterer = RegimeClusterer(ClusteringConfig(n_clusters=self.config.clustering_n_clusters))
         self.feature_importance = RegimeFeatureImportance(ImportanceConfig())
         self.validation_metrics = RegimeValidationMetrics(ValidationConfig())
-        self.ml_trainer = RegimeMLTrainer(TrainingConfig())
         
         # Initialize HMM components if available
         if HMM_AVAILABLE:

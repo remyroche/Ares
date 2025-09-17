@@ -1,15 +1,22 @@
 """
 Market Dimension Analyzer.
 
-This module provides comprehensive analysis of market dimensions that are relevant
-for qualifying market dynamics and regime identification.
+This module analyzes implicit market dimensions captured by existing features
+from the feature engineering pipeline. Instead of generating new features,
+it uses the comprehensive feature set to discover underlying market dimensions
+and their economic significance for regime identification.
 
-Key Dimensions Analyzed:
-- Liquidity (bid-ask spreads, order book depth, market impact)
-- Market Microstructure (tick size, order flow, trade intensity)
-- Volume (trading volume, volume patterns, volume-price relationships)
-- Momentum (price momentum, trend strength, momentum persistence)
-- Volatility (realized volatility, volatility clustering, volatility regimes)
+Key Analysis Goals:
+- Discover implicit dimensions in existing features
+- Assess economic significance of each dimension
+- Identify which market dynamics are most relevant for trading regimes
+- Use existing feature engineering infrastructure for consistency
+
+Integration with Feature Engineering:
+- Uses features from src/feature_engineering/feature_generators.py
+- Leverages cross-timeframe analysis features
+- Incorporates microstructure proxies from existing pipeline
+- Maintains compatibility with existing optimization system
 """
 
 import numpy as np
@@ -23,17 +30,24 @@ import json
 
 from src.utils.logger import system_logger
 
+# Import feature engineering components
+try:
+    from src.feature_engineering.feature_generators import FeatureGenerators
+    from src.feature_engineering.optimized_feature_orchestrator import OptimizedFeatureOrchestrator
+    FEATURE_ENGINEERING_AVAILABLE = True
+except ImportError as e:
+    system_logger.warning(f"Feature engineering components not available: {e}")
+    FEATURE_ENGINEERING_AVAILABLE = False
+
 
 class MarketDimension(Enum):
-    """Enumeration of market dimensions for analysis."""
-    LIQUIDITY = "liquidity"
-    MICROSTRUCTURE = "microstructure"
-    VOLUME = "volume"
-    MOMENTUM = "momentum"
-    VOLATILITY = "volatility"
-    CORRELATION = "correlation"
-    SEASONALITY = "seasonality"
-    NEWS_SENTIMENT = "news_sentiment"
+    """Enumeration of implicit market dimensions discovered from features."""
+    LIQUIDITY = "liquidity"  # Volume-based liquidity proxies, spread indicators
+    MICROSTRUCTURE = "microstructure"  # Order flow proxies, trade intensity
+    VOLUME = "volume"  # Volume patterns, volume-price relationships
+    MOMENTUM = "momentum"  # Price momentum, trend strength, persistence
+    VOLATILITY = "volatility"  # Realized volatility, volatility clustering
+    CORRELATION = "correlation"  # Auto-correlation, cross-timeframe correlations
 
 
 @dataclass
@@ -111,37 +125,251 @@ class MarketDimensionAnalyzer:
         
     def analyze_all_dimensions(self, 
                              market_data: pd.DataFrame,
-                             regime_labels: Optional[np.ndarray] = None) -> Dict[MarketDimension, DimensionMetrics]:
+                             regime_labels: Optional[np.ndarray] = None,
+                             use_existing_features: bool = True) -> Dict[MarketDimension, DimensionMetrics]:
         """
-        Analyze all market dimensions for their relevance to regime identification.
+        Analyze implicit market dimensions using existing feature engineering pipeline.
         
         Args:
             market_data: OHLCV market data
             regime_labels: Optional regime labels for supervised analysis
+            use_existing_features: Whether to use existing feature engineering pipeline
             
         Returns:
             Dictionary mapping dimensions to their analysis metrics
         """
-        self.logger.info("🔍 Starting comprehensive market dimension analysis")
+        self.logger.info("🔍 Starting implicit market dimension analysis using feature engineering pipeline")
         
+        # Generate comprehensive features using existing pipeline
+        if use_existing_features and FEATURE_ENGINEERING_AVAILABLE:
+            feature_data = self._generate_features_from_pipeline(market_data)
+        else:
+            # Fallback to basic feature generation
+            feature_data = self._generate_basic_features(market_data)
+        
+        # Discover implicit dimensions from features
+        results = self._discover_implicit_dimensions(feature_data, regime_labels)
+        
+        # Calculate overall rankings
+        self._calculate_dimension_rankings(results)
+        
+        self.logger.info(f"✅ Completed analysis of {len(results)} implicit dimensions")
+        return results
+    
+    def _generate_features_from_pipeline(self, market_data: pd.DataFrame) -> pd.DataFrame:
+        """Generate features using the existing feature engineering pipeline."""
+        self.logger.info("🔧 Generating features using existing feature engineering pipeline")
+        
+        try:
+            # Initialize feature generators
+            feature_generators = FeatureGenerators()
+            
+            # Generate comprehensive feature set
+            features = pd.DataFrame(index=market_data.index)
+            
+            # Basic OHLCV features
+            features = pd.concat([features, market_data], axis=1)
+            
+            # Generate technical indicators
+            if hasattr(feature_generators, 'generate_technical_features'):
+                tech_features = feature_generators.generate_technical_features(market_data)
+                features = pd.concat([features, tech_features], axis=1)
+            
+            # Generate volume features
+            if hasattr(feature_generators, 'generate_volume_features'):
+                volume_features = feature_generators.generate_volume_features(market_data)
+                features = pd.concat([features, volume_features], axis=1)
+            
+            # Generate volatility features
+            if hasattr(feature_generators, 'generate_volatility_features'):
+                vol_features = feature_generators.generate_volatility_features(market_data)
+                features = pd.concat([features, vol_features], axis=1)
+            
+            # Generate momentum features
+            if hasattr(feature_generators, 'generate_momentum_features'):
+                momentum_features = feature_generators.generate_momentum_features(market_data)
+                features = pd.concat([features, momentum_features], axis=1)
+            
+            # Generate microstructure proxies
+            if hasattr(feature_generators, 'generate_microstructure_features'):
+                micro_features = feature_generators.generate_microstructure_features(market_data)
+                features = pd.concat([features, micro_features], axis=1)
+            
+            self.logger.info(f"✅ Generated {len(features.columns)} features using pipeline")
+            return features.fillna(method='ffill').fillna(0)
+            
+        except Exception as e:
+            self.logger.error(f"❌ Failed to use feature engineering pipeline: {e}")
+            return self._generate_basic_features(market_data)
+    
+    def _generate_basic_features(self, market_data: pd.DataFrame) -> pd.DataFrame:
+        """Generate basic features as fallback."""
+        self.logger.info("🔧 Generating basic features (fallback)")
+        
+        features = market_data.copy()
+        
+        # Basic derived features
+        if 'close' in features.columns:
+            features['returns'] = features['close'].pct_change()
+            features['log_returns'] = np.log(features['close']).diff()
+            features['volatility_20'] = features['returns'].rolling(20).std()
+            features['sma_20'] = features['close'].rolling(20).mean()
+            features['sma_50'] = features['close'].rolling(50).mean()
+        
+        if 'volume' in features.columns:
+            features['volume_sma_20'] = features['volume'].rolling(20).mean()
+            features['volume_ratio'] = features['volume'] / features['volume_sma_20']
+        
+        return features.fillna(method='ffill').fillna(0)
+    
+    def _discover_implicit_dimensions(self, 
+                                    feature_data: pd.DataFrame,
+                                    regime_labels: Optional[np.ndarray] = None) -> Dict[MarketDimension, DimensionMetrics]:
+        """Discover implicit market dimensions from feature data."""
         results = {}
         
-        # Analyze each dimension
-        for dimension in MarketDimension:
-            self.logger.info(f"📊 Analyzing {dimension.value} dimension")
+        # Group features by implicit dimensions
+        dimension_feature_groups = self._group_features_by_dimension(feature_data)
+        
+        # Analyze each dimension group
+        for dimension, feature_group in dimension_feature_groups.items():
+            self.logger.info(f"📊 Analyzing {dimension.value} dimension ({len(feature_group.columns)} features)")
             try:
-                metrics = self._analyze_single_dimension(market_data, dimension, regime_labels)
+                metrics = self._analyze_dimension_group(feature_group, dimension, regime_labels)
                 results[dimension] = metrics
                 self.dimension_results[dimension] = metrics
             except Exception as e:
                 self.logger.error(f"❌ Error analyzing {dimension.value}: {e}")
                 continue
         
-        # Calculate overall rankings
-        self._calculate_dimension_rankings(results)
-        
-        self.logger.info(f"✅ Completed analysis of {len(results)} dimensions")
         return results
+    
+    def _group_features_by_dimension(self, feature_data: pd.DataFrame) -> Dict[MarketDimension, pd.DataFrame]:
+        """Group features by their implicit market dimension."""
+        dimension_groups = {dimension: pd.DataFrame(index=feature_data.index) for dimension in MarketDimension}
+        
+        for column in feature_data.columns:
+            column_lower = column.lower()
+            
+            # Liquidity dimension features
+            if any(keyword in column_lower for keyword in ['volume', 'spread', 'liquidity', 'depth', 'impact']):
+                dimension_groups[MarketDimension.LIQUIDITY][column] = feature_data[column]
+            
+            # Microstructure dimension features
+            elif any(keyword in column_lower for keyword in ['tick', 'trade', 'order', 'flow', 'intensity', 'micro']):
+                dimension_groups[MarketDimension.MICROSTRUCTURE][column] = feature_data[column]
+            
+            # Volume dimension features
+            elif any(keyword in column_lower for keyword in ['vol', 'obv', 'vwap', 'turnover']):
+                dimension_groups[MarketDimension.VOLUME][column] = feature_data[column]
+            
+            # Momentum dimension features
+            elif any(keyword in column_lower for keyword in ['momentum', 'rsi', 'macd', 'roc', 'trend', 'ma', 'sma', 'ema']):
+                dimension_groups[MarketDimension.MOMENTUM][column] = feature_data[column]
+            
+            # Volatility dimension features
+            elif any(keyword in column_lower for keyword in ['volatility', 'vol', 'atr', 'std', 'var', 'garch']):
+                dimension_groups[MarketDimension.VOLATILITY][column] = feature_data[column]
+            
+            # Correlation dimension features
+            elif any(keyword in column_lower for keyword in ['corr', 'correlation', 'lag', 'autocorr']):
+                dimension_groups[MarketDimension.CORRELATION][column] = feature_data[column]
+            
+            # Default to momentum if unclear
+            else:
+                dimension_groups[MarketDimension.MOMENTUM][column] = feature_data[column]
+        
+        # Remove empty dimension groups
+        dimension_groups = {dim: df for dim, df in dimension_groups.items() if not df.empty}
+        
+        return dimension_groups
+    
+    def _analyze_dimension_group(self, 
+                               feature_group: pd.DataFrame,
+                               dimension: MarketDimension,
+                               regime_labels: Optional[np.ndarray] = None) -> DimensionMetrics:
+        """Analyze a group of features representing an implicit dimension."""
+        
+        # Calculate dimension metrics using the feature group
+        importance_score = self._calculate_importance_score(feature_group, regime_labels)
+        stability_score = self._calculate_stability_score(feature_group)
+        predictive_power = self._calculate_predictive_power(feature_group, regime_labels)
+        regime_discriminability = self._calculate_regime_discriminability(feature_group, regime_labels)
+        
+        # Additional dimension-specific metrics
+        dimension_metrics = self._calculate_dimension_specific_metrics(feature_group, dimension)
+        
+        # Add economic significance analysis
+        economic_significance = self._assess_economic_significance(feature_group, dimension, regime_labels)
+        dimension_metrics.update(economic_significance)
+        
+        return DimensionMetrics(
+            dimension=dimension,
+            importance_score=importance_score,
+            stability_score=stability_score,
+            predictive_power=predictive_power,
+            regime_discriminability=regime_discriminability,
+            feature_names=list(feature_group.columns),
+            metrics=dimension_metrics
+        )
+    
+    def _assess_economic_significance(self, 
+                                    feature_group: pd.DataFrame,
+                                    dimension: MarketDimension,
+                                    regime_labels: Optional[np.ndarray] = None) -> Dict[str, float]:
+        """Assess the economic significance of a market dimension."""
+        significance_metrics = {}
+        
+        try:
+            # Economic significance based on return prediction
+            if 'returns' in feature_group.columns or any('return' in col.lower() for col in feature_group.columns):
+                return_cols = [col for col in feature_group.columns if 'return' in col.lower()]
+                if return_cols:
+                    returns = feature_group[return_cols[0]]
+                    
+                    # Information ratio (excess return / tracking error)
+                    excess_return = returns.mean()
+                    tracking_error = returns.std()
+                    info_ratio = excess_return / tracking_error if tracking_error > 0 else 0
+                    significance_metrics['information_ratio'] = float(info_ratio)
+                    
+                    # Sharpe ratio proxy
+                    sharpe_proxy = excess_return / tracking_error * np.sqrt(252) if tracking_error > 0 else 0
+                    significance_metrics['sharpe_ratio_proxy'] = float(sharpe_proxy)
+            
+            # Regime-specific economic significance
+            if regime_labels is not None:
+                # Calculate regime-specific feature statistics
+                unique_regimes = np.unique(regime_labels)
+                regime_means = {}
+                regime_stds = {}
+                
+                for regime in unique_regimes:
+                    regime_mask = regime_labels == regime
+                    regime_data = feature_group[regime_mask].mean(axis=1)  # Average across features
+                    regime_means[regime] = float(regime_data.mean())
+                    regime_stds[regime] = float(regime_data.std())
+                
+                # Economic separability (difference in means relative to pooled std)
+                if len(regime_means) > 1:
+                    regime_values = list(regime_means.values())
+                    pooled_std = np.mean(list(regime_stds.values()))
+                    separability = (max(regime_values) - min(regime_values)) / pooled_std if pooled_std > 0 else 0
+                    significance_metrics['regime_separability'] = float(separability)
+                
+                significance_metrics['regime_means'] = regime_means
+                significance_metrics['regime_stds'] = regime_stds
+            
+            # Feature coherence within dimension
+            if len(feature_group.columns) > 1:
+                correlation_matrix = feature_group.corr()
+                avg_correlation = correlation_matrix.values[np.triu_indices_from(correlation_matrix.values, k=1)].mean()
+                significance_metrics['dimension_coherence'] = float(avg_correlation)
+            
+        except Exception as e:
+            self.logger.warning(f"Could not calculate economic significance for {dimension.value}: {e}")
+        
+        return significance_metrics
     
     def _analyze_single_dimension(self, 
                                 market_data: pd.DataFrame,

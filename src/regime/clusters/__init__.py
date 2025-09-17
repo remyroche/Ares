@@ -13,22 +13,35 @@ Key Components:
 - Integration: Bridge with existing HMM systems
 """
 
-from .dimension_analyzer import MarketDimensionAnalyzer
-from .regime_clusterer import RegimeClusterer
-from .feature_importance import RegimeFeatureImportance
-from .ml_training import RegimeMLTrainer
-from .validation_metrics import RegimeValidationMetrics
-from .integration_layer import HMMIntegrationLayer
-from .visualization import RegimeVisualization
+from .dimension_analyzer import MarketDimensionAnalyzer, DimensionAnalysisConfig, MarketDimension
+from .regime_clusterer import RegimeClusterer, ClusteringConfig, ClusteringMethod
+from .feature_importance import RegimeFeatureImportance, ImportanceConfig, ImportanceMethod
+from .validation_metrics import RegimeValidationMetrics, ValidationConfig
+from .integration_layer import HMMIntegrationLayer, IntegrationConfig, IntegrationMethod
+from .visualization import RegimeVisualization, VisualizationConfig
 
 __all__ = [
+    # Main classes
     'MarketDimensionAnalyzer',
     'RegimeClusterer', 
     'RegimeFeatureImportance',
-    'RegimeMLTrainer',
     'RegimeValidationMetrics',
     'HMMIntegrationLayer',
-    'RegimeVisualization'
+    'RegimeVisualization',
+    
+    # Configuration classes
+    'DimensionAnalysisConfig',
+    'ClusteringConfig',
+    'ImportanceConfig',
+    'ValidationConfig',
+    'IntegrationConfig',
+    'VisualizationConfig',
+    
+    # Enums
+    'MarketDimension',
+    'ClusteringMethod',
+    'ImportanceMethod',
+    'IntegrationMethod'
 ]
 
 __version__ = "1.0.0"

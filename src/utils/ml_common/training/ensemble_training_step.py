@@ -98,7 +98,9 @@ class EnsembleTrainingStep(BaseTrainingStep):
                 estimators=list(base_models.items()),
                 final_estimator=meta_learner,
                 cv=self.config.cv_folds,
-                n_jobs=-1
+                n_jobs=-1,
+                stack_method='predict_proba',
+                passthrough=True
             )
             
         else:

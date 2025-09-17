@@ -100,14 +100,15 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
                 config = EnsembleTrainingConfig(
                     model_name="hmm_ensemble_models",
                     timeframe="1h",
-                    model_types=["catboost", "elastic_net", "ensemble_rf"],
+                    base_models=["CatBoostClassifier", "LogisticRegression", "RandomForestClassifier"],
+                    meta_model="LogisticRegression",
                     hpo_n_trials=100,
                     hpo_timeout_seconds=3600,
                     min_samples_per_regime=1000,
                     enable_data_augmentation=True,
                     augmentation_method="smote",
                     model_save_path="./models/hmm_ensemble_models",
-                    evaluation_metrics=["accuracy", "f1_score", "precision", "recall", "auc"]
+                    evaluation_metrics=["accuracy", "f1_score", "precision", "recall", "log_loss", "auc"]
                 )
                 tprint("📋 Using default configuration for HMM ensemble training")
 
@@ -122,7 +123,7 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
                 'initialization_time': time.time() - self.start_time,
                 'vectorization_enabled': self.enable_vectorization,
                 'config_used': config.model_name,
-                'model_types': config.model_types,
+                'model_types': getattr(config, 'base_models', []),
                 'timeframe': config.timeframe,
                 'hardware_optimization': {
                     'gpu_available': self.gpu_manager is not None,
@@ -502,84 +503,93 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
             Dictionary of ensemble models
         """
         try:
-            from catboost import CatBoostRegressor
-            from sklearn.linear_model import ElasticNet
-            from sklearn.ensemble import RandomForestRegressor
+            from catboost import CatBoostClassifier
+            from sklearn.linear_model import LogisticRegression
+            from sklearn.ensemble import RandomForestClassifier
             
             # Create ensemble models with validated parameters using math validation
             ensemble_models = {}
             
-            # CatBoost with validated parameters (Primary: Speed + robustness)
+            # CatBoostClassifier with validated parameters (Primary: Speed + robustness)
             try:
                 iterations = self.math_validator.validate_positive(1000, "CatBoost iterations")
                 learning_rate = self.math_validator.validate_range(0.05, 0.0, 1.0, "CatBoost learning_rate")
                 depth = self.math_validator.validate_positive(6, "CatBoost depth")
                 
-                ensemble_models['catboost'] = CatBoostRegressor(
+                ensemble_models['CatBoostClassifier'] = CatBoostClassifier(
                     iterations=int(iterations),
                     learning_rate=learning_rate,
                     depth=int(depth),
                     random_seed=42,
-                    verbose=False
+                    verbose=False,
+                    loss_function='MultiClass'
                 )
                 tprint("✅ CatBoost model created with validated parameters")
             except Exception as e:
                 tprint(f"⚠️ CatBoost model creation failed: {e}")
                 # Fallback to default parameters
-                ensemble_models['catboost'] = CatBoostRegressor(
+                ensemble_models['CatBoostClassifier'] = CatBoostClassifier(
                     iterations=1000,
                     learning_rate=0.05,
                     depth=6,
                     random_seed=42,
-                    verbose=False
+                    verbose=False,
+                    loss_function='MultiClass'
                 )
             
-            # Elastic Net with validated parameters (Primary: Fast baseline)
+            # LogisticRegression with elastic-net regularization (Primary: Fast baseline)
             try:
-                alpha = self.math_validator.validate_positive(0.1, "ElasticNet alpha")
-                l1_ratio = self.math_validator.validate_range(0.5, 0.0, 1.0, "ElasticNet l1_ratio")
-                max_iter = self.math_validator.validate_positive(1000, "ElasticNet max_iter")
+                max_iter = self.math_validator.validate_positive(1000, "LogReg max_iter")
+                l1_ratio = self.math_validator.validate_range(0.5, 0.0, 1.0, "LogReg l1_ratio")
                 
-                ensemble_models['elastic_net'] = ElasticNet(
+                ensemble_models['LogisticRegression'] = LogisticRegression(
                     random_state=43,
                     max_iter=int(max_iter),
-                    alpha=alpha,
-                    l1_ratio=l1_ratio
+                    penalty='elasticnet',
+                    l1_ratio=l1_ratio,
+                    solver='saga',
+                    class_weight='balanced',
+                    multi_class='auto'
                 )
-                tprint("✅ Elastic Net model created with validated parameters")
+                tprint("✅ LogisticRegression (elastic-net) created with validated parameters")
             except Exception as e:
-                tprint(f"⚠️ Elastic Net model creation failed: {e}")
+                tprint(f"⚠️ LogisticRegression creation failed: {e}")
                 # Fallback to default parameters
-                ensemble_models['elastic_net'] = ElasticNet(
+                ensemble_models['LogisticRegression'] = LogisticRegression(
                     random_state=43,
                     max_iter=1000,
-                    alpha=0.1,
-                    l1_ratio=0.5
+                    penalty='elasticnet',
+                    l1_ratio=0.5,
+                    solver='saga',
+                    class_weight='balanced',
+                    multi_class='auto'
                 )
             
-            # Random Forest with validated parameters (Meta: Speed + Efficient)
+            # RandomForestClassifier with validated parameters (Meta: Speed + Efficient)
             try:
-                n_estimators = self.math_validator.validate_positive(100, "RandomForest n_estimators")
+                n_estimators = self.math_validator.validate_positive(200, "RandomForest n_estimators")
                 max_depth = self.math_validator.validate_positive(10, "RandomForest max_depth")
                 min_samples_split = self.math_validator.validate_positive(2, "RandomForest min_samples_split")
                 
-                ensemble_models['ensemble_rf'] = RandomForestRegressor(
+                ensemble_models['RandomForestClassifier'] = RandomForestClassifier(
                     n_estimators=int(n_estimators),
                     max_depth=int(max_depth),
                     min_samples_split=int(min_samples_split),
                     random_state=44,
-                    n_jobs=-1
+                    n_jobs=-1,
+                    class_weight='balanced'
                 )
                 tprint("✅ Random Forest model created with validated parameters")
             except Exception as e:
                 tprint(f"⚠️ Random Forest model creation failed: {e}")
                 # Fallback to default parameters
-                ensemble_models['ensemble_rf'] = RandomForestRegressor(
-                    n_estimators=100,
+                ensemble_models['RandomForestClassifier'] = RandomForestClassifier(
+                    n_estimators=200,
                     max_depth=10,
                     min_samples_split=2,
                     random_state=44,
-                    n_jobs=-1
+                    n_jobs=-1,
+                    class_weight='balanced'
                 )
             
             tprint(f"📊 Created {len(ensemble_models)} ensemble models for HMM training using common utilities")

@@ -3511,24 +3511,26 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                 'volume_differentiation': float(volume_diff_score),
                 'volatility_differentiation': float(volatility_diff_score),
                 'momentum_differentiation': float(momentum_diff_score),
-                'bull_bear_validation': float(bull_bear_score),
+                'combined_momentum_score': float(combined_momentum_score),
+                'bull_bear_validation': float(bull_bear_score),  # Kept for reference
                 'similarity_validation': float(similarity_score)
             }
             
-            # Weighted overall score
+            # Weighted overall score (Bull/Bear validation is part of momentum analysis)
             weights = {
-                'volume': 0.15,
-                'volatility': 0.25,
-                'momentum': 0.30,
-                'bull_bear': 0.20,
+                'volume': 0.20,
+                'volatility': 0.35,
+                'momentum': 0.35,  # Includes Bull/Bear validation
                 'similarity': 0.10
             }
+            
+            # Combine momentum score with bull/bear validation (they measure the same thing)
+            combined_momentum_score = (momentum_diff_score * 0.7 + bull_bear_score * 0.3)
             
             weighted_score = (
                 volume_diff_score * weights['volume'] +
                 volatility_diff_score * weights['volatility'] +
-                momentum_diff_score * weights['momentum'] +
-                bull_bear_score * weights['bull_bear'] +
+                combined_momentum_score * weights['momentum'] +
                 similarity_score * weights['similarity']
             )
             
@@ -3553,10 +3555,8 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                 recommendations.append('Consider improving volume-based regime characterization')
             if volatility_diff_score < 0.5:
                 recommendations.append('Consider improving volatility-based regime characterization')
-            if momentum_diff_score < 0.5:
-                recommendations.append('Consider improving momentum-based regime characterization')
-            if bull_bear_score < 0.6:
-                recommendations.append('Clustering may not clearly distinguish Bull/Bear/Sideways markets')
+            if combined_momentum_score < 0.5:
+                recommendations.append('Consider improving momentum-based regime characterization and Bull/Bear/Sideways distinction')
             if similarity_score < 0.6:
                 recommendations.append('Regimes within clusters may not be sufficiently similar')
             

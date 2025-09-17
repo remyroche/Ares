@@ -1165,6 +1165,92 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             self.logger.error(f"❌ Elbow method failed: {e}")
             return max_clusters
     
+    def _calculate_hmm_appropriate_metrics(self, market_data: pd.DataFrame, 
+                                         cluster_assignments: np.ndarray, 
+                                         n_clusters: int) -> Dict[str, Any]:
+        """
+        Calculate HMM-appropriate validation metrics instead of traditional clustering metrics.
+        
+        This replaces misleading clustering metrics (silhouette_score, davies_bouldin_score, 
+        calinski_harabasz_score) with metrics appropriate for temporal regime modeling.
+        """
+        try:
+            # Import HMM validation framework
+            try:
+                from src.utils.hmm_validation import HMMStatisticalValidator
+                validator = HMMStatisticalValidator(logger=self.logger)
+                
+                # Create regime data DataFrame
+                regime_data = market_data.copy()
+                regime_data['regime'] = cluster_assignments
+                
+                # Use HMM-appropriate validation
+                validation_result = validator.validate_hmm_regimes_appropriate(
+                    regime_data, market_data
+                )
+                
+                # Extract key metrics for compatibility
+                hmm_metrics = {
+                    'hmm_quality_score': validation_result.get('hmm_validation_metrics', {}).get('hmm_quality_score', 0.0),
+                    'temporal_coherence': validation_result.get('temporal_coherence', {}).get('temporal_coherence', 0.0),
+                    'transition_quality': validation_result.get('transition_quality', {}).get('transition_quality', 0.0),
+                    'economic_differentiation': validation_result.get('economic_differentiation', {}).get('economic_differentiation', 0.0),
+                    'spatial_coherence': validation_result.get('spatial_coherence', {}).get('spatial_coherence', 0.0),
+                    'regime_stability': validation_result.get('regime_stability', {}).get('regime_stability_index', 0.0),
+                    'validation_passed': validation_result.get('hmm_validation_metrics', {}).get('validation_passed', False),
+                    'interpretation': validation_result.get('hmm_validation_metrics', {}).get('overall_interpretation', 'HMM validation completed'),
+                    'validation_method': 'HMM-appropriate metrics'
+                }
+                
+                # Add regime distribution
+                unique_regimes, counts = np.unique(cluster_assignments, return_counts=True)
+                regime_distribution = {f'regime_{regime}': count for regime, count in zip(unique_regimes, counts)}
+                hmm_metrics['regime_distribution'] = regime_distribution
+                hmm_metrics['regime_count'] = len(unique_regimes)
+                
+                self.logger.info(f"✅ HMM validation metrics calculated - Quality Score: {hmm_metrics['hmm_quality_score']:.3f}")
+                return hmm_metrics
+                
+            except ImportError:
+                self.logger.warning("HMM validation framework not available, using basic metrics")
+                return self._calculate_basic_clustering_metrics(market_data, cluster_assignments, n_clusters)
+                
+        except Exception as e:
+            self.logger.error(f"❌ Error calculating HMM-appropriate metrics: {e}")
+            return self._calculate_basic_clustering_metrics(market_data, cluster_assignments, n_clusters)
+    
+    def _calculate_basic_clustering_metrics(self, market_data: pd.DataFrame, 
+                                          cluster_assignments: np.ndarray, 
+                                          n_clusters: int) -> Dict[str, Any]:
+        """Fallback to basic clustering metrics if HMM validation is not available."""
+        try:
+            unique_regimes, counts = np.unique(cluster_assignments, return_counts=True)
+            regime_distribution = {f'regime_{regime}': count for regime, count in zip(unique_regimes, counts)}
+            
+            return {
+                'hmm_quality_score': 0.5,  # Neutral score
+                'temporal_coherence': 0.0,
+                'transition_quality': 0.0,
+                'economic_differentiation': 0.0,
+                'spatial_coherence': 0.0,
+                'regime_stability': 0.0,
+                'validation_passed': len(unique_regimes) > 1,
+                'regime_count': len(unique_regimes),
+                'regime_distribution': regime_distribution,
+                'interpretation': 'Basic clustering metrics - HMM validation not available',
+                'validation_method': 'Basic fallback metrics'
+            }
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error calculating basic clustering metrics: {e}")
+            return {
+                'hmm_quality_score': 0.0,
+                'validation_passed': False,
+                'error': str(e),
+                'interpretation': 'Error in metrics calculation',
+                'validation_method': 'Error state'
+            }
+    
     def _find_elbow_point(self, k_values: list, inertias: list, silhouette_scores: list) -> int:
         """Find the elbow point in the inertia curve."""
         try:

@@ -21,6 +21,7 @@ from pathlib import Path
 import logging
 import pickle
 import warnings
+from datetime import datetime
 warnings.filterwarnings('ignore')
 
 # Import existing infrastructure
@@ -53,6 +54,10 @@ from src.core.errors import (
 from src.utils.logger import system_logger
 from src.utils.data.klines_parquet import get_klines_manager
 from src.utils.tprint import tprint
+
+# Import our standardized utilities
+from .validation_utils import get_validator, ValidationErrorType, ValidationResult, validate_training_input, validate_pipeline_state, create_standardized_error
+from .config_utils import get_config_manager, get_path_manager
 
 logger = system_logger.getChild('RegimeDataSplittingEnhanced')
 
@@ -123,18 +128,20 @@ class HMMRegimeTagger:
     
     def create_features_for_tagging(self, market_data: pd.DataFrame) -> pd.DataFrame:
         """Create features for HMM regime tagging."""
-        # Input validation
-        if market_data is None:
-            raise ValueError("VALIDATION_ERROR: market_data is None. Action required: Provide valid market data DataFrame.")
+        # Input validation using standardized validator
+        validator = get_validator(self.logger)
         
-        if not isinstance(market_data, pd.DataFrame):
-            raise ValueError(f"VALIDATION_ERROR: market_data must be a DataFrame, got {type(market_data)}. Action required: Convert data to pandas DataFrame.")
-        
-        if market_data.empty:
-            raise ValueError("VALIDATION_ERROR: market_data is empty. Action required: Provide non-empty market data.")
+        validation_result = validator.validate_dataframe(market_data, "market_data")
+        if not validation_result.valid:
+            raise ValueError(validation_result.errors[0])
         
         if self.feature_generator is None:
-            raise ValueError("CONFIG_ERROR: Feature generator not initialized. Action required: Initialize HMMRegimeTagger with proper configuration.")
+            error_msg = create_standardized_error(
+                ValidationErrorType.CONFIG_ERROR,
+                "Feature generator not initialized",
+                "Initialize HMMRegimeTagger with proper configuration"
+            )
+            raise ValueError(error_msg)
         
         # Use existing feature generator for 200+ features
         features = self.feature_generator.generate_all_features(market_data)
@@ -144,18 +151,20 @@ class HMMRegimeTagger:
     
     def select_features_for_tagging(self, X: pd.DataFrame, is_classification: bool = True) -> pd.DataFrame:
         """Select features for HMM regime tagging."""
-        # Input validation
-        if X is None:
-            raise ValueError("VALIDATION_ERROR: X is None. Action required: Provide valid feature DataFrame.")
+        # Input validation using standardized validator
+        validator = get_validator(self.logger)
         
-        if not isinstance(X, pd.DataFrame):
-            raise ValueError(f"VALIDATION_ERROR: X must be a DataFrame, got {type(X)}. Action required: Convert features to pandas DataFrame.")
-        
-        if X.empty:
-            raise ValueError("VALIDATION_ERROR: X is empty. Action required: Provide non-empty feature data.")
+        validation_result = validator.validate_dataframe(X, "feature_data")
+        if not validation_result.valid:
+            raise ValueError(validation_result.errors[0])
         
         if not isinstance(is_classification, bool):
-            raise ValueError(f"VALIDATION_ERROR: is_classification must be a boolean, got {type(is_classification)}. Action required: Set is_classification to True or False.")
+            error_msg = create_standardized_error(
+                ValidationErrorType.VALIDATION_ERROR,
+                f"is_classification must be a boolean, got {type(is_classification)}",
+                "Set is_classification to True or False"
+            )
+            raise ValueError(error_msg)
         
         if self.feature_selector is None:
             # Return all features if no feature selector
@@ -285,6 +294,11 @@ class RegimeDataSplittingEnhanced:
         self.logger = logger.getChild('RegimeDataSplittingEnhanced')
         self.hmm_tagger = None
         
+        # Initialize configuration and path managers
+        self.config_manager = get_config_manager(config)
+        self.path_manager = get_path_manager(config)
+        self.validator = get_validator(self.logger)
+        
         if HMM_TRAINING_AVAILABLE:
             self.hmm_tagger = HMMRegimeTagger(config)
     
@@ -335,7 +349,7 @@ class RegimeDataSplittingEnhanced:
             # Step 2: Load and validate market data
             tprint('📊 Step 2: Loading and validating market data...')
             market_data = await self._load_and_validate_market_data(symbol, exchange, timeframe, data_dir)
-            if market_data is None or len(market_data) == 0:
+            if market_data is None or market_data.empty:
                 tprint('❌ No market data available for regime tagging')
                 raise ValueError("No market data available for regime tagging")
             tprint(f'✅ Market data loaded: {market_data.shape}')
@@ -421,7 +435,7 @@ class RegimeDataSplittingEnhanced:
                 regime_states = self._extract_regime_states_from_pipeline(pipeline_state)
                 regime_probabilities = self._extract_regime_probabilities_from_pipeline(pipeline_state)
                 
-                if len(regime_states) == 0:
+                if not regime_states:
                     raise ValueError("No regime data available for tagging")
                 
                 # Align data lengths with validation
@@ -538,35 +552,25 @@ class RegimeDataSplittingEnhanced:
             }
     
     def _validate_enhanced_inputs(self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
-        """Validate inputs with enhanced error checking."""
+        """Validate inputs with enhanced error checking using standardized validation."""
+        # Use standardized validation
+        training_input_result = validate_training_input(training_input)
+        pipeline_state_result = validate_pipeline_state(pipeline_state)
+        
+        # Combine results
         validation_result = {
-            'valid': True,
-            'errors': [],
-            'warnings': []
+            'valid': training_input_result.valid and pipeline_state_result.valid,
+            'errors': training_input_result.errors + pipeline_state_result.errors,
+            'warnings': training_input_result.warnings + pipeline_state_result.warnings
         }
-        
-        # Check training input with standardized error messages
-        if not isinstance(training_input, dict):
-            validation_result['valid'] = False
-            validation_result['errors'].append("VALIDATION_ERROR: Training input must be a dictionary. Action required: Provide training_input as dict.")
-        
-        # Check required parameters
-        required_params = ['symbol', 'exchange', 'timeframe']
-        for param in required_params:
-            if param not in training_input or not training_input[param]:
-                validation_result['valid'] = False
-                validation_result['errors'].append(f"CONFIG_ERROR: Missing required parameter '{param}'. Action required: Set training_input['{param}'].")
-        
-        # Check pipeline state
-        if not isinstance(pipeline_state, dict):
-            validation_result['warnings'].append("WARNING: Pipeline state is not a dictionary. Action suggested: Initialize pipeline_state as dict.")
         
         return validation_result
     
     async def _load_and_validate_market_data(self, symbol: str, exchange: str, timeframe: str, data_dir: str) -> Optional[pd.DataFrame]:
         """Load and validate market data with enhanced error handling."""
         try:
-            data_path = Path(data_dir) / 'training' / f'{exchange}_{symbol}_{timeframe}_market_data.parquet'
+            # Use path manager for consistent path handling
+            data_path = self.path_manager.get_market_data_path(exchange, symbol, timeframe, data_dir)
             
             if not data_path.exists():
                 self.logger.warning(f"⚠️ Market data file not found: {data_path}")
@@ -736,8 +740,9 @@ class RegimeDataSplittingEnhanced:
     async def _save_tagged_data_with_validation(self, market_data: pd.DataFrame, symbol: str, exchange: str, timeframe: str, data_dir: str) -> Dict[str, Any]:
         """Save tagged data with enhanced validation."""
         try:
-            output_path = Path(data_dir) / 'training' / f'{exchange}_{symbol}_{timeframe}_regime_tagged_data.parquet'
-            output_path.parent.mkdir(parents=True, exist_ok=True)
+            # Use path manager for consistent path handling
+            output_path = self.path_manager.get_regime_tagged_data_path(exchange, symbol, timeframe, data_dir)
+            self.path_manager.ensure_directories_exist(output_path)
             
             # Validate data before saving
             if market_data.empty:

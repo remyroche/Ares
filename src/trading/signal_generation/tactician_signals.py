@@ -309,10 +309,11 @@ class TacticianSignalGenerator:
             # Combined confidence
             combined_confidence = (analyst_confidence + timing_confidence) / 2
             
-            # Kelly criterion calculation
+            # Kelly criterion calculation for position sizing
+            # Note: These values represent actual trading outcomes, not model training targets
             win_probability = combined_confidence
-            avg_win = 0.02  # 2% average win
-            avg_loss = 0.01  # 1% average loss
+            avg_win = 0.005   # 0.5% average win (realistic trading outcome expectation)
+            avg_loss = 0.003  # 0.3% average loss (realistic risk management)
             
             kelly_fraction = (win_probability * avg_win - (1 - win_probability) * avg_loss) / avg_win
             kelly_fraction = max(0, min(kelly_fraction, self.kelly_fraction))  # Cap at configured fraction

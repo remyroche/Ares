@@ -1271,7 +1271,7 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
         
         # Try to save artifacts using serialization utilities
         try:
-            artifact_path = f"artifacts/feature_lookback_optimization_{self.config.symbol}_{self.config.exchange}_{self.config.timeframe}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+            artifact_path = f"artifacts/feature_lookback_optimization_artifacts.json"
             
             # Ensure directory exists
             from pathlib import Path

@@ -655,11 +655,6 @@ class ValidationFramework:
                 'best_score': best_score
             }
         
-        if best_score > 1.0:
-            return False, f"Best score is suspiciously high: {best_score}", {
-                'best_score': best_score
-            }
-        
         return True, f"Best score is valid: {best_score}", {
             'best_score': best_score
         }

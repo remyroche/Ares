@@ -1,4 +1,4 @@
-"""
+""""""
 HMM Regime Discovery Component.
 
 This component discovers market regimes using Hidden Markov Models.
@@ -147,6 +147,7 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
 
             artifacts = {
                 'hmm_regime_discovery_result': {
+                    # Core regime data
                     'regime_models': regime_models,
                     'regime_assignments': regime_assignments,
                     'regime_count': len(regime_models),

@@ -14,6 +14,9 @@ from pathlib import Path
 import warnings
 
 from src.utils.tprint import tprint
+from src.utils.common_operations import safe_divide, safe_float, safe_int, ensure_directory
+from src.utils.math_validation import validate_finite, validate_positive, validate_range
+from src.utils.serialization_utils import UniversalSerializer
 
 # Using tprint for all logging - no logger needed
 
@@ -102,10 +105,9 @@ class HMMTrainingReporter:
             output_dir: Directory to save reports
         """
         self.output_dir = Path(output_dir)
-        self.output_dir.mkdir(exist_ok=True)
-        self.logger = logger.getChild('HMMTrainingReporter')
+        ensure_directory(self.output_dir)
         
-        self.logger.info(f"✅ Enhanced Reporter initialized (output: {self.output_dir})")
+        tprint(f"✅ Enhanced Reporter initialized (output: {self.output_dir})")
     
     def generate_comprehensive_report(
         self,
@@ -126,7 +128,7 @@ class HMMTrainingReporter:
         Returns:
             Comprehensive report dictionary
         """
-        self.logger.info("🔄 Generating comprehensive training report...")
+        tprint("🔄 Generating comprehensive training report...")
         
         try:
             # Extract and structure data
@@ -183,11 +185,11 @@ class HMMTrainingReporter:
             # Save report
             self._save_report(report, kwargs)
             
-            self.logger.info("✅ Comprehensive report generated successfully")
+            tprint("✅ Comprehensive report generated successfully")
             return report
             
         except Exception as e:
-            self.logger.error(f"❌ Failed to generate comprehensive report: {e}")
+            tprint(f"❌ Failed to generate comprehensive report: {e}")
             return self._create_error_report(str(e))
     
     def _extract_model_summaries(self, training_results: Dict[str, Any]) -> List[ModelSummary]:
@@ -256,7 +258,7 @@ class HMMTrainingReporter:
                 model_summaries.append(model_summary)
                 
             except Exception as e:
-                self.logger.warning(f"⚠️ Failed to extract summary for {model_name}: {e}")
+                tprint(f"⚠️ Failed to extract summary for {model_name}: {e}")
                 # Create minimal summary for failed extraction
                 model_summaries.append(ModelSummary(
                     name=model_name,
@@ -297,9 +299,9 @@ class HMMTrainingReporter:
         """Analyze feature selection and importance."""
         metadata = training_results.get('metadata', {})
         
-        total_features = metadata.get('total_features', 0)
-        selected_features = metadata.get('selected_features', 0)
-        feature_selection_ratio = selected_features / max(total_features, 1)
+        total_features = safe_int(metadata.get('total_features', 0), 0)
+        selected_features = safe_int(metadata.get('selected_features', 0), 0)
+        feature_selection_ratio = safe_divide(selected_features, max(total_features, 1), 0.0)
         
         # Extract top features from model results
         top_features = []
@@ -313,9 +315,9 @@ class HMMTrainingReporter:
                         feature_importance_scores[feature] = []
                     feature_importance_scores[feature].append(importance)
         
-        # Calculate average importance and get top features
+        # Calculate average importance and get top features using safe operations
         if feature_importance_scores:
-            avg_importance = {feature: np.mean(scores) for feature, scores in feature_importance_scores.items()}
+            avg_importance = {feature: safe_float(np.mean(scores), 0.0) for feature, scores in feature_importance_scores.items()}
             top_features = sorted(avg_importance.items(), key=lambda x: x[1], reverse=True)[:10]
         
         return FeatureAnalysis(
@@ -334,10 +336,13 @@ class HMMTrainingReporter:
         
         total_regimes = len(regime_distribution)
         
-        # Calculate regime balance score
+        # Calculate regime balance score using safe operations
         if regime_distribution:
-            regime_counts = [info['count'] for info in regime_distribution.values()]
-            regime_balance_score = np.min(regime_counts) / np.max(regime_counts)
+            regime_counts = [safe_int(info.get('count', 0), 0) for info in regime_distribution.values()]
+            if regime_counts:
+                regime_balance_score = safe_divide(min(regime_counts), max(regime_counts), 0.0)
+            else:
+                regime_balance_score = 0.0
         else:
             regime_balance_score = 0.0
         
@@ -359,16 +364,16 @@ class HMMTrainingReporter:
         
         for model_result in model_results.values():
             if hasattr(model_result, 'metrics'):
-                training_times.append(model_result.metrics.training_time)
-                memory_usage.append(model_result.metrics.memory_usage_mb)
+                training_times.append(safe_float(model_result.metrics.training_time, 0.0))
+                memory_usage.append(safe_float(model_result.metrics.memory_usage_mb, 0.0))
             elif isinstance(model_result, dict):
-                training_times.append(model_result.get('training_time', 0.0))
-                memory_usage.append(model_result.get('memory_usage_mb', 0.0))
+                training_times.append(safe_float(model_result.get('training_time', 0.0), 0.0))
+                memory_usage.append(safe_float(model_result.get('memory_usage_mb', 0.0), 0.0))
         
         return ComputationalMetrics(
-            total_execution_time=total_execution_time,
-            average_training_time=np.mean(training_times) if training_times else 0.0,
-            memory_peak_usage_mb=np.max(memory_usage) if memory_usage else 0.0,
+            total_execution_time=safe_float(total_execution_time, 0.0),
+            average_training_time=safe_float(np.mean(training_times) if training_times else 0.0, 0.0),
+            memory_peak_usage_mb=safe_float(np.max(memory_usage) if memory_usage else 0.0, 0.0),
             cpu_utilization_percent=75.0,  # Could be measured
             gpu_utilization_percent=85.0,  # Could be measured
             parallel_efficiency=0.92  # Could be calculated
@@ -571,13 +576,15 @@ class HMMTrainingReporter:
             filename = f"hmm_training_comprehensive_report_{symbol}_{exchange}_{timeframe}_{timestamp}.json"
             filepath = self.output_dir / filename
             
-            with open(filepath, 'w') as f:
-                json.dump(report, f, indent=2, default=str)
-            
-            self.logger.info(f"📊 Comprehensive report saved to: {filepath}")
+            # Use UniversalSerializer for consistent serialization
+            serializer = UniversalSerializer()
+            if serializer.save(report, str(filepath), format='json'):
+                tprint(f"📊 Comprehensive report saved to: {filepath}")
+            else:
+                tprint(f"❌ Failed to save report to: {filepath}")
             
         except Exception as e:
-            self.logger.error(f"❌ Failed to save report: {e}")
+            tprint(f"❌ Failed to save report: {e}")
     
     def _create_error_report(self, error_message: str) -> Dict[str, Any]:
         """Create error report when generation fails."""

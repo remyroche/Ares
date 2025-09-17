@@ -4,11 +4,55 @@ Configuration module for Enhanced HMM Clustering
 
 This module provides various pre-configured settings for different
 market analysis scenarios and use cases.
+
+DEPRECATED: This module is deprecated. Use the unified configuration
+from src.training.steps.market_analysis.hmm_clustering_config instead.
 """
 
+import warnings
 from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional
 from enum import Enum
+
+# Import unified configuration
+try:
+    from src.training.steps.market_analysis.hmm_clustering_config import (
+        UnifiedHMMClusteringConfig,
+        MarketType,
+        TimeframeType,
+        get_config_by_name,
+        create_custom_config,
+        validate_config
+    )
+    
+    # Provide backward compatibility aliases
+    HMMClusteringConfig = UnifiedHMMClusteringConfig
+    HMMClusteringConfigFactory = UnifiedHMMClusteringConfig
+    ConfigValidator = type('ConfigValidator', (), {'validate_config': staticmethod(validate_config)})
+    ConfigPresets = type('ConfigPresets', (), {
+        'CRYPTO_BTC_1H': get_config_by_name('crypto_btc_1h'),
+        'CRYPTO_DAILY': get_config_by_name('crypto_daily'),
+        'FOREX_MAJOR_1H': get_config_by_name('forex_major_1h'),
+        'HIGH_FREQUENCY': get_config_by_name('high_frequency'),
+        'RESEARCH': get_config_by_name('research')
+    })
+    
+    warnings.warn(
+        "This configuration module is deprecated. Use "
+        "src.training.steps.market_analysis.hmm_clustering_config instead.",
+        DeprecationWarning,
+        stacklevel=2
+    )
+    
+    UNIFIED_CONFIG_AVAILABLE = True
+    
+except ImportError:
+    UNIFIED_CONFIG_AVAILABLE = False
+    warnings.warn(
+        "Unified configuration not available, using legacy configuration",
+        UserWarning,
+        stacklevel=2
+    )
 
 class MarketType(Enum):
     """Enumeration of market types for configuration."""

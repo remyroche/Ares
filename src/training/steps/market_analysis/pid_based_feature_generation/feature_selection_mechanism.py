@@ -26,6 +26,14 @@ except ImportError:
     NUMPY_AVAILABLE = False
     np = None
 
+# Pandas dependency (guarded)
+try:
+    import pandas as pd
+    PANDAS_AVAILABLE = True
+except ImportError:
+    PANDAS_AVAILABLE = False
+    pd = None
+
 # Import PID utilities
 try:
     from src.training.utils.feature_selection.partial_information_decompositor import (
@@ -881,7 +889,7 @@ class FeatureSelectionMechanism:
     def compute_enhanced_correlation_analysis(self, X: np.ndarray, feature_names: List[str]) -> Dict[str, Any]:
         """Compute enhanced correlation analysis using advanced matrix operations."""
         try:
-            if not MATRIX_OPS_AVAILABLE:
+            if not MATRIX_OPS_AVAILABLE or not PANDAS_AVAILABLE:
                 return {}
             
             results = {}
@@ -908,7 +916,7 @@ class FeatureSelectionMechanism:
                 results['correlation_matrix'] = corr_matrix
                 
                 # Compute eigendecomposition
-                eigenvalues, eigenvectors = np.linalg.eig(corr_matrix)
+                eigenvalues, eigenvectors = np.linalg.eig(corr_matrix.values)
                 results['eigenvalues'] = eigenvalues
                 results['eigenvectors'] = eigenvectors
                 
@@ -925,7 +933,7 @@ class FeatureSelectionMechanism:
     def compute_batch_feature_analysis(self, X: np.ndarray, feature_names: List[str]) -> Dict[str, Any]:
         """Compute feature analysis in batches for large datasets."""
         try:
-            if not MATRIX_OPS_AVAILABLE or not self.batch_processor:
+            if not MATRIX_OPS_AVAILABLE or not self.batch_processor or not PANDAS_AVAILABLE:
                 return {}
             
             if X.shape[0] > 1000:
@@ -972,9 +980,9 @@ class FeatureSelectionMechanism:
             self.logger.warning(f"Feature selection operations optimization failed: {e}")
             return {}
     
-    def get_enhanced_performance_metrics(self) -> Dict[str, Any]:
+    def get_enhanced_performance_metrics(self, result: FeatureSelectionResult) -> Dict[str, Any]:
         """Get enhanced performance metrics including matrix operations status."""
-        base_metrics = self.get_selection_summary()
+        base_metrics = self.get_selection_statistics(result)
         
         enhanced_metrics = {
             **base_metrics,

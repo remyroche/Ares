@@ -29,6 +29,10 @@ from .metric_orthogonalization import MetricOrthogonalizer, OrthogonalMetric, Or
 from .comprehensive_feature_integration import ComprehensiveFeatureGenerator
 from .statistical_dimension_analysis import StatisticalDimensionAnalyzer, DimensionalityMethod
 from .dimension_economic_relevance import DimensionEconomicRelevanceAnalyzer, analyze_all_dimensions_economic_relevance
+from .dynamic_targets import DynamicTargetsBuilder, DynamicTargetConfig
+from .feature_selection import mrmr_select, MRMRConfig, estimate_mutual_information
+from .pid_utils import pid_pair, pid_triad
+from .dimension_discovery_pipeline import DimensionDiscoveryPipeline, DiscoveryConfig
 
 __all__ = [
     # Main classes
@@ -47,6 +51,8 @@ __all__ = [
     'ComprehensiveFeatureGenerator',
     'StatisticalDimensionAnalyzer',
     'DimensionEconomicRelevanceAnalyzer',
+    'DynamicTargetsBuilder',
+    'DimensionDiscoveryPipeline',
     
     # Configuration classes
     'DimensionAnalysisConfig',
@@ -57,6 +63,8 @@ __all__ = [
     'VisualizationConfig',
     'EconomicValidationConfig',
     'TradingCalibration',
+    'DynamicTargetConfig',
+    'DiscoveryConfig',
     
     # Enums
     'MarketDimension',
@@ -70,7 +78,11 @@ __all__ = [
     # Utility functions
     'generate_complete_trading_calibration_report',
     'create_bias_free_analysis_wrapper',
-    'analyze_all_dimensions_economic_relevance'
+    'analyze_all_dimensions_economic_relevance',
+    'mrmr_select',
+    'estimate_mutual_information',
+    'pid_pair',
+    'pid_triad',
 ]
 
 __version__ = "1.0.0"

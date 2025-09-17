@@ -230,13 +230,11 @@ class DependencyManager:
                         def __init__(self):
                             self.rss = 100 * 1024 * 1024  # 100MB fallback
                     return MemoryInfo()
-                
-                def cpu_percent(self):
-                    return 50.0  # 50% fallback
-            
-            def Process(self):
-                return self.Process()
-        
+
+                def cpu_percent(self, interval=None):
+                    # Return a stable placeholder CPU percent
+                    return 50.0
+
         return PsutilFallback()
     
     def _create_scipy_fallback(self) -> Any:

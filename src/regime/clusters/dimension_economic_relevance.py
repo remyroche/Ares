@@ -164,8 +164,8 @@ class DimensionEconomicRelevanceAnalyzer:
         momentum_5 = returns.rolling(5).mean()
         momentum_20 = returns.rolling(20).mean()
         
-        # Create composite dimension signal
-        dimension_signal = dimension_features.mean(axis=1)  # Average across dimension features
+        # Create composite dimension signal using weighted aggregation (not simple mean)
+        dimension_signal = self._create_weighted_dimension_signal(market_data, dimension_features)
         dimension_signal_normalized = (dimension_signal - dimension_signal.mean()) / dimension_signal.std()
         
         # Analyze momentum support patterns
@@ -499,6 +499,84 @@ class DimensionEconomicRelevanceAnalyzer:
                 feature_contributions[feature] = 0.0
         
         return feature_contributions
+    
+    def _create_weighted_dimension_signal(self, 
+                                        market_data: pd.DataFrame,
+                                        dimension_features: pd.DataFrame) -> pd.Series:
+        """
+        Create weighted dimension signal using PCA loadings or feature importance.
+        
+        Avoids signal dilution from equal-weight averaging of potentially
+        noisy features within a dimension.
+        """
+        
+        if len(dimension_features.columns) == 1:
+            return dimension_features.iloc[:, 0]
+        
+        try:
+            # Method 1: PCA-based weighting (preferred)
+            from sklearn.decomposition import PCA
+            from sklearn.preprocessing import StandardScaler
+            
+            # Standardize features
+            scaler = StandardScaler()
+            features_scaled = scaler.fit_transform(dimension_features.fillna(0))
+            
+            # Apply PCA to get first component (captures most variance)
+            pca = PCA(n_components=1)
+            first_component = pca.fit_transform(features_scaled)
+            
+            # Use PCA loadings as weights
+            loadings = pca.components_[0]
+            
+            # Create weighted signal
+            weighted_signal = np.zeros(len(dimension_features))
+            for i, (feature, loading) in enumerate(zip(dimension_features.columns, loadings)):
+                weighted_signal += loading * dimension_features[feature].fillna(0).values
+            
+            return pd.Series(weighted_signal, index=dimension_features.index)
+            
+        except Exception as e:
+            self.logger.warning(f"PCA weighting failed: {e}, trying Lasso weighting")
+            
+            try:
+                # Method 2: Lasso-based weighting (fallback)
+                from sklearn.linear_model import LassoCV
+                from sklearn.preprocessing import StandardScaler
+                
+                if 'close' in market_data.columns:
+                    # Use future returns as target for feature selection
+                    returns = market_data['close'].pct_change().fillna(0)
+                    target = returns.shift(-1).fillna(0)  # Next period return
+                    
+                    # Align target with features
+                    min_len = min(len(dimension_features), len(target))
+                    X = dimension_features.iloc[:min_len].fillna(0)
+                    y = target.iloc[:min_len]
+                    
+                    # Standardize features
+                    scaler = StandardScaler()
+                    X_scaled = scaler.fit_transform(X)
+                    
+                    # Apply Lasso for feature selection
+                    lasso = LassoCV(cv=3, random_state=42)
+                    lasso.fit(X_scaled, y)
+                    
+                    # Use Lasso coefficients as weights
+                    weights = np.abs(lasso.coef_)
+                    
+                    # Create weighted signal
+                    weighted_signal = np.zeros(len(dimension_features))
+                    for i, (feature, weight) in enumerate(zip(dimension_features.columns, weights)):
+                        weighted_signal += weight * dimension_features[feature].fillna(0).values
+                    
+                    return pd.Series(weighted_signal, index=dimension_features.index)
+                    
+            except Exception as e2:
+                self.logger.warning(f"Lasso weighting failed: {e2}, using equal weights")
+                
+                # Method 3: Equal weights (fallback)
+                return dimension_features.mean(axis=1)
 
 
 def analyze_all_dimensions_economic_relevance(market_data: pd.DataFrame,

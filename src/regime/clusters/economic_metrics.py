@@ -50,6 +50,11 @@ class EconomicMetric(Enum):
     TREND_ACCELERATION_IMPACT = "trend_acceleration_impact"
     PRICE_REGIME_TRANSITION_TRIGGER = "price_regime_transition_trigger"
     
+    # Missing Critical Metrics
+    ASYMMETRIC_VOLATILITY_RESPONSE = "asymmetric_volatility_response"
+    REGIME_PERSISTENCE_SCORE = "regime_persistence_score"
+    TAIL_DEPENDENCE_INTENSITY = "tail_dependence_intensity"
+    
     # Trading Economics
     REGIME_PERSISTENCE_VALUE = "regime_persistence_value"
     TRANSITION_COST_ANALYSIS = "transition_cost_analysis"
@@ -501,6 +506,11 @@ class EconomicValidator:
             results[EconomicMetric.MOMENTUM_INTENSITY_EFFECT] = self._calculate_momentum_intensity_effect(market_data, regime_labels)
             results[EconomicMetric.TREND_ACCELERATION_IMPACT] = self._calculate_trend_acceleration_impact(market_data, regime_labels)
             results[EconomicMetric.PRICE_REGIME_TRANSITION_TRIGGER] = self._calculate_price_regime_transition_trigger(market_data, regime_labels)
+            
+            # Missing critical metrics
+            results[EconomicMetric.ASYMMETRIC_VOLATILITY_RESPONSE] = self._calculate_asymmetric_volatility_response(market_data, regime_labels)
+            results[EconomicMetric.REGIME_PERSISTENCE_SCORE] = self._calculate_regime_persistence_score(market_data, regime_labels)
+            results[EconomicMetric.TAIL_DEPENDENCE_INTENSITY] = self._calculate_tail_dependence_intensity(market_data, regime_labels)
         
         return results
     
@@ -1433,6 +1443,365 @@ class EconomicValidator:
             trading_implications=trading_implications,
             metadata={'transition_details': transition_triggers[:10] if transition_triggers else []}  # Limit for storage
         )
+    
+    def _calculate_asymmetric_volatility_response(self, market_data: pd.DataFrame, regime_labels: np.ndarray) -> EconomicValidationResult:
+        """
+        Calculate asymmetric volatility response (leverage effect).
+        
+        Measures whether downside moves produce stronger volatility responses than upside moves.
+        Critical for tail-risk hedging and options pricing.
+        """
+        
+        returns = market_data['close'].pct_change().fillna(0)
+        
+        # Calculate realized volatility
+        volatility = returns.rolling(20).std()
+        
+        unique_regimes = np.unique(regime_labels)
+        regime_asymmetric_responses = {}
+        
+        for regime in unique_regimes:
+            regime_mask = regime_labels == regime
+            
+            if np.sum(regime_mask) > 50:  # Need sufficient data for asymmetry analysis
+                regime_returns = returns[regime_mask]
+                regime_volatility = volatility[regime_mask]
+                
+                # Separate positive and negative returns
+                positive_returns = regime_returns[regime_returns > 0]
+                negative_returns = regime_returns[regime_returns < 0]
+                
+                # Calculate volatility following positive vs negative returns
+                vol_after_positive = []
+                vol_after_negative = []
+                
+                for i in range(len(regime_returns) - 1):
+                    current_return = regime_returns.iloc[i]
+                    next_volatility = regime_volatility.iloc[i + 1] if i + 1 < len(regime_volatility) else np.nan
+                    
+                    if not np.isnan(next_volatility):
+                        if current_return > 0:
+                            vol_after_positive.append(next_volatility)
+                        elif current_return < 0:
+                            vol_after_negative.append(next_volatility)
+                
+                # Calculate asymmetric response
+                if vol_after_positive and vol_after_negative:
+                    avg_vol_after_positive = np.mean(vol_after_positive)
+                    avg_vol_after_negative = np.mean(vol_after_negative)
+                    
+                    # Asymmetry ratio: vol_after_negative / vol_after_positive
+                    # >1 = leverage effect (downside increases vol more)
+                    asymmetry_ratio = avg_vol_after_negative / avg_vol_after_positive if avg_vol_after_positive > 0 else 1.0
+                    
+                    # Return skewness (additional asymmetry measure)
+                    return_skewness = regime_returns.skew()
+                    
+                    # Composite asymmetric response score
+                    asymmetric_response = abs(asymmetry_ratio - 1.0) + abs(return_skewness) * 0.1
+                    
+                    regime_asymmetric_responses[regime] = {
+                        'asymmetry_ratio': float(asymmetry_ratio),
+                        'return_skewness': float(return_skewness),
+                        'vol_after_positive': float(avg_vol_after_positive),
+                        'vol_after_negative': float(avg_vol_after_negative),
+                        'asymmetric_response_score': float(asymmetric_response)
+                    }
+                else:
+                    regime_asymmetric_responses[regime] = {
+                        'asymmetry_ratio': 1.0,
+                        'return_skewness': 0.0,
+                        'vol_after_positive': 0.0,
+                        'vol_after_negative': 0.0,
+                        'asymmetric_response_score': 0.0
+                    }
+            else:
+                regime_asymmetric_responses[regime] = {
+                    'asymmetry_ratio': 1.0,
+                    'return_skewness': 0.0,
+                    'vol_after_positive': 0.0,
+                    'vol_after_negative': 0.0,
+                    'asymmetric_response_score': 0.0
+                }
+        
+        # Calculate overall asymmetric volatility response difference
+        if len(regime_asymmetric_responses) > 1:
+            response_scores = [data['asymmetric_response_score'] for data in regime_asymmetric_responses.values()]
+            max_asymmetry_diff = max(response_scores) - min(response_scores)
+            
+            # Economic significance: >0.2 asymmetry difference (20% leverage effect difference)
+            economically_significant = max_asymmetry_diff > 0.2
+            
+            interpretation = f"Asymmetric volatility response difference: {max_asymmetry_diff:.3f}"
+            trading_implications = "Regimes show different leverage effects - important for tail hedging and options" if economically_significant else "Similar volatility asymmetry across regimes"
+        else:
+            max_asymmetry_diff = 0.0
+            economically_significant = False
+            interpretation = "Single regime - no asymmetry comparison"
+            trading_implications = "No asymmetric volatility benefits from regime identification"
+        
+        return EconomicValidationResult(
+            metric=EconomicMetric.ASYMMETRIC_VOLATILITY_RESPONSE,
+            value=float(max_asymmetry_diff),
+            economic_significance=economically_significant,
+            regime_specific_values={int(k): v['asymmetric_response_score'] for k, v in regime_asymmetric_responses.items()},
+            statistical_significance=None,
+            confidence_interval=None,
+            interpretation=interpretation,
+            trading_implications=trading_implications,
+            metadata={'regime_details': regime_asymmetric_responses}
+        )
+    
+    def _calculate_regime_persistence_score(self, market_data: pd.DataFrame, regime_labels: np.ndarray) -> EconomicValidationResult:
+        """
+        Calculate regime persistence score (how sticky regimes are).
+        
+        Measures how long regimes typically last and their transition probabilities.
+        Critical for strategy confidence and commitment levels.
+        """
+        
+        # Calculate regime durations and transition matrix
+        regime_durations = []
+        current_regime = regime_labels[0]
+        current_duration = 1
+        
+        # Track regime durations
+        for i in range(1, len(regime_labels)):
+            if regime_labels[i] == current_regime:
+                current_duration += 1
+            else:
+                regime_durations.append((current_regime, current_duration))
+                current_regime = regime_labels[i]
+                current_duration = 1
+        
+        # Add final regime
+        regime_durations.append((current_regime, current_duration))
+        
+        # Calculate transition matrix
+        unique_regimes = np.unique(regime_labels)
+        n_regimes = len(unique_regimes)
+        transition_matrix = np.zeros((n_regimes, n_regimes))
+        
+        for i in range(len(regime_labels) - 1):
+            from_regime_idx = np.where(unique_regimes == regime_labels[i])[0][0]
+            to_regime_idx = np.where(unique_regimes == regime_labels[i + 1])[0][0]
+            transition_matrix[from_regime_idx, to_regime_idx] += 1
+        
+        # Normalize to probabilities
+        row_sums = transition_matrix.sum(axis=1, keepdims=True)
+        transition_probs = np.divide(transition_matrix, row_sums, 
+                                   out=np.zeros_like(transition_matrix), 
+                                   where=row_sums!=0)
+        
+        # Calculate persistence metrics for each regime
+        regime_persistence_metrics = {}
+        
+        for i, regime in enumerate(unique_regimes):
+            # Duration statistics
+            regime_duration_list = [duration for reg, duration in regime_durations if reg == regime]
+            
+            if regime_duration_list:
+                avg_duration = np.mean(regime_duration_list)
+                median_duration = np.median(regime_duration_list)
+                max_duration = np.max(regime_duration_list)
+                
+                # Persistence probability (diagonal of transition matrix)
+                persistence_prob = transition_probs[i, i] if i < len(transition_probs) else 0.0
+                
+                # Half-life calculation (how long until 50% chance of regime change)
+                if persistence_prob > 0 and persistence_prob < 1:
+                    half_life = np.log(0.5) / np.log(persistence_prob)
+                else:
+                    half_life = avg_duration
+                
+                # Composite persistence score
+                persistence_score = (avg_duration * 0.4 + half_life * 0.4 + persistence_prob * 20)
+                
+                regime_persistence_metrics[regime] = {
+                    'avg_duration': float(avg_duration),
+                    'median_duration': float(median_duration),
+                    'max_duration': float(max_duration),
+                    'persistence_probability': float(persistence_prob),
+                    'half_life': float(half_life),
+                    'persistence_score': float(persistence_score)
+                }
+            else:
+                regime_persistence_metrics[regime] = {
+                    'avg_duration': 0.0,
+                    'median_duration': 0.0,
+                    'max_duration': 0.0,
+                    'persistence_probability': 0.0,
+                    'half_life': 0.0,
+                    'persistence_score': 0.0
+                }
+        
+        # Calculate overall persistence score difference
+        if len(regime_persistence_metrics) > 1:
+            persistence_scores = [data['persistence_score'] for data in regime_persistence_metrics.values()]
+            persistence_range = max(persistence_scores) - min(persistence_scores)
+            
+            # Economic significance: >10 persistence score difference
+            economically_significant = persistence_range > 10.0
+            
+            interpretation = f"Regime persistence difference: {persistence_range:.1f} score range"
+            trading_implications = "Significant persistence differences enable regime-specific strategy commitment levels" if economically_significant else "Similar persistence across regimes"
+        else:
+            persistence_range = 0.0
+            economically_significant = False
+            interpretation = "Single regime - no persistence comparison"
+            trading_implications = "No persistence benefits from regime identification"
+        
+        return EconomicValidationResult(
+            metric=EconomicMetric.REGIME_PERSISTENCE_SCORE,
+            value=float(persistence_range),
+            economic_significance=economically_significant,
+            regime_specific_values={int(k): v['persistence_score'] for k, v in regime_persistence_metrics.items()},
+            statistical_significance=None,
+            confidence_interval=None,
+            interpretation=interpretation,
+            trading_implications=trading_implications,
+            metadata={
+                'regime_details': regime_persistence_metrics,
+                'transition_matrix': transition_probs.tolist()
+            }
+        )
+    
+    def _calculate_tail_dependence_intensity(self, market_data: pd.DataFrame, regime_labels: np.ndarray) -> EconomicValidationResult:
+        """
+        Calculate tail dependence intensity (clustering of extreme events).
+        
+        Measures how strongly extreme events cluster within regimes.
+        Critical for crisis regime detection and tail hedging.
+        """
+        
+        returns = market_data['close'].pct_change().fillna(0)
+        
+        # Define extreme events (VaR exceedances)
+        var_95 = returns.rolling(100).quantile(0.05)  # 95% VaR (5th percentile)
+        var_99 = returns.rolling(100).quantile(0.01)  # 99% VaR (1st percentile)
+        
+        # Extreme event indicators
+        extreme_events_95 = (returns <= var_95).astype(int)
+        extreme_events_99 = (returns <= var_99).astype(int)
+        
+        unique_regimes = np.unique(regime_labels)
+        regime_tail_dependence = {}
+        
+        for regime in unique_regimes:
+            regime_mask = regime_labels == regime
+            
+            if np.sum(regime_mask) > 100:  # Need sufficient data for tail analysis
+                regime_returns = returns[regime_mask]
+                regime_extreme_95 = extreme_events_95[regime_mask]
+                regime_extreme_99 = extreme_events_99[regime_mask]
+                
+                # Tail dependence measures
+                # 1. Clustering coefficient (probability of extreme event following extreme event)
+                clustering_95 = self._calculate_clustering_coefficient(regime_extreme_95)
+                clustering_99 = self._calculate_clustering_coefficient(regime_extreme_99)
+                
+                # 2. Tail conditional correlation
+                tail_corr = self._calculate_tail_conditional_correlation(regime_returns)
+                
+                # 3. Extreme event frequency
+                extreme_freq_95 = regime_extreme_95.mean()
+                extreme_freq_99 = regime_extreme_99.mean()
+                
+                # 4. Tail thickness (kurtosis of extreme events)
+                extreme_returns = regime_returns[regime_returns <= regime_returns.quantile(0.05)]
+                tail_kurtosis = extreme_returns.kurtosis() if len(extreme_returns) > 10 else 0
+                
+                # Composite tail dependence intensity
+                tail_intensity = (
+                    clustering_95 * 0.3 +
+                    clustering_99 * 0.3 +
+                    abs(tail_corr) * 0.2 +
+                    extreme_freq_95 * 0.1 +
+                    max(0, tail_kurtosis - 3) * 0.1  # Excess kurtosis
+                )
+                
+                regime_tail_dependence[regime] = {
+                    'clustering_95': float(clustering_95),
+                    'clustering_99': float(clustering_99),
+                    'tail_conditional_correlation': float(tail_corr),
+                    'extreme_frequency_95': float(extreme_freq_95),
+                    'extreme_frequency_99': float(extreme_freq_99),
+                    'tail_kurtosis': float(tail_kurtosis),
+                    'tail_dependence_intensity': float(tail_intensity)
+                }
+            else:
+                regime_tail_dependence[regime] = {
+                    'clustering_95': 0.0,
+                    'clustering_99': 0.0,
+                    'tail_conditional_correlation': 0.0,
+                    'extreme_frequency_95': 0.0,
+                    'extreme_frequency_99': 0.0,
+                    'tail_kurtosis': 0.0,
+                    'tail_dependence_intensity': 0.0
+                }
+        
+        # Calculate overall tail dependence intensity difference
+        if len(regime_tail_dependence) > 1:
+            intensity_scores = [data['tail_dependence_intensity'] for data in regime_tail_dependence.values()]
+            intensity_range = max(intensity_scores) - min(intensity_scores)
+            
+            # Economic significance: >0.1 tail intensity difference
+            economically_significant = intensity_range > 0.1
+            
+            interpretation = f"Tail dependence intensity difference: {intensity_range:.3f}"
+            trading_implications = "Regimes show different extreme event clustering - critical for tail hedging" if economically_significant else "Similar tail behavior across regimes"
+        else:
+            intensity_range = 0.0
+            economically_significant = False
+            interpretation = "Single regime - no tail dependence comparison"
+            trading_implications = "No tail risk benefits from regime identification"
+        
+        return EconomicValidationResult(
+            metric=EconomicMetric.TAIL_DEPENDENCE_INTENSITY,
+            value=float(intensity_range),
+            economic_significance=economically_significant,
+            regime_specific_values={int(k): v['tail_dependence_intensity'] for k, v in regime_tail_dependence.items()},
+            statistical_significance=None,
+            confidence_interval=None,
+            interpretation=interpretation,
+            trading_implications=trading_implications,
+            metadata={'regime_details': regime_tail_dependence}
+        )
+    
+    def _calculate_clustering_coefficient(self, extreme_events: pd.Series) -> float:
+        """Calculate clustering coefficient for extreme events."""
+        if len(extreme_events) < 10:
+            return 0.0
+        
+        # Calculate probability of extreme event following extreme event
+        clustering_count = 0
+        extreme_count = 0
+        
+        for i in range(len(extreme_events) - 1):
+            if extreme_events.iloc[i] == 1:  # Current period is extreme
+                extreme_count += 1
+                if extreme_events.iloc[i + 1] == 1:  # Next period is also extreme
+                    clustering_count += 1
+        
+        clustering_coefficient = clustering_count / extreme_count if extreme_count > 0 else 0.0
+        return float(clustering_coefficient)
+    
+    def _calculate_tail_conditional_correlation(self, returns: pd.Series) -> float:
+        """Calculate tail conditional correlation (correlation in extreme events)."""
+        
+        # Get extreme negative returns (bottom 5%)
+        threshold = returns.quantile(0.05)
+        extreme_returns = returns[returns <= threshold]
+        
+        if len(extreme_returns) < 10:
+            return 0.0
+        
+        # Calculate autocorrelation of extreme returns
+        try:
+            tail_autocorr = extreme_returns.autocorr(1)
+            return float(tail_autocorr) if not np.isnan(tail_autocorr) else 0.0
+        except:
+            return 0.0
     
     def generate_economic_report(self, 
                                validation_results: Dict[EconomicMetric, EconomicValidationResult]) -> str:

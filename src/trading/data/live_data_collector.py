@@ -203,7 +203,7 @@ class LiveDataCollector:
         """Initialize real-time feature engineering."""
         try:
             # Import feature engineering components
-            from src.feature_engineering.optimized_feature_orchestrator import OptimizedFeatureOrchestrator
+            from src.feature_generation.utils.optimized_feature_orchestrator import OptimizedFeatureOrchestrator
 
             self.feature_engineer = OptimizedFeatureOrchestrator(
                 symbol=self.config.symbol,
@@ -217,7 +217,7 @@ class LiveDataCollector:
         except ImportError:
             # Try alternative feature engineering
             try:
-                from src.feature_engineering.feature_generators import FeatureGenerators
+                from src.feature_generation.utils.feature_generators import FeatureGenerators
                 self.feature_engineer = FeatureGenerators()
                 tprint_success("✅ Alternative feature engineering initialized")
             except ImportError:

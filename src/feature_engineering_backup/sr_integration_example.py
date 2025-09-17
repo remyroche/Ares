@@ -5,7 +5,7 @@ This module demonstrates how to integrate SR feature extraction with the paramet
 optimization engine for maximum performance and accuracy.
 
 Usage:
-    python -m src.feature_engineering.sr_integration_example
+    python -m src.feature_generation.utils.sr_integration_example
 """
 
 import numpy as np

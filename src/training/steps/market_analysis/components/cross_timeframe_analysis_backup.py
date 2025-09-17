@@ -114,7 +114,7 @@ class CrossTimeframeAnalysisComponent(BaseMarketAnalysisComponent):
         
         try:
             # Import cross timeframe analysis utilities
-            from src.feature_engineering.cross_timeframe_features import CrossTimeframeFeatureGenerator, CrossTimeframeConfig
+            from src.feature_generation.utils.cross_timeframe_features import CrossTimeframeFeatureGenerator, CrossTimeframeConfig
             
             # Get market data with enhanced validation
             market_data = await self._load_and_validate_market_data(data)

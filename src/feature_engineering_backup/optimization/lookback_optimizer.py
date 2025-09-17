@@ -77,7 +77,7 @@ class LookbackOptimizer:
         
         # Try to import the existing optimization system
         try:
-            from ...feature_engineering.feature_generation_optimization import (
+            from ..utils.feature_generation_optimization import (
                 FeatureGenerationOptimizer,
                 FeatureOptimizationConfig as LegacyConfig
             )

@@ -38,7 +38,7 @@ except ImportError:
 
 # Try to use unified optimization system
 try:
-    from ...feature_engineering.optimization import get_feature_optimizer
+    from ..utils.optimization import get_feature_optimizer
     UNIFIED_OPTIMIZATION_AVAILABLE = True
 except ImportError:
     UNIFIED_OPTIMIZATION_AVAILABLE = False
@@ -84,7 +84,7 @@ class HMMCompatibleFeatureGenerators:
     def _initialize_legacy_generators(self):
         """Initialize legacy feature generators for fallback."""
         try:
-            from ...feature_engineering.feature_generators import FeatureGenerators
+            from ..utils.feature_generators import FeatureGenerators
             self.legacy_generators = FeatureGenerators()
             self.legacy_available = True
             self.logger.info("✅ Legacy feature generators available for fallback")
@@ -138,7 +138,7 @@ class HMMCompatibleFeatureGenerators:
         # Final fallback - generate basic features
         return self._generate_basic_hmm_features(data)
     
-    def _generate_features_with_new_system(self, data: pd.DataFrame) -> pd.DataFrame:
+    def _generate_features_with_new_system(self, data):
         """Generate HMM features using the new unified feature generation system."""
         result_df = data.copy()
         start_time = time.time()
@@ -200,7 +200,7 @@ class HMMCompatibleFeatureGenerators:
             self.logger.error(f"❌ New feature system failed: {e}")
             raise
     
-    def _add_hmm_specific_features(self, result_df: pd.DataFrame, original_data: pd.DataFrame):
+    def _add_hmm_specific_features(self, result_df, original_data):
         """Add HMM-specific features that are optimized for regime detection."""
         try:
             # Volume features
@@ -288,7 +288,7 @@ class HMMCompatibleFeatureGenerators:
         except Exception as e:
             self.logger.error(f"❌ Failed to add HMM-specific features: {e}")
     
-    def _clean_hmm_features(self, data: pd.DataFrame) -> pd.DataFrame:
+    def _clean_hmm_features(self, data):
         """Clean and validate HMM features."""
         try:
             # Remove infinite values
@@ -317,7 +317,7 @@ class HMMCompatibleFeatureGenerators:
             self.logger.error(f"❌ Failed to clean features: {e}")
             return data
     
-    def _generate_basic_hmm_features(self, data: pd.DataFrame) -> pd.DataFrame:
+    def _generate_basic_hmm_features(self, data):
         """Generate basic HMM features as final fallback."""
         self.logger.warning("⚠️ Using basic HMM feature generation as fallback")
         

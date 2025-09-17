@@ -571,7 +571,7 @@ class ModelSaver:
     
     async def _save_feature_engineering_pipeline(self, pipeline: Any, metadata: ModelMetadata) -> None:
         """Save feature engineering pipeline."""
-        pipeline_file = f"{self.config.output_dir}/{self.config.model_name}_{metadata.version}_feature_engineering.pkl"
+        pipeline_file = f"{self.config.output_dir}/{self.config.model_name}_{metadata.version}_feature_generation.utils.pkl"
         
         with open(pipeline_file, 'wb') as f:
             if self.config.enable_compression:

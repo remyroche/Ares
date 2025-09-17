@@ -1332,7 +1332,7 @@ class LabelingStep:
         self.logger.info(f'   - Time barrier minutes: {self.time_barrier_minutes}')
         self.logger.info(f'   - Max lookahead: {self.max_lookahead}')
         try:
-            from src.feature_engineering.step06_labeling_components.regime_specific_triple_barrier_optimizer import RegimeSpecificTripleBarrierOptimizer  # type: ignore
+            from src.feature_generation.utils.step06_labeling_components.regime_specific_triple_barrier_optimizer import RegimeSpecificTripleBarrierOptimizer  # type: ignore
             self.regime_barrier_optimizer = RegimeSpecificTripleBarrierOptimizer(self.config)
             self.logger.info('✅ RegimeSpecificTripleBarrierOptimizer initialized successfully')
         except ImportError as e:

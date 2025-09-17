@@ -86,7 +86,7 @@ class TrainingDataProvider:
         """Apply feature engineering from training pipeline."""
         try:
             # Import feature engineering components from training pipeline
-            from src.feature_engineering.feature_engineering_orchestrator import FeatureEngineeringOrchestrator
+            from src.feature_generation.utils.feature_engineering_orchestrator import FeatureEngineeringOrchestrator
             
             # Create feature engineering orchestrator
             feature_orchestrator = FeatureEngineeringOrchestrator(

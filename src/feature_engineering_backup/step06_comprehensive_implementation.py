@@ -899,13 +899,13 @@ class Step06ComprehensiveImplementation:
             ]
 
             indicator_parts = ppo.map(
-                lambda lb_dict: self.enhanced_feature_engineering.extract_indicators_batch(market_data, lb_dict),
+                lambda lb_dict: self.enhanced_feature_generation.utils.extract_indicators_batch(market_data, lb_dict),
                 chunks
             )
             indicators = pd.concat(indicator_parts, axis=1)
             
             # Create sophisticated interactions
-            interactions = self.enhanced_feature_engineering.create_sophisticated_interactions(
+            interactions = self.enhanced_feature_generation.utils.create_sophisticated_interactions(
                 indicators, current_idx=len(indicators) - 1
             )
             
@@ -930,7 +930,7 @@ class Step06ComprehensiveImplementation:
                 'engineered_data': engineered_data,
                 'feature_statistics': feature_stats,
                 'features_created': len(feature_cols),
-                'processing_stats': self.enhanced_feature_engineering.get_processing_stats()
+                'processing_stats': self.enhanced_feature_generation.utils.get_processing_stats()
             }
             
         except Exception as e:

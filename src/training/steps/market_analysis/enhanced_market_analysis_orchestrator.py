@@ -48,7 +48,7 @@ try:
     from .step06_feature_engineering_per_regime import FeatureEngineeringStep
 except ImportError:
     try:
-        from src.feature_engineering.step06_enhanced_feature_engineering import EnhancedFeatureEngineering as FeatureEngineeringStep
+        from src.feature_generation.utils.step06_enhanced_feature_engineering import EnhancedFeatureEngineering as FeatureEngineeringStep
     except ImportError:
         # Fallback class
         class FeatureEngineeringStep:

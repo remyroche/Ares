@@ -9,7 +9,7 @@ This package contains data collection components for step06 including:
 """
 
 try:
-    from .feature_engineering.step06_feature_engineering import FeatureEngineeringStep
+    from .feature_generation.utils.step06_feature_engineering import FeatureEngineeringStep
     FEATURE_ENGINEERING_STEP_AVAILABLE = True
 except ImportError:
     FEATURE_ENGINEERING_STEP_AVAILABLE = False

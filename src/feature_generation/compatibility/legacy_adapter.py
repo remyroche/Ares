@@ -24,7 +24,7 @@ class LegacyFeatureAdapter:
         self.logger.info("✅ Simplified legacy adapter initialized")
         self.logger.warning("⚠️ Legacy adapter is deprecated. Please migrate to unified systems:")
         self.logger.warning("  - Feature generation: src.feature_generation")
-        self.logger.warning("  - Feature optimization: src.feature_engineering.optimization")
+        self.logger.warning("  - Feature optimization: src.feature_generation.utils.optimization")
     
     def migrate_legacy_features(self, legacy_config: Dict[str, Any]) -> List[Any]:
         """
@@ -40,7 +40,7 @@ class LegacyFeatureAdapter:
         self.logger.info("📋 Migration guidance:")
         self.logger.info("  1. Use FeatureBank from src.feature_generation")
         self.logger.info("  2. Use category-based feature generation")
-        self.logger.info("  3. Use unified optimization from src.feature_engineering.optimization")
+        self.logger.info("  3. Use unified optimization from src.feature_generation.utils.optimization")
         
         return []
     

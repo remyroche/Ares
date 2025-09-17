@@ -58,9 +58,9 @@ except ImportError as e:
 
 # Import existing extensive feature generation systems
 try:
-    from src.feature_engineering.step06_enhanced_feature_engineering import EnhancedFeatureEngineering
-    from src.feature_engineering.cross_timeframe_interaction_features import CrossTimeframeFeatureGenerator
-    from src.feature_engineering.limited_microstructure_features import LimitedMicrostructureFeatures
+    from src.feature_generation.utils.step06_enhanced_feature_engineering import EnhancedFeatureEngineering
+    from src.feature_generation.utils.cross_timeframe_interaction_features import CrossTimeframeFeatureGenerator
+    from src.feature_generation.utils.limited_microstructure_features import LimitedMicrostructureFeatures
     EXTENSIVE_FEATURE_SYSTEMS_AVAILABLE = True
 except ImportError as e:
     logger.warning(f"Extensive feature generation systems not available: {e}")
@@ -213,7 +213,7 @@ class EnhancedOptimizationSystem:
             if self.enhanced_feature_engineering:
                 # Use the existing RSI calculation from enhanced feature engineering
                 periods_config = {'RSI': [period]}
-                indicators = self.enhanced_feature_engineering.extract_indicators_batch(data, periods_config)
+                indicators = self.enhanced_feature_generation.utils.extract_indicators_batch(data, periods_config)
                 return indicators.get(f'RSI_{period}', pd.Series(index=data.index, dtype=float))
             else:
                 # Fallback calculation
@@ -227,7 +227,7 @@ class EnhancedOptimizationSystem:
         try:
             if self.enhanced_feature_engineering:
                 periods_config = {'SMA': [period]}
-                indicators = self.enhanced_feature_engineering.extract_indicators_batch(data, periods_config)
+                indicators = self.enhanced_feature_generation.utils.extract_indicators_batch(data, periods_config)
                 return indicators.get(f'SMA_{period}', pd.Series(index=data.index, dtype=float))
             else:
                 # Fallback calculation
@@ -241,7 +241,7 @@ class EnhancedOptimizationSystem:
         try:
             if self.enhanced_feature_engineering:
                 periods_config = {'EMA': [period]}
-                indicators = self.enhanced_feature_engineering.extract_indicators_batch(data, periods_config)
+                indicators = self.enhanced_feature_generation.utils.extract_indicators_batch(data, periods_config)
                 return indicators.get(f'EMA_{period}', pd.Series(index=data.index, dtype=float))
             else:
                 # Fallback calculation
@@ -255,7 +255,7 @@ class EnhancedOptimizationSystem:
         try:
             if self.enhanced_feature_engineering:
                 periods_config = {'MACD': [period]}
-                indicators = self.enhanced_feature_engineering.extract_indicators_batch(data, periods_config)
+                indicators = self.enhanced_feature_generation.utils.extract_indicators_batch(data, periods_config)
                 return indicators.get(f'MACD_signal_{period}', pd.Series(index=data.index, dtype=float))
             else:
                 # Fallback calculation
@@ -272,7 +272,7 @@ class EnhancedOptimizationSystem:
         try:
             if self.enhanced_feature_engineering:
                 periods_config = {'Bollinger_Bands': [period]}
-                indicators = self.enhanced_feature_engineering.extract_indicators_batch(data, periods_config)
+                indicators = self.enhanced_feature_generation.utils.extract_indicators_batch(data, periods_config)
                 return indicators.get(f'BB_position_{period}', pd.Series(index=data.index, dtype=float))
             else:
                 # Fallback calculation
@@ -290,7 +290,7 @@ class EnhancedOptimizationSystem:
         try:
             if self.enhanced_feature_engineering:
                 periods_config = {'Stochastic': [period]}
-                indicators = self.enhanced_feature_engineering.extract_indicators_batch(data, periods_config)
+                indicators = self.enhanced_feature_generation.utils.extract_indicators_batch(data, periods_config)
                 return indicators.get(f'Stoch_D_{period}', pd.Series(index=data.index, dtype=float))
             else:
                 # Fallback calculation
@@ -307,7 +307,7 @@ class EnhancedOptimizationSystem:
         try:
             if self.enhanced_feature_engineering:
                 periods_config = {'ATR': [period]}
-                indicators = self.enhanced_feature_engineering.extract_indicators_batch(data, periods_config)
+                indicators = self.enhanced_feature_generation.utils.extract_indicators_batch(data, periods_config)
                 return indicators.get(f'ATR_{period}', pd.Series(index=data.index, dtype=float))
             else:
                 # Fallback calculation
@@ -325,7 +325,7 @@ class EnhancedOptimizationSystem:
         try:
             if self.enhanced_feature_engineering:
                 periods_config = {'ADX': [period]}
-                indicators = self.enhanced_feature_engineering.extract_indicators_batch(data, periods_config)
+                indicators = self.enhanced_feature_generation.utils.extract_indicators_batch(data, periods_config)
                 return indicators.get(f'ADX_{period}', pd.Series(index=data.index, dtype=float))
             else:
                 # Fallback calculation - simplified ADX
@@ -339,7 +339,7 @@ class EnhancedOptimizationSystem:
         try:
             if self.enhanced_feature_engineering:
                 periods_config = {'OBV': [period]}
-                indicators = self.enhanced_feature_engineering.extract_indicators_batch(data, periods_config)
+                indicators = self.enhanced_feature_generation.utils.extract_indicators_batch(data, periods_config)
                 return indicators.get(f'OBV_{period}', pd.Series(index=data.index, dtype=float))
             else:
                 # Fallback calculation
@@ -357,7 +357,7 @@ class EnhancedOptimizationSystem:
         try:
             if self.enhanced_feature_engineering:
                 periods_config = {'MFI': [period]}
-                indicators = self.enhanced_feature_engineering.extract_indicators_batch(data, periods_config)
+                indicators = self.enhanced_feature_generation.utils.extract_indicators_batch(data, periods_config)
                 return indicators.get(f'MFI_{period}', pd.Series(index=data.index, dtype=float))
             else:
                 # Fallback calculation

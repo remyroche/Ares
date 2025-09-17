@@ -8,7 +8,7 @@ full backwards compatibility.
 Key Features:
 - Category-based feature organization (returns, momentum, volume, support/resistance, etc.)
 - Matrix operations integration for optimized computation
-- Lookback optimization system
+- Advanced utilities (moved from feature_engineering)
 - Feature bank for easy feature selection
 - Backwards compatibility with existing code
 - Hardware acceleration support (M1/M2/M3 optimization)
@@ -16,7 +16,7 @@ Key Features:
 Architecture:
 - Core framework for feature generation
 - Category-specific feature generators
-- Lookback optimization system
+- Advanced utilities (optimization, analysis, etc.)
 - Feature bank and registry
 - Matrix operations integration
 - Backwards compatibility layer
@@ -26,7 +26,9 @@ Usage:
         FeatureBank,
         get_feature_generator,
         generate_features_by_category,
-        optimize_feature_lookbacks
+        # Advanced utilities
+        FeatureGenerationOptimizer,
+        EnhancedFeatureEngineering
     )
     
     # Initialize feature bank
@@ -38,10 +40,6 @@ Usage:
         categories=['returns', 'momentum', 'volume'],
         lookback_optimization=True
     )
-    
-    # Get specific feature generator
-    generator = get_feature_generator('momentum')
-    momentum_features = generator.generate(df, lookback_periods=[5, 10, 20])
 """
 
 # Core framework imports
@@ -117,12 +115,6 @@ except ImportError as e:
     logger = logging.getLogger(__name__)
     logger.warning(f"Category generators not available: {e}")
 
-# Optimization system moved to feature_engineering.optimization
-OPTIMIZATION_AVAILABLE = False
-import logging
-logger = logging.getLogger(__name__)
-logger.info("💡 Feature optimization moved to src.feature_engineering.optimization")
-
 # Matrix operations integration
 try:
     from .matrix_integration import (
@@ -183,114 +175,162 @@ except ImportError as e:
     logger = logging.getLogger(__name__)
     logger.warning(f"Convenience functions not available: {e}")
 
+# Advanced utilities (moved from feature_engineering)
+try:
+    from .utils import (
+        # Optimization system
+        FeatureGenerationOptimizer,
+        FeatureOptimizationConfig,
+        FeatureOptimizationResult,
+        OptimizationMethod,
+        get_feature_optimizer,
+        optimize_feature_lookback,
+        get_optimization_config,
+        LookbackOptimizer,
+        
+        # Advanced feature engineering
+        EnhancedFeatureEngineering,
+        Step06UtilityContainer,
+        UtilityConfig,
+        
+        # Analysis pipelines
+        CrossTimeframeAnalysisPipeline,
+        FractionalDifferentiationPipeline,
+        EnhancedMatrixOperations,
+        
+        # Validation
+        validate_feature_quality,
+        validate_features_dataframe
+    )
+    UTILS_AVAILABLE = True
+except ImportError as e:
+    UTILS_AVAILABLE = False
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.warning(f"Advanced utils not available: {e}")
+
 # Version and metadata
-__version__ = "1.0.0"
+__version__ = "2.0.0"
 __author__ = "Unified Feature Generation Team"
-__description__ = "Centralized feature generation system with category-based organization"
+__description__ = "Centralized feature generation system with category-based organization and advanced utilities"
 
 # Build __all__ list conditionally
 __all__ = []
 
-# Always available
+# Core framework
 if CORE_AVAILABLE:
-# MIGRATED TO feature_engineering:     __all__.extend([
-#         "FeatureBank",
-#         "FeatureGenerator", 
-#         "FeatureCategory",
-#         "FeatureRegistry",
-#         "get_feature_generator",
-#         "get_feature_bank",
-#         "register_feature_generator",
-#         "list_available_features",
-#         "list_available_categories"
-#     ])
+    __all__.extend([
+        "FeatureBank",
+        "FeatureGenerator", 
+        "FeatureCategory",
+        "FeatureRegistry",
+        "get_feature_generator",
+        "get_feature_bank",
+        "register_feature_generator",
+        "list_available_features",
+        "list_available_categories"
+    ])
 
 # Base calculations
 if BASE_CALCULATIONS_AVAILABLE:
-# MIGRATED TO feature_engineering:     __all__.extend([
-#         "BaseCalculator",
-#         "BaseCalculationType",
-#         "BaseCalculationConfig",
-#         "PriceReturnsCalculator",
-#         "ReturnsVWAPCalculator",
-#         "PriceLevelsCalculator",
-#         "VolumeWeightedCalculator",
-#         "VolumeReturnsCalculator",
-#         "create_base_calculator",
-#         "get_base_calculator",
-#         "calculate_price_returns",
-#         "calculate_returns_vwap",
-#         "calculate_price_levels",
-#         "calculate_volume_weighted",
-#         "calculate_volume_returns"
-#     ])
+    __all__.extend([
+        "BaseCalculator",
+        "BaseCalculationType",
+        "BaseCalculationConfig",
+        "PriceReturnsCalculator",
+        "ReturnsVWAPCalculator",
+        "PriceLevelsCalculator",
+        "VolumeWeightedCalculator",
+        "VolumeReturnsCalculator",
+        "create_base_calculator",
+        "get_base_calculator",
+        "calculate_price_returns",
+        "calculate_returns_vwap",
+        "calculate_price_levels",
+        "calculate_volume_weighted",
+        "calculate_volume_returns"
+    ])
 
 # Category generators
 if CATEGORIES_AVAILABLE:
-# MIGRATED TO feature_engineering:     __all__.extend([
-#         "ReturnsFeatureGenerator",
-#         "MomentumFeatureGenerator", 
-#         "VolumeFeatureGenerator",
-#         "SupportResistanceFeatureGenerator",
-#         "CandlestickPatternFeatureGenerator",
-#         "HMMRegimeFeatureGenerator",
-#         "VolatilityFeatureGenerator",
-#         "TrendFeatureGenerator",
-#         "OscillatorFeatureGenerator",
-#         "InteractionFeatureGenerator",
-#         "CrossTimeframeInteractionGenerator",
-#         "FeatureRatioGenerator",
-#         "PolynomialFeatureGenerator",
-#         "CorrelationInteractionGenerator",
-#         "create_interaction_generators",
-#         "create_default_interaction_generators"
-#     ])
-
-# Optimization
-# MIGRATED TO feature_engineering: if OPTIMIZATION_AVAILABLE:
-# MIGRATED TO feature_engineering:     __all__.extend([
-# MIGRATED TO feature_engineering:         "LookbackOptimizer",
-# MIGRATED TO feature_engineering:         "FeatureOptimizationConfig",
-# MIGRATED TO feature_engineering:         "FeatureOptimizationResult", 
-# MIGRATED TO feature_engineering:         "optimize_feature_lookbacks",
-# MIGRATED TO feature_engineering:         "get_optimization_config"
-#     ])
+    __all__.extend([
+        "ReturnsFeatureGenerator",
+        "MomentumFeatureGenerator", 
+        "VolumeFeatureGenerator",
+        "SupportResistanceFeatureGenerator",
+        "CandlestickPatternFeatureGenerator",
+        "HMMRegimeFeatureGenerator",
+        "VolatilityFeatureGenerator",
+        "TrendFeatureGenerator",
+        "OscillatorFeatureGenerator",
+        "InteractionFeatureGenerator",
+        "CrossTimeframeInteractionGenerator",
+        "FeatureRatioGenerator",
+        "PolynomialFeatureGenerator",
+        "CorrelationInteractionGenerator",
+        "create_interaction_generators",
+        "create_default_interaction_generators"
+    ])
 
 # Matrix integration
 if MATRIX_INTEGRATION_AVAILABLE:
-# MIGRATED TO feature_engineering:     __all__.extend([
-#         "MatrixFeatureProcessor",
-#         "VectorizedFeatureGenerator",
-#         "get_matrix_processor",
-#         "enable_matrix_acceleration"
-#     ])
+    __all__.extend([
+        "MatrixFeatureProcessor",
+        "VectorizedFeatureGenerator",
+        "get_matrix_processor",
+        "enable_matrix_acceleration"
+    ])
 
 # Backwards compatibility
 if COMPATIBILITY_AVAILABLE:
-# MIGRATED TO feature_engineering:     __all__.extend([
-#         "LegacyFeatureAdapter",
-#         "migrate_legacy_features",
-#         "get_legacy_adapter", 
-#         "enable_legacy_compatibility"
-#     ])
+    __all__.extend([
+        "LegacyFeatureAdapter",
+        "migrate_legacy_features",
+        "get_legacy_adapter", 
+        "enable_legacy_compatibility"
+    ])
 
 # HMM compatibility
 if HMM_COMPATIBILITY_AVAILABLE:
-# MIGRATED TO feature_engineering:     __all__.extend([
-#         "HMMCompatibleFeatureGenerators",
-#         "FeatureGenerators",
-#         "get_hmm_compatible_generators"
-#     ])
+    __all__.extend([
+        "HMMCompatibleFeatureGenerators",
+        "FeatureGenerators",
+        "get_hmm_compatible_generators"
+    ])
 
 # Convenience functions
 if CONVENIENCE_AVAILABLE:
-# MIGRATED TO feature_engineering:     __all__.extend([
-#         "generate_features_by_category",
-#         "generate_all_features",
-#         "get_feature_summary",
-#         "validate_feature_data",
-#         "export_feature_config"
-#     ])
+    __all__.extend([
+        "generate_features_by_category",
+        "generate_all_features",
+        "get_feature_summary",
+        "validate_feature_data",
+        "export_feature_config"
+    ])
+
+# Advanced utils
+if UTILS_AVAILABLE:
+    __all__.extend([
+        # Optimization system
+        "FeatureGenerationOptimizer",
+        "FeatureOptimizationConfig", 
+        "FeatureOptimizationResult",
+        "OptimizationMethod",
+        "get_feature_optimizer",
+        "optimize_feature_lookback",
+        "get_optimization_config",
+        "LookbackOptimizer",
+        
+        # Advanced utilities
+        "EnhancedFeatureEngineering",
+        "Step06UtilityContainer",
+        "UtilityConfig",
+        "CrossTimeframeAnalysisPipeline",
+        "FractionalDifferentiationPipeline",
+        "EnhancedMatrixOperations",
+        "validate_feature_quality",
+        "validate_features_dataframe"
+    ])
 
 # Initialize default feature bank if core is available
 if CORE_AVAILABLE:
@@ -307,5 +347,10 @@ import logging
 logger = logging.getLogger(__name__)
 logger.info("✅ Unified Feature Generation System initialized")
 logger.info(f"📦 Version: {__version__}")
-logger.info("🔧 Features: Category-based organization, matrix operations integration, lookback optimization")
+logger.info("🔧 Features: Category-based organization, advanced utilities, optimization")
 logger.info("🍎 Optimized for: Apple Silicon M1/M2/M3 Macs")
+
+if UTILS_AVAILABLE:
+    logger.info("🚀 Advanced utilities available (optimization, analysis, etc.)")
+else:
+    logger.warning("⚠️ Advanced utilities not available - limited functionality")

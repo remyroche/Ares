@@ -22,7 +22,7 @@ Available utilities:
 - enhanced_matrix_operations: GPU-accelerated matrix operations
 
 Usage:
-    from src.feature_engineering import (
+    from src.feature_generation.utils import (
         Step06UtilityContainer,
         EnhancedFeatureEngineering,
         OptimizedTripleBarrierLabeling,

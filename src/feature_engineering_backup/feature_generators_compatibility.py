@@ -2,7 +2,7 @@
 Feature Generators Compatibility Module
 
 This module provides compatibility for code that imports FeatureGenerators from
-src.feature_engineering.feature_generators, redirecting to the new unified
+src.feature_generation.utils.feature_generators, redirecting to the new unified
 feature generation system.
 """
 
@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 # Issue deprecation warning
 warnings.warn(
-    "Importing FeatureGenerators from src.feature_engineering.feature_generators is deprecated. "
+    "Importing FeatureGenerators from src.feature_generation.utils.feature_generators is deprecated. "
     "Please use: from src.feature_generation import FeatureGenerators",
     DeprecationWarning,
     stacklevel=2

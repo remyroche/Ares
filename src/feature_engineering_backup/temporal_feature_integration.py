@@ -30,16 +30,16 @@ from src.utils.math_validation import safe_divide, safe_log, safe_sqrt
 
 # Feature optimization imports
 try:
-    from src.feature_engineering.optimization_config import OptimizationConfigManager
-    from src.feature_engineering.optimization_validator import validate_optimization_results
-    from src.feature_engineering.optimization_metrics import generate_optimization_report
+    from src.feature_generation.utils.optimization_config import OptimizationConfigManager
+    from src.feature_generation.utils.optimization_validator import validate_optimization_results
+    from src.feature_generation.utils.optimization_metrics import generate_optimization_report
     FEATURE_OPTIMIZATION_AVAILABLE = True
 except ImportError:
     FEATURE_OPTIMIZATION_AVAILABLE = False
 
 # Cross timeframe analysis imports
 try:
-    from src.feature_engineering.optimized_cross_timeframe_analysis_integration import (
+    from src.feature_generation.utils.optimized_cross_timeframe_analysis_integration import (
         analyze_cross_timeframes_optimized, create_optimized_config
     )
     CROSS_TIMEFRAME_AVAILABLE = True

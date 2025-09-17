@@ -69,7 +69,7 @@ class FeatureBank:
         self.lookback_optimizer = None
         if self.config.enable_lookback_optimization:
             try:
-                from ...feature_engineering.optimization import LookbackOptimizer
+                from ..utils.optimization import LookbackOptimizer
                 self.lookback_optimizer = LookbackOptimizer()
                 self.logger.info("✅ Lookback optimization enabled")
             except ImportError:

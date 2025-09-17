@@ -306,7 +306,7 @@ config = FeatureOptimizationConfig(
 ### Step 1: Identify Current Feature Generation
 ```python
 # Old way
-from src.feature_engineering.feature_generators import FeatureGenerators
+from src.feature_generation.utils.feature_generators import FeatureGenerators
 generator = FeatureGenerators()
 features = generator.batch_technical_indicators(df, indicator_configs)
 ```

@@ -769,7 +769,7 @@ class MultiTimeframeTrainingAnalyzer:
                 guide['code_examples'] = {
                     'feature_preparation': '''
 # Prepare features for single timeframe training
-from src.feature_engineering.optimized_cross_timeframe_analysis_integration import (
+from src.feature_generation.utils.optimized_cross_timeframe_analysis_integration import (
     analyze_cross_timeframes_optimized
 )
 

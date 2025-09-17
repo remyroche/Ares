@@ -10,15 +10,15 @@ For advanced feature engineering, use the existing utilities from `src.feature_e
 
 ```python
 # For advanced feature engineering
-from src.feature_engineering.step06_enhanced_feature_engineering import (
+from src.feature_generation.utils.step06_enhanced_feature_engineering import (
     EnhancedFeatureEngineeringStep,
     FeatureEngineeringConfig
 )
-from src.feature_engineering.step06_utility_container import (
+from src.feature_generation.utils.step06_utility_container import (
     Step06UtilityContainer,
     get_utility_container
 )
-from src.feature_engineering.math_validation import (
+from src.feature_generation.utils.math_validation import (
     safe_divide,
     safe_log,
     safe_sqrt,
@@ -39,7 +39,7 @@ result = await feature_engineer.engineer_features(data)
 ### Example Usage in ML Modules:
 
 ```python
-from src.feature_engineering.step06_enhanced_feature_engineering import EnhancedFeatureEngineeringStep
+from src.feature_generation.utils.step06_enhanced_feature_engineering import EnhancedFeatureEngineeringStep
 
 class MyMLModule:
     def __init__(self, config):
@@ -55,7 +55,7 @@ class MyMLModule:
 
 ```python
 # Use existing math validation utilities
-from src.feature_engineering.math_validation import safe_divide, safe_log
+from src.feature_generation.utils.math_validation import safe_divide, safe_log
 
 def calculate_rsi(prices, period=14):
     deltas = np.diff(prices)

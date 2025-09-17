@@ -195,7 +195,7 @@ class ProfitBasedFeatureEngineering:
     @handles_errors(
         exceptions=(ValueError, TypeError, MemoryError),
         default_return=pd.DataFrame(),
-        context="profit_feature_engineering.apply_all_features"
+        context="profit_feature_generation.utils.apply_all_features"
     )
     def apply_all_features(
         self,

@@ -141,8 +141,8 @@ class StepValidationUpdater:
     def _import_step_class(self, step_name: str) -> Optional[Type]:
         """Import step class dynamically."""
         step_imports = {
-            'step06_advanced_feature_engineering': ('src.training.steps.data_collection.feature_engineering.step06_feature_engineering', 'FeatureEngineeringStep'),
-            'step08_advanced_feature_selection': ('src.training.steps.data_collection.feature_engineering.step08_advanced_feature_selection', 'FeatureSelectionStep'),
+            'step06_advanced_feature_engineering': ('src.training.steps.data_collection.feature_generation.utils.step06_feature_engineering', 'FeatureEngineeringStep'),
+            'step08_advanced_feature_selection': ('src.training.steps.data_collection.feature_generation.utils.step08_advanced_feature_selection', 'FeatureSelectionStep'),
             # Simplified model training steps
             'analyst_model_training': ('src.training.steps.model_training.simplified.analyst_model_training', 'AnalystModelTrainer'),
             'tactician_model_training': ('src.training.steps.model_training.simplified.tactician_model_training', 'TacticianModelTrainer'),

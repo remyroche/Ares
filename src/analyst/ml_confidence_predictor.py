@@ -555,12 +555,12 @@ class MLConfidencePredictor:
         try:
             from src.analyst.multi_timeframe_feature_engineering import MultiTimeframeFeatureEngineering
             from .meta_labeling_system import MetaLabelingSystem
-            # Use existing feature engineering from src.feature_engineering
-            from src.feature_engineering.step06_enhanced_feature_engineering import EnhancedFeatureEngineeringStep
+            # Use existing feature engineering from src.feature_generation.utils
+            from src.feature_generation.utils.step06_enhanced_feature_engineering import EnhancedFeatureEngineeringStep
             from src.analyst.feature_engineering_orchestrator import FeatureEngineeringOrchestrator
             feature_config = self.config.get('feature_engineering', {'enable_advanced_features': True, 'enable_multi_timeframe_features': True, 'enable_autoencoder_features': True, 'enable_legacy_features': True, 'feature_cache_duration': 300, 'enable_feature_selection': True, 'max_features': 500, 'multi_timeframe_feature_engineering': {'enable_mtf_features': True, 'enable_timeframe_adaptation': True}})
             self.advanced_feature_engineering = EnhancedFeatureEngineeringStep(feature_config)
-            await self.advanced_feature_engineering.initialize()
+            await self.advanced_feature_generation.utils.initialize()
             self.multi_timeframe_feature_engineering = MultiTimeframeFeatureEngineering(feature_config)
             self.feature_engineering_orchestrator = FeatureEngineeringOrchestrator(feature_config)
             self.logger.info('✅ Feature engineering integration initialized successfully')

@@ -100,7 +100,7 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
                 config = EnsembleTrainingConfig(
                     model_name="hmm_ensemble_models",
                     timeframe="1h",
-                    base_models=["RandomForestClassifier", "RidgeClassifier", "LogisticRegression"],
+                    base_models=["CatBoostClassifier", "LogisticRegressionCV", "RandomForestClassifier"],
                     meta_model="LogisticRegression",
                     hpo_n_trials=100,
                     hpo_timeout_seconds=3600,
@@ -543,11 +543,35 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
             Dictionary of ensemble models
         """
         try:
-            from sklearn.linear_model import LogisticRegressionCV, RidgeClassifier
-            from sklearn.ensemble import ExtraTreesClassifier
+            try:
+                from catboost import CatBoostClassifier
+                _catboost_available = True
+            except Exception as _e:
+                _catboost_available = False
+            from sklearn.linear_model import LogisticRegressionCV
+            from sklearn.ensemble import RandomForestClassifier
 
             # Create classification base models with validated parameters
             ensemble_models = {}
+
+            # CatBoost Classifier (optional if catboost installed)
+            if _catboost_available:
+                try:
+                    iterations = self.math_validator.validate_positive(1000, "CatBoost iterations")
+                    learning_rate = self.math_validator.validate_range(0.05, 0.0, 1.0, "CatBoost learning_rate")
+                    depth = self.math_validator.validate_positive(6, "CatBoost depth")
+                    ensemble_models['catboost'] = CatBoostClassifier(
+                        iterations=int(iterations),
+                        learning_rate=learning_rate,
+                        depth=int(depth),
+                        random_seed=42,
+                        verbose=False
+                    )
+                    tprint("✅ CatBoostClassifier created with validated parameters")
+                except Exception as e:
+                    tprint(f"⚠️ CatBoostClassifier creation failed: {e}")
+            else:
+                tprint("ℹ️ CatBoost not available - skipping CatBoostClassifier base model")
 
             # Elastic Net (Logistic) via LogisticRegressionCV with elasticnet penalty
             try:
@@ -566,8 +590,11 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
                 tprint("✅ Elastic Net (LogisticRegressionCV) created with elasticnet penalty")
             except Exception as e:
                 tprint(f"⚠️ Elastic Net logistic creation failed: {e}")
-                # Fallback to RidgeClassifier if unavailable
-                ensemble_models['elastic_net_logistic'] = RidgeClassifier(random_state=43)
+                # Fallback: basic LogisticRegressionCV without elasticnet
+                try:
+                    ensemble_models['elastic_net_logistic'] = LogisticRegressionCV(cv=5, max_iter=1000, n_jobs=-1)
+                except Exception:
+                    pass
 
             # Ridge Classifier
             try:
@@ -578,20 +605,22 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
                 tprint(f"⚠️ Ridge Classifier creation failed: {e}")
                 ensemble_models['ridge_classifier'] = RidgeClassifier(random_state=43)
 
-            # Extra Trees Classifier (tree-based alternative to RandomForest)
+            # Random Forest (use classifier variant to maintain classification pipeline)
             try:
-                n_estimators = self.math_validator.validate_positive(300, "ExtraTrees n_estimators")
-                max_depth = self.math_validator.validate_positive(12, "ExtraTrees max_depth")
-                ensemble_models['extra_trees'] = ExtraTreesClassifier(
+                n_estimators = self.math_validator.validate_positive(100, "RandomForest n_estimators")
+                max_depth = self.math_validator.validate_positive(10, "RandomForest max_depth")
+                min_samples_split = self.math_validator.validate_positive(2, "RandomForest min_samples_split")
+                ensemble_models['random_forest'] = RandomForestClassifier(
                     n_estimators=int(n_estimators),
                     max_depth=int(max_depth),
+                    min_samples_split=int(min_samples_split),
                     random_state=44,
                     n_jobs=-1
                 )
-                tprint("✅ ExtraTrees Classifier created with validated parameters")
+                tprint("✅ RandomForestClassifier created with validated parameters")
             except Exception as e:
-                tprint(f"⚠️ ExtraTrees Classifier creation failed: {e}")
-                ensemble_models['extra_trees'] = ExtraTreesClassifier(n_estimators=300, max_depth=12, random_state=44, n_jobs=-1)
+                tprint(f"⚠️ RandomForestClassifier creation failed: {e}")
+                ensemble_models['random_forest'] = RandomForestClassifier(n_estimators=100, max_depth=10, min_samples_split=2, random_state=44, n_jobs=-1)
 
             tprint(f"📊 Created {len(ensemble_models)} classification base models for HMM training")
             tprint(f"   Models: {list(ensemble_models.keys())}")

@@ -1647,9 +1647,9 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             return {'error': f'Momentum metrics calculation failed: {e}'}
     
     def _calculate_cluster_statistical_significance(self, cluster_assignments: List[int], market_data: Any, regime_characteristics: Dict[str, Any] = None, regime_to_cluster: Dict[str, int] = None) -> Dict[str, Any]:
-        """Calculate statistical significance tests for cluster differences."""
-        if not PANDAS_AVAILABLE or not isinstance(market_data, pd.DataFrame):
-            return {'error': 'Pandas not available or invalid market data'}
+        """Calculate regime-level statistical significance tests for cluster differences."""
+        if not regime_characteristics or not regime_to_cluster:
+            return {'error': 'Regime characteristics and regime-to-cluster mapping required for regime-level analysis'}
         
         try:
             from scipy import stats
@@ -1660,112 +1660,34 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             if len(unique_clusters) < 2:
                 return {'error': 'Need at least 2 clusters for statistical analysis'}
             
-            # Prepare data for analysis
-            cluster_data = {}
-            for cluster_id in unique_clusters:
-                cluster_mask = np.array(cluster_assignments) == cluster_id
-                cluster_data[cluster_id] = market_data[cluster_mask]
+            # 1. Regime-Level Statistical Tests for Volume Characteristics
+            volume_tests = self._test_regime_volume_characteristics(regime_characteristics, regime_to_cluster, unique_clusters)
+            statistical_metrics['regime_volume_tests'] = volume_tests
             
-            # 1. ANOVA tests for continuous variables
-            anova_results = {}
-            # Test more relevant features instead of basic OHLCV
-            continuous_vars = ['close', 'volume']  # Keep basic price/volume
-            # Add momentum, volatility, and volume features if available
-            feature_columns = [col for col in market_data.columns if any(
-                keyword in col.lower() for keyword in [
-                    'momentum', 'volatility', 'volume_ratio', 'atr', 'rsi', 'macd',
-                    'price_change', 'return', 'vol', 'std', 'range'
-                ]
-            )]
-            continuous_vars.extend(feature_columns[:10])  # Limit to top 10 features
+            # 2. Regime-Level Statistical Tests for Volatility Characteristics  
+            volatility_tests = self._test_regime_volatility_characteristics(regime_characteristics, regime_to_cluster, unique_clusters)
+            statistical_metrics['regime_volatility_tests'] = volatility_tests
             
-            for var in continuous_vars:
-                if var in market_data.columns:
-                    groups = [cluster_data[cid][var].dropna() for cid in unique_clusters if len(cluster_data[cid][var].dropna()) > 0]
-                    if len(groups) >= 2 and all(len(g) > 1 for g in groups):
-                        try:
-                            f_stat, p_value = stats.f_oneway(*groups)
-                            anova_results[var] = {
-                                'f_statistic': float(f_stat),
-                                'p_value': float(p_value),
-                                'significant': p_value < 0.05,
-                                'effect_size': self._calculate_eta_squared(groups, f_stat)
-                            }
-                        except Exception as e:
-                            anova_results[var] = {'error': str(e)}
+            # 3. Regime-Level Statistical Tests for Momentum Characteristics
+            momentum_tests = self._test_regime_momentum_characteristics(regime_characteristics, regime_to_cluster, unique_clusters)
+            statistical_metrics['regime_momentum_tests'] = momentum_tests
             
-            statistical_metrics['anova_tests'] = anova_results
+            # 4. Cluster Validation Metrics for Bull/Bear/Sideways Distinction
+            cluster_validation = self._validate_bull_bear_sideways_clusters(regime_characteristics, regime_to_cluster, unique_clusters)
+            statistical_metrics['cluster_validation'] = cluster_validation
             
-            # 2. Pairwise t-tests between clusters
-            pairwise_tests = {}
-            for i, cluster_1 in enumerate(unique_clusters):
-                for cluster_2 in unique_clusters[i+1:]:
-                    pair_key = f'cluster_{cluster_1}_vs_cluster_{cluster_2}'
-                    pairwise_tests[pair_key] = {}
-                    
-                    for var in continuous_vars:
-                        if var in market_data.columns:
-                            data_1 = cluster_data[cluster_1][var].dropna()
-                            data_2 = cluster_data[cluster_2][var].dropna()
-                            
-                            if len(data_1) > 1 and len(data_2) > 1:
-                                try:
-                                    # Welch's t-test (unequal variances)
-                                    t_stat, p_value = stats.ttest_ind(data_1, data_2, equal_var=False)
-                                    cohens_d = self._calculate_cohens_d(data_1, data_2)
-                                    
-                                    pairwise_tests[pair_key][var] = {
-                                        't_statistic': float(t_stat),
-                                        'p_value': float(p_value),
-                                        'significant': p_value < 0.05,
-                                        'cohens_d': float(cohens_d),
-                                        'effect_size': 'large' if abs(cohens_d) > 0.8 else 'medium' if abs(cohens_d) > 0.5 else 'small'
-                                    }
-                                except Exception as e:
-                                    pairwise_tests[pair_key][var] = {'error': str(e)}
+            # 5. Regime Similarity Validation (within vs across clusters)
+            similarity_validation = self._validate_regime_similarity_within_across_clusters(regime_characteristics, regime_to_cluster, unique_clusters)
+            statistical_metrics['regime_similarity_validation'] = similarity_validation
             
-            statistical_metrics['pairwise_t_tests'] = pairwise_tests
-            
-            # 3. Within-cluster analysis
-            within_cluster_metrics = {}
-            for cluster_id in unique_clusters:
-                cluster_df = cluster_data[cluster_id]
-                within_metrics = {}
-                
-                for var in continuous_vars:
-                    if var in cluster_df.columns:
-                        data = cluster_df[var].dropna()
-                        if len(data) > 1:
-                            within_metrics[var] = {
-                                'mean': float(data.mean()),
-                                'std': float(data.std()),
-                                'skewness': float(data.skew()),
-                                'kurtosis': float(data.kurtosis()),
-                                'shapiro_p': float(stats.shapiro(data)[1]) if len(data) <= 5000 else None,  # Shapiro-Wilk test
-                                'is_normal': stats.shapiro(data)[1] > 0.05 if len(data) <= 5000 else None
-                            }
-                
-                within_cluster_metrics[f'cluster_{cluster_id}'] = within_metrics
-            
-            statistical_metrics['within_cluster_analysis'] = within_cluster_metrics
-            
-            # 4. Overall cluster separation metrics
-            separation_metrics = self._calculate_cluster_separation_metrics(cluster_data, unique_clusters)
-            statistical_metrics['cluster_separation'] = separation_metrics
-            
-            # 5. Within-regime cluster analysis (more relevant for regime clustering)
-            if regime_characteristics is not None and regime_to_cluster is not None:
-                within_regime_metrics = self._calculate_within_regime_cluster_analysis(
-                    cluster_assignments, regime_characteristics, regime_to_cluster
-                )
-                statistical_metrics['within_regime_analysis'] = within_regime_metrics
-            else:
-                statistical_metrics['within_regime_analysis'] = {'note': 'Regime characteristics not available for within-regime analysis'}
+            # 6. Overall Cluster Quality Assessment
+            overall_quality = self._assess_overall_cluster_quality(volume_tests, volatility_tests, momentum_tests, cluster_validation, similarity_validation)
+            statistical_metrics['overall_cluster_quality'] = overall_quality
             
             return statistical_metrics
             
         except Exception as e:
-            return {'error': f'Statistical analysis failed: {e}'}
+            return {'error': f'Regime-level statistical analysis failed: {e}'}
     
     def _calculate_eta_squared(self, groups, f_stat):
         """Calculate eta-squared effect size for ANOVA."""
@@ -3165,4 +3087,483 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                 'error': f'Merge failed: {e}'
             })
             return result
+
+    # ========== NEW REGIME-LEVEL STATISTICAL ANALYSIS FUNCTIONS ==========
+    
+    def _test_regime_volume_characteristics(self, regime_characteristics: Dict[str, Any], regime_to_cluster: Dict[str, int], unique_clusters: List[int]) -> Dict[str, Any]:
+        """Test statistical differences in volume characteristics between clusters."""
+        try:
+            from scipy import stats
+            
+            volume_tests = {}
+            
+            # Volume characteristics to test
+            volume_features = [
+                'mean_volume_momentum_5', 'mean_volume_momentum_20', 'mean_volume_ratio',
+                'volume_momentum_volatility', 'volume_ratio_volatility'
+            ]
+            
+            # Extract volume data by cluster
+            cluster_volume_data = {}
+            for cluster_id in unique_clusters:
+                cluster_volume_data[cluster_id] = {feature: [] for feature in volume_features}
+            
+            # Collect regime-level volume characteristics by cluster
+            for regime_id, cluster_id in regime_to_cluster.items():
+                if regime_id in regime_characteristics:
+                    volume_chars = regime_characteristics[regime_id].get('volume_characteristics', {})
+                    for feature in volume_features:
+                        if feature in volume_chars:
+                            cluster_volume_data[cluster_id][feature].append(volume_chars[feature])
+            
+            # Perform ANOVA tests for each volume feature
+            for feature in volume_features:
+                groups = []
+                for cluster_id in unique_clusters:
+                    data = cluster_volume_data[cluster_id][feature]
+                    if len(data) > 0:
+                        groups.append(data)
+                
+                if len(groups) >= 2 and all(len(g) > 1 for g in groups):
+                    try:
+                        f_stat, p_value = stats.f_oneway(*groups)
+                        effect_size = self._calculate_eta_squared(groups, f_stat)
+                        
+                        volume_tests[feature] = {
+                            'f_statistic': float(f_stat),
+                            'p_value': float(p_value),
+                            'significant': p_value < 0.05,
+                            'effect_size': float(effect_size),
+                            'effect_magnitude': 'large' if effect_size > 0.14 else 'medium' if effect_size > 0.06 else 'small',
+                            'cluster_means': {f'cluster_{cid}': float(np.mean(cluster_volume_data[cid][feature])) if cluster_volume_data[cid][feature] else 0.0 for cid in unique_clusters}
+                        }
+                    except Exception as e:
+                        volume_tests[feature] = {'error': str(e)}
+                else:
+                    volume_tests[feature] = {'error': 'Insufficient data for statistical test'}
+            
+            # Overall volume differentiation score
+            significant_features = sum(1 for test in volume_tests.values() if isinstance(test, dict) and test.get('significant', False))
+            total_features = len([test for test in volume_tests.values() if isinstance(test, dict) and 'error' not in test])
+            
+            volume_tests['overall_volume_differentiation'] = {
+                'significant_features': significant_features,
+                'total_features': total_features,
+                'differentiation_score': significant_features / total_features if total_features > 0 else 0.0,
+                'differentiation_quality': 'high' if (significant_features / total_features if total_features > 0 else 0) > 0.6 else 'medium' if (significant_features / total_features if total_features > 0 else 0) > 0.3 else 'low'
+            }
+            
+            return volume_tests
+            
+        except Exception as e:
+            return {'error': f'Volume characteristics test failed: {e}'}
+    
+    def _test_regime_volatility_characteristics(self, regime_characteristics: Dict[str, Any], regime_to_cluster: Dict[str, int], unique_clusters: List[int]) -> Dict[str, Any]:
+        """Test statistical differences in volatility characteristics between clusters."""
+        try:
+            from scipy import stats
+            
+            volatility_tests = {}
+            
+            # Volatility characteristics to test
+            volatility_features = [
+                'mean_volatility_5', 'mean_volatility_10', 'mean_volatility_20',
+                'volatility_momentum', 'volatility_acceleration', 'mean_atr_normalized'
+            ]
+            
+            # Extract volatility data by cluster
+            cluster_volatility_data = {}
+            for cluster_id in unique_clusters:
+                cluster_volatility_data[cluster_id] = {feature: [] for feature in volatility_features}
+            
+            # Collect regime-level volatility characteristics by cluster
+            for regime_id, cluster_id in regime_to_cluster.items():
+                if regime_id in regime_characteristics:
+                    volatility_chars = regime_characteristics[regime_id].get('volatility_characteristics', {})
+                    for feature in volatility_features:
+                        if feature in volatility_chars:
+                            cluster_volatility_data[cluster_id][feature].append(volatility_chars[feature])
+            
+            # Perform ANOVA tests for each volatility feature
+            for feature in volatility_features:
+                groups = []
+                for cluster_id in unique_clusters:
+                    data = cluster_volatility_data[cluster_id][feature]
+                    if len(data) > 0:
+                        groups.append(data)
+                
+                if len(groups) >= 2 and all(len(g) > 1 for g in groups):
+                    try:
+                        f_stat, p_value = stats.f_oneway(*groups)
+                        effect_size = self._calculate_eta_squared(groups, f_stat)
+                        
+                        volatility_tests[feature] = {
+                            'f_statistic': float(f_stat),
+                            'p_value': float(p_value),
+                            'significant': p_value < 0.05,
+                            'effect_size': float(effect_size),
+                            'effect_magnitude': 'large' if effect_size > 0.14 else 'medium' if effect_size > 0.06 else 'small',
+                            'cluster_means': {f'cluster_{cid}': float(np.mean(cluster_volatility_data[cid][feature])) if cluster_volatility_data[cid][feature] else 0.0 for cid in unique_clusters}
+                        }
+                    except Exception as e:
+                        volatility_tests[feature] = {'error': str(e)}
+                else:
+                    volatility_tests[feature] = {'error': 'Insufficient data for statistical test'}
+            
+            # Overall volatility differentiation score
+            significant_features = sum(1 for test in volatility_tests.values() if isinstance(test, dict) and test.get('significant', False))
+            total_features = len([test for test in volatility_tests.values() if isinstance(test, dict) and 'error' not in test])
+            
+            volatility_tests['overall_volatility_differentiation'] = {
+                'significant_features': significant_features,
+                'total_features': total_features,
+                'differentiation_score': significant_features / total_features if total_features > 0 else 0.0,
+                'differentiation_quality': 'high' if (significant_features / total_features if total_features > 0 else 0) > 0.6 else 'medium' if (significant_features / total_features if total_features > 0 else 0) > 0.3 else 'low'
+            }
+            
+            return volatility_tests
+            
+        except Exception as e:
+            return {'error': f'Volatility characteristics test failed: {e}'}
+    
+    def _test_regime_momentum_characteristics(self, regime_characteristics: Dict[str, Any], regime_to_cluster: Dict[str, int], unique_clusters: List[int]) -> Dict[str, Any]:
+        """Test statistical differences in momentum characteristics between clusters."""
+        try:
+            from scipy import stats
+            
+            momentum_tests = {}
+            
+            # Momentum characteristics to test
+            momentum_features = [
+                'mean_price_momentum_5', 'mean_price_momentum_20', 'mean_rsi', 'mean_macd',
+                'rsi_momentum', 'macd_momentum', 'momentum_strength'
+            ]
+            
+            # Extract momentum data by cluster
+            cluster_momentum_data = {}
+            for cluster_id in unique_clusters:
+                cluster_momentum_data[cluster_id] = {feature: [] for feature in momentum_features}
+            
+            # Collect regime-level momentum characteristics by cluster
+            for regime_id, cluster_id in regime_to_cluster.items():
+                if regime_id in regime_characteristics:
+                    momentum_chars = regime_characteristics[regime_id].get('momentum_characteristics', {})
+                    for feature in momentum_features:
+                        if feature in momentum_chars:
+                            cluster_momentum_data[cluster_id][feature].append(momentum_chars[feature])
+            
+            # Perform ANOVA tests for each momentum feature
+            for feature in momentum_features:
+                groups = []
+                for cluster_id in unique_clusters:
+                    data = cluster_momentum_data[cluster_id][feature]
+                    if len(data) > 0:
+                        groups.append(data)
+                
+                if len(groups) >= 2 and all(len(g) > 1 for g in groups):
+                    try:
+                        f_stat, p_value = stats.f_oneway(*groups)
+                        effect_size = self._calculate_eta_squared(groups, f_stat)
+                        
+                        momentum_tests[feature] = {
+                            'f_statistic': float(f_stat),
+                            'p_value': float(p_value),
+                            'significant': p_value < 0.05,
+                            'effect_size': float(effect_size),
+                            'effect_magnitude': 'large' if effect_size > 0.14 else 'medium' if effect_size > 0.06 else 'small',
+                            'cluster_means': {f'cluster_{cid}': float(np.mean(cluster_momentum_data[cid][feature])) if cluster_momentum_data[cid][feature] else 0.0 for cid in unique_clusters}
+                        }
+                    except Exception as e:
+                        momentum_tests[feature] = {'error': str(e)}
+                else:
+                    momentum_tests[feature] = {'error': 'Insufficient data for statistical test'}
+            
+            # Overall momentum differentiation score
+            significant_features = sum(1 for test in momentum_tests.values() if isinstance(test, dict) and test.get('significant', False))
+            total_features = len([test for test in momentum_tests.values() if isinstance(test, dict) and 'error' not in test])
+            
+            momentum_tests['overall_momentum_differentiation'] = {
+                'significant_features': significant_features,
+                'total_features': total_features,
+                'differentiation_score': significant_features / total_features if total_features > 0 else 0.0,
+                'differentiation_quality': 'high' if (significant_features / total_features if total_features > 0 else 0) > 0.6 else 'medium' if (significant_features / total_features if total_features > 0 else 0) > 0.3 else 'low'
+            }
+            
+            return momentum_tests
+            
+        except Exception as e:
+            return {'error': f'Momentum characteristics test failed: {e}'}
+    
+    def _validate_bull_bear_sideways_clusters(self, regime_characteristics: Dict[str, Any], regime_to_cluster: Dict[str, int], unique_clusters: List[int]) -> Dict[str, Any]:
+        """Validate whether the 3 clusters meaningfully represent Bull/Bear/Sideways market conditions."""
+        try:
+            cluster_validation = {}
+            
+            # Calculate cluster profiles
+            cluster_profiles = {}
+            for cluster_id in unique_clusters:
+                cluster_regimes = [regime_id for regime_id, cid in regime_to_cluster.items() if cid == cluster_id]
+                
+                if not cluster_regimes:
+                    continue
+                
+                # Aggregate characteristics for this cluster
+                momentum_values = []
+                volatility_values = []
+                volume_momentum_values = []
+                
+                for regime_id in cluster_regimes:
+                    if regime_id in regime_characteristics:
+                        regime_data = regime_characteristics[regime_id]
+                        
+                        # Momentum indicators
+                        momentum_chars = regime_data.get('momentum_characteristics', {})
+                        if momentum_chars:
+                            momentum_values.append(momentum_chars.get('mean_price_momentum_5', 0))
+                        
+                        # Volatility indicators
+                        volatility_chars = regime_data.get('volatility_characteristics', {})
+                        if volatility_chars:
+                            volatility_values.append(volatility_chars.get('mean_volatility_20', 0))
+                        
+                        # Volume momentum
+                        volume_chars = regime_data.get('volume_characteristics', {})
+                        if volume_chars:
+                            volume_momentum_values.append(volume_chars.get('mean_volume_momentum_5', 0))
+                
+                # Calculate cluster profile
+                avg_momentum = np.mean(momentum_values) if momentum_values else 0
+                avg_volatility = np.mean(volatility_values) if volatility_values else 0
+                avg_volume_momentum = np.mean(volume_momentum_values) if volume_momentum_values else 0
+                
+                # Classify cluster behavior
+                if avg_momentum > 0.02:  # Strong positive momentum
+                    market_type = 'Bull'
+                    confidence = min(avg_momentum * 20, 1.0)  # Scale to 0-1
+                elif avg_momentum < -0.02:  # Strong negative momentum
+                    market_type = 'Bear'
+                    confidence = min(abs(avg_momentum) * 20, 1.0)
+                else:  # Low momentum
+                    market_type = 'Sideways'
+                    # High volatility with low momentum suggests sideways
+                    confidence = min(avg_volatility * 10, 1.0) if avg_volatility > 0.01 else 0.3
+                
+                cluster_profiles[cluster_id] = {
+                    'avg_momentum': float(avg_momentum),
+                    'avg_volatility': float(avg_volatility),
+                    'avg_volume_momentum': float(avg_volume_momentum),
+                    'predicted_market_type': market_type,
+                    'classification_confidence': float(confidence),
+                    'n_regimes': len(cluster_regimes)
+                }
+            
+            # Validate cluster distinctiveness
+            cluster_validation['cluster_profiles'] = cluster_profiles
+            
+            # Check if we have good Bull/Bear/Sideways separation
+            market_types = [profile['predicted_market_type'] for profile in cluster_profiles.values()]
+            unique_market_types = set(market_types)
+            
+            cluster_validation['market_type_coverage'] = {
+                'unique_market_types': list(unique_market_types),
+                'has_bull': 'Bull' in unique_market_types,
+                'has_bear': 'Bear' in unique_market_types,
+                'has_sideways': 'Sideways' in unique_market_types,
+                'complete_coverage': len(unique_market_types) == 3
+            }
+            
+            # Calculate separation quality
+            momentum_values_by_cluster = []
+            for cluster_id in unique_clusters:
+                if cluster_id in cluster_profiles:
+                    momentum_values_by_cluster.append(cluster_profiles[cluster_id]['avg_momentum'])
+            
+            if len(momentum_values_by_cluster) >= 2:
+                momentum_range = max(momentum_values_by_cluster) - min(momentum_values_by_cluster)
+                momentum_std = np.std(momentum_values_by_cluster)
+                
+                cluster_validation['separation_quality'] = {
+                    'momentum_range': float(momentum_range),
+                    'momentum_std': float(momentum_std),
+                    'separation_score': float(momentum_range + momentum_std),
+                    'separation_quality': 'high' if momentum_range > 0.08 else 'medium' if momentum_range > 0.04 else 'low'
+                }
+            
+            # Overall validation score
+            coverage_score = len(unique_market_types) / 3.0  # 0-1 based on market type coverage
+            separation_score = cluster_validation.get('separation_quality', {}).get('separation_score', 0) / 0.2  # Normalize
+            separation_score = min(separation_score, 1.0)
+            
+            avg_confidence = np.mean([profile['classification_confidence'] for profile in cluster_profiles.values()]) if cluster_profiles else 0
+            
+            overall_score = (coverage_score * 0.4 + separation_score * 0.4 + avg_confidence * 0.2)
+            
+            cluster_validation['overall_validation'] = {
+                'coverage_score': float(coverage_score),
+                'separation_score': float(separation_score),
+                'avg_confidence': float(avg_confidence),
+                'overall_score': float(overall_score),
+                'validation_quality': 'high' if overall_score > 0.7 else 'medium' if overall_score > 0.5 else 'low'
+            }
+            
+            return cluster_validation
+            
+        except Exception as e:
+            return {'error': f'Bull/Bear/Sideways validation failed: {e}'}
+    
+    def _validate_regime_similarity_within_across_clusters(self, regime_characteristics: Dict[str, Any], regime_to_cluster: Dict[str, int], unique_clusters: List[int]) -> Dict[str, Any]:
+        """Validate that regimes within clusters are more similar than regimes across clusters."""
+        try:
+            similarity_validation = {}
+            
+            # Calculate within-cluster similarities
+            within_cluster_similarities = {}
+            for cluster_id in unique_clusters:
+                cluster_regimes = [regime_id for regime_id, cid in regime_to_cluster.items() if cid == cluster_id]
+                
+                if len(cluster_regimes) < 2:
+                    within_cluster_similarities[cluster_id] = {'mean_similarity': 1.0, 'similarities': []}
+                    continue
+                
+                similarities = []
+                for i, regime_1 in enumerate(cluster_regimes):
+                    for regime_2 in cluster_regimes[i+1:]:
+                        if regime_1 in regime_characteristics and regime_2 in regime_characteristics:
+                            similarity = self._calculate_regime_similarity(
+                                regime_characteristics[regime_1], 
+                                regime_characteristics[regime_2]
+                            )
+                            similarities.append(similarity)
+                
+                within_cluster_similarities[cluster_id] = {
+                    'mean_similarity': float(np.mean(similarities)) if similarities else 0.0,
+                    'std_similarity': float(np.std(similarities)) if similarities else 0.0,
+                    'min_similarity': float(np.min(similarities)) if similarities else 0.0,
+                    'max_similarity': float(np.max(similarities)) if similarities else 0.0,
+                    'n_comparisons': len(similarities)
+                }
+            
+            # Calculate across-cluster similarities
+            across_cluster_similarities = []
+            for i, cluster_1 in enumerate(unique_clusters):
+                for cluster_2 in unique_clusters[i+1:]:
+                    cluster_1_regimes = [regime_id for regime_id, cid in regime_to_cluster.items() if cid == cluster_1]
+                    cluster_2_regimes = [regime_id for regime_id, cid in regime_to_cluster.items() if cid == cluster_2]
+                    
+                    cluster_pair_similarities = []
+                    for regime_1 in cluster_1_regimes:
+                        for regime_2 in cluster_2_regimes:
+                            if regime_1 in regime_characteristics and regime_2 in regime_characteristics:
+                                similarity = self._calculate_regime_similarity(
+                                    regime_characteristics[regime_1], 
+                                    regime_characteristics[regime_2]
+                                )
+                                cluster_pair_similarities.append(similarity)
+                                across_cluster_similarities.append(similarity)
+            
+            # Summary statistics
+            avg_within_similarity = np.mean([cluster_data['mean_similarity'] for cluster_data in within_cluster_similarities.values()])
+            avg_across_similarity = np.mean(across_cluster_similarities) if across_cluster_similarities else 0.0
+            
+            similarity_validation['within_cluster_similarities'] = within_cluster_similarities
+            similarity_validation['across_cluster_summary'] = {
+                'mean_similarity': float(avg_across_similarity),
+                'std_similarity': float(np.std(across_cluster_similarities)) if across_cluster_similarities else 0.0,
+                'min_similarity': float(np.min(across_cluster_similarities)) if across_cluster_similarities else 0.0,
+                'max_similarity': float(np.max(across_cluster_similarities)) if across_cluster_similarities else 0.0,
+                'n_comparisons': len(across_cluster_similarities)
+            }
+            
+            # Validation metrics
+            similarity_difference = avg_within_similarity - avg_across_similarity
+            similarity_ratio = avg_within_similarity / avg_across_similarity if avg_across_similarity > 0 else float('inf')
+            
+            similarity_validation['validation_metrics'] = {
+                'avg_within_similarity': float(avg_within_similarity),
+                'avg_across_similarity': float(avg_across_similarity),
+                'similarity_difference': float(similarity_difference),
+                'similarity_ratio': float(similarity_ratio) if similarity_ratio != float('inf') else 10.0,
+                'good_clustering': similarity_difference > 0.1 and similarity_ratio > 1.2,
+                'clustering_quality': 'high' if similarity_difference > 0.2 and similarity_ratio > 1.5 else 'medium' if similarity_difference > 0.1 and similarity_ratio > 1.2 else 'low'
+            }
+            
+            return similarity_validation
+            
+        except Exception as e:
+            return {'error': f'Regime similarity validation failed: {e}'}
+    
+    def _assess_overall_cluster_quality(self, volume_tests: Dict[str, Any], volatility_tests: Dict[str, Any], momentum_tests: Dict[str, Any], cluster_validation: Dict[str, Any], similarity_validation: Dict[str, Any]) -> Dict[str, Any]:
+        """Assess overall quality of the clustering based on all statistical tests."""
+        try:
+            overall_assessment = {}
+            
+            # Extract key metrics
+            volume_diff_score = volume_tests.get('overall_volume_differentiation', {}).get('differentiation_score', 0)
+            volatility_diff_score = volatility_tests.get('overall_volatility_differentiation', {}).get('differentiation_score', 0)
+            momentum_diff_score = momentum_tests.get('overall_momentum_differentiation', {}).get('differentiation_score', 0)
+            
+            bull_bear_score = cluster_validation.get('overall_validation', {}).get('overall_score', 0)
+            similarity_quality = similarity_validation.get('validation_metrics', {}).get('clustering_quality', 'low')
+            similarity_score = 1.0 if similarity_quality == 'high' else 0.6 if similarity_quality == 'medium' else 0.3
+            
+            # Component scores
+            overall_assessment['component_scores'] = {
+                'volume_differentiation': float(volume_diff_score),
+                'volatility_differentiation': float(volatility_diff_score),
+                'momentum_differentiation': float(momentum_diff_score),
+                'bull_bear_validation': float(bull_bear_score),
+                'similarity_validation': float(similarity_score)
+            }
+            
+            # Weighted overall score
+            weights = {
+                'volume': 0.15,
+                'volatility': 0.25,
+                'momentum': 0.30,
+                'bull_bear': 0.20,
+                'similarity': 0.10
+            }
+            
+            weighted_score = (
+                volume_diff_score * weights['volume'] +
+                volatility_diff_score * weights['volatility'] +
+                momentum_diff_score * weights['momentum'] +
+                bull_bear_score * weights['bull_bear'] +
+                similarity_score * weights['similarity']
+            )
+            
+            # Quality assessment
+            if weighted_score > 0.7:
+                quality_level = 'high'
+                assessment = 'Excellent clustering - clusters are well-differentiated and meaningful'
+            elif weighted_score > 0.5:
+                quality_level = 'medium'
+                assessment = 'Good clustering - clusters show reasonable differentiation'
+            else:
+                quality_level = 'low'
+                assessment = 'Poor clustering - clusters lack clear differentiation'
+            
+            overall_assessment['overall_score'] = float(weighted_score)
+            overall_assessment['quality_level'] = quality_level
+            overall_assessment['assessment'] = assessment
+            
+            # Recommendations
+            recommendations = []
+            if volume_diff_score < 0.5:
+                recommendations.append('Consider improving volume-based regime characterization')
+            if volatility_diff_score < 0.5:
+                recommendations.append('Consider improving volatility-based regime characterization')
+            if momentum_diff_score < 0.5:
+                recommendations.append('Consider improving momentum-based regime characterization')
+            if bull_bear_score < 0.6:
+                recommendations.append('Clustering may not clearly distinguish Bull/Bear/Sideways markets')
+            if similarity_score < 0.6:
+                recommendations.append('Regimes within clusters may not be sufficiently similar')
+            
+            overall_assessment['recommendations'] = recommendations
+            
+            return overall_assessment
+            
+        except Exception as e:
+            return {'error': f'Overall cluster quality assessment failed: {e}'}
     

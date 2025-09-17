@@ -14,11 +14,13 @@ from pathlib import Path
 import warnings
 
 from src.utils.tprint import tprint
+from src.utils.logger import system_logger
 from src.utils.common_operations import safe_divide, safe_float, safe_int, ensure_directory
 from src.utils.math_validation import validate_finite, validate_positive, validate_range
 from src.utils.serialization_utils import UniversalSerializer
 
-# Using tprint for all logging - no logger needed
+# Module logger
+logger = system_logger.getChild('HMMTrainingReporting')
 
 
 @dataclass

@@ -119,6 +119,12 @@ except ImportError:
 
 # Using tprint for all logging - no logger needed
 
+# Additional ML imports for global classifier, calibration, and metrics
+from sklearn.ensemble import StackingClassifier, RandomForestClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.calibration import CalibratedClassifierCV
+from sklearn.metrics import log_loss
+
 
 class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
     """
@@ -161,7 +167,7 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
                 config = EnsembleTrainingConfig(
                     model_name="hmm_ensemble_models",
                     timeframe="1h",
-                    base_models=["CatBoostClassifier", "LogisticRegressionCV", "RandomForestClassifier"],
+                    base_models=["CatBoostClassifier", "LogisticRegression"],
                     meta_model="LogisticRegression",
                     hpo_n_trials=100,
                     hpo_timeout_seconds=3600,
@@ -169,7 +175,7 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
                     enable_data_augmentation=True,
                     augmentation_method="smote",
                     model_save_path="./models/hmm_ensemble_models",
-                    evaluation_metrics=["accuracy", "precision", "recall", "f1_score", "roc_auc"]
+                    evaluation_metrics=["accuracy", "precision", "recall", "f1_score", "log_loss"]
                 )
                 tprint("📋 Using default configuration for HMM ensemble training (classification)")
 
@@ -213,6 +219,11 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
             tprint(f"❌ Failed to initialize HMM Ensemble Training Component: {e}")
             tprint(f"🔍 Traceback: {traceback.format_exc()}")
             raise RuntimeError(f"HMM Ensemble Training Component initialization failed: {e}") from e
+
+        # Placeholder for global regime classifier and metadata
+        self.global_regime_clf = None
+        self.regime_classes_ = None
+        self.global_calibration_ece = None
     
     def _validate_config(self, config: EnsembleTrainingConfig) -> None:
         """
@@ -456,17 +467,48 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
                 if 'error' not in results:
                     results = self._add_ensemble_specific_metadata(results, base_hmm_models, hmm_training_metrics)
                 
-                # Step 5: Optimize memory usage before generating the report so it's included
-                tprint("🔄 Step 5: Optimizing memory usage...")
+                # Step 5: Train global regime classifier (stacked, calibrated)
+                tprint("🔄 Step 5: Training global regime classifier (stacked + calibrated)...")
+                try:
+                    self._train_global_regime_classifier(X, regime_labels)
+                    if hasattr(self.global_regime_clf, 'predict_proba'):
+                        proba_train = self.global_regime_clf.predict_proba(X)
+                        self.global_calibration_ece = self._expected_calibration_error(regime_labels, proba_train)
+                        tprint(f"📏 Global classifier ECE (train proxy): {self.global_calibration_ece:.4f}")
+                    results['global_regime_classifier'] = {
+                        'trained': True,
+                        'classes': self.regime_classes_.tolist() if self.regime_classes_ is not None else None,
+                        'ece_train': float(self.global_calibration_ece) if self.global_calibration_ece is not None else None
+                    }
+                except Exception as e:
+                    tprint(f"⚠️ Global regime classifier training failed: {e}")
+                    results['global_regime_classifier'] = {'trained': False, 'error': str(e)}
+
+                # Step 6: Optimize memory usage before generating the report so it's included
+                tprint("🔄 Step 6: Optimizing memory usage...")
                 memory_stats = optimize_memory()
                 results['memory_optimization'] = memory_stats
 
-                # Step 6: Generate comprehensive report using common utilities
+                # Step 7: Generate comprehensive report using common utilities
                 execution_time = time.time() - execution_start_time
                 results = self._generate_comprehensive_report(results, execution_time, base_hmm_models, hmm_training_metrics)
-                
+
                 tprint(f"✅ HMM ensemble training completed successfully in {execution_time:.2f}s")
                 tprint(f"🧠 Memory optimization: {memory_stats}")
+                
+                # Step 8: Automatically compute probabilities on training features for convenience
+                try:
+                    proba_out = self.predict_regime_proba(X)
+                    results['regime_probabilities'] = {
+                        'proba': proba_out.get('proba'),
+                        'entropy': proba_out.get('entropy'),
+                        'classes': proba_out.get('classes'),
+                        'ece_train': proba_out.get('ece_train')
+                    }
+                    tprint("📊 Added regime probabilities and entropy to results")
+                except Exception as e:
+                    tprint(f"⚠️ Could not compute regime probabilities automatically: {e}")
+                
                 return results
                 
             except Exception as e:
@@ -625,6 +667,94 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
         except Exception as e:
             tprint(f"❌ Core training execution failed: {e}")
             raise
+
+    def _train_global_regime_classifier(self, X: np.ndarray, regime_labels: np.ndarray) -> None:
+        """
+        Train a global stacked classifier with calibrated meta learner (RandomForestClassifier) over predict_proba.
+        Base models: CatBoostClassifier, LogisticRegression-elasticnet, RandomForestClassifier.
+        Meta learner: RandomForestClassifier wrapped with CalibratedClassifierCV.
+        """
+        # Determine classes
+        self.regime_classes_ = np.unique(regime_labels)
+
+        # Define base estimators
+        base_estimators = []
+        try:
+            from catboost import CatBoostClassifier
+            cat = CatBoostClassifier(iterations=800, learning_rate=0.05, depth=6, random_seed=42, verbose=False, loss_function='MultiClass')
+            base_estimators.append(('catboost', cat))
+        except Exception:
+            pass
+
+        logreg = LogisticRegression(
+            penalty='elasticnet', solver='saga', l1_ratio=0.5, max_iter=2000, class_weight='balanced', multi_class='auto', random_state=43
+        )
+        base_estimators.append(('logreg_en', logreg))
+
+        # RandomForestClassifier removed from base estimators per request
+
+        # Meta learner: RF with calibration
+        meta = RandomForestClassifier(
+            n_estimators=300, max_depth=10, min_samples_split=2, random_state=123, n_jobs=-1, class_weight='balanced'
+        )
+        meta_calibrated = CalibratedClassifierCV(base_estimator=meta, method='isotonic', cv=3)
+
+        # Stacking classifier using predict_proba
+        stack = StackingClassifier(
+            estimators=base_estimators,
+            final_estimator=meta_calibrated,
+            stack_method='predict_proba',
+            passthrough=True,
+            cv=3,
+            n_jobs=-1
+        )
+
+        # Fit on all samples (assume upstream validation/HPO handles overfit risk)
+        stack.fit(X, regime_labels)
+        self.global_regime_clf = stack
+
+    def _expected_calibration_error(self, y_true: np.ndarray, proba: np.ndarray, n_bins: int = 15) -> float:
+        """Compute multiclass ECE on probability simplex."""
+        # Argmax labels and confidences
+        preds = np.argmax(proba, axis=1)
+        conf = np.max(proba, axis=1)
+        correct = (preds == y_true).astype(float)
+
+        # Bin by confidence
+        bins = np.linspace(0.0, 1.0, n_bins+1)
+        ece = 0.0
+        for i in range(n_bins):
+            lo, hi = bins[i], bins[i+1]
+            mask = (conf > lo) & (conf <= hi)
+            if not np.any(mask):
+                continue
+            acc_bin = float(np.mean(correct[mask]))
+            conf_bin = float(np.mean(conf[mask]))
+            weight = float(np.mean(mask))
+            ece += weight * abs(acc_bin - conf_bin)
+        return float(ece)
+
+    def predict_regime_proba(self, X: np.ndarray) -> Dict[str, Any]:
+        """
+        Predict calibrated regime probabilities and entropy using the global stacked classifier.
+        Returns dict with 'proba', 'entropy', 'classes'.
+        """
+        if self.global_regime_clf is None:
+            raise RuntimeError("Global regime classifier not trained")
+        proba = self.global_regime_clf.predict_proba(X)
+        # Entropy
+        eps = 1e-12
+        p_safe = np.clip(proba, eps, 1.0)
+        ent = -np.sum(p_safe * np.log(p_safe), axis=1)
+        # Normalize by log(K) for [0,1]
+        k = proba.shape[1]
+        ent_norm = ent / np.log(k) if k > 1 else ent
+        return {
+            'proba': proba,
+            'entropy': ent_norm,
+            'classes': self.regime_classes_.tolist() if self.regime_classes_ is not None else None,
+            'ece_train': float(self.global_calibration_ece) if self.global_calibration_ece is not None else None
+        }
     
     def _create_base_models_for_ensemble(self) -> Dict[str, Any]:
         """
@@ -636,103 +766,76 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
             Dictionary of base models for ensemble training
         """
         try:
-            try:
-                from catboost import CatBoostClassifier
-                _catboost_available = True
-            except Exception as _e:
-                _catboost_available = False
-            from sklearn.linear_model import LogisticRegressionCV
-            from sklearn.ensemble import RandomForestClassifier
-
-            # Create classification base models with validated parameters
+            from catboost import CatBoostClassifier
+            from sklearn.linear_model import LogisticRegression
+            
             ensemble_models = {}
-
-            # CatBoost Classifier (optional if catboost installed)
-            if _catboost_available:
-                try:
-                    iterations = self.math_validator.validate_positive(1000, "CatBoost iterations")
-                    learning_rate = self.math_validator.validate_range(0.05, 0.0, 1.0, "CatBoost learning_rate")
-                    depth = self.math_validator.validate_positive(6, "CatBoost depth")
-                    ensemble_models['catboost'] = CatBoostClassifier(
-                        iterations=int(iterations),
-                        learning_rate=learning_rate,
-                        depth=int(depth),
-                        random_seed=42,
-                        verbose=False
-                    )
-                    tprint("✅ CatBoostClassifier created with validated parameters")
-                except Exception as e:
-                    tprint(f"⚠️ CatBoostClassifier creation failed: {e}")
-            else:
-                tprint("ℹ️ CatBoost not available - skipping CatBoostClassifier base model")
-
-            # Elastic Net (Logistic) via LogisticRegressionCV with elasticnet penalty
+            
+            # CatBoostClassifier with validated parameters (Primary: Speed + robustness)
             try:
-                max_iter = self.math_validator.validate_positive(2000, "ElasticNet-Logistic max_iter")
-                # l1_ratio in [0,1]; try a small grid
-                l1_ratios = [0.2, 0.5, 0.8]
-                ensemble_models['elastic_net_logistic'] = LogisticRegressionCV(
-                    Cs=10,
-                    cv=5,
-                    penalty='elasticnet',
-                    solver='saga',
-                    l1_ratios=l1_ratios,
-                    max_iter=int(max_iter),
-                    n_jobs=-1
-
+                iterations = 1000
+                learning_rate = 0.05
+                depth = 6
+                if self.math_validator:
+                    iterations = self.math_validator.validate_positive(iterations, "CatBoost iterations")
+                    learning_rate = self.math_validator.validate_range(learning_rate, 0.0, 1.0, "CatBoost learning_rate")
+                    depth = self.math_validator.validate_positive(depth, "CatBoost depth")
+                ensemble_models['CatBoostClassifier'] = CatBoostClassifier(
+                    iterations=int(iterations),
+                    learning_rate=learning_rate,
+                    depth=int(depth),
+                    random_seed=42,
+                    verbose=False,
+                    loss_function='MultiClass'
                 )
-                tprint("✅ Elastic Net (LogisticRegressionCV) created with elasticnet penalty")
+                tprint("✅ CatBoostClassifier created with validated parameters")
             except Exception as e:
-                tprint(f"⚠️ Elastic Net logistic creation failed: {e}")
-                # Fallback: basic LogisticRegressionCV without elasticnet
+                tprint(f"⚠️ CatBoostClassifier creation failed: {e}")
                 try:
-                    ensemble_models['elastic_net_logistic'] = LogisticRegressionCV(cv=5, max_iter=1000, n_jobs=-1)
+                    ensemble_models['CatBoostClassifier'] = CatBoostClassifier(iterations=800, learning_rate=0.05, depth=6, random_seed=42, verbose=False, loss_function='MultiClass')
                 except Exception:
                     pass
-
-            # Ridge Classifier
+            
+            # LogisticRegression with elastic-net regularization (Primary: Fast baseline)
             try:
-                alpha = self.math_validator.validate_positive(1.0, "RidgeClassifier alpha")
-                ensemble_models['ridge_classifier'] = RidgeClassifier(alpha=float(alpha), random_state=43)
-                tprint("✅ Ridge Classifier created with validated parameters")
-            except Exception as e:
-                tprint(f"⚠️ Ridge Classifier creation failed: {e}")
-                ensemble_models['ridge_classifier'] = RidgeClassifier(random_state=43)
-
-            # Random Forest (use classifier variant to maintain classification pipeline)
-            try:
-                n_estimators = self.math_validator.validate_positive(100, "RandomForest n_estimators")
-                max_depth = self.math_validator.validate_positive(10, "RandomForest max_depth")
-                min_samples_split = self.math_validator.validate_positive(2, "RandomForest min_samples_split")
-                ensemble_models['random_forest'] = RandomForestClassifier(
-
-                    n_estimators=int(n_estimators),
-                    max_depth=int(max_depth),
-                    min_samples_split=int(min_samples_split),
-                    random_state=44,
-                    n_jobs=-1
+                max_iter = 1500
+                l1_ratio = 0.5
+                if self.math_validator:
+                    max_iter = self.math_validator.validate_positive(max_iter, "LogReg max_iter")
+                    l1_ratio = self.math_validator.validate_range(l1_ratio, 0.0, 1.0, "LogReg l1_ratio")
+                ensemble_models['LogisticRegression'] = LogisticRegression(
+                    random_state=43,
+                    max_iter=int(max_iter),
+                    penalty='elasticnet',
+                    l1_ratio=l1_ratio,
+                    solver='saga',
+                    class_weight='balanced',
+                    multi_class='auto'
                 )
-                tprint("✅ RandomForestClassifier created with validated parameters")
+                tprint("✅ LogisticRegression (elastic-net) created with validated parameters")
             except Exception as e:
-                tprint(f"⚠️ RandomForestClassifier creation failed: {e}")
-                ensemble_models['random_forest'] = RandomForestClassifier(n_estimators=100, max_depth=10, min_samples_split=2, random_state=44, n_jobs=-1)
-
-            tprint(f"📊 Created {len(ensemble_models)} classification base models for HMM training")
+                tprint(f"⚠️ LogisticRegression creation failed: {e}")
+                try:
+                    ensemble_models['LogisticRegression'] = LogisticRegression(random_state=43, max_iter=1000, penalty='elasticnet', l1_ratio=0.5, solver='saga', class_weight='balanced', multi_class='auto')
+                except Exception:
+                    pass
+            
+            tprint(f"📊 Created {len(ensemble_models)} base models for HMM training")
             tprint(f"   Models: {list(ensemble_models.keys())}")
-
-            # Update training stats using safe operations
-            self.training_stats['ensemble_models_created'] = len(ensemble_models)
+            
+            # Update training stats
+            self.training_stats['base_models_created'] = len(ensemble_models)
             self.training_stats['model_creation_method'] = 'classification_validated'
-
-            return base_models
+            
+            return ensemble_models
             
         except ImportError as e:
             tprint(f"❌ CRITICAL: Failed to import required model libraries - FAILING FAST")
             tprint(f"   Error: {e}")
             raise RuntimeError(f"Required model libraries not available: {e}") from e
         except Exception as e:
-            tprint(f"❌ Failed to create ensemble models: {e}")
-            raise RuntimeError(f"Ensemble model creation failed: {e}") from e
+            tprint(f"❌ Failed to create base models: {e}")
+            raise RuntimeError(f"Base model creation failed: {e}") from e
 
     def _prepare_base_models_for_regimes(self, base_models: Dict[str, Any], regime_labels: np.ndarray) -> Dict[int, Dict[str, Any]]:
         """
@@ -830,6 +933,53 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
                 'recommendations': self._generate_recommendations(results, execution_time)
             }
             
+            # If regime probabilities are available, summarize and attach
+            if 'regime_probabilities' in results and isinstance(results['regime_probabilities'], dict):
+                rp = results['regime_probabilities']
+                proba = rp.get('proba')
+                entropy = rp.get('entropy')
+                classes = rp.get('classes')
+                ece_train = rp.get('ece_train')
+                try:
+                    if proba is not None and entropy is not None:
+                        # Compute summary stats
+                        entropy_arr = np.array(entropy)
+                        proba_arr = np.array(proba)
+                        summary = {
+                            'num_samples': int(proba_arr.shape[0]),
+                            'num_classes': int(proba_arr.shape[1]) if proba_arr.ndim == 2 else None,
+                            'classes': classes,
+                            'entropy_mean': float(np.mean(entropy_arr)),
+                            'entropy_std': float(np.std(entropy_arr)),
+                            'entropy_p25': float(np.percentile(entropy_arr, 25)),
+                            'entropy_p50': float(np.percentile(entropy_arr, 50)),
+                            'entropy_p75': float(np.percentile(entropy_arr, 75)),
+                            'ece_train': float(ece_train) if ece_train is not None else None,
+                            'avg_class_prob': (
+                                {str(classes[i]): float(np.mean(proba_arr[:, i])) for i in range(proba_arr.shape[1])}
+                                if proba_arr.ndim == 2 and classes is not None else None
+                            )
+                        }
+                        comprehensive_report['regime_probability_summary'] = summary
+                        
+                        # Optionally save a compact preview artifact
+                        try:
+                            preview_count = int(min(100, proba_arr.shape[0]))
+                            preview = {
+                                'classes': classes,
+                                'proba_preview': proba_arr[:preview_count].tolist(),
+                                'entropy_preview': entropy_arr[:preview_count].tolist()
+                            }
+                            preview_path = Path(self.config.model_save_path) / 'regime_probabilities_preview.json'
+                            ensure_directory(preview_path.parent)
+                            if self.serializer.save(preview, str(preview_path), format='json'):
+                                comprehensive_report['regime_probability_preview_path'] = str(preview_path)
+                        } 
+                        except Exception:
+                            pass
+                except Exception as e:
+                    tprint(f"⚠️ Could not summarize regime probabilities: {e}")
+
             # Add comprehensive report to results
             results['comprehensive_report'] = comprehensive_report
             

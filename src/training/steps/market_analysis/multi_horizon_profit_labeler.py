@@ -27,22 +27,18 @@ from src.core.decorators import handles_errors, traced, validates, log_execution
 @dataclass
 class MultiHorizonConfig:
     """Configuration for multi-horizon profit labeling."""
-    # Profit targets (fee-aware, 0.3% minimum)
+    # Profit targets (fee-aware, 0.3% minimum) - SHORT-TERM FOCUSED
     profit_targets: Dict[str, float] = field(default_factory=lambda: {
         'micro': 0.003,    # 0.3% (net: 0.22% after 0.08% fees)
         'small': 0.005,    # 0.5% (net: 0.42% after fees)
         'medium': 0.007,   # 0.7% (net: 0.62% after fees)
-        'good': 0.010,     # 1.0% (net: 0.92% after fees)
-        'great': 0.015,    # 1.5% (net: 1.42% after fees)
-        'excellent': 0.020 # 2.0% (net: 1.92% after fees)
+        'good': 0.010      # 1.0% (net: 0.92% after fees)
     })
     
-    # Time horizons (will be optimized by feature_lookback_optimization)
+    # Time horizons (SHORT-TERM ONLY for regular reassessment)
     time_horizons: Dict[str, int] = field(default_factory=lambda: {
-        'immediate': 3,    # 15 minutes (3 * 5m) - will be optimized
-        'short': 6,        # 30 minutes (6 * 5m) - will be optimized
-        'medium': 12,      # 60 minutes (12 * 5m) - will be optimized
-        'extended': 18     # 90 minutes (18 * 5m) - will be optimized
+        'immediate': 2,    # 10 minutes (2 * 5m) - capture quick moves
+        'short': 4         # 20 minutes (4 * 5m) - capture short-term moves
     })
     
     # Fee consideration
@@ -166,19 +162,19 @@ class MultiHorizonProfitLabeler:
                 f'{col_name}_quality_score'
             ])
         
-        # Composite score columns
+        # Composite score columns (SHORT-TERM FOCUSED)
         composite_columns = [
             'immediate_opportunity',
             'short_term_opportunity', 
-            'medium_term_opportunity',
-            'extended_opportunity',
             'overall_opportunity',
             'leverage_adjusted_score',
             'best_target_prob',
             'best_target_name',
             'avg_time_to_target',
             'avg_max_adverse',
-            'net_profitability_score'
+            'net_profitability_score',
+            'reversal_capture_score',    # NEW: Score for capturing reversals
+            'reassessment_frequency'     # NEW: Optimal reassessment frequency
         ]
         columns_to_add.extend(composite_columns)
         
@@ -281,35 +277,69 @@ class MultiHorizonProfitLabeler:
     
     def _calculate_quality_score(self, target_hit: bool, time_to_hit: Optional[int], 
                                max_adverse: float, total_periods: int, net_profit: float) -> float:
-        """Calculate quality score for the profit opportunity."""
+        """
+        Calculate quality score for the profit opportunity.
+        
+        Quality scoring based on three factors:
+        1. Speed Factor (30% weight): How quickly the target is reached
+           - Faster moves get higher scores (less time risk)
+           - Formula: 1.0 - (time_to_hit / total_periods)
+           
+        2. Risk Factor (40% weight): Maximum adverse excursion before target
+           - Lower drawdown before profit = higher quality
+           - Formula: 1.0 - (max_adverse_excursion * penalty_multiplier)
+           
+        3. Profitability Factor (30% weight): Net profit after fees
+           - Higher net profit = higher quality
+           - Formula: min(1.0, net_profit * scale_factor)
+        """
         if not target_hit:
             return 0.1  # Small probability for model uncertainty
         
         quality_factors = []
         
-        # Speed factor (faster = better)
+        # 1. Speed factor (faster = better) - 30% weight
         if time_to_hit is not None:
             speed_factor = 1.0 - (time_to_hit / total_periods)
-            speed_score = max(0.3, speed_factor)
+            speed_score = max(0.2, speed_factor)  # Minimum 20% score
             quality_factors.append(speed_score * self.config.speed_weight)
+            
+            # Bonus for very fast moves (within 50% of time window)
+            if time_to_hit < total_periods * 0.5:
+                speed_bonus = 0.1
+                quality_factors.append(speed_bonus)
         
-        # Risk factor (lower adverse excursion = better)
+        # 2. Risk factor (lower adverse excursion = better) - 40% weight
         if max_adverse > 0:
-            risk_factor = max(0.2, 1.0 - (max_adverse * 20))  # Penalize high adverse excursion
+            # Penalize adverse excursion heavily for short-term moves
+            risk_penalty_multiplier = 30  # Higher penalty for short-term trades
+            risk_factor = max(0.1, 1.0 - (max_adverse * risk_penalty_multiplier))
             risk_score = risk_factor
         else:
-            risk_score = 1.0
+            risk_score = 1.0  # Perfect score if no adverse excursion
         quality_factors.append(risk_score * self.config.risk_weight)
         
-        # Profitability factor (after fees)
+        # 3. Profitability factor (after fees) - 30% weight
         if net_profit > 0:
-            profit_factor = min(1.0, net_profit * 200)  # Scale net profit
-            profit_score = max(0.3, profit_factor)
+            # Scale net profit for short-term moves
+            profit_scale_factor = 300  # Higher scaling for small profits
+            profit_factor = min(1.0, net_profit * profit_scale_factor)
+            profit_score = max(0.2, profit_factor)
+            
+            # Bonus for high profitability relative to risk
+            if max_adverse > 0:
+                profit_risk_ratio = net_profit / max_adverse
+                if profit_risk_ratio > 2.0:  # 2:1 profit:risk ratio
+                    profit_bonus = min(0.2, (profit_risk_ratio - 2.0) * 0.1)
+                    quality_factors.append(profit_bonus)
         else:
             profit_score = 0.1  # Low quality if not profitable after fees
         quality_factors.append(profit_score * self.config.profitability_weight)
         
-        return np.sum(quality_factors)
+        # Cap total quality score at 1.0
+        total_quality = min(1.0, np.sum(quality_factors))
+        
+        return total_quality
     
     def _calculate_composite_scores(self, probability_scores: Dict[str, float], 
                                   sample_labels: Dict[str, float]) -> Dict[str, float]:
@@ -368,6 +398,16 @@ class MultiHorizonProfitLabeler:
         composite_scores['avg_max_adverse'] = np.mean(adverse_values) if adverse_values else 0
         composite_scores['net_profitability_score'] = np.mean([1 if p > 0 else 0 for p in net_profit_values])
         
+        # NEW: Reversal capture score (for capturing small reversals)
+        composite_scores['reversal_capture_score'] = self._calculate_reversal_capture_score(
+            probability_scores, sample_labels
+        )
+        
+        # NEW: Optimal reassessment frequency (in minutes)
+        composite_scores['reassessment_frequency'] = self._calculate_optimal_reassessment_frequency(
+            time_values, probability_scores
+        )
+        
         return composite_scores
     
     def _log_labeling_statistics(self, labeled_data: pd.DataFrame, valid_samples: int):
@@ -393,6 +433,75 @@ class MultiHorizonProfitLabeler:
             self.logger.info(f'   → Avg time to target: {valid_times.mean():.1f} periods')
         
         self.logger.info('✅ Multi-horizon labeling completed successfully')
+    
+    def _calculate_reversal_capture_score(self, probability_scores: Dict[str, float], 
+                                        sample_labels: Dict[str, float]) -> float:
+        """
+        Calculate reversal capture score for small reversals and corrections.
+        
+        This score measures how well the system can capture small price reversals
+        that allow for close/reopen strategies around minor corrections.
+        """
+        reversal_factors = []
+        
+        # Factor 1: Speed of opportunity (faster = better for reversals)
+        time_values = [v for k, v in sample_labels.items() if k.endswith('_time_to_hit') and v >= 0]
+        if time_values:
+            avg_time = np.mean(time_values)
+            # Shorter time horizons get higher reversal scores
+            speed_factor = max(0.1, 1.0 - (avg_time / 4.0))  # Normalize by max 4 periods
+            reversal_factors.append(speed_factor * 0.4)  # 40% weight
+        
+        # Factor 2: Low adverse excursion (clean moves without drawdown)
+        adverse_values = [v for k, v in sample_labels.items() if k.endswith('_max_adverse')]
+        if adverse_values:
+            avg_adverse = np.mean(adverse_values)
+            # Lower adverse excursion = better reversal capture
+            clean_factor = max(0.1, 1.0 - (avg_adverse * 50))  # Heavy penalty for adverse moves
+            reversal_factors.append(clean_factor * 0.3)  # 30% weight
+        
+        # Factor 3: Immediate vs short-term probability ratio
+        immediate_prob = probability_scores.get('micro_immediate', 0.0) + probability_scores.get('small_immediate', 0.0)
+        short_prob = probability_scores.get('micro_short', 0.0) + probability_scores.get('small_short', 0.0)
+        
+        if short_prob > 0:
+            # Higher immediate vs short ratio = better for reversals
+            ratio_factor = min(1.0, immediate_prob / short_prob)
+            reversal_factors.append(ratio_factor * 0.3)  # 30% weight
+        
+        return np.sum(reversal_factors) if reversal_factors else 0.1
+    
+    def _calculate_optimal_reassessment_frequency(self, time_values: List[float], 
+                                                probability_scores: Dict[str, float]) -> float:
+        """
+        Calculate optimal reassessment frequency in minutes.
+        
+        Determines how often positions should be reassessed based on
+        the speed of opportunities and probability patterns.
+        """
+        if not time_values:
+            return 5.0  # Default 5-minute reassessment
+        
+        avg_time_to_target = np.mean(time_values)
+        
+        # Base reassessment frequency on average time to target
+        # Faster opportunities need more frequent reassessment
+        if avg_time_to_target <= 1.0:  # Very fast (within 5 minutes)
+            base_frequency = 2.0  # Every 2 minutes
+        elif avg_time_to_target <= 2.0:  # Fast (within 10 minutes)
+            base_frequency = 3.0  # Every 3 minutes
+        elif avg_time_to_target <= 3.0:  # Medium (within 15 minutes)
+            base_frequency = 4.0  # Every 4 minutes
+        else:  # Slower opportunities
+            base_frequency = 5.0  # Every 5 minutes
+        
+        # Adjust based on probability distribution
+        immediate_probs = [v for k, v in probability_scores.items() if 'immediate' in k]
+        if immediate_probs and np.mean(immediate_probs) > 0.7:
+            # High immediate probabilities = more frequent reassessment
+            base_frequency *= 0.8  # 20% more frequent
+        
+        return max(1.0, min(10.0, base_frequency))  # Cap between 1-10 minutes
 
 # Convenience functions for backward compatibility
 def create_multi_horizon_labeler(config: Optional[MultiHorizonConfig] = None) -> MultiHorizonProfitLabeler:

@@ -54,19 +54,19 @@ class MultiHorizonModelConfig:
     # Input/Output dimensions
     input_features: int = 50  # Number of input features from 5m data
     
-    # Target configuration (matches MultiHorizonConfig)
+    # Target configuration (matches MultiHorizonConfig) - SHORT-TERM FOCUSED
     profit_targets: List[str] = field(default_factory=lambda: [
-        'micro', 'small', 'medium', 'good', 'great', 'excellent'
+        'micro', 'small', 'medium', 'good'
     ])
     time_horizons: List[str] = field(default_factory=lambda: [
-        'immediate', 'short', 'medium', 'extended'
+        'immediate', 'short'
     ])
     
-    # Composite targets
+    # Composite targets (SHORT-TERM FOCUSED)
     composite_targets: List[str] = field(default_factory=lambda: [
-        'immediate_opportunity', 'short_term_opportunity', 
-        'medium_term_opportunity', 'extended_opportunity',
-        'overall_opportunity', 'leverage_adjusted_score'
+        'immediate_opportunity', 'short_term_opportunity',
+        'overall_opportunity', 'leverage_adjusted_score',
+        'reversal_capture_score', 'reassessment_frequency'
     ])
     
     # Model architecture

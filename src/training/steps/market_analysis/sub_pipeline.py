@@ -11,7 +11,7 @@ This module provides the complete market analysis sub-pipeline with exactly 11 r
 6. hmm_models_training - Base models training, HPO, saving, metrics
 7. hmm_ensemble_training - Meta-model, HPO, saving, metrics
 8. regime_data_splitting - Tag data by regimes
-9. triple_barrier_labeling - Apply triple barrier method
+9. multi_horizon_labeling - Apply multi-horizon profit labeling
 10. feature_lookback_optimization - Optimize feature lookback periods
 11. pid_based_feature_generation - PID-based feature generation with interaction, polynomial, and cross-timeframe features
 """
@@ -118,7 +118,7 @@ class SubPipelineResult:
             'hmm_models_training': ['hmm_models_training_result'],
             'hmm_ensemble_training': ['hmm_ensemble_training_result'],
             'regime_data_splitting': ['regime_data_splitting_result'],
-            'triple_barrier_labeling': ['triple_barrier_labeling_result'],
+            'multi_horizon_labeling': ['multi_horizon_labeling_result'],
             'feature_lookback_optimization': ['feature_lookback_optimization_result'],
             'pid_based_feature_generation': ['pid_based_feature_generation_result']
         }

@@ -32,15 +32,19 @@ class TradingDecisionConfig:
     leverage_multiplier: float = 50.0  # High leverage trading
     max_account_risk_per_trade: float = 0.02  # 2% max account risk
     
-    # Probability thresholds for different actions
+    # Probability thresholds for different actions (SHORT-TERM FOCUSED)
     entry_thresholds: Dict[str, float] = field(default_factory=lambda: {
-        'micro_immediate_prob': 0.80,     # 80% for micro moves (15 min)
-        'small_immediate_prob': 0.75,     # 75% for small moves (15 min)
-        'medium_immediate_prob': 0.70,    # 70% for medium moves (15 min)
-        'small_short_prob': 0.70,         # 70% for small moves (30 min)
-        'medium_short_prob': 0.65,        # 65% for medium moves (30 min)
-        'overall_opportunity': 0.65,      # 65% overall opportunity
-        'leverage_adjusted_score': 0.70   # 70% leverage-adjusted score
+        'micro_immediate_prob': 0.75,     # 75% for micro moves (10 min)
+        'small_immediate_prob': 0.70,     # 70% for small moves (10 min)
+        'medium_immediate_prob': 0.65,    # 65% for medium moves (10 min)
+        'good_immediate_prob': 0.60,      # 60% for good moves (10 min)
+        'micro_short_prob': 0.70,         # 70% for micro moves (20 min)
+        'small_short_prob': 0.65,         # 65% for small moves (20 min)
+        'medium_short_prob': 0.60,        # 60% for medium moves (20 min)
+        'good_short_prob': 0.55,          # 55% for good moves (20 min)
+        'overall_opportunity': 0.60,      # 60% overall opportunity (lower for more trades)
+        'leverage_adjusted_score': 0.65,  # 65% leverage-adjusted score
+        'reversal_capture_score': 0.60    # 60% reversal capture score
     })
     
     # Exit thresholds
@@ -60,19 +64,19 @@ class TradingDecisionConfig:
         'min_position_size': 0.002        # 0.2% minimum position size
     })
     
-    # Time-based parameters
-    max_position_duration: int = 90      # 90 minutes maximum hold time
-    reassessment_frequency: int = 5      # Reassess every 5 minutes
+    # Time-based parameters (SHORT-TERM FOCUSED)
+    max_position_duration: int = 25      # 25 minutes maximum hold time
+    reassessment_frequency: int = 3      # Reassess every 3 minutes (more frequent)
     
     # Risk management
     transaction_cost: float = 0.0008     # 0.08% transaction cost
     slippage_allowance: float = 0.0002   # 0.02% slippage allowance
     
-    # Strategy weights for different scenarios
+    # Strategy weights for different scenarios (SHORT-TERM FOCUSED)
     strategy_weights: Dict[str, float] = field(default_factory=lambda: {
-        'immediate_scalp': 0.4,           # Quick scalping (15 min)
-        'short_term_swing': 0.4,          # Short swing (30 min)
-        'medium_term_hold': 0.2           # Medium hold (60+ min)
+        'immediate_scalp': 0.6,           # Quick scalping (10 min) - Higher weight
+        'short_term_swing': 0.4,          # Short swing (20 min) - Lower weight
+        'reversal_capture': 0.3           # NEW: Reversal capture strategy
     })
 
 @dataclass
@@ -179,9 +183,9 @@ class MultiHorizonDecisionEngine:
         short_term_opp = self._analyze_short_term_opportunities(predictions)
         analysis['opportunities']['short_term'] = short_term_opp
         
-        # Analyze medium-term opportunities (60+ min)
-        medium_term_opp = self._analyze_medium_term_opportunities(predictions)
-        analysis['opportunities']['medium_term'] = medium_term_opp
+        # Analyze reversal capture opportunities (NEW)
+        reversal_opp = self._analyze_reversal_opportunities(predictions)
+        analysis['opportunities']['reversal_capture'] = reversal_opp
         
         # Determine best overall opportunity
         best_opportunity = self._select_best_opportunity(analysis['opportunities'])
@@ -260,36 +264,45 @@ class MultiHorizonDecisionEngine:
             'reasoning': reasoning
         }
     
-    def _analyze_medium_term_opportunities(self, predictions: Dict[str, float]) -> Dict[str, Any]:
-        """Analyze medium-term opportunities (60+ minutes)."""
-        medium_term_probs = {
-            'small': predictions.get('small_medium_prob', 0.0),
-            'medium': predictions.get('medium_medium_prob', 0.0),
-            'good': predictions.get('good_medium_prob', 0.0),
-            'great': predictions.get('great_medium_prob', 0.0)
+    def _analyze_reversal_opportunities(self, predictions: Dict[str, float]) -> Dict[str, Any]:
+        """
+        Analyze reversal capture opportunities for close/reopen strategies.
+        
+        This focuses on identifying small reversals and corrections that allow
+        for profitable close/reopen positions around minor market movements.
+        """
+        reversal_probs = {
+            'reversal_capture_score': predictions.get('reversal_capture_score', 0.0),
+            'immediate_micro': predictions.get('micro_immediate_prob', 0.0),
+            'immediate_small': predictions.get('small_immediate_prob', 0.0),
+            'reassessment_freq': predictions.get('reassessment_frequency', 5.0)
         }
         
-        # Focus on larger moves for medium-term
+        # Calculate reversal opportunity score
+        reversal_score = reversal_probs['reversal_capture_score']
+        immediate_strength = (reversal_probs['immediate_micro'] + reversal_probs['immediate_small']) / 2
+        
+        # Weight reversal capture with immediate strength
         weighted_score = (
-            medium_term_probs['small'] * 0.2 +   # 20% weight on small moves
-            medium_term_probs['medium'] * 0.3 +  # 30% weight on medium moves
-            medium_term_probs['good'] * 0.3 +    # 30% weight on good moves
-            medium_term_probs['great'] * 0.2     # 20% weight on great moves
+            reversal_score * 0.6 +           # 60% weight on reversal capture score
+            immediate_strength * 0.4         # 40% weight on immediate opportunities
         )
         
         reasoning = []
-        if medium_term_probs['medium'] > 0.6:
-            reasoning.append(f"Good medium-term medium move: {medium_term_probs['medium']:.1%}")
-        if medium_term_probs['good'] > 0.4:
-            reasoning.append(f"Decent good move probability: {medium_term_probs['good']:.1%}")
+        if reversal_score > 0.6:
+            reasoning.append(f"High reversal capture score: {reversal_score:.1%}")
+        if immediate_strength > 0.7:
+            reasoning.append(f"Strong immediate opportunities: {immediate_strength:.1%}")
+        if reversal_probs['reassessment_freq'] <= 3.0:
+            reasoning.append(f"High-frequency reassessment optimal: {reversal_probs['reassessment_freq']:.1f}min")
         if weighted_score > 0.6:
-            reasoning.append(f"Solid medium-term opportunity: {weighted_score:.1%}")
+            reasoning.append(f"Good reversal capture opportunity: {weighted_score:.1%}")
         
         return {
             'score': weighted_score,
-            'strategy': 'medium_term_hold',
-            'time_horizon': 60,
-            'probabilities': medium_term_probs,
+            'strategy': 'reversal_capture',
+            'time_horizon': int(reversal_probs['reassessment_freq']),  # Dynamic based on reassessment
+            'probabilities': reversal_probs,
             'reasoning': reasoning
         }
     

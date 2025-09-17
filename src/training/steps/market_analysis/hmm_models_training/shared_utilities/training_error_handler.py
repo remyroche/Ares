@@ -48,7 +48,7 @@ class TrainingErrorHandler:
     @staticmethod
     def handle_model_creation_error(model_type: str, error: Exception) -> ModelResult:
         """
-        Standardized model creation error handling.
+        Standardized model creation error handling with preserved stack trace.
         
         Args:
             model_type: Type of model that failed to create
@@ -57,18 +57,25 @@ class TrainingErrorHandler:
         Returns:
             ModelResult with error information
         """
+        import traceback
+        
+        # Preserve the full stack trace
+        error_traceback = traceback.format_exc()
+        detailed_error_message = f"Failed to create {model_type}: {str(error)}"
+        
         return ModelResult(
             model=None,
             metrics=TrainingMetrics(
-                error_message=f"Failed to create {model_type}: {str(error)}",
-                training_time=0.0
+                error_message=detailed_error_message,
+                training_time=0.0,
+                warnings=[f"Full traceback: {error_traceback}"]
             )
         )
     
     @staticmethod
     def handle_training_error(model_type: str, error: Exception, training_time: float) -> ModelResult:
         """
-        Standardized training error handling.
+        Standardized training error handling with preserved stack trace.
         
         Args:
             model_type: Type of model that failed to train
@@ -78,11 +85,18 @@ class TrainingErrorHandler:
         Returns:
             ModelResult with error information
         """
+        import traceback
+        
+        # Preserve the full stack trace
+        error_traceback = traceback.format_exc()
+        detailed_error_message = f"Failed to train {model_type}: {str(error)}"
+        
         return ModelResult(
             model=None,
             metrics=TrainingMetrics(
-                error_message=f"Failed to train {model_type}: {str(error)}",
-                training_time=training_time
+                error_message=detailed_error_message,
+                training_time=training_time,
+                warnings=[f"Full traceback: {error_traceback}"]
             )
         )
     

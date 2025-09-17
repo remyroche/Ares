@@ -2,17 +2,19 @@
 Unified Model Factory
 
 Provides centralized model creation with standardized configurations
-across all HMM training components.
+across all HMM training components. Thread-safe implementation.
 """
 
 from typing import Any, Dict, List, Optional
 import warnings
+import threading
+from copy import deepcopy
 
 warnings.filterwarnings('ignore')
 
 
 class UnifiedModelFactory:
-    """Unified factory for creating model instances with standardized configuration."""
+    """Thread-safe unified factory for creating model instances with standardized configuration."""
     
     _model_configs = {
         'lightgbm': {
@@ -81,10 +83,12 @@ class UnifiedModelFactory:
         }
     }
     
+    _lock = threading.RLock()  # Class-level lock for thread safety
+    
     @classmethod
     def create_model(cls, model_type: str, **custom_params) -> Any:
         """
-        Create model instance with standardized configuration.
+        Thread-safe create model instance with standardized configuration.
         
         Args:
             model_type: Type of model to create
@@ -97,11 +101,13 @@ class UnifiedModelFactory:
             ValueError: If model type is not supported
             ImportError: If required model library is not available
         """
-        if model_type not in cls._model_configs:
-            available_types = list(cls._model_configs.keys())
-            raise ValueError(f"Unknown model type: {model_type}. Available types: {available_types}")
-        
-        config = cls._model_configs[model_type]
+        with cls._lock:
+            if model_type not in cls._model_configs:
+                available_types = list(cls._model_configs.keys())
+                raise ValueError(f"Unknown model type: {model_type}. Available types: {available_types}")
+            
+            # Deep copy to avoid modifying the original config
+            config = deepcopy(cls._model_configs[model_type])
         
         try:
             # Import the class dynamically
@@ -121,32 +127,77 @@ class UnifiedModelFactory:
     
     @classmethod
     def get_available_models(cls) -> List[str]:
-        """Get list of available model types."""
-        return list(cls._model_configs.keys())
+        """Thread-safe get list of available model types."""
+        with cls._lock:
+            return list(cls._model_configs.keys())
     
     @classmethod
     def get_model_config(cls, model_type: str) -> Dict[str, Any]:
-        """Get configuration for a specific model type."""
-        if model_type not in cls._model_configs:
-            raise ValueError(f"Unknown model type: {model_type}")
-        return cls._model_configs[model_type].copy()
+        """Thread-safe get configuration for a specific model type."""
+        with cls._lock:
+            if model_type not in cls._model_configs:
+                raise ValueError(f"Unknown model type: {model_type}")
+            return deepcopy(cls._model_configs[model_type])
     
     @classmethod
     def add_model_config(cls, model_type: str, class_path: str, default_params: Dict[str, Any]) -> None:
         """
-        Add a new model configuration.
+        Thread-safe add a new model configuration.
         
         Args:
             model_type: Name of the model type
             class_path: Full path to the model class
             default_params: Default parameters for the model
         """
-        cls._model_configs[model_type] = {
-            'class': class_path,
-            'default_params': default_params
-        }
+        with cls._lock:
+            cls._model_configs[model_type] = {
+                'class': class_path,
+                'default_params': deepcopy(default_params)
+            }
     
     @classmethod
     def validate_model_type(cls, model_type: str) -> bool:
-        """Validate if a model type is supported."""
-        return model_type in cls._model_configs
+        """Thread-safe validate if a model type is supported."""
+        with cls._lock:
+            return model_type in cls._model_configs
+    
+    @classmethod
+    def remove_model_config(cls, model_type: str) -> bool:
+        """
+        Thread-safe remove a model configuration.
+        
+        Args:
+            model_type: Name of the model type to remove
+            
+        Returns:
+            True if removed, False if not found
+        """
+        with cls._lock:
+            if model_type in cls._model_configs:
+                del cls._model_configs[model_type]
+                return True
+            return False
+    
+    @classmethod
+    def update_model_config(cls, model_type: str, **updates) -> bool:
+        """
+        Thread-safe update existing model configuration.
+        
+        Args:
+            model_type: Name of the model type to update
+            **updates: Configuration updates
+            
+        Returns:
+            True if updated, False if not found
+        """
+        with cls._lock:
+            if model_type not in cls._model_configs:
+                return False
+            
+            config = cls._model_configs[model_type]
+            if 'default_params' in updates:
+                config['default_params'].update(updates['default_params'])
+            if 'class' in updates:
+                config['class'] = updates['class']
+            
+            return True

@@ -654,13 +654,34 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
                 X_normalized = scaler.fit_transform(X)
                 tprint(f"✅ Features normalized using fallback StandardScaler: {X_normalized.shape}")
             
-            # Use GPU context if available for large datasets
-            gpu_threshold = getattr(self.config, 'gpu_threshold_samples', 10000)
-            if self.gpu_manager and X.shape[0] > gpu_threshold:
-                with gpu_context("hmm_ensemble_training_gpu"):
+            # Use GPU context if available for large datasets with proper cleanup
+            if self.gpu_manager and X.shape[0] > 10000:
+                try:
+                    if EXTENDED_COMMON_OPS_AVAILABLE:
+                        with gpu_context("hmm_ensemble_training"):
+                            results = self._execute_training_core(
+                                X_normalized, y, regime_labels, feature_names, hmm_states, base_hmm_models
+                            )
+                    else:
+                        # Fallback without GPU context
+                        results = self._execute_training_core(
+                            X_normalized, y, regime_labels, feature_names, hmm_states, base_hmm_models
+                        )
+                except Exception as e:
+                    tprint(f"⚠️ GPU context failed, falling back to CPU: {e}")
+
                     results = self._execute_training_core(
                         X_normalized, y, regime_labels, feature_names, hmm_states, base_hmm_models
                     )
+                finally:
+                    # Ensure GPU resources are cleaned up
+                    if self.gpu_manager:
+                        try:
+                            # Force GPU memory cleanup if available
+                            if hasattr(self.gpu_manager, 'cleanup_gpu_memory'):
+                                self.gpu_manager.cleanup_gpu_memory()
+                        except Exception as cleanup_error:
+                            tprint(f"⚠️ GPU cleanup warning: {cleanup_error}")
             else:
                 results = self._execute_training_core(
                     X_normalized, y, regime_labels, feature_names, hmm_states, base_hmm_models
@@ -1518,38 +1539,61 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
                     if isinstance(regime_metrics, dict) and 'error' not in regime_metrics:
                         performance_summary['successful_evaluations'] += 1
 
-                        # Handle nested structure (vectorized) or flat metrics
-                        if any(isinstance(v, dict) and ('metrics' in v or 'accuracy' in v) for v in regime_metrics.values()):
-                            best_ensemble = None
-                            best_accuracy = -np.inf
+                        # Enhanced: Handle nested structure with safe dictionary access
+                        try:
+                            # Check if we have nested metrics structure
+                            has_nested_metrics = any(
+                                isinstance(v, dict) and ('metrics' in v or 'accuracy' in v) 
+                                for v in regime_metrics.values() 
+                                if isinstance(v, dict)
+                            )
+                            
+                            if has_nested_metrics:
+                                best_ensemble = None
+                                best_accuracy = -np.inf
 
-                            for ensemble_name, metrics in regime_metrics.items():
-                                metrics_dict = metrics.get('metrics', metrics) if isinstance(metrics, dict) else {}
-                                if isinstance(metrics_dict, dict) and 'accuracy' in metrics_dict:
-                                    accuracy = safe_float(metrics_dict['accuracy'], 0.0)
-                                    accuracies.append(accuracy)
-                                    if accuracy > best_accuracy:
-                                        best_accuracy = accuracy
-                                        best_ensemble = ensemble_name
+                                for ensemble_name, metrics in regime_metrics.items():
+                                    if not isinstance(metrics, dict):
+                                        continue
+                                    
+                                    # Safe nested dictionary access
+                                    metrics_dict = metrics.get('metrics', {}) if 'metrics' in metrics else metrics
+                                    if isinstance(metrics_dict, dict) and 'accuracy' in metrics_dict:
+                                        try:
+                                            accuracy = safe_float(metrics_dict['accuracy'], 0.0)
+                                            if validate_finite(accuracy, f"accuracy_{ensemble_name}"):
+                                                accuracies.append(accuracy)
+                                                if accuracy > best_accuracy:
+                                                    best_accuracy = accuracy
+                                                    best_ensemble = ensemble_name
+                                        except Exception as e:
+                                            tprint(f"⚠️ Invalid accuracy for {ensemble_name}: {e}")
 
-                            if best_ensemble:
-                                best_ensembles[regime] = {
-                                    'ensemble': best_ensemble,
-                                    'accuracy': safe_float(best_accuracy, 0.0)
-                                }
-                                if best_accuracy > performance_summary['best_overall_accuracy']:
-                                    performance_summary['best_overall_accuracy'] = safe_float(best_accuracy, 0.0)
-                        else:
-                            # Flat single-metrics per regime
-                            if 'accuracy' in regime_metrics:
-                                acc_val = safe_float(regime_metrics['accuracy'], 0.0)
-                                accuracies.append(acc_val)
-                                best_ensembles[regime] = {
-                                    'ensemble': 'stacking_ensemble',
-                                    'accuracy': acc_val
-                                }
-                                if acc_val > performance_summary['best_overall_accuracy']:
-                                    performance_summary['best_overall_accuracy'] = acc_val
+                                if best_ensemble and best_accuracy > -np.inf:
+                                    best_ensembles[regime] = {
+                                        'ensemble': best_ensemble,
+                                        'accuracy': safe_float(best_accuracy, 0.0)
+                                    }
+                                    if best_accuracy > performance_summary['best_overall_accuracy']:
+                                        performance_summary['best_overall_accuracy'] = safe_float(best_accuracy, 0.0)
+                            else:
+                                # Flat single-metrics per regime with safe access
+                                if isinstance(regime_metrics, dict) and 'accuracy' in regime_metrics:
+                                    try:
+                                        acc_val = safe_float(regime_metrics['accuracy'], 0.0)
+                                        if validate_finite(acc_val, f"accuracy_{regime}"):
+                                            accuracies.append(acc_val)
+                                            best_ensembles[regime] = {
+                                                'ensemble': 'stacking_ensemble',
+                                                'accuracy': acc_val
+                                            }
+                                            if acc_val > performance_summary['best_overall_accuracy']:
+                                                performance_summary['best_overall_accuracy'] = acc_val
+                                    except Exception as e:
+                                        tprint(f"⚠️ Invalid accuracy for regime {regime}: {e}")
+                        except Exception as e:
+                            tprint(f"⚠️ Error processing metrics for regime {regime}: {e}")
+                            performance_summary['failed_evaluations'] += 1
                     else:
                         performance_summary['failed_evaluations'] += 1
                 

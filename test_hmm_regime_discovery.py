@@ -4,8 +4,12 @@ import sys
 import os
 from pathlib import Path
 
-# Add the src directory to the path
-sys.path.insert(0, '/Users/remyroche/Documents/Ares/src')
+# Add the repository src directory to the path
+repo_root = Path(__file__).resolve().parents[0]
+candidate_src = repo_root / 'src'
+if candidate_src.exists():
+    sys.path.insert(0, str(candidate_src))
+
 
 def test_hmm_regime_discovery():
     """Test HMM regime discovery with the fixed consolidated features file."""
@@ -13,12 +17,13 @@ def test_hmm_regime_discovery():
     print("🧪 TESTING HMM REGIME DISCOVERY WITH FIXED DATA")
     print("=" * 50)
 
-    # Check if the consolidated features file exists
-    data_file = "/Users/remyroche/Documents/Ares/data/training/features_binance_ETHUSDT_consolidated.parquet"
+    # Check if the consolidated features file exists (project-relative fallback)
+    default_file = Path('data/training/features_binance_ETHUSDT_consolidated.parquet')
+    data_file = os.getenv('HMM_FEATURES_PARQUET', str(default_file))
 
     if not Path(data_file).exists():
         print(f"❌ Consolidated features file not found: {data_file}")
-        return False
+        assert False, f"Consolidated features file not found: {data_file}"
 
     print("📥 Loading consolidated features file...")
     data = pd.read_parquet(data_file)
@@ -73,7 +78,9 @@ def test_hmm_regime_discovery():
         print(f"   🎯 Regime distribution: {np.bincount(regime_labels)}")
 
         # Simulate saving results
-        results_file = "/Users/remyroche/Documents/Ares/data/training/hmm_regime_results_test.parquet"
+        results_dir = Path('data/training')
+        results_dir.mkdir(parents=True, exist_ok=True)
+        results_file = str(results_dir / 'hmm_regime_results_test.parquet')
 
         results_df = pd.DataFrame({
             'timestamp': data['timestamp'],
@@ -87,6 +94,8 @@ def test_hmm_regime_discovery():
         results_df.to_parquet(results_file, index=False)
         print(f"💾 Saved HMM results to: {results_file}")
 
+        assert len(results_df) == len(data)
+        assert {'regime_label', 'regime_probability_0'}.issubset(results_df.columns)
         return True
 
     except Exception as e:
@@ -94,6 +103,7 @@ def test_hmm_regime_discovery():
         import traceback
         traceback.print_exc()
         return False
+
 
 if __name__ == "__main__":
     print("🚀 HMM REGIME DISCOVERY TEST")

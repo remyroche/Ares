@@ -1,4 +1,4 @@
-"""
+""""""
 HMM Regime Discovery Component.
 
 This component discovers market regimes using Hidden Markov Models.
@@ -12,6 +12,7 @@ import pandas as pd
 from typing import Any, Dict, List, Optional, Tuple
 from datetime import datetime
 from pathlib import Path
+import time
 
 from .base_component import BaseMarketAnalysisComponent, ComponentConfig, ComponentResult
 from src.utils.logger import system_logger
@@ -50,14 +51,14 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             # Import HMM regime detection utilities
             from src.utils.ml_common.hmm_regime_detection import EnhancedHMMRegimeDetector, HMMRegimeConfig, RegimeDetectionMethod
             
-            # Get symbol from config or pipeline state
+            # Resolve symbol from config or pipeline state
             symbol = getattr(self.config, 'symbol', None)
             if symbol is None and 'symbol' in pipeline_state:
                 symbol = pipeline_state['symbol']
             if symbol is None:
                 raise ValueError("Symbol must be provided in config or pipeline state")
-            
-            # Get market data with symbol validation
+
+            # Get market data
             market_data = await self._load_market_data(data, symbol)
             if market_data is None or market_data.empty:
                 raise ValueError(f"No market data available for regime discovery for symbol: {symbol}")
@@ -85,51 +86,53 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             if optimization_mode not in valid_modes:
                 self.logger.warning(f"Invalid optimization mode '{optimization_mode}', defaulting to 'blank'")
                 optimization_mode = 'blank'
-            
-            max_regimes = hmm_config.get_max_regimes_for_mode(optimization_mode)
+
+            # Determine max regimes allowed for mode
+            try:
+                max_regimes = hmm_config.get_max_regimes_for_mode(optimization_mode)
+            except Exception:
+                max_regimes = {
+                    'light': getattr(hmm_config, 'light_mode_max_regimes', 2),
+                    'blank': getattr(hmm_config, 'blank_mode_max_regimes', 5),
+                    'full': getattr(hmm_config, 'full_mode_max_regimes', 150),
+                }.get(optimization_mode, 5)
             self.logger.info(f'🔧 HMM Regime Discovery mode: {optimization_mode} (max regimes: {max_regimes})')
             
             # Perform regime discovery
+            discovery_start_time = time.time()
             regime_dataframe = await self._perform_regime_discovery(
                 regime_detector, market_data, hmm_config, optimization_mode
             )
+            discovery_time = time.time() - discovery_start_time
             
             # Validate regime discovery results
             if regime_dataframe is None:
                 raise ValueError("HMM regime discovery failed: returned None")
-            
             if regime_dataframe.empty:
                 raise ValueError("HMM regime discovery completed but no regimes were discovered (empty DataFrame)")
-            
-            # Validate DataFrame structure
             if 'regime' not in regime_dataframe.columns:
                 raise ValueError("HMM regime discovery result missing 'regime' column")
-            
+
             # Extract and validate regime assignments
             regime_assignments = regime_dataframe['regime'].tolist()
-            
-            # Validate regime assignments are integers
             try:
                 regime_assignments = [int(assignment) for assignment in regime_assignments]
             except (ValueError, TypeError) as e:
                 raise ValueError(f"Invalid regime assignments: {e}")
-            
-            # Validate regime assignments are non-negative
             if any(assignment < 0 for assignment in regime_assignments):
                 raise ValueError("Regime assignments contain negative values")
-            
+
             # Calculate regime metrics with validation
             unique_regimes = set(regime_assignments)
             if not unique_regimes:
                 raise ValueError("No unique regimes found in assignments")
-            
             regime_models = [f"regime_{i}" for i in sorted(unique_regimes)]
             regime_metrics = {
                 'total_regimes': len(unique_regimes),
                 'total_samples': len(regime_dataframe),
                 'regime_distribution': regime_dataframe['regime'].value_counts().to_dict()
             }
-            
+
             # Validate regime count against mode limits
             if len(unique_regimes) > max_regimes:
                 self.logger.warning(f"Discovered {len(unique_regimes)} regimes, exceeding mode limit of {max_regimes}")
@@ -139,9 +142,9 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             if min_samples < hmm_config.min_regime_samples:
                 self.logger.warning(f"Some regimes have fewer than {hmm_config.min_regime_samples} samples (min: {min_samples})")
             
-            # Create simplified, consistent artifact structure
+            # Create single consolidated artifact
             regime_distribution = self._calculate_regime_distribution(regime_assignments)
-            
+
             artifacts = {
                 'hmm_regime_discovery_result': {
                     # Core regime data
@@ -150,35 +153,30 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
                     'regime_count': len(regime_models),
                     'total_samples': len(regime_assignments),
                     'regime_distribution': regime_distribution,
-                    
-                    # Validation metrics
                     'validation_metrics': {
                         'min_samples_per_regime': min_samples,
                         'max_regimes_allowed': max_regimes,
                         'regime_count_vs_limit': len(regime_models) <= max_regimes,
                         'sufficient_samples': min_samples >= hmm_config.min_regime_samples
                     },
-                    
-                    # Configuration and metadata
                     'configuration': {
                         'symbol': symbol,
-                        'timeframe': '1h',  # Hardcoded as requested
+                        'timeframe': '1h',
                         'optimization_mode': optimization_mode,
                         'max_regimes_for_mode': max_regimes,
                         'min_regime_samples': hmm_config.min_regime_samples,
                         'economic_significance_threshold': hmm_config.economic_significance_threshold
                     },
-                    
-                    # Execution metadata
                     'execution_info': {
                         'timestamp': datetime.now().isoformat(),
                         'data_points_processed': len(market_data),
-                        'success': True
+                        'success': True,
+                        'discovery_time': discovery_time
                     }
                 }
             }
             
-            self.logger.info(f'✅ HMM Regime Discovery completed: {len(regime_models)} regimes discovered (mode: {optimization_mode}, max: {max_regimes})')
+            self.logger.info(f'✅ HMM Regime Discovery completed: {len(regime_models)} regimes discovered (range: 2-150)')
             return ComponentResult(
                 success=True,
                 artifacts=artifacts,
@@ -209,11 +207,11 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
         try:
             if data is None or (isinstance(data, pd.DataFrame) and data.empty):
                 self.logger.warning("⚠️ No market data provided, attempting to load from klines_parquet")
-                
+
                 # Validate symbol parameter
                 if symbol is None:
                     raise ValueError("Symbol parameter is required for market data loading")
-                
+
                 # Try to load data using klines_parquet manager
                 from src.utils.data.klines_parquet import get_klines_manager
                 
@@ -263,67 +261,53 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             # Prepare data for regime detection
             prepared_data = self._prepare_data_for_regime_detection(market_data)
             
-            # Perform regime detection with mode (synchronous call in async context)
-            # Run the synchronous detect_regimes method in a thread pool to avoid blocking
-            import asyncio
+            # Perform regime detection with mode using a background thread to avoid blocking the event loop
             loop = asyncio.get_event_loop()
             regime_dataframe = await loop.run_in_executor(
-                None, 
+                None,
                 lambda: regime_detector.detect_regimes(prepared_data, config=config, mode=mode)
             )
-            
             return regime_dataframe
             
         except Exception as e:
-            self.logger.error(f"Regime discovery process failed: {e}")
-            import traceback
-            self.logger.error(f"Regime discovery error details: {traceback.format_exc()}")
-            # Return None to indicate failure
-            return None
+            # Propagate the error with context for higher-level handling
+            raise RuntimeError(f"Regime discovery process failed: {e}")
     
     def _prepare_data_for_regime_detection(self, data: pd.DataFrame) -> pd.DataFrame:
         """Prepare market data for regime detection with comprehensive validation."""
         # Validate input data
         if data is None:
             raise ValueError("Data cannot be None for regime detection preparation")
-        
         if data.empty:
             raise ValueError("Data cannot be empty for regime detection preparation")
-        
+
+        # Work on a copy to avoid mutating the caller's DataFrame
+        data_copy = data.copy()
+
         # Ensure we have required columns
         required_columns = ['open', 'high', 'low', 'close', 'volume']
-        missing_columns = [col for col in required_columns if col not in data.columns]
-        
+        missing_columns = [col for col in required_columns if col not in data_copy.columns]
+
         if missing_columns:
             self.logger.warning(f"Missing columns for regime detection: {missing_columns}")
-            
-            # Create realistic fallback data based on available columns
-            data_copy = data.copy()
-            
             for col in missing_columns:
                 if col == 'volume':
-                    # Use average volume if available, otherwise estimate from price data
                     if 'close' in data_copy.columns:
-                        # Estimate volume based on price volatility (rough approximation)
                         price_std = data_copy['close'].std()
                         estimated_volume = max(1000, int(price_std * 100))
                         data_copy[col] = estimated_volume
                         self.logger.info(f"Estimated volume using price volatility: {estimated_volume}")
                     else:
-                        data_copy[col] = 1000  # Minimal fallback
+                        data_copy[col] = 1000
                         self.logger.warning("Using minimal volume fallback: 1000")
-                        
                 elif col == 'open':
                     if 'close' in data_copy.columns:
-                        # Use close price as open (reasonable for regime detection)
                         data_copy[col] = data_copy['close']
                         self.logger.info("Using close price as open price fallback")
                     else:
                         raise ValueError("Cannot create open price fallback without close price")
-                        
                 elif col == 'high':
                     if 'close' in data_copy.columns and 'open' in data_copy.columns:
-                        # High should be max of open and close, plus small variation
                         data_copy[col] = data_copy[['open', 'close']].max(axis=1) * 1.001
                         self.logger.info("Created high price using open/close maximum")
                     elif 'close' in data_copy.columns:
@@ -331,10 +315,8 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
                         self.logger.info("Created high price using close price")
                     else:
                         raise ValueError("Cannot create high price fallback without price data")
-                        
                 elif col == 'low':
                     if 'close' in data_copy.columns and 'open' in data_copy.columns:
-                        # Low should be min of open and close, minus small variation
                         data_copy[col] = data_copy[['open', 'close']].min(axis=1) * 0.999
                         self.logger.info("Created low price using open/close minimum")
                     elif 'close' in data_copy.columns:
@@ -342,78 +324,58 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
                         self.logger.info("Created low price using close price")
                     else:
                         raise ValueError("Cannot create low price fallback without price data")
-            
-            data = data_copy
-        
-        # Validate OHLC relationships
-        self._validate_ohlc_relationships(data)
-        
-        # Validate data quality
-        self._validate_data_quality(data)
-        
-        return data
+
+        # Validate OHLC relationships and data quality
+        self._validate_ohlc_relationships(data_copy)
+        self._validate_data_quality(data_copy)
+
+        return data_copy
     
     def _validate_ohlc_relationships(self, data: pd.DataFrame) -> None:
         """Validate OHLC price relationships."""
         try:
-            # Check that high >= low
             invalid_high_low = (data['high'] < data['low']).sum()
             if invalid_high_low > 0:
                 self.logger.warning(f"Found {invalid_high_low} rows where high < low")
-            
-            # Check that high >= open and high >= close
             invalid_high_open = (data['high'] < data['open']).sum()
             invalid_high_close = (data['high'] < data['close']).sum()
             if invalid_high_open > 0:
                 self.logger.warning(f"Found {invalid_high_open} rows where high < open")
             if invalid_high_close > 0:
                 self.logger.warning(f"Found {invalid_high_close} rows where high < close")
-            
-            # Check that low <= open and low <= close
             invalid_low_open = (data['low'] > data['open']).sum()
             invalid_low_close = (data['low'] > data['close']).sum()
             if invalid_low_open > 0:
                 self.logger.warning(f"Found {invalid_low_open} rows where low > open")
             if invalid_low_close > 0:
                 self.logger.warning(f"Found {invalid_low_close} rows where low > close")
-                
         except Exception as e:
             self.logger.warning(f"Error validating OHLC relationships: {e}")
-    
+
     def _validate_data_quality(self, data: pd.DataFrame) -> None:
         """Validate data quality for regime detection."""
         try:
-            # Check for NaN values
             nan_counts = data.isnull().sum()
             if nan_counts.sum() > 0:
                 self.logger.warning(f"Found NaN values: {nan_counts.to_dict()}")
-            
-            # Check for infinite values
             inf_counts = np.isinf(data.select_dtypes(include=[np.number])).sum()
             if inf_counts.sum() > 0:
                 self.logger.warning(f"Found infinite values: {inf_counts.to_dict()}")
-            
-            # Check for negative prices
             price_columns = ['open', 'high', 'low', 'close']
             for col in price_columns:
                 if col in data.columns:
                     negative_count = (data[col] <= 0).sum()
                     if negative_count > 0:
                         self.logger.warning(f"Found {negative_count} non-positive values in {col}")
-            
-            # Check for negative volume
             if 'volume' in data.columns:
                 negative_volume = (data['volume'] < 0).sum()
                 if negative_volume > 0:
                     self.logger.warning(f"Found {negative_volume} negative volume values")
-            
-            # Check data length
             if len(data) < 100:
                 self.logger.warning(f"Data length ({len(data)}) may be insufficient for reliable regime detection")
-                
         except Exception as e:
             self.logger.warning(f"Error validating data quality: {e}")
-    
+
     def _calculate_regime_distribution(self, regime_assignments: List[int]) -> Dict[str, float]:
         """Calculate the distribution of regime assignments."""
         if not regime_assignments:
@@ -428,6 +390,7 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
         # Convert to percentages
         regime_distribution = {}
         for regime, count in regime_counts.items():
-            regime_distribution[f'regime_{regime}'] = (count / total_assignments) * 100
+            key = f'regime_{regime}'
+            regime_distribution[key] = (count / total_assignments) * 100
         
         return regime_distribution

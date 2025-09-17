@@ -1087,7 +1087,7 @@ if __name__ == "__main__":
     # Configure features
     feature_config = ProductionFeatureConfig(
         primary_timeframe="1h",
-        horizons=[5, 20, 60],
+        horizons=[1, 2, 4],
         use_existing_orchestrator=False,  # Disable for testing
         use_existing_feature_engineer=False
     )

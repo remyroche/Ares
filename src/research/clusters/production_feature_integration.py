@@ -81,7 +81,7 @@ class ProductionFeatureConfig:
     
     def __post_init__(self):
         if self.horizons is None:
-            self.horizons = [5, 20, 60]  # 5h, 20h, 60h windows
+            self.horizons = [1, 2, 4]  # 1h, 2h, 4h windows
 
 
 class ProductionLeakageSafeFeatures:
@@ -953,7 +953,7 @@ if __name__ == "__main__":
     # Initialize production feature generator
     config = ProductionFeatureConfig(
         primary_timeframe="1h",
-        horizons=[5, 20, 60],  # 5h, 20h, 60h windows
+        horizons=[1, 2, 4],  # 1h, 2h, 4h windows
         enable_structural_break_features=True,
         enable_duration_features=True,
         enable_regime_transition_features=True,

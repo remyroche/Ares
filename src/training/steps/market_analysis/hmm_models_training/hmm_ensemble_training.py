@@ -107,7 +107,7 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
                 config = EnsembleTrainingConfig(
                     model_name="hmm_ensemble_models",
                     timeframe="1h",
-                    base_models=["CatBoostClassifier", "LogisticRegression", "RandomForestClassifier"],
+                    base_models=["CatBoostClassifier", "LogisticRegression"],
                     meta_model="LogisticRegression",
                     hpo_n_trials=100,
                     hpo_timeout_seconds=3600,
@@ -393,6 +393,20 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
                 
                 tprint(f"✅ HMM ensemble training completed successfully in {execution_time:.2f}s")
                 tprint(f"🧠 Memory optimization: {memory_stats}")
+                
+                # Step 8: Automatically compute probabilities on training features for convenience
+                try:
+                    proba_out = self.predict_regime_proba(X)
+                    results['regime_probabilities'] = {
+                        'proba': proba_out.get('proba'),
+                        'entropy': proba_out.get('entropy'),
+                        'classes': proba_out.get('classes'),
+                        'ece_train': proba_out.get('ece_train')
+                    }
+                    tprint("📊 Added regime probabilities and entropy to results")
+                except Exception as e:
+                    tprint(f"⚠️ Could not compute regime probabilities automatically: {e}")
+                
                 return results
                 
             except Exception as e:
@@ -547,10 +561,7 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
         )
         base_estimators.append(('logreg_en', logreg))
 
-        rf_base = RandomForestClassifier(
-            n_estimators=300, max_depth=12, min_samples_split=2, random_state=44, n_jobs=-1, class_weight='balanced'
-        )
-        base_estimators.append(('rf', rf_base))
+        # RandomForestClassifier removed from base estimators per request
 
         # Meta learner: RF with calibration
         meta = RandomForestClassifier(
@@ -686,32 +697,7 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
                     multi_class='auto'
                 )
             
-            # RandomForestClassifier with validated parameters (Meta: Speed + Efficient)
-            try:
-                n_estimators = self.math_validator.validate_positive(200, "RandomForest n_estimators")
-                max_depth = self.math_validator.validate_positive(10, "RandomForest max_depth")
-                min_samples_split = self.math_validator.validate_positive(2, "RandomForest min_samples_split")
-                
-                ensemble_models['RandomForestClassifier'] = RandomForestClassifier(
-                    n_estimators=int(n_estimators),
-                    max_depth=int(max_depth),
-                    min_samples_split=int(min_samples_split),
-                    random_state=44,
-                    n_jobs=-1,
-                    class_weight='balanced'
-                )
-                tprint("✅ Random Forest model created with validated parameters")
-            except Exception as e:
-                tprint(f"⚠️ Random Forest model creation failed: {e}")
-                # Fallback to default parameters
-                ensemble_models['RandomForestClassifier'] = RandomForestClassifier(
-                    n_estimators=200,
-                    max_depth=10,
-                    min_samples_split=2,
-                    random_state=44,
-                    n_jobs=-1,
-                    class_weight='balanced'
-                )
+            # Note: RandomForestClassifier removed from base models per request
             
             tprint(f"📊 Created {len(ensemble_models)} ensemble models for HMM training using common utilities")
             tprint(f"   Models: {list(ensemble_models.keys())}")

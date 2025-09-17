@@ -4,7 +4,16 @@ A comprehensive research framework for discovering **implicit market dimensions*
 
 ## 🎯 Overview
 
-This framework addresses the key research question: **"What implicit market dimensions are captured by our features, and which are most economically significant for trading regime identification?"**
+This framework addresses the key research question: **"What market regimes (distinct behavioral patterns) can we discover, and do they have sufficient economic significance to justify training different ML models for each regime?"**
+
+## 🎯 Correct Research Flow
+
+**Your Approach** (implemented in this framework):
+```
+Market Data → Discover Regimes → Validate Economic Significance → Train Different ML Models per Regime
+```
+
+The framework first discovers regimes (market behavioral patterns), then validates whether these regimes are economically meaningful enough to justify the complexity of training separate ML models for each regime.
 
 ## 🔬 Research Approach
 

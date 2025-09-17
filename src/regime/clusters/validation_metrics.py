@@ -27,6 +27,13 @@ from abc import ABC, abstractmethod
 
 from src.utils.logger import system_logger
 
+# Import economic metrics
+try:
+    from .economic_metrics import EconomicValidator, EconomicValidationConfig, EconomicMetric
+    ECONOMIC_METRICS_AVAILABLE = True
+except ImportError:
+    ECONOMIC_METRICS_AVAILABLE = False
+
 
 class ValidationMetric(Enum):
     """Enumeration of validation metrics."""
@@ -580,6 +587,12 @@ class RegimeValidationMetrics:
             ValidationMetric.REGIME_BALANCE: RegimeBalanceValidator(self.config),
             ValidationMetric.REGIME_HOMOGENEITY: RegimeHomogeneityValidator(self.config)
         }
+        
+        # Initialize economic validator if available
+        if ECONOMIC_METRICS_AVAILABLE:
+            self.economic_validator = EconomicValidator(EconomicValidationConfig())
+        else:
+            self.economic_validator = None
     
     def validate_single_metric(self,
                               data: pd.DataFrame,
@@ -640,6 +653,61 @@ class RegimeValidationMetrics:
         
         self.logger.info(f"✅ Completed {len(results)} validation metrics")
         return results
+    
+    def validate_economic_significance(self,
+                                     market_data: pd.DataFrame,
+                                     regime_labels: np.ndarray) -> Dict[str, Any]:
+        """
+        Validate economic significance of discovered regimes.
+        
+        Args:
+            market_data: Market data
+            regime_labels: Regime assignments
+            
+        Returns:
+            Dictionary with economic validation results
+        """
+        if not ECONOMIC_METRICS_AVAILABLE or self.economic_validator is None:
+            self.logger.warning("Economic metrics not available")
+            return {}
+        
+        self.logger.info("💰 Running economic significance validation")
+        
+        try:
+            economic_results = self.economic_validator.validate_regime_economics(market_data, regime_labels)
+            
+            # Convert to serializable format
+            economic_dict = {
+                metric.value: result.to_dict() 
+                for metric, result in economic_results.items()
+            }
+            
+            # Generate economic report
+            economic_report = self.economic_validator.generate_economic_report(economic_results)
+            
+            # Calculate economic significance summary
+            economically_significant = sum(1 for result in economic_results.values() if result.economic_significance)
+            total_metrics = len(economic_results)
+            economic_significance_rate = economically_significant / total_metrics if total_metrics > 0 else 0
+            
+            summary = {
+                'total_economic_metrics': total_metrics,
+                'economically_significant_metrics': economically_significant,
+                'economic_significance_rate': economic_significance_rate,
+                'overall_economic_quality': 'strong' if economic_significance_rate >= 0.7 else 'moderate' if economic_significance_rate >= 0.4 else 'weak'
+            }
+            
+            self.logger.info(f"💰 Economic validation completed: {economically_significant}/{total_metrics} metrics significant")
+            
+            return {
+                'economic_results': economic_dict,
+                'economic_report': economic_report,
+                'economic_summary': summary
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Economic validation failed: {e}")
+            return {'error': str(e)}
     
     def calculate_composite_score(self, 
                                 weights: Optional[Dict[ValidationMetric, float]] = None) -> float:

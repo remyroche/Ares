@@ -259,18 +259,27 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                 raise ValueError("No HMM regime discovery results available for clustering")
             
             input_regimes = len(hmm_regime_discovery.get('regime_models', []))
-            self.logger.info(f'🔧 HMM Clustering: Processing {input_regimes} regimes → 3 clusters (Bull/Bear/Sideways)')
+            self.logger.info(f'🔧 HMM Clustering: Processing {input_regimes} regimes → Dynamic clustering based on mode')
             
-            # Configure HMM clustering
+            # Configure HMM clustering - Dynamic cluster count based on mode
+            mode = pipeline_state.get('mode', 'light')  # Get mode from pipeline state
+            
+            if mode == 'full':
+                n_clusters = min(25, max(3, input_regimes // 2))  # Up to 25 clusters in full mode
+            elif mode == 'medium':
+                n_clusters = min(15, max(3, input_regimes // 3))  # Up to 15 clusters in medium mode
+            else:  # light or blank mode
+                n_clusters = 3  # Simple Bull/Bear/Sideways for light mode
+            
             clustering_config = {
-                'n_clusters': 3,  # Bull, Bear, Sideways
+                'n_clusters': n_clusters,
                 'clustering_method': 'hmm_based',
                 'min_cluster_size': 10,
                 'convergence_tolerance': 1e-6,
                 'max_iterations': 100,
                 
                 # Regime constraints
-                'max_regimes': 25,  # Maximum 25 clusters allowed (regimes are clustered into fewer groups)
+                'max_regimes': 25,  # Maximum 25 clusters allowed
                 'min_regime_sample_percentage': 0.01,  # 1% minimum sample threshold
                 
                 # Hardware optimization
@@ -278,6 +287,8 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                 'enable_gpu_acceleration': True,
                 'memory_limit_gb': 8.0
             }
+            
+            self.logger.info(f'🎯 Clustering mode: {mode} → {n_clusters} clusters')
             
             # Create HMM composite manager
             tprint("🔧 Creating HMM composite manager...")
@@ -781,7 +792,100 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
         momentum_chars['momentum_strength'] = abs(price_momentum_5) + abs(rsi_momentum) + abs(macd_momentum)
         momentum_chars['momentum_strength_level'] = 'strong' if momentum_chars['momentum_strength'] > 0.1 else 'weak' if momentum_chars['momentum_strength'] < 0.02 else 'moderate'
         
+        # Add risk-return characteristics
+        risk_return_chars = self._extract_risk_return_characteristics(feature_means, feature_stds)
+        momentum_chars.update(risk_return_chars)
+        
         return momentum_chars
+
+    def _extract_risk_return_characteristics(self, feature_means: Dict[str, float], feature_stds: Dict[str, float]) -> Dict[str, Any]:
+        """Extract risk-adjusted returns, drawdown patterns, and trend persistence characteristics."""
+        risk_return_chars = {}
+        
+        try:
+            # Risk-adjusted returns
+            returns = feature_means.get('returns', 0.0)
+            returns_std = feature_stds.get('returns', 0.01)  # Avoid division by zero
+            
+            # Sharpe ratio approximation (assuming risk-free rate ≈ 0)
+            sharpe_ratio = returns / returns_std if returns_std > 0 else 0.0
+            risk_return_chars['sharpe_ratio'] = sharpe_ratio
+            risk_return_chars['risk_adjusted_return'] = returns / max(returns_std, 0.001)
+            
+            # Return characteristics
+            risk_return_chars['mean_returns'] = returns
+            risk_return_chars['return_volatility'] = returns_std
+            risk_return_chars['return_skewness'] = feature_means.get('return_skewness', 0.0)
+            risk_return_chars['return_kurtosis'] = feature_means.get('return_kurtosis', 3.0)
+            
+            # Drawdown characteristics
+            max_drawdown = feature_means.get('max_drawdown', 0.0)
+            avg_drawdown = feature_means.get('avg_drawdown', 0.0)
+            drawdown_duration = feature_means.get('drawdown_duration', 0.0)
+            
+            risk_return_chars['max_drawdown'] = abs(max_drawdown)  # Make positive
+            risk_return_chars['avg_drawdown'] = abs(avg_drawdown)
+            risk_return_chars['drawdown_duration'] = drawdown_duration
+            risk_return_chars['drawdown_recovery_ratio'] = abs(returns) / max(abs(max_drawdown), 0.001)
+            
+            # Trend persistence characteristics
+            trend_strength = feature_means.get('trend_strength', 0.0)
+            trend_consistency = feature_means.get('trend_consistency', 0.0)
+            autocorrelation_1 = feature_means.get('autocorr_1', 0.0)
+            autocorrelation_5 = feature_means.get('autocorr_5', 0.0)
+            
+            risk_return_chars['trend_strength'] = trend_strength
+            risk_return_chars['trend_consistency'] = trend_consistency
+            risk_return_chars['autocorr_1_day'] = autocorrelation_1
+            risk_return_chars['autocorr_5_day'] = autocorrelation_5
+            risk_return_chars['trend_persistence'] = (abs(autocorrelation_1) + abs(autocorrelation_5)) / 2
+            
+            # Volatility clustering characteristics  
+            vol_persistence = feature_means.get('volatility_persistence', 0.0)
+            vol_clustering = feature_stds.get('volatility_5', 0.0) / max(feature_means.get('volatility_5', 0.01), 0.01)
+            
+            risk_return_chars['volatility_persistence'] = vol_persistence
+            risk_return_chars['volatility_clustering'] = vol_clustering
+            
+            # Risk classification
+            if sharpe_ratio > 1.0:
+                risk_class = 'high_reward_low_risk'
+            elif sharpe_ratio > 0.5:
+                risk_class = 'moderate_reward_risk'
+            elif sharpe_ratio > 0:
+                risk_class = 'low_reward_moderate_risk'
+            else:
+                risk_class = 'negative_reward'
+                
+            risk_return_chars['risk_classification'] = risk_class
+            
+            # Market efficiency indicators
+            mean_reversion_strength = feature_means.get('mean_reversion', 0.0)
+            momentum_persistence = max(abs(autocorrelation_1), abs(autocorrelation_5))
+            
+            if momentum_persistence > 0.3:
+                efficiency_class = 'trending_inefficient'
+            elif mean_reversion_strength > 0.3:
+                efficiency_class = 'mean_reverting'
+            else:
+                efficiency_class = 'semi_efficient'
+                
+            risk_return_chars['market_efficiency'] = efficiency_class
+            risk_return_chars['mean_reversion_strength'] = mean_reversion_strength
+            
+        except Exception as e:
+            # Fallback values if calculation fails
+            risk_return_chars.update({
+                'sharpe_ratio': 0.0,
+                'risk_adjusted_return': 0.0,
+                'max_drawdown': 0.0,
+                'trend_persistence': 0.0,
+                'volatility_clustering': 0.0,
+                'risk_classification': 'unknown',
+                'market_efficiency': 'unknown'
+            })
+        
+        return risk_return_chars
 
     def _calculate_regime_similarity_matrix(self, regime_characteristics: Dict[str, Any]) -> np.ndarray:
         """Calculate similarity matrix between regimes based on their characteristics."""
@@ -841,17 +945,19 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                 'volatility_momentum', 'volatility_acceleration', 'mean_atr_normalized'
             ])
             
-            # Calculate momentum similarity (30% weight)
+            # Calculate momentum similarity (includes risk-return characteristics)
             momentum_similarity = self._calculate_characteristic_similarity(mom_1, mom_2, [
                 'mean_price_momentum_5', 'mean_price_momentum_20', 'mean_rsi', 'mean_macd',
-                'rsi_momentum', 'macd_momentum', 'momentum_strength'
+                'rsi_momentum', 'macd_momentum', 'momentum_strength',
+                'sharpe_ratio', 'trend_persistence', 'max_drawdown', 'volatility_clustering'
             ])
             
-            # Weighted overall similarity
+            # Weighted overall similarity for composite clusters
+            # Balanced approach for multi-dimensional market regime clustering
             overall_similarity = (
-                0.3 * volume_similarity +
-                0.3 * volatility_similarity +
-                0.4 * momentum_similarity
+                0.30 * volume_similarity +     # Volume patterns important for market microstructure
+                0.35 * volatility_similarity + # Volatility crucial for risk and regime identification  
+                0.35 * momentum_similarity     # Momentum essential but not dominant for composite clustering
             )
             
             return overall_similarity
@@ -1680,8 +1786,12 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             similarity_validation = self._validate_regime_similarity_within_across_clusters(regime_characteristics, regime_to_cluster, unique_clusters)
             statistical_metrics['regime_similarity_validation'] = similarity_validation
             
-            # 6. Overall Cluster Quality Assessment
-            overall_quality = self._assess_overall_cluster_quality(volume_tests, volatility_tests, momentum_tests, cluster_validation, similarity_validation)
+            # 6. Factor Impact Analysis for Market Dynamics
+            factor_impact = self._analyze_factor_impact_on_market_dynamics(regime_characteristics, regime_to_cluster, unique_clusters)
+            statistical_metrics['factor_impact_analysis'] = factor_impact
+            
+            # 7. Overall Cluster Quality Assessment
+            overall_quality = self._assess_overall_cluster_quality(volume_tests, volatility_tests, momentum_tests, cluster_validation, similarity_validation, factor_impact)
             statistical_metrics['overall_cluster_quality'] = overall_quality
             
             return statistical_metrics
@@ -3233,10 +3343,12 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             
             momentum_tests = {}
             
-            # Momentum characteristics to test
+            # Momentum characteristics to test (including risk-return features)
             momentum_features = [
                 'mean_price_momentum_5', 'mean_price_momentum_20', 'mean_rsi', 'mean_macd',
-                'rsi_momentum', 'macd_momentum', 'momentum_strength'
+                'rsi_momentum', 'macd_momentum', 'momentum_strength',
+                'sharpe_ratio', 'trend_persistence', 'max_drawdown', 'volatility_clustering',
+                'risk_adjusted_return', 'drawdown_recovery_ratio'
             ]
             
             # Extract momentum data by cluster
@@ -3492,7 +3604,189 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
         except Exception as e:
             return {'error': f'Regime similarity validation failed: {e}'}
     
-    def _assess_overall_cluster_quality(self, volume_tests: Dict[str, Any], volatility_tests: Dict[str, Any], momentum_tests: Dict[str, Any], cluster_validation: Dict[str, Any], similarity_validation: Dict[str, Any]) -> Dict[str, Any]:
+    def _analyze_factor_impact_on_market_dynamics(self, regime_characteristics: Dict[str, Any], regime_to_cluster: Dict[str, int], unique_clusters: List[int]) -> Dict[str, Any]:
+        """Analyze which factors actually impact market dynamics and trading strategy effectiveness."""
+        try:
+            from scipy import stats
+            import numpy as np
+            
+            factor_impact = {}
+            
+            # Define factor categories and their features
+            factor_categories = {
+                'volume_factors': [
+                    'mean_volume_momentum_5', 'mean_volume_momentum_20', 'mean_volume_ratio',
+                    'volume_momentum_volatility', 'volume_ratio_volatility'
+                ],
+                'volatility_factors': [
+                    'mean_volatility_5', 'mean_volatility_10', 'mean_volatility_20',
+                    'volatility_momentum', 'volatility_acceleration', 'mean_atr_normalized',
+                    'volatility_clustering'
+                ],
+                'momentum_factors': [
+                    'mean_price_momentum_5', 'mean_price_momentum_20', 'mean_rsi', 'mean_macd',
+                    'rsi_momentum', 'macd_momentum', 'momentum_strength'
+                ],
+                'risk_return_factors': [
+                    'sharpe_ratio', 'risk_adjusted_return', 'max_drawdown', 'drawdown_recovery_ratio',
+                    'trend_persistence', 'mean_returns', 'return_volatility'
+                ],
+                'market_microstructure_factors': [
+                    'volatility_clustering', 'trend_persistence', 'mean_reversion_strength',
+                    'autocorr_1_day', 'autocorr_5_day'
+                ]
+            }
+            
+            # Collect all regime data
+            all_regime_data = []
+            cluster_labels = []
+            
+            for regime_id, cluster_id in regime_to_cluster.items():
+                if regime_id in regime_characteristics:
+                    regime_data = regime_characteristics[regime_id]
+                    
+                    # Extract all features for this regime
+                    regime_features = {}
+                    for category, features in factor_categories.items():
+                        for feature in features:
+                            # Look in all characteristic categories
+                            value = None
+                            for char_type in ['volume_characteristics', 'volatility_characteristics', 'momentum_characteristics']:
+                                char_data = regime_data.get(char_type, {})
+                                if feature in char_data:
+                                    value = char_data[feature]
+                                    break
+                            
+                            regime_features[feature] = value if value is not None else 0.0
+                    
+                    all_regime_data.append(regime_features)
+                    cluster_labels.append(cluster_id)
+            
+            if len(all_regime_data) < 3:
+                return {'error': 'Insufficient data for factor impact analysis'}
+            
+            # Calculate factor importance for cluster separation
+            factor_importance = {}
+            
+            for category, features in factor_categories.items():
+                category_importance = {}
+                category_f_stats = []
+                
+                for feature in features:
+                    # Extract feature values by cluster
+                    cluster_feature_data = {}
+                    for cluster_id in unique_clusters:
+                        cluster_feature_data[cluster_id] = []
+                    
+                    for i, regime_features in enumerate(all_regime_data):
+                        cluster_id = cluster_labels[i]
+                        if cluster_id in cluster_feature_data:
+                            cluster_feature_data[cluster_id].append(regime_features.get(feature, 0.0))
+                    
+                    # Perform ANOVA to measure factor's ability to distinguish clusters
+                    groups = [data for data in cluster_feature_data.values() if len(data) > 1]
+                    
+                    if len(groups) >= 2:
+                        try:
+                            f_stat, p_value = stats.f_oneway(*groups)
+                            effect_size = self._calculate_eta_squared(groups, f_stat)
+                            
+                            category_importance[feature] = {
+                                'f_statistic': float(f_stat),
+                                'p_value': float(p_value),
+                                'effect_size': float(effect_size),
+                                'significant': p_value < 0.05,
+                                'impact_level': 'high' if effect_size > 0.14 else 'medium' if effect_size > 0.06 else 'low'
+                            }
+                            
+                            if not np.isnan(f_stat) and f_stat > 0:
+                                category_f_stats.append(f_stat)
+                                
+                        except Exception as e:
+                            category_importance[feature] = {'error': str(e)}
+                
+                # Calculate category-level impact
+                if category_f_stats:
+                    avg_f_stat = np.mean(category_f_stats)
+                    significant_features = sum(1 for feat_data in category_importance.values() 
+                                             if isinstance(feat_data, dict) and feat_data.get('significant', False))
+                    total_features = len([feat_data for feat_data in category_importance.values() 
+                                        if isinstance(feat_data, dict) and 'error' not in feat_data])
+                    
+                    category_importance['category_summary'] = {
+                        'avg_f_statistic': float(avg_f_stat),
+                        'significant_features': significant_features,
+                        'total_features': total_features,
+                        'significance_ratio': significant_features / total_features if total_features > 0 else 0.0,
+                        'category_impact': 'high' if avg_f_stat > 5.0 and significant_features / total_features > 0.5 else 'medium' if avg_f_stat > 2.0 else 'low'
+                    }
+                
+                factor_importance[category] = category_importance
+            
+            # Overall factor impact ranking
+            category_impacts = []
+            for category, category_data in factor_importance.items():
+                summary = category_data.get('category_summary', {})
+                if summary:
+                    category_impacts.append({
+                        'category': category,
+                        'avg_f_stat': summary.get('avg_f_statistic', 0),
+                        'significance_ratio': summary.get('significance_ratio', 0),
+                        'impact_score': summary.get('avg_f_statistic', 0) * summary.get('significance_ratio', 0)
+                    })
+            
+            # Sort by impact score
+            category_impacts.sort(key=lambda x: x['impact_score'], reverse=True)
+            
+            factor_impact['factor_importance'] = factor_importance
+            factor_impact['category_ranking'] = category_impacts
+            
+            # Trading strategy implications
+            top_category = category_impacts[0] if category_impacts else None
+            if top_category:
+                if top_category['category'] == 'momentum_factors':
+                    strategy_implication = 'Momentum-based strategies likely most effective'
+                elif top_category['category'] == 'volatility_factors':
+                    strategy_implication = 'Volatility-based strategies likely most effective'
+                elif top_category['category'] == 'volume_factors':
+                    strategy_implication = 'Volume-based strategies likely most effective'
+                elif top_category['category'] == 'risk_return_factors':
+                    strategy_implication = 'Risk-adjusted strategies likely most effective'
+                else:
+                    strategy_implication = 'Market microstructure strategies likely most effective'
+                
+                factor_impact['strategy_implications'] = {
+                    'primary_factor': top_category['category'],
+                    'recommendation': strategy_implication,
+                    'confidence': 'high' if top_category['impact_score'] > 10 else 'medium' if top_category['impact_score'] > 5 else 'low'
+                }
+            
+            # Market dynamics insights
+            momentum_impact = next((cat for cat in category_impacts if cat['category'] == 'momentum_factors'), {}).get('impact_score', 0)
+            volatility_impact = next((cat for cat in category_impacts if cat['category'] == 'volatility_factors'), {}).get('impact_score', 0)
+            volume_impact = next((cat for cat in category_impacts if cat['category'] == 'volume_factors'), {}).get('impact_score', 0)
+            
+            if momentum_impact > volatility_impact and momentum_impact > volume_impact:
+                market_regime = 'momentum_driven'
+            elif volatility_impact > volume_impact:
+                market_regime = 'volatility_driven'
+            else:
+                market_regime = 'volume_driven'
+            
+            factor_impact['market_dynamics'] = {
+                'dominant_regime_type': market_regime,
+                'momentum_importance': float(momentum_impact),
+                'volatility_importance': float(volatility_impact),
+                'volume_importance': float(volume_impact),
+                'regime_complexity': 'high' if len([cat for cat in category_impacts if cat['impact_score'] > 5]) > 2 else 'medium' if len([cat for cat in category_impacts if cat['impact_score'] > 2]) > 1 else 'low'
+            }
+            
+            return factor_impact
+            
+        except Exception as e:
+            return {'error': f'Factor impact analysis failed: {e}'}
+    
+    def _assess_overall_cluster_quality(self, volume_tests: Dict[str, Any], volatility_tests: Dict[str, Any], momentum_tests: Dict[str, Any], cluster_validation: Dict[str, Any], similarity_validation: Dict[str, Any], factor_impact: Dict[str, Any] = None) -> Dict[str, Any]:
         """Assess overall quality of the clustering based on all statistical tests."""
         try:
             overall_assessment = {}
@@ -3516,16 +3810,16 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                 'similarity_validation': float(similarity_score)
             }
             
-            # Weighted overall score (Bull/Bear validation is part of momentum analysis)
+            # Weighted overall score - Heavy focus on similarity for composite clustering
             weights = {
-                'volume': 0.20,
-                'volatility': 0.35,
-                'momentum': 0.35,  # Includes Bull/Bear validation
-                'similarity': 0.10
+                'volume': 0.15,
+                'volatility': 0.25,
+                'momentum': 0.25,
+                'similarity': 0.35  # Heavy focus on regime similarity for composite clusters
             }
             
-            # Combine momentum score with bull/bear validation (they measure the same thing)
-            combined_momentum_score = (momentum_diff_score * 0.7 + bull_bear_score * 0.3)
+            # Use pure momentum differentiation score (bull/bear validation is redundant)
+            combined_momentum_score = momentum_diff_score
             
             weighted_score = (
                 volume_diff_score * weights['volume'] +

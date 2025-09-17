@@ -3623,6 +3623,16 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                 )
                 detailed_metrics[f'cluster_{cluster_id}'] = cluster_metrics
             
+            # Aggregate transition matrix rows and dwell-time distributions
+            transition_rows = {}
+            dwell_time_distribution = {}
+            for cluster_key, metrics in detailed_metrics.items():
+                if cluster_key.startswith('cluster_') and 'error' not in metrics:
+                    cid = metrics.get('cluster_id')
+                    if cid is not None:
+                        transition_rows[cluster_key] = metrics.get('transition_row', {})
+                        dwell_time_distribution[cluster_key] = metrics.get('dwell_time', {})
+
             # Add cluster comparison metrics
             comparison_metrics = self._generate_cluster_comparison_metrics(
                 detailed_metrics, cluster_assignments, market_data
@@ -3634,6 +3644,10 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                 detailed_metrics, cluster_assignments, market_data
             )
             detailed_metrics['cluster_performance'] = performance_metrics
+
+            # Persist global transition and dwell-time artifacts
+            detailed_metrics['transition_matrix_rows'] = transition_rows
+            detailed_metrics['dwell_time_distribution'] = dwell_time_distribution
             
             generation_time = time.time() - start_time
             detailed_metrics['generation_time'] = generation_time
@@ -3667,8 +3681,22 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             
             cluster_metrics = {
                 'cluster_id': cluster_id,
+                'sample_count': int(len(cluster_data)),
                 'sample_percentage': (len(cluster_data) / len(market_data)) * 100
             }
+
+            # Economic metrics (annualized when possible)
+            bars_per_year = self._infer_bars_per_year(market_data)
+            returns_metrics = self._compute_returns_metrics(cluster_data, bars_per_year)
+            cluster_metrics['returns_analysis'] = returns_metrics
+
+            # Dwell-time statistics for this cluster
+            dwell_stats = self._compute_dwell_times_for_cluster(cluster_assignments, cluster_id)
+            cluster_metrics['dwell_time'] = dwell_stats
+
+            # Transition probability row for this cluster
+            n_clusters = int(len(set(cluster_assignments)))
+            cluster_metrics['transition_row'] = self._compute_transition_row(cluster_assignments, cluster_id, n_clusters)
             
             
             # Volume analysis
@@ -3689,14 +3717,182 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             if cluster_id < len(hmm_models):
                 hmm_metrics = self._analyze_cluster_hmm_model(hmm_models[cluster_id])
                 cluster_metrics['hmm_model_analysis'] = hmm_metrics
-            
-            
+            # Economic interpretability label
+            vol_level = cluster_metrics.get('volatility_analysis', {}).get('volatility_classification', {}).get('volatility_level')
+            trend_metrics = cluster_metrics.get('trend_analysis', {}).get('trend_metrics', {})
+            volume_cv = cluster_metrics.get('volume_analysis', {}).get('volume_volatility', {}).get('volume_cv', 0.0)
+            econ_label = self._infer_economic_label(
+                trend_metrics,
+                vol_level,
+                returns_metrics.get('annualized_return', 0.0),
+                returns_metrics.get('annualized_sharpe', 0.0),
+                volume_cv
+            )
+            cluster_metrics['economic_interpretability'] = {'label': econ_label}
+
             return cluster_metrics
             
         except Exception as e:
             return {'error': f'Analysis failed for cluster {cluster_id}: {e}'}
     
     
+    def _infer_bars_per_year(self, market_data: pd.DataFrame) -> float:
+        """Infer approximate bars-per-year from timestamp cadence when possible."""
+        try:
+            ts_col = None
+            for candidate in ['timestamp', 'open_time', 'close_time']:
+                if candidate in market_data.columns:
+                    ts_col = candidate
+                    break
+            if ts_col is None:
+                return 365.0 * 24.0
+            ts = market_data[ts_col]
+            if np.issubdtype(ts.dtype, np.number):
+                unit = 'ms' if ts.iloc[-1] > 10_000_000_000 else 's'
+                t = pd.to_datetime(ts, unit=unit, errors='coerce')
+            else:
+                t = pd.to_datetime(ts, errors='coerce')
+            dt = t.diff().dropna()
+            if len(dt) == 0:
+                return 365.0 * 24.0
+            median_seconds = dt.median().total_seconds()
+            if median_seconds <= 0:
+                return 365.0 * 24.0
+            return float((365.0 * 24.0 * 3600.0) / median_seconds)
+        except Exception:
+            return 365.0 * 24.0
+
+
+    def _compute_returns_metrics(self, cluster_data: pd.DataFrame, bars_per_year: float) -> Dict[str, Any]:
+        """Compute per-cluster return/volatility/Sharpe and 95% CI on mean returns."""
+        try:
+            close = cluster_data['close'] if 'close' in cluster_data.columns else None
+            if close is None or len(close) < 3:
+                return {
+                    'bars_per_year': bars_per_year,
+                    'annualized_return': 0.0,
+                    'annualized_volatility': 0.0,
+                    'annualized_sharpe': 0.0,
+                    'mean_return_bar': 0.0,
+                    'std_return_bar': 0.0,
+                    'ci95_bar': [0.0, 0.0],
+                    'ci95_annualized': [0.0, 0.0]
+                }
+            r = close.pct_change().dropna()
+            if len(r) == 0:
+                return {
+                    'bars_per_year': bars_per_year,
+                    'annualized_return': 0.0,
+                    'annualized_volatility': 0.0,
+                    'annualized_sharpe': 0.0,
+                    'mean_return_bar': 0.0,
+                    'std_return_bar': 0.0,
+                    'ci95_bar': [0.0, 0.0],
+                    'ci95_annualized': [0.0, 0.0]
+                }
+            mean_bar = float(r.mean())
+            std_bar = float(r.std()) if r.std() == r.std() else 0.0
+            n = max(1, len(r))
+            try:
+                ann_return = float((1.0 + mean_bar) ** bars_per_year - 1.0)
+            except Exception:
+                ann_return = float(mean_bar * bars_per_year)
+            ann_vol = float(std_bar * np.sqrt(bars_per_year)) if std_bar == std_bar else 0.0
+            sharpe = float((mean_bar / std_bar) * np.sqrt(bars_per_year)) if std_bar > 0 else 0.0
+            se = std_bar / np.sqrt(n) if n > 0 else 0.0
+            z = 1.96
+            ci_low_bar = mean_bar - z * se
+            ci_high_bar = mean_bar + z * se
+            ci_low_ann = ci_low_bar * bars_per_year
+            ci_high_ann = ci_high_bar * bars_per_year
+            return {
+                'bars_per_year': bars_per_year,
+                'annualized_return': ann_return,
+                'annualized_volatility': ann_vol,
+                'annualized_sharpe': sharpe,
+                'mean_return_bar': mean_bar,
+                'std_return_bar': std_bar,
+                'ci95_bar': [ci_low_bar, ci_high_bar],
+                'ci95_annualized': [ci_low_ann, ci_high_ann]
+            }
+        except Exception:
+            return {
+                'bars_per_year': bars_per_year,
+                'annualized_return': 0.0,
+                'annualized_volatility': 0.0,
+                'annualized_sharpe': 0.0,
+                'mean_return_bar': 0.0,
+                'std_return_bar': 0.0,
+                'ci95_bar': [0.0, 0.0],
+                'ci95_annualized': [0.0, 0.0]
+            }
+
+
+    def _compute_dwell_times_for_cluster(self, cluster_assignments: List[int], cluster_id: int) -> Dict[str, Any]:
+        """Compute run-length (dwell-time) statistics for a single cluster."""
+        try:
+            runs = []
+            current_len = 0
+            for a in cluster_assignments:
+                if a == cluster_id:
+                    current_len += 1
+                else:
+                    if current_len > 0:
+                        runs.append(current_len)
+                        current_len = 0
+            if current_len > 0:
+                runs.append(current_len)
+            if not runs:
+                return {'count': 0, 'mean': 0.0, 'median': 0.0, 'min': 0, 'max': 0, 'p25': 0.0, 'p75': 0.0}
+            arr = np.array(runs, dtype=float)
+            return {
+                'count': int(len(runs)),
+                'mean': float(np.mean(arr)),
+                'median': float(np.median(arr)),
+                'min': int(np.min(arr)),
+                'max': int(np.max(arr)),
+                'p25': float(np.percentile(arr, 25)),
+                'p75': float(np.percentile(arr, 75))
+            }
+        except Exception:
+            return {'count': 0, 'mean': 0.0, 'median': 0.0, 'min': 0, 'max': 0, 'p25': 0.0, 'p75': 0.0}
+
+
+    def _compute_transition_row(self, cluster_assignments: List[int], cluster_id: int, n_clusters: int) -> Dict[str, float]:
+        """Compute transition probabilities from a given cluster to others."""
+        try:
+            counts = {k: 0 for k in range(n_clusters)}
+            total = 0
+            for i in range(1, len(cluster_assignments)):
+                if cluster_assignments[i-1] == cluster_id:
+                    to_c = cluster_assignments[i]
+                    counts[to_c] = counts.get(to_c, 0) + 1
+                    total += 1
+            if total == 0:
+                return {f'to_{k}': 0.0 for k in range(n_clusters)}
+            return {f'to_{k}': float(counts.get(k, 0) / total) for k in range(n_clusters)}
+        except Exception:
+            return {f'to_{k}': 0.0 for k in range(n_clusters)}
+
+
+    def _infer_economic_label(self, trend_metrics: Dict[str, Any], vol_level: Any, annualized_return: float, annualized_sharpe: float, volume_cv: float) -> str:
+        """Infer a concise economic interpretability label for a cluster."""
+        try:
+            direction = trend_metrics.get('trend_direction')
+            strength = float(trend_metrics.get('trend_strength', 0.0))
+            consistency = str(trend_metrics.get('trend_consistency', 'neutral'))
+            vol_level = str(vol_level) if vol_level else 'unknown'
+            if direction == 'upward' and strength > 0.5 and annualized_sharpe > 0:
+                return 'trend-up'
+            if vol_level == 'high' and annualized_return >= 0:
+                return 'high-vol carry'
+            if consistency in ('moderate', 'inconsistent') and abs(annualized_return) < 0.05:
+                return 'mean-reverting'
+            if (volume_cv is not None and volume_cv < 0.3) and vol_level in ('low', 'medium') and consistency == 'inconsistent':
+                return 'illiquid chop'
+            return 'neutral'
+        except Exception:
+            return 'neutral'
     def _analyze_cluster_volume(self, cluster_data: pd.DataFrame) -> Dict[str, Any]:
         """Analyze volume characteristics of a cluster."""
         try:

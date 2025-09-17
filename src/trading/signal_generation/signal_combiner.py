@@ -1,618 +1,720 @@
 """
-Signal Generation Pipeline
+Signal Combiner
 
-Implements proper data flow: HMM regime -> analyst -> tactician
-with sequential model calls and confidence score optimization.
+This module combines signals from Analyst and Tactician components
+to generate final trading decisions with proper weighting and risk management.
 """
 
+import asyncio
 import logging
-from typing import Dict, Any, List, Optional, Tuple
-from dataclasses import dataclass
-from datetime import datetime
-import numpy as np
+from datetime import datetime, timedelta
+from typing import Any, Dict, List, Optional, Union, Tuple
+from dataclasses import dataclass, field
+from enum import Enum
+
 import pandas as pd
+import numpy as np
 
 from src.utils.logger import system_logger
 from src.core.decorators import handles_errors, traced, log_execution_time
-from ..config.regime_config import RegimeType
-from ..config.trading_config import TradingConfig
+from src.utils.tprint import tprint_info, tprint_warning, tprint_error, tprint_success
 
-logger = system_logger.getChild('SignalGenerationPipeline')
+# Import signal types
+from .analyst_signals import AnalystSignal, SignalType, SignalStrength
+from .tactician_signals import TacticianSignal, TimingSignal, TimingConfidence
+
+logger = system_logger.getChild('SignalCombiner')
+
+class CombinedAction(Enum):
+    """Combined trading actions."""
+    BUY = "buy"
+    SELL = "sell"
+    HOLD = "hold"
+    CLOSE = "close"
+    REDUCE = "reduce"
+    INCREASE = "increase"
+
+class CombinationMethod(Enum):
+    """Signal combination methods."""
+    WEIGHTED_AVERAGE = "weighted_average"
+    CONFIDENCE_WEIGHTED = "confidence_weighted"
+    HIERARCHICAL = "hierarchical"
+    CONSENSUS = "consensus"
+    RISK_ADJUSTED = "risk_adjusted"
 
 @dataclass
-class TradingSignal:
-    """Trading signal structure."""
+class CombinedSignal:
+    """Combined signal from Analyst and Tactician."""
     timestamp: datetime
     symbol: str
-    signal_type: str  # 'buy', 'sell', 'hold'
-    strength: float  # 0.0 to 1.0
-    confidence: float  # 0.0 to 1.0
-    source: str  # 'analyst', 'tactician', 'combined'
-    regime_weights: Dict[RegimeType, float]
-    metadata: Dict[str, Any]
+    action: CombinedAction
+    confidence: float
+    strength: float
+    analyst_signal: Optional[AnalystSignal] = None
+    tactician_signal: Optional[TacticianSignal] = None
+    combination_method: CombinationMethod = CombinationMethod.WEIGHTED_AVERAGE
+    risk_metrics: Dict[str, float] = field(default_factory=dict)
+    position_sizing: Dict[str, float] = field(default_factory=dict)
+    metadata: Dict[str, Any] = field(default_factory=dict)
 
 @dataclass
-class SignalCombinationResult:
-    """Result of signal combination."""
-    combined_signal: TradingSignal
-    analyst_signal: Optional[TradingSignal]
-    tactician_signal: Optional[TradingSignal]
-    combination_method: str
-    confidence_score: float
-    regime_adjustment: float
-    metadata: Dict[str, Any]
+class CombinationWeights:
+    """Weights for signal combination."""
+    analyst_weight: float = 0.6
+    tactician_weight: float = 0.4
+    confidence_threshold: float = 0.6
+    risk_adjustment_factor: float = 0.8
+    regime_adjustment_factor: float = 1.0
 
 class SignalCombiner:
     """
-    Signal combiner that integrates analyst and tactician signals with regime awareness.
-    
-    Combines signals using various methods:
-    - Weighted average based on historical performance
-    - Regime-based weighting
-    - Confidence-based weighting
-    - Ensemble methods
+    Signal Combiner that combines Analyst and Tactician signals
+    to generate final trading decisions.
     """
-    
-    def __init__(self, config: TradingConfig):
+
+    def __init__(self, config: Dict[str, Any]):
+        """
+        Initialize the signal combiner.
+        
+        Args:
+            config: Configuration dictionary
+        """
         self.config = config
         self.logger = logger.getChild('SignalCombiner')
         
-        # Signal sources
-        self.analyst_signals: List[TradingSignal] = []
-        self.tactician_signals: List[TradingSignal] = []
-        self.combined_signals: List[SignalCombinationResult] = []
+        # Combination parameters
+        self.weights = CombinationWeights(
+            analyst_weight=config.get('analyst_weight', 0.6),
+            tactician_weight=config.get('tactician_weight', 0.4),
+            confidence_threshold=config.get('confidence_threshold', 0.6),
+            risk_adjustment_factor=config.get('risk_adjustment_factor', 0.8),
+            regime_adjustment_factor=config.get('regime_adjustment_factor', 1.0)
+        )
+        
+        # Combination method
+        self.combination_method = CombinationMethod(
+            config.get('combination_method', 'weighted_average')
+        )
         
         # Performance tracking
-        self.analyst_performance: Dict[str, float] = {}
-        self.tactician_performance: Dict[str, float] = {}
+        self.combination_history: List[CombinedSignal] = []
+        self.max_history = config.get('max_history', 1000)
         
-        # Combination methods
-        self.combination_methods = {
-            'weighted_average': self._combine_weighted_average,
-            'regime_based': self._combine_regime_based,
-            'confidence_weighted': self._combine_confidence_weighted,
-            'ensemble': self._combine_ensemble,
-            'majority_vote': self._combine_majority_vote
-        }
-        
-        # Default combination method
-        self.default_method = 'regime_based'
-        
-        # Regime-specific weights
-        self.regime_weights = {
-            RegimeType.TRENDING_UP: {'analyst': 0.6, 'tactician': 0.4},
-            RegimeType.TRENDING_DOWN: {'analyst': 0.6, 'tactician': 0.4},
-            RegimeType.SIDEWAYS: {'analyst': 0.4, 'tactician': 0.6},
-            RegimeType.HIGH_VOLATILITY: {'analyst': 0.7, 'tactician': 0.3},
-            RegimeType.LOW_VOLATILITY: {'analyst': 0.5, 'tactician': 0.5},
-            RegimeType.BREAKOUT: {'analyst': 0.8, 'tactician': 0.2},
-            RegimeType.REVERSAL: {'analyst': 0.3, 'tactician': 0.7},
-            RegimeType.MOMENTUM: {'analyst': 0.6, 'tactician': 0.4},
-            RegimeType.MEAN_REVERSION: {'analyst': 0.4, 'tactician': 0.6},
-        }
-        
-        # Default weights
-        self.default_weights = {'analyst': 0.6, 'tactician': 0.4}
-        
-    @handles_errors
-    @log_execution_time()
-    @traced(span_name="combine_signals")
-    async def combine_signals(
-        self,
-        symbol: str,
-        analyst_signal: Optional[TradingSignal],
-        tactician_signal: Optional[TradingSignal],
-        regime_probabilities: Dict[RegimeType, float],
-        method: Optional[str] = None
-    ) -> SignalCombinationResult:
+        # Performance metrics
+        self.combination_count = 0
+        self.successful_combinations = 0
+        self.failed_combinations = 0
+
+    async def initialize(self) -> bool:
         """
-        Combine analyst and tactician signals.
+        Initialize the signal combiner.
         
-        Args:
-            symbol: Trading symbol
-            analyst_signal: Signal from analyst component
-            tactician_signal: Signal from tactician component
-            regime_probabilities: Current regime probabilities
-            method: Combination method to use
-            
         Returns:
-            SignalCombinationResult: Combined signal with metadata
+            bool: True if initialization successful
         """
         try:
-            if method is None:
-                method = self.default_method
+            self.logger.info("✅ Signal Combiner initialized")
+            return True
+        except Exception as e:
+            self.logger.error(f"❌ Failed to initialize Signal Combiner: {e}")
+            return False
+
+    @handles_errors
+    @traced("signal_combination")
+    @log_execution_time
+    async def combine_signals(
+        self,
+        analyst_signal: Optional[AnalystSignal] = None,
+        tactician_signal: Optional[TacticianSignal] = None,
+        additional_context: Optional[Dict[str, Any]] = None
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Combine Analyst and Tactician signals.
+        
+        Args:
+            analyst_signal: Signal from Analyst component
+            tactician_signal: Signal from Tactician component
+            additional_context: Additional context for combination
             
-            if method not in self.combination_methods:
-                raise ValueError(f"Unknown combination method: {method}")
+        Returns:
+            Combined signal result or None if no valid combination
+        """
+        try:
+            tprint_info("🔄 Combining Analyst and Tactician signals...")
             
             # Validate inputs
             if not analyst_signal and not tactician_signal:
-                raise ValueError("At least one signal must be provided")
+                tprint_warning("⚠️ No signals provided for combination")
+                return None
             
-            # Get combination function
-            combine_func = self.combination_methods[method]
+            # Perform signal combination based on method
+            if self.combination_method == CombinationMethod.WEIGHTED_AVERAGE:
+                combined_signal = await self._weighted_average_combination(
+                    analyst_signal, tactician_signal, additional_context
+                )
+            elif self.combination_method == CombinationMethod.CONFIDENCE_WEIGHTED:
+                combined_signal = await self._confidence_weighted_combination(
+                    analyst_signal, tactician_signal, additional_context
+                )
+            elif self.combination_method == CombinationMethod.HIERARCHICAL:
+                combined_signal = await self._hierarchical_combination(
+                    analyst_signal, tactician_signal, additional_context
+                )
+            elif self.combination_method == CombinationMethod.CONSENSUS:
+                combined_signal = await self._consensus_combination(
+                    analyst_signal, tactician_signal, additional_context
+                )
+            elif self.combination_method == CombinationMethod.RISK_ADJUSTED:
+                combined_signal = await self._risk_adjusted_combination(
+                    analyst_signal, tactician_signal, additional_context
+                )
+            else:
+                # Default to weighted average
+                combined_signal = await self._weighted_average_combination(
+                    analyst_signal, tactician_signal, additional_context
+                )
             
-            # Combine signals
-            result = await combine_func(
-                symbol, analyst_signal, tactician_signal, regime_probabilities
-            )
+            if combined_signal:
+                # Store combination in history
+                self._store_combination(combined_signal)
+                self.combination_count += 1
+                
+                tprint_success(f"✅ Combined signal generated: {combined_signal.action.value} "
+                             f"(confidence: {combined_signal.confidence:.3f})")
+                
+                # Return as dictionary for compatibility
+                return self._signal_to_dict(combined_signal)
             
-            # Store result
-            self.combined_signals.append(result)
-            
-            # Maintain history size
-            if len(self.combined_signals) > 1000:
-                self.combined_signals = self.combined_signals[-1000:]
-            
-            self.logger.debug(f"Signals combined for {symbol} using {method}: {result.combined_signal.signal_type}")
-            
-            return result
+            return None
             
         except Exception as e:
-            self.logger.error(f"❌ Signal combination failed for {symbol}: {e}")
-            raise
-    
-    async def _combine_weighted_average(
+            self.logger.error(f"❌ Signal combination failed: {e}")
+            return None
+
+    async def _weighted_average_combination(
         self,
-        symbol: str,
-        analyst_signal: Optional[TradingSignal],
-        tactician_signal: Optional[TradingSignal],
-        regime_probabilities: Dict[RegimeType, float]
-    ) -> SignalCombinationResult:
-        """Combine signals using weighted average based on historical performance."""
+        analyst_signal: Optional[AnalystSignal],
+        tactician_signal: Optional[TacticianSignal],
+        additional_context: Optional[Dict[str, Any]]
+    ) -> Optional[CombinedSignal]:
+        """Combine signals using weighted average method."""
         try:
-            # Get performance-based weights
-            analyst_weight = self.analyst_performance.get(symbol, 0.5)
-            tactician_weight = self.tactician_performance.get(symbol, 0.5)
+            # Calculate weighted confidence
+            analyst_confidence = analyst_signal.confidence_score if analyst_signal else 0.0
+            tactician_confidence = tactician_signal.confidence_score if tactician_signal else 0.0
+            
+            # Adjust weights based on signal availability
+            analyst_weight = self.weights.analyst_weight if analyst_signal else 0.0
+            tactician_weight = self.weights.tactician_weight if tactician_signal else 0.0
             
             # Normalize weights
             total_weight = analyst_weight + tactician_weight
-            if total_weight > 0:
-                analyst_weight /= total_weight
-                tactician_weight /= total_weight
-            else:
-                analyst_weight = tactician_weight = 0.5
+            if total_weight == 0:
+                return None
             
-            # Calculate combined signal
-            combined_strength = 0.0
-            combined_confidence = 0.0
-            signal_type = 'hold'
+            analyst_weight /= total_weight
+            tactician_weight /= total_weight
             
-            if analyst_signal:
-                combined_strength += analyst_signal.strength * analyst_weight
-                combined_confidence += analyst_signal.confidence * analyst_weight
-                if analyst_signal.signal_type != 'hold':
-                    signal_type = analyst_signal.signal_type
-            
-            if tactician_signal:
-                combined_strength += tactician_signal.strength * tactician_weight
-                combined_confidence += tactician_signal.confidence * tactician_weight
-                if tactician_signal.signal_type != 'hold' and signal_type == 'hold':
-                    signal_type = tactician_signal.signal_type
-            
-            # Determine final signal type based on strength
-            if combined_strength > 0.6:
-                if signal_type == 'hold':
-                    signal_type = 'buy' if combined_strength > 0 else 'sell'
-            elif combined_strength < -0.6:
-                signal_type = 'sell'
-            else:
-                signal_type = 'hold'
-            
-            # Create combined signal
-            combined_signal = TradingSignal(
-                timestamp=datetime.now(),
-                symbol=symbol,
-                signal_type=signal_type,
-                strength=combined_strength,
-                confidence=combined_confidence,
-                source='combined',
-                regime_weights=regime_probabilities,
-                metadata={
-                    'combination_method': 'weighted_average',
-                    'analyst_weight': analyst_weight,
-                    'tactician_weight': tactician_weight
-                }
+            # Calculate combined confidence
+            combined_confidence = (
+                analyst_confidence * analyst_weight + 
+                tactician_confidence * tactician_weight
             )
             
-            return SignalCombinationResult(
-                combined_signal=combined_signal,
+            # Check confidence threshold
+            if combined_confidence < self.weights.confidence_threshold:
+                return None
+            
+            # Determine action
+            action = self._determine_combined_action(analyst_signal, tactician_signal)
+            
+            # Calculate strength
+            strength = self._calculate_combined_strength(analyst_signal, tactician_signal)
+            
+            # Calculate risk metrics
+            risk_metrics = self._calculate_risk_metrics(analyst_signal, tactician_signal)
+            
+            # Calculate position sizing
+            position_sizing = self._calculate_position_sizing(tactician_signal)
+            
+            return CombinedSignal(
+                timestamp=datetime.now(),
+                symbol=analyst_signal.symbol if analyst_signal else tactician_signal.symbol,
+                action=action,
+                confidence=combined_confidence,
+                strength=strength,
                 analyst_signal=analyst_signal,
                 tactician_signal=tactician_signal,
-                combination_method='weighted_average',
-                confidence_score=combined_confidence,
-                regime_adjustment=0.0,
+                combination_method=CombinationMethod.WEIGHTED_AVERAGE,
+                risk_metrics=risk_metrics,
+                position_sizing=position_sizing,
                 metadata={
-                    'analyst_weight': analyst_weight,
-                    'tactician_weight': tactician_weight
+                    'combination_weights': {
+                        'analyst_weight': analyst_weight,
+                        'tactician_weight': tactician_weight
+                    },
+                    'additional_context': additional_context or {}
                 }
             )
             
         except Exception as e:
             self.logger.error(f"❌ Weighted average combination failed: {e}")
-            raise
-    
-    async def _combine_regime_based(
+            return None
+
+    async def _confidence_weighted_combination(
         self,
-        symbol: str,
-        analyst_signal: Optional[TradingSignal],
-        tactician_signal: Optional[TradingSignal],
-        regime_probabilities: Dict[RegimeType, float]
-    ) -> SignalCombinationResult:
-        """Combine signals using regime-based weighting."""
+        analyst_signal: Optional[AnalystSignal],
+        tactician_signal: Optional[TacticianSignal],
+        additional_context: Optional[Dict[str, Any]]
+    ) -> Optional[CombinedSignal]:
+        """Combine signals using confidence-weighted method."""
         try:
-            # Calculate regime-based weights
-            analyst_weight = 0.0
-            tactician_weight = 0.0
-            
-            for regime, probability in regime_probabilities.items():
-                regime_weights = self.regime_weights.get(regime, self.default_weights)
-                analyst_weight += regime_weights['analyst'] * probability
-                tactician_weight += regime_weights['tactician'] * probability
-            
-            # Normalize weights
-            total_weight = analyst_weight + tactician_weight
-            if total_weight > 0:
-                analyst_weight /= total_weight
-                tactician_weight /= total_weight
-            else:
-                analyst_weight = tactician_weight = 0.5
-            
-            # Calculate combined signal
-            combined_strength = 0.0
-            combined_confidence = 0.0
-            signal_type = 'hold'
-            
-            if analyst_signal:
-                combined_strength += analyst_signal.strength * analyst_weight
-                combined_confidence += analyst_signal.confidence * analyst_weight
-                if analyst_signal.signal_type != 'hold':
-                    signal_type = analyst_signal.signal_type
-            
-            if tactician_signal:
-                combined_strength += tactician_signal.strength * tactician_weight
-                combined_confidence += tactician_signal.confidence * tactician_weight
-                if tactician_signal.signal_type != 'hold' and signal_type == 'hold':
-                    signal_type = tactician_signal.signal_type
-            
-            # Determine final signal type
-            if combined_strength > 0.6:
-                if signal_type == 'hold':
-                    signal_type = 'buy'
-            elif combined_strength < -0.6:
-                signal_type = 'sell'
-            else:
-                signal_type = 'hold'
-            
-            # Create combined signal
-            combined_signal = TradingSignal(
-                timestamp=datetime.now(),
-                symbol=symbol,
-                signal_type=signal_type,
-                strength=combined_strength,
-                confidence=combined_confidence,
-                source='combined',
-                regime_weights=regime_probabilities,
-                metadata={
-                    'combination_method': 'regime_based',
-                    'analyst_weight': analyst_weight,
-                    'tactician_weight': tactician_weight
-                }
-            )
-            
-            return SignalCombinationResult(
-                combined_signal=combined_signal,
-                analyst_signal=analyst_signal,
-                tactician_signal=tactician_signal,
-                combination_method='regime_based',
-                confidence_score=combined_confidence,
-                regime_adjustment=abs(analyst_weight - tactician_weight),
-                metadata={
-                    'analyst_weight': analyst_weight,
-                    'tactician_weight': tactician_weight,
-                    'regime_probabilities': regime_probabilities
-                }
-            )
-            
-        except Exception as e:
-            self.logger.error(f"❌ Regime-based combination failed: {e}")
-            raise
-    
-    async def _combine_confidence_weighted(
-        self,
-        symbol: str,
-        analyst_signal: Optional[TradingSignal],
-        tactician_signal: Optional[TradingSignal],
-        regime_probabilities: Dict[RegimeType, float]
-    ) -> SignalCombinationResult:
-        """Combine signals using confidence-based weighting."""
-        try:
-            # Calculate confidence-based weights
-            analyst_confidence = analyst_signal.confidence if analyst_signal else 0.0
-            tactician_confidence = tactician_signal.confidence if tactician_signal else 0.0
+            # Use confidence scores as weights
+            analyst_confidence = analyst_signal.confidence_score if analyst_signal else 0.0
+            tactician_confidence = tactician_signal.confidence_score if tactician_signal else 0.0
             
             total_confidence = analyst_confidence + tactician_confidence
-            if total_confidence > 0:
-                analyst_weight = analyst_confidence / total_confidence
-                tactician_weight = tactician_confidence / total_confidence
-            else:
-                analyst_weight = tactician_weight = 0.5
+            if total_confidence == 0:
+                return None
             
-            # Calculate combined signal
-            combined_strength = 0.0
-            combined_confidence = 0.0
-            signal_type = 'hold'
+            # Normalize confidence scores to weights
+            analyst_weight = analyst_confidence / total_confidence
+            tactician_weight = tactician_confidence / total_confidence
             
-            if analyst_signal:
-                combined_strength += analyst_signal.strength * analyst_weight
-                combined_confidence += analyst_signal.confidence * analyst_weight
-                if analyst_signal.signal_type != 'hold':
-                    signal_type = analyst_signal.signal_type
-            
-            if tactician_signal:
-                combined_strength += tactician_signal.strength * tactician_weight
-                combined_confidence += tactician_signal.confidence * tactician_weight
-                if tactician_signal.signal_type != 'hold' and signal_type == 'hold':
-                    signal_type = tactician_signal.signal_type
-            
-            # Determine final signal type
-            if combined_strength > 0.6:
-                if signal_type == 'hold':
-                    signal_type = 'buy'
-            elif combined_strength < -0.6:
-                signal_type = 'sell'
-            else:
-                signal_type = 'hold'
-            
-            # Create combined signal
-            combined_signal = TradingSignal(
-                timestamp=datetime.now(),
-                symbol=symbol,
-                signal_type=signal_type,
-                strength=combined_strength,
-                confidence=combined_confidence,
-                source='combined',
-                regime_weights=regime_probabilities,
-                metadata={
-                    'combination_method': 'confidence_weighted',
-                    'analyst_weight': analyst_weight,
-                    'tactician_weight': tactician_weight
-                }
+            # Combined confidence is the weighted average
+            combined_confidence = (
+                analyst_confidence * analyst_weight + 
+                tactician_confidence * tactician_weight
             )
             
-            return SignalCombinationResult(
-                combined_signal=combined_signal,
+            # Check confidence threshold
+            if combined_confidence < self.weights.confidence_threshold:
+                return None
+            
+            # Determine action
+            action = self._determine_combined_action(analyst_signal, tactician_signal)
+            
+            # Calculate strength
+            strength = self._calculate_combined_strength(analyst_signal, tactician_signal)
+            
+            # Calculate risk metrics
+            risk_metrics = self._calculate_risk_metrics(analyst_signal, tactician_signal)
+            
+            # Calculate position sizing
+            position_sizing = self._calculate_position_sizing(tactician_signal)
+            
+            return CombinedSignal(
+                timestamp=datetime.now(),
+                symbol=analyst_signal.symbol if analyst_signal else tactician_signal.symbol,
+                action=action,
+                confidence=combined_confidence,
+                strength=strength,
                 analyst_signal=analyst_signal,
                 tactician_signal=tactician_signal,
-                combination_method='confidence_weighted',
-                confidence_score=combined_confidence,
-                regime_adjustment=0.0,
+                combination_method=CombinationMethod.CONFIDENCE_WEIGHTED,
+                risk_metrics=risk_metrics,
+                position_sizing=position_sizing,
                 metadata={
-                    'analyst_weight': analyst_weight,
-                    'tactician_weight': tactician_weight
+                    'confidence_weights': {
+                        'analyst_weight': analyst_weight,
+                        'tactician_weight': tactician_weight
+                    },
+                    'additional_context': additional_context or {}
                 }
             )
             
         except Exception as e:
-            self.logger.error(f"❌ Confidence-weighted combination failed: {e}")
-            raise
-    
-    async def _combine_ensemble(
+            self.logger.error(f"❌ Confidence weighted combination failed: {e}")
+            return None
+
+    async def _hierarchical_combination(
         self,
-        symbol: str,
-        analyst_signal: Optional[TradingSignal],
-        tactician_signal: Optional[TradingSignal],
-        regime_probabilities: Dict[RegimeType, float]
-    ) -> SignalCombinationResult:
-        """Combine signals using ensemble methods."""
+        analyst_signal: Optional[AnalystSignal],
+        tactician_signal: Optional[TacticianSignal],
+        additional_context: Optional[Dict[str, Any]]
+    ) -> Optional[CombinedSignal]:
+        """Combine signals using hierarchical method (Analyst decides direction, Tactician decides timing)."""
         try:
-            # Get signals from all methods
-            weighted_avg_result = await self._combine_weighted_average(
-                symbol, analyst_signal, tactician_signal, regime_probabilities
-            )
-            regime_based_result = await self._combine_regime_based(
-                symbol, analyst_signal, tactician_signal, regime_probabilities
-            )
-            confidence_weighted_result = await self._combine_confidence_weighted(
-                symbol, analyst_signal, tactician_signal, regime_probabilities
+            # Analyst determines the overall direction
+            if not analyst_signal:
+                return None
+            
+            # Tactician provides timing and position sizing
+            if not tactician_signal:
+                # Use analyst signal with default timing
+                combined_confidence = analyst_signal.confidence_score * 0.8  # Reduce confidence without tactician
+                action = self._map_analyst_signal_to_action(analyst_signal.signal_type)
+            else:
+                # Combine with tactician timing
+                combined_confidence = min(analyst_signal.confidence_score, tactician_signal.confidence_score)
+                action = self._determine_combined_action(analyst_signal, tactician_signal)
+            
+            # Check confidence threshold
+            if combined_confidence < self.weights.confidence_threshold:
+                return None
+            
+            # Calculate strength
+            strength = self._calculate_combined_strength(analyst_signal, tactician_signal)
+            
+            # Calculate risk metrics
+            risk_metrics = self._calculate_risk_metrics(analyst_signal, tactician_signal)
+            
+            # Calculate position sizing
+            position_sizing = self._calculate_position_sizing(tactician_signal)
+            
+            return CombinedSignal(
+                timestamp=datetime.now(),
+                symbol=analyst_signal.symbol,
+                action=action,
+                confidence=combined_confidence,
+                strength=strength,
+                analyst_signal=analyst_signal,
+                tactician_signal=tactician_signal,
+                combination_method=CombinationMethod.HIERARCHICAL,
+                risk_metrics=risk_metrics,
+                position_sizing=position_sizing,
+                metadata={
+                    'hierarchical_method': 'analyst_direction_tactician_timing',
+                    'additional_context': additional_context or {}
+                }
             )
             
-            # Ensemble weights
-            ensemble_weights = {
-                'weighted_average': 0.3,
-                'regime_based': 0.4,
-                'confidence_weighted': 0.3
+        except Exception as e:
+            self.logger.error(f"❌ Hierarchical combination failed: {e}")
+            return None
+
+    async def _consensus_combination(
+        self,
+        analyst_signal: Optional[AnalystSignal],
+        tactician_signal: Optional[TacticianSignal],
+        additional_context: Optional[Dict[str, Any]]
+    ) -> Optional[CombinedSignal]:
+        """Combine signals using consensus method (both must agree)."""
+        try:
+            # Both signals must be present for consensus
+            if not analyst_signal or not tactician_signal:
+                return None
+            
+            # Check if signals agree on direction
+            analyst_action = self._map_analyst_signal_to_action(analyst_signal.signal_type)
+            tactician_action = self._map_tactician_signal_to_action(tactician_signal.timing_signal)
+            
+            # Determine if there's consensus
+            if analyst_action == tactician_action:
+                # Consensus reached
+                combined_confidence = (analyst_signal.confidence_score + tactician_signal.confidence_score) / 2
+                action = analyst_action
+            else:
+                # No consensus - default to hold
+                combined_confidence = 0.3  # Low confidence for no consensus
+                action = CombinedAction.HOLD
+            
+            # Check confidence threshold
+            if combined_confidence < self.weights.confidence_threshold:
+                return None
+            
+            # Calculate strength
+            strength = self._calculate_combined_strength(analyst_signal, tactician_signal)
+            
+            # Calculate risk metrics
+            risk_metrics = self._calculate_risk_metrics(analyst_signal, tactician_signal)
+            
+            # Calculate position sizing
+            position_sizing = self._calculate_position_sizing(tactician_signal)
+            
+            return CombinedSignal(
+                timestamp=datetime.now(),
+                symbol=analyst_signal.symbol,
+                action=action,
+                confidence=combined_confidence,
+                strength=strength,
+                analyst_signal=analyst_signal,
+                tactician_signal=tactician_signal,
+                combination_method=CombinationMethod.CONSENSUS,
+                risk_metrics=risk_metrics,
+                position_sizing=position_sizing,
+                metadata={
+                    'consensus_reached': analyst_action == tactician_action,
+                    'analyst_action': analyst_action.value,
+                    'tactician_action': tactician_action.value,
+                    'additional_context': additional_context or {}
+                }
+            )
+            
+        except Exception as e:
+            self.logger.error(f"❌ Consensus combination failed: {e}")
+            return None
+
+    async def _risk_adjusted_combination(
+        self,
+        analyst_signal: Optional[AnalystSignal],
+        tactician_signal: Optional[TacticianSignal],
+        additional_context: Optional[Dict[str, Any]]
+    ) -> Optional[CombinedSignal]:
+        """Combine signals using risk-adjusted method."""
+        try:
+            # Start with weighted average
+            base_signal = await self._weighted_average_combination(
+                analyst_signal, tactician_signal, additional_context
+            )
+            
+            if not base_signal:
+                return None
+            
+            # Apply risk adjustments
+            risk_adjustment = self.weights.risk_adjustment_factor
+            
+            # Adjust confidence based on risk metrics
+            if base_signal.risk_metrics:
+                volatility_risk = base_signal.risk_metrics.get('volatility', 0.02)
+                liquidation_risk = base_signal.risk_metrics.get('liquidation_risk', 0.1)
+                
+                # Reduce confidence for high risk
+                risk_factor = 1.0 - (volatility_risk * 2 + liquidation_risk * 0.5)
+                risk_factor = max(0.1, min(1.0, risk_factor))
+                
+                base_signal.confidence *= risk_factor * risk_adjustment
+            
+            # Check confidence threshold after risk adjustment
+            if base_signal.confidence < self.weights.confidence_threshold:
+                return None
+            
+            # Update metadata
+            base_signal.combination_method = CombinationMethod.RISK_ADJUSTED
+            base_signal.metadata['risk_adjustment'] = {
+                'risk_adjustment_factor': risk_adjustment,
+                'volatility_risk': base_signal.risk_metrics.get('volatility', 0.0),
+                'liquidation_risk': base_signal.risk_metrics.get('liquidation_risk', 0.0)
             }
             
-            # Calculate ensemble signal
-            combined_strength = 0.0
-            combined_confidence = 0.0
-            
-            for result, weight in ensemble_weights.items():
-                if result == 'weighted_average':
-                    signal = weighted_avg_result.combined_signal
-                elif result == 'regime_based':
-                    signal = regime_based_result.combined_signal
-                else:
-                    signal = confidence_weighted_result.combined_signal
-                
-                combined_strength += signal.strength * weight
-                combined_confidence += signal.confidence * weight
-            
-            # Determine signal type
-            signal_type = 'hold'
-            if combined_strength > 0.6:
-                signal_type = 'buy'
-            elif combined_strength < -0.6:
-                signal_type = 'sell'
-            
-            # Create ensemble signal
-            combined_signal = TradingSignal(
-                timestamp=datetime.now(),
-                symbol=symbol,
-                signal_type=signal_type,
-                strength=combined_strength,
-                confidence=combined_confidence,
-                source='combined',
-                regime_weights=regime_probabilities,
-                metadata={
-                    'combination_method': 'ensemble',
-                    'ensemble_weights': ensemble_weights
-                }
-            )
-            
-            return SignalCombinationResult(
-                combined_signal=combined_signal,
-                analyst_signal=analyst_signal,
-                tactician_signal=tactician_signal,
-                combination_method='ensemble',
-                confidence_score=combined_confidence,
-                regime_adjustment=0.0,
-                metadata={
-                    'ensemble_weights': ensemble_weights,
-                    'individual_results': {
-                        'weighted_average': weighted_avg_result.combined_signal.strength,
-                        'regime_based': regime_based_result.combined_signal.strength,
-                        'confidence_weighted': confidence_weighted_result.combined_signal.strength
-                    }
-                }
-            )
+            return base_signal
             
         except Exception as e:
-            self.logger.error(f"❌ Ensemble combination failed: {e}")
-            raise
-    
-    async def _combine_majority_vote(
+            self.logger.error(f"❌ Risk adjusted combination failed: {e}")
+            return None
+
+    def _determine_combined_action(
         self,
-        symbol: str,
-        analyst_signal: Optional[TradingSignal],
-        tactician_signal: Optional[TradingSignal],
-        regime_probabilities: Dict[RegimeType, float]
-    ) -> SignalCombinationResult:
-        """Combine signals using majority vote."""
+        analyst_signal: Optional[AnalystSignal],
+        tactician_signal: Optional[TacticianSignal]
+    ) -> CombinedAction:
+        """Determine combined action from both signals."""
         try:
-            # Collect signals
-            signals = []
-            if analyst_signal and analyst_signal.signal_type != 'hold':
-                signals.append(analyst_signal)
-            if tactician_signal and tactician_signal.signal_type != 'hold':
-                signals.append(tactician_signal)
+            # Get actions from both signals
+            analyst_action = self._map_analyst_signal_to_action(
+                analyst_signal.signal_type if analyst_signal else SignalType.HOLD
+            )
+            tactician_action = self._map_tactician_signal_to_action(
+                tactician_signal.timing_signal if tactician_signal else TimingSignal.HOLD
+            )
             
-            if not signals:
-                # No active signals, return hold
-                combined_signal = TradingSignal(
-                    timestamp=datetime.now(),
-                    symbol=symbol,
-                    signal_type='hold',
-                    strength=0.0,
-                    confidence=0.0,
-                    source='combined',
-                    regime_weights=regime_probabilities,
-                    metadata={'combination_method': 'majority_vote'}
-                )
-                
-                return SignalCombinationResult(
-                    combined_signal=combined_signal,
-                    analyst_signal=analyst_signal,
-                    tactician_signal=tactician_signal,
-                    combination_method='majority_vote',
-                    confidence_score=0.0,
-                    regime_adjustment=0.0,
-                    metadata={}
-                )
-            
-            # Count votes
-            buy_votes = sum(1 for s in signals if s.signal_type == 'buy')
-            sell_votes = sum(1 for s in signals if s.signal_type == 'sell')
-            
-            # Determine majority
-            if buy_votes > sell_votes:
-                signal_type = 'buy'
-                strength = sum(s.strength for s in signals if s.signal_type == 'buy') / buy_votes
-            elif sell_votes > buy_votes:
-                signal_type = 'sell'
-                strength = sum(s.strength for s in signals if s.signal_type == 'sell') / sell_votes
+            # Combine actions based on priority
+            if analyst_action == CombinedAction.BUY and tactician_action in [CombinedAction.BUY, CombinedAction.HOLD]:
+                return CombinedAction.BUY
+            elif analyst_action == CombinedAction.SELL and tactician_action in [CombinedAction.SELL, CombinedAction.HOLD]:
+                return CombinedAction.SELL
+            elif analyst_action == CombinedAction.HOLD and tactician_action == CombinedAction.CLOSE:
+                return CombinedAction.CLOSE
             else:
-                signal_type = 'hold'
-                strength = 0.0
-            
-            # Calculate average confidence
-            confidence = sum(s.confidence for s in signals) / len(signals)
-            
-            # Create combined signal
-            combined_signal = TradingSignal(
-                timestamp=datetime.now(),
-                symbol=symbol,
-                signal_type=signal_type,
-                strength=strength,
-                confidence=confidence,
-                source='combined',
-                regime_weights=regime_probabilities,
-                metadata={
-                    'combination_method': 'majority_vote',
-                    'buy_votes': buy_votes,
-                    'sell_votes': sell_votes
-                }
-            )
-            
-            return SignalCombinationResult(
-                combined_signal=combined_signal,
-                analyst_signal=analyst_signal,
-                tactician_signal=tactician_signal,
-                combination_method='majority_vote',
-                confidence_score=confidence,
-                regime_adjustment=0.0,
-                metadata={
-                    'buy_votes': buy_votes,
-                    'sell_votes': sell_votes
-                }
-            )
-            
+                return CombinedAction.HOLD
+                
         except Exception as e:
-            self.logger.error(f"❌ Majority vote combination failed: {e}")
-            raise
-    
-    def update_performance(self, symbol: str, analyst_performance: float, tactician_performance: float):
-        """Update performance metrics for signal sources."""
-        try:
-            self.analyst_performance[symbol] = analyst_performance
-            self.tactician_performance[symbol] = tactician_performance
-            
-            self.logger.debug(f"Performance updated for {symbol}: analyst={analyst_performance:.3f}, tactician={tactician_performance:.3f}")
-            
-        except Exception as e:
-            self.logger.warning(f"⚠️ Failed to update performance for {symbol}: {e}")
-    
-    def get_available_methods(self) -> list[str]:
-        """Get list of available combination methods."""
-        return list(self.combination_methods.keys())
-    
-    def set_default_method(self, method: str):
-        """Set default combination method."""
-        if method in self.combination_methods:
-            self.default_method = method
-            self.logger.info(f"Default combination method set to: {method}")
-        else:
-            self.logger.warning(f"Unknown combination method: {method}")
-    
-    def get_combination_history(self, limit: int = 100) -> List[SignalCombinationResult]:
-        """Get recent signal combination history."""
-        return self.combined_signals[-limit:] if self.combined_signals else []
-    
-    def get_performance_metrics(self) -> Dict[str, Any]:
-        """Get performance metrics for signal sources."""
-        return {
-            'analyst_performance': self.analyst_performance.copy(),
-            'tactician_performance': self.tactician_performance.copy(),
-            'total_combinations': len(self.combined_signals),
-            'default_method': self.default_method
+            self.logger.error(f"❌ Action determination failed: {e}")
+            return CombinedAction.HOLD
+
+    def _map_analyst_signal_to_action(self, signal_type: SignalType) -> CombinedAction:
+        """Map analyst signal type to combined action."""
+        mapping = {
+            SignalType.BUY: CombinedAction.BUY,
+            SignalType.SELL: CombinedAction.SELL,
+            SignalType.HOLD: CombinedAction.HOLD,
+            SignalType.CLOSE: CombinedAction.CLOSE
         }
-    
-    async def stop(self):
-        """Stop signal combiner."""
+        return mapping.get(signal_type, CombinedAction.HOLD)
+
+    def _map_tactician_signal_to_action(self, timing_signal: TimingSignal) -> CombinedAction:
+        """Map tactician timing signal to combined action."""
+        mapping = {
+            TimingSignal.ENTER_LONG: CombinedAction.BUY,
+            TimingSignal.ENTER_SHORT: CombinedAction.SELL,
+            TimingSignal.EXIT_LONG: CombinedAction.CLOSE,
+            TimingSignal.EXIT_SHORT: CombinedAction.CLOSE,
+            TimingSignal.HOLD: CombinedAction.HOLD,
+            TimingSignal.CLOSE_ALL: CombinedAction.CLOSE
+        }
+        return mapping.get(timing_signal, CombinedAction.HOLD)
+
+    def _calculate_combined_strength(
+        self,
+        analyst_signal: Optional[AnalystSignal],
+        tactician_signal: Optional[TacticianSignal]
+    ) -> float:
+        """Calculate combined signal strength."""
         try:
-            self.logger.info("🛑 Stopping Signal Combiner...")
-            self.logger.info("✅ Signal Combiner stopped successfully")
+            analyst_strength = analyst_signal.signal_strength.value if analyst_signal else 0.0
+            tactician_strength = tactician_signal.confidence.value if tactician_signal else 0.0
+            
+            # Map strength values to numeric
+            strength_mapping = {
+                'weak': 0.25,
+                'low': 0.25,
+                'moderate': 0.5,
+                'medium': 0.5,
+                'strong': 0.75,
+                'high': 0.75,
+                'very_strong': 1.0,
+                'very_high': 1.0
+            }
+            
+            analyst_numeric = strength_mapping.get(analyst_strength, 0.5)
+            tactician_numeric = strength_mapping.get(tactician_strength, 0.5)
+            
+            # Weighted average
+            analyst_weight = self.weights.analyst_weight if analyst_signal else 0.0
+            tactician_weight = self.weights.tactician_weight if tactician_signal else 0.0
+            
+            total_weight = analyst_weight + tactician_weight
+            if total_weight == 0:
+                return 0.5
+            
+            return (analyst_numeric * analyst_weight + tactician_numeric * tactician_weight) / total_weight
             
         except Exception as e:
-            self.logger.error(f"❌ Error stopping Signal Combiner: {e}")
+            self.logger.error(f"❌ Strength calculation failed: {e}")
+            return 0.5
+
+    def _calculate_risk_metrics(
+        self,
+        analyst_signal: Optional[AnalystSignal],
+        tactician_signal: Optional[TacticianSignal]
+    ) -> Dict[str, float]:
+        """Calculate combined risk metrics."""
+        try:
+            risk_metrics = {}
+            
+            # Analyst risk metrics
+            if analyst_signal:
+                risk_metrics.update({
+                    'market_health': analyst_signal.market_health_score,
+                    'volatility': analyst_signal.volatility_score,
+                    'liquidation_risk': analyst_signal.liquidation_risk_score
+                })
+            
+            # Tactician risk metrics
+            if tactician_signal:
+                risk_metrics.update(tactician_signal.risk_metrics)
+            
+            return risk_metrics
+            
+        except Exception as e:
+            self.logger.error(f"❌ Risk metrics calculation failed: {e}")
+            return {}
+
+    def _calculate_position_sizing(self, tactician_signal: Optional[TacticianSignal]) -> Dict[str, float]:
+        """Calculate position sizing from tactician signal."""
+        try:
+            if not tactician_signal or not tactician_signal.position_sizing:
+                return {
+                    'recommended_size': 0.0,
+                    'max_size': 0.0,
+                    'leverage': 1.0,
+                    'risk_per_trade': 0.02
+                }
+            
+            sizing = tactician_signal.position_sizing
+            return {
+                'recommended_size': sizing.recommended_size,
+                'max_size': sizing.max_size,
+                'leverage': sizing.leverage,
+                'risk_per_trade': sizing.risk_per_trade,
+                'kelly_fraction': sizing.kelly_fraction,
+                'confidence_multiplier': sizing.confidence_multiplier
+            }
+            
+        except Exception as e:
+            self.logger.error(f"❌ Position sizing calculation failed: {e}")
+            return {
+                'recommended_size': 0.0,
+                'max_size': 0.0,
+                'leverage': 1.0,
+                'risk_per_trade': 0.02
+            }
+
+    def _signal_to_dict(self, signal: CombinedSignal) -> Dict[str, Any]:
+        """Convert combined signal to dictionary."""
+        return {
+            'action': signal.action.value,
+            'confidence': signal.confidence,
+            'strength': signal.strength,
+            'symbol': signal.symbol,
+            'timestamp': signal.timestamp.isoformat(),
+            'combination_method': signal.combination_method.value,
+            'risk_metrics': signal.risk_metrics,
+            'position_sizing': signal.position_sizing,
+            'metadata': signal.metadata
+        }
+
+    def _store_combination(self, signal: CombinedSignal):
+        """Store combination in history."""
+        self.combination_history.append(signal)
+        
+        # Maintain history size
+        if len(self.combination_history) > self.max_history:
+            self.combination_history.pop(0)
+
+    def get_combination_history(self, n: int = 100) -> List[CombinedSignal]:
+        """Get recent combination history."""
+        return self.combination_history[-n:] if len(self.combination_history) >= n else self.combination_history.copy()
+
+    def get_combination_stats(self) -> Dict[str, Any]:
+        """Get combination statistics."""
+        if self.combination_count == 0:
+            return {
+                'total_combinations': 0,
+                'success_rate': 0.0,
+                'action_distribution': {},
+                'avg_confidence': 0.0
+            }
+        
+        # Calculate action distribution
+        action_distribution = {}
+        for signal in self.combination_history:
+            action = signal.action.value
+            action_distribution[action] = action_distribution.get(action, 0) + 1
+        
+        # Calculate average confidence
+        avg_confidence = np.mean([s.confidence for s in self.combination_history])
+        
+        return {
+            'total_combinations': self.combination_count,
+            'success_rate': self.successful_combinations / self.combination_count if self.combination_count > 0 else 0.0,
+            'action_distribution': action_distribution,
+            'avg_confidence': avg_confidence,
+            'recent_combinations': len(self.combination_history)
+        }
+
+    def update_combination_performance(self, signal: CombinedSignal, was_successful: bool):
+        """Update combination performance tracking."""
+        if was_successful:
+            self.successful_combinations += 1
+        else:
+            self.failed_combinations += 1
+
+# Convenience functions
+
+def create_signal_combiner(config: Dict[str, Any]) -> SignalCombiner:
+    """Create a configured signal combiner."""
+    return SignalCombiner(config)
+
+async def combine_signals(
+    signal_combiner: SignalCombiner,
+    analyst_signal: Optional[AnalystSignal] = None,
+    tactician_signal: Optional[TacticianSignal] = None,
+    additional_context: Optional[Dict[str, Any]] = None
+) -> Optional[Dict[str, Any]]:
+    """Combine signals with convenience function."""
+    return await signal_combiner.combine_signals(
+        analyst_signal=analyst_signal,
+        tactician_signal=tactician_signal,
+        additional_context=additional_context
+    )

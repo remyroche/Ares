@@ -3,6 +3,7 @@ Live Data Collector for Real-Time Trading Analysis
 
 This module provides a comprehensive live data collection system that fetches
 market data every 30 seconds and integrates with ML models for real-time analysis.
+Enhanced version with multi-timeframe support and ML integration.
 """
 
 import asyncio
@@ -39,8 +40,11 @@ class DataQuality(Enum):
 
 class CollectionInterval(Enum):
     """Collection interval modes."""
-    FAST = 15    # 15 seconds - for high-frequency trading
-    STANDARD = 30  # 30 seconds - standard live trading
+    HMM = 15 * 60      # 15 minutes - for HMM regime detection
+    ANALYST = 2 * 60   # 2 minutes - for Analyst trade decisions
+    TACTICIAN = 30     # 30 seconds - for Tactician timing decisions
+    FAST = 15          # 15 seconds - for high-frequency trading
+    STANDARD = 30      # 30 seconds - standard live trading
 
 @dataclass
 class LiveDataConfig:
@@ -93,9 +97,12 @@ class LiveDataCollector:
         self.ml_model = None
         self.feature_engineer = None
 
-        # Data buffers
+        # Data buffers for different timeframes
         self.data_buffer: List[LiveDataPoint] = []
         self.processed_buffer: List[Dict[str, Any]] = []
+        self.hmm_buffer: List[LiveDataPoint] = []  # 1h data for HMM
+        self.analyst_buffer: List[LiveDataPoint] = []  # 5m data for Analyst
+        self.tactician_buffer: List[LiveDataPoint] = []  # 1m data for Tactician
 
         # State management
         self.is_running = False
@@ -456,7 +463,7 @@ class LiveDataCollector:
         return features
 
     def _update_buffers(self, data_point: LiveDataPoint):
-        """Update data buffers."""
+        """Update data buffers for different timeframes."""
         self.data_buffer.append(data_point)
 
         # Maintain buffer size
@@ -468,6 +475,28 @@ class LiveDataCollector:
             self.processed_buffer.append(data_point.processed_data)
             if len(self.processed_buffer) > self.config.buffer_size:
                 self.processed_buffer.pop(0)
+
+        # Update timeframe-specific buffers
+        self._update_timeframe_buffers(data_point)
+
+    def _update_timeframe_buffers(self, data_point: LiveDataPoint):
+        """Update buffers for different model timeframes."""
+        # HMM buffer (1h data) - add every 60th data point
+        if self.collection_count % 60 == 0:
+            self.hmm_buffer.append(data_point)
+            if len(self.hmm_buffer) > 100:  # Keep last 100 hours
+                self.hmm_buffer.pop(0)
+
+        # Analyst buffer (5m data) - add every 5th data point
+        if self.collection_count % 5 == 0:
+            self.analyst_buffer.append(data_point)
+            if len(self.analyst_buffer) > 200:  # Keep last 200 5-min periods
+                self.analyst_buffer.pop(0)
+
+        # Tactician buffer (1m data) - add every data point
+        self.tactician_buffer.append(data_point)
+        if len(self.tactician_buffer) > 1000:  # Keep last 1000 minutes
+            self.tactician_buffer.pop(0)
 
     async def _trigger_callbacks(self, data_point: LiveDataPoint):
         """Trigger data callbacks."""
@@ -508,6 +537,31 @@ class LiveDataCollector:
         recent_data = self.processed_buffer[-n:] if len(self.processed_buffer) >= n else self.processed_buffer
         return pd.DataFrame(recent_data)
 
+    def get_timeframe_data(self, timeframe: str, n: int = 100) -> List[LiveDataPoint]:
+        """Get data for specific timeframe."""
+        if timeframe == "hmm":
+            return self.hmm_buffer[-n:] if len(self.hmm_buffer) >= n else self.hmm_buffer.copy()
+        elif timeframe == "analyst":
+            return self.analyst_buffer[-n:] if len(self.analyst_buffer) >= n else self.analyst_buffer.copy()
+        elif timeframe == "tactician":
+            return self.tactician_buffer[-n:] if len(self.tactician_buffer) >= n else self.tactician_buffer.copy()
+        else:
+            return self.get_recent_data(n)
+
+    def get_timeframe_dataframe(self, timeframe: str, n: int = 100) -> pd.DataFrame:
+        """Get timeframe data as DataFrame."""
+        data_points = self.get_timeframe_data(timeframe, n)
+        if not data_points:
+            return pd.DataFrame()
+        
+        # Convert to DataFrame
+        data_list = []
+        for dp in data_points:
+            if dp.processed_data:
+                data_list.append(dp.processed_data)
+        
+        return pd.DataFrame(data_list)
+
     def get_stats(self) -> Dict[str, Any]:
         """Get collection statistics."""
         return {
@@ -515,8 +569,11 @@ class LiveDataCollector:
             'collection_count': self.collection_count,
             'error_count': self.error_count,
             'buffer_size': len(self.data_buffer),
+            'hmm_buffer_size': len(self.hmm_buffer),
+            'analyst_buffer_size': len(self.analyst_buffer),
+            'tactician_buffer_size': len(self.tactician_buffer),
             'last_collection_time': self.last_collection_time,
-            'avg_processing_time_ms': np.mean([dp.processing_time_ms for dp in self.data_buffer[-100:]]),
+            'avg_processing_time_ms': np.mean([dp.processing_time_ms for dp in self.data_buffer[-100:]]) if self.data_buffer else 0,
             'ml_predictions_enabled': self.ml_model is not None,
             'feature_engineering_enabled': self.feature_engineer is not None
         }

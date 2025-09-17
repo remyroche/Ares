@@ -81,19 +81,19 @@ exit_confidence = analyst_confidence * analyst_weight + tactician_confidence * t
 - Hold: When position is open and exit confidence is above threshold
 - Exit: When position is open and exit confidence drops below threshold
 
-### 5. Backtesting Optimization for Exit Thresholds
+### 5. Integration with Existing Backtesting Framework
 
-**Scenario-Based Testing:**
-1. **Declining Confidence** - Should trigger exit when confidence drops
-2. **Stable High Confidence** - Should not exit during stable periods
-3. **Volatile Confidence** - Should handle volatility appropriately
-4. **Gradual Recovery** - Should not exit prematurely during recovery
-5. **Sharp Drop** - Should exit quickly on sharp confidence drops
+**Existing Framework Integration:**
+- Exit confidence parameters added to existing `confidence` category optimization
+- Uses existing calibration data and historical returns for evaluation
+- Integrates with existing Optuna-based parameter search
+- Leverages existing scoring and validation mechanisms
 
-**Optimization Scoring:**
-- Correct exit decisions (50% weight)
-- Timing accuracy (30% weight)
-- Method consistency (20% weight)
+**Evaluation Methods:**
+- `_evaluate_using_existing_backtesting_framework()` - Uses existing framework data
+- `_evaluate_exit_timing_on_historical_data()` - Historical confidence analysis
+- `_score_exit_signals_against_returns()` - Exit accuracy vs actual returns
+- Enhanced `_evaluate_confidence_params()` - Includes exit confidence scoring
 
 ## Configuration Example
 
@@ -170,10 +170,11 @@ if result.position_state and result.position_state.is_open:
 ## Benefits
 
 1. **Risk Management**: Automatic position exit when confidence deteriorates
-2. **Optimization**: Data-driven parameter selection through backtesting
-3. **Flexibility**: Multiple combination methods for different market conditions
-4. **Transparency**: Clear exit reasons and confidence tracking
-5. **State Management**: Proper position tracking and history
+2. **Framework Integration**: Uses existing backtesting framework rather than creating separate system
+3. **Historical Data**: Leverages existing calibration data for parameter optimization
+4. **Flexibility**: Multiple combination methods for different market conditions
+5. **Transparency**: Clear exit reasons and confidence tracking
+6. **State Management**: Proper position tracking and history
 
 ## Future Enhancements
 

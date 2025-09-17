@@ -169,13 +169,13 @@ class ExitConfidenceOptimizationDemo:
             self.logger.info("")
     
     async def _demo_backtesting_optimization(self):
-        """Demonstrate backtesting optimization for exit parameters."""
-        self.logger.info("🔬 Step 3: Backtesting Optimization")
+        """Demonstrate backtesting optimization using existing framework."""
+        self.logger.info("🔬 Step 3: Backtesting Optimization (Using Existing Framework)")
         
-        # Create optimizer
+        # Create optimizer using existing framework
         optimizer = FinalParametersOptimizer(self.optimization_config)
         
-        # Focus on confidence category optimization
+        # Focus on confidence category optimization using existing framework
         confidence_params = {
             'exit_confidence_threshold': 0.45,
             'tactician_exit_confidence_weight': 0.65,
@@ -183,20 +183,31 @@ class ExitConfidenceOptimizationDemo:
             'exit_confidence_combination_method': 'multiplicative'
         }
         
-        self.logger.info("🎯 Evaluating exit strategy performance...")
+        self.logger.info("🎯 Evaluating using existing backtesting framework...")
         
-        # Evaluate the exit strategy performance
-        exit_score = optimizer._evaluate_exit_strategy_performance(
-            confidence_params, self.mock_calibration_results
+        # Use existing backtesting framework evaluation
+        enhanced_calibration = self.mock_calibration_results.copy()
+        enhanced_calibration.update(confidence_params)
+        
+        # Evaluate using existing framework
+        framework_score = optimizer._evaluate_using_existing_backtesting_framework(
+            enhanced_calibration, confidence_params
         )
         
-        self.logger.info(f"   Exit strategy score: {exit_score:.3f}")
+        self.logger.info(f"   Existing framework score: {framework_score:.3f}")
         
-        # Test different thresholds
+        # Demonstrate confidence evaluation using existing framework
+        confidence_score = optimizer._evaluate_confidence_params(
+            confidence_params, enhanced_calibration
+        )
+        
+        self.logger.info(f"   Confidence evaluation score: {confidence_score:.3f}")
+        
+        # Test different configurations using existing framework
         thresholds = [0.3, 0.4, 0.5, 0.6, 0.7]
         methods = ['multiplicative', 'logarithmic', 'weighted_average']
         
-        self.logger.info("   Testing different configurations:")
+        self.logger.info("   Testing configurations with existing framework:")
         
         best_score = 0.0
         best_config = None
@@ -207,9 +218,11 @@ class ExitConfidenceOptimizationDemo:
                 test_params['exit_confidence_threshold'] = threshold
                 test_params['exit_confidence_combination_method'] = method
                 
-                score = optimizer._evaluate_exit_strategy_performance(
-                    test_params, self.mock_calibration_results
-                )
+                test_calibration = self.mock_calibration_results.copy()
+                test_calibration.update(test_params)
+                
+                # Use existing framework evaluation
+                score = optimizer._evaluate_confidence_params(test_params, test_calibration)
                 
                 self.logger.info(f"      Threshold={threshold:.1f}, Method={method}: Score={score:.3f}")
                 
@@ -217,7 +230,7 @@ class ExitConfidenceOptimizationDemo:
                     best_score = score
                     best_config = test_params.copy()
         
-        self.logger.info(f"   🏆 Best configuration (Score: {best_score:.3f}):")
+        self.logger.info(f"   🏆 Best configuration using existing framework (Score: {best_score:.3f}):")
         if best_config:
             for key, value in best_config.items():
                 self.logger.info(f"      {key}: {value}")

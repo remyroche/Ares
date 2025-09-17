@@ -87,7 +87,7 @@ except Exception:
 # Constants for improved risk management
 DEFAULT_PROFIT_TAKE_MULTIPLIER = 0.004  # 0.4% - more conservative
 DEFAULT_STOP_LOSS_MULTIPLIER = 0.003    # 0.3% - more conservative
-DEFAULT_TRANSACTION_COST = 0.0008       # 0.08% transaction cost
+GLOBAL_TRANSACTION_COST = 0.0008        # 0.08% global standard transaction cost (entry + exit combined)
 MIN_BARRIER_MULTIPLIER = 0.001          # Minimum 0.1% barrier
 MAX_BARRIER_MULTIPLIER = 0.05           # Maximum 5% barrier
 EPSILON = 1e-10                         # Numerical stability constant
@@ -129,7 +129,8 @@ if 'numba' in globals() and numba is not None:
             stop_barrier = entry_price * (1.0 - sl_mult)
             end_idx = int(end_idx_arr[i])
             
-            if end_idx <= i + 1:
+            # Enhanced end index validation
+            if end_idx <= i + 1 or end_idx > n:
                 labels[i] = 0
                 profit_pcts[i] = 0.0
                 transaction_costs[i] = 0.0
@@ -182,7 +183,7 @@ class OptimizedTripleBarrierLabelingImproved:
         time_barrier_minutes: int = 30, 
         max_lookahead: int = 100, 
         binary_classification: bool = True,
-        transaction_cost: float = DEFAULT_TRANSACTION_COST
+        transaction_cost: float = GLOBAL_TRANSACTION_COST
     ) -> None:
         """Initialize the improved optimized triple barrier labeling.
         
@@ -402,9 +403,11 @@ class OptimizedTripleBarrierLabelingImproved:
         return data
         
     def _calculate_end_indices(self, n: int, idx: pd.Index) -> np.ndarray:
-        """Calculate end indices for barrier evaluation."""
+        """Calculate end indices for barrier evaluation with comprehensive validation."""
         arange_n = np.arange(n, dtype=np.int64)
-        end_by_lookahead = np.minimum(arange_n + 1 + int(self.max_lookahead), n)
+        
+        # FIXED: Correct lookahead calculation (removed the +1 error)
+        end_by_lookahead = np.minimum(arange_n + int(self.max_lookahead), n)
         
         if isinstance(idx, pd.DatetimeIndex) and idx.is_monotonic_increasing:
             try:
@@ -417,8 +420,60 @@ class OptimizedTripleBarrierLabelingImproved:
                 end_by_time = end_by_lookahead
         else:
             end_by_time = end_by_lookahead
+        
+        # Calculate final end indices
+        end_indices = np.minimum(end_by_lookahead, end_by_time).astype(np.int64)
+        
+        # Comprehensive validation with temporal leakage detection
+        self._validate_end_indices_comprehensive(end_indices, n)
+        
+        return end_indices
+    
+    def _validate_end_indices_comprehensive(self, end_indices: np.ndarray, n: int) -> None:
+        """Comprehensive validation of end indices with temporal leakage detection."""
+        # Basic bounds validation
+        if np.any(end_indices < 0):
+            raise ValueError("Negative end indices detected")
+        
+        if np.any(end_indices > n):
+            raise ValueError(f"End indices exceed data length: max={np.max(end_indices)}, n={n}")
+        
+        # Temporal leakage detection - sample first 100 positions for performance
+        leakage_count = 0
+        for i in range(min(100, n - 1)):
+            end_idx = end_indices[i]
             
-        return np.minimum(end_by_lookahead, end_by_time).astype(np.int64)
+            # Check for insufficient lookahead
+            if end_idx <= i + 1:
+                tprint(f'⚠️ Insufficient lookahead at position {i}: end_idx={end_idx}')
+            
+            # Check for temporal leakage (excessive lookahead)
+            expected_max_end = i + self.max_lookahead
+            if end_idx > expected_max_end + 1:  # Allow 1 position tolerance
+                leakage_count += 1
+                if leakage_count <= 3:  # Only show first 3 examples
+                    tprint(f'❌ Temporal leakage at position {i}: end_idx={end_idx} > expected_max={expected_max_end}')
+        
+        if leakage_count > 0:
+            raise ValueError(f"Temporal leakage detected in {leakage_count} positions")
+        
+        # Statistical validation
+        actual_lookaheads = end_indices[:-1] - np.arange(n-1)
+        avg_lookahead = np.mean(actual_lookaheads)
+        max_lookahead = np.max(actual_lookaheads)
+        min_lookahead = np.min(actual_lookaheads)
+        
+        tprint(f'✅ End index validation passed:')
+        tprint(f'   → Lookahead range: [{min_lookahead}, {max_lookahead}]')
+        tprint(f'   → Average lookahead: {avg_lookahead:.2f}')
+        tprint(f'   → Expected max lookahead: {self.max_lookahead}')
+        
+        # Warnings for suspicious patterns
+        if avg_lookahead > self.max_lookahead * 0.9:
+            tprint(f'⚠️ Average lookahead suspiciously high: {avg_lookahead:.2f}')
+        
+        if max_lookahead > self.max_lookahead * 1.1:
+            tprint(f'⚠️ Maximum lookahead exceeds expected: {max_lookahead} > {self.max_lookahead * 1.1}')
         
     def _apply_barrier_logic(
         self, 

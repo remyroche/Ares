@@ -32,6 +32,7 @@ from .live_trading_scheduler import LiveTradingScheduler, ModelType
 from ..monitoring.comprehensive_trade_monitor import comprehensive_trade_monitor, record_detailed_trade, update_trade_outcome
 from ..reporting.performance_reporter import performance_reporter, generate_trading_report
 from ..reporting.dashboard_generator import dashboard_generator, create_trading_dashboard
+from ..reporting.daily_recorder import daily_recorder, record_daily_trading_summary
 
 logger = system_logger.getChild('TradingOrchestrator')
 
@@ -369,6 +370,9 @@ class TradingOrchestrator:
             if self.current_session:
                 self.current_session.end_time = datetime.now()
                 self._update_session_metrics()
+                
+                # Record daily summary if this is end of day
+                await self._record_daily_summary_if_needed()
             
             self.status = OrchestratorStatus.STOPPED
             
@@ -681,6 +685,74 @@ class TradingOrchestrator:
         except Exception as e:
             tprint_error(f"❌ Failed to generate performance report: {e}")
             return {}
+    
+    async def _record_daily_summary_if_needed(self):
+        """Record daily summary if this is the last session of the day."""
+        try:
+            current_time = datetime.now()
+            
+            # Check if this is late in the day (after 6 PM) or if explicitly requested
+            if current_time.hour >= 18 or self.config.get('always_record_daily', False):
+                tprint_info("📝 Recording daily trading summary...")
+                
+                # Get all completed trades for today
+                today = current_time.date()
+                todays_trades = [
+                    t for t in comprehensive_trade_monitor.completed_trades
+                    if t.timestamp.date() == today
+                ]
+                
+                # Get today's sessions
+                todays_sessions = [self.current_session] if self.current_session else []
+                
+                # Record daily summary
+                success = await record_daily_trading_summary(
+                    trades=todays_trades,
+                    sessions=todays_sessions,
+                    target_date=today
+                )
+                
+                if success:
+                    tprint_success(f"✅ Daily summary recorded for {today}")
+                else:
+                    tprint_warning(f"⚠️ Failed to record daily summary for {today}")
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to record daily summary: {e}")
+    
+    async def force_record_daily_summary(self, target_date: Optional[date] = None) -> bool:
+        """Force recording of daily summary for specified date."""
+        try:
+            record_date = target_date or datetime.now().date()
+            
+            tprint_info(f"📝 Force recording daily summary for {record_date}")
+            
+            # Get trades for the specified date
+            target_trades = [
+                t for t in comprehensive_trade_monitor.completed_trades
+                if t.timestamp.date() == record_date
+            ]
+            
+            # Get sessions for the specified date
+            target_sessions = []
+            if self.current_session and self.current_session.start_time.date() == record_date:
+                target_sessions = [self.current_session]
+            
+            # Record daily summary
+            success = await record_daily_trading_summary(
+                trades=target_trades,
+                sessions=target_sessions,
+                target_date=record_date
+            )
+            
+            if success:
+                tprint_success(f"✅ Daily summary force-recorded for {record_date}")
+            
+            return success
+            
+        except Exception as e:
+            tprint_error(f"❌ Failed to force record daily summary: {e}")
+            return False
 
     def get_trading_decisions(self, n: int = 100) -> List[TradingDecision]:
         """Get recent trading decisions."""

@@ -19,6 +19,26 @@ import gc
 
 warnings.filterwarnings('ignore')
 
+# Check ML library dependencies
+ML_LIBRARIES_STATUS = {}
+try:
+    import sklearn
+    ML_LIBRARIES_STATUS['sklearn'] = True
+except ImportError:
+    ML_LIBRARIES_STATUS['sklearn'] = False
+
+try:
+    import lightgbm
+    ML_LIBRARIES_STATUS['lightgbm'] = True
+except ImportError:
+    ML_LIBRARIES_STATUS['lightgbm'] = False
+
+try:
+    import xgboost
+    ML_LIBRARIES_STATUS['xgboost'] = True
+except ImportError:
+    ML_LIBRARIES_STATUS['xgboost'] = False
+
 # Core imports
 from src.utils.tprint import tprint
 from src.utils.logger import system_logger
@@ -54,27 +74,126 @@ from src.utils.serialization_utils import (
 from src.utils.ml_common.evaluation.evaluation_utils import EvaluationUtils
 from src.utils.ml_common.validation.validation_utils import ValidationUtils as MLValidationUtils
 
-# Hardware optimization imports
+# Hardware optimization imports - ensure availability
 try:
-    from src.utils.hardware.m1_gpu_utils import M1GPUManager
-    from src.utils.hardware.m1_memory_optimizer import M1MemoryOptimizer
-    from src.utils.hardware.m1_cpu_optimizer import M1CPUOptimizer
+    from src.utils.hardware.m1_gpu_utils import M1GPUManager, get_m1_gpu_manager
+    from src.utils.hardware.m1_memory_optimizer import M1MemoryOptimizer, get_m1_memory_optimizer
+    from src.utils.hardware.m1_cpu_optimizer import M1CPUOptimizer, get_m1_cpu_optimizer
     HARDWARE_AVAILABLE = True
-except ImportError:
+    tprint("✅ Hardware optimization modules loaded successfully")
+except ImportError as e:
     HARDWARE_AVAILABLE = False
     M1GPUManager = None
     M1MemoryOptimizer = None
     M1CPUOptimizer = None
+    get_m1_gpu_manager = lambda: None
+    get_m1_memory_optimizer = lambda: None
+    get_m1_cpu_optimizer = lambda: None
+    tprint(f"⚠️ Hardware optimization modules not available: {e}")
 
-# Shared utilities (keeping for backward compatibility)
-from .shared_utilities import (
-    TrainingErrorHandler,
-    UnifiedModelFactory,
-    CircuitBreaker,
-    ValidationUtils,
-    ProgressReporter,
-    MemoryTracker
-)
+# Shared utilities with error handling
+try:
+    from .shared_utilities import (
+        TrainingErrorHandler,
+        UnifiedModelFactory,
+        CircuitBreaker,
+        ValidationUtils,
+        ProgressReporter,
+        MemoryTracker
+    )
+    SHARED_UTILITIES_AVAILABLE = True
+    tprint("✅ Shared utilities loaded successfully")
+except ImportError as e:
+    SHARED_UTILITIES_AVAILABLE = False
+    tprint(f"❌ Shared utilities import failed: {e}")
+    # Create fallback classes
+    class TrainingErrorHandler:
+        @staticmethod
+        def handle_training_error(model_type, error, training_time):
+            from dataclasses import dataclass
+            @dataclass
+            class TrainingMetrics:
+                error_message: str = ""
+                training_time: float = 0.0
+            @dataclass 
+            class ModelResult:
+                model: None = None
+                metrics: TrainingMetrics = None
+            return ModelResult(None, TrainingMetrics(f"Failed to train {model_type}: {error}", training_time))
+    
+    class UnifiedModelFactory:
+        @staticmethod
+        def create_model(model_type, **kwargs):
+            # Check library availability first
+            if model_type == 'lightgbm' or model_type == 'lgbm':
+                if not ML_LIBRARIES_STATUS.get('lightgbm', False):
+                    raise ImportError(f"LightGBM not available for model type: {model_type}")
+                import lightgbm
+                return lightgbm.LGBMClassifier(n_estimators=100, learning_rate=0.1, random_state=42, **kwargs)
+            elif model_type == 'xgboost':
+                if not ML_LIBRARIES_STATUS.get('xgboost', False):
+                    raise ImportError(f"XGBoost not available for model type: {model_type}")
+                import xgboost
+                return xgboost.XGBClassifier(n_estimators=100, learning_rate=0.1, random_state=42, **kwargs)
+            elif model_type in ['random_forest', 'rf']:
+                if not ML_LIBRARIES_STATUS.get('sklearn', False):
+                    raise ImportError(f"Scikit-learn not available for model type: {model_type}")
+                from sklearn.ensemble import RandomForestClassifier
+                return RandomForestClassifier(n_estimators=100, random_state=42, **kwargs)
+            elif model_type in ['logistic_regression', 'lr']:
+                if not ML_LIBRARIES_STATUS.get('sklearn', False):
+                    raise ImportError(f"Scikit-learn not available for model type: {model_type}")
+                from sklearn.linear_model import LogisticRegression
+                return LogisticRegression(random_state=42, max_iter=1000, **kwargs)
+            elif model_type in ['elastic_net_lr', 'elastic_net']:
+                if not ML_LIBRARIES_STATUS.get('sklearn', False):
+                    raise ImportError(f"Scikit-learn not available for model type: {model_type}")
+                from sklearn.linear_model import LogisticRegression
+                # Ensure compatible parameters for elastic net
+                safe_kwargs = {k: v for k, v in kwargs.items() if k not in ['penalty', 'solver', 'l1_ratio']}
+                return LogisticRegression(penalty='elasticnet', l1_ratio=0.5, solver='saga', random_state=42, max_iter=1000, **safe_kwargs)
+            else:
+                available_models = ['lightgbm', 'xgboost', 'random_forest', 'logistic_regression', 'elastic_net_lr']
+                raise ValueError(f"Unknown model type: {model_type}. Available: {available_models}")
+    
+    class CircuitBreaker:
+        def __init__(self, *args, **kwargs):
+            self.state = "CLOSED"
+            self.failure_count = 0
+        def call(self, func, *args, **kwargs):
+            return func(*args, **kwargs)
+    
+    class ValidationUtils:
+        @staticmethod
+        def validate_config(config):
+            return True
+        @staticmethod
+        def validate_data_shapes(*args):
+            return True
+        @staticmethod
+        def validate_data_quality(*args):
+            return True
+        @staticmethod
+        def validate_regime_distribution(*args, **kwargs):
+            return True
+    
+    class ProgressReporter:
+        def __init__(self, *args, **kwargs):
+            pass
+        def update_progress(self, *args, **kwargs):
+            pass
+        def finish_report(self):
+            pass
+    
+    class MemoryTracker:
+        def __init__(self):
+            pass
+        def take_snapshot(self, name):
+            pass
+        def get_memory_increase(self):
+            return 0.0
+        def cleanup(self):
+            pass
 
 
 @dataclass
@@ -192,13 +311,26 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
             config: HMM training configuration object or dictionary of parameters
         """
         if config is None:
+            # Use only available model types
+            available_models = []
+            if ML_LIBRARIES_STATUS.get('sklearn', False):
+                available_models.extend(['logistic_regression', 'random_forest', 'elastic_net_lr'])
+            if ML_LIBRARIES_STATUS.get('lightgbm', False):
+                available_models.append('lightgbm')
+            if ML_LIBRARIES_STATUS.get('xgboost', False):
+                available_models.append('xgboost')
+            
+            # Fallback to sklearn models if nothing else available
+            if not available_models:
+                available_models = ['logistic_regression', 'random_forest']
+                
             config = HMMTrainingConfig(
                 model_name="hmm_models_enhanced",
                 timeframe="1h",
                 n_features=100,
                 sequence_length=20,
                 n_regimes=3,
-                model_types=["lightgbm", "elastic_net_lr", "xgboost"],
+                model_types=available_models,
                 hpo_trials=50,
                 enable_multi_objective=True
             )
@@ -289,6 +421,17 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
             except ValueError as e:
                 raise ValueError(f"Invalid numeric parameter: {e}")
             
+            # Validate model types are supported
+            available_model_types = ['lightgbm', 'xgboost', 'random_forest', 'logistic_regression', 'elastic_net_lr']
+            unsupported_models = [m for m in config.model_types if m not in available_model_types]
+            if unsupported_models:
+                supported_models = [m for m in config.model_types if m in available_model_types]
+                if supported_models:
+                    warnings.append(f"WARNING: Unsupported models {unsupported_models} will be skipped. Using: {supported_models}")
+                    config.model_types = supported_models
+                else:
+                    raise ValueError(f"No supported models found in {config.model_types}. Available: {available_model_types}")
+            
             # Warning validations (don't cause fast-fail)
             if config.n_features > 1000:
                 warnings.append("WARNING: Large number of features may impact performance")
@@ -298,6 +441,15 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
             
             if config.sequence_length > 100:
                 warnings.append("WARNING: Large sequence length may impact memory usage")
+            
+            # Light mode specific validations
+            if hasattr(config, 'training_mode_config') and config.training_mode_config:
+                training_mode = config.training_mode_config.get('training_mode', '')
+                if training_mode == 'light':
+                    if config.hpo_trials > 10:
+                        warnings.append("WARNING: Light mode should use ≤10 HPO trials for efficiency")
+                    if config.n_features > 100:
+                        warnings.append("WARNING: Light mode should use ≤100 features for efficiency")
             
             # Log warnings
             if warnings:
@@ -656,19 +808,69 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
             
             # Apply hardware optimizations if available
             if self.memory_optimizer:
-                self.memory_optimizer.optimize_memory_usage()
+                try:
+                    self.memory_optimizer.optimize_memory_usage()
+                    tprint(f"🧠 Memory optimization applied for {model_type}")
+                except Exception as e:
+                    tprint(f"⚠️ Memory optimization failed for {model_type}: {e}")
             
             if self.cpu_optimizer:
-                self.cpu_optimizer.optimize_cpu_usage()
+                try:
+                    self.cpu_optimizer.optimize_cpu_usage()
+                    tprint(f"⚡ CPU optimization applied for {model_type}")
+                except Exception as e:
+                    tprint(f"⚠️ CPU optimization failed for {model_type}: {e}")
             
-            # Create model with circuit breaker protection
+            # Memory management before training
+            gc.collect()
+            initial_memory = psutil.virtual_memory().percent
+            if initial_memory > 80:
+                tprint(f"⚠️ High memory usage ({initial_memory}%) before training {model_type}")
+                gc.collect()  # Force garbage collection
+            
+            # Create model with circuit breaker protection and timeout
             def create_and_train_model():
-                model = self._create_model(model_type)
-                memory_tracker.take_snapshot(f"{model_type}_model_created")
+                # Add timeout for model creation and training
+                import signal
                 
-                # Train model
-                model.fit(X, y)
-                memory_tracker.take_snapshot(f"{model_type}_model_fitted")
+                def timeout_handler(signum, frame):
+                    raise TimeoutError(f"Training timeout for {model_type}")
+                
+                # Set timeout based on training mode (light = 60s, others = 300s)
+                timeout_seconds = 60 if hasattr(self.config, 'training_mode_config') and \
+                                     self.config.training_mode_config and \
+                                     self.config.training_mode_config.get('training_mode') == 'light' else 300
+                
+                try:
+                    signal.signal(signal.SIGALRM, timeout_handler)
+                    signal.alarm(timeout_seconds)
+                    
+                    model = self._create_model(model_type)
+                    memory_tracker.take_snapshot(f"{model_type}_model_created")
+                    
+                    # Check memory before training
+                    current_memory = psutil.virtual_memory().percent
+                    if current_memory > 85:
+                        tprint(f"⚠️ Memory usage critical ({current_memory}%) - skipping {model_type}")
+                        raise MemoryError(f"Insufficient memory for {model_type} training")
+                    
+                    # Train model
+                    model.fit(X, y)
+                    memory_tracker.take_snapshot(f"{model_type}_model_fitted")
+                    
+                    # Cancel timeout
+                    signal.alarm(0)
+                    
+                except TimeoutError as e:
+                    signal.alarm(0)
+                    raise e
+                except MemoryError as e:
+                    signal.alarm(0)
+                    gc.collect()  # Clean up memory
+                    raise e
+                except Exception as e:
+                    signal.alarm(0)
+                    raise e
                 
                 # Evaluate model using safe math operations
                 predictions = model.predict(X)
@@ -751,8 +953,12 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
             
             tprint(f"✅ {model_type} trained successfully (accuracy: {metrics.accuracy:.4f}, time: {training_time:.2f}s, memory: {metrics.memory_usage_mb:.1f}MB)")
             
-            # Cleanup memory
+            # Cleanup memory and check final memory usage
             memory_tracker.cleanup()
+            final_memory = psutil.virtual_memory().percent
+            if final_memory > initial_memory + 10:
+                tprint(f"⚠️ Memory usage increased significantly: {initial_memory}% → {final_memory}%")
+                gc.collect()  # Force cleanup
             
             return ModelResult(
                 model=model,

@@ -51,8 +51,22 @@ class HMMModelsTrainingComponentWrapper(BaseMarketAnalysisComponent):
             regime_labels = pipeline_state.get('regime_labels')
             feature_names = pipeline_state.get('feature_names')
             
-            if X is None or y is None or regime_labels is None:
-                raise ValueError("Missing required data: features, targets, or regime_labels")
+            # Detailed error reporting for missing data
+            missing_data = []
+            if X is None:
+                missing_data.append("features")
+            if y is None:
+                missing_data.append("targets")
+            if regime_labels is None:
+                missing_data.append("regime_labels")
+                
+            if missing_data:
+                available_keys = list(pipeline_state.keys())
+                error_msg = (
+                    f"Missing required data: {', '.join(missing_data)}. "
+                    f"Available pipeline state keys: {available_keys}"
+                )
+                raise ValueError(error_msg)
             
             # Execute training
             results = self.training_instance.execute(X, y, regime_labels, feature_names)

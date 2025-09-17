@@ -15,6 +15,12 @@ import pandas as pd
 
 from src.utils.logger import system_logger
 from src.core.decorators import handles_errors, traced, log_execution_time
+from src.utils.tprint import tprint_info, tprint_warning, tprint_error, tprint_success, tprint_structured, LogLevel
+from ..utils.error_handling import (
+    RegimeDetectionError, TradingErrorSeverity, trading_error_handler,
+    critical_operation, require_no_fallback, extract_market_data_context
+)
+from ..utils.validation import validate_market_data
 from .regime_classifier import RegimeClassifier
 from .regime_analyzer import RegimeAnalyzer
 from .regime_weights import RegimeWeightManager
@@ -68,16 +74,20 @@ class RegimeDetector:
     async def initialize(self) -> bool:
         """Initialize regime detector with existing ML components."""
         try:
+            tprint_info("🚀 Initializing Regime Detector...")
             self.logger.info("Initializing Regime Detector...")
             
             # Initialize classifier
             await self.classifier.initialize()
+            tprint_success("✅ Regime Classifier initialized")
             
             # Initialize analyzer
             await self.analyzer.initialize()
+            tprint_success("✅ Regime Analyzer initialized")
             
             # Initialize weight manager
             await self.weight_manager.initialize()
+            tprint_success("✅ Regime Weight Manager initialized")
             
             # Load existing HMM model if available
             await self._load_hmm_model()
@@ -85,10 +95,12 @@ class RegimeDetector:
             # Load market analyzer if available
             await self._load_market_analyzer()
             
+            tprint_success("✅ Regime Detector initialized successfully")
             self.logger.info("✅ Regime Detector initialized successfully")
             return True
             
         except Exception as e:
+            tprint_error(f"❌ Failed to initialize Regime Detector: {e}")
             self.logger.error(f"❌ Failed to initialize Regime Detector: {e}")
             return False
     
@@ -99,13 +111,20 @@ class RegimeDetector:
             from src.training.steps.market_analysis.enhanced_hmm_training import EnhancedHMMTraining
             
             # This would integrate with your existing HMM training
+            tprint_info("🔍 Loading HMM model for regime detection...")
             self.logger.info("🔍 Loading HMM model for regime detection...")
             
             # Placeholder for HMM model loading
             # In practice, this would load your trained HMM model
             self.hmm_model = None  # Load actual model here
             
+            if self.hmm_model:
+                tprint_success("✅ HMM model loaded successfully")
+            else:
+                tprint_warning("⚠️ HMM model not found, using fallback methods")
+            
         except Exception as e:
+            tprint_warning(f"⚠️ HMM model not available: {e}")
             self.logger.warning(f"⚠️ HMM model not available: {e}")
     
     async def _load_market_analyzer(self):
@@ -123,7 +142,12 @@ class RegimeDetector:
         except Exception as e:
             self.logger.warning(f"⚠️ Market Analyzer not available: {e}")
     
-    @handles_errors
+    @trading_error_handler(
+        error_types=(Exception,),
+        severity=TradingErrorSeverity.HIGH,
+        raise_on_error=True,
+        context_extractor=extract_market_data_context
+    )
     @log_execution_time()
     @traced(span_name="detect_regime")
     async def detect_regime(self, market_data: pd.DataFrame) -> RegimeDetection:
@@ -136,13 +160,19 @@ class RegimeDetector:
         Returns:
             RegimeDetection: Current regime with probabilities and confidence
         """
-        try:
-            if market_data.empty:
-                raise ValueError("Market data is empty")
-            
-            # Get latest data point
-            latest_data = market_data.iloc[-1]
-            timestamp = latest_data.get('timestamp', datetime.now())
+        # Validate market data first
+        validate_market_data(market_data, min_rows=20)
+        
+        if market_data.empty:
+            raise RegimeDetectionError(
+                "Market data is empty",
+                severity=TradingErrorSeverity.HIGH,
+                context={'data_shape': market_data.shape}
+            )
+        
+        # Get latest data point
+        latest_data = market_data.iloc[-1]
+        timestamp = latest_data.get('timestamp', datetime.now())
             
             # Extract features for regime detection
             features = await self._extract_regime_features(market_data)

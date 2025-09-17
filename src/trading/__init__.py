@@ -32,6 +32,8 @@ from .utils import *
 from .sizing import *
 from .signal_generation import *
 from .backtesting import *
+from .reporting import *
+from .integration import *
 
 # Import new live trading components
 from .execution.live_trading_scheduler import (
@@ -61,5 +63,33 @@ from .data.live_data_collector import (
     create_live_data_collector, start_live_collection
 )
 
-__version__ = "1.1.0"
+# Comprehensive monitoring and reporting
+from .monitoring.comprehensive_trade_monitor import (
+    ComprehensiveTradeMonitor, DetailedTradeMetrics, TradingSessionMetrics,
+    comprehensive_trade_monitor, initialize_comprehensive_monitoring,
+    record_detailed_trade, update_trade_outcome
+)
+
+from .reporting.performance_reporter import (
+    PerformanceReporter, performance_reporter, generate_trading_report
+)
+
+from .reporting.dashboard_generator import (
+    DashboardGenerator, dashboard_generator, create_trading_dashboard
+)
+
+from .reporting.trade_analyzer import (
+    TradeAnalyzer, trade_analyzer, analyze_trade_performance
+)
+
+# Integration utilities
+from .integration.model_integration import (
+    TrainingModelLoader, training_model_loader, load_trained_models, validate_model_compatibility
+)
+
+from .integration.training_integration import (
+    TrainingDataProvider, training_data_provider, get_training_features, sync_with_training_pipeline
+)
+
+__version__ = "1.2.0"
 __author__ = "Ares Trading System"

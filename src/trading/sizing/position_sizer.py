@@ -13,6 +13,7 @@ import math
 
 from src.utils.logger import system_logger
 from src.core.decorators import handles_errors, traced, log_execution_time
+from src.utils.tprint import tprint_info, tprint_warning, tprint_error, tprint_success, tprint_structured, LogLevel
 from ..config.trading_config import TradingConfig
 
 logger = system_logger.getChild('PositionSizer')
@@ -60,17 +61,23 @@ class PositionSizer:
     async def initialize(self) -> bool:
         """Initialize position sizer."""
         try:
+            tprint_info("🔄 Initializing Position Sizer...")
             self.logger.info("Initializing Position Sizer...")
             
             # Validate configuration
             if not self._validate_configuration():
+                tprint_error("❌ Position Sizer configuration validation failed")
                 return False
             
+            tprint_success("✅ Position Sizer configuration validated")
+            
             self.is_initialized = True
+            tprint_success("✅ Position Sizer initialized successfully")
             self.logger.info("✅ Position Sizer initialized successfully")
             return True
             
         except Exception as e:
+            tprint_error(f"❌ Failed to initialize Position Sizer: {e}")
             self.logger.error(f"❌ Failed to initialize Position Sizer: {e}")
             return False
     

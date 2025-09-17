@@ -29,6 +29,10 @@ from ..signal_generation.tactician_signals import TacticianSignalGenerator, Tact
 from ..signal_generation.signal_combiner import SignalCombiner
 from ..data.live_data_collector import LiveDataCollector, LiveDataConfig
 from .live_trading_scheduler import LiveTradingScheduler, ModelType
+from ..monitoring.comprehensive_trade_monitor import comprehensive_trade_monitor, record_detailed_trade, update_trade_outcome
+from ..reporting.performance_reporter import performance_reporter, generate_trading_report
+from ..reporting.dashboard_generator import dashboard_generator, create_trading_dashboard
+from ..reporting.daily_recorder import daily_recorder, record_daily_trading_summary
 
 logger = system_logger.getChild('TradingOrchestrator')
 
@@ -157,6 +161,9 @@ class TradingOrchestrator:
             # Initialize trading scheduler
             await self._initialize_trading_scheduler()
             
+            # Initialize comprehensive monitoring
+            await self._initialize_comprehensive_monitoring()
+            
             self.status = OrchestratorStatus.STOPPED
             tprint_success("✅ Trading Orchestrator initialized successfully")
             return True
@@ -263,6 +270,33 @@ class TradingOrchestrator:
         except Exception as e:
             tprint_error(f"❌ Trading scheduler initialization failed: {e}")
             raise
+    
+    async def _initialize_comprehensive_monitoring(self):
+        """Initialize comprehensive trade monitoring."""
+        try:
+            tprint_info("🔄 Initializing comprehensive trade monitoring...")
+            
+            # Initialize comprehensive monitoring with configuration
+            monitoring_config = {
+                'enable_explanations': True,
+                'enable_real_time_export': True,
+                'export_directory': 'trading_reports',
+                'max_trades_in_memory': 5000
+            }
+            
+            # Initialize if not already initialized
+            if not comprehensive_trade_monitor.is_initialized:
+                success = await comprehensive_trade_monitor.initialize()
+                if not success:
+                    tprint_warning("⚠️ Failed to initialize comprehensive monitoring")
+                else:
+                    tprint_success("✅ Comprehensive monitoring initialized")
+            else:
+                tprint_success("✅ Comprehensive monitoring already initialized")
+            
+        except Exception as e:
+            tprint_error(f"❌ Comprehensive monitoring initialization failed: {e}")
+            raise
 
     async def start_trading_session(self) -> bool:
         """
@@ -336,6 +370,9 @@ class TradingOrchestrator:
             if self.current_session:
                 self.current_session.end_time = datetime.now()
                 self._update_session_metrics()
+                
+                # Record daily summary if this is end of day
+                await self._record_daily_summary_if_needed()
             
             self.status = OrchestratorStatus.STOPPED
             
@@ -441,26 +478,108 @@ class TradingOrchestrator:
             return None
 
     async def _execute_trading_decision(self, decision: TradingDecision):
-        """Execute trading decision."""
+        """Execute trading decision with comprehensive monitoring."""
         try:
             tprint_info(f"🔄 Executing {decision.action} order for {decision.symbol}")
             
-            # Here you would integrate with your execution system
-            # For now, just log the decision
+            # Prepare comprehensive trade data
+            trade_data = {
+                'symbol': decision.symbol,
+                'action': decision.action,
+                'quantity': decision.quantity,
+                'price': decision.price,
+                'confidence': decision.confidence,
+                'trading_mode': self.trading_mode.value,
+                'exchange': self.exchange,
+                'analyst_signal': decision.analyst_signal.__dict__ if decision.analyst_signal else None,
+                'tactician_signal': decision.tactician_signal.__dict__ if decision.tactician_signal else None,
+                'combined_signal': decision.combined_signal,
+                'risk_metrics': decision.risk_metrics,
+                'regime_data': decision.metadata.get('regime_data', {}),
+                'position_sizing': {
+                    'recommended_size': decision.quantity,
+                    'leverage': 1.0,  # Default for paper trading
+                    'risk_per_trade': 0.02
+                }
+            }
+            
+            # Prepare models used information
+            models_used = {
+                'analyst_model': {
+                    'type': 'analyst',
+                    'prediction': decision.confidence,
+                    'confidence': decision.confidence,
+                    'weight': 0.6,
+                    'version': '1.0'
+                },
+                'tactician_model': {
+                    'type': 'tactician',
+                    'prediction': decision.confidence,
+                    'confidence': decision.confidence,
+                    'weight': 0.4,
+                    'version': '1.0'
+                }
+            }
+            
+            # Get recent market data for context
+            market_data = self.data_collector.get_processed_data_df(n=100) if self.data_collector else None
+            
+            # Record comprehensive trade decision
+            trade_id = await record_detailed_trade(trade_data, models_used, market_data)
+            
+            # Store decision with trade ID for outcome tracking
+            decision.metadata['trade_id'] = trade_id
             self.trading_decisions.append(decision)
             
-            if self.current_session:
-                self.current_session.total_trades += 1
+            # Simulate execution (in real trading, this would place actual orders)
+            execution_success = await self._simulate_order_execution(decision)
             
-            self.performance_metrics['total_trades'] += 1
-            
-            tprint_success(f"✅ {decision.action} order executed for {decision.symbol}")
+            # Update trade outcome
+            if execution_success:
+                outcome_data = {
+                    'exit_price': decision.price,  # For immediate execution
+                    'pnl_absolute': 0.0,  # Will be updated when position is closed
+                    'pnl_percentage': 0.0,
+                    'duration_minutes': 0.0,
+                    'execution_quality': 0.95,  # High quality for successful execution
+                    'slippage': 0.001,  # 0.1% slippage
+                    'commission': decision.quantity * decision.price * 0.001,  # 0.1% commission
+                    'timing_quality': decision.confidence  # Use confidence as timing quality
+                }
+                
+                await update_trade_outcome(trade_id, outcome_data)
+                
+                if self.current_session:
+                    self.current_session.total_trades += 1
+                
+                self.performance_metrics['total_trades'] += 1
+                
+                tprint_success(f"✅ {decision.action} order executed for {decision.symbol} (ID: {trade_id})")
+            else:
+                tprint_error(f"❌ Failed to execute {decision.action} order for {decision.symbol}")
+                if self.current_session:
+                    self.current_session.failed_trades += 1
+                self.performance_metrics['failed_trades'] += 1
             
         except Exception as e:
             self.logger.error(f"❌ Trading decision execution failed: {e}")
             if self.current_session:
                 self.current_session.failed_trades += 1
             self.performance_metrics['failed_trades'] += 1
+    
+    async def _simulate_order_execution(self, decision: TradingDecision) -> bool:
+        """Simulate order execution (replace with real execution in live trading)."""
+        try:
+            # Simulate execution delay
+            await asyncio.sleep(0.1)
+            
+            # Simulate execution success (95% success rate)
+            import random
+            return random.random() > 0.05
+            
+        except Exception as e:
+            self.logger.error(f"❌ Order execution simulation failed: {e}")
+            return False
 
     async def _on_new_data(self, data_point):
         """Handle new data point."""
@@ -508,8 +627,132 @@ class TradingOrchestrator:
             'performance_metrics': self.performance_metrics,
             'data_collector_stats': self.data_collector.get_stats() if self.data_collector else None,
             'scheduler_stats': self.trading_scheduler.get_scheduler_stats() if self.trading_scheduler else None,
-            'recent_decisions': len(self.trading_decisions)
+            'recent_decisions': len(self.trading_decisions),
+            'monitoring_stats': comprehensive_trade_monitor.get_monitor_stats() if comprehensive_trade_monitor.is_initialized else None
         }
+    
+    async def generate_live_dashboard(self) -> Dict[str, Any]:
+        """Generate live trading dashboard."""
+        try:
+            if not comprehensive_trade_monitor.is_initialized:
+                tprint_warning("⚠️ Comprehensive monitoring not initialized")
+                return {}
+            
+            # Get completed trades
+            completed_trades = comprehensive_trade_monitor.completed_trades
+            
+            # Get active trades
+            active_trades = comprehensive_trade_monitor.active_trades
+            
+            # Get session metrics
+            session_metrics = comprehensive_trade_monitor.current_session
+            
+            # Generate dashboard
+            dashboard = await create_trading_dashboard(
+                trades=completed_trades,
+                session_metrics=session_metrics,
+                active_trades=active_trades
+            )
+            
+            return dashboard
+            
+        except Exception as e:
+            tprint_error(f"❌ Failed to generate live dashboard: {e}")
+            return {}
+    
+    async def generate_performance_report(self, report_type: str = "session") -> Dict[str, Any]:
+        """Generate comprehensive performance report."""
+        try:
+            if not comprehensive_trade_monitor.is_initialized:
+                tprint_warning("⚠️ Comprehensive monitoring not initialized")
+                return {}
+            
+            # Get completed trades
+            completed_trades = comprehensive_trade_monitor.completed_trades
+            
+            # Get session metrics
+            session_metrics = comprehensive_trade_monitor.current_session
+            
+            # Generate report
+            report = await generate_trading_report(
+                trades=completed_trades,
+                session_metrics=session_metrics,
+                report_name=f"orchestrator_{report_type}_report"
+            )
+            
+            return report
+            
+        except Exception as e:
+            tprint_error(f"❌ Failed to generate performance report: {e}")
+            return {}
+    
+    async def _record_daily_summary_if_needed(self):
+        """Record daily summary if this is the last session of the day."""
+        try:
+            current_time = datetime.now()
+            
+            # Check if this is late in the day (after 6 PM) or if explicitly requested
+            if current_time.hour >= 18 or self.config.get('always_record_daily', False):
+                tprint_info("📝 Recording daily trading summary...")
+                
+                # Get all completed trades for today
+                today = current_time.date()
+                todays_trades = [
+                    t for t in comprehensive_trade_monitor.completed_trades
+                    if t.timestamp.date() == today
+                ]
+                
+                # Get today's sessions
+                todays_sessions = [self.current_session] if self.current_session else []
+                
+                # Record daily summary
+                success = await record_daily_trading_summary(
+                    trades=todays_trades,
+                    sessions=todays_sessions,
+                    target_date=today
+                )
+                
+                if success:
+                    tprint_success(f"✅ Daily summary recorded for {today}")
+                else:
+                    tprint_warning(f"⚠️ Failed to record daily summary for {today}")
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to record daily summary: {e}")
+    
+    async def force_record_daily_summary(self, target_date: Optional[date] = None) -> bool:
+        """Force recording of daily summary for specified date."""
+        try:
+            record_date = target_date or datetime.now().date()
+            
+            tprint_info(f"📝 Force recording daily summary for {record_date}")
+            
+            # Get trades for the specified date
+            target_trades = [
+                t for t in comprehensive_trade_monitor.completed_trades
+                if t.timestamp.date() == record_date
+            ]
+            
+            # Get sessions for the specified date
+            target_sessions = []
+            if self.current_session and self.current_session.start_time.date() == record_date:
+                target_sessions = [self.current_session]
+            
+            # Record daily summary
+            success = await record_daily_trading_summary(
+                trades=target_trades,
+                sessions=target_sessions,
+                target_date=record_date
+            )
+            
+            if success:
+                tprint_success(f"✅ Daily summary force-recorded for {record_date}")
+            
+            return success
+            
+        except Exception as e:
+            tprint_error(f"❌ Failed to force record daily summary: {e}")
+            return False
 
     def get_trading_decisions(self, n: int = 100) -> List[TradingDecision]:
         """Get recent trading decisions."""

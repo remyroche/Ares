@@ -19,9 +19,12 @@ import numpy as np
 
 from src.utils.logger import system_logger
 from src.core.decorators import handles_errors, traced, log_execution_time
+from src.utils.tprint import tprint_info, tprint_warning, tprint_error, tprint_success, tprint_structured, LogLevel
 from src.utils.enhanced_error_handler import get_enhanced_error_handler
 from src.utils.memory_management.streaming_data_processor import get_streaming_processor, with_memory_optimization
-from exchange.factory import ExchangeFactory
+from src.utils.hardware.unified_hardware_manager import get_hardware_manager
+from src.utils.data.data_processing_utils import optimize_dataframe_memory
+from src.exchange.binance import BinanceExchange
 from src.config.config import get_static_config
 
 logger = system_logger.getChild('LiveDataCollector')
@@ -117,6 +120,10 @@ class LiveDataCollector:
         # Advanced systems
         self.error_recovery = get_enhanced_error_handler() if config.error_recovery else None
         self.streaming_processor = get_streaming_processor()
+        self.hardware_manager = get_hardware_manager()
+        
+        # Performance optimization
+        self.memory_optimized = True
 
         # Note: Components will be initialized asynchronously in start_collection()
 
@@ -125,33 +132,54 @@ class LiveDataCollector:
         try:
             # Initialize exchange client (skip for simulated mode)
             if self.config.collection_mode != CollectionMode.SIMULATED:
-                # Use ExchangeFactory to create exchange client
-                self.exchange_client = ExchangeFactory.get_exchange(self.config.exchange)
+                tprint_info(f"🔄 Initializing {self.config.exchange} exchange client...")
+                
+                # Use Binance exchange directly
+                if self.config.exchange.lower() == "binance":
+                    self.exchange_client = BinanceExchange()
+                else:
+                    tprint_warning(f"⚠️ Exchange {self.config.exchange} not supported, falling back to Binance")
+                    self.exchange_client = BinanceExchange()
 
                 # Initialize the exchange client
                 if self.exchange_client:
                     success = await self.exchange_client.initialize()
                     if not success:
+                        tprint_warning("⚠️ Failed to initialize exchange client, continuing in simulated mode")
                         self.logger.warning("⚠️ Failed to initialize exchange client, continuing in simulated mode")
                         self.config.collection_mode = CollectionMode.SIMULATED
                         self.exchange_client = None
+                    else:
+                        tprint_success(f"✅ {self.config.exchange} exchange client initialized")
                 else:
+                    tprint_warning("⚠️ Could not create exchange client, falling back to simulated mode")
                     self.logger.warning("⚠️ Could not create exchange client, falling back to simulated mode")
                     self.config.collection_mode = CollectionMode.SIMULATED
             else:
+                tprint_info("🔄 Simulated mode: Skipping exchange client initialization")
                 self.logger.info("🔄 Simulated mode: Skipping exchange client initialization")
 
             # Initialize ML model if enabled
             if self.config.enable_ml_predictions and self.config.ml_model_path:
+                tprint_info("🤖 Loading ML model for predictions...")
                 self._load_ml_model()
 
             # Initialize feature engineering
             if self.config.feature_engineering:
+                tprint_info("⚙️ Initializing feature engineering...")
                 self._initialize_feature_engineering()
+            
+            # Initialize hardware optimization
+            if self.hardware_manager:
+                tprint_info("🚀 Optimizing hardware performance...")
+                await self.hardware_manager.initialize()
+                await self.hardware_manager.optimize_for_trading()
 
+            tprint_success(f"✅ Live data collector initialized (mode: {self.config.collection_mode.value}, interval: {self.config.interval_seconds}s)")
             self.logger.info(f"✅ Live data collector initialized (mode: {self.config.collection_mode.value}, interval: {self.config.interval_seconds}s)")
 
         except Exception as e:
+            tprint_error(f"❌ Failed to initialize components: {e}")
             self.logger.error(f"❌ Failed to initialize components: {e}")
             raise
 
@@ -174,19 +202,31 @@ class LiveDataCollector:
     def _initialize_feature_engineering(self):
         """Initialize real-time feature engineering."""
         try:
-            # Import your existing feature engineering components
-            from src.analyst.feature_engineering_orchestrator import FeatureEngineeringOrchestrator
+            # Import feature engineering components
+            from src.feature_engineering.optimized_feature_orchestrator import OptimizedFeatureOrchestrator
 
-            self.feature_engineer = FeatureEngineeringOrchestrator(
+            self.feature_engineer = OptimizedFeatureOrchestrator(
                 symbol=self.config.symbol,
                 exchange=self.config.exchange,
                 timeframe="1m"  # Base timeframe
             )
 
+            tprint_success("✅ Feature engineering initialized")
             self.logger.info("✅ Feature engineering initialized")
 
+        except ImportError:
+            # Try alternative feature engineering
+            try:
+                from src.feature_engineering.feature_generators import FeatureGenerators
+                self.feature_engineer = FeatureGenerators()
+                tprint_success("✅ Alternative feature engineering initialized")
+            except ImportError:
+                tprint_warning("⚠️ Feature engineering not available, using basic features")
+                self.feature_engineer = None
         except Exception as e:
+            tprint_warning(f"⚠️ Feature engineering not available: {e}")
             self.logger.warning(f"⚠️ Feature engineering not available: {e}")
+            self.feature_engineer = None
 
     @handles_errors
     async def start_collection(self) -> bool:
@@ -282,6 +322,10 @@ class LiveDataCollector:
 
             # Update buffers
             self._update_buffers(data_point)
+
+            # Optimize memory usage
+            if self.memory_optimized and len(self.data_buffer) % 100 == 0:
+                await self._optimize_memory_usage()
 
             # Record timing
             data_point.processing_time_ms = (time.time() - collection_start) * 1000
@@ -560,7 +604,16 @@ class LiveDataCollector:
             if dp.processed_data:
                 data_list.append(dp.processed_data)
         
-        return pd.DataFrame(data_list)
+        df = pd.DataFrame(data_list)
+        
+        # Optimize memory usage for the returned DataFrame
+        if self.memory_optimized and not df.empty:
+            try:
+                df = optimize_dataframe_memory(df)
+            except Exception as e:
+                tprint_warning(f"⚠️ Memory optimization failed: {e}")
+        
+        return df
 
     def get_stats(self) -> Dict[str, Any]:
         """Get collection statistics."""
@@ -577,6 +630,24 @@ class LiveDataCollector:
             'ml_predictions_enabled': self.ml_model is not None,
             'feature_engineering_enabled': self.feature_engineer is not None
         }
+    
+    async def _optimize_memory_usage(self):
+        """Optimize memory usage of data buffers."""
+        try:
+            if self.hardware_manager:
+                # Use hardware manager for memory optimization
+                await self.hardware_manager.optimize_memory_usage()
+            
+            # Convert processed buffer to optimized DataFrame and back
+            if self.processed_buffer:
+                temp_df = pd.DataFrame(self.processed_buffer[-100:])  # Keep last 100
+                optimized_df = optimize_dataframe_memory(temp_df)
+                self.processed_buffer = optimized_df.to_dict('records')
+                
+            tprint_info("🧹 Memory optimization completed")
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Memory optimization failed: {e}")
 
 # Convenience functions
 

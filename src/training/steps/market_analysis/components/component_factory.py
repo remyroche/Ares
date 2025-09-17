@@ -87,11 +87,22 @@ class HMMModelsTrainingComponentWrapper(BaseMarketAnalysisComponent):
                             cluster_assignments = cluster_assignments[:len(X)]
             
             if X is None or y is None or cluster_assignments is None:
-                missing_items = []
-                if X is None: missing_items.append("features")
-                if y is None: missing_items.append("targets")
-                if cluster_assignments is None: missing_items.append("cluster_assignments")
-                raise ValueError(f"Missing required data: {', '.join(missing_items)}")
+              # Detailed error reporting for missing data
+              missing_data = []
+              if X is None:
+                  missing_data.append("features")
+              if y is None:
+                  missing_data.append("targets")
+              if regime_labels is None:
+                  missing_data.append("regime_labels")
+
+              if missing_data:
+                  available_keys = list(pipeline_state.keys())
+                  error_msg = (
+                      f"Missing required data: {', '.join(missing_data)}. "
+                      f"Available pipeline state keys: {available_keys}"
+                  )
+                  raise ValueError(error_msg)
             
             # Execute training
             results = self.training_instance.execute(X, y, cluster_assignments, feature_names)

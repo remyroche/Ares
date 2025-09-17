@@ -119,31 +119,49 @@ class ComprehensiveFeatureGenerator:
             return data
         
         try:
-            # Comprehensive technical indicator configuration
-            indicator_configs = {
-                'sma': [5, 10, 20, 50, 100, 200],
-                'ema': [8, 12, 21, 26, 50, 100],
-                'volatility': [10, 20, 50, 100],
-                'momentum': [5, 10, 20, 50],
-                'rsi': [14, 21, 50],
-                'macd': [12, 26, 9],
-                'bollinger_bands': [20, 50],
-                'stochastic': [14, 21],
-                'volume_sma': [10, 20, 50],
-                'body_size': [],
-                'taker_buy_ratio': [5, 10, 20]
-            }
+            # Use orchestrator if available for optimized feature generation
+            if self.orchestrator:
+                # Generate all available features using orchestrator
+                orchestrated_features = self.orchestrator.generate_all_features(
+                    data, 
+                    feature_types=['technical', 'statistical', 'microstructure', 'volume'],
+                    use_cache=True
+                )
+                
+                # Add orchestrated features
+                for feature_name, feature_values in orchestrated_features.items():
+                    if feature_name not in data.columns:
+                        data[feature_name] = feature_values
+                
+                self.logger.info(f"   ✅ Added {len(orchestrated_features)} orchestrated features")
             
-            # Generate batch technical indicators
-            tech_features = self.feature_generators.batch_technical_indicators(
-                data, indicator_configs, use_gpu=True
-            )
-            
-            # Add to main dataframe
-            for feature_name, feature_values in tech_features.items():
-                data[feature_name] = feature_values
-            
-            self.logger.info(f"   ✅ Added {len(tech_features)} technical indicators")
+            # Fallback to manual technical indicators
+            else:
+                # Comprehensive technical indicator configuration
+                indicator_configs = {
+                    'sma': [5, 10, 20, 50, 100, 200],
+                    'ema': [8, 12, 21, 26, 50, 100],
+                    'volatility': [10, 20, 50, 100],
+                    'momentum': [5, 10, 20, 50],
+                    'rsi': [14, 21, 50],
+                    'macd': [12, 26, 9],
+                    'bollinger_bands': [20, 50],
+                    'stochastic': [14, 21],
+                    'volume_sma': [10, 20, 50],
+                    'body_size': [],
+                    'taker_buy_ratio': [5, 10, 20]
+                }
+                
+                # Generate batch technical indicators
+                tech_features = self.feature_generators.batch_technical_indicators(
+                    data, indicator_configs, use_gpu=True
+                )
+                
+                # Add to main dataframe
+                for feature_name, feature_values in tech_features.items():
+                    data[feature_name] = feature_values
+                
+                self.logger.info(f"   ✅ Added {len(tech_features)} technical indicators")
             
         except Exception as e:
             self.logger.warning(f"Technical indicators generation failed: {e}")

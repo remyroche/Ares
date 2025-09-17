@@ -332,3 +332,116 @@ def calculate_economic_significance_thresholds() -> Dict[str, Dict[str, float]]:
     }
     
     return thresholds
+
+
+def generate_complete_trading_calibration_report(economic_results: Dict[str, Any]) -> str:
+    """Generate complete trading calibration report with concrete examples."""
+    
+    calibrator = TradingMetricCalibrator()
+    report = []
+    
+    report.append("# Complete Trading Calibration Report")
+    report.append("## Economic Metrics → Actionable Trading Rules")
+    report.append("=" * 60)
+    report.append("")
+    
+    # Process each economic metric
+    for metric_name, metric_data in economic_results.items():
+        if isinstance(metric_data, dict) and 'regime_specific_values' in metric_data:
+            regime_values = metric_data['regime_specific_values']
+            metric_value = metric_data.get('value', 0)
+            
+            report.append(f"## {metric_name.upper().replace('_', ' ')}")
+            report.append("")
+            
+            # Generate calibrations based on metric type
+            if 'instability' in metric_name:
+                calibrations = calibrator.calibrate_price_instability_influence(
+                    metric_value, regime_values
+                )
+            elif 'duration' in metric_name:
+                calibrations = calibrator.calibrate_trend_duration_impact(
+                    metric_value, regime_values
+                )
+            elif 'violence' in metric_name:
+                calibrations = calibrator.calibrate_reversal_violence_modulation(
+                    metric_value, regime_values
+                )
+            else:
+                # Generic calibration
+                calibrations = {
+                    regime: TradingCalibration(
+                        metric_name=metric_name,
+                        metric_value=value,
+                        sharpe_impact=value * 0.1,
+                        max_drawdown_impact=value * 0.05,
+                        pnl_per_trade_impact=value * 0.1,
+                        volatility_adjusted_return_impact=value * 0.02,
+                        position_sizing_multiplier=1.0 - value * 0.2,
+                        stop_loss_multiplier=1.0 - value * 0.3,
+                        holding_period_adjustment=1.0 + value * 0.1,
+                        confidence_level=0.8 - value * 0.1
+                    )
+                    for regime, value in regime_values.items()
+                }
+            
+            # Generate regime-specific trading rules
+            for regime, calibration in calibrations.items():
+                report.append(f"### Regime {regime} Trading Rules")
+                report.append("")
+                
+                report.append("**Position Sizing:**")
+                report.append(f"- Multiplier: {calibration.position_sizing_multiplier:.2f}")
+                report.append(f"- If base position = 2%, use {calibration.position_sizing_multiplier * 2:.1f}%")
+                report.append("")
+                
+                report.append("**Risk Management:**")
+                report.append(f"- Stop loss multiplier: {calibration.stop_loss_multiplier:.2f}")
+                report.append(f"- If base stop = 2% ATR, use {calibration.stop_loss_multiplier * 2:.1f}% ATR")
+                report.append("")
+                
+                report.append("**Expected Performance:**")
+                report.append(f"- Sharpe ratio impact: {calibration.sharpe_impact:+.2f}")
+                report.append(f"- Max drawdown impact: {calibration.max_drawdown_impact:+.1%}")
+                report.append(f"- Confidence level: {calibration.confidence_level:.1%}")
+                report.append("")
+                
+                if calibration.holding_period_adjustment != 1.0:
+                    report.append("**Holding Period:**")
+                    report.append(f"- Adjustment multiplier: {calibration.holding_period_adjustment:.2f}")
+                    report.append(f"- If base holding = 10 days, use {calibration.holding_period_adjustment * 10:.0f} days")
+                    report.append("")
+    
+    # Summary recommendations
+    report.append("## Summary Trading Recommendations")
+    report.append("")
+    
+    # Calculate overall regime attractiveness
+    regime_scores = {}
+    for metric_name, metric_data in economic_results.items():
+        if isinstance(metric_data, dict) and 'regime_specific_values' in metric_data:
+            for regime, value in metric_data['regime_specific_values'].items():
+                if regime not in regime_scores:
+                    regime_scores[regime] = []
+                regime_scores[regime].append(abs(value))
+    
+    # Average scores per regime
+    regime_attractiveness = {
+        regime: np.mean(scores) for regime, scores in regime_scores.items()
+    }
+    
+    if regime_attractiveness:
+        best_regime = max(regime_attractiveness, key=regime_attractiveness.get)
+        worst_regime = min(regime_attractiveness, key=regime_attractiveness.get)
+        
+        report.append(f"**Most Attractive Regime**: {best_regime} (score: {regime_attractiveness[best_regime]:.3f})")
+        report.append(f"**Least Attractive Regime**: {worst_regime} (score: {regime_attractiveness[worst_regime]:.3f})")
+        report.append("")
+        
+        report.append("**Overall Strategy Allocation:**")
+        total_score = sum(regime_attractiveness.values())
+        for regime, score in sorted(regime_attractiveness.items()):
+            allocation = score / total_score if total_score > 0 else 1.0 / len(regime_attractiveness)
+            report.append(f"- Regime {regime}: {allocation:.1%} allocation")
+    
+    return "\n".join(report)

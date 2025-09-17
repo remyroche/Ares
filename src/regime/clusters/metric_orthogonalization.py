@@ -464,3 +464,77 @@ class MetricOrthogonalizer:
             report.append("")
         
         return "\n".join(report)
+    
+    def _preserve_fundamental_metrics(self, raw_results: Dict[str, Any]) -> Dict[OrthogonalMetric, OrthogonalMetricResult]:
+        """Preserve fundamental economic metrics that are already orthogonal."""
+        
+        preserved_metrics = {}
+        
+        # Map fundamental metrics to orthogonal metrics
+        fundamental_mapping = {
+            'return_separability': OrthogonalMetric.RETURN_SEPARABILITY,
+            'volatility_separability': OrthogonalMetric.VOLATILITY_SEPARABILITY,
+            'volume_profile_difference': OrthogonalMetric.VOLUME_PROFILE_DIFFERENCE,
+            'sharpe_ratio_difference': OrthogonalMetric.SHARPE_RATIO_DIFFERENCE
+        }
+        
+        for raw_metric_name, orthogonal_metric in fundamental_mapping.items():
+            metric_data = self._extract_metric_value(raw_results, raw_metric_name)
+            
+            if metric_data:
+                preserved_metrics[orthogonal_metric] = OrthogonalMetricResult(
+                    metric=orthogonal_metric,
+                    composite_score=metric_data['value'],
+                    component_scores={raw_metric_name: metric_data['value']},
+                    economic_significance=metric_data['economic_significance'],
+                    trading_implications=f"{raw_metric_name.replace('_', ' ').title()} shows regime differences",
+                    regime_specific_values=metric_data['regime_values'],
+                    statistical_tests={}
+                )
+        
+        return preserved_metrics
+    
+    def calculate_orthogonalization_quality(self, 
+                                          raw_results: Dict[str, Any],
+                                          orthogonal_results: Dict[OrthogonalMetric, OrthogonalMetricResult]) -> Dict[str, float]:
+        """Calculate quality of orthogonalization process."""
+        
+        quality_metrics = {}
+        
+        # 1. Compression ratio
+        n_raw_metrics = len(raw_results)
+        n_orthogonal_metrics = len(orthogonal_results)
+        compression_ratio = n_orthogonal_metrics / n_raw_metrics if n_raw_metrics > 0 else 1.0
+        
+        quality_metrics['compression_ratio'] = compression_ratio
+        quality_metrics['metrics_reduced'] = n_raw_metrics - n_orthogonal_metrics
+        
+        # 2. Information preservation
+        # Calculate how much information is preserved in orthogonalization
+        raw_economic_significance_rate = sum(
+            1 for metric_data in raw_results.values() 
+            if isinstance(metric_data, dict) and metric_data.get('economic_significance', False)
+        ) / n_raw_metrics if n_raw_metrics > 0 else 0
+        
+        orthogonal_significance_rate = sum(
+            1 for result in orthogonal_results.values() 
+            if result.economic_significance
+        ) / n_orthogonal_metrics if n_orthogonal_metrics > 0 else 0
+        
+        information_preservation = orthogonal_significance_rate / raw_economic_significance_rate if raw_economic_significance_rate > 0 else 1.0
+        quality_metrics['information_preservation'] = information_preservation
+        
+        # 3. Independence calculation
+        independence_matrix = self.calculate_metric_independence(orthogonal_results)
+        quality_metrics['average_independence'] = independence_matrix.get('average_independence', 1.0)
+        
+        # 4. Overall orthogonalization quality
+        overall_quality = (
+            (1 - compression_ratio) * 0.3 +  # Reward compression
+            information_preservation * 0.4 +  # Reward information preservation
+            quality_metrics['average_independence'] * 0.3  # Reward independence
+        )
+        
+        quality_metrics['overall_orthogonalization_quality'] = overall_quality
+        
+        return quality_metrics

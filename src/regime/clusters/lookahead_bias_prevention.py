@@ -331,6 +331,184 @@ class LookaheadBiasPrevention:
                     stability_scores.append(stability)
         
         return float(np.mean(stability_scores)) if stability_scores else 0.0
+    
+    def validate_temporal_separation(self, 
+                                   analysis_function,
+                                   market_data: pd.DataFrame,
+                                   **kwargs) -> Dict[str, Any]:
+        """
+        Validate that an analysis function maintains proper temporal separation.
+        
+        Args:
+            analysis_function: Function to validate
+            market_data: Market data for testing
+            **kwargs: Additional arguments for the function
+            
+        Returns:
+            Validation results
+        """
+        
+        self.logger.info("🔍 Validating temporal separation in analysis function")
+        
+        validation_results = {
+            'temporal_separation_verified': False,
+            'lookahead_bias_detected': False,
+            'validation_details': {}
+        }
+        
+        try:
+            # Test 1: Progressive data revelation test
+            # Run analysis with progressively more data to check for consistency
+            data_lengths = [len(market_data) // 4, len(market_data) // 2, len(market_data)]
+            results_by_length = []
+            
+            for length in data_lengths:
+                partial_data = market_data.iloc[:length]
+                try:
+                    result = analysis_function(partial_data, **kwargs)
+                    results_by_length.append({
+                        'data_length': length,
+                        'result': result,
+                        'success': True
+                    })
+                except Exception as e:
+                    results_by_length.append({
+                        'data_length': length,
+                        'result': None,
+                        'success': False,
+                        'error': str(e)
+                    })
+            
+            # Test 2: Future data dependency test
+            # Check if results change when future data is modified
+            original_result = analysis_function(market_data, **kwargs)
+            
+            # Modify future data (last 10% of data)
+            modified_data = market_data.copy()
+            future_start = int(len(market_data) * 0.9)
+            modified_data.iloc[future_start:, :] = modified_data.iloc[future_start:, :] * 1.1  # 10% change
+            
+            modified_result = analysis_function(modified_data, **kwargs)
+            
+            # Check if results are identical (they should be if no lookahead bias)
+            results_identical = self._compare_analysis_results(original_result, modified_result)
+            
+            validation_results.update({
+                'temporal_separation_verified': results_identical,
+                'lookahead_bias_detected': not results_identical,
+                'validation_details': {
+                    'progressive_data_test': results_by_length,
+                    'future_data_dependency_test': {
+                        'results_identical': results_identical,
+                        'original_result_summary': self._summarize_result(original_result),
+                        'modified_result_summary': self._summarize_result(modified_result)
+                    }
+                }
+            })
+            
+            if results_identical:
+                self.logger.info("✅ Temporal separation verified - no lookahead bias detected")
+            else:
+                self.logger.warning("⚠️ Potential lookahead bias detected - results change with future data")
+            
+        except Exception as e:
+            self.logger.error(f"Temporal separation validation failed: {e}")
+            validation_results['validation_error'] = str(e)
+        
+        return validation_results
+    
+    def _compare_analysis_results(self, result1: Any, result2: Any) -> bool:
+        """Compare two analysis results for equality (within tolerance)."""
+        
+        try:
+            # Handle different result types
+            if isinstance(result1, dict) and isinstance(result2, dict):
+                # Compare dictionary results
+                if set(result1.keys()) != set(result2.keys()):
+                    return False
+                
+                for key in result1.keys():
+                    if isinstance(result1[key], (int, float)) and isinstance(result2[key], (int, float)):
+                        if abs(result1[key] - result2[key]) > 1e-6:  # Numerical tolerance
+                            return False
+                    elif result1[key] != result2[key]:
+                        return False
+                
+                return True
+                
+            elif isinstance(result1, (list, np.ndarray)) and isinstance(result2, (list, np.ndarray)):
+                # Compare array results
+                arr1 = np.array(result1)
+                arr2 = np.array(result2)
+                
+                if arr1.shape != arr2.shape:
+                    return False
+                
+                return np.allclose(arr1, arr2, atol=1e-6)
+            
+            else:
+                # Direct comparison
+                return result1 == result2
+                
+        except Exception:
+            return False
+    
+    def _summarize_result(self, result: Any) -> Dict[str, Any]:
+        """Create summary of analysis result for comparison."""
+        
+        summary = {'type': type(result).__name__}
+        
+        try:
+            if isinstance(result, dict):
+                summary['keys'] = list(result.keys())
+                summary['numeric_values'] = {
+                    k: v for k, v in result.items() 
+                    if isinstance(v, (int, float))
+                }
+            elif isinstance(result, (list, np.ndarray)):
+                arr = np.array(result)
+                summary['shape'] = arr.shape
+                summary['mean'] = float(np.mean(arr))
+                summary['std'] = float(np.std(arr))
+            elif isinstance(result, (int, float)):
+                summary['value'] = float(result)
+        except Exception as e:
+            summary['error'] = str(e)
+        
+        return summary
+
+
+def create_bias_free_analysis_wrapper(analysis_function):
+    """
+    Decorator to ensure analysis function is bias-free.
+    
+    Args:
+        analysis_function: Function to wrap with bias prevention
+        
+    Returns:
+        Wrapped function with temporal validation
+    """
+    
+    def bias_free_wrapper(*args, **kwargs):
+        # Add temporal validation
+        bias_prevention = LookaheadBiasPrevention()
+        
+        # Run original analysis
+        result = analysis_function(*args, **kwargs)
+        
+        # Validate temporal separation if market data is provided
+        if len(args) > 0 and isinstance(args[0], pd.DataFrame):
+            validation = bias_prevention.validate_temporal_separation(
+                analysis_function, args[0], **kwargs
+            )
+            
+            # Add validation results to output
+            if isinstance(result, dict):
+                result['temporal_validation'] = validation
+            
+        return result
+    
+    return bias_free_wrapper
 
 
 def create_temporal_validation_framework() -> Dict[str, Any]:

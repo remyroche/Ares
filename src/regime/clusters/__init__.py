@@ -20,6 +20,15 @@ from .validation_metrics import RegimeValidationMetrics, ValidationConfig
 from .integration_layer import HMMIntegrationLayer, IntegrationConfig, IntegrationMethod
 from .visualization import RegimeVisualization, VisualizationConfig
 
+# Enhanced components
+from .economic_metrics import EconomicValidator, EconomicValidationConfig, EconomicMetric
+from .trading_calibration import TradingMetricCalibrator, TradingCalibration, generate_complete_trading_calibration_report
+from .lookahead_bias_prevention import LookaheadBiasPrevention, create_bias_free_analysis_wrapper
+from .metric_orthogonalization import MetricOrthogonalizer, OrthogonalMetric, OrthogonalMetricResult
+from .comprehensive_feature_integration import ComprehensiveFeatureGenerator
+from .statistical_dimension_analysis import StatisticalDimensionAnalyzer, DimensionalityMethod
+from .dimension_economic_relevance import DimensionEconomicRelevanceAnalyzer, analyze_all_dimensions_economic_relevance
+
 __all__ = [
     # Main classes
     'MarketDimensionAnalyzer',
@@ -29,6 +38,15 @@ __all__ = [
     'HMMIntegrationLayer',
     'RegimeVisualization',
     
+    # Enhanced components
+    'EconomicValidator',
+    'TradingMetricCalibrator',
+    'LookaheadBiasPrevention',
+    'MetricOrthogonalizer',
+    'ComprehensiveFeatureGenerator',
+    'StatisticalDimensionAnalyzer',
+    'DimensionEconomicRelevanceAnalyzer',
+    
     # Configuration classes
     'DimensionAnalysisConfig',
     'ClusteringConfig',
@@ -36,12 +54,22 @@ __all__ = [
     'ValidationConfig',
     'IntegrationConfig',
     'VisualizationConfig',
+    'EconomicValidationConfig',
+    'TradingCalibration',
     
     # Enums
     'MarketDimension',
     'ClusteringMethod',
     'ImportanceMethod',
-    'IntegrationMethod'
+    'IntegrationMethod',
+    'EconomicMetric',
+    'OrthogonalMetric',
+    'DimensionalityMethod',
+    
+    # Utility functions
+    'generate_complete_trading_calibration_report',
+    'create_bias_free_analysis_wrapper',
+    'analyze_all_dimensions_economic_relevance'
 ]
 
 __version__ = "1.0.0"

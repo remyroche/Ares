@@ -78,7 +78,7 @@ The optimized cross timeframe analysis system consists of several integrated com
 ### Basic Usage
 
 ```python
-from src.feature_engineering.optimized_cross_timeframe_analysis_integration import (
+from src.feature_generation.utils.optimized_cross_timeframe_analysis_integration import (
     analyze_cross_timeframes_optimized,
     create_optimized_config
 )
@@ -106,7 +106,7 @@ result = await analyze_cross_timeframes_optimized(
 ### Advanced Usage
 
 ```python
-from src.feature_engineering.optimized_cross_timeframe_analysis_integration import (
+from src.feature_generation.utils.optimized_cross_timeframe_analysis_integration import (
     OptimizedCrossTimeframeAnalysisPipeline
 )
 
@@ -184,13 +184,13 @@ The optimized version is designed to be a drop-in replacement for the existing c
 
 ```python
 # Original usage (still works)
-from src.feature_engineering.cross_timeframe_interaction_features import CrossTimeframeFeatureGenerator
+from src.feature_generation.utils.cross_timeframe_interaction_features import CrossTimeframeFeatureGenerator
 
 generator = CrossTimeframeFeatureGenerator()
 features = generator.generate_cross_timeframe_features(price_data, volume_data)
 
 # Optimized usage (recommended)
-from src.feature_engineering.optimized_cross_timeframe_analysis_integration import (
+from src.feature_generation.utils.optimized_cross_timeframe_analysis_integration import (
     analyze_cross_timeframes_optimized
 )
 

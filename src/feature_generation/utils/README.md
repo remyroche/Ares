@@ -90,7 +90,7 @@ Step06 was removed from the main training pipeline but its functionality has bee
 
 ### Basic Usage
 ```python
-from src.feature_engineering import (
+from src.feature_generation.utils import (
     Step06UtilityContainer,
     EnhancedFeatureEngineering,
     EnhancedMatrixOperations,
@@ -131,7 +131,7 @@ stationary_data = fractional_diff.apply_fractional_differentiation(data)
 
 ### Advanced Usage with Dependency Injection
 ```python
-from src.feature_engineering import inject_utilities
+from src.feature_generation.utils import inject_utilities
 
 @inject_utilities('common_ops', 'data_proc', 'math_val')
 async def process_data_with_utilities(data, common_ops, data_proc, math_val):
@@ -167,7 +167,7 @@ These utilities can be used by other steps in the pipeline or by external compon
 
 ```python
 # In step07 or any other step
-from src.feature_engineering import EnhancedFeatureEngineering, EnhancedMatrixOperations
+from src.feature_generation.utils import EnhancedFeatureEngineering, EnhancedMatrixOperations
 
 class Step07EnhancedMatrixOperations:
     def __init__(self, config):
@@ -190,7 +190,7 @@ class Step07EnhancedMatrixOperations:
 - **Pipeline Integration**: Step06 has been removed from the main pipeline but utilities remain available
 - **Dependency Updates**: Other steps that depended on step06 outputs now depend on step05 outputs
 - **Configuration**: Step06-specific configuration has been moved to the feature engineering package
-- **Import Updates**: All imports have been updated from `src.utils.feature_engineering` and `src.utils.step06_utilities` to `src.feature_engineering`
+- **Import Updates**: All imports have been updated from `src.utils.feature_engineering` and `src.utils.step06_utilities` to `src.feature_generation.utils`
 
 ## Performance Considerations
 

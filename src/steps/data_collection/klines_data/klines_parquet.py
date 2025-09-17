@@ -562,7 +562,7 @@ class KlinesParquetManager:
     ) -> bool:
         """Create a consolidated features file with all required features for HMM regime discovery.
 
-        This uses the proper feature engineering modules from src/feature_engineering/
+        This uses the proper feature engineering modules from src/feature_generation/utils/
         and focuses on OHLCV-derived features only (no aggtrades data).
 
         Args:
@@ -606,7 +606,7 @@ class KlinesParquetManager:
             features_df['exchange'] = 'binance'
             features_df['timeframe'] = interval
 
-            # Use proper feature engineering from src/feature_engineering/
+            # Use proper feature engineering from src/feature_generation/utils/
             features_df = self._add_comprehensive_features(features_df, include_technical_indicators, include_volatility_features, include_time_features)
 
             # Add trade statistics columns that HMM regime discovery expects

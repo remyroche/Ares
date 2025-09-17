@@ -1245,7 +1245,7 @@ class HMMStatisticalValidator:
                 regime_data, original_data, feature_columns
             )
             
-            # Convert to dictionary format for compatibility
+            # Convert to dictionary format for compatibility with detailed reporting
             validation_result = {
                 'hmm_validation_metrics': {
                     'hmm_quality_score': hmm_metrics.hmm_quality_score,
@@ -1284,6 +1284,20 @@ class HMMStatisticalValidator:
                 'validation_timestamp': datetime.now().isoformat(),
                 'validation_method': 'HMM-appropriate metrics'
             }
+            
+            # Add detailed report if available
+            if hmm_metrics.detailed_report:
+                validation_result['detailed_report'] = {
+                    'execution_summary': hmm_metrics.detailed_report.execution_summary,
+                    'temporal_analysis': hmm_metrics.detailed_report.temporal_analysis,
+                    'transition_analysis': hmm_metrics.detailed_report.transition_analysis,
+                    'economic_analysis': hmm_metrics.detailed_report.economic_analysis,
+                    'spatial_analysis': hmm_metrics.detailed_report.spatial_analysis,
+                    'regime_characteristics': hmm_metrics.detailed_report.regime_characteristics,
+                    'comparative_analysis': hmm_metrics.detailed_report.comparative_analysis,
+                    'recommendations': hmm_metrics.detailed_report.recommendations,
+                    'quality_assessment': hmm_metrics.detailed_report.quality_assessment
+                }
             
             # Add summary assessment
             if hmm_metrics.hmm_quality_score > 0.8:

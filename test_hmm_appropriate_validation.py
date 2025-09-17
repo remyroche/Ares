@@ -127,9 +127,35 @@ def test_hmm_validation_metrics():
         print(f"   Interpretation: {spatial_metrics['interpretation']}")
         
         print("\n5️⃣ Testing Comprehensive HMM Validation...")
-        comprehensive_metrics = validator.validate_hmm_regimes(market_data, market_data, feature_columns)
+        comprehensive_metrics = validator.validate_hmm_regimes(market_data, market_data, feature_columns, generate_detailed_report=True)
         print(f"   Overall HMM Quality Score: {comprehensive_metrics.hmm_quality_score:.3f}")
         print(f"   Overall Interpretation: {comprehensive_metrics.overall_interpretation}")
+        
+        # Test detailed reporting
+        if comprehensive_metrics.detailed_report:
+            print("\n6️⃣ Testing Detailed Reporting...")
+            detailed = comprehensive_metrics.detailed_report
+            print(f"   Execution Summary: {detailed.execution_summary.get('validation_status', 'Unknown')}")
+            print(f"   Quality Grade: {detailed.execution_summary.get('quality_grade', 'Unknown')}")
+            print(f"   Temporal Grade: {detailed.temporal_analysis.get('temporal_grade', 'Unknown')}")
+            print(f"   Transition Grade: {detailed.transition_analysis.get('transition_grade', 'Unknown')}")
+            print(f"   Economic Grade: {detailed.economic_analysis.get('economic_grade', 'Unknown')}")
+            print(f"   Spatial Grade: {detailed.spatial_analysis.get('spatial_grade', 'Unknown')}")
+            
+            # Show recommendations
+            recommendations = detailed.recommendations
+            print(f"   Immediate Actions: {len(recommendations.get('immediate_actions', []))} items")
+            print(f"   Improvement Suggestions: {len(recommendations.get('improvement_suggestions', []))} items")
+            print(f"   Parameter Tuning: {len(recommendations.get('parameter_tuning', []))} items")
+            
+            # Show quality assessment
+            quality = detailed.quality_assessment
+            print(f"   Overall Grade: {quality.get('overall_grade', 'Unknown')}")
+            print(f"   Production Readiness: {quality.get('production_readiness', {}).get('readiness_level', 'Unknown')}")
+            print(f"   ML Training Suitability: {quality.get('ml_training_suitability', {}).get('suitability_level', 'Unknown')}")
+            
+            print(f"   Strengths: {len(quality.get('strengths', []))} identified")
+            print(f"   Weaknesses: {len(quality.get('weaknesses', []))} identified")
         
         # Compare with traditional clustering metrics (to show the difference)
         print("\n📊 Comparison with Traditional Clustering Metrics:")

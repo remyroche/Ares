@@ -58,6 +58,19 @@ class EconomicDifferentiationMetrics:
     interpretation: str
 
 @dataclass
+class DetailedValidationReport:
+    """Detailed validation report with comprehensive metrics."""
+    execution_summary: Dict[str, Any]
+    temporal_analysis: Dict[str, Any]
+    transition_analysis: Dict[str, Any]
+    economic_analysis: Dict[str, Any]
+    spatial_analysis: Dict[str, Any]
+    regime_characteristics: Dict[str, Any]
+    comparative_analysis: Dict[str, Any]
+    recommendations: Dict[str, Any]
+    quality_assessment: Dict[str, Any]
+
+@dataclass
 class HMMValidationMetrics:
     """Combined HMM validation metrics."""
     hmm_quality_score: float
@@ -67,6 +80,7 @@ class HMMValidationMetrics:
     spatial_coherence: Dict[str, float]
     regime_stability: Dict[str, float]
     overall_interpretation: str
+    detailed_report: Optional[DetailedValidationReport] = None
 
 class HMMValidationFramework:
     """Framework for HMM-appropriate validation metrics."""
@@ -667,9 +681,207 @@ class HMMValidationFramework:
                 'interpretation': "Error in spatial coherence calculation"
             }
     
+    def generate_detailed_report(self, regime_data: pd.DataFrame,
+                               original_data: pd.DataFrame,
+                               temporal_metrics: TemporalCoherenceMetrics,
+                               transition_metrics: TransitionQualityMetrics,
+                               economic_metrics: EconomicDifferentiationMetrics,
+                               spatial_metrics: Dict[str, float],
+                               stability_metrics: Dict[str, float],
+                               hmm_quality_score: float) -> DetailedValidationReport:
+        """
+        Generate comprehensive detailed validation report.
+        
+        Args:
+            regime_data: DataFrame with regime assignments
+            original_data: Original market data
+            temporal_metrics: Temporal coherence metrics
+            transition_metrics: Transition quality metrics
+            economic_metrics: Economic differentiation metrics
+            spatial_metrics: Spatial coherence metrics
+            stability_metrics: Regime stability metrics
+            hmm_quality_score: Overall HMM quality score
+            
+        Returns:
+            DetailedValidationReport: Comprehensive validation report
+        """
+        try:
+            regime_sequence = regime_data['regime'].values
+            unique_regimes = np.unique(regime_sequence)
+            n_regimes = len(unique_regimes)
+            n_samples = len(regime_sequence)
+            
+            # 1. Execution Summary
+            execution_summary = {
+                'validation_timestamp': datetime.now().isoformat(),
+                'data_overview': {
+                    'total_samples': n_samples,
+                    'regime_count': n_regimes,
+                    'unique_regimes': unique_regimes.tolist(),
+                    'data_columns': list(original_data.columns),
+                    'feature_columns': list(original_data.select_dtypes(include=[np.number]).columns)
+                },
+                'validation_method': 'HMM-appropriate metrics framework',
+                'overall_quality_score': hmm_quality_score,
+                'quality_grade': self._get_quality_grade(hmm_quality_score),
+                'validation_status': 'PASSED' if hmm_quality_score > 0.6 else 'NEEDS_IMPROVEMENT'
+            }
+            
+            # 2. Temporal Analysis
+            temporal_analysis = {
+                'temporal_coherence_score': temporal_metrics.temporal_coherence,
+                'temporal_grade': self._get_quality_grade(temporal_metrics.temporal_coherence),
+                'regime_duration_analysis': {
+                    'average_duration': temporal_metrics.avg_regime_duration,
+                    'duration_stability': temporal_metrics.duration_stability,
+                    'duration_consistency': 'Excellent' if temporal_metrics.duration_stability > 0.8 else 'Good' if temporal_metrics.duration_stability > 0.6 else 'Needs improvement'
+                },
+                'regime_consistency_analysis': {
+                    'consistency_score': temporal_metrics.regime_consistency,
+                    'consistency_grade': self._get_quality_grade(temporal_metrics.regime_consistency),
+                    'noise_ratio': temporal_metrics.too_short_ratio,
+                    'noise_assessment': 'Low noise' if temporal_metrics.too_short_ratio < 0.2 else 'Moderate noise' if temporal_metrics.too_short_ratio < 0.4 else 'High noise'
+                },
+                'temporal_interpretation': temporal_metrics.interpretation,
+                'temporal_recommendations': self._get_temporal_recommendations(temporal_metrics)
+            }
+            
+            # 3. Transition Analysis
+            transition_analysis = {
+                'transition_quality_score': transition_metrics.transition_quality,
+                'transition_grade': self._get_quality_grade(transition_metrics.transition_quality),
+                'persistence_analysis': {
+                    'average_persistence': transition_metrics.avg_persistence,
+                    'persistence_consistency': transition_metrics.persistence_consistency,
+                    'persistence_assessment': 'Excellent' if transition_metrics.avg_persistence > 0.8 else 'Good' if transition_metrics.avg_persistence > 0.6 else 'Needs improvement'
+                },
+                'transition_clarity_analysis': {
+                    'transition_clarity': transition_metrics.transition_clarity,
+                    'transition_entropy': transition_metrics.transition_entropy,
+                    'predictability': 'High' if transition_metrics.transition_entropy < 1.0 else 'Moderate' if transition_metrics.transition_entropy < 2.0 else 'Low'
+                },
+                'transition_interpretation': transition_metrics.interpretation,
+                'transition_recommendations': self._get_transition_recommendations(transition_metrics)
+            }
+            
+            # 4. Economic Analysis
+            economic_analysis = {
+                'economic_differentiation_score': economic_metrics.economic_differentiation,
+                'economic_grade': self._get_quality_grade(economic_metrics.economic_differentiation),
+                'return_analysis': {
+                    'return_differentiation': economic_metrics.return_differentiation,
+                    'regime_returns': {f'regime_{k}': v for k, v in economic_metrics.regime_stats.items()},
+                    'return_assessment': 'Well differentiated' if economic_metrics.return_differentiation > 0.5 else 'Moderately differentiated' if economic_metrics.return_differentiation > 0.3 else 'Poorly differentiated'
+                },
+                'volatility_analysis': {
+                    'volatility_differentiation': economic_metrics.volatility_differentiation,
+                    'regime_volatilities': {f'regime_{k}': v['volatility'] for k, v in economic_metrics.regime_stats.items()},
+                    'volatility_assessment': 'Well differentiated' if economic_metrics.volatility_differentiation > 0.5 else 'Moderately differentiated' if economic_metrics.volatility_differentiation > 0.3 else 'Poorly differentiated'
+                },
+                'risk_return_analysis': {
+                    'risk_return_tradeoff': economic_metrics.risk_return_tradeoff,
+                    'regime_sharpes': {f'regime_{k}': v['sharpe'] for k, v in economic_metrics.regime_stats.items()},
+                    'tradeoff_assessment': 'Strong correlation' if economic_metrics.risk_return_tradeoff > 0.7 else 'Moderate correlation' if economic_metrics.risk_return_tradeoff > 0.4 else 'Weak correlation'
+                },
+                'economic_distinctness': {
+                    'regime_economic_distinctness': economic_metrics.regime_economic_distinctness,
+                    'market_efficiency_impact': economic_metrics.market_efficiency_impact,
+                    'distinctness_assessment': 'Highly distinct' if economic_metrics.regime_economic_distinctness > 0.7 else 'Moderately distinct' if economic_metrics.regime_economic_distinctness > 0.4 else 'Poorly distinct'
+                },
+                'economic_interpretation': economic_metrics.interpretation,
+                'economic_recommendations': self._get_economic_recommendations(economic_metrics)
+            }
+            
+            # 5. Spatial Analysis
+            spatial_analysis = {
+                'spatial_coherence_score': spatial_metrics.get('spatial_coherence', 0.0),
+                'spatial_grade': self._get_quality_grade(spatial_metrics.get('spatial_coherence', 0.0)),
+                'cluster_cohesion': {
+                    'intra_regime_similarity': spatial_metrics.get('intra_regime_similarity', 0.0),
+                    'cohesion_assessment': 'High cohesion' if spatial_metrics.get('intra_regime_similarity', 0.0) > 0.7 else 'Moderate cohesion' if spatial_metrics.get('intra_regime_similarity', 0.0) > 0.4 else 'Low cohesion'
+                },
+                'cluster_separation': {
+                    'inter_regime_separation': spatial_metrics.get('inter_regime_separation', 0.0),
+                    'separation_assessment': 'Well separated' if spatial_metrics.get('inter_regime_separation', 0.0) > 0.7 else 'Moderately separated' if spatial_metrics.get('inter_regime_separation', 0.0) > 0.4 else 'Poorly separated'
+                },
+                'spatial_interpretation': spatial_metrics.get('interpretation', 'Spatial analysis completed'),
+                'spatial_recommendations': self._get_spatial_recommendations(spatial_metrics)
+            }
+            
+            # 6. Regime Characteristics
+            regime_characteristics = {
+                'regime_distribution': self._analyze_regime_distribution(regime_sequence),
+                'regime_stability': {
+                    'stability_index': stability_metrics.get('regime_stability_index', 0.0),
+                    'stability_consistency': stability_metrics.get('stability_consistency', 0.0),
+                    'regime_volatility': stability_metrics.get('regime_volatility', 0.0),
+                    'stability_assessment': 'Highly stable' if stability_metrics.get('regime_stability_index', 0.0) > 0.8 else 'Moderately stable' if stability_metrics.get('regime_stability_index', 0.0) > 0.6 else 'Unstable'
+                },
+                'regime_duration_distribution': self._analyze_duration_distribution(regime_sequence),
+                'regime_transition_patterns': self._analyze_transition_patterns(regime_sequence)
+            }
+            
+            # 7. Comparative Analysis
+            comparative_analysis = {
+                'traditional_vs_hmm_metrics': self._generate_comparative_analysis(regime_data, original_data),
+                'regime_overlap_analysis': self._analyze_regime_overlap(regime_sequence, original_data),
+                'market_behavior_consistency': self._analyze_market_behavior_consistency(regime_sequence, original_data)
+            }
+            
+            # 8. Recommendations
+            recommendations = {
+                'immediate_actions': self._get_immediate_recommendations(hmm_quality_score, temporal_metrics, transition_metrics, economic_metrics),
+                'improvement_suggestions': self._get_improvement_suggestions(temporal_metrics, transition_metrics, economic_metrics, spatial_metrics),
+                'parameter_tuning': self._get_parameter_tuning_recommendations(hmm_quality_score),
+                'feature_engineering': self._get_feature_engineering_recommendations(economic_metrics, spatial_metrics)
+            }
+            
+            # 9. Quality Assessment
+            quality_assessment = {
+                'overall_grade': self._get_quality_grade(hmm_quality_score),
+                'component_grades': {
+                    'temporal_coherence': self._get_quality_grade(temporal_metrics.temporal_coherence),
+                    'transition_quality': self._get_quality_grade(transition_metrics.transition_quality),
+                    'economic_differentiation': self._get_quality_grade(economic_metrics.economic_differentiation),
+                    'spatial_coherence': self._get_quality_grade(spatial_metrics.get('spatial_coherence', 0.0)),
+                    'regime_stability': self._get_quality_grade(stability_metrics.get('regime_stability_index', 0.0))
+                },
+                'strengths': self._identify_strengths(temporal_metrics, transition_metrics, economic_metrics, spatial_metrics),
+                'weaknesses': self._identify_weaknesses(temporal_metrics, transition_metrics, economic_metrics, spatial_metrics),
+                'production_readiness': self._assess_production_readiness(hmm_quality_score, temporal_metrics, transition_metrics, economic_metrics),
+                'ml_training_suitability': self._assess_ml_training_suitability(hmm_quality_score, economic_metrics)
+            }
+            
+            return DetailedValidationReport(
+                execution_summary=execution_summary,
+                temporal_analysis=temporal_analysis,
+                transition_analysis=transition_analysis,
+                economic_analysis=economic_analysis,
+                spatial_analysis=spatial_analysis,
+                regime_characteristics=regime_characteristics,
+                comparative_analysis=comparative_analysis,
+                recommendations=recommendations,
+                quality_assessment=quality_assessment
+            )
+            
+        except Exception as e:
+            self.logger.error(f"Error generating detailed report: {e}")
+            return DetailedValidationReport(
+                execution_summary={'error': str(e)},
+                temporal_analysis={},
+                transition_analysis={},
+                economic_analysis={},
+                spatial_analysis={},
+                regime_characteristics={},
+                comparative_analysis={},
+                recommendations={},
+                quality_assessment={}
+            )
+    
     def validate_hmm_regimes(self, regime_data: pd.DataFrame, 
                            original_data: pd.DataFrame,
-                           feature_columns: Optional[List[str]] = None) -> HMMValidationMetrics:
+                           feature_columns: Optional[List[str]] = None,
+                           generate_detailed_report: bool = True) -> HMMValidationMetrics:
         """
         Comprehensive HMM regime validation using appropriate metrics.
         
@@ -728,6 +940,14 @@ class HMMValidationFramework:
             else:
                 overall_interpretation = "HMM regime detection needs improvement in temporal coherence, transitions, or economic differentiation"
             
+            # Generate detailed report if requested
+            detailed_report = None
+            if generate_detailed_report:
+                detailed_report = self.generate_detailed_report(
+                    regime_data, original_data, temporal_metrics, transition_metrics,
+                    economic_metrics, spatial_metrics, stability_metrics, hmm_quality_score
+                )
+            
             return HMMValidationMetrics(
                 hmm_quality_score=hmm_quality_score,
                 temporal_coherence=temporal_metrics,
@@ -735,7 +955,8 @@ class HMMValidationFramework:
                 economic_differentiation=economic_metrics,
                 spatial_coherence=spatial_metrics,
                 regime_stability=stability_metrics,
-                overall_interpretation=overall_interpretation
+                overall_interpretation=overall_interpretation,
+                detailed_report=detailed_report
             )
             
         except Exception as e:
@@ -787,3 +1008,382 @@ class HMMValidationFramework:
         except Exception as e:
             self.logger.error(f"Error calculating transition matrix: {e}")
             return np.array([])
+    
+    # Helper methods for detailed reporting
+    def _get_quality_grade(self, score: float) -> str:
+        """Convert numeric score to letter grade."""
+        if score >= 0.9:
+            return 'A+'
+        elif score >= 0.8:
+            return 'A'
+        elif score >= 0.7:
+            return 'B+'
+        elif score >= 0.6:
+            return 'B'
+        elif score >= 0.5:
+            return 'C'
+        elif score >= 0.4:
+            return 'D'
+        else:
+            return 'F'
+    
+    def _get_temporal_recommendations(self, temporal_metrics: TemporalCoherenceMetrics) -> List[str]:
+        """Generate recommendations for temporal coherence improvements."""
+        recommendations = []
+        
+        if temporal_metrics.temporal_coherence < 0.6:
+            recommendations.append("Consider increasing minimum regime duration threshold")
+            recommendations.append("Review regime detection parameters for noise reduction")
+        
+        if temporal_metrics.too_short_ratio > 0.3:
+            recommendations.append("Implement regime smoothing to reduce noise transitions")
+            recommendations.append("Consider post-processing to merge short regimes")
+        
+        if temporal_metrics.duration_stability < 0.6:
+            recommendations.append("Investigate regime duration variability sources")
+            recommendations.append("Consider adaptive regime detection parameters")
+        
+        return recommendations
+    
+    def _get_transition_recommendations(self, transition_metrics: TransitionQualityMetrics) -> List[str]:
+        """Generate recommendations for transition quality improvements."""
+        recommendations = []
+        
+        if transition_metrics.transition_quality < 0.6:
+            recommendations.append("Review transition probability estimation method")
+            recommendations.append("Consider ensemble approaches for transition modeling")
+        
+        if transition_metrics.transition_entropy > 2.0:
+            recommendations.append("Implement transition smoothing techniques")
+            recommendations.append("Consider hierarchical regime modeling")
+        
+        if transition_metrics.avg_persistence < 0.6:
+            recommendations.append("Investigate regime stability factors")
+            recommendations.append("Consider regime persistence constraints")
+        
+        return recommendations
+    
+    def _get_economic_recommendations(self, economic_metrics: EconomicDifferentiationMetrics) -> List[str]:
+        """Generate recommendations for economic differentiation improvements."""
+        recommendations = []
+        
+        if economic_metrics.economic_differentiation < 0.5:
+            recommendations.append("Enhance feature engineering for economic differentiation")
+            recommendations.append("Consider regime-specific feature selection")
+        
+        if economic_metrics.return_differentiation < 0.3:
+            recommendations.append("Add regime-aware return features")
+            recommendations.append("Consider multi-timeframe return analysis")
+        
+        if economic_metrics.volatility_differentiation < 0.3:
+            recommendations.append("Implement regime-specific volatility modeling")
+            recommendations.append("Add volatility regime indicators")
+        
+        return recommendations
+    
+    def _get_spatial_recommendations(self, spatial_metrics: Dict[str, float]) -> List[str]:
+        """Generate recommendations for spatial coherence improvements."""
+        recommendations = []
+        
+        if spatial_metrics.get('spatial_coherence', 0.0) < 0.5:
+            recommendations.append("Review feature scaling and normalization")
+            recommendations.append("Consider feature selection for better separation")
+        
+        if spatial_metrics.get('intra_regime_similarity', 0.0) < 0.4:
+            recommendations.append("Investigate regime internal consistency")
+            recommendations.append("Consider regime-specific feature engineering")
+        
+        return recommendations
+    
+    def _analyze_regime_distribution(self, regime_sequence: np.ndarray) -> Dict[str, Any]:
+        """Analyze regime distribution characteristics."""
+        unique_regimes, counts = np.unique(regime_sequence, return_counts=True)
+        total_samples = len(regime_sequence)
+        
+        distribution = {}
+        for regime, count in zip(unique_regimes, counts):
+            percentage = (count / total_samples) * 100
+            distribution[f'regime_{regime}'] = {
+                'count': int(count),
+                'percentage': round(percentage, 2),
+                'assessment': 'Balanced' if 15 <= percentage <= 35 else 'Imbalanced' if percentage < 10 or percentage > 50 else 'Moderate'
+            }
+        
+        # Calculate distribution balance
+        percentages = [dist['percentage'] for dist in distribution.values()]
+        distribution_std = np.std(percentages)
+        balance_assessment = 'Well balanced' if distribution_std < 10 else 'Moderately balanced' if distribution_std < 20 else 'Poorly balanced'
+        
+        return {
+            'regime_distribution': distribution,
+            'distribution_balance': {
+                'standard_deviation': round(distribution_std, 2),
+                'assessment': balance_assessment
+            },
+            'total_regimes': len(unique_regimes),
+            'total_samples': total_samples
+        }
+    
+    def _analyze_duration_distribution(self, regime_sequence: np.ndarray) -> Dict[str, Any]:
+        """Analyze regime duration distribution."""
+        regime_changes = np.diff(regime_sequence) != 0
+        regime_durations = []
+        current_duration = 1
+        
+        for change in regime_changes:
+            if change:
+                regime_durations.append(current_duration)
+                current_duration = 1
+            else:
+                current_duration += 1
+        regime_durations.append(current_duration)
+        
+        regime_durations = np.array(regime_durations)
+        
+        return {
+            'duration_statistics': {
+                'mean': round(np.mean(regime_durations), 2),
+                'median': round(np.median(regime_durations), 2),
+                'std': round(np.std(regime_durations), 2),
+                'min': int(np.min(regime_durations)),
+                'max': int(np.max(regime_durations))
+            },
+            'duration_distribution': {
+                'short_durations': int(np.sum(regime_durations < 5)),
+                'medium_durations': int(np.sum((regime_durations >= 5) & (regime_durations < 20))),
+                'long_durations': int(np.sum(regime_durations >= 20))
+            }
+        }
+    
+    def _analyze_transition_patterns(self, regime_sequence: np.ndarray) -> Dict[str, Any]:
+        """Analyze regime transition patterns."""
+        regime_changes = np.diff(regime_sequence) != 0
+        transition_points = np.where(regime_changes)[0]
+        
+        if len(transition_points) > 0:
+            transition_intervals = np.diff(transition_points)
+            return {
+                'transition_count': len(transition_points),
+                'transition_frequency': len(transition_points) / len(regime_sequence),
+                'average_transition_interval': round(np.mean(transition_intervals), 2) if len(transition_intervals) > 0 else 0,
+                'transition_volatility': round(np.std(transition_intervals), 2) if len(transition_intervals) > 0 else 0
+            }
+        else:
+            return {
+                'transition_count': 0,
+                'transition_frequency': 0.0,
+                'average_transition_interval': 0,
+                'transition_volatility': 0.0
+            }
+    
+    def _generate_comparative_analysis(self, regime_data: pd.DataFrame, original_data: pd.DataFrame) -> Dict[str, Any]:
+        """Generate comparative analysis between traditional and HMM metrics."""
+        try:
+            from sklearn.metrics import silhouette_score, calinski_harabasz_score, davies_bouldin_score
+            from sklearn.preprocessing import StandardScaler
+            
+            # Prepare data for traditional metrics
+            numeric_cols = original_data.select_dtypes(include=[np.number]).columns.tolist()
+            feature_data = original_data[numeric_cols].values
+            scaler = StandardScaler()
+            feature_data_scaled = scaler.fit_transform(feature_data)
+            
+            regime_assignments = regime_data['regime'].values
+            
+            # Calculate traditional metrics
+            traditional_metrics = {
+                'silhouette_score': silhouette_score(feature_data_scaled, regime_assignments),
+                'calinski_harabasz_score': calinski_harabasz_score(feature_data_scaled, regime_assignments),
+                'davies_bouldin_score': davies_bouldin_score(feature_data_scaled, regime_assignments)
+            }
+            
+            return {
+                'traditional_metrics': traditional_metrics,
+                'traditional_interpretation': 'These metrics assume spatial separation and are inappropriate for HMM regimes',
+                'hmm_advantage': 'HMM metrics account for temporal dependencies and economic relevance',
+                'recommendation': 'Use HMM-appropriate metrics for temporal regime validation'
+            }
+            
+        except ImportError:
+            return {
+                'traditional_metrics': 'Not available - sklearn not installed',
+                'interpretation': 'Traditional clustering metrics not calculated'
+            }
+        except Exception as e:
+            return {
+                'traditional_metrics': 'Error in calculation',
+                'error': str(e)
+            }
+    
+    def _analyze_regime_overlap(self, regime_sequence: np.ndarray, original_data: pd.DataFrame) -> Dict[str, Any]:
+        """Analyze regime overlap characteristics."""
+        unique_regimes = np.unique(regime_sequence)
+        
+        # Calculate regime statistics
+        regime_stats = {}
+        for regime in unique_regimes:
+            regime_mask = regime_sequence == regime
+            regime_data = original_data[regime_mask]
+            
+            if len(regime_data) > 0:
+                numeric_cols = regime_data.select_dtypes(include=[np.number]).columns
+                regime_stats[regime] = {
+                    'sample_count': len(regime_data),
+                    'mean_values': regime_data[numeric_cols].mean().to_dict(),
+                    'std_values': regime_data[numeric_cols].std().to_dict()
+                }
+        
+        return {
+            'regime_statistics': regime_stats,
+            'overlap_assessment': 'Natural regime overlap is expected in financial markets',
+            'interpretation': 'Overlapping characteristics indicate realistic market behavior'
+        }
+    
+    def _analyze_market_behavior_consistency(self, regime_sequence: np.ndarray, original_data: pd.DataFrame) -> Dict[str, Any]:
+        """Analyze market behavior consistency across regimes."""
+        # This would analyze how market behavior patterns are consistent within regimes
+        # and different between regimes
+        return {
+            'behavior_consistency': 'Analysis requires additional market behavior features',
+            'recommendation': 'Implement market behavior pattern analysis'
+        }
+    
+    def _get_immediate_recommendations(self, hmm_quality_score: float, temporal_metrics: TemporalCoherenceMetrics,
+                                     transition_metrics: TransitionQualityMetrics, economic_metrics: EconomicDifferentiationMetrics) -> List[str]:
+        """Get immediate action recommendations."""
+        recommendations = []
+        
+        if hmm_quality_score < 0.6:
+            recommendations.append("Priority: Improve overall HMM quality - focus on weakest component")
+        
+        if temporal_metrics.temporal_coherence < 0.6:
+            recommendations.append("Action: Implement regime duration filtering to reduce noise")
+        
+        if transition_metrics.transition_quality < 0.6:
+            recommendations.append("Action: Review transition probability estimation")
+        
+        if economic_metrics.economic_differentiation < 0.5:
+            recommendations.append("Action: Enhance economic feature engineering")
+        
+        return recommendations
+    
+    def _get_improvement_suggestions(self, temporal_metrics: TemporalCoherenceMetrics, transition_metrics: TransitionQualityMetrics,
+                                   economic_metrics: EconomicDifferentiationMetrics, spatial_metrics: Dict[str, float]) -> List[str]:
+        """Get improvement suggestions."""
+        suggestions = []
+        
+        suggestions.extend(self._get_temporal_recommendations(temporal_metrics))
+        suggestions.extend(self._get_transition_recommendations(transition_metrics))
+        suggestions.extend(self._get_economic_recommendations(economic_metrics))
+        suggestions.extend(self._get_spatial_recommendations(spatial_metrics))
+        
+        return list(set(suggestions))  # Remove duplicates
+    
+    def _get_parameter_tuning_recommendations(self, hmm_quality_score: float) -> List[str]:
+        """Get parameter tuning recommendations."""
+        recommendations = []
+        
+        if hmm_quality_score < 0.6:
+            recommendations.append("Consider adjusting HMM parameters: n_components, covariance_type")
+            recommendations.append("Review optimization mode settings (light/blank/full)")
+        
+        if hmm_quality_score > 0.8:
+            recommendations.append("Current parameters are well-tuned")
+            recommendations.append("Consider fine-tuning for specific use case optimization")
+        
+        return recommendations
+    
+    def _get_feature_engineering_recommendations(self, economic_metrics: EconomicDifferentiationMetrics, spatial_metrics: Dict[str, float]) -> List[str]:
+        """Get feature engineering recommendations."""
+        recommendations = []
+        
+        if economic_metrics.economic_differentiation < 0.5:
+            recommendations.append("Add regime-specific technical indicators")
+            recommendations.append("Implement volatility regime features")
+            recommendations.append("Consider cross-timeframe features")
+        
+        if spatial_metrics.get('spatial_coherence', 0.0) < 0.5:
+            recommendations.append("Review feature scaling and normalization")
+            recommendations.append("Consider feature selection algorithms")
+        
+        return recommendations
+    
+    def _identify_strengths(self, temporal_metrics: TemporalCoherenceMetrics, transition_metrics: TransitionQualityMetrics,
+                          economic_metrics: EconomicDifferentiationMetrics, spatial_metrics: Dict[str, float]) -> List[str]:
+        """Identify system strengths."""
+        strengths = []
+        
+        if temporal_metrics.temporal_coherence > 0.8:
+            strengths.append("Excellent temporal coherence - regimes are stable over time")
+        
+        if transition_metrics.transition_quality > 0.8:
+            strengths.append("Excellent transition quality - clear regime transitions")
+        
+        if economic_metrics.economic_differentiation > 0.7:
+            strengths.append("Strong economic differentiation - regimes are economically distinct")
+        
+        if spatial_metrics.get('spatial_coherence', 0.0) > 0.7:
+            strengths.append("Good spatial coherence - regimes are internally consistent")
+        
+        return strengths
+    
+    def _identify_weaknesses(self, temporal_metrics: TemporalCoherenceMetrics, transition_metrics: TransitionQualityMetrics,
+                           economic_metrics: EconomicDifferentiationMetrics, spatial_metrics: Dict[str, float]) -> List[str]:
+        """Identify system weaknesses."""
+        weaknesses = []
+        
+        if temporal_metrics.temporal_coherence < 0.6:
+            weaknesses.append("Poor temporal coherence - regimes change too frequently")
+        
+        if transition_metrics.transition_quality < 0.6:
+            weaknesses.append("Poor transition quality - regime transitions are unclear")
+        
+        if economic_metrics.economic_differentiation < 0.5:
+            weaknesses.append("Weak economic differentiation - regimes are not economically distinct")
+        
+        if spatial_metrics.get('spatial_coherence', 0.0) < 0.5:
+            weaknesses.append("Poor spatial coherence - regimes lack internal consistency")
+        
+        return weaknesses
+    
+    def _assess_production_readiness(self, hmm_quality_score: float, temporal_metrics: TemporalCoherenceMetrics,
+                                   transition_metrics: TransitionQualityMetrics, economic_metrics: EconomicDifferentiationMetrics) -> Dict[str, Any]:
+        """Assess production readiness."""
+        if hmm_quality_score > 0.8:
+            readiness = "Production Ready"
+            confidence = "High"
+        elif hmm_quality_score > 0.6:
+            readiness = "Near Production Ready"
+            confidence = "Moderate"
+        else:
+            readiness = "Not Production Ready"
+            confidence = "Low"
+        
+        return {
+            'readiness_level': readiness,
+            'confidence': confidence,
+            'requirements_met': {
+                'temporal_stability': temporal_metrics.temporal_coherence > 0.6,
+                'transition_clarity': transition_metrics.transition_quality > 0.6,
+                'economic_relevance': economic_metrics.economic_differentiation > 0.5
+            }
+        }
+    
+    def _assess_ml_training_suitability(self, hmm_quality_score: float, economic_metrics: EconomicDifferentiationMetrics) -> Dict[str, Any]:
+        """Assess suitability for ML training."""
+        if hmm_quality_score > 0.7 and economic_metrics.economic_differentiation > 0.6:
+            suitability = "Excellent for ML Training"
+            recommendation = "Proceed with confidence - regimes provide strong signal for ML models"
+        elif hmm_quality_score > 0.6 and economic_metrics.economic_differentiation > 0.5:
+            suitability = "Good for ML Training"
+            recommendation = "Suitable for ML training with some caution - consider regime-specific models"
+        else:
+            suitability = "Limited ML Training Value"
+            recommendation = "Improve regime quality before ML training - weak economic differentiation"
+        
+        return {
+            'suitability_level': suitability,
+            'recommendation': recommendation,
+            'regime_count_adequate': len(economic_metrics.regime_stats) >= 2,
+            'economic_signal_strength': economic_metrics.economic_differentiation
+        }

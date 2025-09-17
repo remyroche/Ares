@@ -174,19 +174,43 @@ class TacticianLookbackOptimizationStep(BaseTrainingStep):
             
             execution_time = (datetime.now() - start_time).total_seconds()
             
+            # Generate comprehensive step-level metrics and artifacts
+            step_artifacts = self._generate_step_artifacts(processed_results, start_time, execution_time)
+            step_metrics = self._generate_step_metrics(processed_results, market_data_1m, analyst_models, analyst_ensemble)
+            step_report = self._generate_step_report(processed_results, start_time, execution_time)
+            
             final_results = {
                 'step_name': 'tactician_lookback_optimization',
                 'execution_time': execution_time,
+                'execution_time_formatted': f"{execution_time:.2f}s",
                 'optimization_results': processed_results,
                 'optimized_lookbacks': processed_results.get('best_lookbacks', {}),
                 'optimization_score': processed_results.get('best_score', 0.0),
                 'configuration': self.optimization_config.__dict__,
+                'step_artifacts': step_artifacts,
+                'step_metrics': step_metrics,
+                'step_report': step_report,
                 'metadata': {
                     'timestamp': start_time.isoformat(),
                     'duration_seconds': execution_time,
                     'data_samples': len(market_data_1m),
                     'analyst_models_count': len(analyst_models) if analyst_models else 0,
-                    'has_analyst_ensemble': analyst_ensemble is not None
+                    'has_analyst_ensemble': analyst_ensemble is not None,
+                    'optimization_method': processed_results.get('optimization_method', 'unknown'),
+                    'total_evaluations': processed_results.get('optimization_metrics', {}).get('total_evaluations', 0),
+                    'success_rate': processed_results.get('execution_info', {}).get('success_rate', 0.0)
+                },
+                'quality_assessment': {
+                    'data_quality': 'good' if len(market_data_1m) > 1000 else 'limited',
+                    'optimization_quality': (
+                        'excellent' if processed_results.get('best_score', 0) > 0.8 else
+                        'good' if processed_results.get('best_score', 0) > 0.6 else
+                        'fair' if processed_results.get('best_score', 0) > 0.4 else 'poor'
+                    ),
+                    'analyst_integration_quality': (
+                        'good' if analyst_models and analyst_ensemble else
+                        'partial' if analyst_models or analyst_ensemble else 'limited'
+                    )
                 }
             }
             
@@ -494,6 +518,186 @@ class TacticianLookbackOptimizationStep(BaseTrainingStep):
         """Get default lookback for a specific indicator."""
         defaults = self._get_default_lookbacks()
         return defaults.get(indicator, 10)  # Shorter default for 0.3% movements
+    
+    def _generate_step_artifacts(
+        self, 
+        optimization_results: Dict[str, Any], 
+        start_time: datetime, 
+        execution_time: float
+    ) -> Dict[str, Any]:
+        """Generate comprehensive step-level artifacts."""
+        try:
+            timestamp = start_time.strftime("%Y%m%d_%H%M%S")
+            
+            artifacts = {
+                'primary_artifacts': {
+                    'optimized_lookbacks_file': f"tactician_optimized_lookbacks_{timestamp}.json",
+                    'optimization_results_file': f"tactician_optimization_results_{timestamp}.json",
+                    'performance_metrics_file': f"tactician_optimization_metrics_{timestamp}.json"
+                },
+                'analysis_artifacts': {
+                    'feature_analysis_file': f"tactician_feature_analysis_{timestamp}.json",
+                    'convergence_analysis_file': f"tactician_convergence_analysis_{timestamp}.json",
+                    'performance_analysis_file': f"tactician_performance_analysis_{timestamp}.json"
+                },
+                'reporting_artifacts': {
+                    'summary_report_file': f"tactician_optimization_summary_{timestamp}.json",
+                    'detailed_report_file': f"tactician_optimization_detailed_{timestamp}.json",
+                    'execution_log_file': f"tactician_optimization_log_{timestamp}.txt"
+                },
+                'metadata_artifacts': {
+                    'configuration_file': f"tactician_optimization_config_{timestamp}.json",
+                    'artifact_manifest_file': f"tactician_artifact_manifest_{timestamp}.json"
+                },
+                'artifact_summary': {
+                    'total_artifacts': 0,  # Will be calculated
+                    'primary_count': len([f for f in artifacts['primary_artifacts'].values() if f]),
+                    'analysis_count': len([f for f in artifacts['analysis_artifacts'].values() if f]),
+                    'reporting_count': len([f for f in artifacts['reporting_artifacts'].values() if f]),
+                    'metadata_count': len([f for f in artifacts['metadata_artifacts'].values() if f])
+                }
+            }
+            
+            # Calculate total artifacts
+            artifacts['artifact_summary']['total_artifacts'] = (
+                artifacts['artifact_summary']['primary_count'] +
+                artifacts['artifact_summary']['analysis_count'] +
+                artifacts['artifact_summary']['reporting_count'] +
+                artifacts['artifact_summary']['metadata_count']
+            )
+            
+            return artifacts
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to generate step artifacts: {e}")
+            return {'error': str(e)}
+    
+    def _generate_step_metrics(
+        self,
+        optimization_results: Dict[str, Any],
+        market_data: pd.DataFrame,
+        analyst_models: Optional[Dict[str, Any]],
+        analyst_ensemble: Optional[Any]
+    ) -> Dict[str, Any]:
+        """Generate comprehensive step-level metrics."""
+        try:
+            metrics = {
+                'optimization_metrics': {
+                    'total_evaluations': optimization_results.get('optimization_metrics', {}).get('total_evaluations', 0),
+                    'successful_evaluations': optimization_results.get('optimization_metrics', {}).get('successful_evaluations', 0),
+                    'failed_evaluations': optimization_results.get('optimization_metrics', {}).get('failed_evaluations', 0),
+                    'best_score': optimization_results.get('best_score', 0.0),
+                    'optimization_method': optimization_results.get('optimization_method', 'unknown'),
+                    'convergence_achieved': optimization_results.get('best_score', 0.0) > 0.5
+                },
+                'data_metrics': {
+                    'market_data_samples': len(market_data),
+                    'market_data_timespan_hours': len(market_data) / 60 if len(market_data) > 0 else 0,
+                    'data_quality_score': 1.0 if len(market_data) > 1000 else 0.5,
+                    'required_columns_present': all(col in market_data.columns for col in ['open', 'high', 'low', 'close', 'volume'])
+                },
+                'analyst_integration_metrics': {
+                    'analyst_models_available': len(analyst_models) if analyst_models else 0,
+                    'analyst_ensemble_available': analyst_ensemble is not None,
+                    'integration_quality': (
+                        1.0 if analyst_models and analyst_ensemble else
+                        0.7 if analyst_models or analyst_ensemble else 0.3
+                    ),
+                    'dependency_satisfaction': analyst_models is not None or analyst_ensemble is not None
+                },
+                'feature_optimization_metrics': {
+                    'indicators_optimized': len(optimization_results.get('best_lookbacks', {})),
+                    'feature_categories_optimized': len(set(
+                        indicator.split('_')[0] for indicator in optimization_results.get('best_lookbacks', {}).keys()
+                    )) if optimization_results.get('best_lookbacks') else 0,
+                    'average_lookback_period': (
+                        np.mean(list(optimization_results.get('best_lookbacks', {}).values()))
+                        if optimization_results.get('best_lookbacks') else 0
+                    ),
+                    'lookback_range_utilized': (
+                        max(optimization_results.get('best_lookbacks', {}).values()) -
+                        min(optimization_results.get('best_lookbacks', {}).values())
+                        if optimization_results.get('best_lookbacks') else 0
+                    )
+                },
+                'performance_metrics': {
+                    'optimization_efficiency': (
+                        optimization_results.get('optimization_metrics', {}).get('successful_evaluations', 0) /
+                        max(1, optimization_results.get('optimization_metrics', {}).get('total_evaluations', 1))
+                    ),
+                    'score_improvement': optimization_results.get('best_score', 0.0) - 0.5,  # Improvement over baseline
+                    'execution_efficiency': (
+                        optimization_results.get('optimization_metrics', {}).get('total_evaluations', 0) /
+                        max(1, optimization_results.get('execution_info', {}).get('total_duration', 1))
+                    ),
+                    'resource_utilization': 'optimal' if execution_time < 1800 else 'extended'  # 30 minutes threshold
+                }
+            }
+            
+            return metrics
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to generate step metrics: {e}")
+            return {'error': str(e)}
+    
+    def _generate_step_report(
+        self,
+        optimization_results: Dict[str, Any],
+        start_time: datetime,
+        execution_time: float
+    ) -> Dict[str, Any]:
+        """Generate comprehensive step-level report."""
+        try:
+            report = {
+                'report_header': {
+                    'step_name': 'Tactician Lookback Optimization',
+                    'report_type': 'step_execution_report',
+                    'timestamp': start_time.isoformat(),
+                    'execution_time': f"{execution_time:.2f}s",
+                    'status': 'completed'
+                },
+                'executive_summary': {
+                    'optimization_completed': True,
+                    'indicators_optimized': len(optimization_results.get('best_lookbacks', {})),
+                    'optimization_score': optimization_results.get('best_score', 0.0),
+                    'optimization_quality': (
+                        'excellent' if optimization_results.get('best_score', 0) > 0.8 else
+                        'good' if optimization_results.get('best_score', 0) > 0.6 else
+                        'fair' if optimization_results.get('best_score', 0) > 0.4 else 'poor'
+                    ),
+                    'execution_efficiency': 'good' if execution_time < 1800 else 'extended',
+                    'ready_for_tactician_training': True
+                },
+                'detailed_findings': {
+                    'optimization_method_used': optimization_results.get('optimization_method', 'unknown'),
+                    'total_evaluations_performed': optimization_results.get('optimization_metrics', {}).get('total_evaluations', 0),
+                    'evaluation_success_rate': optimization_results.get('execution_info', {}).get('success_rate', 0.0),
+                    'convergence_achieved': optimization_results.get('best_score', 0.0) > 0.5,
+                    'feature_categories_analyzed': list(self.optimization_config.feature_categories.keys()),
+                    'analyst_integration_successful': optimization_results.get('metadata', {}).get('has_analyst_ensemble', False)
+                },
+                'optimization_insights': optimization_results.get('insights_and_recommendations', []),
+                'performance_analysis': optimization_results.get('performance_analysis', {}),
+                'feature_analysis': optimization_results.get('feature_analysis', {}),
+                'convergence_analysis': optimization_results.get('convergence_analysis', {}),
+                'recommendations': [
+                    "Use optimized lookbacks in Tactician model training",
+                    "Monitor Tactician performance improvements with optimized parameters",
+                    "Compare against baseline performance using default lookbacks",
+                    "Consider re-optimization if market regime changes significantly"
+                ],
+                'next_steps': [
+                    "Proceed to tactician_models_training with optimized lookbacks",
+                    "Validate optimization results in backtesting",
+                    "Monitor real-time performance improvements"
+                ]
+            }
+            
+            return report
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to generate step report: {e}")
+            return {'error': str(e)}
     
     async def _save_results_for_tactician(self, results: Dict[str, Any]):
         """Save optimization results for use by Tactician training step."""

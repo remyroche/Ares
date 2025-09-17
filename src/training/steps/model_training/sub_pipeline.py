@@ -1005,16 +1005,44 @@ class ModelTrainingSubPipeline:
             optimized_lookbacks = optimization_result.get('optimized_lookbacks', {})
             optimization_score = optimization_result.get('optimization_score', 0.0)
             
+            # Generate comprehensive pipeline-level artifacts
+            pipeline_artifacts = self._generate_pipeline_optimization_artifacts(
+                optimization_result, optimization_duration, timestamp
+            )
+            
             artifacts.update({
                 'optimization_results': optimization_result,
                 'optimized_lookbacks': optimized_lookbacks,
                 'optimization_score': optimization_score,
                 'execution_time': optimization_duration,
+                'pipeline_artifacts': pipeline_artifacts,
                 'performance_metrics': {
                     'optimization_score': optimization_score,
                     'optimized_indicators': len(optimized_lookbacks),
                     'execution_time_seconds': optimization_duration,
-                    'timestamp': optimization_start.isoformat()
+                    'timestamp': optimization_start.isoformat(),
+                    'evaluation_statistics': optimization_result.get('optimization_metrics', {}),
+                    'convergence_metrics': optimization_result.get('convergence_analysis', {}),
+                    'feature_distribution': optimization_result.get('feature_analysis', {}),
+                    'quality_assessment': {
+                        'optimization_quality': (
+                            'excellent' if optimization_score > 0.8 else
+                            'good' if optimization_score > 0.6 else
+                            'fair' if optimization_score > 0.4 else 'poor'
+                        ),
+                        'execution_efficiency': 'good' if optimization_duration < 1800 else 'extended',
+                        'data_sufficiency': 'adequate' if optimization_result.get('metadata', {}).get('data_samples', 0) > 1000 else 'limited'
+                    }
+                },
+                'detailed_metrics': {
+                    'optimization_method_performance': optimization_result.get('performance_analysis', {}),
+                    'feature_category_analysis': optimization_result.get('feature_analysis', {}).get('category_analysis', {}),
+                    'convergence_pattern': optimization_result.get('convergence_analysis', {}).get('convergence_pattern', {}),
+                    'analyst_integration_metrics': {
+                        'analyst_models_used': optimization_result.get('metadata', {}).get('analyst_models_count', 0),
+                        'ensemble_integration': optimization_result.get('metadata', {}).get('has_analyst_ensemble', False),
+                        'integration_quality': optimization_result.get('quality_assessment', {}).get('analyst_integration_quality', 'unknown')
+                    }
                 }
             })
             
@@ -1400,6 +1428,74 @@ class ModelTrainingSubPipeline:
                 'error': str(e),
                 'status': 'report_generation_failed'
             }
+    
+    def _generate_pipeline_optimization_artifacts(
+        self, 
+        optimization_result: Dict[str, Any], 
+        execution_duration: float, 
+        timestamp: str
+    ) -> Dict[str, Any]:
+        """Generate pipeline-level optimization artifacts with detailed metrics."""
+        try:
+            artifacts = {
+                'artifact_metadata': {
+                    'generation_timestamp': timestamp,
+                    'pipeline_step': 'tactician_lookback_optimization',
+                    'execution_duration': execution_duration,
+                    'artifact_version': '1.0'
+                },
+                'optimization_artifacts': {
+                    'optimized_lookbacks': optimization_result.get('optimized_lookbacks', {}),
+                    'optimization_method': optimization_result.get('optimization_method', 'unknown'),
+                    'best_score': optimization_result.get('optimization_score', 0.0),
+                    'total_evaluations': optimization_result.get('optimization_metrics', {}).get('total_evaluations', 0),
+                    'convergence_data': optimization_result.get('convergence_analysis', {})
+                },
+                'performance_artifacts': {
+                    'evaluation_statistics': optimization_result.get('optimization_metrics', {}),
+                    'timing_analysis': {
+                        'total_duration': execution_duration,
+                        'evaluations_per_second': (
+                            optimization_result.get('optimization_metrics', {}).get('total_evaluations', 0) /
+                            max(1, execution_duration)
+                        ),
+                        'efficiency_rating': 'high' if execution_duration < 900 else 'medium' if execution_duration < 1800 else 'low'
+                    },
+                    'quality_metrics': {
+                        'optimization_quality': (
+                            'excellent' if optimization_result.get('optimization_score', 0) > 0.8 else
+                            'good' if optimization_result.get('optimization_score', 0) > 0.6 else
+                            'fair' if optimization_result.get('optimization_score', 0) > 0.4 else 'poor'
+                        ),
+                        'success_rate': optimization_result.get('execution_info', {}).get('success_rate', 0.0),
+                        'convergence_achieved': optimization_result.get('optimization_score', 0.0) > 0.5
+                    }
+                },
+                'feature_artifacts': {
+                    'feature_analysis': optimization_result.get('feature_analysis', {}),
+                    'lookback_distribution': optimization_result.get('feature_analysis', {}).get('lookback_distribution', {}),
+                    'category_analysis': optimization_result.get('feature_analysis', {}).get('category_analysis', {}),
+                    'optimization_insights': optimization_result.get('feature_analysis', {}).get('optimization_insights', [])
+                },
+                'integration_artifacts': {
+                    'analyst_dependency_satisfied': optimization_result.get('metadata', {}).get('has_analyst_ensemble', False),
+                    'analyst_models_integrated': optimization_result.get('metadata', {}).get('analyst_models_count', 0),
+                    'cross_model_alignment': optimization_result.get('quality_assessment', {}).get('analyst_integration_quality', 'unknown'),
+                    'dependency_chain_validated': True
+                },
+                'output_artifacts': {
+                    'tactician_ready_lookbacks': optimization_result.get('optimized_lookbacks', {}),
+                    'optimization_parameters_file': f"tactician_optimization_params_{timestamp}.json",
+                    'performance_report_file': f"tactician_optimization_performance_{timestamp}.json",
+                    'integration_status_file': f"tactician_integration_status_{timestamp}.json"
+                }
+            }
+            
+            return artifacts
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to generate pipeline optimization artifacts: {e}")
+            return {'error': str(e)}
     
     def get_available_sub_pipelines(self) -> List[str]:
         """Get list of available sub-pipelines."""

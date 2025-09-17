@@ -802,6 +802,25 @@ class TacticianLookbackOptimizer:
             penalty = self._calculate_lookback_penalty(lookback_params)
             final_score *= (1 - penalty)
             
+            # Track optimization history
+            evaluation_record = {
+                'timestamp': datetime.now().isoformat(),
+                'lookback_params': lookback_params,
+                'scores': scores,
+                'final_score': final_score,
+                'penalty': penalty,
+                'has_analyst_signals': analyst_signals is not None and len(analyst_signals) > 0
+            }
+            self.optimization_history.append(evaluation_record)
+            
+            # Update convergence history
+            self.optimization_metrics['convergence_history'].append(final_score)
+            
+            # Update best score if improved
+            if final_score > self.optimization_metrics['best_score']:
+                self.optimization_metrics['best_score'] = final_score
+                tprint_debug(f"🎯 New best score: {final_score:.4f} with lookbacks: {lookback_params}")
+            
             return max(0.0, min(1.0, final_score))
             
         except Exception as e:
@@ -1136,29 +1155,67 @@ class TacticianLookbackOptimizer:
             elif 'tpe_results' in results and 'best_lookbacks' in results['tpe_results']:
                 self.best_lookbacks = results['tpe_results']['best_lookbacks']
             
-            # Calculate final metrics
+            # Calculate comprehensive final metrics
+            end_time = time.time()
+            total_duration = end_time - self.start_time
+            
+            # Generate detailed performance analysis
+            performance_analysis = self._generate_detailed_performance_analysis(results)
+            
+            # Generate feature analysis
+            feature_analysis = self._generate_feature_analysis(self.best_lookbacks)
+            
+            # Generate optimization convergence analysis
+            convergence_analysis = self._generate_convergence_analysis(results)
+            
             final_results = {
                 'optimization_method': results.get('method', 'unknown'),
                 'best_lookbacks': self.best_lookbacks,
                 'best_score': results.get('best_score', 0.0),
                 'optimization_metrics': self.optimization_metrics,
+                'performance_analysis': performance_analysis,
+                'feature_analysis': feature_analysis,
+                'convergence_analysis': convergence_analysis,
                 'configuration': {
                     'timeframe': self.config.timeframe,
+                    'symbol': self.config.symbol,
+                    'exchange': self.config.exchange,
+                    'optimization_method': self.config.optimization_method,
                     'optimization_timeout': self.config.optimization_timeout,
                     'feature_categories': self.config.feature_categories,
-                    'target_metrics': self.config.target_metrics
+                    'target_metrics': self.config.target_metrics,
+                    'min_lookback': self.config.min_lookback,
+                    'max_lookback': self.config.max_lookback,
+                    'analyst_integration_weights': {
+                        'analyst_signal_weight': self.config.analyst_signal_weight,
+                        'analyst_output_weight': self.config.analyst_output_weight,
+                        'raw_features_weight': self.config.raw_features_weight
+                    }
                 },
                 'execution_info': {
-                    'start_time': self.start_time,
-                    'end_time': time.time(),
-                    'total_duration': time.time() - self.start_time,
+                    'start_time': datetime.fromtimestamp(self.start_time).isoformat(),
+                    'end_time': datetime.fromtimestamp(end_time).isoformat(),
+                    'total_duration_seconds': total_duration,
+                    'total_duration_formatted': f"{total_duration:.2f}s",
                     'total_evaluations': self.optimization_metrics['total_evaluations'],
+                    'successful_evaluations': self.optimization_metrics['successful_evaluations'],
+                    'failed_evaluations': self.optimization_metrics['failed_evaluations'],
                     'success_rate': (
                         self.optimization_metrics['successful_evaluations'] /
                         max(1, self.optimization_metrics['total_evaluations'])
+                    ),
+                    'evaluations_per_second': (
+                        self.optimization_metrics['total_evaluations'] / max(1, total_duration)
                     )
                 },
-                'detailed_results': results
+                'detailed_results': results,
+                'artifacts': {
+                    'optimization_results_file': f"tactician_lookback_optimization_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
+                    'best_lookbacks_file': f"best_lookbacks_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
+                    'performance_metrics_file': f"optimization_metrics_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
+                    'feature_analysis_file': f"feature_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
+                    'convergence_analysis_file': f"convergence_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+                }
             }
             
             tprint_success(f"✅ Optimization results processed: {len(self.best_lookbacks)} optimized lookbacks")
@@ -1169,32 +1226,256 @@ class TacticianLookbackOptimizer:
             return {'error': str(e)}
     
     async def _save_optimization_results(self, results: Dict[str, Any]):
-        """Save optimization results to files."""
+        """Save comprehensive optimization results and artifacts to files."""
         try:
-            tprint_info("💾 Saving optimization results...")
+            tprint_info("💾 Saving comprehensive optimization results and artifacts...")
             
             results_path = Path(self.config.results_path)
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             
-            # Save main results
+            # Ensure all directories exist
+            (results_path / "optimization_results").mkdir(parents=True, exist_ok=True)
+            (results_path / "performance_metrics").mkdir(parents=True, exist_ok=True)
+            (results_path / "feature_analysis").mkdir(parents=True, exist_ok=True)
+            (results_path / "convergence_analysis").mkdir(parents=True, exist_ok=True)
+            (results_path / "detailed_reports").mkdir(parents=True, exist_ok=True)
+            (results_path / "artifacts").mkdir(parents=True, exist_ok=True)
+            
+            # 1. Save main optimization results
             results_file = results_path / "optimization_results" / f"tactician_lookback_optimization_{timestamp}.json"
+            results_file.parent.mkdir(parents=True, exist_ok=True)
             with open(results_file, 'w') as f:
                 json.dump(results, f, indent=2, default=str)
             
-            # Save best lookbacks separately for easy loading
+            # 2. Save best lookbacks separately for easy loading by Tactician training
             lookbacks_file = results_path / "optimization_results" / f"best_lookbacks_{timestamp}.json"
             with open(lookbacks_file, 'w') as f:
                 json.dump(self.best_lookbacks, f, indent=2)
             
-            # Save performance metrics
+            # 3. Save performance metrics with detailed breakdown
+            enhanced_metrics = {
+                'optimization_metrics': self.optimization_metrics,
+                'performance_analysis': results.get('performance_analysis', {}),
+                'timing_analysis': {
+                    'total_duration': time.time() - self.start_time if self.start_time else 0,
+                    'evaluations_per_second': (
+                        self.optimization_metrics['total_evaluations'] / 
+                        max(1, time.time() - self.start_time if self.start_time else 1)
+                    ),
+                    'average_evaluation_time': (
+                        (time.time() - self.start_time) / max(1, self.optimization_metrics['total_evaluations'])
+                        if self.start_time else 0
+                    )
+                },
+                'quality_metrics': {
+                    'success_rate': (
+                        self.optimization_metrics['successful_evaluations'] /
+                        max(1, self.optimization_metrics['total_evaluations'])
+                    ),
+                    'failure_rate': (
+                        self.optimization_metrics['failed_evaluations'] /
+                        max(1, self.optimization_metrics['total_evaluations'])
+                    ),
+                    'best_score_achieved': self.optimization_metrics['best_score']
+                }
+            }
+            
             metrics_file = results_path / "performance_metrics" / f"optimization_metrics_{timestamp}.json"
             with open(metrics_file, 'w') as f:
-                json.dump(self.optimization_metrics, f, indent=2)
+                json.dump(enhanced_metrics, f, indent=2, default=str)
             
-            tprint_success(f"✅ Results saved to {results_path}")
+            # 4. Save feature analysis
+            if 'feature_analysis' in results:
+                feature_file = results_path / "feature_analysis" / f"feature_analysis_{timestamp}.json"
+                with open(feature_file, 'w') as f:
+                    json.dump(results['feature_analysis'], f, indent=2, default=str)
+            
+            # 5. Save convergence analysis
+            if 'convergence_analysis' in results:
+                convergence_file = results_path / "convergence_analysis" / f"convergence_analysis_{timestamp}.json"
+                with open(convergence_file, 'w') as f:
+                    json.dump(results['convergence_analysis'], f, indent=2, default=str)
+            
+            # 6. Generate and save comprehensive summary report
+            summary_report = self._generate_comprehensive_summary_report(results, timestamp)
+            summary_file = results_path / "detailed_reports" / f"optimization_summary_{timestamp}.json"
+            with open(summary_file, 'w') as f:
+                json.dump(summary_report, f, indent=2, default=str)
+            
+            # 7. Save optimization history for analysis
+            history_file = results_path / "artifacts" / f"optimization_history_{timestamp}.json"
+            with open(history_file, 'w') as f:
+                json.dump(self.optimization_history, f, indent=2, default=str)
+            
+            # 8. Create artifact manifest
+            artifact_manifest = {
+                'timestamp': timestamp,
+                'optimization_session': {
+                    'symbol': self.config.symbol,
+                    'exchange': self.config.exchange,
+                    'timeframe': self.config.timeframe,
+                    'optimization_method': self.config.optimization_method
+                },
+                'artifacts_generated': {
+                    'main_results': str(results_file),
+                    'best_lookbacks': str(lookbacks_file),
+                    'performance_metrics': str(metrics_file),
+                    'feature_analysis': str(feature_file) if 'feature_analysis' in results else None,
+                    'convergence_analysis': str(convergence_file) if 'convergence_analysis' in results else None,
+                    'summary_report': str(summary_file),
+                    'optimization_history': str(history_file)
+                },
+                'metrics_summary': {
+                    'total_evaluations': self.optimization_metrics['total_evaluations'],
+                    'best_score': self.optimization_metrics['best_score'],
+                    'optimized_indicators': len(self.best_lookbacks),
+                    'execution_time': time.time() - self.start_time if self.start_time else 0
+                }
+            }
+            
+            manifest_file = results_path / "artifacts" / f"artifact_manifest_{timestamp}.json"
+            with open(manifest_file, 'w') as f:
+                json.dump(artifact_manifest, f, indent=2, default=str)
+            
+            tprint_success(f"✅ Comprehensive results and artifacts saved to {results_path}")
+            tprint_structured({
+                'artifacts_generated': len([f for f in artifact_manifest['artifacts_generated'].values() if f]),
+                'main_results_file': str(results_file),
+                'summary_report_file': str(summary_file),
+                'artifact_manifest': str(manifest_file)
+            })
             
         except Exception as e:
             tprint_warning(f"⚠️ Failed to save results: {e}")
+    
+    def _generate_comprehensive_summary_report(self, results: Dict[str, Any], timestamp: str) -> Dict[str, Any]:
+        """Generate comprehensive summary report with all metrics and insights."""
+        try:
+            # Calculate execution statistics
+            total_duration = time.time() - self.start_time if self.start_time else 0
+            
+            summary = {
+                'report_metadata': {
+                    'report_type': 'tactician_lookback_optimization_summary',
+                    'timestamp': timestamp,
+                    'generation_time': datetime.now().isoformat(),
+                    'report_version': '1.0'
+                },
+                'optimization_session': {
+                    'configuration': {
+                        'symbol': self.config.symbol,
+                        'exchange': self.config.exchange,
+                        'timeframe': self.config.timeframe,
+                        'optimization_method': self.config.optimization_method,
+                        'lookback_range': f"{self.config.min_lookback}-{self.config.max_lookback}",
+                        'target_metrics': self.config.target_metrics
+                    },
+                    'execution_summary': {
+                        'start_time': datetime.fromtimestamp(self.start_time).isoformat() if self.start_time else None,
+                        'end_time': datetime.now().isoformat(),
+                        'total_duration_seconds': total_duration,
+                        'total_duration_formatted': f"{total_duration:.2f}s",
+                        'status': 'completed'
+                    }
+                },
+                'optimization_results': {
+                    'method_used': results.get('optimization_method', 'unknown'),
+                    'best_score_achieved': results.get('best_score', 0.0),
+                    'total_indicators_optimized': len(self.best_lookbacks),
+                    'optimized_lookbacks': self.best_lookbacks,
+                    'optimization_quality': (
+                        'excellent' if results.get('best_score', 0) > 0.8 else
+                        'good' if results.get('best_score', 0) > 0.6 else
+                        'fair' if results.get('best_score', 0) > 0.4 else 'poor'
+                    )
+                },
+                'performance_metrics': {
+                    'evaluation_statistics': {
+                        'total_evaluations': self.optimization_metrics['total_evaluations'],
+                        'successful_evaluations': self.optimization_metrics['successful_evaluations'],
+                        'failed_evaluations': self.optimization_metrics['failed_evaluations'],
+                        'success_rate': (
+                            self.optimization_metrics['successful_evaluations'] /
+                            max(1, self.optimization_metrics['total_evaluations'])
+                        ),
+                        'evaluations_per_second': (
+                            self.optimization_metrics['total_evaluations'] / max(1, total_duration)
+                        )
+                    },
+                    'convergence_metrics': results.get('convergence_analysis', {}),
+                    'feature_metrics': results.get('feature_analysis', {})
+                },
+                'insights_and_recommendations': self._generate_optimization_insights(results),
+                'artifacts_generated': results.get('artifacts', {}),
+                'next_steps': [
+                    "Use optimized lookbacks in Tactician model training",
+                    "Monitor Tactician performance with new lookback periods",
+                    "Compare performance against default lookback periods",
+                    "Consider re-optimization if market conditions change significantly"
+                ]
+            }
+            
+            return summary
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to generate summary report: {e}")
+            return {'error': str(e), 'timestamp': timestamp}
+    
+    def _generate_optimization_insights(self, results: Dict[str, Any]) -> List[str]:
+        """Generate insights and recommendations from optimization results."""
+        try:
+            insights = []
+            
+            # Score-based insights
+            best_score = results.get('best_score', 0.0)
+            if best_score > 0.8:
+                insights.append("Excellent optimization score achieved - lookback periods are well-tuned for 0.3% movements")
+            elif best_score > 0.6:
+                insights.append("Good optimization score - lookback periods should improve Tactician performance")
+            elif best_score > 0.4:
+                insights.append("Fair optimization score - consider additional feature engineering")
+            else:
+                insights.append("Low optimization score - may need different optimization approach or more data")
+            
+            # Lookback distribution insights
+            if self.best_lookbacks:
+                lookback_values = list(self.best_lookbacks.values())
+                mean_lookback = np.mean(lookback_values)
+                
+                if mean_lookback < 10:
+                    insights.append("Very short average lookback periods - optimized for high-frequency 0.3% movements")
+                elif mean_lookback < 20:
+                    insights.append("Short average lookback periods - good balance for 1m timeframe trading")
+                else:
+                    insights.append("Longer average lookback periods - may be better for trend following than 0.3% scalping")
+            
+            # Method-specific insights
+            method = results.get('optimization_method', 'unknown')
+            if method == 'two_step_grid_tpe':
+                insights.append("Used comprehensive two-step optimization - high confidence in results")
+            elif method == 'tpe':
+                insights.append("Used intelligent TPE optimization - good balance of exploration and exploitation")
+            elif method == 'grid_search':
+                insights.append("Used systematic grid search - thorough but may miss optimal regions")
+            
+            # Performance insights
+            success_rate = (
+                self.optimization_metrics['successful_evaluations'] /
+                max(1, self.optimization_metrics['total_evaluations'])
+            )
+            
+            if success_rate > 0.95:
+                insights.append("Excellent evaluation success rate - optimization process was stable")
+            elif success_rate > 0.8:
+                insights.append("Good evaluation success rate - minor issues during optimization")
+            else:
+                insights.append("Lower evaluation success rate - consider checking data quality or feature calculations")
+            
+            return insights
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to generate insights: {e}")
+            return ["Error generating insights"]
     
     async def _optimize_grid_search(
         self,
@@ -1320,6 +1601,221 @@ class TacticianLookbackOptimizer:
         except Exception as e:
             tprint_error(f"❌ TPE optimization failed: {e}")
             raise
+    
+    def _generate_detailed_performance_analysis(self, results: Dict[str, Any]) -> Dict[str, Any]:
+        """Generate detailed performance analysis with comprehensive metrics."""
+        try:
+            tprint_info("📊 Generating detailed performance analysis...")
+            
+            analysis = {
+                'optimization_efficiency': {
+                    'total_evaluations': self.optimization_metrics['total_evaluations'],
+                    'successful_evaluations': self.optimization_metrics['successful_evaluations'],
+                    'failed_evaluations': self.optimization_metrics['failed_evaluations'],
+                    'success_rate': (
+                        self.optimization_metrics['successful_evaluations'] /
+                        max(1, self.optimization_metrics['total_evaluations'])
+                    ),
+                    'failure_rate': (
+                        self.optimization_metrics['failed_evaluations'] /
+                        max(1, self.optimization_metrics['total_evaluations'])
+                    )
+                },
+                'score_distribution': {
+                    'best_score': self.optimization_metrics['best_score'],
+                    'convergence_history': self.optimization_metrics['convergence_history']
+                },
+                'optimization_method_performance': {},
+                'timing_analysis': {
+                    'total_duration': time.time() - self.start_time if self.start_time else 0,
+                    'average_evaluation_time': 0,
+                    'optimization_speed': 'fast' if self.optimization_metrics['total_evaluations'] > 50 else 'normal'
+                }
+            }
+            
+            # Calculate average evaluation time
+            if self.optimization_metrics['total_evaluations'] > 0:
+                total_time = time.time() - self.start_time if self.start_time else 1
+                analysis['timing_analysis']['average_evaluation_time'] = (
+                    total_time / self.optimization_metrics['total_evaluations']
+                )
+            
+            # Add method-specific performance analysis
+            if 'method' in results:
+                method = results['method']
+                analysis['optimization_method_performance'][method] = {
+                    'used': True,
+                    'final_score': results.get('best_score', 0.0),
+                    'evaluations': self.optimization_metrics['total_evaluations']
+                }
+                
+                if method == 'two_step_grid_tpe':
+                    # Add detailed analysis for two-step method
+                    analysis['optimization_method_performance'][method].update({
+                        'coarse_grid_evaluations': results.get('coarse_results', {}).get('total_evaluations', 0),
+                        'fine_grid_evaluations': results.get('fine_results', {}).get('total_evaluations', 0),
+                        'tpe_evaluations': results.get('tpe_results', {}).get('n_trials', 0),
+                        'coarse_best_score': results.get('coarse_results', {}).get('best_score', 0.0),
+                        'fine_best_score': results.get('fine_results', {}).get('best_score', 0.0),
+                        'tpe_best_score': results.get('tpe_results', {}).get('best_score', 0.0)
+                    })
+            
+            # Add quality assessment
+            analysis['quality_assessment'] = {
+                'optimization_quality': 'excellent' if analysis['optimization_efficiency']['success_rate'] > 0.9 else
+                                      'good' if analysis['optimization_efficiency']['success_rate'] > 0.7 else
+                                      'fair' if analysis['optimization_efficiency']['success_rate'] > 0.5 else 'poor',
+                'score_quality': 'excellent' if self.optimization_metrics['best_score'] > 0.8 else
+                               'good' if self.optimization_metrics['best_score'] > 0.6 else
+                               'fair' if self.optimization_metrics['best_score'] > 0.4 else 'poor',
+                'convergence_quality': 'good' if len(self.optimization_metrics['convergence_history']) > 10 else 'limited'
+            }
+            
+            return analysis
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to generate performance analysis: {e}")
+            return {'error': str(e)}
+    
+    def _generate_feature_analysis(self, best_lookbacks: Dict[str, int]) -> Dict[str, Any]:
+        """Generate detailed feature analysis with lookback distribution and insights."""
+        try:
+            tprint_info("📈 Generating feature analysis...")
+            
+            if not best_lookbacks:
+                return {'error': 'No optimized lookbacks available'}
+            
+            # Analyze lookback distribution
+            lookback_values = list(best_lookbacks.values())
+            
+            analysis = {
+                'lookback_statistics': {
+                    'total_indicators': len(best_lookbacks),
+                    'min_lookback': min(lookback_values),
+                    'max_lookback': max(lookback_values),
+                    'mean_lookback': np.mean(lookback_values),
+                    'median_lookback': np.median(lookback_values),
+                    'std_lookback': np.std(lookback_values),
+                    'lookback_range': max(lookback_values) - min(lookback_values)
+                },
+                'category_analysis': {},
+                'lookback_distribution': {
+                    'very_short': len([v for v in lookback_values if v <= 5]),
+                    'short': len([v for v in lookback_values if 5 < v <= 15]),
+                    'medium': len([v for v in lookback_values if 15 < v <= 30]),
+                    'long': len([v for v in lookback_values if 30 < v <= 45]),
+                    'very_long': len([v for v in lookback_values if v > 45])
+                },
+                'optimization_insights': []
+            }
+            
+            # Analyze by feature category
+            for category, indicators in self.config.feature_categories.items():
+                category_lookbacks = [best_lookbacks.get(indicator, 0) for indicator in indicators if indicator in best_lookbacks]
+                
+                if category_lookbacks:
+                    analysis['category_analysis'][category] = {
+                        'indicators_optimized': len(category_lookbacks),
+                        'mean_lookback': np.mean(category_lookbacks),
+                        'min_lookback': min(category_lookbacks),
+                        'max_lookback': max(category_lookbacks),
+                        'lookback_consistency': 1.0 - (np.std(category_lookbacks) / max(1, np.mean(category_lookbacks)))
+                    }
+            
+            # Generate insights
+            mean_lookback = analysis['lookback_statistics']['mean_lookback']
+            if mean_lookback < 10:
+                analysis['optimization_insights'].append("Very short average lookback - optimized for high-frequency trading")
+            elif mean_lookback < 20:
+                analysis['optimization_insights'].append("Short average lookback - good for 1m timeframe and 0.3% targets")
+            elif mean_lookback < 30:
+                analysis['optimization_insights'].append("Medium average lookback - balanced approach")
+            else:
+                analysis['optimization_insights'].append("Long average lookback - may be too slow for 0.3% targets")
+            
+            # Check distribution balance
+            dist = analysis['lookback_distribution']
+            if dist['very_short'] > len(best_lookbacks) * 0.5:
+                analysis['optimization_insights'].append("High proportion of very short lookbacks - may be noisy")
+            elif dist['short'] > len(best_lookbacks) * 0.5:
+                analysis['optimization_insights'].append("Good proportion of short lookbacks - well-suited for 1m trading")
+            
+            return analysis
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to generate feature analysis: {e}")
+            return {'error': str(e)}
+    
+    def _generate_convergence_analysis(self, results: Dict[str, Any]) -> Dict[str, Any]:
+        """Generate optimization convergence analysis."""
+        try:
+            tprint_info("📉 Generating convergence analysis...")
+            
+            convergence_history = self.optimization_metrics.get('convergence_history', [])
+            
+            analysis = {
+                'convergence_metrics': {
+                    'total_iterations': len(convergence_history),
+                    'converged': len(convergence_history) > 0,
+                    'convergence_rate': 'fast' if len(convergence_history) > 20 else 'normal',
+                    'final_score': convergence_history[-1] if convergence_history else 0.0,
+                    'initial_score': convergence_history[0] if convergence_history else 0.0,
+                    'improvement': (convergence_history[-1] - convergence_history[0]) if len(convergence_history) > 1 else 0.0
+                },
+                'convergence_pattern': {
+                    'monotonic_improvement': False,
+                    'plateau_detected': False,
+                    'early_convergence': False,
+                    'oscillation_detected': False
+                },
+                'optimization_stages': {}
+            }
+            
+            # Analyze convergence pattern
+            if len(convergence_history) > 5:
+                # Check for monotonic improvement
+                improvements = [convergence_history[i] > convergence_history[i-1] for i in range(1, len(convergence_history))]
+                analysis['convergence_pattern']['monotonic_improvement'] = sum(improvements) > len(improvements) * 0.7
+                
+                # Check for plateau (last 20% of iterations show little improvement)
+                plateau_start = int(len(convergence_history) * 0.8)
+                if plateau_start < len(convergence_history) - 1:
+                    plateau_scores = convergence_history[plateau_start:]
+                    plateau_variation = np.std(plateau_scores) if len(plateau_scores) > 1 else 0
+                    analysis['convergence_pattern']['plateau_detected'] = plateau_variation < 0.01
+                
+                # Check for early convergence (best score achieved in first 50% of iterations)
+                mid_point = len(convergence_history) // 2
+                best_score_index = convergence_history.index(max(convergence_history))
+                analysis['convergence_pattern']['early_convergence'] = best_score_index < mid_point
+            
+            # Add method-specific convergence analysis
+            if 'method' in results:
+                method = results['method']
+                if method == 'two_step_grid_tpe':
+                    analysis['optimization_stages'] = {
+                        'coarse_grid': {
+                            'completed': 'coarse_results' in results,
+                            'best_score': results.get('coarse_results', {}).get('best_score', 0.0),
+                            'evaluations': results.get('coarse_results', {}).get('total_evaluations', 0)
+                        },
+                        'fine_grid': {
+                            'completed': 'fine_results' in results,
+                            'best_score': results.get('fine_results', {}).get('best_score', 0.0),
+                            'evaluations': results.get('fine_results', {}).get('total_evaluations', 0)
+                        },
+                        'tpe_fine_tuning': {
+                            'completed': 'tpe_results' in results,
+                            'best_score': results.get('tpe_results', {}).get('best_score', 0.0),
+                            'trials': results.get('tpe_results', {}).get('n_trials', 0)
+                        }
+                    }
+            
+            return analysis
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to generate convergence analysis: {e}")
+            return {'error': str(e)}
 
 
 # Convenience functions for integration

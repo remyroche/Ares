@@ -10,6 +10,7 @@ candidate_src = repo_root / 'src'
 if candidate_src.exists():
     sys.path.insert(0, str(candidate_src))
 
+
 def test_hmm_regime_discovery():
     """Test HMM regime discovery with the fixed consolidated features file."""
 
@@ -76,10 +77,10 @@ def test_hmm_regime_discovery():
         print(f"   📈 Processed {len(data)} data points")
         print(f"   🎯 Regime distribution: {np.bincount(regime_labels)}")
 
-    # Simulate saving results
-    results_dir = Path('data/training')
-    results_dir.mkdir(parents=True, exist_ok=True)
-    results_file = str(results_dir / 'hmm_regime_results_test.parquet')
+        # Simulate saving results
+        results_dir = Path('data/training')
+        results_dir.mkdir(parents=True, exist_ok=True)
+        results_file = str(results_dir / 'hmm_regime_results_test.parquet')
 
         results_df = pd.DataFrame({
             'timestamp': data['timestamp'],
@@ -102,6 +103,7 @@ def test_hmm_regime_discovery():
         import traceback
         traceback.print_exc()
         return False
+
 
 if __name__ == "__main__":
     print("🚀 HMM REGIME DISCOVERY TEST")

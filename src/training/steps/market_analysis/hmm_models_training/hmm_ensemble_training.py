@@ -100,19 +100,27 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
                 config = EnsembleTrainingConfig(
                     model_name="hmm_ensemble_models",
                     timeframe="1h",
-                    model_types=["catboost", "elastic_net", "ensemble_rf"],
+                    base_models=["RandomForestClassifier", "RidgeClassifier", "LogisticRegression"],
+                    meta_model="LogisticRegression",
                     hpo_n_trials=100,
                     hpo_timeout_seconds=3600,
                     min_samples_per_regime=1000,
                     enable_data_augmentation=True,
                     augmentation_method="smote",
                     model_save_path="./models/hmm_ensemble_models",
-                    evaluation_metrics=["accuracy", "f1_score", "precision", "recall", "auc"]
+                    evaluation_metrics=["accuracy", "precision", "recall", "f1_score", "roc_auc"]
                 )
-                tprint("📋 Using default configuration for HMM ensemble training")
+                tprint("📋 Using default configuration for HMM ensemble training (classification)")
 
             # Validate configuration with fast-fail using common utilities
             self._validate_config(config)
+            
+            # Backward-compat: ensure model_types exists (used by parent/vectorized paths)
+            try:
+                if not hasattr(config, 'model_types'):
+                    setattr(config, 'model_types', getattr(config, 'base_models', []))
+            except Exception:
+                pass
             
             # Initialize parent class
             super().__init__(config, enable_vectorization=enable_vectorization and VECTORIZED_TRAINING_AVAILABLE)
@@ -122,7 +130,7 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
                 'initialization_time': time.time() - self.start_time,
                 'vectorization_enabled': self.enable_vectorization,
                 'config_used': config.model_name,
-                'model_types': config.model_types,
+                'model_types': getattr(config, 'base_models', getattr(config, 'model_types', [])),
                 'timeframe': config.timeframe,
                 'hardware_optimization': {
                     'gpu_available': self.gpu_manager is not None,
@@ -137,7 +145,7 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
             else:
                 tprint("✅ HMM Ensemble Training Component initialized (standard mode)")
                 
-            tprint(f"📊 Configuration: {len(config.model_types)} ensemble types, {config.timeframe} timeframe")
+            tprint(f"📊 Configuration: {len(getattr(config, 'base_models', getattr(config, 'model_types', [])))} base models, {config.timeframe} timeframe")
             tprint(f"🧠 Hardware: GPU={self.gpu_manager is not None}, Memory={self.memory_optimizer is not None}, CPU={self.cpu_optimizer is not None}")
             
         except Exception as e:
@@ -157,10 +165,13 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
             ValueError: If configuration is invalid
         """
         try:
-            # Validate model types - FAST FAIL
-            if not config.model_types or len(config.model_types) == 0:
-                tprint("❌ CRITICAL: No model types specified - FAILING FAST")
-                raise ValueError("At least one model type must be specified")
+            # Validate base/model types - FAST FAIL (support both base_models and model_types)
+            model_list = getattr(config, 'model_types', None)
+            if not model_list:
+                model_list = getattr(config, 'base_models', [])
+            if not model_list or len(model_list) == 0:
+                tprint("❌ CRITICAL: No base/model types specified - FAILING FAST")
+                raise ValueError("At least one base/model type must be specified")
             
             # Validate timeframe - FAST FAIL
             valid_timeframes = ["1m", "5m", "15m", "30m", "1h", "4h", "1d"]
@@ -351,14 +362,14 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
                 if 'error' not in results:
                     results = self._add_ensemble_specific_metadata(results, base_hmm_models, hmm_training_metrics)
                 
-                # Step 5: Generate comprehensive report using common utilities
-                execution_time = time.time() - execution_start_time
-                results = self._generate_comprehensive_report(results, execution_time, base_hmm_models, hmm_training_metrics)
-                
-                # Step 6: Optimize memory usage after training
-                tprint("🔄 Step 6: Optimizing memory usage...")
+                # Step 5: Optimize memory usage before generating the report so it's included
+                tprint("🔄 Step 5: Optimizing memory usage...")
                 memory_stats = optimize_memory()
                 results['memory_optimization'] = memory_stats
+
+                # Step 6: Generate comprehensive report using common utilities
+                execution_time = time.time() - execution_start_time
+                results = self._generate_comprehensive_report(results, execution_time, base_hmm_models, hmm_training_metrics)
                 
                 tprint(f"✅ HMM ensemble training completed successfully in {execution_time:.2f}s")
                 tprint(f"🧠 Memory optimization: {memory_stats}")
@@ -467,6 +478,9 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
             Training results
         """
         try:
+            # Prepare base models per regime (parent expects mapping by regime)
+            base_models_prepared = self._prepare_base_models_for_regimes(base_hmm_models, regime_labels)
+
             # Use the parent class execute method with additional ensemble-specific logic
             results = super().execute(
                 X=X,
@@ -475,7 +489,7 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
                 feature_names=feature_names,
                 hmm_states=hmm_states,
                 is_classification=True,  # HMM ensemble models are classification
-                base_models=base_hmm_models,
+                base_models=base_models_prepared,
                 symbol=None,  # Can be passed as kwargs
                 exchange=None,
                 timeframe=self.config.timeframe
@@ -502,93 +516,60 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
             Dictionary of ensemble models
         """
         try:
-            from catboost import CatBoostRegressor
-            from sklearn.linear_model import ElasticNet
-            from sklearn.ensemble import RandomForestRegressor
-            
-            # Create ensemble models with validated parameters using math validation
+            from sklearn.linear_model import LogisticRegression, RidgeClassifier
+            from sklearn.ensemble import RandomForestClassifier
+
+            # Create classification base models with validated parameters
             ensemble_models = {}
-            
-            # CatBoost with validated parameters (Primary: Speed + robustness)
+
+            # Logistic Regression
             try:
-                iterations = self.math_validator.validate_positive(1000, "CatBoost iterations")
-                learning_rate = self.math_validator.validate_range(0.05, 0.0, 1.0, "CatBoost learning_rate")
-                depth = self.math_validator.validate_positive(6, "CatBoost depth")
-                
-                ensemble_models['catboost'] = CatBoostRegressor(
-                    iterations=int(iterations),
-                    learning_rate=learning_rate,
-                    depth=int(depth),
-                    random_seed=42,
-                    verbose=False
-                )
-                tprint("✅ CatBoost model created with validated parameters")
-            except Exception as e:
-                tprint(f"⚠️ CatBoost model creation failed: {e}")
-                # Fallback to default parameters
-                ensemble_models['catboost'] = CatBoostRegressor(
-                    iterations=1000,
-                    learning_rate=0.05,
-                    depth=6,
-                    random_seed=42,
-                    verbose=False
-                )
-            
-            # Elastic Net with validated parameters (Primary: Fast baseline)
-            try:
-                alpha = self.math_validator.validate_positive(0.1, "ElasticNet alpha")
-                l1_ratio = self.math_validator.validate_range(0.5, 0.0, 1.0, "ElasticNet l1_ratio")
-                max_iter = self.math_validator.validate_positive(1000, "ElasticNet max_iter")
-                
-                ensemble_models['elastic_net'] = ElasticNet(
-                    random_state=43,
+                max_iter = self.math_validator.validate_positive(1000, "LogisticRegression max_iter")
+                C_value = self.math_validator.validate_positive(1.0, "LogisticRegression C")
+                ensemble_models['logistic_regression'] = LogisticRegression(
                     max_iter=int(max_iter),
-                    alpha=alpha,
-                    l1_ratio=l1_ratio
+                    C=float(C_value),
+                    solver='lbfgs',
+                    n_jobs=-1
                 )
-                tprint("✅ Elastic Net model created with validated parameters")
+                tprint("✅ Logistic Regression model created with validated parameters")
             except Exception as e:
-                tprint(f"⚠️ Elastic Net model creation failed: {e}")
-                # Fallback to default parameters
-                ensemble_models['elastic_net'] = ElasticNet(
-                    random_state=43,
-                    max_iter=1000,
-                    alpha=0.1,
-                    l1_ratio=0.5
-                )
-            
-            # Random Forest with validated parameters (Meta: Speed + Efficient)
+                tprint(f"⚠️ Logistic Regression model creation failed: {e}")
+                ensemble_models['logistic_regression'] = LogisticRegression(max_iter=1000, solver='lbfgs', n_jobs=-1)
+
+            # Ridge Classifier
             try:
-                n_estimators = self.math_validator.validate_positive(100, "RandomForest n_estimators")
+                alpha = self.math_validator.validate_positive(1.0, "RidgeClassifier alpha")
+                ensemble_models['ridge_classifier'] = RidgeClassifier(alpha=float(alpha), random_state=43)
+                tprint("✅ Ridge Classifier created with validated parameters")
+            except Exception as e:
+                tprint(f"⚠️ Ridge Classifier creation failed: {e}")
+                ensemble_models['ridge_classifier'] = RidgeClassifier(random_state=43)
+
+            # Random Forest Classifier
+            try:
+                n_estimators = self.math_validator.validate_positive(200, "RandomForest n_estimators")
                 max_depth = self.math_validator.validate_positive(10, "RandomForest max_depth")
                 min_samples_split = self.math_validator.validate_positive(2, "RandomForest min_samples_split")
-                
-                ensemble_models['ensemble_rf'] = RandomForestRegressor(
+                ensemble_models['random_forest'] = RandomForestClassifier(
                     n_estimators=int(n_estimators),
                     max_depth=int(max_depth),
                     min_samples_split=int(min_samples_split),
                     random_state=44,
                     n_jobs=-1
                 )
-                tprint("✅ Random Forest model created with validated parameters")
+                tprint("✅ Random Forest Classifier created with validated parameters")
             except Exception as e:
-                tprint(f"⚠️ Random Forest model creation failed: {e}")
-                # Fallback to default parameters
-                ensemble_models['ensemble_rf'] = RandomForestRegressor(
-                    n_estimators=100,
-                    max_depth=10,
-                    min_samples_split=2,
-                    random_state=44,
-                    n_jobs=-1
-                )
-            
-            tprint(f"📊 Created {len(ensemble_models)} ensemble models for HMM training using common utilities")
+                tprint(f"⚠️ Random Forest Classifier creation failed: {e}")
+                ensemble_models['random_forest'] = RandomForestClassifier(n_estimators=200, max_depth=10, min_samples_split=2, random_state=44, n_jobs=-1)
+
+            tprint(f"📊 Created {len(ensemble_models)} classification base models for HMM training")
             tprint(f"   Models: {list(ensemble_models.keys())}")
-            
+
             # Update training stats using safe operations
             self.training_stats['ensemble_models_created'] = len(ensemble_models)
-            self.training_stats['model_creation_method'] = 'common_utilities_validated'
-            
+            self.training_stats['model_creation_method'] = 'classification_validated'
+
             return ensemble_models
             
         except ImportError as e:
@@ -598,6 +579,43 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
         except Exception as e:
             tprint(f"❌ Failed to create ensemble models: {e}")
             raise RuntimeError(f"Ensemble model creation failed: {e}") from e
+
+    def _prepare_base_models_for_regimes(self, base_models: Dict[str, Any], regime_labels: np.ndarray) -> Dict[int, Dict[str, Any]]:
+        """
+        Prepare per-regime base models mapping as expected by the parent class.
+
+        Args:
+            base_models: Global base models mapping name -> estimator
+            regime_labels: Array of regime labels to determine unique regimes
+
+        Returns:
+            Dict mapping regime -> cloned base models
+        """
+        try:
+            import numpy as _np
+            unique_regimes = _np.unique(regime_labels)
+            prepared: Dict[int, Dict[str, Any]] = {}
+
+            # Try to use sklearn.clone for safety
+            try:
+                from sklearn.base import clone as sk_clone
+                def _clone_model(m):
+                    try:
+                        return sk_clone(m)
+                    except Exception:
+                        return m
+            except Exception:
+                def _clone_model(m):
+                    return m
+
+            for regime in unique_regimes:
+                prepared[regime] = {name: _clone_model(model) for name, model in (base_models or {}).items()}
+
+            return prepared
+        except Exception as e:
+            tprint(f"⚠️ Failed to prepare base models per regime: {e}")
+            # Fallback: wrap global models under a single key (may be handled by parent)
+            return {}
     
     def _generate_comprehensive_report(
         self,
@@ -1093,27 +1111,39 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
                     
                     if isinstance(regime_metrics, dict) and 'error' not in regime_metrics:
                         performance_summary['successful_evaluations'] += 1
-                        
-                        best_ensemble = None
-                        best_accuracy = -np.inf
-                        
-                        for ensemble_name, metrics in regime_metrics.items():
-                            if isinstance(metrics, dict) and 'accuracy' in metrics:
-                                accuracy = safe_float(metrics['accuracy'], 0.0)
-                                accuracies.append(accuracy)
-                                if accuracy > best_accuracy:
-                                    best_accuracy = accuracy
-                                    best_ensemble = ensemble_name
-                        
-                        if best_ensemble:
-                            best_ensembles[regime] = {
-                                'ensemble': best_ensemble,
-                                'accuracy': safe_float(best_accuracy, 0.0),
-                                'regime_samples': safe_int(regime_metrics.get('samples', 0), 0)
-                            }
-                            
-                            if best_accuracy > performance_summary['best_overall_accuracy']:
-                                performance_summary['best_overall_accuracy'] = safe_float(best_accuracy, 0.0)
+
+                        # Handle nested structure (vectorized) or flat metrics
+                        if any(isinstance(v, dict) and ('metrics' in v or 'accuracy' in v) for v in regime_metrics.values()):
+                            best_ensemble = None
+                            best_accuracy = -np.inf
+
+                            for ensemble_name, metrics in regime_metrics.items():
+                                metrics_dict = metrics.get('metrics', metrics) if isinstance(metrics, dict) else {}
+                                if isinstance(metrics_dict, dict) and 'accuracy' in metrics_dict:
+                                    accuracy = safe_float(metrics_dict['accuracy'], 0.0)
+                                    accuracies.append(accuracy)
+                                    if accuracy > best_accuracy:
+                                        best_accuracy = accuracy
+                                        best_ensemble = ensemble_name
+
+                            if best_ensemble:
+                                best_ensembles[regime] = {
+                                    'ensemble': best_ensemble,
+                                    'accuracy': safe_float(best_accuracy, 0.0)
+                                }
+                                if best_accuracy > performance_summary['best_overall_accuracy']:
+                                    performance_summary['best_overall_accuracy'] = safe_float(best_accuracy, 0.0)
+                        else:
+                            # Flat single-metrics per regime
+                            if 'accuracy' in regime_metrics:
+                                acc_val = safe_float(regime_metrics['accuracy'], 0.0)
+                                accuracies.append(acc_val)
+                                best_ensembles[regime] = {
+                                    'ensemble': 'stacking_ensemble',
+                                    'accuracy': acc_val
+                                }
+                                if acc_val > performance_summary['best_overall_accuracy']:
+                                    performance_summary['best_overall_accuracy'] = acc_val
                     else:
                         performance_summary['failed_evaluations'] += 1
                 

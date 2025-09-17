@@ -57,10 +57,18 @@ src/regime/clusters/
 
 ## 🔄 Research Workflows
 
-### 1. Dimension-First Approach
+### 1. Enhanced Dimension-First Approach
 ```
-Features → Dimension Discovery → Economic Significance → Clustering → HMM Enhancement
+Many Features → Statistical Dimensionality Analysis → Market Dimensions → Economic Relevance → Clustering → HMM Enhancement
 ```
+
+**Detailed Pipeline Steps:**
+1. **Feature Generation**: Use existing pipeline to capture many market dimensions
+2. **Statistical Analysis**: PCA, FA, ICA to discover implicit dimensions  
+3. **Market Dimension Discovery**: Group features into market dimensions (liquidity, momentum, etc.)
+4. **Economic Relevance Analysis**: Determine which dimensions influence price action
+5. **Clustering**: Apply clustering to economically relevant dimensions
+6. **HMM Enhancement**: Integrate findings with existing HMM systems
 
 ### 2. HMM-First Approach  
 ```

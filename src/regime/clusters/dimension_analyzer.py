@@ -259,8 +259,16 @@ class MarketDimensionAnalyzer:
                                                        reverse=True)]
         }
         
-        # Step 4: Pipeline coherence analysis
-        self.logger.info("📊 Step 4: Pipeline coherence analysis")
+        # Step 4: Economic relevance analysis of market dimensions
+        self.logger.info("💰 Step 4: Economic relevance analysis - which dimensions influence price action?")
+        economic_relevance_results = self._analyze_dimensions_economic_relevance(
+            market_data, feature_data, dimension_results
+        )
+        
+        pipeline_results['economic_relevance'] = economic_relevance_results
+        
+        # Step 5: Pipeline coherence analysis
+        self.logger.info("📊 Step 5: Pipeline coherence analysis")
         coherence_analysis = self._analyze_pipeline_coherence(
             feature_data, reduced_features, dimension_results, regime_labels
         )
@@ -503,6 +511,87 @@ class MarketDimensionAnalyzer:
                 recommendations.append("📉 Dimensionality reduction hurts clustering - consider using original features")
         
         return recommendations
+    
+    def _analyze_dimensions_economic_relevance(self,
+                                             market_data: pd.DataFrame,
+                                             feature_data: pd.DataFrame,
+                                             dimension_results: Dict[MarketDimension, DimensionMetrics]) -> Dict[str, Any]:
+        """
+        Analyze economic relevance of discovered dimensions for price action influence.
+        
+        This method determines which dimensions beyond volume and volatility
+        have meaningful impact on price movements and trading strategies.
+        """
+        try:
+            from .dimension_economic_relevance import analyze_all_dimensions_economic_relevance, generate_economic_relevance_report
+            
+            # Create dimension feature groups from dimension results
+            dimension_feature_groups = {}
+            for dimension, metrics in dimension_results.items():
+                dimension_features = feature_data[metrics.feature_names]
+                dimension_feature_groups[dimension.value] = dimension_features
+            
+            # Analyze economic relevance
+            relevance_results = analyze_all_dimensions_economic_relevance(
+                market_data, dimension_feature_groups
+            )
+            
+            # Generate insights about dimensions beyond volume/volatility
+            beyond_vol_volatility = {}
+            for dim_name, relevance in relevance_results.items():
+                if 'volume' not in dim_name.lower() and 'volatility' not in dim_name.lower():
+                    if relevance.overall_relevance_score > 0.15:  # Threshold for relevance
+                        beyond_vol_volatility[dim_name] = {
+                            'relevance_score': relevance.overall_relevance_score,
+                            'key_influences': [
+                                influence.value for influence, score in relevance.price_action_influences.items()
+                                if score > 0.2
+                            ],
+                            'trading_applications': relevance.trading_applications[:3]  # Top 3
+                        }
+            
+            # Create summary
+            summary = {
+                'total_dimensions_analyzed': len(relevance_results),
+                'highly_relevant_dimensions': sum(1 for r in relevance_results.values() if r.overall_relevance_score > 0.3),
+                'moderately_relevant_dimensions': sum(1 for r in relevance_results.values() if 0.15 < r.overall_relevance_score <= 0.3),
+                'dimensions_beyond_volume_volatility': beyond_vol_volatility,
+                'volume_volatility_baseline': {
+                    dim: rel.overall_relevance_score 
+                    for dim, rel in relevance_results.items() 
+                    if 'volume' in dim.lower() or 'volatility' in dim.lower()
+                }
+            }
+            
+            # Generate comprehensive report
+            economic_report = generate_economic_relevance_report(relevance_results)
+            
+            self.logger.info(f"💰 Economic relevance analysis completed:")
+            self.logger.info(f"   📊 {summary['total_dimensions_analyzed']} dimensions analyzed")
+            self.logger.info(f"   🟢 {summary['highly_relevant_dimensions']} highly relevant")
+            self.logger.info(f"   🟡 {summary['moderately_relevant_dimensions']} moderately relevant")
+            self.logger.info(f"   🔍 {len(beyond_vol_volatility)} relevant beyond volume/volatility")
+            
+            if beyond_vol_volatility:
+                self.logger.info("   🎯 Dimensions beyond volume/volatility with price action influence:")
+                for dim, data in beyond_vol_volatility.items():
+                    self.logger.info(f"      - {dim}: {data['relevance_score']:.3f}")
+            else:
+                self.logger.info("   ⚠️ No dimensions beyond volume/volatility show significant relevance")
+            
+            return {
+                'relevance_results': {dim: rel.to_dict() for dim, rel in relevance_results.items()},
+                'summary': summary,
+                'economic_relevance_report': economic_report,
+                'beyond_volume_volatility_insights': beyond_vol_volatility
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Economic relevance analysis failed: {e}")
+            return {
+                'error': str(e),
+                'summary': {'total_dimensions_analyzed': 0}
+            }
     
     def _generate_features_from_pipeline(self, market_data: pd.DataFrame) -> pd.DataFrame:
         """Generate features using the existing feature engineering pipeline."""

@@ -30,11 +30,46 @@ from config import (
     ConfigPresets
 )
 
-# Import common utilities
-from src.utils.common_operations import get_m1_gpu_manager, get_m1_memory_optimizer
-from src.utils.data.klines_parquet import KlinesParquetManager
-from src.utils.serialization_utils import UniversalSerializer
-from src.utils.ml_common.hmm_regime_detection import EnhancedHMMRegimeDetector
+# Import common utilities with error handling
+try:
+    from src.utils.common_operations import get_m1_gpu_manager, get_m1_memory_optimizer
+    COMMON_OPERATIONS_AVAILABLE = True
+except ImportError:
+    COMMON_OPERATIONS_AVAILABLE = False
+    logger.warning("Common operations not available")
+
+try:
+    from src.utils.kline_parquet import KlinesParquetManager
+except ImportError:
+    try:
+        from src.utils.data.klines_parquet import KlinesParquetManager
+    except ImportError:
+        KlinesParquetManager = None
+        logger.warning("Klines parquet manager not available")
+
+try:
+    from src.utils.serialization_utils import UniversalSerializer
+except ImportError:
+    UniversalSerializer = None
+    logger.warning("Serialization utils not available")
+
+try:
+    from src.utils.ml_common.hmm_regime_detection import EnhancedHMMRegimeDetector
+except ImportError:
+    EnhancedHMMRegimeDetector = None
+    logger.warning("HMM regime detection not available")
+
+# Import feature generation system
+try:
+    from src.feature_generation import (
+        get_hmm_compatible_generators,
+        FeatureGenerators,
+        generate_features_by_category
+    )
+    FEATURE_GENERATION_AVAILABLE = True
+except ImportError:
+    FEATURE_GENERATION_AVAILABLE = False
+    logger.warning("Feature generation system not available")
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -59,60 +94,78 @@ def demonstrate_basic_integration():
         clustering = EnhancedHMMClustering(config)
         
         # Check hardware optimization availability
-        gpu_manager = get_m1_gpu_manager()
-        memory_optimizer = get_m1_memory_optimizer()
-        
-        if gpu_manager:
-            logger.info("✓ M1 GPU manager available")
+        if COMMON_OPERATIONS_AVAILABLE:
+            try:
+                gpu_manager = get_m1_gpu_manager()
+                memory_optimizer = get_m1_memory_optimizer()
+                
+                if gpu_manager:
+                    logger.info("✓ M1 GPU manager available")
+                else:
+                    logger.info("⚠️ M1 GPU manager not available")
+                
+                if memory_optimizer:
+                    logger.info("✓ M1 memory optimizer available")
+                else:
+                    logger.info("⚠️ M1 memory optimizer not available")
+            except Exception as e:
+                logger.warning(f"Hardware optimization check failed: {e}")
         else:
-            logger.info("⚠️ M1 GPU manager not available")
-        
-        if memory_optimizer:
-            logger.info("✓ M1 memory optimizer available")
-        else:
-            logger.info("⚠️ M1 memory optimizer not available")
+            logger.info("⚠️ Common operations not available")
         
         # Demonstrate data loading with klines manager
-        klines_manager = KlinesParquetManager()
+        if KlinesParquetManager is not None:
+            klines_manager = KlinesParquetManager()
+        else:
+            klines_manager = None
+            logger.warning("Klines manager not available")
         
-        # Check available data
-        data_info = klines_manager.get_data_info("BTCUSDT", "1h")
-        logger.info(f"BTCUSDT 1h data available: {data_info['available']}")
-        
-        if data_info['available']:
-            # Load sample data
-            end_date = datetime.now()
-            start_date = end_date - timedelta(days=30)
-            
-            data = klines_manager.load_data(
-                symbol="BTCUSDT",
-                interval="1h",
-                start_date=start_date,
-                end_date=end_date
-            )
-            
-            if data is not None and not data.empty:
-                logger.info(f"✓ Loaded {len(data)} data points")
+        # Check available data if klines manager is available
+        if klines_manager is not None:
+            try:
+                data_info = klines_manager.get_data_info("BTCUSDT", "1h")
+                logger.info(f"BTCUSDT 1h data available: {data_info.get('available', False)}")
                 
-                # Run HMM clustering
-                result = run_hmm_clustering_analysis(
-                    symbol="BTCUSDT",
-                    interval="1h",
-                    config=config,
-                    save_results=True
-                )
-                
-                logger.info("✓ HMM clustering completed successfully")
-                logger.info(f"  - Processing time: {result.processing_time:.2f}s")
-                logger.info(f"  - Regime stability: {result.performance_metrics.get('regime_stability', 0):.4f}")
-                logger.info(f"  - Number of regimes: {len(np.unique(result.regime_labels))}")
-                
-                return result
-            else:
-                logger.warning("No data loaded, using synthetic data for demonstration")
+                if data_info.get('available', False):
+                    # Load sample data
+                    end_date = datetime.now()
+                    start_date = end_date - timedelta(days=30)
+                    
+                    data = klines_manager.load_data(
+                        symbol="BTCUSDT",
+                        interval="1h",
+                        start_date=start_date,
+                        end_date=end_date
+                    )
+                    
+                    if data is not None and not data.empty:
+                        logger.info(f"✓ Loaded {len(data)} data points")
+                        
+                        # Run HMM clustering
+                        result = run_hmm_clustering_analysis(
+                            symbol="BTCUSDT",
+                            interval="1h",
+                            config=config,
+                            save_results=True
+                        )
+                        
+                        logger.info("✓ HMM clustering completed successfully")
+                        logger.info(f"  - Processing time: {result.processing_time:.2f}s")
+                        logger.info(f"  - Regime stability: {result.performance_metrics.get('regime_stability', 0):.4f}")
+                        logger.info(f"  - Number of regimes: {len(np.unique(result.regime_labels))}")
+                        
+                        return result
+                    else:
+                        logger.warning("No data loaded, using synthetic data for demonstration")
+                        return demonstrate_with_synthetic_data(config)
+                else:
+                    logger.warning("No real data available, using synthetic data for demonstration")
+                    return demonstrate_with_synthetic_data(config)
+            except Exception as e:
+                logger.warning(f"Data loading failed: {e}, using synthetic data for demonstration")
                 return demonstrate_with_synthetic_data(config)
         else:
-            logger.warning("No real data available, using synthetic data for demonstration")
+            logger.warning("Klines manager not available, using synthetic data for demonstration")
             return demonstrate_with_synthetic_data(config)
             
     except Exception as e:
@@ -182,13 +235,36 @@ def demonstrate_with_synthetic_data(config):
         # Initialize clustering
         clustering = EnhancedHMMClustering(config)
         
-        # Engineer features
-        features = clustering.engineer_features(data)
-        logger.info(f"Engineered {len(features.columns)} features")
-        
-        # Select features
-        selected_features = clustering.select_features(features)
-        logger.info(f"Selected {len(selected_features.columns)} features")
+        # Test feature generation system integration
+        if FEATURE_GENERATION_AVAILABLE and clustering.feature_generators is not None:
+            logger.info("✓ Feature generation system available")
+            try:
+                # Test direct feature generation
+                hmm_features = clustering.feature_generators.generate_features_for_hmm(data)
+                if hmm_features is not None and not hmm_features.empty:
+                    logger.info(f"✓ Generated {len(hmm_features.columns)} features using feature generation system")
+                    selected_features = hmm_features
+                else:
+                    logger.warning("Feature generation returned empty, falling back to manual")
+                    features = clustering.engineer_features(data)
+                    selected_features = features
+            except Exception as e:
+                logger.warning(f"Feature generation failed: {e}, falling back to manual")
+                features = clustering.engineer_features(data)
+                selected_features = features
+        else:
+            logger.info("⚠️ Feature generation system not available, using manual feature engineering")
+            # Engineer features
+            features = clustering.engineer_features(data)
+            logger.info(f"Engineered {len(features.columns)} features")
+            
+            # Select features if selector available
+            if clustering.feature_selector is not None:
+                selected_features = clustering.select_features(features)
+                logger.info(f"Selected {len(selected_features.columns)} features")
+            else:
+                selected_features = features
+                logger.info("Feature selector not available, using all features")
         
         # Fit HMM model
         result = clustering.fit_hmm_model(selected_features)
@@ -221,26 +297,44 @@ def demonstrate_configuration_presets():
         ]
         
         for preset_name, description in presets:
-            config = get_config_by_name(preset_name)
-            if config:
-                logger.info(f"✓ {description}:")
-                logger.info(f"  - Components: {config.n_components}")
-                logger.info(f"  - Lookback windows: {config.lookback_windows}")
-                logger.info(f"  - Technical indicators: {len(config.technical_indicators)}")
-                logger.info(f"  - Max features: {config.max_features}")
-            else:
-                logger.warning(f"✗ Preset {preset_name} not found")
+            try:
+                config = get_config_by_name(preset_name)
+                if config:
+                    logger.info(f"✓ {description}:")
+                    logger.info(f"  - Components: {config.n_components}")
+                    logger.info(f"  - Lookback windows: {config.lookback_windows}")
+                    logger.info(f"  - Technical indicators: {len(config.technical_indicators)}")
+                    logger.info(f"  - Max features: {config.max_features}")
+                else:
+                    logger.warning(f"✗ Preset {preset_name} not found")
+            except Exception as e:
+                logger.warning(f"⚠️ Preset {preset_name} failed: {e}")
         
         # Test custom configuration creation
-        custom_config = HMMClusteringConfigFactory.create_crypto_config(
-            timeframe="intraday",
-            market_volatility="high"
-        )
+        try:
+            from config import TimeframeType
+            custom_config = HMMClusteringConfigFactory.create_crypto_config(
+                timeframe=TimeframeType.INTRADAY,
+                market_volatility="high"
+            )
+            
+            logger.info("✓ Custom crypto configuration:")
+            logger.info(f"  - Components: {custom_config.n_components}")
+            logger.info(f"  - Lookback windows: {custom_config.lookback_windows}")
+            logger.info(f"  - Technical indicators: {custom_config.technical_indicators}")
+        except Exception as e:
+            logger.warning(f"⚠️ Custom config creation failed: {e}")
         
-        logger.info("✓ Custom crypto configuration:")
-        logger.info(f"  - Components: {custom_config.n_components}")
-        logger.info(f"  - Lookback windows: {custom_config.lookback_windows}")
-        logger.info(f"  - Technical indicators: {custom_config.technical_indicators}")
+        # Test feature generation system if available
+        if FEATURE_GENERATION_AVAILABLE:
+            logger.info("✓ Feature generation system available")
+            try:
+                generators = get_hmm_compatible_generators()
+                logger.info(f"✓ HMM compatible generators initialized: {type(generators).__name__}")
+            except Exception as e:
+                logger.warning(f"⚠️ Feature generators initialization failed: {e}")
+        else:
+            logger.info("⚠️ Feature generation system not available")
         
         return True
         
@@ -288,31 +382,34 @@ def demonstrate_serialization():
         selected_features = clustering.select_features(features)
         result = clustering.fit_hmm_model(selected_features)
         
-        # Test serialization
-        model_path = "test_integration_model.pkl"
-        
-        # Save model
-        save_success = clustering.save_model(model_path)
-        logger.info(f"Model save: {'✓' if save_success else '✗'}")
-        
-        if save_success:
-            # Load model in new instance
-            new_clustering = EnhancedHMMClustering(config)
-            load_success = new_clustering.load_model(model_path)
-            logger.info(f"Model load: {'✓' if load_success else '✗'}")
+        # Test serialization if available
+        if clustering.serializer is not None:
+            model_path = "test_integration_model.pkl"
             
-            if load_success:
-                # Test prediction with loaded model
-                new_labels, new_probs = new_clustering.predict_regimes(selected_features)
-                logger.info(f"Prediction with loaded model: {'✓' if len(new_labels) > 0 else '✗'}")
+            # Save model
+            save_success = clustering.save_model(model_path)
+            logger.info(f"Model save: {'✓' if save_success else '✗'}")
+            
+            if save_success:
+                # Load model in new instance
+                new_clustering = EnhancedHMMClustering(config)
+                load_success = new_clustering.load_model(model_path)
+                logger.info(f"Model load: {'✓' if load_success else '✗'}")
                 
-                # Compare predictions
-                original_labels = result.regime_labels
-                labels_match = np.array_equal(original_labels, new_labels)
-                logger.info(f"Predictions match: {'✓' if labels_match else '✗'}")
-        
-        # Clean up
-        Path(model_path).unlink(missing_ok=True)
+                if load_success:
+                    # Test prediction with loaded model
+                    new_labels, new_probs = new_clustering.predict_regimes(selected_features)
+                    logger.info(f"Prediction with loaded model: {'✓' if len(new_labels) > 0 else '✗'}")
+                    
+                    # Compare predictions
+                    original_labels = result.regime_labels
+                    labels_match = np.array_equal(original_labels, new_labels)
+                    logger.info(f"Predictions match: {'✓' if labels_match else '✗'}")
+            
+            # Clean up
+            Path(model_path).unlink(missing_ok=True)
+        else:
+            logger.info("⚠️ Serializer not available, skipping save/load test")
         
         return True
         

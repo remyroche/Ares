@@ -18,6 +18,14 @@ from ..utils.validation import validate_market_data
 
 logger = system_logger.getChild('DataIntegration')
 
+class TradingDataExporter:
+    """
+    Exports trading data for use in training pipeline.
+    """
+    
+    def __init__(self):
+        self.logger = logger.getChild('TradingDataExporter')
+
 class DataSyncManager:
     """
     Manages data synchronization between trading and training pipelines.

@@ -45,10 +45,15 @@ The `src/trading/` module has been fully implemented with comprehensive function
 - `execution/paper_trader.py`: Enhanced paper trading with monitoring
 - `execution/paper_trading_integration.py`: Integration utilities
 
-#### **Monitoring System**
+#### **Monitoring & Reporting System**
 - `monitoring/trade_monitor.py`: Real-time trade monitoring
+- `monitoring/comprehensive_trade_monitor.py`: **Detailed trade metrics with ML explanations**
+- `reporting/performance_reporter.py`: **Comprehensive performance reporting**
+- `reporting/dashboard_generator.py`: **Live interactive dashboards**
+- `reporting/trade_analyzer.py`: **Individual trade analysis with SHAP/LIME**
 - Integration with enhanced monitoring orchestrator
-- Comprehensive performance tracking
+- **SHAP/LIME explanations for every trade**
+- **Complete ML model performance tracking**
 
 ### 3. Thorough Logging with tprint ✅
 
@@ -178,7 +183,15 @@ await sync_with_training_pipeline(trading_data)
 - Multi-timeframe data processing
 - Real-time regime detection
 - Live signal generation
-- Continuous performance monitoring
+- **Comprehensive real-time monitoring with detailed trade metrics**
+
+### **Advanced Monitoring & Reporting**
+- **Detailed trade metrics**: ML models used, SHAP explanations, confidence scores, PnL
+- **SHAP/LIME explanations**: For every trade decision and model prediction
+- **Live interactive dashboards**: Real-time performance tracking and visualization
+- **Comprehensive reporting**: Session, daily, weekly, and monthly reports
+- **Individual trade analysis**: Deep dive into each trade with quality scoring
+- **Model performance tracking**: Accuracy, contribution, and effectiveness analysis
 
 ### **ML Integration**
 - HMM regime detection with 25+ regimes

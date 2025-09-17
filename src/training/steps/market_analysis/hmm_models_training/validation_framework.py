@@ -12,6 +12,9 @@ from enum import Enum
 import warnings
 
 from src.utils.tprint import tprint
+from src.utils.common_operations import safe_divide, safe_float, safe_int
+from src.utils.math_validation import validate_finite, validate_positive, validate_range
+from src.utils.common_utilities import safe_convert_dtypes, calculate_data_quality_metrics
 
 # Using tprint for all logging - no logger needed
 
@@ -65,12 +68,11 @@ class HMMTrainingValidator:
         """
         self.validation_level = validation_level
         self.early_exit = early_exit
-        self.logger = logger.getChild('HMMTrainingValidator')
         
         # Validation thresholds based on level
         self.thresholds = self._get_thresholds()
         
-        self.logger.info(f"✅ Enhanced HMM Training Validator initialized (level: {validation_level.value}, early_exit: {early_exit})")
+        tprint(f"✅ Enhanced HMM Training Validator initialized (level: {validation_level.value}, early_exit: {early_exit})")
     
     def _get_thresholds(self) -> Dict[str, Any]:
         """Get validation thresholds based on validation level."""
@@ -121,7 +123,7 @@ class HMMTrainingValidator:
         Returns:
             ValidationReport with detailed results
         """
-        self.logger.info("🔄 Starting comprehensive input validation...")
+        tprint("🔄 Starting comprehensive input validation...")
         
         checks = []
         
@@ -147,7 +149,7 @@ class HMMTrainingValidator:
         if self.early_exit:
             critical_failures = [check for check in checks if check.result == ValidationResult.FAIL and check.severity == "critical"]
             if critical_failures:
-                self.logger.error(f"❌ Early exit due to critical failures: {[f.name for f in critical_failures]}")
+                tprint(f"❌ Early exit due to critical failures: {[f.name for f in critical_failures]}")
                 return ValidationReport(
                     overall_result=ValidationResult.FAIL,
                     checks=critical_failures,
@@ -159,7 +161,7 @@ class HMMTrainingValidator:
         # Generate report
         report = self._generate_validation_report(checks)
         
-        self.logger.info(f"✅ Enhanced input validation completed: {report.overall_result.value}")
+        tprint(f"✅ Enhanced input validation completed: {report.overall_result.value}")
         return report
     
     def _validate_data_types(
@@ -673,7 +675,7 @@ class HMMTrainingValidator:
         Returns:
             ValidationReport for model results
         """
-        self.logger.info("🔄 Validating model training results...")
+        tprint("🔄 Validating model training results...")
         
         checks = []
         
@@ -764,7 +766,7 @@ class HMMTrainingValidator:
         # Generate report
         report = self._generate_validation_report(checks)
         
-        self.logger.info(f"✅ Model results validation completed: {report.overall_result.value}")
+        tprint(f"✅ Model results validation completed: {report.overall_result.value}")
         return report
 
 

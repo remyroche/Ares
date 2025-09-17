@@ -14,6 +14,10 @@ from pathlib import Path
 import warnings
 
 from src.utils.tprint import tprint
+from src.utils.logger import system_logger
+
+# Module logger
+logger = system_logger.getChild('HMMTrainingReporting')
 
 # Using tprint for all logging - no logger needed
 

@@ -12,6 +12,10 @@ from enum import Enum
 import warnings
 
 from src.utils.tprint import tprint
+from src.utils.logger import system_logger
+
+# Module logger
+logger = system_logger.getChild('HMMTrainingValidation')
 
 # Using tprint for all logging - no logger needed
 

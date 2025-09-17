@@ -582,8 +582,10 @@ class EnsembleTrainingStep(BaseTrainingStep):
         # Get base models
         base_models = kwargs.get('base_models')
         if base_models is None or not base_models:
-            self.logger.warning("⚠️ No base models provided, using mock models")
-            base_models = self._create_mock_base_models()
+            self.logger.warning("⚠️ No base models provided; proceeding to standard training path")
+            return self._execute_standard_training(
+                X, y, regime_labels, feature_names, hmm_states, **kwargs
+            )
 
         # Use vectorized ensemble training
         vectorized_results = self.vectorized_manager.vectorized_ensemble_training(

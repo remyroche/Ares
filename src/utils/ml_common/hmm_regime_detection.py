@@ -123,6 +123,17 @@ class HMMRegimeConfig:
     blank_mode_max_regimes: int = 5
     full_mode_max_regimes: int = 150
     
+    # Debug and logging configuration
+    debug_mode: bool = False
+    verbose_logging: bool = False
+    log_level: str = "INFO"  # DEBUG, INFO, WARNING, ERROR
+    
+    # Performance configuration
+    batch_size: Optional[int] = None  # Auto-configure based on memory if None
+    max_batch_size: int = 50000
+    min_batch_size: int = 1000
+    memory_threshold_gb: float = 4.0  # Switch to batching above this memory usage
+    
     def get_max_regimes_for_mode(self, mode: str) -> int:
         """Get the maximum number of regimes allowed for a given mode."""
         mode = mode.lower() if mode else 'light'
@@ -180,9 +191,20 @@ class EnhancedHMMRegimeDetector:
         start_time = time.time()
         
         self.config = config or HMMRegimeConfig()
+        
+        # Configure logging level based on config
+        if self.config.debug_mode or self.config.verbose_logging:
+            log_level = getattr(logging, self.config.log_level.upper(), logging.INFO)
+            self.logger.setLevel(log_level)
+        
         self.logger.info(f"📊 Configuration loaded: {self.config.method.value}")
         self.logger.info(f"📊 HMM components: {self.config.n_components}")
         self.logger.info(f"📊 Covariance type: {self.config.covariance_type}")
+        
+        if self.config.debug_mode:
+            self.logger.info(f"🐛 Debug mode enabled with log level: {self.config.log_level}")
+        if self.config.verbose_logging:
+            self.logger.info(f"📝 Verbose logging enabled")
         
         # Initialize utility managers
         self.logger.debug("🔧 Initializing utility managers...")
@@ -220,6 +242,49 @@ class EnhancedHMMRegimeDetector:
             'regime_history': [],
             'stability_score': 0.0
         }
+
+    def _debug_log(self, message: str) -> None:
+        """Log debug messages only if debug mode is enabled."""
+        if self.config.debug_mode:
+            self.logger.debug(message)
+        elif self.config.verbose_logging:
+            self.logger.info(message)
+    
+    def _calculate_optimal_batch_size(self, data_size: int, n_features: int) -> int:
+        """Calculate optimal batch size based on data size, features, and available memory."""
+        if self.config.batch_size is not None:
+            # Use user-specified batch size, but clamp to reasonable bounds
+            return max(self.config.min_batch_size, 
+                      min(self.config.max_batch_size, self.config.batch_size))
+        
+        # Auto-calculate based on memory and data characteristics
+        try:
+            import psutil
+            available_memory_gb = psutil.virtual_memory().available / (1024**3)
+            
+            # Estimate memory per sample (features * 8 bytes for float64 * safety factor)
+            memory_per_sample = n_features * 8 * 2  # 2x safety factor
+            
+            # Calculate batch size to use ~25% of available memory
+            target_memory_gb = min(available_memory_gb * 0.25, self.config.memory_threshold_gb)
+            optimal_batch_size = int(target_memory_gb * (1024**3) / memory_per_sample)
+            
+            # Clamp to reasonable bounds
+            optimal_batch_size = max(self.config.min_batch_size,
+                                   min(self.config.max_batch_size, optimal_batch_size))
+            
+            self.logger.info(f"📊 Auto-configured batch size: {optimal_batch_size} "
+                           f"(available memory: {available_memory_gb:.1f}GB, "
+                           f"features: {n_features})")
+            
+            return optimal_batch_size
+            
+        except ImportError:
+            self.logger.warning("⚠️ psutil not available, using default batch size")
+            return 20000  # Conservative default
+        except Exception as e:
+            self.logger.warning(f"⚠️ Failed to calculate optimal batch size: {e}")
+            return 20000  # Conservative default
 
     def _initialize_utilities(self):
         """Initialize utility managers."""
@@ -318,11 +383,11 @@ class EnhancedHMMRegimeDetector:
         Returns:
             DataFrame with regime labels and metadata
         """
-        self.logger.info(f"🔍 DEBUG: detect_regimes called with method={method}, mode={mode}")
-        self.logger.info(f"🔍 DEBUG: Input data shape: {data.shape if hasattr(data, 'shape') else 'No shape'}")
+        self._debug_log(f"🔍 DEBUG: detect_regimes called with method={method}, mode={mode}")
+        self._debug_log(f"🔍 DEBUG: Input data shape: {data.shape if hasattr(data, 'shape') else 'No shape'}")
 
         method = method or self.config.method
-        self.logger.info(f"🔍 DEBUG: Using method: {method}")
+        self._debug_log(f"🔍 DEBUG: Using method: {method}")
         config = config or self.config
         optimization_mode = mode  # Local variable for optimization mode
         start_time = time.time()
@@ -358,18 +423,24 @@ class EnhancedHMMRegimeDetector:
             validation_results = self._validate_regime_quality(regimes_df, data)
             
             # Update performance stats
-            self.logger.info(f"🔍 DEBUG: Updating performance stats...")
+            self._debug_log(f"🔍 DEBUG: Updating performance stats...")
             self._update_performance_stats(start_time, len(regimes_df))
-            self.logger.info(f"🔍 DEBUG: Performance stats updated")
+            self._debug_log(f"🔍 DEBUG: Performance stats updated")
 
             self.logger.info(f"✅ Detected {len(regimes_df)} regimes using {method.value}")
-            self.logger.info(f"🔍 DEBUG: detect_regimes method completing, returning DataFrame with shape: {regimes_df.shape}")
-            self.logger.info(f"🔍 DEBUG: Result columns: {list(regimes_df.columns)}")
+            self._debug_log(f"🔍 DEBUG: detect_regimes method completing, returning DataFrame with shape: {regimes_df.shape}")
+            self._debug_log(f"🔍 DEBUG: Result columns: {list(regimes_df.columns)}")
             return regimes_df
             
-        except Exception as e:
+        except (ValueError, RuntimeError) as e:
             self.logger.error(f"❌ Failed to detect regimes: {e}")
             raise
+        except ImportError as e:
+            self.logger.error(f"❌ Missing required dependencies for regime detection: {e}")
+            raise RuntimeError(f"HMM regime detection requires additional dependencies: {e}") from e
+        except Exception as e:
+            self.logger.error(f"❌ Unexpected error in regime detection: {e}")
+            raise RuntimeError(f"Unexpected error in HMM regime detection: {e}") from e
 
     def _detect_hmm_gaussian_regimes(
         self,
@@ -415,7 +486,7 @@ class EnhancedHMMRegimeDetector:
             self.logger.warning(f"⚠️ Found {nan_count} NaN values in numeric data, using forward/backward fill. Locations: {nan_location_str}")
 
             # Use forward fill, then backward fill for remaining NaN values
-            numeric_data = numeric_data.fillna(method='ffill').fillna(method='bfill')
+            numeric_data = numeric_data.ffill().bfill()
 
             # If still have NaN values (e.g., all values in column are NaN), fill with column mean
             numeric_data = numeric_data.fillna(numeric_data.mean())
@@ -428,15 +499,19 @@ class EnhancedHMMRegimeDetector:
             enhanced_data = self._create_enhanced_features(numeric_data)
             numeric_data = enhanced_data
             self.logger.info(f"✅ Enhanced features created: {numeric_data.shape[1]} features")
+        except (KeyError, ValueError, TypeError) as e:
+            self.logger.warning(f"⚠️ Feature engineering failed due to data issue, using original data: {e}")
         except Exception as e:
-            self.logger.warning(f"⚠️ Feature engineering failed, using original data: {e}")
+            self.logger.warning(f"⚠️ Unexpected error in feature engineering, using original data: {e}")
 
         # Data normalization for HMM stability
         try:
             numeric_data = self._normalize_hmm_data(numeric_data)
             self.logger.info("✅ Data normalized for HMM training")
+        except (ValueError, TypeError, AttributeError) as e:
+            self.logger.warning(f"⚠️ Data normalization failed due to data issue: {e}")
         except Exception as e:
-            self.logger.warning(f"⚠️ Data normalization failed: {e}")
+            self.logger.warning(f"⚠️ Unexpected error in data normalization: {e}")
 
         # Safety: ensure numeric-only after engineering
         numeric_data = numeric_data.select_dtypes(include=[np.number])
@@ -451,7 +526,7 @@ class EnhancedHMMRegimeDetector:
         # Check for infinite values
         if np.any(np.isinf(numeric_data.values)):
             self.logger.warning("⚠️ Found infinite values in data, replacing with finite values")
-            numeric_data = numeric_data.replace([np.inf, -np.inf], np.nan).fillna(method='ffill').fillna(method='bfill').fillna(0)
+            numeric_data = numeric_data.replace([np.inf, -np.inf], np.nan).ffill().bfill().fillna(0)
 
         # Ensure data covariance is positive-definite for stable HMM fitting
         # This must be done BEFORE any HMM training attempts
@@ -955,8 +1030,11 @@ class EnhancedHMMRegimeDetector:
             regime_labels = model.predict(numeric_data)
             predict_time = time.time() - predict_start
             self.logger.info(f"✅ Regime prediction completed in {predict_time:.2f}s")
+        except (AttributeError, ValueError) as e:
+            self.logger.error(f"❌ HMM prediction failed due to model or data issue: {e}")
+            raise RuntimeError(f"HMM prediction failed: {e}") from e
         except Exception as e:
-            self.logger.error(f"❌ HMM prediction failed: {e}")
+            self.logger.error(f"❌ Unexpected error during HMM prediction: {e}")
             raise RuntimeError(f"HMM prediction failed: {e}") from e
 
         # Handle length mismatch due to feature engineering
@@ -965,12 +1043,25 @@ class EnhancedHMMRegimeDetector:
 
         if processed_length != original_length:
             self.logger.warning(f"⚠️ Length mismatch: original {original_length}, processed {processed_length}")
-            # Create regime labels for original length, using the last regime for missing data
-            extended_regime_labels = np.full(original_length, regime_labels[-1] if len(regime_labels) > 0 else 0)
+            
+            # Use interpolation instead of filling with last value to avoid data leakage
+            extended_regime_labels = np.full(original_length, np.nan)
+            
             # Map processed data indices back to original data
             processed_indices = numeric_data.index
             extended_regime_labels[processed_indices] = regime_labels
-            regime_labels = extended_regime_labels
+            
+            # Forward fill for initial missing values, then backward fill
+            extended_series = pd.Series(extended_regime_labels)
+            extended_series = extended_series.ffill().bfill()
+            
+            # If still NaN (shouldn't happen with proper forward/backward fill), use mode
+            if extended_series.isna().any():
+                mode_value = pd.Series(regime_labels).mode()
+                fill_value = mode_value[0] if len(mode_value) > 0 else 0
+                extended_series = extended_series.fillna(fill_value)
+            
+            regime_labels = extended_series.values.astype(int)
 
         # Create result DataFrame
         result = data.copy()
@@ -985,9 +1076,12 @@ class EnhancedHMMRegimeDetector:
                     self.logger.info("⚡ Using parallel processing and memory optimization for performance")
                     start_time = time.time()
 
+                    # Calculate optimal batch size for this dataset
+                    optimal_batch_size = self._calculate_optimal_batch_size(len(numeric_data), numeric_data.shape[1])
+                    
                     # Use optimized batched prediction with parallel processing for very large datasets
                     probabilities = self._optimized_batched_predict_proba(
-                        model, numeric_data, batch_size=20000, use_parallel=True
+                        model, numeric_data, batch_size=optimal_batch_size, use_parallel=True
                     )
                     # Apply temperature scaling and Dirichlet smoothing to reduce overconfidence
                     temperature = 1.3
@@ -1031,20 +1125,20 @@ class EnhancedHMMRegimeDetector:
                         self.logger.warning(f"⚠️ One regime dominates ({max_regime_share:.1%}) - check model fit")
 
                     self.logger.info(f"📊 Prediction quality: max_prob={max_prob_mean:.3f}, entropy={entropy_mean:.3f}")
-                    self.logger.info(f"🔍 DEBUG: Completed optimized prediction quality assessment")
+                    self._debug_log(f"🔍 DEBUG: Completed optimized prediction quality assessment")
 
                     # Add detailed entropy analysis
                     entropy_std = np.std(result['regime_probability_entropy'])
-                    self.logger.info(f"🔍 DEBUG: Entropy stats - mean: {entropy_mean:.4f}, std: {entropy_std:.4f}, min: {np.min(result['regime_probability_entropy']):.4f}, max: {np.max(result['regime_probability_entropy']):.4f}")
+                    self._debug_log(f"🔍 DEBUG: Entropy stats - mean: {entropy_mean:.4f}, std: {entropy_std:.4f}, min: {np.min(result['regime_probability_entropy']):.4f}, max: {np.max(result['regime_probability_entropy']):.4f}")
 
                     # Check regime distribution
                     regime_dist = np.mean(probabilities, axis=0)
-                    self.logger.info(f"🔍 DEBUG: Regime distribution: {regime_dist}")
-                    self.logger.info(f"🔍 DEBUG: Max regime share: {np.max(regime_dist):.1%}")
+                    self._debug_log(f"🔍 DEBUG: Regime distribution: {regime_dist}")
+                    self._debug_log(f"🔍 DEBUG: Max regime share: {np.max(regime_dist):.1%}")
 
                 else:
                     self.logger.info(f"🔢 Computing probabilistic predictions for {len(numeric_data)} samples across {config.n_components} regimes...")
-                    self.logger.info(f"🔍 DEBUG: Starting batched prediction for large dataset")
+                    self._debug_log(f"🔍 DEBUG: Starting batched prediction for large dataset")
                     start_time = time.time()
 
                     # For large datasets, predict_proba can be slow - add batching for better memory management
@@ -1217,7 +1311,7 @@ class EnhancedHMMRegimeDetector:
 
         # Handle NaN values created by rolling operations - DON'T drop rows to preserve length
         # Instead, fill with forward/backward fill or zeros
-        df = df.fillna(method='ffill').fillna(method='bfill').fillna(0)
+        df = df.ffill().bfill().fillna(0)
 
         # Debug: Check for problematic calculations and known problematic columns
         self.logger.info(f"Features created: {list(df.columns)}")
@@ -1372,13 +1466,42 @@ class EnhancedHMMRegimeDetector:
         return df
 
     def _ensure_positive_definite_data(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Ensure data covariance matrix is positive-definite for stable HMM fitting."""
+        """Ensure data covariance matrix is positive-definite for stable HMM fitting with comprehensive data quality checks."""
         df = data.copy()
+
+        # Comprehensive data quality assessment before regularization
+        quality_issues = []
+        
+        # Check for NaN values
+        nan_cols = df.columns[df.isnull().any()].tolist()
+        if nan_cols:
+            quality_issues.append(f"NaN values in {len(nan_cols)} columns")
+            
+        # Check for infinite values
+        inf_cols = []
+        for col in df.select_dtypes(include=[np.number]).columns:
+            if np.any(np.isinf(df[col])):
+                inf_cols.append(col)
+        if inf_cols:
+            quality_issues.append(f"Infinite values in {len(inf_cols)} columns")
+            
+        # Check for constant columns
+        constant_cols = []
+        for col in df.select_dtypes(include=[np.number]).columns:
+            if df[col].nunique() <= 1:
+                constant_cols.append(col)
+        if constant_cols:
+            quality_issues.append(f"Constant values in {len(constant_cols)} columns")
 
         # Enhanced data validation and preprocessing
         validation_results = self._validate_data_for_hmm_enhanced(df)
         
-        # Log warnings and recommendations
+        # Log data quality issues first
+        if quality_issues:
+            self.logger.warning(f"⚠️ Data quality issues detected: {'; '.join(quality_issues)}")
+            self.logger.info("🔧 Applying targeted fixes before regularization...")
+        
+        # Log validation warnings and recommendations
         for warning in validation_results['warnings']:
             self.logger.warning(f"⚠️ {warning}")
         
@@ -1386,40 +1509,59 @@ class EnhancedHMMRegimeDetector:
             self.logger.info(f"💡 Recommendation: {recommendation}")
 
         # Remove highly correlated features to prevent ill-conditioned covariance matrices
-        corr_matrix = df.corr()
-        upper_tri = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
+        try:
+            corr_matrix = df.corr()
+            upper_tri = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
 
-        # Find features with correlation > 0.95
-        high_corr_features = []
-        for col in upper_tri.columns:
-            correlated_features = upper_tri.index[upper_tri[col].abs() > 0.95].tolist()
-            if correlated_features:
-                high_corr_features.extend(correlated_features)
+            # Find features with correlation > 0.95
+            high_corr_features = []
+            for col in upper_tri.columns:
+                correlated_features = upper_tri.index[upper_tri[col].abs() > 0.95].tolist()
+                if correlated_features:
+                    high_corr_features.extend(correlated_features)
 
-        # Remove duplicate features and keep unique ones
-        high_corr_features = list(set(high_corr_features))
+            # Remove duplicate features and keep unique ones
+            high_corr_features = list(set(high_corr_features))
 
-        if high_corr_features:
-            df = df.drop(columns=high_corr_features)
-            self.logger.info(f"🧹 Removed {len(high_corr_features)} highly correlated features for HMM stability: {high_corr_features}")
+            if high_corr_features:
+                df = df.drop(columns=high_corr_features)
+                self.logger.info(f"🧹 Removed {len(high_corr_features)} highly correlated features for HMM stability: {high_corr_features}")
+        except Exception as e:
+            self.logger.warning(f"⚠️ Correlation analysis failed: {e}, proceeding without correlation filtering")
 
-        # Enhanced regularization approach
+        # Enhanced regularization approach with condition number check
         if len(df.columns) > 1:
-            # Calculate sample covariance
-            cov_matrix = df.cov()
-
-            # Check if covariance matrix is positive-definite
             try:
-                np.linalg.cholesky(cov_matrix.values)
-                is_positive_definite = True
-            except np.linalg.LinAlgError:
-                is_positive_definite = False
-
-            if not is_positive_definite:
-                self.logger.warning("⚠️ Data covariance matrix not positive-definite, applying enhanced regularization")
+                # Calculate sample covariance
+                cov_matrix = df.cov()
                 
-                # Use more sophisticated regularization approach
-                df = self._apply_enhanced_regularization(df)
+                # Calculate condition number for additional diagnostics
+                eigenvals = np.linalg.eigvals(cov_matrix.values)
+                min_eigenval = np.min(eigenvals)
+                max_eigenval = np.max(eigenvals)
+                condition_number = max_eigenval / max(min_eigenval, 1e-12)
+                
+                self.logger.info(f"📊 Covariance matrix diagnostics: min_eigenval={min_eigenval:.6f}, condition_number={condition_number:.2f}")
+
+                # Check if covariance matrix is positive-definite
+                try:
+                    np.linalg.cholesky(cov_matrix.values)
+                    is_positive_definite = True
+                except np.linalg.LinAlgError:
+                    is_positive_definite = False
+
+                if not is_positive_definite:
+                    self.logger.warning("⚠️ Data covariance matrix not positive-definite, applying enhanced regularization")
+                    # Use more sophisticated regularization approach
+                    df = self._apply_enhanced_regularization(df)
+                elif condition_number > 1e12:
+                    self.logger.warning(f"⚠️ Covariance matrix is ill-conditioned (condition number: {condition_number:.2e})")
+                    self.logger.info("🔧 Consider feature selection or dimensionality reduction")
+                else:
+                    self.logger.info("✅ Data covariance matrix is positive-definite and well-conditioned")
+                    
+            except Exception as e:
+                self.logger.warning(f"⚠️ Covariance analysis failed: {e}, using original data")
 
         return df
 

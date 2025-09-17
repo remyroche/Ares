@@ -50,12 +50,13 @@ class FinalParametersOptimizer:
         self.nonlinear_config = nonlinear_config or NonLinearConfig()
         self.parameter_sampler = NonLinearParameterSampler(self.nonlinear_config)
         
-        # Parameter categories for optimization
+        # Parameter categories for optimization (updated for new Analyst & Tactician models)
         self.categories = [
             'confidence', 'intensity', 'position_sizing', 'leverage', 'tpsl',
             'ensemble', 'sr', 'two_tier', 'technical_indicators',
             'system_monitoring', 'training_optimization', 'regime_transitions',
-            'signal_aggregation', 'turnover_cost_penalty'
+            'signal_aggregation', 'turnover_cost_penalty', 'entry_timing_optimization', 
+            'confidence_aware_ensemble', 'model_specific_parameters'
         ]
         
         # Default search spaces for each category
@@ -113,6 +114,15 @@ class FinalParametersOptimizer:
                 'analyst_exit_confidence_weight': {'type': 'float', 'min': 0.2, 'max': 0.6},
                 'exit_confidence_combination_method': {'type': 'categorical', 'choices': ['multiplicative', 'logarithmic', 'weighted_average']}
             },
+            'intensity': {
+                # Signal intensity and strength parameters
+                'signal_intensity_threshold': {'type': 'float', 'min': 0.4, 'max': 0.8},
+                'intensity_decay_factor': {'type': 'float', 'min': 0.85, 'max': 0.99},
+                'intensity_amplification_factor': {'type': 'float', 'min': 1.05, 'max': 1.25},
+                'min_intensity_duration': {'type': 'int', 'min': 3, 'max': 15},
+                'max_intensity_duration': {'type': 'int', 'min': 30, 'max': 120},
+                'intensity_combination_method': {'type': 'categorical', 'choices': ['weighted_average', 'maximum', 'harmonic_mean']}
+            },
             'position_sizing': {
                 'base_position_size': {'type': 'float', 'min': 0.01, 'max': 0.15},
                 'max_position_size': {'type': 'float', 'min': 0.1, 'max': 0.3}
@@ -127,7 +137,13 @@ class FinalParametersOptimizer:
             'ensemble': {
                 'analyst_weight': {'type': 'float', 'min': 0.2, 'max': 0.5},
                 'tactician_weight': {'type': 'float', 'min': 0.2, 'max': 0.5},
-                'strategist_weight': {'type': 'float', 'min': 0.1, 'max': 0.3}
+                'strategist_weight': {'type': 'float', 'min': 0.1, 'max': 0.3},
+                # Ensemble method parameters for Analyst (Elastic Net meta) & Tactician (LightGBM meta)
+                'ensemble_method': {'type': 'categorical', 'choices': ['stacking', 'weighted_average', 'voting', 'meta_learner']},
+                'analyst_meta_model_type': {'type': 'categorical', 'choices': ['elastic_net']},
+                'tactician_meta_model_type': {'type': 'categorical', 'choices': ['lightgbm']},
+                'stacking_cv_folds': {'type': 'int', 'min': 3, 'max': 10},
+                'meta_learner_weight': {'type': 'float', 'min': 0.1, 'max': 0.4}
             },
             'sr': {
                 'touch_count_weight': {'type': 'float', 'min': 0.1, 'max': 0.4},
@@ -191,6 +207,48 @@ class FinalParametersOptimizer:
                 'slippage_rate': {'type': 'float', 'min': 0.0002, 'max': 0.001},
                 'max_turnover_rate': {'type': 'float', 'min': 0.1, 'max': 0.5},
                 'round_trip_multiplier': {'type': 'float', 'min': 1.5, 'max': 3.0}
+            },
+            'entry_timing_optimization': {
+                # Entry timing parameters - Tactician naturally optimizes for 0-0.4% range
+                'entry_timing_range': {'type': 'float', 'min': 0.002, 'max': 0.004},  # 0.2% to 0.4%
+                'early_entry_penalty_weight': {'type': 'float', 'min': 0.1, 'max': 0.5},
+                'late_entry_penalty_weight': {'type': 'float', 'min': 0.1, 'max': 0.5},
+                'optimal_entry_reward_weight': {'type': 'float', 'min': 0.3, 'max': 0.7},
+                'entry_timing_efficiency_weight': {'type': 'float', 'min': 0.2, 'max': 0.6},
+                'directional_accuracy_threshold': {'type': 'float', 'min': 0.55, 'max': 0.75},
+                'adverse_movement_threshold': {'type': 'float', 'min': 0.6, 'max': 0.8},
+                'entry_timing_lookback_periods': {'type': 'int', 'min': 5, 'max': 20}
+            },
+            'confidence_aware_ensemble': {
+                # Confidence-aware ensemble parameters for updated models
+                'confidence_threshold_entry': {'type': 'float', 'min': 0.6, 'max': 0.85},
+                'confidence_threshold_exit': {'type': 'float', 'min': 0.5, 'max': 0.75},
+                'confidence_weight_analyst': {'type': 'float', 'min': 0.2, 'max': 0.5},
+                'confidence_weight_tactician': {'type': 'float', 'min': 0.3, 'max': 0.6},
+                'confidence_combination_method': {'type': 'categorical', 'choices': ['multiplicative', 'weighted_average', 'harmonic_mean', 'geometric_mean']},
+                'ensemble_confidence_threshold': {'type': 'float', 'min': 0.65, 'max': 0.9},
+                'base_model_confidence_weight': {'type': 'float', 'min': 0.4, 'max': 0.8},
+                'meta_model_confidence_weight': {'type': 'float', 'min': 0.2, 'max': 0.6}
+            },
+            'model_specific_parameters': {
+                # Analyst model weights (Base models)
+                'analyst_tcn_weight': {'type': 'float', 'min': 0.2, 'max': 0.4},
+                'analyst_catboost_weight': {'type': 'float', 'min': 0.2, 'max': 0.4},
+                'analyst_lightgbm_weight': {'type': 'float', 'min': 0.2, 'max': 0.4},
+                # Analyst meta-learner weight
+                'analyst_elastic_net_weight': {'type': 'float', 'min': 0.1, 'max': 0.3},
+                
+                # Tactician model weights (Base models)
+                'tactician_xgboost_weight': {'type': 'float', 'min': 0.2, 'max': 0.35},
+                'tactician_randomforest_weight': {'type': 'float', 'min': 0.15, 'max': 0.3},
+                'tactician_catboost_weight': {'type': 'float', 'min': 0.2, 'max': 0.35},
+                'tactician_elastic_net_weight': {'type': 'float', 'min': 0.15, 'max': 0.3},
+                # Tactician meta-learner weight
+                'tactician_lightgbm_weight': {'type': 'float', 'min': 0.1, 'max': 0.3},
+                
+                # General model parameters
+                'model_diversity_bonus': {'type': 'float', 'min': 0.05, 'max': 0.15},
+                'model_complexity_penalty': {'type': 'float', 'min': 0.01, 'max': 0.1}
             }
         }
     
@@ -475,6 +533,14 @@ class FinalParametersOptimizer:
                 base_score = self._evaluate_signal_aggregation_params(params, calibration_results)
             elif category == 'turnover_cost_penalty':
                 base_score = self._evaluate_turnover_cost_penalty_params(params, calibration_results)
+            elif category == 'intensity':
+                base_score = self._evaluate_intensity_params(params, calibration_results)
+            elif category == 'entry_timing_optimization':
+                base_score = self._evaluate_entry_timing_optimization_params(params, calibration_results)
+            elif category == 'confidence_aware_ensemble':
+                base_score = self._evaluate_confidence_aware_ensemble_params(params, calibration_results)
+            elif category == 'model_specific_parameters':
+                base_score = self._evaluate_model_specific_params(params, calibration_results)
 
             # Apply turnover cost penalty to all categories
             if base_score > 0.0:
@@ -1486,6 +1552,166 @@ class FinalParametersOptimizer:
             else:
                 score += 0.1
 
+        return score
+
+    def _evaluate_intensity_params(self, params: Dict[str, Any], 
+                                 calibration_results: Dict[str, Any]) -> float:
+        """Evaluate signal intensity parameters."""
+        score = 0.0
+        
+        if 'signal_intensity_threshold' in params:
+            threshold = params['signal_intensity_threshold']
+            if 0.5 <= threshold <= 0.7:
+                score += 0.3
+            elif 0.4 <= threshold <= 0.8:
+                score += 0.2
+            else:
+                score += 0.1
+        
+        if 'intensity_decay_factor' in params:
+            decay = params['intensity_decay_factor']
+            if 0.9 <= decay <= 0.95:
+                score += 0.2
+            elif 0.85 <= decay <= 0.99:
+                score += 0.15
+            else:
+                score += 0.1
+        
+        return score
+    
+    def _evaluate_entry_timing_optimization_params(self, params: Dict[str, Any], 
+                                                 calibration_results: Dict[str, Any]) -> float:
+        """Evaluate entry timing optimization parameters for updated Tactician models."""
+        score = 0.0
+        
+        if 'entry_timing_range' in params:
+            range_val = params['entry_timing_range']
+            # Optimal range is around 0.003-0.004 (0.3%-0.4%)
+            if 0.003 <= range_val <= 0.004:
+                score += 0.3
+            elif 0.002 <= range_val <= 0.004:
+                score += 0.2
+            else:
+                score += 0.1
+        
+        if 'optimal_entry_reward_weight' in params and 'early_entry_penalty_weight' in params:
+            reward_weight = params['optimal_entry_reward_weight']
+            penalty_weight = params['early_entry_penalty_weight']
+            # Reward should be higher than penalty for optimal timing
+            if reward_weight > penalty_weight and reward_weight >= 0.4:
+                score += 0.25
+            else:
+                score += 0.15
+        
+        if 'directional_accuracy_threshold' in params:
+            threshold = params['directional_accuracy_threshold']
+            if 0.6 <= threshold <= 0.7:
+                score += 0.2
+            else:
+                score += 0.1
+        
+        return score
+    
+    def _evaluate_confidence_aware_ensemble_params(self, params: Dict[str, Any], 
+                                                 calibration_results: Dict[str, Any]) -> float:
+        """Evaluate confidence-aware ensemble parameters for updated models."""
+        score = 0.0
+        
+        if 'confidence_threshold_entry' in params and 'confidence_threshold_exit' in params:
+            entry_thresh = params['confidence_threshold_entry']
+            exit_thresh = params['confidence_threshold_exit']
+            # Entry threshold should typically be higher than exit threshold
+            if entry_thresh > exit_thresh and 0.65 <= entry_thresh <= 0.8:
+                score += 0.3
+            else:
+                score += 0.15
+        
+        if 'confidence_weight_tactician' in params and 'confidence_weight_analyst' in params:
+            tactician_weight = params['confidence_weight_tactician']
+            analyst_weight = params['confidence_weight_analyst']
+            # Tactician should have higher weight for timing decisions
+            if tactician_weight > analyst_weight and tactician_weight >= 0.4:
+                score += 0.25
+            else:
+                score += 0.15
+        
+        if 'ensemble_confidence_threshold' in params:
+            threshold = params['ensemble_confidence_threshold']
+            if 0.7 <= threshold <= 0.85:
+                score += 0.2
+            else:
+                score += 0.1
+        
+        return score
+    
+    def _evaluate_model_specific_params(self, params: Dict[str, Any], 
+                                      calibration_results: Dict[str, Any]) -> float:
+        """Evaluate model-specific parameters for new Analyst & Tactician model types."""
+        score = 0.0
+        
+        # Check if weights are balanced for different model types
+        analyst_weights = []
+        tactician_weights = []
+        
+        # Analyst model weights
+        analyst_weight_keys = [
+            'analyst_tcn_weight', 'analyst_catboost_weight', 'analyst_lightgbm_weight'
+        ]
+        
+        # Tactician model weights  
+        tactician_weight_keys = [
+            'tactician_xgboost_weight', 'tactician_randomforest_weight', 
+            'tactician_catboost_weight', 'tactician_elastic_net_weight'
+        ]
+        
+        for key in analyst_weight_keys:
+            if key in params:
+                analyst_weights.append(params[key])
+                
+        for key in tactician_weight_keys:
+            if key in params:
+                tactician_weights.append(params[key])
+        
+        # Evaluate Analyst model balance
+        if analyst_weights:
+            max_weight = max(analyst_weights)
+            min_weight = min(analyst_weights)
+            weight_balance = min_weight / max_weight if max_weight > 0 else 0
+            
+            if weight_balance >= 0.6:  # Well balanced
+                score += 0.15
+            elif weight_balance >= 0.4:  # Moderately balanced
+                score += 0.1
+            else:
+                score += 0.05
+        
+        # Evaluate Tactician model balance
+        if tactician_weights:
+            max_weight = max(tactician_weights)
+            min_weight = min(tactician_weights)
+            weight_balance = min_weight / max_weight if max_weight > 0 else 0
+            
+            if weight_balance >= 0.6:  # Well balanced
+                score += 0.15
+            elif weight_balance >= 0.4:  # Moderately balanced
+                score += 0.1
+            else:
+                score += 0.05
+        
+        if 'model_diversity_bonus' in params:
+            bonus = params['model_diversity_bonus']
+            if 0.08 <= bonus <= 0.12:
+                score += 0.15
+            else:
+                score += 0.1
+        
+        if 'model_complexity_penalty' in params:
+            penalty = params['model_complexity_penalty']
+            if 0.02 <= penalty <= 0.06:
+                score += 0.15
+            else:
+                score += 0.1
+        
         return score
 
     def _calculate_turnover_penalty(self, params: Dict[str, Any],

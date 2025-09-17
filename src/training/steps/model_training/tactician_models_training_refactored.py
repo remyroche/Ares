@@ -217,10 +217,9 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                 meta_model="ElasticNetCV",
                 ensemble_name="tactician_ensemble",
                 enable_entry_timing_optimization=True,
-                entry_timing_range=0.003,
-                expected_movement=0.003
+                entry_timing_range=0.004,
+                expected_movement=0.004
             )
-main
 
         try:
             # Initialize parent class with comprehensive error handling
@@ -1644,7 +1643,7 @@ main
             
             # Add entry timing optimization if enabled
             if hasattr(self.config, 'enable_entry_timing_optimization') and self.config.enable_entry_timing_optimization:
-                self.logger.info("🔄 Applying entry timing optimization for 0-0.3% range...")
+                self.logger.info("🔄 Applying entry timing optimization for 0-0.4% range...")
                 entry_timing_results = self._apply_entry_timing_optimization(X, y, feature_names, results)
                 results.update(entry_timing_results)
             
@@ -1717,7 +1716,7 @@ main
                                       y: np.ndarray,
                                       feature_names: Optional[List[str]],
                                       base_results: Dict[str, Any]) -> Dict[str, Any]:
-        """Apply entry timing optimization for 0-0.3% range."""
+        """Apply entry timing optimization for 0-0.4% range."""
         try:
             from .tactician_directional_optimization import EntryTimingTacticianOptimizer
             
@@ -1725,9 +1724,9 @@ main
             entry_timing_optimizer = EntryTimingTacticianOptimizer(self.config)
             
             # Get entry timing range from config
-            entry_timing_range = getattr(self.config, 'entry_timing_range', 0.003)  # 0-0.3% range
+            entry_timing_range = getattr(self.config, 'entry_timing_range', 0.004)  # 0-0.4% range
             
-            # Filter targets for entry timing range (0-0.3%)
+            # Filter targets for entry timing range (0-0.4%)
             entry_timing_mask = np.abs(y) <= entry_timing_range
             X_entry_timing = X[entry_timing_mask]
             y_entry_timing = y[entry_timing_mask]

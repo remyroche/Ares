@@ -2,35 +2,60 @@
 MARKET_ANALYSIS Module
 
 This module provides comprehensive market analysis functionality including:
-- Triple barrier labeling with regime awareness
+- Multi-horizon profit labeling for enhanced ML training
 - HMM regime detection and clustering
 - Performance optimization and validation
 - Integration with existing market analysis pipeline
 
 Key Components:
-- triple_barrier_labeling: Core triple barrier implementation
-- regime_aware_triple_barrier_optimizer: Regime-specific optimization
-- triple_barrier_validator: Comprehensive validation framework
-- enhanced_market_analysis_with_triple_barrier: Integrated pipeline
+- multi_horizon_profit_labeler: Core multi-horizon implementation
+- multi_horizon_sub_pipeline_adapter: Sub-pipeline integration
+- gradient_flow_analysis: Performance analysis framework
+- feature_lookback_optimization: Enhanced optimization system
 """
 
-# Import core triple barrier components from new package
-from .triple_barrier_labeling import (
-    UnifiedTripleBarrierLabeler,
-    TripleBarrierConfig,
-    TripleBarrierResult,
-    create_triple_barrier_labeler,
-    apply_triple_barrier_labeling,
-    # Exception classes
-    TripleBarrierError,
-    ValidationError,
-    ConfigurationError,
-    HardwareOptimizationError,
-    DataQualityError
+# Import core multi-horizon components (NEW SYSTEM)
+from .multi_horizon_profit_labeler import (
+    MultiHorizonProfitLabeler,
+    MultiHorizonConfig,
+    create_multi_horizon_labeler,
+    apply_multi_horizon_labeling
 )
 
-# Legacy compatibility - map old names to new implementation
-MarketAnalysisTripleBarrierLabeling = UnifiedTripleBarrierLabeler
+# Import sub-pipeline adapter
+from .multi_horizon_sub_pipeline_adapter import (
+    MultiHorizonSubPipelineAdapter,
+    execute_multi_horizon_labeling_step
+)
+
+# Import gradient flow analysis
+from .gradient_flow_analysis import (
+    GradientFlowAnalyzer,
+    GradientFlowAnalysis,
+    analyze_gradient_flow_benefits
+)
+
+# Legacy compatibility - DEPRECATED but maintained for backward compatibility
+try:
+    from .triple_barrier_labeling import (
+        UnifiedTripleBarrierLabeler,
+        TripleBarrierConfig,
+        TripleBarrierResult,
+        create_triple_barrier_labeler,
+        apply_triple_barrier_labeling,
+        TripleBarrierError,
+        ValidationError,
+        ConfigurationError,
+        HardwareOptimizationError,
+        DataQualityError
+    )
+    LEGACY_TRIPLE_BARRIER_AVAILABLE = True
+except ImportError:
+    LEGACY_TRIPLE_BARRIER_AVAILABLE = False
+
+# Legacy compatibility mapping
+if LEGACY_TRIPLE_BARRIER_AVAILABLE:
+    MarketAnalysisTripleBarrierLabeling = UnifiedTripleBarrierLabeler
 
 # Import regime-aware optimizer
 from .regime_aware_triple_barrier_optimizer import (
@@ -165,64 +190,93 @@ def quick_start_example():
     print(f"   → Time range: {data.index[0]} to {data.index[-1]}")
     print(f"   → Regimes: {data['hmm_regime'].value_counts().to_dict()}")
     
-    # Apply triple barrier labeling
-    print("\n🏷️ Applying triple barrier labeling...")
-    result = apply_triple_barrier_labeling(data)
+    # Apply multi-horizon labeling
+    print("\n🎯 Applying multi-horizon profit labeling...")
+    result = apply_multi_horizon_labeling(data)
     
-    if result.success:
-        labeled_data = result.labeled_data
+    if isinstance(result, pd.DataFrame) and len(result) > 0:
+        labeled_data = result
         print(f"✅ Labeling completed:")
-        print(f"   → Labeled samples: {result.total_labels_generated}")
-        print(f"   → Label distribution: {result.label_distribution}")
-        print(f"   → Quality score: {result.data_quality_score:.2%}")
-        print(f"   → Execution time: {result.execution_duration:.2f}s")
+        print(f"   → Labeled samples: {len(labeled_data)}")
+        print(f"   → Total features: {labeled_data.shape[1]}")
+        print(f"   → New probability targets: {len([c for c in labeled_data.columns if c.endswith('_prob')])}")
+        
+        # Show sample opportunities
+        if 'overall_opportunity' in labeled_data.columns:
+            overall_opp = labeled_data['overall_opportunity'].dropna()
+            print(f"   → Average opportunity score: {overall_opp.mean():.3f}")
+            print(f"   → High opportunity samples: {(overall_opp > 0.7).sum()} ({(overall_opp > 0.7).sum()/len(overall_opp)*100:.1f}%)")
     else:
-        print(f"❌ Labeling failed: {result.error_message}")
+        print(f"❌ Labeling failed or returned empty result")
         return None
     
-    # Calculate basic metrics
-    if 'net_profit_pct' in labeled_data.columns:
-        profits = labeled_data['net_profit_pct']
-        win_rate = (profits > 0).mean()
-        avg_profit = profits.mean()
-        sharpe_ratio = profits.mean() / profits.std() * np.sqrt(252) if profits.std() > 0 else 0
+    # Calculate multi-horizon metrics
+    probability_columns = [col for col in labeled_data.columns if col.endswith('_prob')]
+    if probability_columns:
+        print(f"💰 Multi-horizon metrics:")
         
-        print(f"💰 Performance metrics:")
-        print(f"   → Win rate: {win_rate:.3f}")
-        print(f"   → Average profit: {avg_profit:.4f}")
-        print(f"   → Sharpe ratio: {sharpe_ratio:.3f}")
+        # Average probabilities by target type
+        for target_type in ['micro', 'small', 'medium', 'good']:
+            target_cols = [col for col in probability_columns if col.startswith(f'{target_type}_')]
+            if target_cols:
+                avg_prob = labeled_data[target_cols].mean().mean()
+                print(f"   → {target_type.capitalize()} target avg probability: {avg_prob:.3f}")
+        
+        # Composite scores
+        if 'leverage_adjusted_score' in labeled_data.columns:
+            leverage_score = labeled_data['leverage_adjusted_score'].mean()
+            print(f"   → Leverage-adjusted score: {leverage_score:.3f}")
+        
+        if 'reversal_capture_score' in labeled_data.columns:
+            reversal_score = labeled_data['reversal_capture_score'].mean()
+            print(f"   → Reversal capture score: {reversal_score:.3f}")
     
     # Validate results
     print("\n🔍 Validating results...")
-    is_valid = result.validation_passed
-    print(f"✅ Validation result: {'PASSED' if is_valid else 'FAILED'}")
-    if result.validation_warnings:
-        print(f"   → Warnings: {len(result.validation_warnings)}")
+    has_probabilities = len(probability_columns) > 0
+    has_opportunities = 'overall_opportunity' in labeled_data.columns
+    print(f"✅ Validation result: {'PASSED' if has_probabilities and has_opportunities else 'FAILED'}")
+    if has_probabilities:
+        print(f"   → Probability targets: {len(probability_columns)}")
+    if has_opportunities:
+        print(f"   → Opportunity scoring: Available")
     
     print("\n🎉 Quick start example completed successfully!")
     print("\nFor more advanced usage, see:")
-    print("   → TRIPLE_BARRIER_DOCUMENTATION.md")
-    print("   → triple_barrier_labeling/test_unified_labeler.py")
+    print("   → multi_horizon_profit_labeler.py")
+    print("   → gradient_flow_analysis.py")
+    print("   → multi_horizon_sub_pipeline_adapter.py")
     
     return labeled_data
 
 # Export all public components
 __all__ = [
-    # Core triple barrier components (new unified implementation)
+    # Core multi-horizon components (NEW SYSTEM)
+    "MultiHorizonProfitLabeler",
+    "MultiHorizonConfig", 
+    "create_multi_horizon_labeler",
+    "apply_multi_horizon_labeling",
+    
+    # Sub-pipeline integration
+    "MultiHorizonSubPipelineAdapter",
+    "execute_multi_horizon_labeling_step",
+    
+    # Analysis components
+    "GradientFlowAnalyzer",
+    "GradientFlowAnalysis", 
+    "analyze_gradient_flow_benefits",
+    
+    # Legacy triple barrier components (DEPRECATED - for backward compatibility only)
     "UnifiedTripleBarrierLabeler",
     "TripleBarrierConfig",
-    "TripleBarrierResult",
+    "TripleBarrierResult", 
     "create_triple_barrier_labeler",
     "apply_triple_barrier_labeling",
-    
-    # Exception classes
     "TripleBarrierError",
     "ValidationError",
     "ConfigurationError",
     "HardwareOptimizationError",
     "DataQualityError",
-    
-    # Legacy compatibility
     "MarketAnalysisTripleBarrierLabeling",
     
     # Regime-aware optimizer

@@ -158,7 +158,7 @@ class MainPipelineConfig:
         ],
         PipelineStage.MARKET_ANALYSIS: [
             'sr_detection', 'sr_clustering', 'hmm_clustering',
-            'hmm_regime_discovery', 'regime_data_splitting', 'triple_barrier_labeling',
+            'hmm_regime_discovery', 'regime_data_splitting', 'multi_horizon_labeling',
             'feature_lookback_optimization', 'cross_timeframe_analysis',
             'sr_feature_integration'
         ],
@@ -580,7 +580,7 @@ class MainTrainingPipeline:
 
         # For MARKET_ANALYSIS, use sequential execution with automatic progression
         # Start with the first sub-pipeline and let it trigger the next ones
-        self.logger.info("🚀 Starting automatic sequential execution: sr_parameter_optimization -> sr_detection -> sr_clustering -> hmm_regime_discovery -> hmm_clustering -> regime_data_splitting -> triple_barrier_labeling -> feature_lookback_optimization -> cross_timeframe_analysis -> sr_feature_integration")
+        self.logger.info("🚀 Starting automatic sequential execution: sr_parameter_optimization -> sr_detection -> sr_clustering -> hmm_regime_discovery -> hmm_clustering -> regime_data_splitting -> multi_horizon_labeling -> feature_lookback_optimization -> cross_timeframe_analysis -> sr_feature_integration")
 
         results = []
         if sub_pipeline_names:
@@ -795,7 +795,7 @@ def get_full_pipeline_config(
             ],
             PipelineStage.MARKET_ANALYSIS: [
                 'sr_detection', 'sr_clustering', 'hmm_clustering',
-                'hmm_regime_discovery', 'regime_data_splitting', 'triple_barrier_labeling',
+                'hmm_regime_discovery', 'regime_data_splitting', 'multi_horizon_labeling',
                 'feature_lookback_optimization', 'cross_timeframe_analysis',
                 'sr_feature_integration'
             ],
@@ -850,7 +850,7 @@ def get_light_pipeline_config(
                 'data_download', 'data_conversion', 'data_validation'
             ],
             PipelineStage.MARKET_ANALYSIS: [
-                'sr_detection', 'hmm_regime_discovery', 'triple_barrier_labeling'
+                'sr_detection', 'hmm_regime_discovery', 'multi_horizon_labeling'
             ],
             PipelineStage.MODEL_TRAINING: [
                 'hmm_training', 'analyst_models_training', 'model_validation'

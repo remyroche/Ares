@@ -11,7 +11,7 @@ This module provides the complete market analysis sub-pipeline with exactly 11 r
 6. hmm_models_training - Base models training, HPO, saving, metrics
 7. hmm_ensemble_training - Meta-model, HPO, saving, metrics
 8. regime_data_splitting - Tag data by regimes
-9. triple_barrier_labeling - Apply triple barrier method
+9. multi_horizon_labeling - Apply multi-horizon profit labeling
 10. feature_lookback_optimization - Optimize feature lookback periods
 11. pid_based_feature_generation - PID-based feature generation with interaction, polynomial, and cross-timeframe features
 """
@@ -118,7 +118,7 @@ class SubPipelineResult:
             'hmm_models_training': ['hmm_models_training_result'],
             'hmm_ensemble_training': ['hmm_ensemble_training_result'],
             'regime_data_splitting': ['regime_data_splitting_result'],
-            'triple_barrier_labeling': ['triple_barrier_labeling_result'],
+            'multi_horizon_labeling': ['multi_horizon_labeling_result'],
             'feature_lookback_optimization': ['feature_lookback_optimization_result'],
             'pid_based_feature_generation': ['pid_based_feature_generation_result']
         }
@@ -482,12 +482,22 @@ class MarketAnalysisSubPipeline:
                 'regime_data': results['regime_data']
             })
             
-            # Stage 9: Triple Barrier Labeling
-            self.logger.info('🏷️ Executing Stage 9: Triple Barrier Labeling')
+            # Stage 9: Multi-Horizon Labeling
+            self.logger.info('🎯 Executing Stage 9: Multi-Horizon Labeling')
             try:
-                from src.training.steps.market_analysis.triple_barrier_labeling.step import execute_triple_barrier_labeling_step
-                triple_barrier_labeling_result = await execute_triple_barrier_labeling_step(
-                    data, self._current_pipeline_state, self.config
+                from src.training.steps.market_analysis.multi_horizon_sub_pipeline_adapter import execute_multi_horizon_labeling_step
+                
+                # Extract labeling configuration
+                labeling_config = self.config.custom_params.get('multi_horizon_labeling', {})
+                
+                multi_horizon_labeling_result = execute_multi_horizon_labeling_step(
+                    data=data,
+                    regime_labels=self._current_pipeline_state.get('regime_labels'),
+                    config=labeling_config,
+                    symbol=self.config.symbol,
+                    exchange=self.config.exchange,
+                    timeframe=self.config.timeframe,
+                    mode=self.config.mode.value
                 )
                 
                 # Create a mock result object for compatibility
@@ -497,19 +507,19 @@ class MarketAnalysisSubPipeline:
                         self.status = result_dict.get('status', 'unknown')
                         self.metadata = result_dict.get('metadata', {})
                 
-                triple_barrier_labeling_result = MockResult(triple_barrier_labeling_result)
+                multi_horizon_labeling_result = MockResult(multi_horizon_labeling_result)
                 
-                if triple_barrier_labeling_result.status != 'completed':
-                    return self._create_error_result("Triple Barrier Labeling failed", triple_barrier_labeling_result.artifacts)
+                if multi_horizon_labeling_result.status != 'completed':
+                    return self._create_error_result("Multi-Horizon Labeling failed", multi_horizon_labeling_result.artifacts)
                     
             except Exception as e:
-                self.logger.error(f"Triple Barrier Labeling execution failed: {e}")
-                return self._create_error_result("Triple Barrier Labeling execution failed", str(e))
+                self.logger.error(f"Multi-Horizon Labeling execution failed: {e}")
+                return self._create_error_result("Multi-Horizon Labeling execution failed", str(e))
             
             # Extract data from consolidated artifact
-            triple_barrier_data = triple_barrier_labeling_result.artifacts.get('triple_barrier_labeling_result', {})
-            results['labeled_data'] = triple_barrier_data.get('labeled_data', {})
-            results['labeling_metrics'] = triple_barrier_data.get('labeling_metrics', {})
+            multi_horizon_data = multi_horizon_labeling_result.artifacts.get('multi_horizon_labeling_result', {})
+            results['labeled_data'] = multi_horizon_data.get('labeled_data', {})
+            results['labeling_metrics'] = multi_horizon_data.get('labeling_metrics', {})
             
             # Update pipeline state for next components
             self._current_pipeline_state.update({
@@ -767,7 +777,7 @@ class MarketAnalysisSubPipeline:
             'hmm_models_training',
             'hmm_ensemble_training',
             'regime_data_splitting',
-            'triple_barrier_labeling',
+            'multi_horizon_labeling',
             'feature_lookback_optimization',
             'pid_based_feature_generation'
         ]
@@ -848,7 +858,7 @@ class MarketAnalysisSubPipeline:
         
         data_processing_steps = [
             'regime_data_splitting',
-            'triple_barrier_labeling',
+            'multi_horizon_labeling',
             'feature_lookback_optimization',
             'pid_based_feature_generation'
         ]

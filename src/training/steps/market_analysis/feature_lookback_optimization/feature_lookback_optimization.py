@@ -119,7 +119,38 @@ from ...market_analysis.components.base_component import BaseMarketAnalysisCompo
 from .optimization_reporter import OptimizationReporter
 from .validation_framework import ValidationFramework, ValidationLevel, ValidationStatus
 from .monitoring_metrics import MonitoringMetrics, MetricType, MetricLevel
+from .optimization_strategy import OptimizationStrategyFactory, OptimizationMethod
 from src.utils.logger import system_logger
+
+class StandardizedErrorHandler:
+    """Standardized error handling for consistent error management across the component."""
+    
+    def __init__(self, logger, component_name: str = "FeatureLookbackOptimization"):
+        self.logger = logger
+        self.component_name = component_name
+    
+    def handle_error(self, error: Exception, operation: str, return_value=None, reraise: bool = False):
+        """Handle errors in a standardized way."""
+        error_msg = f"{operation} failed in {self.component_name}: {str(error)}"
+        self.logger.error(error_msg)
+        tprint(f"❌ {error_msg}")
+        
+        if reraise:
+            raise type(error)(error_msg) from error
+        
+        return return_value
+    
+    def handle_warning(self, warning_msg: str, operation: str):
+        """Handle warnings in a standardized way."""
+        warning_msg = f"{operation} warning in {self.component_name}: {warning_msg}"
+        self.logger.warning(warning_msg)
+        tprint(f"⚠️ {warning_msg}")
+    
+    def handle_info(self, info_msg: str, operation: str):
+        """Handle info messages in a standardized way."""
+        info_msg = f"{operation} in {self.component_name}: {info_msg}"
+        self.logger.info(info_msg)
+        tprint(f"ℹ️ {info_msg}")
 
 # Hardware optimization imports
 try:
@@ -152,21 +183,11 @@ except ImportError as e:
     MRMR_OPTIMIZER_AVAILABLE = False
     tprint(f"⚠️ MRMR lookback optimizer not available: {e}")
 
-# Configuration constants
-class OptimizationConfig:
-    """Configuration constants for optimization."""
-    DEFAULT_LOOKBACK_RANGE = (5, 50)
-    DEFAULT_POPULATION_SIZE = 50
-    DEFAULT_GENERATIONS = 100
-    DEFAULT_MUTATION_RATE = 0.1
-    DEFAULT_CROSSOVER_RATE = 0.8
-    DEFAULT_ELITISM_RATE = 0.1
-    DEFAULT_MAX_FEATURES = 20
-    DEFAULT_FEATURE_IMPORTANCE_THRESHOLD = 0.01
-    DEFAULT_MEMORY_LIMIT_GB = 8.0
-    DEFAULT_DATA_COMPLETENESS_THRESHOLD = 0.8
-    DEFAULT_OPTIMIZATION_TIMEOUT = 600  # 10 minutes
-    DEFAULT_MEMORY_CLEANUP_INTERVAL = 100  # Cleanup every 100 operations
+# Import configuration constants
+from .constants import (
+    OPTIMIZATION_CONSTANTS, PERFORMANCE_CONSTANTS, VALIDATION_CONSTANTS,
+    QUALITY_CONSTANTS, FILE_CONSTANTS, ALGORITHM_CONSTANTS
+)
 
 
 class OptimizationStatus(Enum):
@@ -207,6 +228,7 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
         """Initialize the feature lookback optimization component."""
         super().__init__(config)
         self.logger = system_logger.getChild('FeatureLookbackOptimization')
+        self.error_handler = StandardizedErrorHandler(self.logger, 'FeatureLookbackOptimization')
         self.optimization_status = OptimizationStatus.PENDING
         self.start_time: Optional[float] = None
         self.metrics: Optional[OptimizationMetrics] = None
@@ -223,6 +245,21 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
         self.common_utils = CommonUtilities()
         self.math_validator = MathValidation()
         self.serializer = UniversalSerializer()
+        
+        # Initialize ML common utilities
+        self.data_quality_checker = None
+        self.feature_preparator = None
+        self.hyperparameter_optimizer = None
+        self.cross_validator = None
+        self.performance_monitor_ml = None
+        
+        if ML_COMMON_AVAILABLE:
+            try:
+                self.data_quality_checker = DataQualityUtilities()
+                self.feature_preparator = FeaturePreparator()
+                tprint("✅ ML common utilities initialized")
+            except Exception as e:
+                tprint(f"⚠️ ML common utilities initialization failed: {e}")
         
         # Initialize hardware optimization if available
         if HARDWARE_OPTIMIZATION_AVAILABLE:
@@ -242,15 +279,39 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
         self.enhanced_matrix_ops = None
         self.vectorized_core = None
         self.batch_processor = None
+        self.matrix_ops = None
+        self.vectorized_ops = None
+        self.hardware_ops = None
+        
+        # Initialize M1 optimization components
+        self.m1_gpu_manager = None
+        self.m1_memory_optimizer = None
+        self.m1_cpu_optimizer = None
         
         if MATRIX_OPS_AVAILABLE:
             try:
-                self.enhanced_matrix_ops = get_enhanced_matrix_operations()
-                self.vectorized_core = get_vectorized_processing_core()
+                from src.utils.matrix_operations.unified_operations import get_unified_matrix_operations
+                from src.utils.matrix_operations.vectorized_core import get_vectorized_processing_core
+                from src.utils.matrix_operations.batch_operations import get_batch_matrix_processor
+                from src.utils.matrix_operations.hardware_integration import get_hardware_optimized_processor
+                
+                self.matrix_ops = get_unified_matrix_operations()
+                self.vectorized_ops = get_vectorized_processing_core()
                 self.batch_processor = get_batch_matrix_processor()
+                self.hardware_ops = get_hardware_optimized_processor()
                 tprint("✅ Advanced matrix operations initialized for feature lookback optimization")
             except Exception as e:
                 tprint(f"⚠️ Matrix operations initialization failed: {e}")
+        
+        # Initialize M1 GPU manager if available
+        try:
+            from src.utils.common_operations import get_m1_gpu_manager, get_m1_memory_optimizer, get_m1_cpu_optimizer
+            self.m1_gpu_manager = get_m1_gpu_manager()
+            self.m1_memory_optimizer = get_m1_memory_optimizer()
+            self.m1_cpu_optimizer = get_m1_cpu_optimizer()
+            tprint("✅ M1 optimization components initialized")
+        except Exception as e:
+            tprint(f"⚠️ M1 optimization initialization failed: {e}")
         
         tprint(f"🔧 Matrix operations available: {MATRIX_OPS_AVAILABLE}")
         tprint(f"🔧 Advanced matrix operations available: {ADVANCED_MATRIX_OPS_AVAILABLE}")
@@ -287,7 +348,7 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
         """Clean up memory using hardware optimization tools."""
         self.operation_count += 1
         
-        if self.operation_count % OptimizationConfig.DEFAULT_MEMORY_CLEANUP_INTERVAL == 0:
+        if self.operation_count % PERFORMANCE_CONSTANTS.DEFAULT_CLEANUP_INTERVAL == 0:
             try:
                 # Use M1 memory optimizer if available
                 if self.m1_memory_optimizer:
@@ -317,21 +378,30 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
                     pass
     
     async def _enhanced_data_handling(self, data: Any, pipeline_state: Dict[str, Any]) -> Optional[pd.DataFrame]:
-        """Enhanced data handling to get data from multiple sources."""
+        """Enhanced data handling to get data from multiple sources with optimized memory usage."""
         try:
-            # Try direct data first
+            # Try direct data first - avoid unnecessary copies
             if data is not None:
                 if isinstance(data, pd.DataFrame) and not data.empty:
-                    # Use common utilities for data validation and optimization
-                    validated_data = self._validate_and_optimize_data(data)
-                    tprint("✅ Using direct DataFrame data")
-                    return validated_data
+                    # Validate in-place when possible to avoid copying
+                    if self._quick_validate_data(data):
+                        tprint("✅ Using direct DataFrame data (validated in-place)")
+                        return data  # Return original data if validation passes
+                    else:
+                        # Only copy and fix if validation fails
+                        validated_data = self._validate_and_optimize_data(data)
+                        tprint("✅ Using direct DataFrame data (fixed copy)")
+                        return validated_data
                 elif hasattr(data, 'to_dataframe'):
                     df = data.to_dataframe()
                     if not df.empty:
-                        validated_data = self._validate_and_optimize_data(df)
-                        tprint("✅ Converted data to DataFrame")
-                        return validated_data
+                        if self._quick_validate_data(df):
+                            tprint("✅ Converted data to DataFrame (validated in-place)")
+                            return df
+                        else:
+                            validated_data = self._validate_and_optimize_data(df)
+                            tprint("✅ Converted data to DataFrame (fixed copy)")
+                            return validated_data
             
             # Try to get data from pipeline state
             if pipeline_state:
@@ -379,6 +449,36 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
         except Exception as e:
             tprint(f"❌ Enhanced data handling failed: {e}")
             return None
+    
+    def _quick_validate_data(self, data: pd.DataFrame) -> bool:
+        """Quick validation without copying data - returns True if data is good as-is."""
+        try:
+            # Check basic requirements without copying
+            if data.empty:
+                return False
+            
+            # Check for required columns
+            required_columns = VALIDATION_CONSTANTS.REQUIRED_OHLCV_COLUMNS
+            if not all(col in data.columns for col in required_columns):
+                return False
+            
+            # Check for excessive nulls (quick check)
+            null_ratio = data.isnull().sum().sum() / (len(data) * len(data.columns))
+            if null_ratio > VALIDATION_CONSTANTS.MAX_NULL_RATIO:
+                return False
+            
+            # Check for infinite values in numeric columns (quick check)
+            numeric_cols = data.select_dtypes(include=[np.number]).columns
+            if len(numeric_cols) > 0:
+                has_inf = np.isinf(data[numeric_cols].values).any()
+                if has_inf:
+                    return False
+            
+            return True
+            
+        except Exception as e:
+            self.error_handler.handle_warning(f"Quick validation failed: {e}", "quick_validate_data")
+            return False
     
     def _validate_and_optimize_data(self, data: pd.DataFrame) -> pd.DataFrame:
         """Validate and optimize data using common utilities and advanced matrix operations."""

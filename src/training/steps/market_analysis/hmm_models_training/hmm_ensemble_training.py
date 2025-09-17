@@ -775,6 +775,53 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
                 'recommendations': self._generate_recommendations(results, execution_time)
             }
             
+            # If regime probabilities are available, summarize and attach
+            if 'regime_probabilities' in results and isinstance(results['regime_probabilities'], dict):
+                rp = results['regime_probabilities']
+                proba = rp.get('proba')
+                entropy = rp.get('entropy')
+                classes = rp.get('classes')
+                ece_train = rp.get('ece_train')
+                try:
+                    if proba is not None and entropy is not None:
+                        # Compute summary stats
+                        entropy_arr = np.array(entropy)
+                        proba_arr = np.array(proba)
+                        summary = {
+                            'num_samples': int(proba_arr.shape[0]),
+                            'num_classes': int(proba_arr.shape[1]) if proba_arr.ndim == 2 else None,
+                            'classes': classes,
+                            'entropy_mean': float(np.mean(entropy_arr)),
+                            'entropy_std': float(np.std(entropy_arr)),
+                            'entropy_p25': float(np.percentile(entropy_arr, 25)),
+                            'entropy_p50': float(np.percentile(entropy_arr, 50)),
+                            'entropy_p75': float(np.percentile(entropy_arr, 75)),
+                            'ece_train': float(ece_train) if ece_train is not None else None,
+                            'avg_class_prob': (
+                                {str(classes[i]): float(np.mean(proba_arr[:, i])) for i in range(proba_arr.shape[1])}
+                                if proba_arr.ndim == 2 and classes is not None else None
+                            )
+                        }
+                        comprehensive_report['regime_probability_summary'] = summary
+                        
+                        # Optionally save a compact preview artifact
+                        try:
+                            preview_count = int(min(100, proba_arr.shape[0]))
+                            preview = {
+                                'classes': classes,
+                                'proba_preview': proba_arr[:preview_count].tolist(),
+                                'entropy_preview': entropy_arr[:preview_count].tolist()
+                            }
+                            preview_path = Path(self.config.model_save_path) / 'regime_probabilities_preview.json'
+                            ensure_directory(preview_path.parent)
+                            if self.serializer.save(preview, str(preview_path), format='json'):
+                                comprehensive_report['regime_probability_preview_path'] = str(preview_path)
+                        } 
+                        except Exception:
+                            pass
+                except Exception as e:
+                    tprint(f"⚠️ Could not summarize regime probabilities: {e}")
+
             # Add comprehensive report to results
             results['comprehensive_report'] = comprehensive_report
             

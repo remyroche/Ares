@@ -48,28 +48,64 @@ class HMMModelsTrainingComponentWrapper(BaseMarketAnalysisComponent):
             # Extract required data from pipeline state
             X = pipeline_state.get('features')
             y = pipeline_state.get('targets')
-            regime_labels = pipeline_state.get('regime_labels')
+            cluster_assignments = pipeline_state.get('cluster_assignments')
             feature_names = pipeline_state.get('feature_names')
             
-            # Detailed error reporting for missing data
-            missing_data = []
-            if X is None:
-                missing_data.append("features")
-            if y is None:
-                missing_data.append("targets")
-            if regime_labels is None:
-                missing_data.append("regime_labels")
-                
-            if missing_data:
-                available_keys = list(pipeline_state.keys())
-                error_msg = (
-                    f"Missing required data: {', '.join(missing_data)}. "
-                    f"Available pipeline state keys: {available_keys}"
-                )
-                raise ValueError(error_msg)
+            # If cluster_assignments is missing, try to get from hmm_clusters
+            if cluster_assignments is None:
+                hmm_clusters = pipeline_state.get('hmm_clusters', {})
+                cluster_assignments = hmm_clusters.get('cluster_assignments')
+                if cluster_assignments is not None:
+                    print(f"✅ Found cluster_assignments in hmm_clusters: {len(cluster_assignments)} samples")
+            
+            # If we don't have features/targets, try to extract from dataframe
+            if X is None or y is None:
+                dataframe = pipeline_state.get('dataframe')
+                if dataframe is not None:
+                    import pandas as pd
+                    import numpy as np
+                    
+                    # Create basic features and targets from OHLCV data
+                    if 'close' in dataframe.columns:
+                        # Simple features: returns, volatility, etc.
+                        returns = dataframe['close'].pct_change().fillna(0)
+                        volatility = returns.rolling(20).std().fillna(0)
+                        volume_ratio = (dataframe['volume'] / dataframe['volume'].rolling(20).mean()).fillna(1) if 'volume' in dataframe.columns else pd.Series([1] * len(dataframe), index=dataframe.index)
+                        
+                        X = np.column_stack([returns.values, volatility.values, volume_ratio.values])
+                        feature_names = ['returns', 'volatility', 'volume_ratio']
+                        
+                        # Create targets (future returns)
+                        y = returns.shift(-1).fillna(0).values
+                        
+                        # Remove last row where target is NaN
+                        X = X[:-1]
+                        y = y[:-1]
+                        
+                        # Adjust cluster_assignments length if necessary
+                        if cluster_assignments is not None and len(cluster_assignments) > len(X):
+                            cluster_assignments = cluster_assignments[:len(X)]
+            
+            if X is None or y is None or cluster_assignments is None:
+              # Detailed error reporting for missing data
+              missing_data = []
+              if X is None:
+                  missing_data.append("features")
+              if y is None:
+                  missing_data.append("targets")
+              if regime_labels is None:
+                  missing_data.append("regime_labels")
+
+              if missing_data:
+                  available_keys = list(pipeline_state.keys())
+                  error_msg = (
+                      f"Missing required data: {', '.join(missing_data)}. "
+                      f"Available pipeline state keys: {available_keys}"
+                  )
+                  raise ValueError(error_msg)
             
             # Execute training
-            results = self.training_instance.execute(X, y, regime_labels, feature_names)
+            results = self.training_instance.execute(X, y, cluster_assignments, feature_names)
             
             # Create comprehensive artifact
             artifact = {
@@ -119,18 +155,57 @@ class HMMEnsembleTrainingComponentWrapper(BaseMarketAnalysisComponent):
             # Extract required data from pipeline state
             X = pipeline_state.get('features')
             y = pipeline_state.get('targets')
-            regime_labels = pipeline_state.get('regime_labels')
+            cluster_assignments = pipeline_state.get('cluster_assignments')
             feature_names = pipeline_state.get('feature_names')
             hmm_states = pipeline_state.get('hmm_states')
             base_hmm_models = pipeline_state.get('hmm_models', {}).get('hmm_models', {})
             hmm_training_metrics = pipeline_state.get('hmm_models', {}).get('hmm_training_metrics', {})
             
-            if X is None or y is None or regime_labels is None:
-                raise ValueError("Missing required data: features, targets, or regime_labels")
+            # If cluster_assignments is missing, try to get from hmm_clusters
+            if cluster_assignments is None:
+                hmm_clusters = pipeline_state.get('hmm_clusters', {})
+                cluster_assignments = hmm_clusters.get('cluster_assignments')
+                if cluster_assignments is not None:
+                    print(f"✅ Found cluster_assignments in hmm_clusters: {len(cluster_assignments)} samples")
+            
+            # If we don't have features/targets, try to extract from dataframe
+            if X is None or y is None:
+                dataframe = pipeline_state.get('dataframe')
+                if dataframe is not None:
+                    import pandas as pd
+                    import numpy as np
+                    
+                    # Create basic features and targets from OHLCV data
+                    if 'close' in dataframe.columns:
+                        # Simple features: returns, volatility, etc.
+                        returns = dataframe['close'].pct_change().fillna(0)
+                        volatility = returns.rolling(20).std().fillna(0)
+                        volume_ratio = (dataframe['volume'] / dataframe['volume'].rolling(20).mean()).fillna(1) if 'volume' in dataframe.columns else pd.Series([1] * len(dataframe), index=dataframe.index)
+                        
+                        X = np.column_stack([returns.values, volatility.values, volume_ratio.values])
+                        feature_names = ['returns', 'volatility', 'volume_ratio']
+                        
+                        # Create targets (future returns)
+                        y = returns.shift(-1).fillna(0).values
+                        
+                        # Remove last row where target is NaN
+                        X = X[:-1]
+                        y = y[:-1]
+                        
+                        # Adjust cluster_assignments length if necessary
+                        if cluster_assignments is not None and len(cluster_assignments) > len(X):
+                            cluster_assignments = cluster_assignments[:len(X)]
+            
+            if X is None or y is None or cluster_assignments is None:
+                missing_items = []
+                if X is None: missing_items.append("features")
+                if y is None: missing_items.append("targets")
+                if cluster_assignments is None: missing_items.append("cluster_assignments")
+                raise ValueError(f"Missing required data: {', '.join(missing_items)}")
             
             # Execute training
             results = self.training_instance.execute(
-                X, y, regime_labels, feature_names, hmm_states, 
+                X, y, cluster_assignments, feature_names, hmm_states, 
                 base_hmm_models, hmm_training_metrics
             )
             

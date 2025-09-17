@@ -73,6 +73,16 @@ class TacticianMetaOutput:
     base_outputs: List[TacticianBaseOutput]
 
 @dataclass
+class PositionState:
+    """Current position state."""
+    is_open: bool = False
+    entry_timestamp: Optional[datetime] = None
+    entry_price: Optional[float] = None
+    position_size: Optional[float] = None
+    direction: Optional[str] = None  # 'long' or 'short'
+    entry_confidence: Optional[float] = None
+    
+@dataclass
 class SignalGenerationResult:
     """Complete signal generation result."""
     timestamp: datetime
@@ -85,6 +95,11 @@ class SignalGenerationResult:
     signal_strength: float
     optimization_parameters: Dict[str, Any]
     metadata: Dict[str, Any]
+    # Exit-specific fields
+    exit_confidence: Optional[float] = None
+    should_exit: bool = False
+    exit_reason: Optional[str] = None
+    position_state: Optional[PositionState] = None
 
 class SignalGenerationPipeline:
     """
@@ -112,12 +127,21 @@ class SignalGenerationPipeline:
             'regime_confidence_threshold': 0.7,
             'signal_confidence_threshold': 0.6,
             'meta_model_weight': 0.8,
-            'base_model_weight': 0.2
+            'base_model_weight': 0.2,
+            # Exit-specific parameters
+            'exit_confidence_threshold': 0.5,
+            'tactician_exit_confidence_weight': 0.6,
+            'analyst_exit_confidence_weight': 0.4,
+            'exit_confidence_combination_method': 'multiplicative'  # 'multiplicative', 'logarithmic', 'weighted_average'
         }
         
         # State management
         self.is_initialized = False
         self.signal_history: List[SignalGenerationResult] = []
+        
+        # Position state management
+        self.current_position: Optional[PositionState] = None
+        self.position_history: List[PositionState] = []
         
     @handles_errors
     async def initialize(self) -> bool:
@@ -277,7 +301,12 @@ class SignalGenerationPipeline:
                         'regime_confidence_threshold': conf_opt.get('regime_threshold', 0.7),
                         'signal_confidence_threshold': conf_opt.get('signal_threshold', 0.6),
                         'meta_model_weight': conf_opt.get('meta_weight', 0.8),
-                        'base_model_weight': conf_opt.get('base_weight', 0.2)
+                        'base_model_weight': conf_opt.get('base_weight', 0.2),
+                        # Exit-specific parameters
+                        'exit_confidence_threshold': conf_opt.get('exit_threshold', 0.5),
+                        'tactician_exit_confidence_weight': conf_opt.get('tactician_exit_weight', 0.6),
+                        'analyst_exit_confidence_weight': conf_opt.get('analyst_exit_weight', 0.4),
+                        'exit_confidence_combination_method': conf_opt.get('exit_combination_method', 'multiplicative')
                     })
                     self.logger.info("✅ Loaded confidence optimization parameters from backtesting results")
                 else:
@@ -342,10 +371,22 @@ class SignalGenerationPipeline:
                 market_data, hmm_output, analyst_meta_output, tactician_base_outputs, timestamp
             )
             
-            # Step 6: Final Signal Generation
-            final_signal = self._generate_final_signal(
-                hmm_output, analyst_meta_output, tactician_meta_output
+            # Step 6: Calculate Exit Confidence (for position management)
+            exit_confidence = self._calculate_exit_confidence(
+                analyst_meta_output.analyst_confidence,
+                tactician_meta_output.tactician_confidence
             )
+            
+            # Step 7: Check Exit Conditions (if position is open)
+            should_exit, exit_reason = self._check_exit_conditions(exit_confidence)
+            
+            # Step 8: Final Signal Generation
+            final_signal = self._generate_final_signal(
+                hmm_output, analyst_meta_output, tactician_meta_output, should_exit, exit_reason
+            )
+            
+            # Update position state based on signal
+            self._update_position_state(final_signal, timestamp, should_exit)
             
             # Create result
             result = SignalGenerationResult(
@@ -362,7 +403,12 @@ class SignalGenerationPipeline:
                     'symbol': symbol,
                     'data_points': len(market_data),
                     'processing_time_ms': 0  # Will be set by decorator
-                }
+                },
+                # Exit-specific fields
+                exit_confidence=exit_confidence,
+                should_exit=should_exit,
+                exit_reason=exit_reason,
+                position_state=self.current_position
             )
             
             # Store in history
@@ -642,14 +688,216 @@ class SignalGenerationPipeline:
             self.logger.warning(f"⚠️ Combined confidence calculation failed: {e}")
             return (analyst_confidence + tactician_confidence) / 2
     
+    def _calculate_exit_confidence(self, analyst_confidence: float, tactician_confidence: float) -> float:
+        """
+        Calculate exit confidence using multiplicative and logarithmic combinations.
+        
+        This method implements the requirement for optimal exit confidence calculation based on
+        tactician's and analyst's confidence outputs, using different combination methods.
+        
+        Args:
+            analyst_confidence: Current analyst confidence (regularly recalculated)
+            tactician_confidence: Current tactician confidence (regularly recalculated)
+            
+        Returns:
+            Combined exit confidence value
+        """
+        try:
+            # Get exit-specific weights and combination method
+            tactician_weight = self.optimization_params['tactician_exit_confidence_weight']
+            analyst_weight = self.optimization_params['analyst_exit_confidence_weight']
+            combination_method = self.optimization_params['exit_confidence_combination_method']
+            
+            # Ensure weights are normalized
+            total_weight = tactician_weight + analyst_weight
+            if total_weight > 0:
+                tactician_weight = tactician_weight / total_weight
+                analyst_weight = analyst_weight / total_weight
+            else:
+                tactician_weight = 0.6
+                analyst_weight = 0.4
+            
+            # Calculate exit confidence based on selected method
+            if combination_method == 'multiplicative':
+                # Multiplicative combination: (tactician_conf^tactician_weight) * (analyst_conf^analyst_weight)
+                exit_confidence = self._calculate_multiplicative_exit_confidence(
+                    analyst_confidence, tactician_confidence, tactician_weight, analyst_weight
+                )
+            elif combination_method == 'logarithmic':
+                # Logarithmic combination: exp(tactician_weight * log(tactician_conf) + analyst_weight * log(analyst_conf))
+                exit_confidence = self._calculate_logarithmic_exit_confidence(
+                    analyst_confidence, tactician_confidence, tactician_weight, analyst_weight
+                )
+            else:  # weighted_average or default
+                # Weighted average combination
+                exit_confidence = (analyst_confidence * analyst_weight + 
+                                 tactician_confidence * tactician_weight)
+            
+            # Ensure confidence is within valid range [0, 1]
+            exit_confidence = max(0.0, min(1.0, exit_confidence))
+            
+            self.logger.debug(f"📊 Exit confidence calculation using {combination_method}:")
+            self.logger.debug(f"   Analyst: {analyst_confidence:.4f} (weight: {analyst_weight:.3f})")
+            self.logger.debug(f"   Tactician: {tactician_confidence:.4f} (weight: {tactician_weight:.3f})")
+            self.logger.debug(f"   Exit confidence: {exit_confidence:.4f}")
+            
+            return exit_confidence
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error calculating exit confidence: {e}")
+            # Fallback to simple weighted average
+            return (analyst_confidence * 0.4 + tactician_confidence * 0.6)
+    
+    def _calculate_multiplicative_exit_confidence(self, analyst_confidence: float, tactician_confidence: float,
+                                                tactician_weight: float, analyst_weight: float) -> float:
+        """
+        Calculate exit confidence using multiplicative operations.
+        
+        Formula: (tactician_confidence^tactician_weight) * (analyst_confidence^analyst_weight)
+        """
+        try:
+            # Ensure confidences are positive for power operations
+            analyst_conf = max(0.001, analyst_confidence)
+            tactician_conf = max(0.001, tactician_confidence)
+            
+            # Multiplicative combination with weights as exponents
+            multiplicative_conf = (
+                (tactician_conf ** tactician_weight) * 
+                (analyst_conf ** analyst_weight)
+            )
+            
+            # Normalize to [0, 1] range
+            multiplicative_conf = min(1.0, multiplicative_conf)
+            
+            return multiplicative_conf
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error in multiplicative exit confidence calculation: {e}")
+            return 0.5  # Default fallback
+    
+    def _calculate_logarithmic_exit_confidence(self, analyst_confidence: float, tactician_confidence: float,
+                                             tactician_weight: float, analyst_weight: float) -> float:
+        """
+        Calculate exit confidence using logarithmic additions.
+        
+        Formula: exp(tactician_weight * log(tactician_confidence) + analyst_weight * log(analyst_confidence))
+        """
+        try:
+            # Ensure confidences are positive for log operations
+            analyst_conf = max(0.001, analyst_confidence)
+            tactician_conf = max(0.001, tactician_confidence)
+            
+            # Logarithmic addition with weights
+            log_combination = (
+                tactician_weight * np.log(tactician_conf) +
+                analyst_weight * np.log(analyst_conf)
+            )
+            
+            # Convert back using exponential
+            logarithmic_conf = np.exp(log_combination)
+            
+            # Normalize to [0, 1] range
+            logarithmic_conf = min(1.0, max(0.0, logarithmic_conf))
+            
+            return logarithmic_conf
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error in logarithmic exit confidence calculation: {e}")
+            return 0.5  # Default fallback
+    
+    def _check_exit_conditions(self, exit_confidence: float) -> Tuple[bool, Optional[str]]:
+        """
+        Check if position should be exited based on exit confidence threshold.
+        
+        Args:
+            exit_confidence: Combined exit confidence from analyst and tactician
+            
+        Returns:
+            Tuple of (should_exit, exit_reason)
+        """
+        try:
+            # If no position is open, no need to exit
+            if not self.current_position or not self.current_position.is_open:
+                return False, None
+            
+            exit_threshold = self.optimization_params['exit_confidence_threshold']
+            
+            # Check if exit confidence drops below threshold
+            if exit_confidence < exit_threshold:
+                exit_reason = f"Exit confidence {exit_confidence:.3f} below threshold {exit_threshold:.3f}"
+                self.logger.info(f"🚪 Exit condition triggered: {exit_reason}")
+                return True, exit_reason
+            
+            return False, None
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error checking exit conditions: {e}")
+            return False, f"Error checking exit conditions: {e}"
+    
+    def _update_position_state(self, final_signal: Dict[str, Any], timestamp: datetime, should_exit: bool):
+        """
+        Update position state based on signal and exit conditions.
+        
+        Args:
+            final_signal: Generated trading signal
+            timestamp: Current timestamp
+            should_exit: Whether position should be exited
+        """
+        try:
+            signal = final_signal['signal']
+            confidence = final_signal['confidence']
+            
+            # Handle exit conditions first
+            if should_exit and self.current_position and self.current_position.is_open:
+                # Close current position
+                self.current_position.is_open = False
+                self.position_history.append(self.current_position)
+                self.logger.info(f"📉 Position closed: {self.current_position.direction} from {self.current_position.entry_timestamp}")
+                self.current_position = None
+                return
+            
+            # Handle new position entries
+            if signal in ['buy', 'sell'] and (not self.current_position or not self.current_position.is_open):
+                # Open new position
+                self.current_position = PositionState(
+                    is_open=True,
+                    entry_timestamp=timestamp,
+                    entry_price=None,  # Would be set by execution engine
+                    position_size=None,  # Would be set by execution engine
+                    direction='long' if signal == 'buy' else 'short',
+                    entry_confidence=confidence
+                )
+                self.logger.info(f"📈 New position opened: {signal} at {timestamp} (confidence: {confidence:.3f})")
+            
+            # Handle position closes from signal
+            elif signal == 'close' and self.current_position and self.current_position.is_open:
+                self.current_position.is_open = False
+                self.position_history.append(self.current_position)
+                self.logger.info(f"📉 Position closed by signal: {self.current_position.direction}")
+                self.current_position = None
+                
+        except Exception as e:
+            self.logger.error(f"❌ Error updating position state: {e}")
+    
     def _generate_final_signal(
         self,
         hmm_output: HMMRegimeOutput,
         analyst_output: AnalystMetaOutput,
-        tactician_output: TacticianMetaOutput
+        tactician_output: TacticianMetaOutput,
+        should_exit: bool = False,
+        exit_reason: Optional[str] = None
     ) -> Dict[str, Any]:
         """Generate final trading signal with validation."""
         try:
+            # Priority 1: Handle exit conditions first
+            if should_exit:
+                return {
+                    'signal': 'close',
+                    'confidence': 1.0,  # High confidence for exit
+                    'strength': 1.0,
+                    'reason': f'Exit condition triggered: {exit_reason}'
+                }
+            
             # Use optimization parameters for thresholds
             regime_threshold = self.optimization_params['regime_confidence_threshold']
             signal_threshold = self.optimization_params['signal_confidence_threshold']

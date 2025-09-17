@@ -106,7 +106,12 @@ class FinalParametersOptimizer:
                 'tactician_confidence_threshold': {'type': 'float', 'min': 0.7, 'max': 0.9},
                 'tactician_confidence_weight': {'type': 'float', 'min': 0.3, 'max': 0.8},
                 'analyst_confidence_weight': {'type': 'float', 'min': 0.2, 'max': 0.7},
-                'confidence_combination_method': {'type': 'categorical', 'choices': ['multiplicative', 'logarithmic', 'harmonic', 'weighted_average']}
+                'confidence_combination_method': {'type': 'categorical', 'choices': ['multiplicative', 'logarithmic', 'harmonic', 'weighted_average']},
+                # Exit-specific confidence parameters
+                'exit_confidence_threshold': {'type': 'float', 'min': 0.3, 'max': 0.7},
+                'tactician_exit_confidence_weight': {'type': 'float', 'min': 0.4, 'max': 0.8},
+                'analyst_exit_confidence_weight': {'type': 'float', 'min': 0.2, 'max': 0.6},
+                'exit_confidence_combination_method': {'type': 'categorical', 'choices': ['multiplicative', 'logarithmic', 'weighted_average']}
             },
             'position_sizing': {
                 'base_position_size': {'type': 'float', 'min': 0.01, 'max': 0.15},
@@ -475,6 +480,11 @@ class FinalParametersOptimizer:
             if base_score > 0.0:
                 turnover_penalty = self._calculate_turnover_penalty(params, calibration_results)
                 base_score -= turnover_penalty
+            
+            # Special handling for confidence category - add exit strategy backtesting
+            if category == 'confidence' and base_score > 0.0:
+                exit_strategy_score = self._evaluate_exit_strategy_performance(params, calibration_results)
+                base_score += exit_strategy_score * 0.4  # Weight exit strategy evaluation
 
             return base_score
 
@@ -518,12 +528,35 @@ class FinalParametersOptimizer:
                 if abs(tactician_weight + analyst_weight - 1.0) < 0.1:
                     score += 0.1  # Bonus for weights that sum close to 1.0
             
+            # Extract exit confidence parameters
+            exit_threshold = params.get('exit_confidence_threshold', 0.5)
+            tactician_exit_weight = params.get('tactician_exit_confidence_weight', 0.6)
+            analyst_exit_weight = params.get('analyst_exit_confidence_weight', 0.4)
+            exit_combination_method = params.get('exit_confidence_combination_method', 'multiplicative')
+            
+            # Validate exit confidence parameters
+            if 0.3 <= exit_threshold <= 0.7:
+                score += 0.1
+            if 0.2 <= tactician_exit_weight <= 0.8 and 0.2 <= analyst_exit_weight <= 0.8:
+                score += 0.1
+                if abs(tactician_exit_weight + analyst_exit_weight - 1.0) < 0.1:
+                    score += 0.1  # Bonus for exit weights that sum close to 1.0
+            
+            # Bonus for advanced exit combination methods
+            if exit_combination_method in ['multiplicative', 'logarithmic']:
+                score += 0.1
+            
             # Update calibration results with parameter weights
             enhanced_calibration = calibration_results.copy()
             enhanced_calibration.update({
                 'tactician_confidence_weight': tactician_weight,
                 'analyst_confidence_weight': analyst_weight,
-                'confidence_combination_method': params.get('confidence_combination_method', 'weighted_average')
+                'confidence_combination_method': params.get('confidence_combination_method', 'weighted_average'),
+                # Exit-specific parameters
+                'exit_confidence_threshold': exit_threshold,
+                'tactician_exit_confidence_weight': tactician_exit_weight,
+                'analyst_exit_confidence_weight': analyst_exit_weight,
+                'exit_confidence_combination_method': exit_combination_method
             })
             
             # Calculate optimal confidence using multiplicative and logarithmic operations
@@ -550,6 +583,12 @@ class FinalParametersOptimizer:
                 combination_method = params.get('confidence_combination_method', 'weighted_average')
                 if combination_method in ['multiplicative', 'logarithmic']:
                     score += 0.1  # Bonus for advanced methods
+                
+                # Evaluate exit confidence calculation
+                exit_confidence_score = self._evaluate_exit_confidence_calculation(
+                    analyst_thresh, tactician_thresh, enhanced_calibration
+                )
+                score += exit_confidence_score * 0.3  # Weight exit confidence evaluation
         
         return score
     
@@ -830,6 +869,107 @@ class FinalParametersOptimizer:
             
         except Exception as e:
             self.logger.error(f"❌ Error evaluating confidence stability: {e}")
+            return 0.5  # Default fallback
+    
+    def _evaluate_exit_confidence_calculation(self, analyst_threshold: float, tactician_threshold: float,
+                                           calibration_results: Dict[str, Any]) -> float:
+        """
+        Evaluate exit confidence calculation effectiveness.
+        
+        Args:
+            analyst_threshold: Analyst confidence threshold
+            tactician_threshold: Tactician confidence threshold
+            calibration_results: Results from confidence calibration including exit parameters
+            
+        Returns:
+            Exit confidence evaluation score between 0 and 1
+        """
+        try:
+            score = 0.0
+            
+            # Get exit confidence parameters
+            exit_threshold = calibration_results.get('exit_confidence_threshold', 0.5)
+            tactician_exit_weight = calibration_results.get('tactician_exit_confidence_weight', 0.6)
+            analyst_exit_weight = calibration_results.get('analyst_exit_confidence_weight', 0.4)
+            exit_combination_method = calibration_results.get('exit_confidence_combination_method', 'multiplicative')
+            
+            # Calculate exit confidence using different methods
+            exit_confidences = {}
+            
+            # Method 1: Multiplicative
+            try:
+                analyst_conf = max(0.001, analyst_threshold)
+                tactician_conf = max(0.001, tactician_threshold)
+                multiplicative_exit = (
+                    (tactician_conf ** tactician_exit_weight) * 
+                    (analyst_conf ** analyst_exit_weight)
+                )
+                exit_confidences['multiplicative'] = min(1.0, multiplicative_exit)
+            except:
+                exit_confidences['multiplicative'] = 0.5
+            
+            # Method 2: Logarithmic
+            try:
+                analyst_conf = max(0.001, analyst_threshold)
+                tactician_conf = max(0.001, tactician_threshold)
+                log_combination = (
+                    tactician_exit_weight * np.log(tactician_conf) +
+                    analyst_exit_weight * np.log(analyst_conf)
+                )
+                logarithmic_exit = np.exp(log_combination)
+                exit_confidences['logarithmic'] = min(1.0, max(0.0, logarithmic_exit))
+            except:
+                exit_confidences['logarithmic'] = 0.5
+            
+            # Method 3: Weighted Average
+            weighted_avg_exit = (
+                analyst_threshold * analyst_exit_weight +
+                tactician_threshold * tactician_exit_weight
+            )
+            exit_confidences['weighted_average'] = max(0.0, min(1.0, weighted_avg_exit))
+            
+            # Score based on selected method effectiveness
+            selected_exit_confidence = exit_confidences.get(exit_combination_method, 0.5)
+            
+            # Score factors
+            # 1. Exit confidence should be reasonable (not too high or too low)
+            if 0.4 <= selected_exit_confidence <= 0.8:
+                score += 0.3
+            elif 0.2 <= selected_exit_confidence <= 0.9:
+                score += 0.2
+            else:
+                score += 0.1
+            
+            # 2. Exit threshold should be lower than entry confidence
+            entry_confidence = (analyst_threshold + tactician_threshold) / 2
+            if exit_threshold < entry_confidence:
+                score += 0.2
+                # Bonus for reasonable gap
+                gap = entry_confidence - exit_threshold
+                if 0.1 <= gap <= 0.3:
+                    score += 0.1
+            
+            # 3. Exit weights should be reasonable
+            if abs(tactician_exit_weight + analyst_exit_weight - 1.0) < 0.1:
+                score += 0.2
+            
+            # 4. Method consistency bonus
+            if exit_combination_method in ['multiplicative', 'logarithmic']:
+                # These methods should produce reasonable results
+                multiplicative_conf = exit_confidences.get('multiplicative', 0)
+                logarithmic_conf = exit_confidences.get('logarithmic', 0)
+                
+                if multiplicative_conf > 0.1 and logarithmic_conf > 0.1:
+                    score += 0.1
+                    
+                    # Bonus if methods are consistent
+                    if abs(multiplicative_conf - logarithmic_conf) < 0.2:
+                        score += 0.1
+            
+            return min(1.0, score)
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error evaluating exit confidence calculation: {e}")
             return 0.5  # Default fallback
 
     def _evaluate_position_sizing_params(self, params: Dict[str, Any], 
@@ -1299,6 +1439,250 @@ class FinalParametersOptimizer:
         except Exception as e:
             self.logger.warning(f"Error estimating turnover rate: {e}")
             return 0.15  # Default turnover rate
+    
+    def _evaluate_exit_strategy_performance(self, params: Dict[str, Any], 
+                                          calibration_results: Dict[str, Any]) -> float:
+        """
+        Evaluate exit strategy performance through simulated backtesting.
+        
+        This method simulates how well the exit confidence threshold and combination methods
+        work in practice by testing different scenarios.
+        
+        Args:
+            params: Current parameter configuration including exit parameters
+            calibration_results: Calibration results with historical data
+            
+        Returns:
+            Exit strategy performance score (0.0 to 1.0)
+        """
+        try:
+            self.logger.debug("🔍 Evaluating exit strategy performance...")
+            
+            # Extract exit parameters
+            exit_threshold = params.get('exit_confidence_threshold', 0.5)
+            tactician_exit_weight = params.get('tactician_exit_confidence_weight', 0.6)
+            analyst_exit_weight = params.get('analyst_exit_confidence_weight', 0.4)
+            exit_combination_method = params.get('exit_confidence_combination_method', 'multiplicative')
+            
+            # Simulate various confidence scenarios
+            scenarios = self._generate_confidence_scenarios()
+            
+            total_score = 0.0
+            scenario_count = 0
+            
+            for scenario in scenarios:
+                scenario_score = self._evaluate_single_exit_scenario(
+                    scenario, exit_threshold, tactician_exit_weight, 
+                    analyst_exit_weight, exit_combination_method
+                )
+                total_score += scenario_score
+                scenario_count += 1
+            
+            if scenario_count == 0:
+                return 0.5  # Default score
+            
+            avg_score = total_score / scenario_count
+            
+            self.logger.debug(f"📊 Exit strategy evaluation completed:")
+            self.logger.debug(f"   Exit threshold: {exit_threshold:.3f}")
+            self.logger.debug(f"   Combination method: {exit_combination_method}")
+            self.logger.debug(f"   Average scenario score: {avg_score:.3f}")
+            
+            return avg_score
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error evaluating exit strategy performance: {e}")
+            return 0.5  # Default fallback
+    
+    def _generate_confidence_scenarios(self) -> List[Dict[str, Any]]:
+        """
+        Generate various confidence scenarios for backtesting exit strategies.
+        
+        Returns:
+            List of scenarios with different confidence patterns
+        """
+        scenarios = []
+        
+        # Scenario 1: Declining confidence (should trigger exit)
+        scenarios.append({
+            'name': 'declining_confidence',
+            'analyst_confidence_sequence': [0.8, 0.7, 0.6, 0.5, 0.4],
+            'tactician_confidence_sequence': [0.9, 0.8, 0.6, 0.5, 0.3],
+            'expected_exit': True,
+            'optimal_exit_point': 3  # Should exit around 4th measurement
+        })
+        
+        # Scenario 2: Stable high confidence (should not exit)
+        scenarios.append({
+            'name': 'stable_high_confidence',
+            'analyst_confidence_sequence': [0.8, 0.8, 0.7, 0.8, 0.8],
+            'tactician_confidence_sequence': [0.9, 0.8, 0.8, 0.9, 0.8],
+            'expected_exit': False,
+            'optimal_exit_point': None
+        })
+        
+        # Scenario 3: Volatile confidence (should be cautious)
+        scenarios.append({
+            'name': 'volatile_confidence',
+            'analyst_confidence_sequence': [0.7, 0.5, 0.8, 0.4, 0.6],
+            'tactician_confidence_sequence': [0.8, 0.6, 0.9, 0.3, 0.7],
+            'expected_exit': True,
+            'optimal_exit_point': 3  # Should exit when it drops to 0.3
+        })
+        
+        # Scenario 4: Gradual recovery (should not exit early)
+        scenarios.append({
+            'name': 'gradual_recovery',
+            'analyst_confidence_sequence': [0.6, 0.5, 0.6, 0.7, 0.8],
+            'tactician_confidence_sequence': [0.7, 0.6, 0.7, 0.8, 0.9],
+            'expected_exit': False,
+            'optimal_exit_point': None
+        })
+        
+        # Scenario 5: Sharp drop (should exit quickly)
+        scenarios.append({
+            'name': 'sharp_drop',
+            'analyst_confidence_sequence': [0.8, 0.8, 0.3, 0.2, 0.1],
+            'tactician_confidence_sequence': [0.9, 0.9, 0.4, 0.2, 0.1],
+            'expected_exit': True,
+            'optimal_exit_point': 2  # Should exit immediately after drop
+        })
+        
+        return scenarios
+    
+    def _evaluate_single_exit_scenario(self, scenario: Dict[str, Any], exit_threshold: float,
+                                     tactician_exit_weight: float, analyst_exit_weight: float,
+                                     exit_combination_method: str) -> float:
+        """
+        Evaluate a single exit scenario.
+        
+        Args:
+            scenario: Scenario configuration with confidence sequences
+            exit_threshold: Exit confidence threshold
+            tactician_exit_weight: Weight for tactician confidence in exit calculation
+            analyst_exit_weight: Weight for analyst confidence in exit calculation
+            exit_combination_method: Method for combining confidences
+            
+        Returns:
+            Scenario evaluation score (0.0 to 1.0)
+        """
+        try:
+            analyst_seq = scenario['analyst_confidence_sequence']
+            tactician_seq = scenario['tactician_confidence_sequence']
+            expected_exit = scenario['expected_exit']
+            optimal_exit_point = scenario.get('optimal_exit_point')
+            
+            exit_triggered = False
+            exit_point = None
+            
+            # Simulate the confidence sequence
+            for i, (analyst_conf, tactician_conf) in enumerate(zip(analyst_seq, tactician_seq)):
+                # Calculate exit confidence using the specified method
+                if exit_combination_method == 'multiplicative':
+                    exit_confidence = self._calculate_multiplicative_confidence(
+                        analyst_conf, tactician_conf, tactician_exit_weight, analyst_exit_weight
+                    )
+                elif exit_combination_method == 'logarithmic':
+                    exit_confidence = self._calculate_logarithmic_confidence(
+                        analyst_conf, tactician_conf, tactician_exit_weight, analyst_exit_weight
+                    )
+                else:  # weighted_average
+                    exit_confidence = (
+                        analyst_conf * analyst_exit_weight +
+                        tactician_conf * tactician_exit_weight
+                    )
+                
+                # Check if exit should be triggered
+                if exit_confidence < exit_threshold:
+                    exit_triggered = True
+                    exit_point = i
+                    break
+            
+            # Evaluate the exit decision
+            score = 0.0
+            
+            # Base score for correct exit decision
+            if expected_exit and exit_triggered:
+                score += 0.5  # Correctly identified need to exit
+                
+                # Bonus for exiting at the right time
+                if optimal_exit_point is not None:
+                    time_diff = abs(exit_point - optimal_exit_point)
+                    if time_diff == 0:
+                        score += 0.3  # Perfect timing
+                    elif time_diff == 1:
+                        score += 0.2  # Close timing
+                    elif time_diff <= 2:
+                        score += 0.1  # Reasonable timing
+                        
+            elif not expected_exit and not exit_triggered:
+                score += 0.6  # Correctly stayed in position
+                
+            elif expected_exit and not exit_triggered:
+                score += 0.1  # Failed to exit when should have (small penalty)
+                
+            elif not expected_exit and exit_triggered:
+                score += 0.2  # Exited when shouldn't have (moderate penalty)
+            
+            # Additional scoring factors
+            
+            # Penalty for very early or very late exits in declining scenarios
+            if scenario['name'] == 'declining_confidence' and exit_triggered:
+                if exit_point == 0:
+                    score *= 0.7  # Too early
+                elif exit_point >= 4:
+                    score *= 0.8  # Too late
+            
+            # Bonus for not exiting during recovery
+            if scenario['name'] == 'gradual_recovery' and not exit_triggered:
+                score += 0.1
+            
+            # Penalty for not exiting during sharp drops
+            if scenario['name'] == 'sharp_drop' and not exit_triggered:
+                score *= 0.5
+            
+            return min(1.0, max(0.0, score))
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error evaluating exit scenario: {e}")
+            return 0.5  # Default fallback
+    
+    def _calculate_multiplicative_confidence(self, analyst_conf: float, tactician_conf: float,
+                                           tactician_weight: float, analyst_weight: float) -> float:
+        """Calculate confidence using multiplicative method (shared with signal pipeline)."""
+        try:
+            analyst_conf = max(0.001, analyst_conf)
+            tactician_conf = max(0.001, tactician_conf)
+            
+            multiplicative_conf = (
+                (tactician_conf ** tactician_weight) * 
+                (analyst_conf ** analyst_weight)
+            )
+            
+            return min(1.0, multiplicative_conf)
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error in multiplicative confidence calculation: {e}")
+            return 0.5
+    
+    def _calculate_logarithmic_confidence(self, analyst_conf: float, tactician_conf: float,
+                                        tactician_weight: float, analyst_weight: float) -> float:
+        """Calculate confidence using logarithmic method (shared with signal pipeline)."""
+        try:
+            analyst_conf = max(0.001, analyst_conf)
+            tactician_conf = max(0.001, tactician_conf)
+            
+            log_combination = (
+                tactician_weight * np.log(tactician_conf) +
+                analyst_weight * np.log(analyst_conf)
+            )
+            
+            logarithmic_conf = np.exp(log_combination)
+            return min(1.0, max(0.0, logarithmic_conf))
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error in logarithmic confidence calculation: {e}")
+            return 0.5
 
     async def save_optimization_results(self, optimization_results: Dict[str, Any],
                                       symbol: str, exchange: str, data_dir: str) -> None:

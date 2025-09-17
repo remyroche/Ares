@@ -466,7 +466,14 @@ class CrossTimeframeFeatureGenerator:
                 continue
         
         if cross_timeframe_features:
-            return np.column_stack(cross_timeframe_features), cross_timeframe_names
+            features_matrix = np.column_stack(cross_timeframe_features)
+            # Drop near-constant features (low variance)
+            variances = np.var(features_matrix, axis=0)
+            keep_mask = variances > 1e-12
+            if not np.all(keep_mask):
+                features_matrix = features_matrix[:, keep_mask]
+                cross_timeframe_names = [name for name, keep in zip(cross_timeframe_names, keep_mask) if keep]
+            return features_matrix, cross_timeframe_names
         else:
             return np.array([]).reshape(X.shape[0], 0), []
     
@@ -503,17 +510,48 @@ class CrossTimeframeFeatureGenerator:
             elif cross_timeframe_type == CrossTimeframeType.CORRELATION:
                 # Rolling correlation between timeframes
                 window = min(20, len(x1))
-                feature = np.full_like(x1, np.corrcoef(x1, x2)[0, 1])
-                name = f"{feat1}_corr_{feat2}"
+                if window >= 3:
+                    x1_mean = np.convolve(x1, np.ones(window)/window, mode='valid')
+                    x2_mean = np.convolve(x2, np.ones(window)/window, mode='valid')
+                    x1_centered = x1[window-1:] - x1_mean
+                    x2_centered = x2[window-1:] - x2_mean
+                    num = np.convolve(x1_centered * x2_centered, np.ones(1), mode='valid')
+                    den = np.sqrt(
+                        np.convolve(x1_centered**2, np.ones(1), mode='valid') *
+                        np.convolve(x2_centered**2, np.ones(1), mode='valid')
+                    )
+                    corr_valid = np.divide(num, den, out=np.zeros_like(num), where=(den != 0))
+                    feature = np.zeros_like(x1, dtype=float)
+                    feature[:window-1] = 0.0
+                    feature[window-1:] = corr_valid
+                else:
+                    feature = np.zeros_like(x1, dtype=float)
+                name = f"{feat1}_rolling_corr_{feat2}"
                 
             elif cross_timeframe_type == CrossTimeframeType.LAG_CORRELATION:
-                # Lag-based correlation
+                # True lag-based rolling correlation
                 lag = min(5, len(x1) // 4)
                 if lag > 0:
-                    lagged_x1 = np.roll(x1, lag)
-                    lagged_x1[:lag] = 0
-                    feature = lagged_x1 * x2
-                    name = f"{feat1}_lag_{lag}_x_{feat2}"
+                    x1_lag = np.roll(x1, lag)
+                    x1_lag[:lag] = x1_lag[lag]
+                    window = min(20, len(x1))
+                    if window >= 3:
+                        x1_mean = np.convolve(x1_lag, np.ones(window)/window, mode='valid')
+                        x2_mean = np.convolve(x2, np.ones(window)/window, mode='valid')
+                        x1_centered = x1_lag[window-1:] - x1_mean
+                        x2_centered = x2[window-1:] - x2_mean
+                        num = np.convolve(x1_centered * x2_centered, np.ones(1), mode='valid')
+                        den = np.sqrt(
+                            np.convolve(x1_centered**2, np.ones(1), mode='valid') *
+                            np.convolve(x2_centered**2, np.ones(1), mode='valid')
+                        )
+                        corr_valid = np.divide(num, den, out=np.zeros_like(num), where=(den != 0))
+                        feature = np.zeros_like(x1, dtype=float)
+                        feature[:window-1] = 0.0
+                        feature[window-1:] = corr_valid
+                        name = f"{feat1}_lag{lag}_rolling_corr_{feat2}"
+                    else:
+                        return None, ""
                 else:
                     return None, ""
                 
@@ -525,21 +563,44 @@ class CrossTimeframeFeatureGenerator:
                 name = f"{feat1}_momentum_minus_{feat2}_momentum"
                 
             elif cross_timeframe_type == CrossTimeframeType.VOLATILITY:
-                # Volatility ratio between timeframes
-                vol1 = np.std(x1)
-                vol2 = np.std(x2)
-                if vol2 != 0:
-                    feature = np.full_like(x1, vol1 / vol2)
-                    name = f"{feat1}_vol_ratio_{feat2}_vol"
+                # Rolling volatility ratio between timeframes
+                window = min(20, len(x1))
+                if window >= 3:
+                    def rolling_std(arr, w):
+                        mean = np.convolve(arr, np.ones(w)/w, mode='valid')
+                        sq_mean = np.convolve(arr*arr, np.ones(w)/w, mode='valid')
+                        var = np.maximum(sq_mean - mean*mean, 0.0)
+                        return np.sqrt(var)
+                    vol1 = rolling_std(x1, window)
+                    vol2 = rolling_std(x2, window)
+                    ratio = np.divide(vol1, vol2, out=np.zeros_like(vol1), where=(vol2 != 0))
+                    feature = np.zeros_like(x1, dtype=float)
+                    feature[:window-1] = 0.0
+                    feature[window-1:] = ratio
+                    name = f"{feat1}_rolling_vol_ratio_{feat2}"
                 else:
                     return None, ""
                 
             elif cross_timeframe_type == CrossTimeframeType.TREND_ALIGNMENT:
-                # Trend alignment between timeframes
-                trend1 = np.polyfit(range(len(x1)), x1, 1)[0]
-                trend2 = np.polyfit(range(len(x2)), x2, 1)[0]
-                feature = np.full_like(x1, trend1 * trend2)
-                name = f"{feat1}_trend_x_{feat2}_trend"
+                # Rolling trend alignment between timeframes using slope product
+                window = min(20, len(x1))
+                if window >= 3:
+                    idx = np.arange(window)
+                    idx_mean = idx.mean()
+                    denom = ((idx - idx_mean)**2).sum()
+                    slope_prod = np.zeros(len(x1), dtype=float)
+                    for t in range(window-1, len(x1)):
+                        s1 = x1[t-window+1:t+1]
+                        s2 = x2[t-window+1:t+1]
+                        s1_mean = s1.mean()
+                        s2_mean = s2.mean()
+                        slope1 = ((idx - idx_mean) * (s1 - s1_mean)).sum() / denom
+                        slope2 = ((idx - idx_mean) * (s2 - s2_mean)).sum() / denom
+                        slope_prod[t] = slope1 * slope2
+                    feature = slope_prod
+                    name = f"{feat1}_rolling_trend_align_{feat2}"
+                else:
+                    return None, ""
                 
             elif cross_timeframe_type == CrossTimeframeType.REGIME_CONSISTENCY:
                 # Regime consistency between timeframes

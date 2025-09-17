@@ -34,6 +34,7 @@ from src.utils.logger import system_logger
 try:
     from src.feature_engineering.feature_generators import FeatureGenerators
     from src.feature_engineering.optimized_feature_orchestrator import OptimizedFeatureOrchestrator
+    from .comprehensive_feature_integration import ComprehensiveFeatureGenerator
     FEATURE_ENGINEERING_AVAILABLE = True
 except ImportError as e:
     system_logger.warning(f"Feature engineering components not available: {e}")
@@ -136,6 +137,12 @@ class MarketDimensionAnalyzer:
             self.statistical_analyzer = StatisticalDimensionAnalyzer()
         else:
             self.statistical_analyzer = None
+        
+        # Initialize comprehensive feature generator
+        if FEATURE_ENGINEERING_AVAILABLE:
+            self.comprehensive_generator = ComprehensiveFeatureGenerator()
+        else:
+            self.comprehensive_generator = None
         
     def analyze_all_dimensions(self, 
                              market_data: pd.DataFrame,
@@ -594,49 +601,29 @@ class MarketDimensionAnalyzer:
             }
     
     def _generate_features_from_pipeline(self, market_data: pd.DataFrame) -> pd.DataFrame:
-        """Generate features using the existing feature engineering pipeline."""
-        self.logger.info("🔧 Generating features using existing feature engineering pipeline")
+        """Generate ALL available features using the comprehensive feature engineering pipeline."""
+        self.logger.info("🔧 Generating ALL available features from comprehensive feature engineering pipeline")
         
         try:
-            # Initialize feature generators
-            feature_generators = FeatureGenerators()
-            
-            # Generate comprehensive feature set
-            features = pd.DataFrame(index=market_data.index)
-            
-            # Basic OHLCV features
-            features = pd.concat([features, market_data], axis=1)
-            
-            # Generate technical indicators
-            if hasattr(feature_generators, 'generate_technical_features'):
-                tech_features = feature_generators.generate_technical_features(market_data)
-                features = pd.concat([features, tech_features], axis=1)
-            
-            # Generate volume features
-            if hasattr(feature_generators, 'generate_volume_features'):
-                volume_features = feature_generators.generate_volume_features(market_data)
-                features = pd.concat([features, volume_features], axis=1)
-            
-            # Generate volatility features
-            if hasattr(feature_generators, 'generate_volatility_features'):
-                vol_features = feature_generators.generate_volatility_features(market_data)
-                features = pd.concat([features, vol_features], axis=1)
-            
-            # Generate momentum features
-            if hasattr(feature_generators, 'generate_momentum_features'):
-                momentum_features = feature_generators.generate_momentum_features(market_data)
-                features = pd.concat([features, momentum_features], axis=1)
-            
-            # Generate microstructure proxies
-            if hasattr(feature_generators, 'generate_microstructure_features'):
-                micro_features = feature_generators.generate_microstructure_features(market_data)
-                features = pd.concat([features, micro_features], axis=1)
-            
-            self.logger.info(f"✅ Generated {len(features.columns)} features using pipeline")
-            return features.fillna(method='ffill').fillna(0)
+            if self.comprehensive_generator:
+                # Use comprehensive feature generator to get ALL features
+                features = self.comprehensive_generator.generate_all_available_features(market_data)
+                
+                # Log feature categories
+                feature_categories = self.comprehensive_generator.get_feature_categories(features)
+                self.logger.info("📊 Comprehensive feature generation completed:")
+                for category, feature_list in feature_categories.items():
+                    if feature_list:
+                        self.logger.info(f"   {category}: {len(feature_list)} features")
+                
+                return features
+            else:
+                # Fallback to basic feature generation
+                self.logger.warning("Comprehensive generator not available, using fallback")
+                return self._generate_basic_features(market_data)
             
         except Exception as e:
-            self.logger.error(f"❌ Failed to use feature engineering pipeline: {e}")
+            self.logger.error(f"❌ Failed to use comprehensive feature pipeline: {e}")
             return self._generate_basic_features(market_data)
     
     def _generate_basic_features(self, market_data: pd.DataFrame) -> pd.DataFrame:

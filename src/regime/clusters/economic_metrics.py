@@ -42,10 +42,13 @@ class EconomicMetric(Enum):
     VOLUME_PROFILE_DIFFERENCE = "volume_profile_difference"
     MARKET_IMPACT_DIFFERENCE = "market_impact_difference"
     
-    # Price Action Influence Metrics
-    PRICE_ACTION_INFLUENCE = "price_action_influence"
-    MOMENTUM_PREDICTION_POWER = "momentum_prediction_power"
-    MEAN_REVERSION_SIGNAL_STRENGTH = "mean_reversion_signal_strength"
+    # General Price Action Influence Metrics
+    PRICE_INSTABILITY_INFLUENCE = "price_instability_influence"
+    TREND_DURATION_IMPACT = "trend_duration_impact"
+    REVERSAL_VIOLENCE_MODULATION = "reversal_violence_modulation"
+    MOMENTUM_INTENSITY_EFFECT = "momentum_intensity_effect"
+    TREND_ACCELERATION_IMPACT = "trend_acceleration_impact"
+    PRICE_REGIME_TRANSITION_TRIGGER = "price_regime_transition_trigger"
     
     # Trading Economics
     REGIME_PERSISTENCE_VALUE = "regime_persistence_value"
@@ -490,11 +493,14 @@ class EconomicValidator:
         if 'volume' in market_data.columns:
             results[EconomicMetric.VOLUME_PROFILE_DIFFERENCE] = self._calculate_volume_profile_difference(market_data, regime_labels)
         
-        # Price action influence metrics
+        # General price action influence metrics
         if 'close' in market_data.columns:
-            results[EconomicMetric.PRICE_ACTION_INFLUENCE] = self._calculate_price_action_influence(market_data, regime_labels)
-            results[EconomicMetric.MOMENTUM_PREDICTION_POWER] = self._calculate_momentum_prediction_power(market_data, regime_labels)
-            results[EconomicMetric.MEAN_REVERSION_SIGNAL_STRENGTH] = self._calculate_mean_reversion_signal_strength(market_data, regime_labels)
+            results[EconomicMetric.PRICE_INSTABILITY_INFLUENCE] = self._calculate_price_instability_influence(market_data, regime_labels)
+            results[EconomicMetric.TREND_DURATION_IMPACT] = self._calculate_trend_duration_impact(market_data, regime_labels)
+            results[EconomicMetric.REVERSAL_VIOLENCE_MODULATION] = self._calculate_reversal_violence_modulation(market_data, regime_labels)
+            results[EconomicMetric.MOMENTUM_INTENSITY_EFFECT] = self._calculate_momentum_intensity_effect(market_data, regime_labels)
+            results[EconomicMetric.TREND_ACCELERATION_IMPACT] = self._calculate_trend_acceleration_impact(market_data, regime_labels)
+            results[EconomicMetric.PRICE_REGIME_TRANSITION_TRIGGER] = self._calculate_price_regime_transition_trigger(market_data, regime_labels)
         
         return results
     
@@ -933,6 +939,499 @@ class EconomicValidator:
             interpretation=interpretation,
             trading_implications=trading_implications,
             metadata={'regime_details': regime_reversion_strength}
+        )
+    
+    def _calculate_price_instability_influence(self, market_data: pd.DataFrame, regime_labels: np.ndarray) -> EconomicValidationResult:
+        """Calculate how regimes influence price instability (volatility of volatility, extreme moves)."""
+        
+        returns = market_data['close'].pct_change().fillna(0)
+        
+        # Calculate various instability measures
+        volatility_20 = returns.rolling(20).std()
+        volatility_of_volatility = volatility_20.rolling(20).std()  # Vol of vol
+        extreme_moves = (abs(returns) > returns.rolling(100).quantile(0.95)).astype(int)  # Top 5% moves
+        
+        unique_regimes = np.unique(regime_labels)
+        regime_instability = {}
+        
+        for regime in unique_regimes:
+            regime_mask = regime_labels == regime
+            
+            if np.sum(regime_mask) > 20:  # Need sufficient data
+                regime_vol_of_vol = volatility_of_volatility[regime_mask].mean()
+                regime_extreme_freq = extreme_moves[regime_mask].mean()
+                regime_return_kurtosis = returns[regime_mask].kurtosis()  # Tail thickness
+                
+                # Composite instability score
+                instability_score = (
+                    regime_vol_of_vol * 10 +  # Scale vol of vol
+                    regime_extreme_freq * 5 +  # Scale extreme move frequency
+                    max(0, regime_return_kurtosis - 3) * 0.1  # Excess kurtosis
+                )
+                
+                regime_instability[regime] = {
+                    'volatility_of_volatility': float(regime_vol_of_vol),
+                    'extreme_move_frequency': float(regime_extreme_freq),
+                    'return_kurtosis': float(regime_return_kurtosis),
+                    'instability_score': float(instability_score)
+                }
+            else:
+                regime_instability[regime] = {
+                    'volatility_of_volatility': 0.0,
+                    'extreme_move_frequency': 0.0,
+                    'return_kurtosis': 0.0,
+                    'instability_score': 0.0
+                }
+        
+        # Calculate overall instability influence
+        if len(regime_instability) > 1:
+            instability_scores = [data['instability_score'] for data in regime_instability.values()]
+            max_diff = max(instability_scores) - min(instability_scores)
+            
+            # Economic significance: >0.1 instability difference
+            economically_significant = max_diff > 0.1
+            
+            interpretation = f"Price instability influence: {max_diff:.3f} difference"
+            trading_implications = "Regimes significantly affect market instability and extreme moves" if economically_significant else "Similar instability patterns across regimes"
+        else:
+            max_diff = 0.0
+            economically_significant = False
+            interpretation = "Single regime - no instability comparison"
+            trading_implications = "No instability benefits from regime identification"
+        
+        return EconomicValidationResult(
+            metric=EconomicMetric.PRICE_INSTABILITY_INFLUENCE,
+            value=float(max_diff),
+            economic_significance=economically_significant,
+            regime_specific_values={int(k): v['instability_score'] for k, v in regime_instability.items()},
+            statistical_significance=None,
+            confidence_interval=None,
+            interpretation=interpretation,
+            trading_implications=trading_implications,
+            metadata={'regime_details': regime_instability}
+        )
+    
+    def _calculate_trend_duration_impact(self, market_data: pd.DataFrame, regime_labels: np.ndarray) -> EconomicValidationResult:
+        """Calculate how regimes impact trend duration (how long trends last)."""
+        
+        prices = market_data['close']
+        
+        # Define trend using multiple timeframes
+        ma_short = prices.rolling(10).mean()
+        ma_long = prices.rolling(50).mean()
+        trend_direction = np.where(ma_short > ma_long, 1, -1)  # 1=uptrend, -1=downtrend
+        
+        unique_regimes = np.unique(regime_labels)
+        regime_trend_durations = {}
+        
+        for regime in unique_regimes:
+            regime_mask = regime_labels == regime
+            
+            # Calculate trend durations within this regime
+            trend_durations = []
+            current_trend = None
+            current_duration = 0
+            
+            for i in range(len(regime_mask)):
+                if regime_mask[i]:  # In this regime
+                    if trend_direction[i] == current_trend:
+                        current_duration += 1
+                    else:
+                        if current_duration > 0:
+                            trend_durations.append(current_duration)
+                        current_trend = trend_direction[i]
+                        current_duration = 1
+                else:
+                    # Regime ended, record current trend if any
+                    if current_duration > 0:
+                        trend_durations.append(current_duration)
+                        current_duration = 0
+                        current_trend = None
+            
+            # Final trend
+            if current_duration > 0:
+                trend_durations.append(current_duration)
+            
+            # Calculate trend duration statistics
+            if trend_durations:
+                avg_duration = np.mean(trend_durations)
+                median_duration = np.median(trend_durations)
+                max_duration = np.max(trend_durations)
+                duration_volatility = np.std(trend_durations)
+                
+                regime_trend_durations[regime] = {
+                    'avg_trend_duration': float(avg_duration),
+                    'median_trend_duration': float(median_duration),
+                    'max_trend_duration': float(max_duration),
+                    'duration_volatility': float(duration_volatility),
+                    'n_trends': len(trend_durations)
+                }
+            else:
+                regime_trend_durations[regime] = {
+                    'avg_trend_duration': 0.0,
+                    'median_trend_duration': 0.0,
+                    'max_trend_duration': 0.0,
+                    'duration_volatility': 0.0,
+                    'n_trends': 0
+                }
+        
+        # Calculate trend duration impact
+        if len(regime_trend_durations) > 1:
+            avg_durations = [data['avg_trend_duration'] for data in regime_trend_durations.values()]
+            duration_range = max(avg_durations) - min(avg_durations)
+            
+            # Economic significance: >5 period difference in trend duration
+            economically_significant = duration_range > 5.0
+            
+            interpretation = f"Trend duration impact: {duration_range:.1f} period difference"
+            trading_implications = "Regimes significantly affect trend persistence and duration" if economically_significant else "Similar trend durations across regimes"
+        else:
+            duration_range = 0.0
+            economically_significant = False
+            interpretation = "Single regime - no trend duration comparison"
+            trading_implications = "No trend duration benefits from regime identification"
+        
+        return EconomicValidationResult(
+            metric=EconomicMetric.TREND_DURATION_IMPACT,
+            value=float(duration_range),
+            economic_significance=economically_significant,
+            regime_specific_values={int(k): v['avg_trend_duration'] for k, v in regime_trend_durations.items()},
+            statistical_significance=None,
+            confidence_interval=None,
+            interpretation=interpretation,
+            trading_implications=trading_implications,
+            metadata={'regime_details': regime_trend_durations}
+        )
+    
+    def _calculate_reversal_violence_modulation(self, market_data: pd.DataFrame, regime_labels: np.ndarray) -> EconomicValidationResult:
+        """Calculate how regimes modulate reversal violence (speed and magnitude of reversals)."""
+        
+        prices = market_data['close']
+        returns = prices.pct_change().fillna(0)
+        
+        # Detect reversals using local extrema
+        ma_10 = prices.rolling(10).mean()
+        price_position = (prices - ma_10) / ma_10  # Position relative to MA
+        
+        unique_regimes = np.unique(regime_labels)
+        regime_reversal_violence = {}
+        
+        for regime in unique_regimes:
+            regime_mask = regime_labels == regime
+            
+            # Find reversals within this regime
+            reversal_magnitudes = []
+            reversal_speeds = []
+            
+            for i in range(10, len(regime_mask) - 10):
+                if regime_mask[i]:  # In this regime
+                    current_position = price_position.iloc[i]
+                    
+                    # Look for significant position (>2% from MA)
+                    if abs(current_position) > 0.02:
+                        # Look for reversal in next 10 periods
+                        future_positions = price_position.iloc[i+1:i+11]
+                        
+                        # Find if reversal occurs (crossing zero)
+                        if current_position > 0:  # Above MA, look for move below
+                            reversal_points = future_positions[future_positions < 0]
+                        else:  # Below MA, look for move above
+                            reversal_points = future_positions[future_positions > 0]
+                        
+                        if len(reversal_points) > 0:
+                            # Calculate reversal magnitude and speed
+                            reversal_magnitude = abs(current_position - reversal_points.iloc[0])
+                            reversal_speed = reversal_magnitude / (np.where(future_positions.index == reversal_points.index[0])[0][0] + 1)
+                            
+                            reversal_magnitudes.append(reversal_magnitude)
+                            reversal_speeds.append(reversal_speed)
+            
+            # Calculate reversal violence metrics
+            if reversal_magnitudes and reversal_speeds:
+                avg_magnitude = np.mean(reversal_magnitudes)
+                avg_speed = np.mean(reversal_speeds)
+                violence_score = avg_magnitude * avg_speed  # Magnitude × Speed = Violence
+                
+                regime_reversal_violence[regime] = {
+                    'avg_reversal_magnitude': float(avg_magnitude),
+                    'avg_reversal_speed': float(avg_speed),
+                    'reversal_violence_score': float(violence_score),
+                    'n_reversals': len(reversal_magnitudes)
+                }
+            else:
+                regime_reversal_violence[regime] = {
+                    'avg_reversal_magnitude': 0.0,
+                    'avg_reversal_speed': 0.0,
+                    'reversal_violence_score': 0.0,
+                    'n_reversals': 0
+                }
+        
+        # Calculate reversal violence modulation
+        if len(regime_reversal_violence) > 1:
+            violence_scores = [data['reversal_violence_score'] for data in regime_reversal_violence.values()]
+            violence_range = max(violence_scores) - min(violence_scores)
+            
+            # Economic significance: >0.001 violence difference (magnitude × speed)
+            economically_significant = violence_range > 0.001
+            
+            interpretation = f"Reversal violence modulation: {violence_range:.4f} difference"
+            trading_implications = "Regimes significantly affect reversal speed and magnitude" if economically_significant else "Similar reversal patterns across regimes"
+        else:
+            violence_range = 0.0
+            economically_significant = False
+            interpretation = "Single regime - no reversal violence comparison"
+            trading_implications = "No reversal pattern benefits from regime identification"
+        
+        return EconomicValidationResult(
+            metric=EconomicMetric.REVERSAL_VIOLENCE_MODULATION,
+            value=float(violence_range),
+            economic_significance=economically_significant,
+            regime_specific_values={int(k): v['reversal_violence_score'] for k, v in regime_reversal_violence.items()},
+            statistical_significance=None,
+            confidence_interval=None,
+            interpretation=interpretation,
+            trading_implications=trading_implications,
+            metadata={'regime_details': regime_reversal_violence}
+        )
+    
+    def _calculate_momentum_intensity_effect(self, market_data: pd.DataFrame, regime_labels: np.ndarray) -> EconomicValidationResult:
+        """Calculate how regimes affect momentum intensity (strength of price movements)."""
+        
+        returns = market_data['close'].pct_change().fillna(0)
+        
+        # Calculate momentum intensity measures
+        momentum_5 = returns.rolling(5).mean()
+        momentum_20 = returns.rolling(20).mean()
+        momentum_strength = abs(momentum_5) + abs(momentum_20)  # Combined momentum strength
+        
+        # Calculate acceleration (rate of change of momentum)
+        momentum_acceleration = momentum_5.diff()
+        
+        unique_regimes = np.unique(regime_labels)
+        regime_momentum_intensity = {}
+        
+        for regime in unique_regimes:
+            regime_mask = regime_labels == regime
+            
+            if np.sum(regime_mask) > 20:
+                regime_momentum_data = momentum_strength[regime_mask]
+                regime_acceleration_data = momentum_acceleration[regime_mask]
+                
+                # Calculate intensity metrics
+                avg_intensity = regime_momentum_data.mean()
+                max_intensity = regime_momentum_data.quantile(0.95)  # 95th percentile
+                intensity_volatility = regime_momentum_data.std()
+                
+                # Acceleration metrics
+                avg_acceleration = abs(regime_acceleration_data).mean()
+                max_acceleration = abs(regime_acceleration_data).quantile(0.95)
+                
+                # Composite intensity effect
+                intensity_effect = avg_intensity + max_intensity * 0.5 + avg_acceleration * 10
+                
+                regime_momentum_intensity[regime] = {
+                    'avg_momentum_intensity': float(avg_intensity),
+                    'max_momentum_intensity': float(max_intensity),
+                    'intensity_volatility': float(intensity_volatility),
+                    'avg_acceleration': float(avg_acceleration),
+                    'max_acceleration': float(max_acceleration),
+                    'composite_intensity_effect': float(intensity_effect)
+                }
+            else:
+                regime_momentum_intensity[regime] = {
+                    'avg_momentum_intensity': 0.0,
+                    'max_momentum_intensity': 0.0,
+                    'intensity_volatility': 0.0,
+                    'avg_acceleration': 0.0,
+                    'max_acceleration': 0.0,
+                    'composite_intensity_effect': 0.0
+                }
+        
+        # Calculate momentum intensity effect
+        if len(regime_momentum_intensity) > 1:
+            intensity_effects = [data['composite_intensity_effect'] for data in regime_momentum_intensity.values()]
+            intensity_range = max(intensity_effects) - min(intensity_effects)
+            
+            # Economic significance: >0.01 intensity difference
+            economically_significant = intensity_range > 0.01
+            
+            interpretation = f"Momentum intensity effect: {intensity_range:.4f} difference"
+            trading_implications = "Regimes significantly affect momentum strength and acceleration" if economically_significant else "Similar momentum patterns across regimes"
+        else:
+            intensity_range = 0.0
+            economically_significant = False
+            interpretation = "Single regime - no momentum intensity comparison"
+            trading_implications = "No momentum intensity benefits from regime identification"
+        
+        return EconomicValidationResult(
+            metric=EconomicMetric.MOMENTUM_INTENSITY_EFFECT,
+            value=float(intensity_range),
+            economic_significance=economically_significant,
+            regime_specific_values={int(k): v['composite_intensity_effect'] for k, v in regime_momentum_intensity.items()},
+            statistical_significance=None,
+            confidence_interval=None,
+            interpretation=interpretation,
+            trading_implications=trading_implications,
+            metadata={'regime_details': regime_momentum_intensity}
+        )
+    
+    def _calculate_trend_acceleration_impact(self, market_data: pd.DataFrame, regime_labels: np.ndarray) -> EconomicValidationResult:
+        """Calculate how regimes impact trend acceleration (rate of change of trend strength)."""
+        
+        prices = market_data['close']
+        returns = prices.pct_change().fillna(0)
+        
+        # Calculate trend strength using linear regression slope
+        trend_strengths = []
+        for i in range(20, len(prices)):
+            window_prices = prices.iloc[i-20:i]
+            if len(window_prices) == 20:
+                # Linear regression slope as trend strength
+                x = np.arange(20)
+                slope = np.polyfit(x, window_prices, 1)[0]
+                trend_strength = slope / window_prices.iloc[-1]  # Normalize by price
+                trend_strengths.append(trend_strength)
+            else:
+                trend_strengths.append(0.0)
+        
+        # Pad to match original length
+        trend_strengths = [0.0] * 20 + trend_strengths
+        trend_strength_series = pd.Series(trend_strengths, index=prices.index)
+        
+        # Calculate trend acceleration (change in trend strength)
+        trend_acceleration = trend_strength_series.diff()
+        
+        unique_regimes = np.unique(regime_labels)
+        regime_acceleration_impact = {}
+        
+        for regime in unique_regimes:
+            regime_mask = regime_labels == regime
+            
+            if np.sum(regime_mask) > 20:
+                regime_acceleration_data = trend_acceleration[regime_mask]
+                
+                # Calculate acceleration metrics
+                avg_acceleration = abs(regime_acceleration_data).mean()
+                max_acceleration = abs(regime_acceleration_data).quantile(0.95)
+                acceleration_volatility = regime_acceleration_data.std()
+                
+                # Trend strength metrics
+                regime_strength_data = trend_strength_series[regime_mask]
+                avg_trend_strength = abs(regime_strength_data).mean()
+                
+                # Composite acceleration impact
+                acceleration_impact = avg_acceleration + max_acceleration * 0.5 + avg_trend_strength
+                
+                regime_acceleration_impact[regime] = {
+                    'avg_acceleration': float(avg_acceleration),
+                    'max_acceleration': float(max_acceleration),
+                    'acceleration_volatility': float(acceleration_volatility),
+                    'avg_trend_strength': float(avg_trend_strength),
+                    'acceleration_impact': float(acceleration_impact)
+                }
+            else:
+                regime_acceleration_impact[regime] = {
+                    'avg_acceleration': 0.0,
+                    'max_acceleration': 0.0,
+                    'acceleration_volatility': 0.0,
+                    'avg_trend_strength': 0.0,
+                    'acceleration_impact': 0.0
+                }
+        
+        # Calculate trend acceleration impact
+        if len(regime_acceleration_impact) > 1:
+            acceleration_impacts = [data['acceleration_impact'] for data in regime_acceleration_impact.values()]
+            impact_range = max(acceleration_impacts) - min(acceleration_impacts)
+            
+            # Economic significance: >0.001 acceleration difference
+            economically_significant = impact_range > 0.001
+            
+            interpretation = f"Trend acceleration impact: {impact_range:.4f} difference"
+            trading_implications = "Regimes significantly affect trend acceleration and strength" if economically_significant else "Similar trend acceleration across regimes"
+        else:
+            impact_range = 0.0
+            economically_significant = False
+            interpretation = "Single regime - no acceleration comparison"
+            trading_implications = "No trend acceleration benefits from regime identification"
+        
+        return EconomicValidationResult(
+            metric=EconomicMetric.TREND_ACCELERATION_IMPACT,
+            value=float(impact_range),
+            economic_significance=economically_significant,
+            regime_specific_values={int(k): v['acceleration_impact'] for k, v in regime_acceleration_impact.items()},
+            statistical_significance=None,
+            confidence_interval=None,
+            interpretation=interpretation,
+            trading_implications=trading_implications,
+            metadata={'regime_details': regime_acceleration_impact}
+        )
+    
+    def _calculate_price_regime_transition_trigger(self, market_data: pd.DataFrame, regime_labels: np.ndarray) -> EconomicValidationResult:
+        """Calculate how price action triggers regime transitions."""
+        
+        returns = market_data['close'].pct_change().fillna(0)
+        volatility = returns.rolling(20).std()
+        
+        # Detect regime transitions
+        regime_changes = np.diff(regime_labels) != 0
+        regime_change_indices = np.where(regime_changes)[0] + 1  # +1 to get the new regime start
+        
+        # Analyze price conditions around regime transitions
+        transition_triggers = []
+        
+        for change_idx in regime_change_indices:
+            if change_idx >= 10 and change_idx < len(returns) - 5:
+                # Price conditions before transition (5 periods before)
+                pre_returns = returns.iloc[change_idx-5:change_idx]
+                pre_volatility = volatility.iloc[change_idx-5:change_idx]
+                
+                # Price conditions after transition (5 periods after)
+                post_returns = returns.iloc[change_idx:change_idx+5]
+                post_volatility = volatility.iloc[change_idx:change_idx+5]
+                
+                # Calculate trigger characteristics
+                pre_extreme_move = any(abs(pre_returns) > pre_returns.rolling(20).quantile(0.95).iloc[-1])
+                pre_vol_spike = any(pre_volatility > pre_volatility.rolling(20).quantile(0.95).iloc[-1])
+                
+                post_behavior_change = abs(post_returns.mean() - pre_returns.mean())
+                post_vol_change = abs(post_volatility.mean() - pre_volatility.mean())
+                
+                transition_triggers.append({
+                    'pre_extreme_move': pre_extreme_move,
+                    'pre_vol_spike': pre_vol_spike,
+                    'post_behavior_change': post_behavior_change,
+                    'post_vol_change': post_vol_change,
+                    'trigger_strength': float(pre_extreme_move) + float(pre_vol_spike) + post_behavior_change * 100 + post_vol_change * 100
+                })
+        
+        # Calculate transition trigger characteristics
+        if transition_triggers:
+            avg_trigger_strength = np.mean([t['trigger_strength'] for t in transition_triggers])
+            extreme_move_rate = np.mean([t['pre_extreme_move'] for t in transition_triggers])
+            vol_spike_rate = np.mean([t['pre_vol_spike'] for t in transition_triggers])
+            avg_behavior_change = np.mean([t['post_behavior_change'] for t in transition_triggers])
+            
+            # Economic significance: >0.5 trigger strength or >50% extreme move rate
+            economically_significant = avg_trigger_strength > 0.5 or extreme_move_rate > 0.5
+            
+            interpretation = f"Regime transitions triggered by extreme moves {extreme_move_rate:.1%} of time"
+            trading_implications = "Price action significantly triggers regime changes" if economically_significant else "Regime changes not strongly price-driven"
+        else:
+            avg_trigger_strength = 0.0
+            economically_significant = False
+            interpretation = "No regime transitions detected"
+            trading_implications = "Stable regime - no transition analysis possible"
+        
+        return EconomicValidationResult(
+            metric=EconomicMetric.PRICE_REGIME_TRANSITION_TRIGGER,
+            value=float(avg_trigger_strength),
+            economic_significance=economically_significant,
+            regime_specific_values={'avg_trigger_strength': avg_trigger_strength},
+            statistical_significance=None,
+            confidence_interval=None,
+            interpretation=interpretation,
+            trading_implications=trading_implications,
+            metadata={'transition_details': transition_triggers[:10] if transition_triggers else []}  # Limit for storage
         )
     
     def generate_economic_report(self, 

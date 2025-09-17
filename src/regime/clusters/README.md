@@ -63,12 +63,18 @@ Many Features → Statistical Dimensionality Analysis → Market Dimensions → 
 ```
 
 **Detailed Pipeline Steps:**
-1. **Feature Generation**: Use existing pipeline to capture many market dimensions
-2. **Statistical Analysis**: PCA, FA, ICA to discover implicit dimensions  
+1. **Comprehensive Feature Generation**: Use ALL available features from `src/feature_engineering/` (100+ features)
+2. **Statistical Dimensionality Analysis**: PCA, FA, ICA with statistical tests (KMO, Bartlett, etc.)
 3. **Market Dimension Discovery**: Group features into market dimensions (liquidity, momentum, etc.)
-4. **Economic Relevance Analysis**: Determine which dimensions influence price action
-5. **Clustering**: Apply clustering to economically relevant dimensions
-6. **HMM Enhancement**: Integrate findings with existing HMM systems
+4. **Economic Relevance Analysis**: Determine which dimensions influence price action (NEW STEP)
+   - Price instability influence
+   - Trend duration impact  
+   - Reversal violence modulation
+   - Momentum intensity effects
+   - Trend acceleration impact
+5. **Clustering with Statistical Validation**: AIC, BIC, Gap statistic, etc.
+6. **Economic Validation**: 9 comprehensive economic metrics
+7. **HMM Integration**: Optimal timing strategies
 
 ### 2. HMM-First Approach  
 ```

@@ -117,21 +117,11 @@ except ImportError as e:
     logger = logging.getLogger(__name__)
     logger.warning(f"Category generators not available: {e}")
 
-# Lookback optimization system
-try:
-    from .optimization import (
-        LookbackOptimizer,
-        FeatureOptimizationConfig,
-        FeatureOptimizationResult,
-        optimize_feature_lookbacks,
-        get_optimization_config
-    )
-    OPTIMIZATION_AVAILABLE = True
-except ImportError as e:
-    OPTIMIZATION_AVAILABLE = False
-    import logging
-    logger = logging.getLogger(__name__)
-    logger.warning(f"Lookback optimization not available: {e}")
+# Optimization system moved to feature_engineering.optimization
+OPTIMIZATION_AVAILABLE = False
+import logging
+logger = logging.getLogger(__name__)
+logger.info("💡 Feature optimization moved to src.feature_engineering.optimization")
 
 # Matrix operations integration
 try:
@@ -203,104 +193,104 @@ __all__ = []
 
 # Always available
 if CORE_AVAILABLE:
-    __all__.extend([
-        "FeatureBank",
-        "FeatureGenerator", 
-        "FeatureCategory",
-        "FeatureRegistry",
-        "get_feature_generator",
-        "get_feature_bank",
-        "register_feature_generator",
-        "list_available_features",
-        "list_available_categories"
-    ])
+# MIGRATED TO feature_engineering:     __all__.extend([
+#         "FeatureBank",
+#         "FeatureGenerator", 
+#         "FeatureCategory",
+#         "FeatureRegistry",
+#         "get_feature_generator",
+#         "get_feature_bank",
+#         "register_feature_generator",
+#         "list_available_features",
+#         "list_available_categories"
+#     ])
 
 # Base calculations
 if BASE_CALCULATIONS_AVAILABLE:
-    __all__.extend([
-        "BaseCalculator",
-        "BaseCalculationType",
-        "BaseCalculationConfig",
-        "PriceReturnsCalculator",
-        "ReturnsVWAPCalculator",
-        "PriceLevelsCalculator",
-        "VolumeWeightedCalculator",
-        "VolumeReturnsCalculator",
-        "create_base_calculator",
-        "get_base_calculator",
-        "calculate_price_returns",
-        "calculate_returns_vwap",
-        "calculate_price_levels",
-        "calculate_volume_weighted",
-        "calculate_volume_returns"
-    ])
+# MIGRATED TO feature_engineering:     __all__.extend([
+#         "BaseCalculator",
+#         "BaseCalculationType",
+#         "BaseCalculationConfig",
+#         "PriceReturnsCalculator",
+#         "ReturnsVWAPCalculator",
+#         "PriceLevelsCalculator",
+#         "VolumeWeightedCalculator",
+#         "VolumeReturnsCalculator",
+#         "create_base_calculator",
+#         "get_base_calculator",
+#         "calculate_price_returns",
+#         "calculate_returns_vwap",
+#         "calculate_price_levels",
+#         "calculate_volume_weighted",
+#         "calculate_volume_returns"
+#     ])
 
 # Category generators
 if CATEGORIES_AVAILABLE:
-    __all__.extend([
-        "ReturnsFeatureGenerator",
-        "MomentumFeatureGenerator", 
-        "VolumeFeatureGenerator",
-        "SupportResistanceFeatureGenerator",
-        "CandlestickPatternFeatureGenerator",
-        "HMMRegimeFeatureGenerator",
-        "VolatilityFeatureGenerator",
-        "TrendFeatureGenerator",
-        "OscillatorFeatureGenerator",
-        "InteractionFeatureGenerator",
-        "CrossTimeframeInteractionGenerator",
-        "FeatureRatioGenerator",
-        "PolynomialFeatureGenerator",
-        "CorrelationInteractionGenerator",
-        "create_interaction_generators",
-        "create_default_interaction_generators"
-    ])
+# MIGRATED TO feature_engineering:     __all__.extend([
+#         "ReturnsFeatureGenerator",
+#         "MomentumFeatureGenerator", 
+#         "VolumeFeatureGenerator",
+#         "SupportResistanceFeatureGenerator",
+#         "CandlestickPatternFeatureGenerator",
+#         "HMMRegimeFeatureGenerator",
+#         "VolatilityFeatureGenerator",
+#         "TrendFeatureGenerator",
+#         "OscillatorFeatureGenerator",
+#         "InteractionFeatureGenerator",
+#         "CrossTimeframeInteractionGenerator",
+#         "FeatureRatioGenerator",
+#         "PolynomialFeatureGenerator",
+#         "CorrelationInteractionGenerator",
+#         "create_interaction_generators",
+#         "create_default_interaction_generators"
+#     ])
 
 # Optimization
-if OPTIMIZATION_AVAILABLE:
-    __all__.extend([
-        "LookbackOptimizer",
-        "FeatureOptimizationConfig",
-        "FeatureOptimizationResult", 
-        "optimize_feature_lookbacks",
-        "get_optimization_config"
-    ])
+# MIGRATED TO feature_engineering: if OPTIMIZATION_AVAILABLE:
+# MIGRATED TO feature_engineering:     __all__.extend([
+# MIGRATED TO feature_engineering:         "LookbackOptimizer",
+# MIGRATED TO feature_engineering:         "FeatureOptimizationConfig",
+# MIGRATED TO feature_engineering:         "FeatureOptimizationResult", 
+# MIGRATED TO feature_engineering:         "optimize_feature_lookbacks",
+# MIGRATED TO feature_engineering:         "get_optimization_config"
+#     ])
 
 # Matrix integration
 if MATRIX_INTEGRATION_AVAILABLE:
-    __all__.extend([
-        "MatrixFeatureProcessor",
-        "VectorizedFeatureGenerator",
-        "get_matrix_processor",
-        "enable_matrix_acceleration"
-    ])
+# MIGRATED TO feature_engineering:     __all__.extend([
+#         "MatrixFeatureProcessor",
+#         "VectorizedFeatureGenerator",
+#         "get_matrix_processor",
+#         "enable_matrix_acceleration"
+#     ])
 
 # Backwards compatibility
 if COMPATIBILITY_AVAILABLE:
-    __all__.extend([
-        "LegacyFeatureAdapter",
-        "migrate_legacy_features",
-        "get_legacy_adapter", 
-        "enable_legacy_compatibility"
-    ])
+# MIGRATED TO feature_engineering:     __all__.extend([
+#         "LegacyFeatureAdapter",
+#         "migrate_legacy_features",
+#         "get_legacy_adapter", 
+#         "enable_legacy_compatibility"
+#     ])
 
 # HMM compatibility
 if HMM_COMPATIBILITY_AVAILABLE:
-    __all__.extend([
-        "HMMCompatibleFeatureGenerators",
-        "FeatureGenerators",
-        "get_hmm_compatible_generators"
-    ])
+# MIGRATED TO feature_engineering:     __all__.extend([
+#         "HMMCompatibleFeatureGenerators",
+#         "FeatureGenerators",
+#         "get_hmm_compatible_generators"
+#     ])
 
 # Convenience functions
 if CONVENIENCE_AVAILABLE:
-    __all__.extend([
-        "generate_features_by_category",
-        "generate_all_features",
-        "get_feature_summary",
-        "validate_feature_data",
-        "export_feature_config"
-    ])
+# MIGRATED TO feature_engineering:     __all__.extend([
+#         "generate_features_by_category",
+#         "generate_all_features",
+#         "get_feature_summary",
+#         "validate_feature_data",
+#         "export_feature_config"
+#     ])
 
 # Initialize default feature bank if core is available
 if CORE_AVAILABLE:

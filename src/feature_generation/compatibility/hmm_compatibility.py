@@ -35,6 +35,14 @@ except ImportError:
     FeatureCategory = None
     FeatureBank = None
 
+
+# Try to use unified optimization system
+try:
+    from ...feature_engineering.optimization import get_feature_optimizer
+    UNIFIED_OPTIMIZATION_AVAILABLE = True
+except ImportError:
+    UNIFIED_OPTIMIZATION_AVAILABLE = False
+
 logger = logging.getLogger(__name__)
 
 class HMMCompatibleFeatureGenerators:

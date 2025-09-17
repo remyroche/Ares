@@ -131,6 +131,20 @@ from .enhanced_sr_feature_extractor import (
     extract_enhanced_sr_features
 )
 
+# Unified Feature Optimization System
+from .optimization import (
+    FeatureGenerationOptimizer,
+    FeatureOptimizationConfig,
+    FeatureOptimizationResult,
+    OptimizationMethod,
+    get_feature_optimizer,
+    optimize_feature_lookback,
+    get_optimization_config,
+    
+    # Backward compatibility
+    LookbackOptimizer
+)
+
 __all__ = [
     # Utility container
     'Step06UtilityContainer',
@@ -196,7 +210,18 @@ __all__ = [
     'HistoricalSRAnalyzer',
     'HistoricalSRConfig',
     'get_enhanced_sr_feature_extractor',
-    'extract_enhanced_sr_features'
+    'extract_enhanced_sr_features',
+
+    # Unified optimization system
+    'FeatureGenerationOptimizer',
+    'FeatureOptimizationConfig',
+    'FeatureOptimizationResult', 
+    'OptimizationMethod',
+    'get_feature_optimizer',
+    'optimize_feature_lookback',
+    'get_optimization_config',
+    'LookbackOptimizer',
+
 ]
 
 __version__ = "1.0.0"

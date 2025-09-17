@@ -52,7 +52,7 @@ from src.utils.common_utilities import CommonUtilities
 # Import ML Common utilities
 from ..validation.cv_utils import TemporalCrossValidator, PurgedKFold
 from ..validation.validation_utils import ValidationFramework
-from ..optimization.pareto import ParetoFrontAnalyzer
+from ...feature_engineering.optimization.pareto import ParetoFrontAnalyzer
 from ..ensembles.ensemble_manager import EnsembleManager
 
 logger = logging.getLogger(__name__)

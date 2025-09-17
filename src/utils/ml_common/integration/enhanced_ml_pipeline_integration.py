@@ -32,7 +32,7 @@ from ..monitoring.enhanced_error_detector import (
     ErrorCategory, 
     ErrorSeverity
 )
-from ..optimization.enhanced_hpo_monitor import (
+from ...feature_engineering.optimization.enhanced_hpo_monitor import (
     get_global_hpo_monitor,
     HPOStatus,
     TrialResult

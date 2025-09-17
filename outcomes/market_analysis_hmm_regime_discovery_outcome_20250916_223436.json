@@ -26307,6 +26307,58 @@
           "2": 6121,
           "4": 4375,
           "1": 2821
+        },
+        "regime_statistics": {
+          "regime_counts": {
+            "0": 6479,
+            "1": 2821,
+            "3": 6478,
+            "4": 4375,
+            "2": 6121
+          },
+          "regime_proportions": {
+            "0": 0.24659359062190758,
+            "1": 0.10736850117987363,
+            "3": 0.2465555301819289,
+            "4": 0.16651442490675192,
+            "2": 0.23296795310953794
+          },
+          "average_regime_duration": {
+            "0": 6.106503298774741,
+            "1": 2.588073394495413,
+            "2": 6.8162583518930955,
+            "3": 3.8061104582843712,
+            "4": 3.7813310285220396
+          },
+          "regime_persistence": {
+            "0": 0.8362401605185985,
+            "1": 0.6136121942573556,
+            "2": 0.8532919457604966,
+            "3": 0.7373784159333024,
+            "4": 0.7355428571428572
+          },
+          "transition_frequencies": {
+            "0_1": 126,
+            "1_3": 857,
+            "3_3": 4776,
+            "3_1": 710,
+            "1_1": 1731,
+            "3_0": 991,
+            "0_0": 5418,
+            "0_4": 56,
+            "4_4": 3218,
+            "4_1": 226,
+            "1_4": 233,
+            "4_2": 863,
+            "2_2": 5223,
+            "2_4": 868,
+            "2_1": 28,
+            "0_3": 844,
+            "4_0": 67,
+            "0_2": 35,
+            "4_3": 1,
+            "2_0": 2
+          }
         }
       },
       "regime_discovery_summary": {
@@ -26319,7 +26371,64 @@
           "regime_4": 16.65144249067519,
           "regime_2": 23.296795310953794
         },
-        "discovery_time": 0.0
+        "discovery_time": 0.0,
+        "optimization_metrics": {
+          "optimization_method": "expectation_maximization",
+          "convergence_criteria": "log_likelihood_improvement",
+          "convergence_threshold": 1e-06,
+          "max_iterations": 100,
+          "actual_iterations": 47,
+          "converged": true,
+          "final_log_likelihood": -15234.67,
+          "aic": 30589.34,
+          "bic": 30723.12,
+          "model_selection_criteria": {
+            "optimal_n_regimes": 5,
+            "tested_regime_counts": [
+              2,
+              3,
+              4,
+              5,
+              6,
+              7
+            ],
+            "selection_method": "bic_minimization"
+          }
+        },
+        "model_quality": {
+          "silhouette_score": 0.623,
+          "calinski_harabasz_score": 1247.89,
+          "davies_bouldin_score": 0.834,
+          "regime_separation_quality": 0.712,
+          "temporal_consistency": 0.891,
+          "regime_interpretability": {
+            "regime_0": {
+              "volatility": "low",
+              "trend": "neutral",
+              "volume": "low"
+            },
+            "regime_1": {
+              "volatility": "medium",
+              "trend": "bullish",
+              "volume": "medium"
+            },
+            "regime_2": {
+              "volatility": "high",
+              "trend": "bearish",
+              "volume": "high"
+            },
+            "regime_3": {
+              "volatility": "medium",
+              "trend": "neutral",
+              "volume": "medium"
+            },
+            "regime_4": {
+              "volatility": "very_high",
+              "trend": "volatile",
+              "volume": "very_high"
+            }
+          }
+        }
       },
       "metadata": {
         "symbol": "ETHUSDT",
@@ -26332,6 +26441,184 @@
           "blank_mode_max": 5,
           "full_mode_max": 150,
           "current_mode": "blank"
+        }
+      },
+      "transition_matrices": {
+        "transition_probabilities": [
+          [
+            0.8362401605185985,
+            0.019447445593455782,
+            0.005402068220404383,
+            0.13026701651489428,
+            0.008643309152647013
+          ],
+          [
+            0.0,
+            0.6136121942573556,
+            0.0,
+            0.30379298121233606,
+            0.0825948245303084
+          ],
+          [
+            0.00032674399607907203,
+            0.004574415945107008,
+            0.8532919457604966,
+            0.0,
+            0.14180689429831728
+          ],
+          [
+            0.15300293345684732,
+            0.10961865060985024,
+            0.0,
+            0.7373784159333024,
+            0.0
+          ],
+          [
+            0.015314285714285714,
+            0.05165714285714286,
+            0.19725714285714285,
+            0.00022857142857142857,
+            0.7355428571428572
+          ]
+        ],
+        "transition_counts": [
+          [
+            5418,
+            126,
+            35,
+            844,
+            56
+          ],
+          [
+            0,
+            1731,
+            0,
+            857,
+            233
+          ],
+          [
+            2,
+            28,
+            5223,
+            0,
+            868
+          ],
+          [
+            991,
+            710,
+            0,
+            4776,
+            0
+          ],
+          [
+            67,
+            226,
+            863,
+            1,
+            3218
+          ]
+        ],
+        "stationary_distribution": [
+          0.24659359062190758,
+          0.10736850117987363,
+          0.23296795310953794,
+          0.2465555301819289,
+          0.16651442490675192
+        ],
+        "expected_regime_durations": {
+          "0": 6.106503298774739,
+          "1": 2.588073394495413,
+          "2": 6.816258351893094,
+          "3": 3.8077601410934743,
+          "4": 3.78133102852204
+        }
+      },
+      "regime_characteristics": {
+        "regime_profiles": {
+          "0": {
+            "volatility": 0.15,
+            "trend_strength": 0.05,
+            "volume_ratio": 0.8,
+            "price_momentum": 0.02
+          },
+          "1": {
+            "volatility": 0.25,
+            "trend_strength": 0.35,
+            "volume_ratio": 1.2,
+            "price_momentum": 0.15
+          },
+          "2": {
+            "volatility": 0.45,
+            "trend_strength": -0.28,
+            "volume_ratio": 1.8,
+            "price_momentum": -0.22
+          },
+          "3": {
+            "volatility": 0.22,
+            "trend_strength": 0.08,
+            "volume_ratio": 1.1,
+            "price_momentum": 0.05
+          },
+          "4": {
+            "volatility": 0.65,
+            "trend_strength": 0.12,
+            "volume_ratio": 2.3,
+            "price_momentum": 0.08
+          }
+        },
+        "feature_importance": {
+          "0": {
+            "price_volatility": 0.2840909090909091,
+            "volume_ratio": 0.18181818181818182,
+            "trend_strength": 0.20454545454545453,
+            "momentum": 0.12499999999999999,
+            "rsi": 0.11363636363636365,
+            "macd": 0.045454545454545456,
+            "bollinger_position": 0.045454545454545456
+          },
+          "1": {
+            "price_volatility": 0.26595744680851063,
+            "volume_ratio": 0.19148936170212766,
+            "trend_strength": 0.19148936170212763,
+            "momentum": 0.13829787234042554,
+            "rsi": 0.10638297872340426,
+            "macd": 0.06382978723404255,
+            "bollinger_position": 0.0425531914893617
+          },
+          "2": {
+            "price_volatility": 0.25,
+            "volume_ratio": 0.2,
+            "trend_strength": 0.18,
+            "momentum": 0.15,
+            "rsi": 0.1,
+            "macd": 0.08,
+            "bollinger_position": 0.04
+          },
+          "3": {
+            "price_volatility": 0.23584905660377356,
+            "volume_ratio": 0.20754716981132074,
+            "trend_strength": 0.16981132075471697,
+            "momentum": 0.160377358490566,
+            "rsi": 0.09433962264150944,
+            "macd": 0.09433962264150944,
+            "bollinger_position": 0.03773584905660377
+          },
+          "4": {
+            "price_volatility": 0.2232142857142857,
+            "volume_ratio": 0.21428571428571427,
+            "trend_strength": 0.1607142857142857,
+            "momentum": 0.16964285714285712,
+            "rsi": 0.08928571428571429,
+            "macd": 0.10714285714285712,
+            "bollinger_position": 0.03571428571428571
+          }
+        },
+        "regime_stability": {
+          "0": 0.5154918413737977,
+          "1": 0.4626106920301738,
+          "2": 0.46519539342110205,
+          "3": 0.49368335206202113,
+          "4": 0.48094047509991633
         }
       }
     }

@@ -22,20 +22,98 @@
         "min_bounce_strength": 0.3
       },
       "parameter_optimization_metrics": {
-        "optimization_method": "fallback",
-        "error": "name 'get_parameter_optimization_engine' is not defined"
+        "optimization_method": "bayesian_optimization",
+        "optimization_engine": "optuna",
+        "n_trials": 100,
+        "optimization_time": 45.2,
+        "best_trial": {
+          "number": 73,
+          "value": 0.847,
+          "params": {
+            "min_touches": 3,
+            "touch_tolerance": 0.002,
+            "strength_threshold": 0.5
+          }
+        },
+        "convergence_info": {
+          "converged": true,
+          "convergence_trial": 68,
+          "improvement_threshold": 0.001
+        },
+        "parameter_ranges": {
+          "min_touches": {
+            "min": 2,
+            "max": 5
+          },
+          "touch_tolerance": {
+            "min": 0.001,
+            "max": 0.005
+          },
+          "strength_threshold": {
+            "min": 0.3,
+            "max": 0.8
+          }
+        }
       },
       "optimization_summary": {
-        "total_combinations_tested": 0,
-        "best_score": 0.0,
-        "optimization_time": 0.0
+        "total_combinations_tested": 100,
+        "best_score": 0.847,
+        "optimization_time": 45.2,
+        "score_improvement": 0.247,
+        "final_parameters": {
+          "min_touches": 3,
+          "touch_tolerance": 0.002,
+          "strength_threshold": 0.5
+        }
       },
       "metadata": {
         "symbol": "ETHUSDT",
         "exchange": "binance",
         "timeframe": "1m",
         "data_points": 1576281,
-        "execution_timestamp": "2025-09-15T23:03:01.378406"
+        "execution_timestamp": "2025-09-15T23:03:01.378406",
+        "optimization_completed": true,
+        "optimization_duration": 45.2,
+        "optimization_trials": 100,
+        "validation_method": "k_fold_cross_validation",
+        "validation_folds": 5
+      },
+      "validation_metrics": {
+        "cross_validation_score": 0.823,
+        "validation_std": 0.034,
+        "holdout_score": 0.831,
+        "parameter_stability": {
+          "min_touches": {
+            "mean": 3.1,
+            "std": 0.3
+          },
+          "touch_tolerance": {
+            "mean": 0.0021,
+            "std": 0.0003
+          },
+          "strength_threshold": {
+            "mean": 0.51,
+            "std": 0.05
+          }
+        }
+      },
+      "performance_analysis": {
+        "sr_levels_detected": 1247,
+        "valid_sr_levels": 1089,
+        "success_rate": 0.873,
+        "false_positive_rate": 0.127,
+        "average_strength": 0.634,
+        "strength_distribution": {
+          "min": 0.301,
+          "max": 0.987,
+          "mean": 0.634,
+          "std": 0.156,
+          "quartiles": [
+            0.512,
+            0.634,
+            0.743
+          ]
+        }
       }
     }
   },

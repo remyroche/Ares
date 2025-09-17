@@ -888,6 +888,35 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             risk_return_chars['market_efficiency'] = efficiency_class
             risk_return_chars['mean_reversion_strength'] = mean_reversion_strength
             
+            # Market microstructure proxies (orderbook-related)
+            # These are proxies calculated from available price/volume data
+            
+            # Bid-ask spread proxy (using high-low range as proxy)
+            high_low_spread = feature_means.get('high_low_spread', 0.0)
+            risk_return_chars['bid_ask_spread_proxy'] = high_low_spread
+            
+            # Price impact proxy (volatility per unit volume)
+            volume_mean = feature_means.get('volume', 1.0)
+            volatility_mean = feature_means.get('volatility_5', 0.01)
+            price_impact_proxy = volatility_mean / max(volume_mean, 1.0) if volume_mean > 0 else 0.0
+            risk_return_chars['price_impact_proxy'] = price_impact_proxy
+            
+            # Order flow imbalance proxy (volume momentum as proxy)
+            order_flow_proxy = feature_means.get('volume_momentum_5', 0.0)
+            risk_return_chars['order_flow_imbalance'] = order_flow_proxy
+            
+            # Market depth proxy (inverse of price impact)
+            market_depth_proxy = 1.0 / max(price_impact_proxy, 0.001)
+            risk_return_chars['market_depth_proxy'] = market_depth_proxy
+            
+            # Tick size effects proxy (price granularity measure)
+            price_granularity = feature_stds.get('close', 0.01) / max(feature_means.get('close', 1.0), 1.0)
+            risk_return_chars['tick_size_effects'] = price_granularity
+            
+            # Quote intensity proxy (trading frequency measure)
+            quote_intensity_proxy = feature_means.get('trade_count', feature_means.get('volume_ratio_5', 1.0))
+            risk_return_chars['quote_intensity'] = quote_intensity_proxy
+            
         except Exception as e:
             # Fallback values if calculation fails
             risk_return_chars.update({
@@ -896,8 +925,13 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                 'max_drawdown': 0.0,
                 'trend_persistence': 0.0,
                 'volatility_clustering': 0.0,
-                'risk_classification': 'unknown',
-                'market_efficiency': 'unknown'
+                'market_efficiency': 'unknown',
+                'bid_ask_spread_proxy': 0.0,
+                'price_impact_proxy': 0.0,
+                'order_flow_imbalance': 0.0,
+                'market_depth_proxy': 0.0,
+                'tick_size_effects': 0.0,
+                'quote_intensity': 0.0
             })
         
         return risk_return_chars
@@ -950,10 +984,10 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                     
                     inertias.append(inertia)
                     
-                    # Calculate silhouette score
+                    # Calculate within-cluster coherence (more relevant for multi-dimensional markets)
                     if len(set(cluster_labels)) > 1:
-                        sil_score = silhouette_score(distance_matrix, cluster_labels, metric='precomputed')
-                        silhouette_scores.append(sil_score)
+                        coherence_score = self._calculate_within_cluster_coherence(distance_matrix, cluster_labels)
+                        silhouette_scores.append(coherence_score)  # Reusing variable name for consistency
                     else:
                         silhouette_scores.append(-1)
                         
@@ -1024,6 +1058,44 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
         except Exception as e:
             self.logger.error(f"❌ Elbow point calculation failed: {e}")
             return k_values[-1] if k_values else 3
+
+    def _calculate_within_cluster_coherence(self, distance_matrix: np.ndarray, cluster_labels: np.ndarray) -> float:
+        """Calculate within-cluster coherence focusing on internal consistency rather than separation."""
+        try:
+            import numpy as np
+            
+            coherence_scores = []
+            unique_clusters = np.unique(cluster_labels)
+            
+            for cluster_id in unique_clusters:
+                cluster_indices = np.where(cluster_labels == cluster_id)[0]
+                
+                if len(cluster_indices) < 2:
+                    continue
+                    
+                # Calculate within-cluster distances
+                cluster_distances = distance_matrix[np.ix_(cluster_indices, cluster_indices)]
+                
+                # Remove diagonal (self-distances = 0)
+                n_points = len(cluster_indices)
+                within_distances = []
+                for i in range(n_points):
+                    for j in range(i + 1, n_points):
+                        within_distances.append(cluster_distances[i, j])
+                
+                if within_distances:
+                    # Lower average distance = higher coherence
+                    avg_within_distance = np.mean(within_distances)
+                    # Convert to coherence score (higher = better)
+                    coherence = 1.0 / (1.0 + avg_within_distance)
+                    coherence_scores.append(coherence)
+            
+            # Return average coherence across all clusters
+            return float(np.mean(coherence_scores)) if coherence_scores else 0.0
+            
+        except Exception as e:
+            self.logger.error(f"❌ Within-cluster coherence calculation failed: {e}")
+            return 0.0
 
     def _calculate_regime_similarity_matrix(self, regime_characteristics: Dict[str, Any]) -> np.ndarray:
         """Calculate similarity matrix between regimes based on their characteristics."""
@@ -3767,16 +3839,16 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                     'volume_momentum_volatility', 'volume_ratio_volatility'
                 ],
                 'market_microstructure': [
-                    'volatility_clustering', 'trend_persistence', 'mean_reversion_strength',
-                    'autocorr_1_day', 'autocorr_5_day', 'market_efficiency'
+                    # Orderbook proxies and market structure indicators
+                    'bid_ask_spread_proxy', 'price_impact_proxy', 'order_flow_imbalance',
+                    'tick_size_effects', 'market_depth_proxy', 'quote_intensity',
+                    'volatility_clustering',  # High-frequency volatility patterns
+                    'mean_reversion_strength', 'autocorr_1_day'  # Price discovery efficiency
                 ],
                 'liquidity_proxies': [
                     'mean_volume_ratio', 'volume_momentum_volatility', 'mean_atr_normalized',
-                    'volatility_clustering'  # High frequency volatility changes indicate liquidity
-                ],
-                'risk_dynamics': [
-                    'sharpe_ratio', 'max_drawdown', 'drawdown_recovery_ratio',
-                    'return_volatility', 'risk_adjusted_return'
+                    'volatility_clustering',  # High frequency volatility changes indicate liquidity
+                    'bid_ask_spread_proxy', 'market_depth_proxy'  # Direct liquidity indicators
                 ]
             }
             
@@ -3893,22 +3965,20 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                     'statistical_confidence': 'high' if top_aspect['significance_ratio'] > 0.6 else 'medium' if top_aspect['significance_ratio'] > 0.3 else 'low'
                 }
             
-            # Comprehensive market dynamics analysis
+            # Comprehensive market dynamics analysis - core market aspects only
             momentum_impact = next((aspect for aspect in aspect_impacts if aspect['market_aspect'] == 'momentum'), {}).get('dynamics_impact_score', 0)
             volatility_impact = next((aspect for aspect in aspect_impacts if aspect['market_aspect'] == 'volatility'), {}).get('dynamics_impact_score', 0)
             volume_impact = next((aspect for aspect in aspect_impacts if aspect['market_aspect'] == 'volume'), {}).get('dynamics_impact_score', 0)
             microstructure_impact = next((aspect for aspect in aspect_impacts if aspect['market_aspect'] == 'market_microstructure'), {}).get('dynamics_impact_score', 0)
             liquidity_impact = next((aspect for aspect in aspect_impacts if aspect['market_aspect'] == 'liquidity_proxies'), {}).get('dynamics_impact_score', 0)
-            risk_impact = next((aspect for aspect in aspect_impacts if aspect['market_aspect'] == 'risk_dynamics'), {}).get('dynamics_impact_score', 0)
             
-            # Determine which aspects have the highest impact on market dynamics
+            # Determine which market aspects have the highest impact on dynamics
             aspect_scores = {
                 'momentum': momentum_impact,
                 'volatility': volatility_impact,
                 'volume': volume_impact,
                 'market_microstructure': microstructure_impact,
-                'liquidity': liquidity_impact,
-                'risk_dynamics': risk_impact
+                'liquidity': liquidity_impact
             }
             
             # Sort aspects by impact

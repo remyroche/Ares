@@ -261,25 +261,27 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             input_regimes = len(hmm_regime_discovery.get('regime_models', []))
             self.logger.info(f'🔧 HMM Clustering: Processing {input_regimes} regimes → Dynamic clustering based on mode')
             
-            # Configure HMM clustering - Dynamic cluster count based on mode
+            # Configure HMM clustering - Data-driven cluster selection with elbow method
             mode = pipeline_state.get('mode', 'light')  # Get mode from pipeline state
             
+            # Set maximum clusters based on mode
             if mode == 'full':
-                n_clusters = min(25, max(3, input_regimes // 2))  # Up to 25 clusters in full mode
-            elif mode == 'medium':
-                n_clusters = min(15, max(3, input_regimes // 3))  # Up to 15 clusters in medium mode
-            else:  # light or blank mode
-                n_clusters = 3  # Simple Bull/Bear/Sideways for light mode
+                max_clusters = min(25, max(3, input_regimes // 2))  # Maximum 25 clusters in full mode
+            elif mode == 'blank':
+                max_clusters = min(8, max(3, input_regimes // 4))   # Maximum 8 clusters in blank mode  
+            else:  # light mode
+                max_clusters = 3  # Maximum 3 clusters for light mode
             
             clustering_config = {
-                'n_clusters': n_clusters,
+                'max_clusters': max_clusters,
+                'use_elbow_method': True,  # Enable data-driven cluster selection
                 'clustering_method': 'hmm_based',
                 'min_cluster_size': 10,
                 'convergence_tolerance': 1e-6,
                 'max_iterations': 100,
                 
                 # Regime constraints
-                'max_regimes': 25,  # Maximum 25 clusters allowed
+                'max_regimes': 25,  # Maximum 25 regimes allowed
                 'min_regime_sample_percentage': 0.01,  # 1% minimum sample threshold
                 
                 # Hardware optimization
@@ -288,7 +290,7 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                 'memory_limit_gb': 8.0
             }
             
-            self.logger.info(f'🎯 Clustering mode: {mode} → {n_clusters} clusters')
+            self.logger.info(f'🎯 Clustering mode: {mode} → max {max_clusters} clusters (data-driven selection)')
             
             # Create HMM composite manager
             tprint("🔧 Creating HMM composite manager...")
@@ -586,8 +588,9 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             tprint(f"📊 Regime models count: {len(regime_models)}")
             tprint(f"📊 Regime assignments count: {len(regime_assignments)}")
             
-            # Get the number of clusters to create
-            n_clusters = config.get('n_clusters', 3)
+            # Get clustering configuration
+            max_clusters = config.get('max_clusters', 3)
+            use_elbow_method = config.get('use_elbow_method', False)
             
             # Use the regime discovery results to determine the number of models to train
             regime_models = regime_discovery.get('regime_models', [])
@@ -595,6 +598,18 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             
             if not regime_models or not regime_assignments:
                 raise ValueError("No regime discovery results available for clustering")
+            
+            # Determine optimal number of clusters using elbow method if enabled
+            if use_elbow_method and max_clusters > 3:
+                tprint("📊 Using elbow method to determine optimal cluster count...")
+                optimal_clusters = self._find_optimal_clusters_elbow_method(
+                    regime_discovery, max_clusters, market_data
+                )
+                n_clusters = optimal_clusters
+                tprint(f"✅ Elbow method selected {n_clusters} clusters")
+            else:
+                n_clusters = max_clusters
+                tprint(f"📊 Using maximum clusters: {n_clusters}")
             
             self.logger.info(f"🎯 Starting HMM clustering: {len(regime_models)} regimes → {n_clusters} clusters")
             
@@ -886,6 +901,129 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             })
         
         return risk_return_chars
+
+    def _find_optimal_clusters_elbow_method(self, regime_discovery: Dict[str, Any], max_clusters: int, market_data: Any) -> int:
+        """Find optimal number of clusters using elbow method based on regime similarity."""
+        try:
+            from sklearn.cluster import AgglomerativeClustering
+            from sklearn.metrics import silhouette_score
+            import numpy as np
+            
+            # Extract regime characteristics
+            regime_characteristics = self._extract_regime_characteristics_from_discovery(regime_discovery)
+            if not regime_characteristics:
+                self.logger.warning("⚠️ No regime characteristics available for elbow method")
+                return max_clusters
+            
+            # Calculate regime similarity matrix
+            similarity_matrix = self._calculate_regime_similarity_matrix(regime_characteristics)
+            if similarity_matrix.size == 0:
+                self.logger.warning("⚠️ Empty similarity matrix for elbow method")
+                return max_clusters
+            
+            # Convert similarity to distance matrix
+            distance_matrix = 1.0 - similarity_matrix
+            
+            # Test different cluster counts and calculate metrics
+            cluster_range = range(2, min(max_clusters + 1, len(regime_characteristics)))
+            inertias = []
+            silhouette_scores = []
+            
+            for n_clusters in cluster_range:
+                try:
+                    # Perform hierarchical clustering
+                    clustering = AgglomerativeClustering(
+                        n_clusters=n_clusters,
+                        metric='precomputed',
+                        linkage='average'
+                    )
+                    cluster_labels = clustering.fit_predict(distance_matrix)
+                    
+                    # Calculate inertia (within-cluster sum of squared distances)
+                    inertia = 0.0
+                    for cluster_id in range(n_clusters):
+                        cluster_indices = np.where(cluster_labels == cluster_id)[0]
+                        if len(cluster_indices) > 1:
+                            # Calculate average distance within cluster
+                            cluster_distances = distance_matrix[np.ix_(cluster_indices, cluster_indices)]
+                            inertia += np.sum(cluster_distances) / (len(cluster_indices) * (len(cluster_indices) - 1))
+                    
+                    inertias.append(inertia)
+                    
+                    # Calculate silhouette score
+                    if len(set(cluster_labels)) > 1:
+                        sil_score = silhouette_score(distance_matrix, cluster_labels, metric='precomputed')
+                        silhouette_scores.append(sil_score)
+                    else:
+                        silhouette_scores.append(-1)
+                        
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Clustering failed for {n_clusters} clusters: {e}")
+                    inertias.append(float('inf'))
+                    silhouette_scores.append(-1)
+            
+            if not inertias or all(x == float('inf') for x in inertias):
+                self.logger.warning("⚠️ All clustering attempts failed")
+                return max_clusters
+            
+            # Find elbow point using rate of change
+            optimal_k = self._find_elbow_point(list(cluster_range), inertias, silhouette_scores)
+            
+            # Log elbow analysis results
+            self.logger.info(f"📊 Elbow analysis: tested {len(cluster_range)} cluster counts")
+            self.logger.info(f"📊 Optimal clusters found: {optimal_k}")
+            
+            return optimal_k
+            
+        except Exception as e:
+            self.logger.error(f"❌ Elbow method failed: {e}")
+            return max_clusters
+    
+    def _find_elbow_point(self, k_values: list, inertias: list, silhouette_scores: list) -> int:
+        """Find the elbow point in the inertia curve."""
+        try:
+            import numpy as np
+            
+            if len(inertias) < 3:
+                return k_values[-1] if k_values else 3
+            
+            # Calculate rate of change (second derivative approximation)
+            rate_changes = []
+            for i in range(1, len(inertias) - 1):
+                if inertias[i-1] != float('inf') and inertias[i] != float('inf') and inertias[i+1] != float('inf'):
+                    rate_change = inertias[i-1] - 2*inertias[i] + inertias[i+1]
+                    rate_changes.append((i, rate_change))
+            
+            if not rate_changes:
+                # Fallback: use silhouette scores
+                if silhouette_scores:
+                    best_idx = np.argmax(silhouette_scores)
+                    return k_values[best_idx]
+                return k_values[-1]
+            
+            # Find the point with maximum rate of change (elbow)
+            elbow_idx = max(rate_changes, key=lambda x: x[1])[0]
+            optimal_k = k_values[elbow_idx]
+            
+            # Validate with silhouette score
+            if silhouette_scores and len(silhouette_scores) > elbow_idx:
+                sil_score = silhouette_scores[elbow_idx]
+                
+                # If silhouette score is too low, try nearby points
+                if sil_score < 0.3:
+                    # Look for better silhouette scores nearby
+                    best_sil_idx = np.argmax(silhouette_scores)
+                    best_sil_k = k_values[best_sil_idx]
+                    
+                    # Use silhouette-based choice if significantly better
+                    if silhouette_scores[best_sil_idx] > sil_score + 0.1:
+                        optimal_k = best_sil_k
+            
+            return optimal_k
+            
+        except Exception as e:
+            self.logger.error(f"❌ Elbow point calculation failed: {e}")
+            return k_values[-1] if k_values else 3
 
     def _calculate_regime_similarity_matrix(self, regime_characteristics: Dict[str, Any]) -> np.ndarray:
         """Calculate similarity matrix between regimes based on their characteristics."""
@@ -3612,28 +3750,33 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             
             factor_impact = {}
             
-            # Define factor categories and their features
-            factor_categories = {
-                'volume_factors': [
+            # Define market aspects and their features for dynamics analysis
+            market_aspects = {
+                'momentum': [
+                    'mean_price_momentum_5', 'mean_price_momentum_20', 'mean_rsi', 'mean_macd',
+                    'rsi_momentum', 'macd_momentum', 'momentum_strength', 'trend_persistence',
+                    'autocorr_1_day', 'autocorr_5_day'
+                ],
+                'volatility': [
+                    'mean_volatility_5', 'mean_volatility_10', 'mean_volatility_20',
+                    'volatility_momentum', 'volatility_acceleration', 'mean_atr_normalized',
+                    'volatility_clustering', 'return_volatility'
+                ],
+                'volume': [
                     'mean_volume_momentum_5', 'mean_volume_momentum_20', 'mean_volume_ratio',
                     'volume_momentum_volatility', 'volume_ratio_volatility'
                 ],
-                'volatility_factors': [
-                    'mean_volatility_5', 'mean_volatility_10', 'mean_volatility_20',
-                    'volatility_momentum', 'volatility_acceleration', 'mean_atr_normalized',
-                    'volatility_clustering'
-                ],
-                'momentum_factors': [
-                    'mean_price_momentum_5', 'mean_price_momentum_20', 'mean_rsi', 'mean_macd',
-                    'rsi_momentum', 'macd_momentum', 'momentum_strength'
-                ],
-                'risk_return_factors': [
-                    'sharpe_ratio', 'risk_adjusted_return', 'max_drawdown', 'drawdown_recovery_ratio',
-                    'trend_persistence', 'mean_returns', 'return_volatility'
-                ],
-                'market_microstructure_factors': [
+                'market_microstructure': [
                     'volatility_clustering', 'trend_persistence', 'mean_reversion_strength',
-                    'autocorr_1_day', 'autocorr_5_day'
+                    'autocorr_1_day', 'autocorr_5_day', 'market_efficiency'
+                ],
+                'liquidity_proxies': [
+                    'mean_volume_ratio', 'volume_momentum_volatility', 'mean_atr_normalized',
+                    'volatility_clustering'  # High frequency volatility changes indicate liquidity
+                ],
+                'risk_dynamics': [
+                    'sharpe_ratio', 'max_drawdown', 'drawdown_recovery_ratio',
+                    'return_volatility', 'risk_adjusted_return'
                 ]
             }
             
@@ -3647,7 +3790,7 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                     
                     # Extract all features for this regime
                     regime_features = {}
-                    for category, features in factor_categories.items():
+                    for aspect, features in market_aspects.items():
                         for feature in features:
                             # Look in all characteristic categories
                             value = None
@@ -3665,12 +3808,12 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             if len(all_regime_data) < 3:
                 return {'error': 'Insufficient data for factor impact analysis'}
             
-            # Calculate factor importance for cluster separation
-            factor_importance = {}
+            # Calculate market aspect importance for cluster separation and dynamics
+            aspect_importance = {}
             
-            for category, features in factor_categories.items():
-                category_importance = {}
-                category_f_stats = []
+            for aspect, features in market_aspects.items():
+                aspect_analysis = {}
+                aspect_f_stats = []
                 
                 for feature in features:
                     # Extract feature values by cluster
@@ -3691,94 +3834,93 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                             f_stat, p_value = stats.f_oneway(*groups)
                             effect_size = self._calculate_eta_squared(groups, f_stat)
                             
-                            category_importance[feature] = {
+                            aspect_analysis[feature] = {
                                 'f_statistic': float(f_stat),
                                 'p_value': float(p_value),
                                 'effect_size': float(effect_size),
                                 'significant': p_value < 0.05,
-                                'impact_level': 'high' if effect_size > 0.14 else 'medium' if effect_size > 0.06 else 'low'
+                                'market_impact': 'high' if effect_size > 0.14 else 'medium' if effect_size > 0.06 else 'low'
                             }
                             
                             if not np.isnan(f_stat) and f_stat > 0:
-                                category_f_stats.append(f_stat)
+                                aspect_f_stats.append(f_stat)
                                 
                         except Exception as e:
-                            category_importance[feature] = {'error': str(e)}
+                            aspect_analysis[feature] = {'error': str(e)}
                 
-                # Calculate category-level impact
-                if category_f_stats:
-                    avg_f_stat = np.mean(category_f_stats)
-                    significant_features = sum(1 for feat_data in category_importance.values() 
+                # Calculate aspect-level market dynamics impact
+                if aspect_f_stats:
+                    avg_f_stat = np.mean(aspect_f_stats)
+                    significant_features = sum(1 for feat_data in aspect_analysis.values() 
                                              if isinstance(feat_data, dict) and feat_data.get('significant', False))
-                    total_features = len([feat_data for feat_data in category_importance.values() 
+                    total_features = len([feat_data for feat_data in aspect_analysis.values() 
                                         if isinstance(feat_data, dict) and 'error' not in feat_data])
                     
-                    category_importance['category_summary'] = {
+                    aspect_analysis['aspect_summary'] = {
                         'avg_f_statistic': float(avg_f_stat),
                         'significant_features': significant_features,
                         'total_features': total_features,
                         'significance_ratio': significant_features / total_features if total_features > 0 else 0.0,
-                        'category_impact': 'high' if avg_f_stat > 5.0 and significant_features / total_features > 0.5 else 'medium' if avg_f_stat > 2.0 else 'low'
+                        'market_dynamics_impact': 'high' if avg_f_stat > 5.0 and significant_features / total_features > 0.5 else 'medium' if avg_f_stat > 2.0 else 'low'
                     }
                 
-                factor_importance[category] = category_importance
+                aspect_importance[aspect] = aspect_analysis
             
-            # Overall factor impact ranking
-            category_impacts = []
-            for category, category_data in factor_importance.items():
-                summary = category_data.get('category_summary', {})
+            # Overall market aspects impact ranking
+            aspect_impacts = []
+            for aspect, aspect_data in aspect_importance.items():
+                summary = aspect_data.get('aspect_summary', {})
                 if summary:
-                    category_impacts.append({
-                        'category': category,
+                    aspect_impacts.append({
+                        'market_aspect': aspect,
                         'avg_f_stat': summary.get('avg_f_statistic', 0),
                         'significance_ratio': summary.get('significance_ratio', 0),
-                        'impact_score': summary.get('avg_f_statistic', 0) * summary.get('significance_ratio', 0)
+                        'dynamics_impact_score': summary.get('avg_f_statistic', 0) * summary.get('significance_ratio', 0)
                     })
             
-            # Sort by impact score
-            category_impacts.sort(key=lambda x: x['impact_score'], reverse=True)
+            # Sort by dynamics impact score
+            aspect_impacts.sort(key=lambda x: x['dynamics_impact_score'], reverse=True)
             
-            factor_impact['factor_importance'] = factor_importance
-            factor_impact['category_ranking'] = category_impacts
+            factor_impact['market_aspects_analysis'] = aspect_importance
+            factor_impact['aspect_ranking'] = aspect_impacts
             
-            # Trading strategy implications
-            top_category = category_impacts[0] if category_impacts else None
-            if top_category:
-                if top_category['category'] == 'momentum_factors':
-                    strategy_implication = 'Momentum-based strategies likely most effective'
-                elif top_category['category'] == 'volatility_factors':
-                    strategy_implication = 'Volatility-based strategies likely most effective'
-                elif top_category['category'] == 'volume_factors':
-                    strategy_implication = 'Volume-based strategies likely most effective'
-                elif top_category['category'] == 'risk_return_factors':
-                    strategy_implication = 'Risk-adjusted strategies likely most effective'
-                else:
-                    strategy_implication = 'Market microstructure strategies likely most effective'
-                
-                factor_impact['strategy_implications'] = {
-                    'primary_factor': top_category['category'],
-                    'recommendation': strategy_implication,
-                    'confidence': 'high' if top_category['impact_score'] > 10 else 'medium' if top_category['impact_score'] > 5 else 'low'
+            # Market dynamics insights - which aspects actually drive market behavior
+            top_aspect = aspect_impacts[0] if aspect_impacts else None
+            if top_aspect:
+                factor_impact['primary_market_driver'] = {
+                    'dominant_aspect': top_aspect['market_aspect'],
+                    'impact_strength': 'high' if top_aspect['dynamics_impact_score'] > 10 else 'medium' if top_aspect['dynamics_impact_score'] > 5 else 'low',
+                    'statistical_confidence': 'high' if top_aspect['significance_ratio'] > 0.6 else 'medium' if top_aspect['significance_ratio'] > 0.3 else 'low'
                 }
             
-            # Market dynamics insights
-            momentum_impact = next((cat for cat in category_impacts if cat['category'] == 'momentum_factors'), {}).get('impact_score', 0)
-            volatility_impact = next((cat for cat in category_impacts if cat['category'] == 'volatility_factors'), {}).get('impact_score', 0)
-            volume_impact = next((cat for cat in category_impacts if cat['category'] == 'volume_factors'), {}).get('impact_score', 0)
+            # Comprehensive market dynamics analysis
+            momentum_impact = next((aspect for aspect in aspect_impacts if aspect['market_aspect'] == 'momentum'), {}).get('dynamics_impact_score', 0)
+            volatility_impact = next((aspect for aspect in aspect_impacts if aspect['market_aspect'] == 'volatility'), {}).get('dynamics_impact_score', 0)
+            volume_impact = next((aspect for aspect in aspect_impacts if aspect['market_aspect'] == 'volume'), {}).get('dynamics_impact_score', 0)
+            microstructure_impact = next((aspect for aspect in aspect_impacts if aspect['market_aspect'] == 'market_microstructure'), {}).get('dynamics_impact_score', 0)
+            liquidity_impact = next((aspect for aspect in aspect_impacts if aspect['market_aspect'] == 'liquidity_proxies'), {}).get('dynamics_impact_score', 0)
+            risk_impact = next((aspect for aspect in aspect_impacts if aspect['market_aspect'] == 'risk_dynamics'), {}).get('dynamics_impact_score', 0)
             
-            if momentum_impact > volatility_impact and momentum_impact > volume_impact:
-                market_regime = 'momentum_driven'
-            elif volatility_impact > volume_impact:
-                market_regime = 'volatility_driven'
-            else:
-                market_regime = 'volume_driven'
+            # Determine which aspects have the highest impact on market dynamics
+            aspect_scores = {
+                'momentum': momentum_impact,
+                'volatility': volatility_impact,
+                'volume': volume_impact,
+                'market_microstructure': microstructure_impact,
+                'liquidity': liquidity_impact,
+                'risk_dynamics': risk_impact
+            }
             
-            factor_impact['market_dynamics'] = {
-                'dominant_regime_type': market_regime,
-                'momentum_importance': float(momentum_impact),
-                'volatility_importance': float(volatility_impact),
-                'volume_importance': float(volume_impact),
-                'regime_complexity': 'high' if len([cat for cat in category_impacts if cat['impact_score'] > 5]) > 2 else 'medium' if len([cat for cat in category_impacts if cat['impact_score'] > 2]) > 1 else 'low'
+            # Sort aspects by impact
+            sorted_aspects = sorted(aspect_scores.items(), key=lambda x: x[1], reverse=True)
+            
+            factor_impact['market_dynamics_hierarchy'] = {
+                'aspect_impact_scores': aspect_scores,
+                'ranked_aspects': [{'aspect': aspect, 'impact_score': score} for aspect, score in sorted_aspects],
+                'primary_driver': sorted_aspects[0][0] if sorted_aspects else 'unknown',
+                'secondary_driver': sorted_aspects[1][0] if len(sorted_aspects) > 1 else 'none',
+                'complexity_level': 'high' if len([score for _, score in sorted_aspects if score > 5]) > 3 else 'medium' if len([score for _, score in sorted_aspects if score > 2]) > 2 else 'low',
+                'multi_factor_market': len([score for _, score in sorted_aspects if score > 3]) > 2
             }
             
             return factor_impact

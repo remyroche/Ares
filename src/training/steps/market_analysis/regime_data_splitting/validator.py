@@ -64,13 +64,7 @@ except ImportError:
     import datetime
     system_logger = logging.getLogger(__name__)
 
-def safe_json_load(file_path: Union[str, Path]) -> None:
-    """Safe JSON loading with fallback."""
-    try:
-        with open(file_path, 'r') as f:
-            return json.load(f)
-    except Exception:
-        return {}
+# Note: safe_json_load already imported from src.utils.core.common
 
 class BaseValidator:
 
@@ -191,14 +185,9 @@ class Step4RegimeDataSplittingValidator(BaseValidator):
             file_exists, file_metrics = self.validate_file_exists(str(regime_file), 'regime file')
             if not file_exists:
                 return False
-            # For regime data validation, use direct parquet reading as it's processed data
-            try:
-                from ...standardized_parquet_handler import standardized_parquet_handler
-                df = standardized_parquet_handler.read_parquet_standardized(regime_file)
-            except ImportError:
-                # Fallback to pandas if standardized handler not available
-                import pandas as pd
-                df = pd.read_parquet(regime_file)
+            # For processed data validation, use safe parquet reader
+            df = safe_read_parquet(regime_file)
+
             df_valid, df_metrics = self.validate_dataframe_quality(df = df, min_rows = 100, required_columns=['timestamp', 'composite_cluster_id'], check_data_types = True, check_value_ranges = True, check_duplicates = True, check_temporal_consistency = True)
             if not df_valid:
                 self.logger.warning(f'⚠️ DataFrame validation failed for {regime_file.name}')
@@ -308,14 +297,8 @@ class Step4RegimeDataSplittingValidator(BaseValidator):
                 for file_path in existing_files:
                     if file_path.endswith('.parquet'):
                         try:
-                            # For processed data validation, use direct parquet reading
-                            try:
-                                from ...standardized_parquet_handler import standardized_parquet_handler
-                                df = standardized_parquet_handler.read_parquet_standardized(file_path)
-                            except ImportError:
-                                # Fallback to pandas if standardized handler not available
-                                import pandas as pd
-                                df = pd.read_parquet(file_path)
+                            # For processed data validation, use safe parquet reader
+                            df = safe_read_parquet(file_path)
                             try:
                                 df_valid, df_metrics = self.validate_dataframe_quality(df, min_rows = 100, check_data_types = True)
                             except Exception:

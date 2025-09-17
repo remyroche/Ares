@@ -2045,9 +2045,8 @@ class RegimeDataSplittingStep:
                 'engine': 'auto'
             }
 
-            # For writing processed data, we'll use direct parquet writing
-            from ...standardized_parquet_handler import standardized_parquet_handler
-            standardized_parquet_handler.write_parquet_standardized(data, unified_file, **parquet_options)
+            # For writing processed data, use pandas parquet directly
+            data.to_parquet(unified_file, **parquet_options)
             file_size_mb = unified_file.stat().st_size / (1024 * 1024)
             self.logger.info(f'✅ Saved unified regime dataset: {len(data):,} rows -> {file_size_mb:.1f}MB file')
             return True
@@ -2235,13 +2234,11 @@ class RegimeDataSplittingStep:
                     table = pq.read_table(file_path, **kwargs)
                     df = table.to_pandas()
                 else:
-                    # For processed data files, we'll use direct parquet reading
-                    from ...standardized_parquet_handler import standardized_parquet_handler
-                    df = standardized_parquet_handler.read_parquet_standardized(file_path, **kwargs)
+                    # For processed data files, use safe parquet reader
+                    df = safe_read_parquet(file_path)
             else:
                 # Standard read and cache metadata - for processed data files
-                from ...standardized_parquet_handler import standardized_parquet_handler
-                df = standardized_parquet_handler.read_parquet_standardized(file_path, **kwargs)
+                df = safe_read_parquet(file_path)
                 self._cache_parquet_metadata(file_path, df.shape)
             
             return df
@@ -2249,8 +2246,7 @@ class RegimeDataSplittingStep:
         except Exception as e:
             self.logger.warning(f"⚠️ Cached read failed for {file_path}: {e}")
             # Fallback to standard read - for processed data files
-            from ...standardized_parquet_handler import standardized_parquet_handler
-            return standardized_parquet_handler.read_parquet_standardized(file_path, **kwargs)
+            return safe_read_parquet(file_path)
 
     @comprehensive_function_monitor
     async def _create_unified_regime_dataset(self, data: pd.DataFrame, regime_ids: List[int], data_dir: str, symbol: str, exchange: str, timeframe: str) -> Dict[str, Any] | None:
@@ -2816,9 +2812,8 @@ async def run_step(symbol: str, exchange: str, timeframe: str, data_dir: str = N
     bias_detector = get_global_detector()
     bias_detector.set_current_timestamp(current_time)
     if data_dir is None:
-        # Use standardized path for processed data
-        from ...standardized_parquet_handler import standardized_parquet_handler
-        data_dir = standardized_parquet_handler.get_standardized_path('processed_data', exchange, symbol)
+        # Use default processed data path if not provided
+        data_dir = str(Path('historical_data'))
 
     step_start = time.time()
     try:

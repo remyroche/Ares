@@ -23,6 +23,14 @@ import pandas as pd
 
 from src.utils.logger import system_logger
 
+# Try to reuse the richer selection framework if available
+try:
+    from src.training.utils.feature_selection.selection_methods import MRMRSelector  # type: ignore
+    _HAS_TRAINING_MRMR = True
+except Exception:
+    MRMRSelector = None  # type: ignore
+    _HAS_TRAINING_MRMR = False
+
 
 @dataclass
 class MRMRConfig:
@@ -100,7 +108,8 @@ def estimate_pairwise_mi(X: pd.DataFrame, random_state: int = 42) -> np.ndarray:
 def mrmr_select(X: pd.DataFrame, y: np.ndarray, config: Optional[MRMRConfig] = None) -> List[str]:
     """Select features using mRMR criterion.
 
-    score(feature) = MI(feature; y) - lambda * mean_j_in_selected MI(feature; j)
+    If the training feature_selection framework is available, delegate to it;
+    otherwise use the local implementation.
     """
     cfg = config or MRMRConfig()
     logger = system_logger.getChild('mRMR')
@@ -109,35 +118,43 @@ def mrmr_select(X: pd.DataFrame, y: np.ndarray, config: Optional[MRMRConfig] = N
     if len(feature_names) == 0:
         return []
 
-    # Compute relevance
+    # Prefer robust selector from training utils if present
+    if _HAS_TRAINING_MRMR and MRMRSelector is not None:
+        try:
+            selector = MRMRSelector(config={
+                'relevance_method': 'mutual_info',
+                'redundancy_method': 'mutual_info',
+                'n_neighbors': 3,
+            })
+            res = selector.select_features(X.values, y, feature_names, n_features=cfg.max_features)
+            sel = res.get('selected_features', [])
+            if sel:
+                return sel
+        except Exception as e:
+            logger.warning(f"Training MRMRSelector failed ({e}); falling back to local mRMR")
+
+    # Local fallback: MI-based mRMR
     mi_y = estimate_mutual_information(X, y, random_state=cfg.random_state)
 
-    # Short-circuit if very few features
     if len(feature_names) <= cfg.max_features:
         logger.info(f"mRMR pass-through: {len(feature_names)} <= max_features")
         return feature_names
 
-    # Compute redundancy matrix (pairwise MI)
     mi_mat = estimate_pairwise_mi(X, random_state=cfg.random_state)
 
     selected: List[int] = []
     remaining: List[int] = list(range(len(feature_names)))
 
-    # Initialize with best relevance
     first_idx = int(np.argmax(mi_y))
     selected.append(first_idx)
     remaining.remove(first_idx)
 
-    # Iteratively add by mRMR score
     while len(selected) < min(cfg.max_features, len(feature_names)) and remaining:
         best_idx = None
         best_score = -1e9
         for j in remaining:
             relevance = mi_y[j]
-            if selected:
-                redundancy = np.mean([mi_mat[j, s] for s in selected])
-            else:
-                redundancy = 0.0
+            redundancy = np.mean([mi_mat[j, s] for s in selected]) if selected else 0.0
             score = relevance - cfg.redundancy_penalty * redundancy
             if score > best_score:
                 best_score = score

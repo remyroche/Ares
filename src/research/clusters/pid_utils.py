@@ -20,6 +20,18 @@ import pandas as pd
 
 from src.utils.logger import system_logger
 
+# Try to reuse enhanced PID from training utils if present
+try:
+    from src.training.utils.feature_selection.enhanced_partial_information_decomposition import (
+        PIDCalculator, PIDConfig, PIDMeasure  # type: ignore
+    )
+    _HAS_ENHANCED_PID = True
+except Exception:
+    PIDCalculator = None  # type: ignore
+    PIDConfig = None  # type: ignore
+    PIDMeasure = None  # type: ignore
+    _HAS_ENHANCED_PID = False
+
 
 def _is_classification_target(y: np.ndarray) -> bool:
     unique = np.unique(y[~np.isnan(y)])
@@ -48,6 +60,29 @@ def pid_pair(X: pd.DataFrame, y: np.ndarray, f1: str, f2: str, random_state: int
     'unique_f2', 'synergy'.
     """
     logger = system_logger.getChild('PID')
+
+    # Prefer enhanced PID if available
+    if _HAS_ENHANCED_PID and PIDCalculator is not None and PIDConfig is not None and PIDMeasure is not None:
+        try:
+            calc = PIDCalculator(PIDConfig())
+            x1 = X[[f1]].fillna(0).values.squeeze()
+            x2 = X[[f2]].fillna(0).values.squeeze()
+            yy = pd.Series(y).fillna(0).values.squeeze()
+            res = calc.compute_pid(x1, x2, yy)
+            # Take I_MIN result as baseline
+            pid_res = res.get(PIDMeasure.I_MIN)
+            if pid_res is not None:
+                return {
+                    'mi_f1': np.nan,  # not directly returned; keep simplified fields absent
+                    'mi_f2': np.nan,
+                    'mi_joint': pid_res.total_mi,
+                    'redundancy': pid_res.redundant,
+                    'unique_f1': pid_res.unique_x1,
+                    'unique_f2': pid_res.unique_x2,
+                    'synergy': pid_res.synergistic,
+                }
+        except Exception as e:
+            logger.warning(f"Enhanced PID failed ({e}); falling back to simplified PID")
     x1 = X[[f1]].fillna(0).values
     x2 = X[[f2]].fillna(0).values
     mi_f1 = _estimate_mi(x1, y, random_state)
@@ -75,6 +110,7 @@ def pid_triad(X: pd.DataFrame, y: np.ndarray, features: List[str], random_state:
 
     Compare joint MI vs best pair MI to approximate higher-order synergy.
     """
+    # Use enhanced PID in pairwise passes if available; triad support could be added similarly
     assert len(features) == 3, "pid_triad expects exactly 3 features"
     f1, f2, f3 = features
     x1 = X[[f1]].fillna(0).values

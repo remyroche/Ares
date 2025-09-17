@@ -261,38 +261,76 @@ class PIDBasedFeatureGenerationComponent(BaseMarketAnalysisComponent):
             )
     
     async def _load_and_validate_market_data(self, data: Any) -> Any:
-        """Load and validate market data with enhanced data handling."""
+        """Load and validate market data with strict validation that fails fast."""
         try:
             # Enhanced data handling - try to get data from multiple sources
             processed_data = await self._enhanced_data_handling(data)
             if processed_data is None:
-                raise ValueError("No valid market data available from any source")
+                raise ValueError("CRITICAL: No valid market data available from any source - cannot proceed with feature generation")
             
             if not PANDAS_AVAILABLE:
-                raise ValueError("Pandas not available for data processing")
+                raise ValueError("CRITICAL: Pandas not available for data processing - required dependency missing")
             
             if not isinstance(processed_data, pd.DataFrame):
-                raise ValueError(f"Expected pandas DataFrame, got {type(processed_data).__name__}")
+                raise ValueError(f"CRITICAL: Expected pandas DataFrame, got {type(processed_data).__name__} - invalid data format")
             
             if processed_data.empty:
-                raise ValueError("Market data is empty")
+                raise ValueError("CRITICAL: Market data is completely empty - no data points to process")
             
-            # Validate required columns
+            # Strict validation - require minimum data quality
+            if len(processed_data) < 100:
+                raise ValueError(f"CRITICAL: Insufficient data points ({len(processed_data)}) - need at least 100 for meaningful feature generation")
+            
+            # Check for excessive NaN values
+            nan_percentage = processed_data.isnull().sum().sum() / (len(processed_data) * len(processed_data.columns))
+            if nan_percentage > 0.5:
+                raise ValueError(f"CRITICAL: Excessive missing data ({nan_percentage:.1%}) - data quality too poor for feature generation")
+            
+            # Validate data types
+            numeric_columns = processed_data.select_dtypes(include=[np.number]).columns
+            if len(numeric_columns) == 0:
+                raise ValueError("CRITICAL: No numeric columns found - cannot generate numerical features")
+            
+            # Check for constant columns (zero variance)
+            constant_columns = []
+            for col in numeric_columns:
+                if processed_data[col].nunique() <= 1:
+                    constant_columns.append(col)
+            
+            if len(constant_columns) == len(numeric_columns):
+                raise ValueError(f"CRITICAL: All numeric columns are constant - no variation for feature generation")
+            elif len(constant_columns) > 0:
+                self.logger.warning(f"Removing {len(constant_columns)} constant columns: {constant_columns}")
+                processed_data = processed_data.drop(columns=constant_columns)
+            
+            # Validate required columns for financial data
             required_columns = ['open', 'high', 'low', 'close', 'volume']
             missing_columns = [col for col in required_columns if col not in processed_data.columns]
-            if missing_columns:
-                self.logger.warning(f"Missing required columns: {missing_columns}")
-                # Create fallback columns
-                for col in missing_columns:
-                    if col == 'volume':
-                        processed_data[col] = 1000  # Default volume
-                    else:
-                        processed_data[col] = processed_data.get('close', 100.0)  # Use close price as fallback
             
+            if len(missing_columns) == len(required_columns):
+                self.logger.warning("No standard OHLCV columns found - proceeding with available numeric data")
+            elif missing_columns:
+                self.logger.warning(f"Missing some OHLCV columns: {missing_columns}")
+                # Only create fallback columns if we have at least one price column
+                price_columns = [col for col in ['open', 'high', 'low', 'close'] if col in processed_data.columns]
+                if price_columns:
+                    reference_price = processed_data[price_columns[0]]
+                    for col in missing_columns:
+                        if col == 'volume':
+                            processed_data[col] = 1000  # Default volume
+                        elif col in ['open', 'high', 'low', 'close']:
+                            processed_data[col] = reference_price  # Use existing price as fallback
+            
+            # Final validation
+            final_numeric_columns = processed_data.select_dtypes(include=[np.number]).columns
+            if len(final_numeric_columns) < 2:
+                raise ValueError(f"CRITICAL: Need at least 2 numeric columns for feature generation, got {len(final_numeric_columns)}")
+            
+            self.logger.info(f"✅ Data validation passed: {len(processed_data)} rows, {len(final_numeric_columns)} numeric columns")
             return processed_data.copy()
             
         except Exception as e:
-            self.logger.error(f"Data loading failed: {e}")
+            self.logger.error(f"❌ Data validation failed: {e}")
             raise
     
     async def _enhanced_data_handling(self, data: Any) -> Optional[pd.DataFrame]:

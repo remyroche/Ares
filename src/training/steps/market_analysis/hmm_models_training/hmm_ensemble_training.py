@@ -495,6 +495,33 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
                 timeframe=self.config.timeframe
             )
             
+            # Post-process to compute roc_auc when possible (ensure predict_proba support)
+            try:
+                if 'evaluation_results' in results and isinstance(results.get('models'), dict):
+                    # Only compute for binary classification
+                    import numpy as _np
+                    from sklearn.metrics import roc_auc_score as _roc_auc_score
+                    unique_classes = _np.unique(y)
+                    if unique_classes.shape[0] == 2:
+                        for regime, ensemble_entry in results['models'].items():
+                            if isinstance(ensemble_entry, dict) and 'ensemble_manager' in ensemble_entry:
+                                model_obj = ensemble_entry['ensemble_manager']
+                                if hasattr(model_obj, 'predict_proba'):
+                                    regime_mask = (regime_labels == regime)
+                                    if _np.any(regime_mask):
+                                        regime_X = X[regime_mask]
+                                        regime_y = y[regime_mask]
+                                        try:
+                                            y_proba = model_obj.predict_proba(regime_X)
+                                            if y_proba is not None and y_proba.ndim == 2 and y_proba.shape[1] >= 2:
+                                                roc_auc = _roc_auc_score(regime_y, y_proba[:, 1])
+                                                if isinstance(results['evaluation_results'].get(regime), dict):
+                                                    results['evaluation_results'][regime]['roc_auc'] = float(roc_auc)
+                                        except Exception:
+                                            pass
+            except Exception:
+                pass
+            
             # Add matrix operations performance stats
             if hasattr(self.matrix_ops, 'get_performance_stats'):
                 matrix_stats = self.matrix_ops.get_performance_stats()
@@ -516,26 +543,31 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
             Dictionary of ensemble models
         """
         try:
-            from sklearn.linear_model import LogisticRegression, RidgeClassifier
-            from sklearn.ensemble import RandomForestClassifier
+            from sklearn.linear_model import LogisticRegressionCV, RidgeClassifier
+            from sklearn.ensemble import ExtraTreesClassifier
 
             # Create classification base models with validated parameters
             ensemble_models = {}
 
-            # Logistic Regression
+            # Elastic Net (Logistic) via LogisticRegressionCV with elasticnet penalty
             try:
-                max_iter = self.math_validator.validate_positive(1000, "LogisticRegression max_iter")
-                C_value = self.math_validator.validate_positive(1.0, "LogisticRegression C")
-                ensemble_models['logistic_regression'] = LogisticRegression(
+                max_iter = self.math_validator.validate_positive(2000, "ElasticNet-Logistic max_iter")
+                # l1_ratio in [0,1]; try a small grid
+                l1_ratios = [0.2, 0.5, 0.8]
+                ensemble_models['elastic_net_logistic'] = LogisticRegressionCV(
+                    Cs=10,
+                    cv=5,
+                    penalty='elasticnet',
+                    solver='saga',
+                    l1_ratios=l1_ratios,
                     max_iter=int(max_iter),
-                    C=float(C_value),
-                    solver='lbfgs',
                     n_jobs=-1
                 )
-                tprint("✅ Logistic Regression model created with validated parameters")
+                tprint("✅ Elastic Net (LogisticRegressionCV) created with elasticnet penalty")
             except Exception as e:
-                tprint(f"⚠️ Logistic Regression model creation failed: {e}")
-                ensemble_models['logistic_regression'] = LogisticRegression(max_iter=1000, solver='lbfgs', n_jobs=-1)
+                tprint(f"⚠️ Elastic Net logistic creation failed: {e}")
+                # Fallback to RidgeClassifier if unavailable
+                ensemble_models['elastic_net_logistic'] = RidgeClassifier(random_state=43)
 
             # Ridge Classifier
             try:
@@ -546,22 +578,20 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
                 tprint(f"⚠️ Ridge Classifier creation failed: {e}")
                 ensemble_models['ridge_classifier'] = RidgeClassifier(random_state=43)
 
-            # Random Forest Classifier
+            # Extra Trees Classifier (tree-based alternative to RandomForest)
             try:
-                n_estimators = self.math_validator.validate_positive(200, "RandomForest n_estimators")
-                max_depth = self.math_validator.validate_positive(10, "RandomForest max_depth")
-                min_samples_split = self.math_validator.validate_positive(2, "RandomForest min_samples_split")
-                ensemble_models['random_forest'] = RandomForestClassifier(
+                n_estimators = self.math_validator.validate_positive(300, "ExtraTrees n_estimators")
+                max_depth = self.math_validator.validate_positive(12, "ExtraTrees max_depth")
+                ensemble_models['extra_trees'] = ExtraTreesClassifier(
                     n_estimators=int(n_estimators),
                     max_depth=int(max_depth),
-                    min_samples_split=int(min_samples_split),
                     random_state=44,
                     n_jobs=-1
                 )
-                tprint("✅ Random Forest Classifier created with validated parameters")
+                tprint("✅ ExtraTrees Classifier created with validated parameters")
             except Exception as e:
-                tprint(f"⚠️ Random Forest Classifier creation failed: {e}")
-                ensemble_models['random_forest'] = RandomForestClassifier(n_estimators=200, max_depth=10, min_samples_split=2, random_state=44, n_jobs=-1)
+                tprint(f"⚠️ ExtraTrees Classifier creation failed: {e}")
+                ensemble_models['extra_trees'] = ExtraTreesClassifier(n_estimators=300, max_depth=12, random_state=44, n_jobs=-1)
 
             tprint(f"📊 Created {len(ensemble_models)} classification base models for HMM training")
             tprint(f"   Models: {list(ensemble_models.keys())}")

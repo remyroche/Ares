@@ -1221,38 +1221,66 @@ class ModelTrainingSubPipeline:
         try:
             tprint(f"   🔍 Loading 1m market data for {config.symbol}...")
             
-            # This would load actual 1m market data
-            # For now, we'll create mock data for demonstration
-            from datetime import timedelta
-            import numpy as np
+            # Load actual 1m market data from the data collection system
+            try:
+                # Try to load from data cache or collection system
+                from src.data.data_collection.data_collector import DataCollector
+                from src.data.data_collection.data_collection_config import DataCollectionConfig
+                
+                # Create data collection config for 1m timeframe
+                data_config = DataCollectionConfig(
+                    symbol=config.symbol,
+                    exchange=config.exchange,
+                    timeframe='1m',
+                    data_dir=config.data_dir
+                )
+                
+                data_collector = DataCollector(data_config)
+                market_data_1m = await data_collector.load_historical_data()
+                
+                if market_data_1m is not None and not market_data_1m.empty:
+                    tprint(f"   ✅ Loaded {len(market_data_1m)} 1m data points for {config.symbol}")
+                    return market_data_1m
+                else:
+                    tprint(f"   ⚠️ No 1m data found in data collection system")
+                    
+            except ImportError:
+                tprint(f"   ⚠️ Data collection system not available")
+            except Exception as e:
+                tprint(f"   ⚠️ Failed to load from data collection system: {e}")
             
-            # Generate mock 1m data for the last 7 days
-            end_time = datetime.now()
-            start_time = end_time - timedelta(days=7)
+            # Fallback: try to load from file system
+            try:
+                import glob
+                from pathlib import Path
+                
+                # Look for 1m data files
+                data_patterns = [
+                    f"{config.data_dir}/**/{config.symbol}*1m*.parquet",
+                    f"{config.data_dir}/**/{config.symbol}*1min*.parquet",
+                    f"{config.data_dir}/**/1m/{config.symbol}*.parquet"
+                ]
+                
+                for pattern in data_patterns:
+                    files = glob.glob(pattern, recursive=True)
+                    if files:
+                        # Load the most recent file
+                        latest_file = max(files, key=lambda x: Path(x).stat().st_mtime)
+                        tprint(f"   🔍 Found 1m data file: {latest_file}")
+                        
+                        market_data_1m = pd.read_parquet(latest_file)
+                        
+                        if not market_data_1m.empty:
+                            tprint(f"   ✅ Loaded {len(market_data_1m)} 1m data points from file")
+                            return market_data_1m
+                
+                tprint(f"   ⚠️ No 1m data files found in {config.data_dir}")
+                
+            except Exception as e:
+                tprint(f"   ⚠️ Failed to load from file system: {e}")
             
-            # Create minute-by-minute timestamps
-            timestamps = pd.date_range(start=start_time, end=end_time, freq='1min')
-            n_samples = len(timestamps)
-            
-            # Generate realistic OHLCV data
-            base_price = 2000.0  # Base price for mock data
-            price_walk = np.cumsum(np.random.normal(0, 0.001, n_samples))
-            
-            mock_data = pd.DataFrame({
-                'timestamp': timestamps,
-                'open': base_price + price_walk + np.random.normal(0, 0.5, n_samples),
-                'high': base_price + price_walk + np.random.normal(2, 0.5, n_samples),
-                'low': base_price + price_walk + np.random.normal(-2, 0.5, n_samples),
-                'close': base_price + price_walk + np.random.normal(0, 0.5, n_samples),
-                'volume': np.random.exponential(1000, n_samples)
-            })
-            
-            # Ensure OHLC relationships are correct
-            mock_data['high'] = np.maximum.reduce([mock_data['open'], mock_data['high'], mock_data['close']])
-            mock_data['low'] = np.minimum.reduce([mock_data['open'], mock_data['low'], mock_data['close']])
-            
-            tprint(f"   ✅ Loaded {len(mock_data)} 1m data points for {config.symbol}")
-            return mock_data
+            # If no data found, raise an error instead of generating mock data
+            raise ValueError(f"No 1m market data found for {config.symbol}. Please ensure 1m data is available in the data collection system or data directory.")
             
         except Exception as e:
             tprint(f"   ❌ Failed to load 1m market data: {e}")

@@ -105,7 +105,7 @@ class TacticianLookbackConfig:
     optimization_timeout: Optional[int] = 3600  # 1 hour
     
     # Lookback constraints
-    min_lookback: int = 5
+    min_lookback: int = 3
     max_lookback: int = 60  # Shorter for 1m timeframe
     lookback_step: int = 1
     
@@ -885,7 +885,7 @@ class TacticianLookbackOptimizer:
         analyst_signals: np.ndarray,
         market_data: pd.DataFrame
     ) -> float:
-        """Calculate entry timing accuracy when Analyst gives green light."""
+        """Calculate entry timing accuracy when Analyst gives green light (optimized for 0.3% movements)."""
         try:
             if features.empty or len(analyst_signals) == 0:
                 return 0.5
@@ -902,11 +902,19 @@ class TacticianLookbackOptimizer:
             # Focus on green light periods
             green_light_returns = future_returns[green_light_periods]
             
-            # Calculate accuracy: percentage of positive returns during green light
+            # Calculate accuracy optimized for 0.3% target movements
             if len(green_light_returns) > 0:
-                positive_returns = (green_light_returns > 0).sum()
-                accuracy = positive_returns / len(green_light_returns)
-                return float(accuracy)
+                # Weight accuracy by proximity to 0.3% target
+                target_return = 0.003  # 0.3% target movement
+                
+                # Score returns based on achieving target (0.3% or more is good)
+                target_achieved = (green_light_returns >= target_return).sum()
+                small_positive = ((green_light_returns > 0) & (green_light_returns < target_return)).sum()
+                negative = (green_light_returns < 0).sum()
+                
+                # Weighted scoring: full points for target achievement, partial for small positive
+                score = (target_achieved * 1.0 + small_positive * 0.5 + negative * 0.0) / len(green_light_returns)
+                return float(score)
             else:
                 return 0.5
             
@@ -919,46 +927,55 @@ class TacticianLookbackOptimizer:
         features: pd.DataFrame,
         market_data: pd.DataFrame
     ) -> float:
-        """Calculate exit timing accuracy for risk management."""
+        """Calculate exit timing accuracy for risk management (optimized for 0.3% movements)."""
         try:
             if features.empty:
                 return 0.5
             
-            # Calculate volatility-adjusted returns
+            # Calculate volatility-adjusted returns for short-term movements
             returns = market_data['close'].pct_change()
-            volatility = returns.rolling(window=20).std()
+            volatility = returns.rolling(window=10).std()  # Shorter window for 1m data
             
-            # Identify high-risk periods (high volatility or negative momentum)
+            # Identify high-risk periods for 0.3% target movements
+            # More sensitive thresholds for short-term trading
             high_risk_periods = (
-                (volatility > volatility.quantile(0.8)) |
-                (returns.rolling(window=5).mean() < -0.001)
+                (volatility > volatility.quantile(0.75)) |  # Lower threshold for 1m
+                (returns.rolling(window=3).mean() < -0.0015) |  # 0.15% negative momentum
+                (returns.abs() > 0.005)  # Large movements (>0.5%) indicate instability
             )
             
             # Calculate how well features predict these periods
             if 'rsi' in features.columns:
-                rsi_signals = features['rsi'] > 70  # Overbought
+                rsi_signals = (features['rsi'] > 65) | (features['rsi'] < 35)  # Tighter overbought/oversold for 1m
             else:
                 rsi_signals = pd.Series(False, index=features.index)
             
             if 'atr' in features.columns:
-                atr_signals = features['atr'] > features['atr'].quantile(0.8)  # High volatility
+                atr_signals = features['atr'] > features['atr'].quantile(0.75)  # High volatility (lower threshold)
             else:
                 atr_signals = pd.Series(False, index=features.index)
             
-            # Combine exit signals
-            exit_signals = rsi_signals | atr_signals
+            # Add momentum-based exit signals for short-term trading
+            momentum_signals = pd.Series(False, index=features.index)
+            if len(returns) > 3:
+                # Exit when recent momentum turns negative
+                recent_momentum = returns.rolling(window=3).mean()
+                momentum_signals = recent_momentum < -0.001  # 0.1% negative momentum
+            
+            # Combine exit signals (more sensitive for short-term trading)
+            exit_signals = rsi_signals | atr_signals | momentum_signals
             
             # Calculate accuracy: how often exit signals precede high-risk periods
             if exit_signals.sum() > 0:
-                # Check if exit signals are followed by high-risk periods
+                # Check if exit signals are followed by high-risk periods (shorter horizon for 1m)
                 correct_exits = 0
                 total_exits = 0
                 
-                for i in range(len(exit_signals) - 5):
+                for i in range(len(exit_signals) - 3):  # Shorter lookahead for 1m trading
                     if exit_signals.iloc[i]:
                         total_exits += 1
-                        # Check next 5 periods for high risk
-                        if high_risk_periods.iloc[i+1:i+6].any():
+                        # Check next 3 periods for high risk (3 minutes ahead)
+                        if high_risk_periods.iloc[i+1:i+4].any():
                             correct_exits += 1
                 
                 if total_exits > 0:
@@ -976,28 +993,53 @@ class TacticianLookbackOptimizer:
         features: pd.DataFrame,
         market_data: pd.DataFrame
     ) -> float:
-        """Calculate signal-to-noise ratio of features."""
+        """Calculate signal-to-noise ratio of features (optimized for 0.3% movements)."""
         try:
             if features.empty:
                 return 0.5
             
-            # Calculate correlations with future returns
-            future_returns = market_data['close'].pct_change().shift(-1)
+            # Calculate correlations with future returns (multiple horizons for short-term trading)
+            returns_1min = market_data['close'].pct_change().shift(-1)
+            returns_3min = market_data['close'].pct_change(periods=3).shift(-3)
+            returns_5min = market_data['close'].pct_change(periods=5).shift(-5)
             
             correlations = []
             for column in features.columns:
                 if features[column].dtype in ['float64', 'int64']:
                     try:
-                        corr = safe_correlation(features[column], future_returns)
-                        if validate_finite(corr):
-                            correlations.append(abs(corr))
+                        # Calculate correlations with different horizons
+                        corr_1min = safe_correlation(features[column], returns_1min)
+                        corr_3min = safe_correlation(features[column], returns_3min)
+                        corr_5min = safe_correlation(features[column], returns_5min)
+                        
+                        # Weight short-term correlations more heavily for 0.3% targets
+                        valid_corrs = []
+                        if validate_finite(corr_1min):
+                            valid_corrs.append(abs(corr_1min) * 0.5)  # 50% weight for 1-minute
+                        if validate_finite(corr_3min):
+                            valid_corrs.append(abs(corr_3min) * 0.3)  # 30% weight for 3-minute
+                        if validate_finite(corr_5min):
+                            valid_corrs.append(abs(corr_5min) * 0.2)  # 20% weight for 5-minute
+                        
+                        if valid_corrs:
+                            # Weighted average correlation
+                            weighted_corr = sum(valid_corrs)
+                            correlations.append(weighted_corr)
                     except Exception:
                         continue
             
             if correlations:
-                # Signal quality is the mean absolute correlation
+                # Signal quality is the mean weighted correlation
                 signal_quality = np.mean(correlations)
-                return float(signal_quality)
+                
+                # Apply penalty for features that don't show consistent short-term predictive power
+                consistency_bonus = 1.0
+                if len(correlations) > 1:
+                    # Bonus for consistent correlations across features
+                    corr_std = np.std(correlations)
+                    consistency_bonus = max(0.8, 1.0 - corr_std)
+                
+                return float(signal_quality * consistency_bonus)
             else:
                 return 0.5
             
@@ -1056,20 +1098,24 @@ class TacticianLookbackOptimizer:
             return 0.5
     
     def _calculate_lookback_penalty(self, lookback_params: Dict[str, int]) -> float:
-        """Calculate penalty for extreme lookback values."""
+        """Calculate penalty for extreme lookback values (optimized for 0.3% movements)."""
         try:
             penalties = []
             
             for indicator, lookback in lookback_params.items():
-                # Penalty for very short lookbacks (too noisy)
-                if lookback < 10:
+                # Penalty for very short lookbacks (too noisy, even for 0.3% targets)
+                if lookback < 5:
+                    penalties.append(0.15)  # Higher penalty for very short lookbacks
+                
+                # Penalty for very long lookbacks (too slow for 0.3% short-term targets)
+                elif lookback > 30:  # Shorter threshold for 0.3% movements
                     penalties.append(0.1)
                 
-                # Penalty for very long lookbacks (too slow for 1m timeframe)
-                elif lookback > 45:
-                    penalties.append(0.1)
+                # Slight penalty for moderately long lookbacks (not optimal for short-term)
+                elif lookback > 20:
+                    penalties.append(0.05)
                 
-                # No penalty for reasonable lookbacks
+                # Sweet spot for 0.3% movements: 5-20 periods
                 else:
                     penalties.append(0.0)
             

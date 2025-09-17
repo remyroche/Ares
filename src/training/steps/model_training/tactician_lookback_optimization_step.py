@@ -275,10 +275,9 @@ class TacticianLookbackOptimizationStep(BaseTrainingStep):
                 
                 for model_name, model in analyst_models.items():
                     try:
-                        # This would call the actual model prediction
-                        # For now, we'll create mock outputs based on market data
-                        predictions = self._generate_mock_analyst_predictions(
-                            market_data_1m, model_name
+                        # Call the actual model prediction
+                        predictions = self._generate_analyst_predictions(
+                            market_data_1m, model, model_name
                         )
                         
                         model_predictions.append(predictions['predictions'])
@@ -305,8 +304,8 @@ class TacticianLookbackOptimizationStep(BaseTrainingStep):
             # Generate ensemble outputs
             if analyst_ensemble:
                 try:
-                    # This would call the actual ensemble prediction
-                    ensemble_predictions = self._generate_mock_ensemble_predictions(market_data_1m)
+                    # Call the actual ensemble prediction
+                    ensemble_predictions = self._generate_ensemble_predictions(market_data_1m, analyst_ensemble)
                     analyst_outputs['ensemble_predictions'] = ensemble_predictions['predictions']
                     analyst_outputs['ensemble_confidences'] = ensemble_predictions['confidences']
                     
@@ -337,37 +336,46 @@ class TacticianLookbackOptimizationStep(BaseTrainingStep):
             tprint_error(f"❌ Failed to generate Analyst outputs: {e}")
             return None, {}
     
-    def _generate_mock_analyst_predictions(
+    def _generate_analyst_predictions(
         self,
         market_data: pd.DataFrame,
+        model: Any,
         model_name: str
     ) -> Dict[str, np.ndarray]:
-        """Generate mock Analyst predictions for testing."""
+        """Generate Analyst predictions using the actual trained model."""
         try:
-            # This is a placeholder - in production, this would call the actual model
-            n_samples = len(market_data)
-            
-            # Generate realistic mock predictions based on market data
-            returns = market_data['close'].pct_change().fillna(0)
-            volatility = returns.rolling(window=20).std().fillna(0.01)
-            
-            # Mock predictions with some market signal correlation
-            base_predictions = 0.5 + 0.3 * np.tanh(returns.rolling(window=5).mean() / volatility)
-            noise = np.random.normal(0, 0.1, n_samples)
-            predictions = np.clip(base_predictions + noise, 0.1, 0.9)
-            
-            # Mock confidences inversely related to volatility
-            base_confidences = 1.0 - np.clip(volatility * 10, 0.2, 0.8)
-            confidence_noise = np.random.normal(0, 0.05, n_samples)
-            confidences = np.clip(base_confidences + confidence_noise, 0.3, 0.95)
+            # Call the actual trained model
+            if hasattr(model, 'predict') and hasattr(model, 'predict_proba'):
+                # Standard sklearn-like interface
+                predictions = model.predict(market_data)
+                confidences = model.predict_proba(market_data)
+                
+                # Extract confidence scores (assuming binary classification)
+                if confidences.ndim > 1 and confidences.shape[1] > 1:
+                    confidences = np.max(confidences, axis=1)
+                
+            elif hasattr(model, 'predict'):
+                # Model with only predict method
+                predictions = model.predict(market_data)
+                confidences = np.full(len(predictions), 0.7)  # Default confidence
+                
+            elif isinstance(model, dict) and 'type' in model:
+                # Fallback for mock models during development
+                tprint_warning(f"⚠️ Using fallback for mock model {model_name}")
+                n_samples = len(market_data)
+                predictions = np.full(n_samples, 0.5)
+                confidences = np.full(n_samples, 0.6)
+                
+            else:
+                raise ValueError(f"Model {model_name} does not have a compatible interface")
             
             return {
-                'predictions': predictions.values,
-                'confidences': confidences.values
+                'predictions': np.array(predictions),
+                'confidences': np.array(confidences)
             }
             
         except Exception as e:
-            self.logger.warning(f"Mock prediction generation failed for {model_name}: {e}")
+            self.logger.warning(f"Analyst prediction generation failed for {model_name}: {e}")
             # Return neutral predictions as fallback
             n_samples = len(market_data)
             return {
@@ -375,32 +383,45 @@ class TacticianLookbackOptimizationStep(BaseTrainingStep):
                 'confidences': np.full(n_samples, 0.6)
             }
     
-    def _generate_mock_ensemble_predictions(self, market_data: pd.DataFrame) -> Dict[str, np.ndarray]:
-        """Generate mock ensemble predictions."""
+    def _generate_ensemble_predictions(
+        self, 
+        market_data: pd.DataFrame, 
+        ensemble_model: Any
+    ) -> Dict[str, np.ndarray]:
+        """Generate ensemble predictions using the actual trained ensemble model."""
         try:
-            n_samples = len(market_data)
-            
-            # Generate ensemble predictions with higher quality than individual models
-            returns = market_data['close'].pct_change().fillna(0)
-            sma_short = market_data['close'].rolling(window=10).mean()
-            sma_long = market_data['close'].rolling(window=30).mean()
-            
-            # Ensemble predictions based on moving average crossover
-            signal_strength = (sma_short - sma_long) / sma_long
-            predictions = 0.5 + 0.4 * np.tanh(signal_strength * 10)
-            predictions = np.clip(predictions, 0.2, 0.8)
-            
-            # Higher confidence for ensemble
-            base_confidences = 0.7 + 0.2 * (1 - returns.rolling(window=10).std())
-            confidences = np.clip(base_confidences, 0.5, 0.9)
+            # Call the actual trained ensemble model
+            if hasattr(ensemble_model, 'predict') and hasattr(ensemble_model, 'predict_proba'):
+                # Standard ensemble interface
+                predictions = ensemble_model.predict(market_data)
+                confidences = ensemble_model.predict_proba(market_data)
+                
+                # Extract confidence scores
+                if confidences.ndim > 1 and confidences.shape[1] > 1:
+                    confidences = np.max(confidences, axis=1)
+                    
+            elif hasattr(ensemble_model, 'predict'):
+                # Ensemble with only predict method
+                predictions = ensemble_model.predict(market_data)
+                confidences = np.full(len(predictions), 0.8)  # Higher default confidence for ensemble
+                
+            elif isinstance(ensemble_model, dict) and 'type' in ensemble_model:
+                # Fallback for mock ensemble during development
+                tprint_warning("⚠️ Using fallback for mock ensemble model")
+                n_samples = len(market_data)
+                predictions = np.full(n_samples, 0.5)
+                confidences = np.full(n_samples, 0.7)
+                
+            else:
+                raise ValueError("Ensemble model does not have a compatible interface")
             
             return {
-                'predictions': predictions.fillna(0.5).values,
-                'confidences': confidences.fillna(0.7).values
+                'predictions': np.array(predictions),
+                'confidences': np.array(confidences)
             }
             
         except Exception as e:
-            self.logger.warning(f"Mock ensemble prediction generation failed: {e}")
+            self.logger.warning(f"Ensemble prediction generation failed: {e}")
             n_samples = len(market_data)
             return {
                 'predictions': np.full(n_samples, 0.5),
@@ -450,29 +471,29 @@ class TacticianLookbackOptimizationStep(BaseTrainingStep):
             }
     
     def _get_default_lookbacks(self) -> Dict[str, int]:
-        """Get default lookback periods for 1m timeframe."""
+        """Get default lookback periods for 1m timeframe (optimized for 0.3% movements)."""
         return {
-            'rsi': 14,
-            'macd': 26,
-            'bollinger_bands': 20,
-            'stoch': 14,
-            'volume_sma': 20,
-            'vwap': 20,
-            'obv': 10,
-            'volume_roc': 12,
-            'williams_r': 14,
-            'cci': 20,
-            'momentum': 10,
-            'roc': 12,
-            'atr': 14,
-            'volatility_bands': 20,
-            'keltner_channels': 20
+            'rsi': 10,  # Shorter for 0.3% movements
+            'macd': 18,  # Reduced from 26
+            'bollinger_bands': 15,  # Shorter for quick reactions
+            'stoch': 10,  # More responsive
+            'volume_sma': 15,  # Shorter volume analysis
+            'vwap': 15,  # Shorter VWAP for intraday
+            'obv': 8,   # Quick volume momentum
+            'volume_roc': 8,   # Fast volume changes
+            'williams_r': 10,  # More responsive
+            'cci': 15,  # Shorter for 1m
+            'momentum': 6,   # Very short for 0.3% targets
+            'roc': 8,    # Quick rate of change
+            'atr': 10,   # Shorter volatility measure
+            'volatility_bands': 15,  # Responsive volatility
+            'keltner_channels': 15   # Shorter channels
         }
     
     def _get_default_lookback(self, indicator: str) -> int:
         """Get default lookback for a specific indicator."""
         defaults = self._get_default_lookbacks()
-        return defaults.get(indicator, 14)
+        return defaults.get(indicator, 10)  # Shorter default for 0.3% movements
     
     async def _save_results_for_tactician(self, results: Dict[str, Any]):
         """Save optimization results for use by Tactician training step."""

@@ -311,8 +311,8 @@ class TacticianSignalGenerator:
             
             # Kelly criterion calculation
             win_probability = combined_confidence
-            avg_win = 0.02  # 2% average win
-            avg_loss = 0.01  # 1% average loss
+            avg_win = 0.003  # 0.3% average win (aligned with Tactician target)
+            avg_loss = 0.002  # 0.2% average loss (tighter risk management)
             
             kelly_fraction = (win_probability * avg_win - (1 - win_probability) * avg_loss) / avg_win
             kelly_fraction = max(0, min(kelly_fraction, self.kelly_fraction))  # Cap at configured fraction

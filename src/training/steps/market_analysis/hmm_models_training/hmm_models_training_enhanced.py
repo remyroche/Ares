@@ -479,7 +479,7 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
         """Initialize feature generator with specific error handling."""
         try:
             # Try primary import
-            from src.feature_engineering.feature_generators import FeatureGenerators
+            from src.feature_generation.utils.feature_generators import FeatureGenerators
             generator = FeatureGenerators()
             self.logger.info("✅ Feature generator initialized from feature_engineering")
             return generator

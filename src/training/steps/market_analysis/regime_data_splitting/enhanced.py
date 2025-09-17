@@ -27,7 +27,7 @@ warnings.filterwarnings('ignore')
 try:
     from ..hmm_training.hmm_models_training_refactored import HMMModelsTrainingRefactored as HMMModelsTraining
     from ..hmm_training.hmm_ensemble_training import HMMEnsembleTrainingRefactored as HMMEnsembleTraining
-    from src.feature_engineering.feature_generators import FeatureGenerator
+    from src.feature_generation.utils.feature_generators import FeatureGenerator
     from src.training.utils.feature_selection.main_framework import FeatureSelectionFramework
     HMM_TRAINING_AVAILABLE = True
 except ImportError as e:

@@ -43,7 +43,7 @@ class RegimeAwareLabeling:
             
             # Initialize regime barrier optimizer
             try:
-                from src.feature_engineering.step06_labeling_components.regime_specific_triple_barrier_optimizer import RegimeSpecificTripleBarrierOptimizer
+                from src.feature_generation.utils.step06_labeling_components.regime_specific_triple_barrier_optimizer import RegimeSpecificTripleBarrierOptimizer
                 self.regime_barrier_optimizer = RegimeSpecificTripleBarrierOptimizer(self.config)
                 self.logger.info('✅ RegimeSpecificTripleBarrierOptimizer initialized successfully')
             except ImportError as e:

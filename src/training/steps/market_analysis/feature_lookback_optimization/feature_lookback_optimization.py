@@ -942,7 +942,7 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
     def _create_optimization_config(self, pipeline_state: Dict[str, Any]) -> Any:
         """Create optimization configuration based on pipeline state and component config."""
         try:
-            from src.feature_engineering.feature_generation_optimization import FeatureOptimizationConfig
+            from src.feature_generation.utils.feature_generation_optimization import FeatureOptimizationConfig
             
             # Check if regime data is available for regime-aware optimization
             regime_data_splitting = pipeline_state.get('regime_data_splitting_result', {})
@@ -1041,7 +1041,7 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
     async def _get_feature_optimizer(self, config: Any) -> Any:
         """Get feature optimizer with fallback handling."""
         try:
-            from src.feature_engineering.feature_generation_optimization import get_feature_optimizer
+            from src.feature_generation.utils.feature_generation_optimization import get_feature_optimizer
             optimizer = get_feature_optimizer(config)
             tprint('✅ Feature optimizer initialized successfully')
             return optimizer

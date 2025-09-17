@@ -21,7 +21,7 @@ from ..integration.enhanced_ml_pipeline_integration import (
     PipelineStatus
 )
 from ..monitoring.enhanced_error_detector import detect_error
-from ..optimization.enhanced_hpo_monitor import get_global_hpo_monitor
+from ..utils.optimization.enhanced_hpo_monitor import get_global_hpo_monitor
 from ..testing.enhanced_testing_framework import (
     get_global_testing_framework,
     TestType,

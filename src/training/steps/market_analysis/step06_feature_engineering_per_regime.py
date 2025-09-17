@@ -22,7 +22,7 @@ from src.utils.comprehensive_function_logger import log_step_functions, log_impo
 
 # Import feature generation optimization
 try:
-    from src.feature_engineering.feature_generation_optimization import (
+    from src.feature_generation.utils.feature_generation_optimization import (
         FeatureGenerationOptimizer, 
         FeatureOptimizationConfig, 
         OptimizationMethod

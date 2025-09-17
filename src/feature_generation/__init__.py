@@ -8,7 +8,7 @@ full backwards compatibility.
 Key Features:
 - Category-based feature organization (returns, momentum, volume, support/resistance, etc.)
 - Matrix operations integration for optimized computation
-- Lookback optimization system
+- Advanced utilities (moved from feature_engineering)
 - Feature bank for easy feature selection
 - Backwards compatibility with existing code
 - Hardware acceleration support (M1/M2/M3 optimization)
@@ -16,7 +16,7 @@ Key Features:
 Architecture:
 - Core framework for feature generation
 - Category-specific feature generators
-- Lookback optimization system
+- Advanced utilities (optimization, analysis, etc.)
 - Feature bank and registry
 - Matrix operations integration
 - Backwards compatibility layer
@@ -26,7 +26,9 @@ Usage:
         FeatureBank,
         get_feature_generator,
         generate_features_by_category,
-        optimize_feature_lookbacks
+        # Advanced utilities
+        FeatureGenerationOptimizer,
+        EnhancedFeatureEngineering
     )
     
     # Initialize feature bank
@@ -38,10 +40,6 @@ Usage:
         categories=['returns', 'momentum', 'volume'],
         lookback_optimization=True
     )
-    
-    # Get specific feature generator
-    generator = get_feature_generator('momentum')
-    momentum_features = generator.generate(df, lookback_periods=[5, 10, 20])
 """
 
 # Core framework imports
@@ -117,22 +115,6 @@ except ImportError as e:
     logger = logging.getLogger(__name__)
     logger.warning(f"Category generators not available: {e}")
 
-# Lookback optimization system
-try:
-    from .optimization import (
-        LookbackOptimizer,
-        FeatureOptimizationConfig,
-        FeatureOptimizationResult,
-        optimize_feature_lookbacks,
-        get_optimization_config
-    )
-    OPTIMIZATION_AVAILABLE = True
-except ImportError as e:
-    OPTIMIZATION_AVAILABLE = False
-    import logging
-    logger = logging.getLogger(__name__)
-    logger.warning(f"Lookback optimization not available: {e}")
-
 # Matrix operations integration
 try:
     from .matrix_integration import (
@@ -193,15 +175,49 @@ except ImportError as e:
     logger = logging.getLogger(__name__)
     logger.warning(f"Convenience functions not available: {e}")
 
+# Advanced utilities (moved from feature_engineering)
+try:
+    from .utils import (
+        # Optimization system
+        FeatureGenerationOptimizer,
+        FeatureOptimizationConfig,
+        FeatureOptimizationResult,
+        OptimizationMethod,
+        get_feature_optimizer,
+        optimize_feature_lookback,
+        get_optimization_config,
+        LookbackOptimizer,
+        
+        # Advanced feature engineering
+        EnhancedFeatureEngineering,
+        Step06UtilityContainer,
+        UtilityConfig,
+        
+        # Analysis pipelines
+        CrossTimeframeAnalysisPipeline,
+        FractionalDifferentiationPipeline,
+        EnhancedMatrixOperations,
+        
+        # Validation
+        validate_feature_quality,
+        validate_features_dataframe
+    )
+    UTILS_AVAILABLE = True
+except ImportError as e:
+    UTILS_AVAILABLE = False
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.warning(f"Advanced utils not available: {e}")
+
 # Version and metadata
-__version__ = "1.0.0"
+__version__ = "2.0.0"
 __author__ = "Unified Feature Generation Team"
-__description__ = "Centralized feature generation system with category-based organization"
+__description__ = "Centralized feature generation system with category-based organization and advanced utilities"
 
 # Build __all__ list conditionally
 __all__ = []
 
-# Always available
+# Core framework
 if CORE_AVAILABLE:
     __all__.extend([
         "FeatureBank",
@@ -256,16 +272,6 @@ if CATEGORIES_AVAILABLE:
         "create_default_interaction_generators"
     ])
 
-# Optimization
-if OPTIMIZATION_AVAILABLE:
-    __all__.extend([
-        "LookbackOptimizer",
-        "FeatureOptimizationConfig",
-        "FeatureOptimizationResult", 
-        "optimize_feature_lookbacks",
-        "get_optimization_config"
-    ])
-
 # Matrix integration
 if MATRIX_INTEGRATION_AVAILABLE:
     __all__.extend([
@@ -302,6 +308,30 @@ if CONVENIENCE_AVAILABLE:
         "export_feature_config"
     ])
 
+# Advanced utils
+if UTILS_AVAILABLE:
+    __all__.extend([
+        # Optimization system
+        "FeatureGenerationOptimizer",
+        "FeatureOptimizationConfig", 
+        "FeatureOptimizationResult",
+        "OptimizationMethod",
+        "get_feature_optimizer",
+        "optimize_feature_lookback",
+        "get_optimization_config",
+        "LookbackOptimizer",
+        
+        # Advanced utilities
+        "EnhancedFeatureEngineering",
+        "Step06UtilityContainer",
+        "UtilityConfig",
+        "CrossTimeframeAnalysisPipeline",
+        "FractionalDifferentiationPipeline",
+        "EnhancedMatrixOperations",
+        "validate_feature_quality",
+        "validate_features_dataframe"
+    ])
+
 # Initialize default feature bank if core is available
 if CORE_AVAILABLE:
     try:
@@ -317,5 +347,10 @@ import logging
 logger = logging.getLogger(__name__)
 logger.info("✅ Unified Feature Generation System initialized")
 logger.info(f"📦 Version: {__version__}")
-logger.info("🔧 Features: Category-based organization, matrix operations integration, lookback optimization")
+logger.info("🔧 Features: Category-based organization, advanced utilities, optimization")
 logger.info("🍎 Optimized for: Apple Silicon M1/M2/M3 Macs")
+
+if UTILS_AVAILABLE:
+    logger.info("🚀 Advanced utilities available (optimization, analysis, etc.)")
+else:
+    logger.warning("⚠️ Advanced utilities not available - limited functionality")

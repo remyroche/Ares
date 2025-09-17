@@ -32,8 +32,8 @@ class StepValidationInitializer:
             'step03_hmm_regime_discovery': {'module': 'src.training.steps.data_collection.data_preparation.step03_hmm_regime_discovery', 'class': 'Step03HMMRegimeDiscovery', 'priority': 4},
             'step04_regime_data_splitting': {'module': 'src.training.steps.market_analysis.regime_data_splitting.main', 'class': 'RegimeDataSplittingStep', 'priority': 5},
             'step05_labeling': {'module': 'src.training.steps.step5_labeling', 'class': 'LabelingStep', 'priority': 6},
-            'step06_advanced_feature_engineering': {'module': 'src.training.steps.data_collection.feature_engineering.step06_feature_engineering', 'class': 'FeatureEngineeringStep', 'priority': 7},
-            'step08_advanced_feature_selection': {'module': 'src.training.steps.data_collection.feature_engineering.step08_advanced_feature_selection', 'class': 'FeatureSelectionStep', 'priority': 8},
+            'step06_advanced_feature_engineering': {'module': 'src.training.steps.data_collection.feature_generation.utils.step06_feature_engineering', 'class': 'FeatureEngineeringStep', 'priority': 7},
+            'step08_advanced_feature_selection': {'module': 'src.training.steps.data_collection.feature_generation.utils.step08_advanced_feature_selection', 'class': 'FeatureSelectionStep', 'priority': 8},
             # Simplified model training steps
             'analyst_model_training': {'module': 'src.training.steps.model_training.simplified.analyst_model_training', 'class': 'AnalystModelTrainer', 'priority': 10},
             'tactician_model_training': {'module': 'src.training.steps.model_training.simplified.tactician_model_training', 'class': 'TacticianModelTrainer', 'priority': 11},

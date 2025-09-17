@@ -5,11 +5,11 @@ import pywt
 import numpy as np
 import pandas as pd
 import pandas_ta as ta
-# Use existing feature engineering from src.feature_engineering
-from src.feature_engineering.step06_enhanced_feature_engineering import EnhancedFeatureEngineeringStep
+# Use existing feature engineering from src.feature_generation.utils
+from src.feature_generation.utils.step06_enhanced_feature_engineering import EnhancedFeatureEngineeringStep
 from .autoencoder_feature_generator import AutoencoderFeatureGenerator
-from ..feature_engineering.limited_microstructure_features import LimitedMicrostructureFeatures
-from ..training.steps.data_collection.feature_engineering.feature_components import EntropyFeatureEngine
+from .utils.limited_microstructure_features import LimitedMicrostructureFeatures
+from ..training.steps.data_collection.feature_generation.utils.feature_components import EntropyFeatureEngine
 from ..utils.step06_utilities import CrossTimeframeFeatureGenerator
 from ..config import CONFIG
 from ..core.domain import handle_data_processing_errors, handle_file_operations
@@ -73,7 +73,7 @@ class FeatureEngineeringOrchestrator:
             features_df = klines_df.copy()
             if self.enable_advanced_features:
                 self.logger.info('📊 Generating advanced features...')
-                features_df = self.advanced_feature_engineering.generate_features(features_df, agg_trades_df, futures_df)
+                features_df = self.advanced_feature_generation.utils.generate_features(features_df, agg_trades_df, futures_df)
                 self.logger.info(f'✅ Advanced features generated. Shape: {features_df.shape}')
             if self.enable_autoencoder_features and (not features_df.empty):
                 self.logger.info('🤖 Generating autoencoder features...')
@@ -198,8 +198,8 @@ class FeatureEngineeringOrchestrator:
     async def _calculate_multi_timeframe_features(self, price_data: pd.DataFrame, volume_data: pd.DataFrame, order_flow_data: pd.DataFrame | None = None) -> pd.DataFrame:
         """Calculate multi-timeframe features."""
         try:
-            # Use existing feature engineering from src.feature_engineering
-            from src.feature_engineering.step06_enhanced_feature_engineering import EnhancedFeatureEngineering
+            # Use existing feature engineering from src.feature_generation.utils
+            from src.feature_generation.utils.step06_enhanced_feature_engineering import EnhancedFeatureEngineering
             advanced_fe = EnhancedFeatureEngineering(self.config)
             await advanced_fe.initialize()
             multi_timeframe_features = await advanced_fe._engineer_multi_timeframe_features(price_data, volume_data, order_flow_data)
@@ -381,7 +381,7 @@ class FeatureEngineeringOrchestrator:
     def get_orchestrator_info(self) -> dict[str, Any]:
         """Get information about the orchestrator."""
         try:
-            return {'orchestrator_type': 'FeatureEngineeringOrchestrator', 'enable_advanced_features': self.enable_advanced_features, 'enable_autoencoder_features': self.enable_autoencoder_features, 'enable_legacy_features': self.enable_legacy_features, 'enable_entropy_features': self.enable_entropy_features, 'advanced_feature_engineering_info': self.advanced_feature_engineering.get_feature_statistics(), 'autoencoder_generator_info': self.autoencoder_generator.get_generator_info(), 'config': self.orchestrator_config}
+            return {'orchestrator_type': 'FeatureEngineeringOrchestrator', 'enable_advanced_features': self.enable_advanced_features, 'enable_autoencoder_features': self.enable_autoencoder_features, 'enable_legacy_features': self.enable_legacy_features, 'enable_entropy_features': self.enable_entropy_features, 'advanced_feature_engineering_info': self.advanced_feature_generation.utils.get_feature_statistics(), 'autoencoder_generator_info': self.autoencoder_generator.get_generator_info(), 'config': self.orchestrator_config}
         except Exception:
             self.logger.error('Error getting orchestrator info: {e}')
             return {}

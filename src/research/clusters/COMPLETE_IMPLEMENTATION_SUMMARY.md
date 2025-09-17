@@ -279,7 +279,7 @@ python complete_implementation_example.py
 ## 📁 **8. COMPLETE FILE STRUCTURE**
 
 ```
-src/regime/clusters/
+src/research/clusters/
 ├── __init__.py                              # Complete framework exports
 ├── dimension_analyzer.py                    # Enhanced with comprehensive features
 ├── regime_clusterer.py                     # Enhanced with statistical validation
@@ -377,7 +377,7 @@ research_findings = {
 your_market_data = pd.read_csv('your_data.csv')
 
 # 2. Run complete analysis
-from src.regime.clusters import complete_implementation_example
+from src.research.clusters import complete_implementation_example
 result = await complete_implementation_example.demonstrate_complete_framework()
 
 # 3. Get research decision
@@ -385,16 +385,18 @@ decision = result['decision']
 economic_quality = result['economic_quality'] 
 beyond_vol_vol_count = result['beyond_vol_volatility_count']
 
-# 4. Apply findings
+# 4. Apply findings to your ML training
 if "TRAIN REGIME-SPECIFIC" in decision:
-    # Implement regime-specific ML models
-    train_separate_models_per_regime()
+    # Implement regime-specific ML models in your training pipeline
+    # Use discovered regimes and trading rules for model training
+    implement_regime_specific_training(regimes=result['regime_labels'], 
+                                     trading_rules=result['trading_rules'])
 elif "VOLUME/VOLATILITY" in decision:
     # Focus on volume/volatility regimes
-    train_volume_volatility_regime_models()
+    implement_volume_volatility_regime_training()
 else:
     # Single model approach
-    train_single_ml_model()
+    implement_single_model_training()
 ```
 
 ### **Generated Outputs:**

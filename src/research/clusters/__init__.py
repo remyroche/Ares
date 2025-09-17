@@ -6,10 +6,11 @@ market regime dimensions and clustering strategies for trading applications.
 
 Key Components:
 - Dimension Analysis: Research framework for market dimension importance
-- Regime Clustering: Advanced clustering algorithms for market regimes
+- Regime Clustering: Advanced clustering algorithms for market regimes  
 - Feature Importance: Analysis of regime-relevant features
-- ML Model Training: Regime-specific model training framework
-- Validation: Quality metrics and validation tools
+- Economic Validation: Trading-calibrated regime quality metrics
+- Statistical Analysis: PCA, AIC, BIC, statistical validation
+- Trading Calibration: Concrete trading rules for each regime
 - Integration: Bridge with existing HMM systems
 """
 

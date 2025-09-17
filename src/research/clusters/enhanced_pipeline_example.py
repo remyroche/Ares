@@ -17,7 +17,7 @@ import asyncio
 from pathlib import Path
 import logging
 
-from src.regime.clusters import (
+from src.research.clusters import (
     MarketDimensionAnalyzer, DimensionAnalysisConfig,
     RegimeClusterer, ClusteringConfig, ClusteringMethod,
     RegimeValidationMetrics, ValidationConfig

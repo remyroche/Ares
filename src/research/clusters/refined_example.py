@@ -20,7 +20,7 @@ from pathlib import Path
 import logging
 
 # Import the refined regime clustering framework
-from src.regime.clusters import (
+from src.research.clusters import (
     MarketDimensionAnalyzer, DimensionAnalysisConfig, MarketDimension,
     RegimeClusterer, ClusteringConfig, ClusteringMethod,
     RegimeFeatureImportance, ImportanceConfig, ImportanceMethod,

@@ -6,6 +6,8 @@ A comprehensive research framework for discovering **implicit market dimensions*
 
 This framework addresses the key research question: **"What market regimes (distinct behavioral patterns) can we discover, and do they have sufficient economic significance to justify training different ML models for each regime?"**
 
+**Note**: This framework focuses on **regime discovery and validation**. ML model training should be implemented separately in your existing training pipeline based on the discovered regimes and generated trading rules.
+
 ## 🎯 Correct Research Flow
 
 **Your Approach** (implemented in this framework):
@@ -42,7 +44,7 @@ The framework first discovers regimes (market behavioral patterns), then validat
 The framework consists of 7 main components:
 
 ```
-src/regime/clusters/
+src/research/clusters/
 ├── __init__.py                      # Main exports and framework entry point
 ├── dimension_analyzer.py            # Implicit dimension discovery from existing features
 ├── regime_clusterer.py             # Clustering with dimension analysis
@@ -93,12 +95,11 @@ Both workflows → Compare Results → Identify Best Strategy
 ```python
 import pandas as pd
 import numpy as np
-from src.regime.clusters import (
+from src.research.clusters import (
     MarketDimensionAnalyzer,
     RegimeClusterer, 
     RegimeFeatureImportance,
     RegimeValidationMetrics,
-    RegimeMLTrainer,
     HMMIntegrationLayer,
     RegimeVisualization
 )
@@ -127,11 +128,9 @@ validation_results = validator.validate_all_metrics(
     market_data, best_result.labels
 )
 
-# 5. Train ML models on regimes
-ml_trainer = RegimeMLTrainer()
-training_results = ml_trainer.train_all_strategies(
-    market_data, target_variable, best_result.labels
-)
+# 5. Generate trading rules for regimes
+from src.research.clusters import generate_complete_trading_calibration_report
+trading_rules = generate_complete_trading_calibration_report(validation_results)
 
 # 6. Generate visualizations
 visualizer = RegimeVisualization()
@@ -592,7 +591,7 @@ The framework generates comprehensive reports including:
 ### Custom Clustering Algorithms
 
 ```python
-from src.regime.clusters.regime_clusterer import BaseClusterer, ClusteringResult
+from src.research.clusters.regime_clusterer import BaseClusterer, ClusteringResult
 
 class CustomClusterer(BaseClusterer):
     def fit_predict(self, data):
@@ -617,7 +616,7 @@ clusterer.clusterers[ClusteringMethod.CUSTOM] = CustomClusterer(config)
 ### Custom Validation Metrics
 
 ```python
-from src.regime.clusters.validation_metrics import BaseValidator, ValidationResult
+from src.research.clusters.validation_metrics import BaseValidator, ValidationResult
 
 class CustomValidator(BaseValidator):
     def validate(self, data, regime_labels, **kwargs):
@@ -654,7 +653,7 @@ See `example_usage.py` for a complete example that demonstrates:
 Run the example:
 
 ```bash
-cd src/regime/clusters
+cd src/research/clusters
 python example_usage.py
 ```
 
@@ -678,9 +677,10 @@ This framework integrates with:
 
 - **Existing HMM Systems**: `src/training/steps/market_analysis/components/hmm_*`
 - **Feature Engineering**: `src/feature_engineering/`
-- **ML Pipeline**: `src/training/`
 - **Data Management**: `src/utils/data/`
 - **Logging System**: `src/utils/logger`
+
+**Note**: This framework focuses on regime discovery and validation. ML model training should be implemented separately based on the discovered regimes and generated trading rules.
 
 ## 📞 Support
 

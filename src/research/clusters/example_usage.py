@@ -26,12 +26,11 @@ from pathlib import Path
 import logging
 
 # Import the regime clustering framework
-from src.regime.clusters import (
+from src.research.clusters import (
     MarketDimensionAnalyzer, DimensionAnalysisConfig,
     RegimeClusterer, ClusteringConfig, ClusteringMethod,
     RegimeFeatureImportance, ImportanceConfig, ImportanceMethod,
     RegimeValidationMetrics, ValidationConfig,
-    RegimeMLTrainer, TrainingConfig, TrainingStrategy,
     HMMIntegrationLayer, IntegrationConfig, IntegrationMethod,
     RegimeVisualization, VisualizationConfig
 )
@@ -264,67 +263,47 @@ async def run_validation_example(market_data: pd.DataFrame, regime_labels: np.nd
     }
 
 
-async def run_ml_training_example(market_data: pd.DataFrame, regime_labels: np.ndarray) -> dict:
-    """Example of ML model training on regimes."""
-    logger.info("🤖 Running ML Model Training Example")
+async def run_trading_calibration_example(market_data: pd.DataFrame, regime_labels: np.ndarray) -> dict:
+    """Example of trading calibration for discovered regimes."""
+    logger.info("💼 Running Trading Calibration Example")
     
-    # Configure training
-    config = TrainingConfig(
-        test_size=0.2,
-        cross_validation_folds=3,
-        use_hyperopt=False,  # Disable for faster example
-        ensemble_methods=[TrainingStrategy.REGIME_SPECIFIC, TrainingStrategy.MULTI_REGIME]
-    )
+    # Run economic validation
+    from src.research.clusters import EconomicValidator, generate_complete_trading_calibration_report
     
-    # Initialize trainer
-    trainer = RegimeMLTrainer(config)
+    economic_validator = EconomicValidator()
+    economic_results = economic_validator.validate_regime_economics(market_data, regime_labels)
     
-    # Prepare features and target
-    features = market_data[['open', 'high', 'low', 'close', 'volume', 'volatility']].fillna(0)
+    # Convert to serializable format
+    economic_dict = {
+        metric.value: result.to_dict() 
+        for metric, result in economic_results.items()
+    }
     
-    # Create target variable (predict next period's return direction)
-    returns = market_data['returns'].fillna(0)
-    target = (returns.shift(-1) > 0).astype(int).fillna(0).values[:-1]
-    features = features.iloc[:-1]  # Align with target
-    regime_labels = regime_labels[:-1]  # Align with target
+    # Generate trading calibration report
+    trading_report = generate_complete_trading_calibration_report(economic_dict)
     
-    # Train using different strategies
-    training_results = {}
+    # Extract key trading insights
+    economically_significant = sum(1 for result in economic_results.values() if result.economic_significance)
+    total_metrics = len(economic_results)
     
-    for strategy in [TrainingStrategy.REGIME_SPECIFIC, TrainingStrategy.MULTI_REGIME]:
-        try:
-            result = trainer.train_single_strategy(
-                features, target, regime_labels, strategy,
-                experiment_name=f"{strategy.value}_example"
-            )
-            training_results[strategy.value] = result.to_dict()
-            
-            # Log performance
-            main_metric = list(result.performance_metrics.keys())[0]
-            score = result.performance_metrics[main_metric]
-            logger.info(f"   {strategy.value}: {main_metric}={score:.3f}")
-            
-        except Exception as e:
-            logger.error(f"   {strategy.value} failed: {e}")
+    logger.info(f"✅ Economic validation completed: {economically_significant}/{total_metrics} metrics significant")
     
-    # Compare strategies
-    comparison_df = trainer.compare_strategies()
+    # Determine ML training recommendation
+    significance_rate = economically_significant / total_metrics
+    if significance_rate >= 0.7:
+        ml_recommendation = "Train separate ML models per regime"
+    elif significance_rate >= 0.4:
+        ml_recommendation = "Consider selective regime-based modeling"
+    else:
+        ml_recommendation = "Single ML model approach recommended"
     
-    # Get best strategy
-    best_strategy = trainer.get_best_strategy()
-    
-    if best_strategy:
-        best_name, best_result = best_strategy
-        logger.info(f"✅ Best strategy: {best_name}")
-    
-    # Generate report
-    report = trainer.generate_training_report()
+    logger.info(f"🤖 ML Training Recommendation: {ml_recommendation}")
     
     return {
-        'training_results': training_results,
-        'comparison_df': comparison_df.to_dict() if not comparison_df.empty else {},
-        'best_strategy': best_name if best_strategy else None,
-        'training_report': report
+        'economic_results': economic_dict,
+        'trading_calibration_report': trading_report,
+        'ml_training_recommendation': ml_recommendation,
+        'economic_significance_rate': significance_rate
     }
 
 
@@ -467,8 +446,8 @@ async def main():
         # Step 5: Validation Analysis
         validation_results = await run_validation_example(market_data, discovered_regimes)
         
-        # Step 6: ML Training
-        ml_training_results = await run_ml_training_example(market_data, discovered_regimes)
+        # Step 6: Trading Calibration
+        trading_calibration_results = await run_trading_calibration_example(market_data, discovered_regimes)
         
         # Step 7: Integration Analysis
         integration_results = await run_integration_example(market_data)
@@ -479,7 +458,7 @@ async def main():
             'clustering_results': clustering_results,
             'feature_importance': feature_importance_results,
             'validation_metrics': {'validation_results': validation_results['validation_results']},
-            'ml_training': ml_training_results,
+            'trading_calibration': trading_calibration_results,
             'integration': integration_results
         }
         
@@ -497,7 +476,7 @@ async def main():
         logger.info(f"  📈 Top dimension: {dimension_results['top_dimensions'][0][0] if dimension_results['top_dimensions'] else 'N/A'}")
         logger.info(f"  ⚖️ Top feature: {feature_importance_results['consensus_features'][0][0] if feature_importance_results['consensus_features'] else 'N/A'}")
         logger.info(f"  ✅ Validation score: {validation_results['composite_score']:.3f}")
-        logger.info(f"  🤖 Best ML strategy: {ml_training_results.get('best_strategy', 'N/A')}")
+        logger.info(f"  💼 ML Training Recommendation: {trading_calibration_results.get('ml_training_recommendation', 'N/A')}")
         logger.info(f"  📊 Visualizations: {len(visualization_results['visualizations_created'])}")
         logger.info("=" * 60)
         

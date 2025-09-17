@@ -22,7 +22,7 @@ import logging
 import json
 
 # Import complete enhanced framework
-from src.regime.clusters import (
+from src.research.clusters import (
     # Core components
     MarketDimensionAnalyzer, DimensionAnalysisConfig,
     RegimeClusterer, ClusteringConfig, ClusteringMethod,

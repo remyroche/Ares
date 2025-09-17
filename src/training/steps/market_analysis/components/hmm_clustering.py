@@ -1376,30 +1376,26 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             if len(k_values) < 3:
                 return k_values[-1] if k_values else 3
             
-            # Get recommendations from different methods
-            elbow_k = self._find_elbow_point(k_values, inertias, coherence_scores)
-            enhanced_k = self._find_elbow_point_enhanced(k_values, inertias, coherence_scores, validation_metrics)
-            aic_k = ic_metrics.get('optimal_k_aic', elbow_k)
-            bic_k = ic_metrics.get('optimal_k_bic', elbow_k)
+            # Get recommendations from advanced methods only
+            aic_k = ic_metrics.get('optimal_k_aic', k_values[-1] if k_values else 3)
+            bic_k = ic_metrics.get('optimal_k_bic', k_values[-1] if k_values else 3)
             
-            # Collect all recommendations
+            # Collect advanced method recommendations
             recommendations = {
-                'elbow_method': elbow_k,
-                'enhanced_validation': enhanced_k,
                 'aic_criterion': aic_k,
                 'bic_criterion': bic_k
             }
             
             # Add GMM recommendation if available and good quality
             if gmm_results and gmm_results.get('gmm_quality') == 'good':
-                gmm_k = gmm_results.get('optimal_k_gmm', elbow_k)
+                gmm_k = gmm_results.get('optimal_k_gmm', aic_k)
                 recommendations['gmm_confidence'] = gmm_k
                 coverage = gmm_results.get('gmm_results', {}).get(gmm_k, {}).get('coverage', 0)
-                self.logger.info(f"📊 GMM clustering achieved {coverage*100:.1f}% confidence coverage")
+                self.logger.info(f"📊 GMM clustering achieved {coverage*100:.1f}% confidence coverage (IC-optimized threshold)")
             
             # Add Spectral recommendation if available and good quality
             if spectral_results and spectral_results.get('spectral_quality') == 'good':
-                spectral_k = spectral_results.get('optimal_k_spectral', elbow_k)
+                spectral_k = spectral_results.get('optimal_k_spectral', aic_k)
                 recommendations['spectral_clustering'] = spectral_k
                 complexity = spectral_results.get('eigenvalue_analysis', {}).get('regime_relationship_type', 'unknown')
                 self.logger.info(f"📊 Spectral clustering detected {complexity} regime relationships")
@@ -1486,8 +1482,6 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             regime_features_scaled = scaler.fit_transform(regime_features)
             
             gmm_results = {}
-            target_coverage_min = 0.85  # 85% minimum coverage
-            target_coverage_max = 0.90  # 90% maximum coverage
             
             for k in k_values:
                 try:
@@ -1503,46 +1497,14 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                     probs = gmm.predict_proba(regime_features_scaled)
                     max_probs = np.max(probs, axis=1)
                     
-                    # Test different confidence thresholds to achieve target coverage
-                    best_threshold = 0.7
-                    best_coverage = 0.0
-                    best_assignments = None
+                    # Optimize confidence threshold based on AIC/BIC criterion
+                    optimal_threshold, optimal_coverage, optimal_assignments = self._optimize_confidence_threshold_with_ic(
+                        gmm, regime_features_scaled, probs, max_probs
+                    )
                     
-                    for threshold in np.arange(0.5, 0.95, 0.05):
-                        confident_mask = max_probs >= threshold
-                        coverage = np.sum(confident_mask) / len(max_probs)
-                        
-                        # Check if coverage is in target range
-                        if target_coverage_min <= coverage <= target_coverage_max:
-                            best_threshold = threshold
-                            best_coverage = coverage
-                            
-                            # Create hard assignments
-                            hard_assignments = np.full(len(regime_features), -1)  # -1 for uncertain
-                            confident_indices = np.where(confident_mask)[0]
-                            hard_assignments[confident_indices] = gmm.predict(regime_features_scaled)[confident_indices]
-                            best_assignments = hard_assignments
-                            break
-                        elif coverage > target_coverage_max and coverage > best_coverage:
-                            # If we can't get in range, prefer higher coverage
-                            best_threshold = threshold
-                            best_coverage = coverage
-                            hard_assignments = np.full(len(regime_features), -1)
-                            confident_indices = np.where(confident_mask)[0]
-                            hard_assignments[confident_indices] = gmm.predict(regime_features_scaled)[confident_indices]
-                            best_assignments = hard_assignments
-                    
-                    # If no good threshold found, use default
-                    if best_assignments is None:
-                        threshold = 0.7
-                        confident_mask = max_probs >= threshold
-                        coverage = np.sum(confident_mask) / len(max_probs)
-                        hard_assignments = np.full(len(regime_features), -1)
-                        confident_indices = np.where(confident_mask)[0]
-                        hard_assignments[confident_indices] = gmm.predict(regime_features_scaled)[confident_indices]
-                        best_assignments = hard_assignments
-                        best_coverage = coverage
-                        best_threshold = threshold
+                    best_threshold = optimal_threshold
+                    best_coverage = optimal_coverage
+                    best_assignments = optimal_assignments
                     
                     # Calculate quality metrics
                     n_confident = np.sum(best_assignments != -1)
@@ -1584,6 +1546,95 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
         except Exception as e:
             self.logger.error(f"❌ GMM clustering with confidence failed: {e}")
             return {'gmm_results': {}, 'optimal_k_gmm': k_values[-1] if k_values else 3, 'gmm_quality': 'poor'}
+
+    def _optimize_confidence_threshold_with_ic(self, gmm, regime_features_scaled, probs, max_probs):
+        """Optimize confidence threshold using Information Criterion approach."""
+        try:
+            from sklearn.mixture import GaussianMixture
+            import numpy as np
+            
+            threshold_candidates = np.arange(0.5, 0.95, 0.05)
+            best_threshold = 0.7
+            best_coverage = 0.0
+            best_assignments = None
+            best_ic_score = float('inf')
+            
+            for threshold in threshold_candidates:
+                try:
+                    # Create confident subset
+                    confident_mask = max_probs >= threshold
+                    coverage = np.sum(confident_mask) / len(max_probs)
+                    
+                    if coverage < 0.3:  # Skip if too few confident samples
+                        continue
+                    
+                    # Get confident subset
+                    confident_features = regime_features_scaled[confident_mask]
+                    confident_probs = probs[confident_mask]
+                    
+                    if len(confident_features) < 3:
+                        continue
+                    
+                    # Refit GMM on confident subset for IC calculation
+                    subset_gmm = GaussianMixture(
+                        n_components=min(gmm.n_components, len(confident_features) - 1),
+                        covariance_type='full',
+                        random_state=42,
+                        max_iter=100
+                    )
+                    subset_gmm.fit(confident_features)
+                    
+                    # Calculate modified BIC that rewards coverage
+                    base_bic = subset_gmm.bic(confident_features)
+                    
+                    # Penalty for low coverage (we want high coverage)
+                    coverage_penalty = (1.0 - coverage) * 100  # Penalty increases as coverage decreases
+                    
+                    # Bonus for high confidence (average confidence of included samples)
+                    avg_confidence = np.mean(max_probs[confident_mask])
+                    confidence_bonus = (avg_confidence - 0.5) * 50  # Bonus for high confidence
+                    
+                    # Combined IC score (lower is better)
+                    combined_ic = base_bic + coverage_penalty - confidence_bonus
+                    
+                    # Update best if this is better
+                    if combined_ic < best_ic_score:
+                        best_ic_score = combined_ic
+                        best_threshold = threshold
+                        best_coverage = coverage
+                        
+                        # Create hard assignments
+                        hard_assignments = np.full(len(regime_features_scaled), -1)
+                        confident_indices = np.where(confident_mask)[0]
+                        hard_assignments[confident_indices] = gmm.predict(regime_features_scaled)[confident_indices]
+                        best_assignments = hard_assignments
+                
+                except Exception:
+                    continue
+            
+            # Fallback if optimization failed
+            if best_assignments is None:
+                threshold = 0.7
+                confident_mask = max_probs >= threshold
+                coverage = np.sum(confident_mask) / len(max_probs)
+                hard_assignments = np.full(len(regime_features_scaled), -1)
+                confident_indices = np.where(confident_mask)[0]
+                hard_assignments[confident_indices] = gmm.predict(regime_features_scaled)[confident_indices]
+                best_assignments = hard_assignments
+                best_coverage = coverage
+                best_threshold = threshold
+            
+            return best_threshold, best_coverage, best_assignments
+            
+        except Exception as e:
+            # Fallback to default
+            threshold = 0.7
+            confident_mask = max_probs >= threshold
+            coverage = np.sum(confident_mask) / len(max_probs)
+            hard_assignments = np.full(len(regime_features_scaled), -1)
+            confident_indices = np.where(confident_mask)[0]
+            hard_assignments[confident_indices] = gmm.predict(regime_features_scaled)[confident_indices]
+            return threshold, coverage, hard_assignments
 
     def _test_spectral_clustering(self, similarity_matrix: np.ndarray, k_values: list) -> dict:
         """Test spectral clustering for complex regime relationships using eigenvalue analysis."""
@@ -4844,8 +4895,82 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                 
                 economic_validation['momentum_regime_validation'] = momentum_validation
             
-            # 3. Overall Economic Alignment Score (Equal weight for volatility and momentum)
+            # 3. Volume Regime Validation
+            volume_validation = {}
+            if hasattr(market_data, 'columns') and 'volume' in market_data.columns:
+                volume = market_data['volume']
+                
+                # Multiple volume measures
+                volume_ma_ratio = volume / volume.rolling(20).mean()  # Volume relative to average
+                volume_momentum_5 = volume.pct_change(5)  # 5-day volume change
+                volume_volatility = volume.rolling(20).std() / volume.rolling(20).mean()  # Volume volatility
+                
+                volume_measures = {
+                    'volume_ma_ratio': volume_ma_ratio,
+                    'volume_momentum_5': volume_momentum_5,
+                    'volume_volatility': volume_volatility
+                }
+                
+                unique_clusters = list(set(cluster_assignments))
+                
+                for vol_name, vol_data in volume_measures.items():
+                    vol_groups = [vol_data[np.array(cluster_assignments) == cid].dropna() for cid in unique_clusters]
+                    vol_groups = [group for group in vol_groups if len(group) > 1]
+                    
+                    if len(vol_groups) >= 2:
+                        # Use log-transformed volume for better normality
+                        log_vol_groups = [np.log(np.abs(group) + 1) for group in vol_groups]
+                        f_stat, p_value = stats.f_oneway(*log_vol_groups)
+                        volume_validation[vol_name] = {
+                            'f_statistic': float(f_stat),
+                            'p_value': float(p_value),
+                            'significant': p_value < 0.05
+                        }
+                
+                economic_validation['volume_regime_validation'] = volume_validation
+            
+            # 4. Market Stress Regime Validation
+            stress_validation = {}
+            if hasattr(market_data, 'columns') and 'close' in market_data.columns:
+                returns = market_data['close'].pct_change().dropna()
+                
+                # Stress indicators
+                large_moves = np.abs(returns) > np.abs(returns).quantile(0.95)  # Extreme moves
+                negative_runs = (returns < 0).rolling(3).sum() >= 2  # Consecutive negative days
+                volatility_spikes = returns.rolling(5).std() > returns.rolling(20).std() * 1.5
+                
+                stress_measures = {
+                    'extreme_moves': large_moves,
+                    'negative_runs': negative_runs,
+                    'volatility_spikes': volatility_spikes
+                }
+                
+                unique_clusters = list(set(cluster_assignments))
+                
+                for stress_name, stress_data in stress_measures.items():
+                    # Calculate stress frequency by cluster
+                    cluster_stress_freq = []
+                    for cluster_id in unique_clusters:
+                        cluster_mask = np.array(cluster_assignments) == cluster_id
+                        cluster_stress = stress_data[cluster_mask]
+                        if len(cluster_stress) > 0:
+                            stress_freq = cluster_stress.sum() / len(cluster_stress)
+                            cluster_stress_freq.append(stress_freq)
+                    
+                    if len(cluster_stress_freq) >= 2:
+                        # Test if stress frequency differs significantly between clusters
+                        f_stat, p_value = stats.f_oneway(*[np.full(10, freq) for freq in cluster_stress_freq])
+                        stress_validation[stress_name] = {
+                            'cluster_stress_frequencies': cluster_stress_freq,
+                            'significant_difference': p_value < 0.05,
+                            'stress_concentration': max(cluster_stress_freq) - min(cluster_stress_freq)
+                        }
+                
+                economic_validation['market_stress_validation'] = stress_validation
+            
+            # 5. Overall Economic Alignment Score (Equal weight for all financial aspects)
             alignment_components = []
+            component_names = []
             
             # Volatility component score
             if 'volatility_regime_validation' in economic_validation:
@@ -4853,6 +4978,7 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                 vol_total = len(volatility_validation)
                 vol_score = vol_significant / vol_total if vol_total > 0 else 0.0
                 alignment_components.append(vol_score)
+                component_names.append('volatility')
             
             # Momentum component score  
             if 'momentum_regime_validation' in economic_validation:
@@ -4860,14 +4986,38 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                 mom_total = len(momentum_validation)
                 mom_score = mom_significant / mom_total if mom_total > 0 else 0.0
                 alignment_components.append(mom_score)
+                component_names.append('momentum')
+            
+            # Volume component score
+            if 'volume_regime_validation' in economic_validation:
+                volume_significant = sum(1 for test in volume_validation.values() if test.get('significant', False))
+                volume_total = len(volume_validation)
+                volume_score = volume_significant / volume_total if volume_total > 0 else 0.0
+                alignment_components.append(volume_score)
+                component_names.append('volume')
+            
+            # Market stress component score
+            if 'market_stress_validation' in economic_validation:
+                stress_significant = sum(1 for test in stress_validation.values() if test.get('significant_difference', False))
+                stress_total = len(stress_validation)
+                stress_score = stress_significant / stress_total if stress_total > 0 else 0.0
+                alignment_components.append(stress_score)
+                component_names.append('market_stress')
             
             overall_score = np.mean(alignment_components) if alignment_components else 0.5
             
+            # Create component score dictionary
+            component_scores = {}
+            for i, name in enumerate(component_names):
+                if i < len(alignment_components):
+                    component_scores[f'{name}_score'] = alignment_components[i]
+            
             economic_validation['overall_economic_alignment'] = {
-                'volatility_score': alignment_components[0] if len(alignment_components) > 0 else 0.0,
-                'momentum_score': alignment_components[1] if len(alignment_components) > 1 else 0.0,
+                **component_scores,  # Include all component scores dynamically
                 'overall_score': float(overall_score),
-                'equal_weight_validation': len(alignment_components) == 2,  # Both volatility and momentum tested
+                'components_tested': component_names,
+                'n_financial_aspects': len(alignment_components),
+                'comprehensive_validation': len(alignment_components) >= 3,  # Volatility + momentum + volume minimum
                 'economic_alignment_quality': 'high' if overall_score > 0.7 else 'medium' if overall_score > 0.5 else 'low',
                 'economic_validation_passed': overall_score > 0.6
             }

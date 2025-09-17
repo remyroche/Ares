@@ -63,6 +63,13 @@ except ImportError:
 
 # Using tprint for all logging - no logger needed
 
+# Additional ML imports for global classifier, calibration, and metrics
+from sklearn.ensemble import StackingClassifier, RandomForestClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.calibration import CalibratedClassifierCV
+from sklearn.metrics import log_loss
+import numpy as np
+
 
 class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
     """
@@ -145,6 +152,11 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
             tprint(f"❌ Failed to initialize HMM Ensemble Training Component: {e}")
             tprint(f"🔍 Traceback: {traceback.format_exc()}")
             raise RuntimeError(f"HMM Ensemble Training Component initialization failed: {e}") from e
+
+        # Placeholder for global regime classifier and metadata
+        self.global_regime_clf = None
+        self.regime_classes_ = None
+        self.global_calibration_ece = None
     
     def _validate_config(self, config: EnsembleTrainingConfig) -> None:
         """
@@ -352,12 +364,30 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
                 if 'error' not in results:
                     results = self._add_ensemble_specific_metadata(results, base_hmm_models, hmm_training_metrics)
                 
-                # Step 5: Generate comprehensive report using common utilities
+                # Step 5: Train global regime classifier (stacked, calibrated)
+                tprint("🔄 Step 5: Training global regime classifier (stacked + calibrated)...")
+                try:
+                    self._train_global_regime_classifier(X, regime_labels)
+                    # Evaluate calibration quality (ECE) on training data as a quick proxy
+                    if hasattr(self.global_regime_clf, 'predict_proba'):
+                        proba_train = self.global_regime_clf.predict_proba(X)
+                        self.global_calibration_ece = self._expected_calibration_error(regime_labels, proba_train)
+                        tprint(f"📏 Global classifier ECE (train proxy): {self.global_calibration_ece:.4f}")
+                    results['global_regime_classifier'] = {
+                        'trained': True,
+                        'classes': self.regime_classes_.tolist() if self.regime_classes_ is not None else None,
+                        'ece_train': float(self.global_calibration_ece) if self.global_calibration_ece is not None else None
+                    }
+                except Exception as e:
+                    tprint(f"⚠️ Global regime classifier training failed: {e}")
+                    results['global_regime_classifier'] = {'trained': False, 'error': str(e)}
+
+                # Step 6: Generate comprehensive report using common utilities
                 execution_time = time.time() - execution_start_time
                 results = self._generate_comprehensive_report(results, execution_time, base_hmm_models, hmm_training_metrics)
                 
-                # Step 6: Optimize memory usage after training
-                tprint("🔄 Step 6: Optimizing memory usage...")
+                # Step 7: Optimize memory usage after training
+                tprint("🔄 Step 7: Optimizing memory usage...")
                 memory_stats = optimize_memory()
                 results['memory_optimization'] = memory_stats
                 
@@ -493,6 +523,97 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
         except Exception as e:
             tprint(f"❌ Core training execution failed: {e}")
             raise
+
+    def _train_global_regime_classifier(self, X: np.ndarray, regime_labels: np.ndarray) -> None:
+        """
+        Train a global stacked classifier with calibrated meta learner (RandomForestClassifier) over predict_proba.
+        Base models: CatBoostClassifier, LogisticRegression-elasticnet, RandomForestClassifier.
+        Meta learner: RandomForestClassifier wrapped with CalibratedClassifierCV.
+        """
+        # Determine classes
+        self.regime_classes_ = np.unique(regime_labels)
+
+        # Define base estimators
+        base_estimators = []
+        try:
+            from catboost import CatBoostClassifier
+            cat = CatBoostClassifier(iterations=800, learning_rate=0.05, depth=6, random_seed=42, verbose=False, loss_function='MultiClass')
+            base_estimators.append(('catboost', cat))
+        except Exception:
+            pass
+
+        logreg = LogisticRegression(
+            penalty='elasticnet', solver='saga', l1_ratio=0.5, max_iter=2000, class_weight='balanced', multi_class='auto', random_state=43
+        )
+        base_estimators.append(('logreg_en', logreg))
+
+        rf_base = RandomForestClassifier(
+            n_estimators=300, max_depth=12, min_samples_split=2, random_state=44, n_jobs=-1, class_weight='balanced'
+        )
+        base_estimators.append(('rf', rf_base))
+
+        # Meta learner: RF with calibration
+        meta = RandomForestClassifier(
+            n_estimators=300, max_depth=10, min_samples_split=2, random_state=123, n_jobs=-1, class_weight='balanced'
+        )
+        meta_calibrated = CalibratedClassifierCV(base_estimator=meta, method='isotonic', cv=3)
+
+        # Stacking classifier using predict_proba
+        stack = StackingClassifier(
+            estimators=base_estimators,
+            final_estimator=meta_calibrated,
+            stack_method='predict_proba',
+            passthrough=True,
+            cv=3,
+            n_jobs=-1
+        )
+
+        # Fit on all samples (assume upstream validation/HPO handles overfit risk)
+        stack.fit(X, regime_labels)
+        self.global_regime_clf = stack
+
+    def _expected_calibration_error(self, y_true: np.ndarray, proba: np.ndarray, n_bins: int = 15) -> float:
+        """Compute multiclass ECE on probability simplex."""
+        # Argmax labels and confidences
+        preds = np.argmax(proba, axis=1)
+        conf = np.max(proba, axis=1)
+        correct = (preds == y_true).astype(float)
+
+        # Bin by confidence
+        bins = np.linspace(0.0, 1.0, n_bins+1)
+        ece = 0.0
+        for i in range(n_bins):
+            lo, hi = bins[i], bins[i+1]
+            mask = (conf > lo) & (conf <= hi)
+            if not np.any(mask):
+                continue
+            acc_bin = float(np.mean(correct[mask]))
+            conf_bin = float(np.mean(conf[mask]))
+            weight = float(np.mean(mask))
+            ece += weight * abs(acc_bin - conf_bin)
+        return float(ece)
+
+    def predict_regime_proba(self, X: np.ndarray) -> Dict[str, Any]:
+        """
+        Predict calibrated regime probabilities and entropy using the global stacked classifier.
+        Returns dict with 'proba', 'entropy', 'classes'.
+        """
+        if self.global_regime_clf is None:
+            raise RuntimeError("Global regime classifier not trained")
+        proba = self.global_regime_clf.predict_proba(X)
+        # Entropy
+        eps = 1e-12
+        p_safe = np.clip(proba, eps, 1.0)
+        ent = -np.sum(p_safe * np.log(p_safe), axis=1)
+        # Normalize by log(K) for [0,1]
+        k = proba.shape[1]
+        ent_norm = ent / np.log(k) if k > 1 else ent
+        return {
+            'proba': proba,
+            'entropy': ent_norm,
+            'classes': self.regime_classes_.tolist() if self.regime_classes_ is not None else None,
+            'ece_train': float(self.global_calibration_ece) if self.global_calibration_ece is not None else None
+        }
     
     def _create_ensemble_models(self) -> Dict[str, Any]:
         """

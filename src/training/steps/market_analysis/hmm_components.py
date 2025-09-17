@@ -48,8 +48,8 @@ class HMMRegimeAnalyzer:
             X = features.values
             scaler = StandardScaler()
             X_scaled = scaler.fit_transform(X)
-            # Use mode-appropriate n_iter values (defaulting to blank mode equivalent)
-            n_iter = 20  # Blank mode equivalent for training components
+            # Use mode-appropriate n_iter values (configurable, defaulting to blank mode equivalent)
+            n_iter = self.config.get('n_iter', 20)  # Configurable n_iter, default to blank mode equivalent
             self.hmm_model = hmm.GaussianHMM(n_components = self.n_regimes, covariance_type='full', n_iter = n_iter)
             self.hmm_model.fit(X_scaled)
             states = self.hmm_model.predict(X_scaled)

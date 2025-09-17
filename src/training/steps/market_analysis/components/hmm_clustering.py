@@ -975,9 +975,19 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                 regime_characteristics, cluster_range
             )
             
+            # Test GMM-based clustering with confidence thresholding
+            gmm_results = self._test_gmm_clustering_with_confidence(
+                regime_characteristics, list(cluster_range)
+            )
+            
+            # Test Spectral clustering for complex regime relationships
+            spectral_results = self._test_spectral_clustering(
+                similarity_matrix, list(cluster_range)
+            )
+            
             # Find elbow point using multiple methods
             optimal_k = self._find_optimal_k_comprehensive(
-                list(cluster_range), inertias, silhouette_scores, validation_metrics, ic_metrics
+                list(cluster_range), inertias, silhouette_scores, validation_metrics, ic_metrics, gmm_results, spectral_results
             )
             
             # Log elbow analysis results
@@ -1358,7 +1368,7 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             self.logger.error(f"❌ Information criterion calculation failed: {e}")
             return {'aic_scores': [], 'bic_scores': [], 'optimal_k_aic': 3, 'optimal_k_bic': 3}
 
-    def _find_optimal_k_comprehensive(self, k_values: list, inertias: list, coherence_scores: list, validation_metrics: dict, ic_metrics: dict) -> int:
+    def _find_optimal_k_comprehensive(self, k_values: list, inertias: list, coherence_scores: list, validation_metrics: dict, ic_metrics: dict, gmm_results: dict = None, spectral_results: dict = None) -> int:
         """Find optimal k using comprehensive approach: elbow + validation + information criteria."""
         try:
             import numpy as np
@@ -1379,6 +1389,20 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                 'aic_criterion': aic_k,
                 'bic_criterion': bic_k
             }
+            
+            # Add GMM recommendation if available and good quality
+            if gmm_results and gmm_results.get('gmm_quality') == 'good':
+                gmm_k = gmm_results.get('optimal_k_gmm', elbow_k)
+                recommendations['gmm_confidence'] = gmm_k
+                coverage = gmm_results.get('gmm_results', {}).get(gmm_k, {}).get('coverage', 0)
+                self.logger.info(f"📊 GMM clustering achieved {coverage*100:.1f}% confidence coverage")
+            
+            # Add Spectral recommendation if available and good quality
+            if spectral_results and spectral_results.get('spectral_quality') == 'good':
+                spectral_k = spectral_results.get('optimal_k_spectral', elbow_k)
+                recommendations['spectral_clustering'] = spectral_k
+                complexity = spectral_results.get('eigenvalue_analysis', {}).get('regime_relationship_type', 'unknown')
+                self.logger.info(f"📊 Spectral clustering detected {complexity} regime relationships")
             
             # Count votes for each k
             vote_counts = {}
@@ -1409,6 +1433,433 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
         except Exception as e:
             self.logger.error(f"❌ Comprehensive k selection failed: {e}")
             return self._find_elbow_point(k_values, inertias, coherence_scores)
+
+    def _test_gmm_clustering_with_confidence(self, regime_characteristics: Dict[str, Any], k_values: list) -> dict:
+        """Test GMM clustering with hard assignment using confidence threshold (target 85-90% coverage)."""
+        try:
+            from sklearn.mixture import GaussianMixture
+            from sklearn.preprocessing import StandardScaler
+            import numpy as np
+            
+            # Extract regime features (same as IC calculation)
+            regime_ids = list(regime_characteristics.keys())
+            regime_features = []
+            
+            for regime_id in regime_ids:
+                regime_data = regime_characteristics[regime_id]
+                features = []
+                
+                # Extract momentum features
+                momentum_chars = regime_data.get('momentum_characteristics', {})
+                features.extend([
+                    momentum_chars.get('mean_price_momentum_5', 0),
+                    momentum_chars.get('mean_rsi', 50),
+                    momentum_chars.get('momentum_strength', 0),
+                    momentum_chars.get('trend_persistence', 0)
+                ])
+                
+                # Extract volatility features
+                volatility_chars = regime_data.get('volatility_characteristics', {})
+                features.extend([
+                    volatility_chars.get('mean_volatility_20', 0),
+                    volatility_chars.get('volatility_momentum', 0),
+                    volatility_chars.get('mean_atr_normalized', 0),
+                    volatility_chars.get('volatility_clustering', 0)
+                ])
+                
+                # Extract volume features
+                volume_chars = regime_data.get('volume_characteristics', {})
+                features.extend([
+                    volume_chars.get('mean_volume_momentum_5', 0),
+                    volume_chars.get('mean_volume_ratio', 1)
+                ])
+                
+                regime_features.append(features)
+            
+            if len(regime_features) < 3:
+                return {'gmm_results': {}, 'optimal_k_gmm': k_values[-1] if k_values else 3}
+            
+            regime_features = np.array(regime_features)
+            
+            # Standardize features
+            scaler = StandardScaler()
+            regime_features_scaled = scaler.fit_transform(regime_features)
+            
+            gmm_results = {}
+            target_coverage_min = 0.85  # 85% minimum coverage
+            target_coverage_max = 0.90  # 90% maximum coverage
+            
+            for k in k_values:
+                try:
+                    gmm = GaussianMixture(
+                        n_components=min(k, len(regime_features) - 1),
+                        covariance_type='full',
+                        random_state=42,
+                        max_iter=200
+                    )
+                    gmm.fit(regime_features_scaled)
+                    
+                    # Get probabilistic assignments
+                    probs = gmm.predict_proba(regime_features_scaled)
+                    max_probs = np.max(probs, axis=1)
+                    
+                    # Test different confidence thresholds to achieve target coverage
+                    best_threshold = 0.7
+                    best_coverage = 0.0
+                    best_assignments = None
+                    
+                    for threshold in np.arange(0.5, 0.95, 0.05):
+                        confident_mask = max_probs >= threshold
+                        coverage = np.sum(confident_mask) / len(max_probs)
+                        
+                        # Check if coverage is in target range
+                        if target_coverage_min <= coverage <= target_coverage_max:
+                            best_threshold = threshold
+                            best_coverage = coverage
+                            
+                            # Create hard assignments
+                            hard_assignments = np.full(len(regime_features), -1)  # -1 for uncertain
+                            confident_indices = np.where(confident_mask)[0]
+                            hard_assignments[confident_indices] = gmm.predict(regime_features_scaled)[confident_indices]
+                            best_assignments = hard_assignments
+                            break
+                        elif coverage > target_coverage_max and coverage > best_coverage:
+                            # If we can't get in range, prefer higher coverage
+                            best_threshold = threshold
+                            best_coverage = coverage
+                            hard_assignments = np.full(len(regime_features), -1)
+                            confident_indices = np.where(confident_mask)[0]
+                            hard_assignments[confident_indices] = gmm.predict(regime_features_scaled)[confident_indices]
+                            best_assignments = hard_assignments
+                    
+                    # If no good threshold found, use default
+                    if best_assignments is None:
+                        threshold = 0.7
+                        confident_mask = max_probs >= threshold
+                        coverage = np.sum(confident_mask) / len(max_probs)
+                        hard_assignments = np.full(len(regime_features), -1)
+                        confident_indices = np.where(confident_mask)[0]
+                        hard_assignments[confident_indices] = gmm.predict(regime_features_scaled)[confident_indices]
+                        best_assignments = hard_assignments
+                        best_coverage = coverage
+                        best_threshold = threshold
+                    
+                    # Calculate quality metrics
+                    n_confident = np.sum(best_assignments != -1)
+                    n_clusters_used = len(np.unique(best_assignments[best_assignments != -1])) if n_confident > 0 else 0
+                    
+                    gmm_results[k] = {
+                        'coverage': float(best_coverage),
+                        'confidence_threshold': float(best_threshold),
+                        'n_confident_regimes': int(n_confident),
+                        'n_clusters_used': int(n_clusters_used),
+                        'assignments': best_assignments.tolist(),
+                        'bic_score': gmm.bic(regime_features_scaled),
+                        'aic_score': gmm.aic(regime_features_scaled),
+                        'quality_score': best_coverage * (n_clusters_used / k) if k > 0 else 0.0  # Coverage * cluster utilization
+                    }
+                    
+                except Exception as e:
+                    gmm_results[k] = {
+                        'coverage': 0.0,
+                        'error': str(e),
+                        'quality_score': 0.0
+                    }
+            
+            # Find optimal k based on quality score (coverage * cluster utilization)
+            valid_results = {k: result for k, result in gmm_results.items() 
+                           if 'quality_score' in result and result['coverage'] >= 0.8}
+            
+            if valid_results:
+                optimal_k_gmm = max(valid_results.keys(), key=lambda k: valid_results[k]['quality_score'])
+            else:
+                optimal_k_gmm = k_values[-1] if k_values else 3
+            
+            return {
+                'gmm_results': gmm_results,
+                'optimal_k_gmm': optimal_k_gmm,
+                'gmm_quality': 'good' if valid_results else 'poor'
+            }
+            
+        except Exception as e:
+            self.logger.error(f"❌ GMM clustering with confidence failed: {e}")
+            return {'gmm_results': {}, 'optimal_k_gmm': k_values[-1] if k_values else 3, 'gmm_quality': 'poor'}
+
+    def _test_spectral_clustering(self, similarity_matrix: np.ndarray, k_values: list) -> dict:
+        """Test spectral clustering for complex regime relationships using eigenvalue analysis."""
+        try:
+            from sklearn.cluster import SpectralClustering
+            from sklearn.metrics import silhouette_score
+            import numpy as np
+            
+            if similarity_matrix.size == 0 or len(similarity_matrix) < 3:
+                return {'spectral_results': {}, 'optimal_k_spectral': k_values[-1] if k_values else 3, 'spectral_quality': 'poor'}
+            
+            spectral_results = {}
+            
+            # Analyze eigenvalues to understand regime relationship complexity
+            eigenvalue_analysis = self._analyze_similarity_eigenvalues(similarity_matrix)
+            
+            for k in k_values:
+                try:
+                    # Spectral clustering with different affinity interpretations
+                    spectral = SpectralClustering(
+                        n_clusters=k,
+                        affinity='precomputed',
+                        random_state=42,
+                        n_init=10
+                    )
+                    
+                    cluster_labels = spectral.fit_predict(similarity_matrix)
+                    
+                    # Calculate spectral-specific quality metrics
+                    spectral_quality = self._calculate_spectral_quality(
+                        similarity_matrix, cluster_labels, k
+                    )
+                    
+                    # Calculate how well spectral captures complex relationships
+                    relationship_complexity = self._measure_regime_relationship_complexity(
+                        similarity_matrix, cluster_labels
+                    )
+                    
+                    spectral_results[k] = {
+                        'cluster_labels': cluster_labels.tolist(),
+                        'spectral_quality': spectral_quality,
+                        'relationship_complexity': relationship_complexity,
+                        'eigenvalue_gap': eigenvalue_analysis.get('eigenvalue_gaps', {}).get(k-1, 0.0),
+                        'overall_score': spectral_quality * (1 + relationship_complexity)  # Reward complex relationship capture
+                    }
+                    
+                except Exception as e:
+                    spectral_results[k] = {
+                        'error': str(e),
+                        'overall_score': 0.0
+                    }
+            
+            # Find optimal k based on eigenvalue gaps and relationship complexity
+            optimal_k_spectral = self._find_optimal_k_spectral(
+                spectral_results, eigenvalue_analysis, k_values
+            )
+            
+            # Assess overall spectral clustering quality
+            spectral_quality = 'good' if any(
+                result.get('overall_score', 0) > 0.6 
+                for result in spectral_results.values() 
+                if 'overall_score' in result
+            ) else 'poor'
+            
+            return {
+                'spectral_results': spectral_results,
+                'eigenvalue_analysis': eigenvalue_analysis,
+                'optimal_k_spectral': optimal_k_spectral,
+                'spectral_quality': spectral_quality
+            }
+            
+        except Exception as e:
+            self.logger.error(f"❌ Spectral clustering test failed: {e}")
+            return {'spectral_results': {}, 'optimal_k_spectral': k_values[-1] if k_values else 3, 'spectral_quality': 'poor'}
+
+    def _analyze_similarity_eigenvalues(self, similarity_matrix: np.ndarray) -> dict:
+        """Analyze eigenvalues of similarity matrix to understand regime relationship structure."""
+        try:
+            import numpy as np
+            
+            # Create graph Laplacian
+            degree_matrix = np.diag(np.sum(similarity_matrix, axis=1))
+            laplacian = degree_matrix - similarity_matrix
+            
+            # Compute eigenvalues
+            eigenvalues, eigenvectors = np.linalg.eigh(laplacian)
+            
+            # Sort eigenvalues (ascending for Laplacian)
+            sorted_indices = np.argsort(eigenvalues)
+            eigenvalues = eigenvalues[sorted_indices]
+            eigenvectors = eigenvectors[:, sorted_indices]
+            
+            # Calculate eigenvalue gaps (larger gaps indicate natural cluster boundaries)
+            eigenvalue_gaps = {}
+            for i in range(1, min(len(eigenvalues), 10)):  # Check up to 10 clusters
+                if i < len(eigenvalues):
+                    gap = eigenvalues[i] - eigenvalues[i-1]
+                    eigenvalue_gaps[i] = float(gap)
+            
+            # Identify spectral properties
+            n_zero_eigenvalues = np.sum(np.abs(eigenvalues) < 1e-10)  # Connected components
+            spectral_gap = float(eigenvalues[1] - eigenvalues[0]) if len(eigenvalues) > 1 else 0.0
+            
+            # Assess regime relationship complexity
+            eigenvalue_spread = float(np.std(eigenvalues[:10])) if len(eigenvalues) >= 10 else float(np.std(eigenvalues))
+            complexity_score = eigenvalue_spread / (spectral_gap + 1e-10)  # High spread + small gap = complex
+            
+            return {
+                'eigenvalues': eigenvalues[:10].tolist(),  # First 10 eigenvalues
+                'eigenvalue_gaps': eigenvalue_gaps,
+                'n_connected_components': int(n_zero_eigenvalues),
+                'spectral_gap': spectral_gap,
+                'complexity_score': float(complexity_score),
+                'regime_relationship_type': 'complex' if complexity_score > 2.0 else 'moderate' if complexity_score > 1.0 else 'simple'
+            }
+            
+        except Exception as e:
+            return {'error': f'Eigenvalue analysis failed: {e}', 'complexity_score': 0.0}
+
+    def _calculate_spectral_quality(self, similarity_matrix: np.ndarray, cluster_labels: np.ndarray, k: int) -> float:
+        """Calculate quality metrics specific to spectral clustering."""
+        try:
+            import numpy as np
+            
+            # Calculate modularity (graph clustering quality)
+            modularity = self._calculate_modularity(similarity_matrix, cluster_labels)
+            
+            # Calculate spectral clustering specific metrics
+            # 1. Within-cluster similarity (higher is better)
+            within_cluster_sim = 0.0
+            n_pairs = 0
+            
+            for cluster_id in range(k):
+                cluster_indices = np.where(cluster_labels == cluster_id)[0]
+                if len(cluster_indices) > 1:
+                    for i in range(len(cluster_indices)):
+                        for j in range(i+1, len(cluster_indices)):
+                            within_cluster_sim += similarity_matrix[cluster_indices[i], cluster_indices[j]]
+                            n_pairs += 1
+            
+            avg_within_sim = within_cluster_sim / n_pairs if n_pairs > 0 else 0.0
+            
+            # 2. Between-cluster dissimilarity (lower similarity is better for separation)
+            between_cluster_sim = 0.0
+            n_between_pairs = 0
+            
+            for cluster_1 in range(k):
+                for cluster_2 in range(cluster_1 + 1, k):
+                    indices_1 = np.where(cluster_labels == cluster_1)[0]
+                    indices_2 = np.where(cluster_labels == cluster_2)[0]
+                    
+                    for i in indices_1:
+                        for j in indices_2:
+                            between_cluster_sim += similarity_matrix[i, j]
+                            n_between_pairs += 1
+            
+            avg_between_sim = between_cluster_sim / n_between_pairs if n_between_pairs > 0 else 0.0
+            
+            # Combine metrics (higher within-cluster similarity, lower between-cluster similarity)
+            separation_quality = (avg_within_sim - avg_between_sim) / (avg_within_sim + avg_between_sim + 1e-10)
+            
+            # Overall spectral quality (combine modularity and separation)
+            spectral_quality = 0.6 * modularity + 0.4 * separation_quality
+            
+            return float(max(0.0, min(1.0, spectral_quality)))  # Clamp to [0,1]
+            
+        except Exception as e:
+            return 0.0
+
+    def _calculate_modularity(self, similarity_matrix: np.ndarray, cluster_labels: np.ndarray) -> float:
+        """Calculate modularity score for graph clustering quality."""
+        try:
+            import numpy as np
+            
+            # Convert similarity to adjacency matrix (threshold at median)
+            threshold = np.median(similarity_matrix[similarity_matrix > 0])
+            adjacency = (similarity_matrix > threshold).astype(float)
+            
+            # Calculate modularity
+            m = np.sum(adjacency) / 2  # Total edges
+            if m == 0:
+                return 0.0
+            
+            modularity = 0.0
+            unique_clusters = np.unique(cluster_labels)
+            
+            for cluster in unique_clusters:
+                cluster_indices = np.where(cluster_labels == cluster)[0]
+                
+                # Edges within cluster
+                edges_within = np.sum(adjacency[np.ix_(cluster_indices, cluster_indices)]) / 2
+                
+                # Expected edges within cluster
+                degrees = np.sum(adjacency[cluster_indices, :], axis=1)
+                expected_edges = np.sum(degrees) ** 2 / (4 * m)
+                
+                modularity += (edges_within - expected_edges) / m
+            
+            return float(modularity)
+            
+        except Exception as e:
+            return 0.0
+
+    def _measure_regime_relationship_complexity(self, similarity_matrix: np.ndarray, cluster_labels: np.ndarray) -> float:
+        """Measure how well spectral clustering captures complex regime relationships."""
+        try:
+            import numpy as np
+            
+            # Analyze cross-cluster similarity patterns
+            unique_clusters = np.unique(cluster_labels)
+            k = len(unique_clusters)
+            
+            if k < 2:
+                return 0.0
+            
+            # Create cluster-to-cluster similarity matrix
+            cluster_sim_matrix = np.zeros((k, k))
+            
+            for i, cluster_1 in enumerate(unique_clusters):
+                for j, cluster_2 in enumerate(unique_clusters):
+                    indices_1 = np.where(cluster_labels == cluster_1)[0]
+                    indices_2 = np.where(cluster_labels == cluster_2)[0]
+                    
+                    if len(indices_1) > 0 and len(indices_2) > 0:
+                        # Average similarity between clusters
+                        cross_sim = np.mean(similarity_matrix[np.ix_(indices_1, indices_2)])
+                        cluster_sim_matrix[i, j] = cross_sim
+            
+            # Measure complexity: non-uniform cross-cluster relationships indicate complexity
+            off_diagonal = cluster_sim_matrix[~np.eye(k, dtype=bool)]
+            complexity = float(np.std(off_diagonal)) if len(off_diagonal) > 0 else 0.0
+            
+            # Normalize complexity score
+            return min(1.0, complexity * 5.0)  # Scale factor to get reasonable range
+            
+        except Exception as e:
+            return 0.0
+
+    def _find_optimal_k_spectral(self, spectral_results: dict, eigenvalue_analysis: dict, k_values: list) -> int:
+        """Find optimal k for spectral clustering based on eigenvalue gaps and quality."""
+        try:
+            import numpy as np
+            
+            # Method 1: Eigenvalue gap analysis
+            eigenvalue_gaps = eigenvalue_analysis.get('eigenvalue_gaps', {})
+            if eigenvalue_gaps:
+                # Find k with largest eigenvalue gap (natural cluster boundary)
+                max_gap_k = max(eigenvalue_gaps.keys(), key=lambda k: eigenvalue_gaps[k])
+                gap_recommendation = max_gap_k + 1  # k = gap_position + 1
+            else:
+                gap_recommendation = k_values[-1] if k_values else 3
+            
+            # Method 2: Overall spectral quality score
+            valid_results = {k: result for k, result in spectral_results.items() 
+                           if 'overall_score' in result and result['overall_score'] > 0}
+            
+            if valid_results:
+                quality_recommendation = max(valid_results.keys(), 
+                                           key=lambda k: valid_results[k]['overall_score'])
+            else:
+                quality_recommendation = k_values[-1] if k_values else 3
+            
+            # Combine recommendations (prefer eigenvalue gap if significant)
+            if eigenvalue_gaps and gap_recommendation in k_values:
+                max_gap = eigenvalue_gaps.get(gap_recommendation - 1, 0)
+                if max_gap > 0.1:  # Significant gap
+                    optimal_k = gap_recommendation
+                else:
+                    optimal_k = quality_recommendation
+            else:
+                optimal_k = quality_recommendation
+            
+            return optimal_k
+            
+        except Exception as e:
+            return k_values[-1] if k_values else 3
 
     def _calculate_regime_similarity_matrix(self, regime_characteristics: Dict[str, Any]) -> np.ndarray:
         """Calculate similarity matrix between regimes based on their characteristics."""
@@ -4307,37 +4758,116 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             
             economic_validation = {}
             
-            # 1. Volatility Regime Validation
+            # 1. Volatility Regime Validation (Multiple volatility measures)
+            volatility_validation = {}
             if hasattr(market_data, 'columns') and 'close' in market_data.columns:
                 returns = market_data['close'].pct_change().dropna()
-                rolling_vol = returns.rolling(window=20).std() * np.sqrt(252)
                 
-                # Group volatility by cluster
-                unique_clusters = list(set(cluster_assignments))
-                vol_groups = [rolling_vol[np.array(cluster_assignments) == cid].dropna() for cid in unique_clusters]
-                vol_groups = [group for group in vol_groups if len(group) > 1]
+                # Multiple volatility measures
+                rolling_vol_20 = returns.rolling(window=20).std() * np.sqrt(252)  # 20-day annualized
+                rolling_vol_5 = returns.rolling(window=5).std() * np.sqrt(252)   # 5-day annualized
                 
-                if len(vol_groups) >= 2:
-                    f_stat, p_value = stats.f_oneway(*vol_groups)
-                    vol_regime_quality = 'good' if p_value < 0.05 else 'poor'
+                # High-low volatility (if available)
+                if 'high' in market_data.columns and 'low' in market_data.columns:
+                    hl_volatility = np.log(market_data['high'] / market_data['low'])
                 else:
-                    vol_regime_quality = 'poor'
+                    hl_volatility = None
                 
-                economic_validation['volatility_regime_validation'] = {
-                    'significant_difference': p_value < 0.05 if len(vol_groups) >= 2 else False,
-                    'quality': vol_regime_quality
+                unique_clusters = list(set(cluster_assignments))
+                
+                # Test different volatility measures
+                vol_measures = {
+                    'rolling_vol_20': rolling_vol_20,
+                    'rolling_vol_5': rolling_vol_5
                 }
+                
+                if hl_volatility is not None:
+                    vol_measures['hl_volatility'] = hl_volatility
+                
+                for vol_name, vol_data in vol_measures.items():
+                    vol_groups = [vol_data[np.array(cluster_assignments) == cid].dropna() for cid in unique_clusters]
+                    vol_groups = [group for group in vol_groups if len(group) > 1]
+                    
+                    if len(vol_groups) >= 2:
+                        f_stat, p_value = stats.f_oneway(*vol_groups)
+                        volatility_validation[vol_name] = {
+                            'f_statistic': float(f_stat),
+                            'p_value': float(p_value),
+                            'significant': p_value < 0.05
+                        }
+                
+                economic_validation['volatility_regime_validation'] = volatility_validation
             
-            # 2. Overall Economic Alignment Score
+            # 2. Momentum Regime Validation (Multiple momentum measures)
+            momentum_validation = {}
+            if hasattr(market_data, 'columns') and 'close' in market_data.columns:
+                prices = market_data['close']
+                
+                # Multiple momentum measures
+                momentum_5 = prices.pct_change(5)  # 5-day momentum
+                momentum_20 = prices.pct_change(20)  # 20-day momentum
+                
+                # Moving average momentum
+                ma_short = prices.rolling(10).mean()
+                ma_long = prices.rolling(30).mean()
+                ma_momentum = (ma_short - ma_long) / ma_long
+                
+                # Technical momentum (if available)
+                momentum_measures = {
+                    'momentum_5': momentum_5,
+                    'momentum_20': momentum_20,
+                    'ma_momentum': ma_momentum
+                }
+                
+                # Add RSI and MACD if available
+                if 'rsi' in market_data.columns:
+                    rsi_momentum = market_data['rsi'].pct_change(5)
+                    momentum_measures['rsi_momentum'] = rsi_momentum
+                
+                if 'macd' in market_data.columns:
+                    macd_momentum = market_data['macd'].pct_change(5)
+                    momentum_measures['macd_momentum'] = macd_momentum
+                
+                unique_clusters = list(set(cluster_assignments))
+                
+                for mom_name, mom_data in momentum_measures.items():
+                    mom_groups = [mom_data[np.array(cluster_assignments) == cid].dropna() for cid in unique_clusters]
+                    mom_groups = [group for group in mom_groups if len(group) > 1]
+                    
+                    if len(mom_groups) >= 2:
+                        f_stat, p_value = stats.f_oneway(*mom_groups)
+                        momentum_validation[mom_name] = {
+                            'f_statistic': float(f_stat),
+                            'p_value': float(p_value),
+                            'significant': p_value < 0.05
+                        }
+                
+                economic_validation['momentum_regime_validation'] = momentum_validation
+            
+            # 3. Overall Economic Alignment Score (Equal weight for volatility and momentum)
             alignment_components = []
+            
+            # Volatility component score
             if 'volatility_regime_validation' in economic_validation:
-                vol_score = 1.0 if economic_validation['volatility_regime_validation']['quality'] == 'good' else 0.3
+                vol_significant = sum(1 for test in volatility_validation.values() if test.get('significant', False))
+                vol_total = len(volatility_validation)
+                vol_score = vol_significant / vol_total if vol_total > 0 else 0.0
                 alignment_components.append(vol_score)
+            
+            # Momentum component score  
+            if 'momentum_regime_validation' in economic_validation:
+                mom_significant = sum(1 for test in momentum_validation.values() if test.get('significant', False))
+                mom_total = len(momentum_validation)
+                mom_score = mom_significant / mom_total if mom_total > 0 else 0.0
+                alignment_components.append(mom_score)
             
             overall_score = np.mean(alignment_components) if alignment_components else 0.5
             
             economic_validation['overall_economic_alignment'] = {
+                'volatility_score': alignment_components[0] if len(alignment_components) > 0 else 0.0,
+                'momentum_score': alignment_components[1] if len(alignment_components) > 1 else 0.0,
                 'overall_score': float(overall_score),
+                'equal_weight_validation': len(alignment_components) == 2,  # Both volatility and momentum tested
                 'economic_alignment_quality': 'high' if overall_score > 0.7 else 'medium' if overall_score > 0.5 else 'low',
                 'economic_validation_passed': overall_score > 0.6
             }

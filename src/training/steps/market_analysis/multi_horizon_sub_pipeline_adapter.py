@@ -16,8 +16,22 @@ from typing import Dict, List, Optional, Any, Tuple
 import logging
 from datetime import datetime
 
+# Optimized imports using common utilities
 from src.utils.logger import get_logger
 from src.core.decorators import handles_errors, traced, validates, log_execution_time
+from src.utils.common_operations import (
+    validate_dataframe, validate_dataframe_columns, safe_dataframe_operation,
+    safe_fillna, safe_convert_dtypes, safe_merge_dataframes,
+    calculate_data_quality_metrics, create_summary_statistics,
+    timed_operation, memory_checkpoint, gpu_context,
+    integrate_with_m1_optimizers
+)
+from src.utils.math_validation import (
+    safe_mean, safe_std, validate_finite, safe_percentage_change
+)
+from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer
+from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer
+from src.utils.serialization_utils import UniversalSerializer
 
 # Import the multi-horizon labeler
 from .multi_horizon_profit_labeler import (
@@ -35,10 +49,21 @@ class MultiHorizonSubPipelineAdapter:
     """
     
     def __init__(self):
-        """Initialize the adapter."""
+        """Initialize the adapter with hardware optimizations."""
         self.logger = get_logger('MultiHorizonSubPipelineAdapter')
-        self.logger.info('🔄 Multi-Horizon Sub-Pipeline Adapter initialized')
+        
+        # Initialize hardware optimizers
+        self.memory_optimizer = get_m1_memory_optimizer()
+        self.cpu_optimizer = get_m1_cpu_optimizer()
+        self.serializer = UniversalSerializer()
+        
+        # Optimize CPU for data processing
+        if self.cpu_optimizer:
+            self.cpu_optimizer.optimize_numpy_operations()
+        
+        self.logger.info('🔄 Multi-Horizon Sub-Pipeline Adapter initialized with M1 optimizations')
     
+    @timed_operation
     @traced(span_name='execute_multi_horizon_labeling_step')
     @validates()
     @handles_errors(exceptions=(Exception,), default_return={'status': 'failed', 'error': 'Unknown error'})
@@ -72,24 +97,34 @@ class MultiHorizonSubPipelineAdapter:
         self.logger.info(f'🎯 Executing multi-horizon labeling step for {symbol or "unknown"} on {timeframe or "unknown"}')
         
         try:
-            # Validate input data
-            if data is None or len(data) == 0:
+            # Validate input data with enhanced validation
+            if not validate_dataframe(data):
                 return {
                     'status': 'failed',
-                    'error': 'No input data provided',
+                    'error': 'Invalid or empty DataFrame provided',
                     'artifacts': {}
                 }
             
-            # Create multi-horizon configuration
-            labeling_config = self._create_labeling_config(config)
+            # Optimize data memory usage
+            if self.memory_optimizer:
+                data = self.memory_optimizer.optimize_dataframe_memory(data)
             
-            # Apply multi-horizon labeling
-            labeled_data = apply_multi_horizon_labeling(data, labeling_config)
+            # Use memory checkpoint for large operations
+            with memory_checkpoint('multi_horizon_labeling'):
+                # Create multi-horizon configuration
+                labeling_config = self._create_labeling_config(config)
+                
+                # Apply multi-horizon labeling with safe operations
+                labeled_data = safe_dataframe_operation(
+                    data, 
+                    apply_multi_horizon_labeling, 
+                    labeling_config
+                )
+                
+                # Calculate labeling metrics with enhanced validation
+                labeling_metrics = self._calculate_labeling_metrics(labeled_data, data)
             
-            # Calculate labeling metrics
-            labeling_metrics = self._calculate_labeling_metrics(labeled_data, data)
-            
-            # Create result compatible with sub-pipeline
+            # Create result compatible with sub-pipeline with enhanced metrics
             result = {
                 'status': 'completed',
                 'execution_time': datetime.now().isoformat(),
@@ -101,7 +136,9 @@ class MultiHorizonSubPipelineAdapter:
                         'method': 'multi_horizon_profit_labeling',
                         'symbol': symbol,
                         'exchange': exchange,
-                        'timeframe': timeframe
+                        'timeframe': timeframe,
+                        'data_quality': calculate_data_quality_metrics(labeled_data),
+                        'summary_stats': create_summary_statistics(labeled_data)
                     }
                 }
             }
@@ -144,7 +181,7 @@ class MultiHorizonSubPipelineAdapter:
     
     def _calculate_labeling_metrics(self, labeled_data: pd.DataFrame, 
                                   original_data: pd.DataFrame) -> Dict[str, Any]:
-        """Calculate comprehensive labeling metrics."""
+        """Calculate comprehensive labeling metrics with safe operations."""
         metrics = {
             'total_samples': len(labeled_data),
             'original_samples': len(original_data),
@@ -153,11 +190,11 @@ class MultiHorizonSubPipelineAdapter:
             'labeling_method': 'multi_horizon_profit_labeling'
         }
         
-        # Calculate target-specific metrics
+        # Calculate target-specific metrics with safe operations
         target_columns = [col for col in labeled_data.columns if col.endswith('_prob')]
         metrics['probability_targets'] = len(target_columns)
         
-        # Calculate composite score metrics
+        # Calculate composite score metrics with safe operations
         composite_columns = [
             'overall_opportunity', 'leverage_adjusted_score', 
             'immediate_opportunity', 'short_term_opportunity',
@@ -168,17 +205,19 @@ class MultiHorizonSubPipelineAdapter:
             if col in labeled_data.columns:
                 values = labeled_data[col].dropna()
                 if len(values) > 0:
-                    metrics[f'{col}_mean'] = values.mean()
-                    metrics[f'{col}_std'] = values.std()
-                    metrics[f'{col}_high_quality_ratio'] = (values > 0.7).sum() / len(values)
+                    metrics[f'{col}_mean'] = validate_finite(safe_mean(values, default=0.0), f'{col}_mean')
+                    metrics[f'{col}_std'] = validate_finite(safe_std(values, default=0.0), f'{col}_std')
+                    high_quality_count = (values > 0.7).sum()
+                    metrics[f'{col}_high_quality_ratio'] = safe_divide(high_quality_count, len(values), default=0.0)
         
-        # Overall quality metrics
+        # Overall quality metrics with safe operations
         if 'overall_opportunity' in labeled_data.columns:
             overall_opp = labeled_data['overall_opportunity'].dropna()
             if len(overall_opp) > 0:
-                metrics['high_opportunity_samples'] = (overall_opp > 0.7).sum()
-                metrics['high_opportunity_ratio'] = (overall_opp > 0.7).sum() / len(overall_opp)
-                metrics['average_opportunity_score'] = overall_opp.mean()
+                high_opp_count = (overall_opp > 0.7).sum()
+                metrics['high_opportunity_samples'] = int(high_opp_count)
+                metrics['high_opportunity_ratio'] = safe_divide(high_opp_count, len(overall_opp), default=0.0)
+                metrics['average_opportunity_score'] = validate_finite(safe_mean(overall_opp, default=0.0), 'average_opportunity_score')
         
         return metrics
 

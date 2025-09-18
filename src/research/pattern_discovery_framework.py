@@ -1378,7 +1378,17 @@ class PatternDiscoveryOrchestrator:
             'sideways_consolidation': SidewaysConsolidationDiscoverer(),
             'volume_spike_impact': VolumeSpikePriceImpactDiscoverer(),
             'seasonal_pattern': SeasonalPatternDiscoverer(),
-            'extreme_movement': ExtremeMovementDiscoverer()
+            'extreme_movement': ExtremeMovementDiscoverer(),
+            
+            # Additional sophisticated patterns
+            'momentum_exhaustion': MomentumExhaustionDiscoverer(),
+            'volatility_clustering': VolatilityClusteringDiscoverer(),
+            'support_resistance_test': SupportResistanceTestDiscoverer(),
+            'volume_climax': VolumeClimaxDiscoverer(),
+            'price_rejection': PriceRejectionDiscoverer(),
+            'accumulation_distribution': AccumulationDistributionDiscoverer(),
+            'divergence_pattern': DivergencePatternDiscoverer(),
+            'exhaustion_gap': ExhaustionGapDiscoverer()
         }
     
     def discover_all_patterns(self, prices: pd.Series) -> Dict[str, PatternDiscoveryResult]:

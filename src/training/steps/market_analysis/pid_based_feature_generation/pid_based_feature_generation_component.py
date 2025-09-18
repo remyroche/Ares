@@ -184,8 +184,8 @@ class PIDBasedFeatureGenerationComponent(BaseMarketAnalysisComponent):
             # Step 5: Get target variable if available (from multi-horizon profit labeler)
             target = await self._get_target_variable(pipeline_state)
             
-            # Step 6: Orchestrate feature generation
-            self.logger.info('🚀 Orchestrating PID-based feature generation...')
+            # Step 6: Orchestrate feature generation with long/short differentiation
+            self.logger.info('🚀 Orchestrating PID-based feature generation with long/short differentiation...')
             orchestrator_result = await self.orchestrator.orchestrate_feature_generation(
                 market_data,
                 feature_names,
@@ -476,7 +476,7 @@ class PIDBasedFeatureGenerationComponent(BaseMarketAnalysisComponent):
             self.logger.error(f"❌ Failed to load multi-horizon outcome: {e}")
             return None
     
-    async def _get_target_variable(self, pipeline_state: Dict[str, Any]) -> Optional[np.ndarray]:
+    async def _get_target_variable(self, pipeline_state: Dict[str, Any]) -> Optional[Dict[str, np.ndarray]]:
         """Get target variable from multi-horizon profit labeler (replaces triple barrier labeling)."""
         try:
             # First, try to get multi-horizon labeling results (NEW SYSTEM)
@@ -527,12 +527,13 @@ class PIDBasedFeatureGenerationComponent(BaseMarketAnalysisComponent):
                     self.logger.info(f"🔍 DEBUG: Available columns: {list(labeled_data.columns)}")
                     
                     # PRIORITY: Use bi-directional targets for PID analysis (same priority as feature optimization)
+                    # Modified to prioritize long/short differentiation
                     target_options = [
-                        # BI-DIRECTIONAL: Primary targets for PID analysis
-                        'directional_confidence',        # Strength of directional bias - BEST for PID
+                        # LONG/SHORT DIFFERENTIATED: Primary targets for PID analysis
+                        'long_overall_opportunity',      # Long opportunity score - PRIMARY for long features
+                        'short_overall_opportunity',     # Short opportunity score - PRIMARY for short features
+                        'directional_confidence',        # Strength of directional bias - BEST for overall PID
                         'opportunity_asymmetry',         # Long-short bias indicator
-                        'long_overall_opportunity',      # Long opportunity score
-                        'short_overall_opportunity',     # Short opportunity score
                         
                         # LEGACY: Backward compatibility targets
                         'overall_opportunity',           # Original composite score
@@ -543,31 +544,63 @@ class PIDBasedFeatureGenerationComponent(BaseMarketAnalysisComponent):
                     
                     self.logger.info(f"🔍 DEBUG: Checking target options: {target_options}")
                     
+                    # Try to extract both long and short targets
+                    targets = {}
+                    
+                    # Look for long opportunity target
+                    if 'long_overall_opportunity' in labeled_data.columns:
+                        long_values = labeled_data['long_overall_opportunity'].values
+                        long_valid_mask = ~np.isnan(long_values)
+                        if np.any(long_valid_mask):
+                            targets['long'] = long_values[long_valid_mask]
+                            self.logger.info(f"🎯 LONG PID: Found long opportunity target ({np.sum(long_valid_mask)} valid samples)")
+                    
+                    # Look for short opportunity target
+                    if 'short_overall_opportunity' in labeled_data.columns:
+                        short_values = labeled_data['short_overall_opportunity'].values
+                        short_valid_mask = ~np.isnan(short_values)
+                        if np.any(short_valid_mask):
+                            targets['short'] = short_values[short_valid_mask]
+                            self.logger.info(f"🎯 SHORT PID: Found short opportunity target ({np.sum(short_valid_mask)} valid samples)")
+                    
+                    # If we have both long and short targets, return them
+                    if 'long' in targets and 'short' in targets:
+                        self.logger.info("🎯 LONG/SHORT DIFFERENTIATED PID: Using both long and short opportunity targets")
+                        self._target_source_info = {
+                            'target_used': 'long_short_opportunities',
+                            'target_type': 'long_short_differentiated',
+                            'valid_samples': {'long': len(targets['long']), 'short': len(targets['short'])},
+                            'source': 'multi_horizon_labeling'
+                        }
+                        return targets
+                    
+                    # Fallback to single target approach if we don't have both
                     for target_option in target_options:
-                        self.logger.info(f"🔍 DEBUG: Checking target '{target_option}': {'✅ Found' if target_option in labeled_data.columns else '❌ Not found'}")
+                        self.logger.info(f"🔍 DEBUG: Checking fallback target '{target_option}': {'✅ Found' if target_option in labeled_data.columns else '❌ Not found'}")
                         if target_option in labeled_data.columns:
                             target_values = labeled_data[target_option].values
                             valid_mask = ~np.isnan(target_values)
                             if np.any(valid_mask):
-                                if target_option in ['directional_confidence', 'opportunity_asymmetry', 'long_overall_opportunity', 'short_overall_opportunity']:
-                                    self.logger.info(f"🎯 BI-DIRECTIONAL PID: Using '{target_option}' as PID target ({np.sum(valid_mask)} valid samples)")
+                                if target_option in ['directional_confidence', 'opportunity_asymmetry']:
+                                    self.logger.info(f"🎯 BI-DIRECTIONAL PID: Using '{target_option}' as fallback PID target ({np.sum(valid_mask)} valid samples)")
                                     # Store target source info for outcome tracking
                                     self._target_source_info = {
                                         'target_used': target_option,
-                                        'target_type': 'bi_directional',
+                                        'target_type': 'bi_directional_fallback',
                                         'valid_samples': int(np.sum(valid_mask)),
                                         'source': 'multi_horizon_labeling'
                                     }
+                                    return {'combined': target_values[valid_mask]}
                                 else:
-                                    self.logger.info(f"✅ LEGACY PID: Using '{target_option}' as PID target ({np.sum(valid_mask)} valid samples)")
+                                    self.logger.info(f"✅ LEGACY PID: Using '{target_option}' as fallback PID target ({np.sum(valid_mask)} valid samples)")
                                     # Store target source info for outcome tracking
                                     self._target_source_info = {
                                         'target_used': target_option,
-                                        'target_type': 'legacy',
+                                        'target_type': 'legacy_fallback',
                                         'valid_samples': int(np.sum(valid_mask)),
                                         'source': 'multi_horizon_labeling'
                                     }
-                                return target_values[valid_mask]
+                                    return {'combined': target_values[valid_mask]}
             
             # Try to load multi-horizon results from recent outcome files
             self.logger.info("🔍 Attempting to load multi-horizon results from recent outcome files...")
@@ -670,7 +703,7 @@ class PIDBasedFeatureGenerationComponent(BaseMarketAnalysisComponent):
             return None
     
     async def _validate_generation_results(self, orchestrator_result: OrchestratorResult) -> Dict[str, Any]:
-        """Validate feature generation results."""
+        """Validate feature generation results with long/short differentiation analysis."""
         issues = []
         recommendations = []
         
@@ -684,6 +717,27 @@ class PIDBasedFeatureGenerationComponent(BaseMarketAnalysisComponent):
             issues.append("No features were generated")
             recommendations.append("Check feature generation configuration and input data")
         
+        # Analyze long/short differentiation
+        long_features = len([f for f in orchestrator_result.combined_feature_names if f.startswith('long_')])
+        short_features = len([f for f in orchestrator_result.combined_feature_names if f.startswith('short_')])
+        total_differentiated = long_features + short_features
+        
+        # Long/short specific validation
+        if total_differentiated > 0:
+            # We have differentiated features - validate balance
+            if long_features == 0:
+                issues.append("No long-specific features generated despite short features being present")
+                recommendations.append("Check long opportunity target data quality and availability")
+            elif short_features == 0:
+                issues.append("No short-specific features generated despite long features being present")
+                recommendations.append("Check short opportunity target data quality and availability")
+            elif abs(long_features - short_features) > max(long_features, short_features):
+                issues.append(f"Severely imbalanced long/short features (Long: {long_features}, Short: {short_features})")
+                recommendations.append("Review target data balance and PID threshold settings")
+        else:
+            # No differentiated features - this might be expected if no long/short targets available
+            recommendations.append("No long/short differentiated features - using combined target approach")
+        
         # Check quality scores
         if orchestrator_result.overall_quality_score < 0.3:
             issues.append(f"Low overall quality score: {orchestrator_result.overall_quality_score}")
@@ -694,13 +748,29 @@ class PIDBasedFeatureGenerationComponent(BaseMarketAnalysisComponent):
             issues.append(f"High redundancy score: {orchestrator_result.redundancy_score}")
             recommendations.append("Consider feature selection to reduce redundancy")
         
-        quality_score = orchestrator_result.overall_quality_score
+        # Calculate adjusted quality score considering long/short balance
+        base_quality_score = orchestrator_result.overall_quality_score
+        
+        # Bonus for good long/short differentiation
+        if total_differentiated > 0:
+            balance_bonus = 0.1 * (1.0 - abs(long_features - short_features) / max(total_differentiated, 1))
+            differentiation_bonus = 0.05 * (total_differentiated / max(orchestrator_result.total_features_generated, 1))
+            quality_score = min(1.0, base_quality_score + balance_bonus + differentiation_bonus)
+        else:
+            quality_score = base_quality_score
         
         return {
             'is_valid': len(issues) == 0,
             'issues': issues,
             'quality_score': quality_score,
-            'recommendations': recommendations
+            'recommendations': recommendations,
+            'long_short_analysis': {
+                'long_features': long_features,
+                'short_features': short_features,
+                'total_differentiated': total_differentiated,
+                'differentiation_ratio': total_differentiated / max(orchestrator_result.total_features_generated, 1),
+                'balance_score': 1.0 - abs(long_features - short_features) / max(total_differentiated, 1) if total_differentiated > 0 else 0.0
+            }
         }
     
     def _calculate_data_quality_score(self, data: Any) -> float:
@@ -799,7 +869,25 @@ class PIDBasedFeatureGenerationComponent(BaseMarketAnalysisComponent):
         validation_result: Dict[str, Any],
         orchestrator_result: OrchestratorResult
     ) -> Dict[str, Any]:
-        """Generate comprehensive final report."""
+        """Generate comprehensive final report with long/short differentiation analysis."""
+        # Analyze long/short feature distribution
+        long_features = len([f for f in orchestrator_result.combined_feature_names if f.startswith('long_')])
+        short_features = len([f for f in orchestrator_result.combined_feature_names if f.startswith('short_')])
+        undifferentiated_features = orchestrator_result.total_features_generated - long_features - short_features
+        
+        # Categorize features by type and direction
+        feature_breakdown = {
+            'interaction_features': len([f for f in orchestrator_result.combined_feature_names if 'interaction' in f]),
+            'polynomial_features': len([f for f in orchestrator_result.combined_feature_names if 'polynomial' in f]),
+            'cross_timeframe_features': len([f for f in orchestrator_result.combined_feature_names if 'cross_timeframe' in f]),
+            'total_features': orchestrator_result.total_features_generated,
+            # Long/Short breakdown
+            'long_features': long_features,
+            'short_features': short_features,
+            'undifferentiated_features': undifferentiated_features,
+            'differentiation_ratio': (long_features + short_features) / max(orchestrator_result.total_features_generated, 1)
+        }
+        
         return {
             'execution_summary': {
                 'total_time': time.time() - self.start_time if self.start_time else 0,
@@ -813,22 +901,55 @@ class PIDBasedFeatureGenerationComponent(BaseMarketAnalysisComponent):
                     'target_type': 'unknown',
                     'valid_samples': 0,
                     'source': 'unknown'
-                })
+                }),
+                # Long/short differentiation summary
+                'long_short_differentiation': {
+                    'enabled': long_features > 0 or short_features > 0,
+                    'long_features_count': long_features,
+                    'short_features_count': short_features,
+                    'balance_ratio': short_features / max(long_features, 1) if long_features > 0 else 0
+                }
             },
-            'feature_breakdown': {
-                'interaction_features': len([f for f in orchestrator_result.combined_feature_names if f.startswith('interaction_')]),
-                'polynomial_features': len([f for f in orchestrator_result.combined_feature_names if f.startswith('polynomial_')]),
-                'cross_timeframe_features': len([f for f in orchestrator_result.combined_feature_names if f.startswith('cross_timeframe_')]),
-                'total_features': orchestrator_result.total_features_generated
-            },
+            'feature_breakdown': feature_breakdown,
             'quality_metrics': {
                 'overall_quality_score': orchestrator_result.overall_quality_score,
                 'feature_diversity_score': orchestrator_result.feature_diversity_score,
                 'redundancy_score': orchestrator_result.redundancy_score,
-                'stability_score': orchestrator_result.stability_score
+                'stability_score': orchestrator_result.stability_score,
+                # Long/short specific quality metrics
+                'long_short_balance_score': 1.0 - abs(long_features - short_features) / max(long_features + short_features, 1),
+                'differentiation_coverage': feature_breakdown['differentiation_ratio']
             },
-            'recommendations': validation_result.get('recommendations', [])
+            'recommendations': self._generate_long_short_recommendations(validation_result, feature_breakdown)
         }
+    
+    def _generate_long_short_recommendations(self, validation_result: Dict[str, Any], feature_breakdown: Dict[str, Any]) -> List[str]:
+        """Generate recommendations specific to long/short feature differentiation."""
+        recommendations = validation_result.get('recommendations', []).copy()
+        
+        # Long/short specific recommendations
+        long_count = feature_breakdown.get('long_features', 0)
+        short_count = feature_breakdown.get('short_features', 0)
+        differentiation_ratio = feature_breakdown.get('differentiation_ratio', 0)
+        
+        if long_count == 0 and short_count == 0:
+            recommendations.append("No long/short differentiated features generated - ensure multi-horizon labeling provides separate long/short targets")
+            recommendations.append("Consider running multi_horizon_profit_labeler before PID feature generation for better directional analysis")
+        elif differentiation_ratio < 0.5:
+            recommendations.append(f"Low feature differentiation ({differentiation_ratio:.1%}) - most features are undifferentiated")
+            recommendations.append("Verify that long_overall_opportunity and short_overall_opportunity targets are available and distinct")
+        elif abs(long_count - short_count) > max(long_count, short_count) * 0.5:
+            recommendations.append(f"Imbalanced long/short features (Long: {long_count}, Short: {short_count}) - may indicate biased target data")
+            recommendations.append("Review target data quality and ensure balanced long/short opportunities in the dataset")
+        else:
+            recommendations.append(f"Good long/short feature balance achieved ({long_count} long, {short_count} short features)")
+            
+        # Quality-based recommendations
+        balance_score = 1.0 - abs(long_count - short_count) / max(long_count + short_count, 1)
+        if balance_score < 0.7:
+            recommendations.append("Consider balancing long/short feature generation by adjusting PID thresholds per direction")
+            
+        return recommendations
     
     def _generate_failure_report(self, error_message: str) -> Dict[str, Any]:
         """Generate failure report."""

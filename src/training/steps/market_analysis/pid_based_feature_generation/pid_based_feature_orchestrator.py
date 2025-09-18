@@ -472,19 +472,22 @@ class PIDBasedFeatureOrchestrator:
         data: Union[np.ndarray, pd.DataFrame],
         feature_names: List[str],
         optimized_lookback_periods: Optional[Dict[str, int]] = None,
-        target: Optional[np.ndarray] = None
+        target: Optional[Union[np.ndarray, Dict[str, np.ndarray]]] = None
     ) -> OrchestratorResult:
         """
-        Orchestrate all PID-based feature generation processes.
+        Orchestrate all PID-based feature generation processes with long/short differentiation.
         
         Args:
             data: Input feature matrix
             feature_names: List of feature names
             optimized_lookback_periods: Optimized lookback periods from feature_lookback_optimization
-            target: Target variable for PID analysis (optional) - now uses multi-horizon profit probabilities
+            target: Target variable(s) for PID analysis (optional) - can be:
+                   - Dict with 'long' and 'short' keys for differentiated analysis
+                   - Dict with 'combined' key for single target analysis
+                   - np.ndarray for legacy single target analysis
             
         Returns:
-            OrchestratorResult with all generated features
+            OrchestratorResult with all generated features (differentiated by long/short when applicable)
         """
         start_time = time.time()
         tprint_info("Starting PID-based feature orchestration...")
@@ -559,12 +562,23 @@ class PIDBasedFeatureOrchestrator:
             if len(feature_names) != X.shape[1]:
                 raise ValueError(f"Feature names count ({len(feature_names)}) doesn't match data columns ({X.shape[1]}) - fast failing")
             
-            # Validate target if provided
+            # Validate target if provided (handle both dict and array formats)
             if target is not None:
-                if len(target) != X.shape[0]:
-                    raise ValueError(f"Target length ({len(target)}) doesn't match data length ({X.shape[0]}) - fast failing")
-                if np.any(np.isnan(target)) or np.any(np.isinf(target)):
-                    tprint_warning("Target contains NaN or Inf values - this may cause issues")
+                if isinstance(target, dict):
+                    # Handle dictionary format for long/short differentiation
+                    for target_type, target_values in target.items():
+                        if len(target_values) > X.shape[0]:
+                            raise ValueError(f"Target '{target_type}' length ({len(target_values)}) exceeds data length ({X.shape[0]}) - fast failing")
+                        if np.any(np.isnan(target_values)) or np.any(np.isinf(target_values)):
+                            tprint_warning(f"Target '{target_type}' contains NaN or Inf values - this may cause issues")
+                    tprint_info(f"Using differentiated targets: {list(target.keys())}")
+                else:
+                    # Handle legacy array format
+                    if len(target) != X.shape[0]:
+                        raise ValueError(f"Target length ({len(target)}) doesn't match data length ({X.shape[0]}) - fast failing")
+                    if np.any(np.isnan(target)) or np.any(np.isinf(target)):
+                        tprint_warning("Target contains NaN or Inf values - this may cause issues")
+                    tprint_info("Using legacy single target format")
             
             tprint_info(f"Input data shape: {X.shape}")
             tprint_info(f"Feature count: {len(feature_names)}")
@@ -580,11 +594,11 @@ class PIDBasedFeatureOrchestrator:
             # Generate features - use synchronous calls for reliability
             generation_results = []
             
-            # Interaction features
+            # Interaction features with long/short differentiation
             if self.interaction_generator:
                 try:
-                    tprint_info("Generating interaction features...")
-                    interaction_result = await self._generate_interaction_features_safe(
+                    tprint_info("Generating interaction features with long/short differentiation...")
+                    interaction_result = await self._generate_interaction_features_with_differentiation(
                         X, feature_names, optimized_lookback_periods, target
                     )
                     generation_results.append(('interaction', interaction_result))
@@ -593,11 +607,11 @@ class PIDBasedFeatureOrchestrator:
                     tprint_error(f"Interaction feature generation failed: {e}")
                     generation_results.append(('interaction', e))
             
-            # Polynomial features
+            # Polynomial features with long/short differentiation
             if self.polynomial_generator:
                 try:
-                    tprint_info("Generating polynomial features...")
-                    polynomial_result = await self._generate_polynomial_features_safe(
+                    tprint_info("Generating polynomial features with long/short differentiation...")
+                    polynomial_result = await self._generate_polynomial_features_with_differentiation(
                         X, feature_names, optimized_lookback_periods, target
                     )
                     generation_results.append(('polynomial', polynomial_result))
@@ -606,11 +620,11 @@ class PIDBasedFeatureOrchestrator:
                     tprint_error(f"Polynomial feature generation failed: {e}")
                     generation_results.append(('polynomial', e))
             
-            # Cross-timeframe features
+            # Cross-timeframe features with long/short differentiation
             if self.cross_timeframe_generator:
                 try:
-                    tprint_info("Generating cross-timeframe features...")
-                    cross_timeframe_result = await self._generate_cross_timeframe_features_safe(
+                    tprint_info("Generating cross-timeframe features with long/short differentiation...")
+                    cross_timeframe_result = await self._generate_cross_timeframe_features_with_differentiation(
                         X, feature_names, optimized_lookback_periods, target
                     )
                     generation_results.append(('cross_timeframe', cross_timeframe_result))
@@ -1082,7 +1096,7 @@ class PIDBasedFeatureOrchestrator:
         self, 
         data: Union[np.ndarray, pd.DataFrame], 
         feature_names: Optional[List[str]], 
-        target: Optional[np.ndarray]
+        target: Optional[Union[np.ndarray, Dict[str, np.ndarray]]]
     ) -> Dict[str, Any]:
         """Validate input data using common utilities."""
         validation_result = {
@@ -1336,7 +1350,7 @@ class PIDBasedFeatureOrchestrator:
         X: np.ndarray, 
         feature_names: List[str], 
         optimized_lookback_periods: Optional[Dict[str, int]], 
-        target: Optional[np.ndarray]
+        target: Optional[Union[np.ndarray, Dict[str, np.ndarray]]]
     ):
         """Safe wrapper for interaction feature generation."""
         try:
@@ -1366,7 +1380,7 @@ class PIDBasedFeatureOrchestrator:
         X: np.ndarray, 
         feature_names: List[str], 
         optimized_lookback_periods: Optional[Dict[str, int]], 
-        target: Optional[np.ndarray]
+        target: Optional[Union[np.ndarray, Dict[str, np.ndarray]]]
     ):
         """Safe wrapper for polynomial feature generation."""
         try:
@@ -1396,7 +1410,7 @@ class PIDBasedFeatureOrchestrator:
         X: np.ndarray, 
         feature_names: List[str], 
         optimized_lookback_periods: Optional[Dict[str, int]], 
-        target: Optional[np.ndarray]
+        target: Optional[Union[np.ndarray, Dict[str, np.ndarray]]]
     ):
         """Safe wrapper for cross-timeframe feature generation."""
         try:
@@ -1500,3 +1514,244 @@ class PIDBasedFeatureOrchestrator:
                 'matrix_ops_used': False,
                 'feature_stability_score': 0.0
             }
+    
+    # Long/Short Differentiation Methods
+    async def _generate_interaction_features_with_differentiation(
+        self, 
+        X: np.ndarray, 
+        feature_names: List[str], 
+        optimized_lookback_periods: Optional[Dict[str, int]], 
+        target: Optional[Union[np.ndarray, Dict[str, np.ndarray]]]
+    ):
+        """Generate interaction features with long/short differentiation."""
+        try:
+            # Check if we have differentiated targets
+            if isinstance(target, dict) and 'long' in target and 'short' in target:
+                tprint_info("Generating separate interaction features for long and short opportunities")
+                
+                # Generate features for long targets
+                long_result = await self._generate_interaction_features_safe(
+                    X, feature_names, optimized_lookback_periods, target['long']
+                )
+                
+                # Generate features for short targets  
+                short_result = await self._generate_interaction_features_safe(
+                    X, feature_names, optimized_lookback_periods, target['short']
+                )
+                
+                # Combine results with differentiated naming
+                return self._combine_long_short_results(long_result, short_result, 'interaction')
+            
+            elif isinstance(target, dict) and 'combined' in target:
+                # Handle combined target format
+                return await self._generate_interaction_features_safe(
+                    X, feature_names, optimized_lookback_periods, target['combined']
+                )
+            else:
+                # Handle legacy format
+                return await self._generate_interaction_features_safe(
+                    X, feature_names, optimized_lookback_periods, target
+                )
+        except Exception as e:
+            tprint_error(f"Long/short interaction feature generation failed: {e}")
+            # Fallback to regular generation
+            return await self._generate_interaction_features_safe(
+                X, feature_names, optimized_lookback_periods, target
+            )
+    
+    async def _generate_polynomial_features_with_differentiation(
+        self, 
+        X: np.ndarray, 
+        feature_names: List[str], 
+        optimized_lookback_periods: Optional[Dict[str, int]], 
+        target: Optional[Union[np.ndarray, Dict[str, np.ndarray]]]
+    ):
+        """Generate polynomial features with long/short differentiation."""
+        try:
+            # Check if we have differentiated targets
+            if isinstance(target, dict) and 'long' in target and 'short' in target:
+                tprint_info("Generating separate polynomial features for long and short opportunities")
+                
+                # Generate features for long targets
+                long_result = await self._generate_polynomial_features_safe(
+                    X, feature_names, optimized_lookback_periods, target['long']
+                )
+                
+                # Generate features for short targets
+                short_result = await self._generate_polynomial_features_safe(
+                    X, feature_names, optimized_lookback_periods, target['short']
+                )
+                
+                # Combine results with differentiated naming
+                return self._combine_long_short_results(long_result, short_result, 'polynomial')
+            
+            elif isinstance(target, dict) and 'combined' in target:
+                # Handle combined target format
+                return await self._generate_polynomial_features_safe(
+                    X, feature_names, optimized_lookback_periods, target['combined']
+                )
+            else:
+                # Handle legacy format
+                return await self._generate_polynomial_features_safe(
+                    X, feature_names, optimized_lookback_periods, target
+                )
+        except Exception as e:
+            tprint_error(f"Long/short polynomial feature generation failed: {e}")
+            # Fallback to regular generation
+            return await self._generate_polynomial_features_safe(
+                X, feature_names, optimized_lookback_periods, target
+            )
+    
+    async def _generate_cross_timeframe_features_with_differentiation(
+        self, 
+        X: np.ndarray, 
+        feature_names: List[str], 
+        optimized_lookback_periods: Optional[Dict[str, int]], 
+        target: Optional[Union[np.ndarray, Dict[str, np.ndarray]]]
+    ):
+        """Generate cross-timeframe features with long/short differentiation."""
+        try:
+            # Check if we have differentiated targets
+            if isinstance(target, dict) and 'long' in target and 'short' in target:
+                tprint_info("Generating separate cross-timeframe features for long and short opportunities")
+                
+                # Generate features for long targets
+                long_result = await self._generate_cross_timeframe_features_safe(
+                    X, feature_names, optimized_lookback_periods, target['long']
+                )
+                
+                # Generate features for short targets
+                short_result = await self._generate_cross_timeframe_features_safe(
+                    X, feature_names, optimized_lookback_periods, target['short']
+                )
+                
+                # Combine results with differentiated naming
+                return self._combine_long_short_results(long_result, short_result, 'cross_timeframe')
+            
+            elif isinstance(target, dict) and 'combined' in target:
+                # Handle combined target format
+                return await self._generate_cross_timeframe_features_safe(
+                    X, feature_names, optimized_lookback_periods, target['combined']
+                )
+            else:
+                # Handle legacy format
+                return await self._generate_cross_timeframe_features_safe(
+                    X, feature_names, optimized_lookback_periods, target
+                )
+        except Exception as e:
+            tprint_error(f"Long/short cross-timeframe feature generation failed: {e}")
+            # Fallback to regular generation
+            return await self._generate_cross_timeframe_features_safe(
+                X, feature_names, optimized_lookback_periods, target
+            )
+    
+    def _combine_long_short_results(self, long_result, short_result, feature_type: str):
+        """Combine long and short feature generation results with differentiated naming."""
+        try:
+            # Create combined result structure
+            if hasattr(long_result, '__dict__'):
+                # Handle result objects
+                combined_result = type(long_result)()
+                
+                # Combine features with prefixes
+                combined_features = {}
+                combined_feature_names = []
+                combined_scores = {}
+                
+                # Add long features with prefix
+                if hasattr(long_result, f'{feature_type}_features'):
+                    long_features = getattr(long_result, f'{feature_type}_features', {})
+                    for name, values in long_features.items():
+                        long_name = f"long_{name}"
+                        combined_features[long_name] = values
+                        combined_feature_names.append(long_name)
+                
+                if hasattr(long_result, 'feature_names'):
+                    for name in getattr(long_result, 'feature_names', []):
+                        long_name = f"long_{name}"
+                        if long_name not in combined_feature_names:
+                            combined_feature_names.append(long_name)
+                
+                # Add short features with prefix
+                if hasattr(short_result, f'{feature_type}_features'):
+                    short_features = getattr(short_result, f'{feature_type}_features', {})
+                    for name, values in short_features.items():
+                        short_name = f"short_{name}"
+                        combined_features[short_name] = values
+                        combined_feature_names.append(short_name)
+                
+                if hasattr(short_result, 'feature_names'):
+                    for name in getattr(short_result, 'feature_names', []):
+                        short_name = f"short_{name}"
+                        if short_name not in combined_feature_names:
+                            combined_feature_names.append(short_name)
+                
+                # Combine scores
+                if hasattr(long_result, f'{feature_type}_scores'):
+                    long_scores = getattr(long_result, f'{feature_type}_scores', {})
+                    for name, score in long_scores.items():
+                        combined_scores[f"long_{name}"] = score
+                
+                if hasattr(short_result, f'{feature_type}_scores'):
+                    short_scores = getattr(short_result, f'{feature_type}_scores', {})
+                    for name, score in short_scores.items():
+                        combined_scores[f"short_{name}"] = score
+                
+                # Set combined attributes
+                setattr(combined_result, f'{feature_type}_features', combined_features)
+                setattr(combined_result, 'feature_names', combined_feature_names)
+                setattr(combined_result, f'{feature_type}_scores', combined_scores)
+                setattr(combined_result, 'total_features_generated', len(combined_feature_names))
+                
+                # Combine other attributes
+                long_count = getattr(long_result, 'total_features_generated', 0)
+                short_count = getattr(short_result, 'total_features_generated', 0)
+                setattr(combined_result, 'total_features_generated', long_count + short_count)
+                
+                # Average execution times
+                long_time = getattr(long_result, 'execution_time', 0.0)
+                short_time = getattr(short_result, 'execution_time', 0.0)
+                setattr(combined_result, 'execution_time', (long_time + short_time) / 2)
+                
+                # Set other flags
+                setattr(combined_result, 'optimization_used', 
+                       getattr(long_result, 'optimization_used', False) or 
+                       getattr(short_result, 'optimization_used', False))
+                setattr(combined_result, 'matrix_ops_used', 
+                       getattr(long_result, 'matrix_ops_used', False) or 
+                       getattr(short_result, 'matrix_ops_used', False))
+                
+                tprint_success(f"Combined long/short {feature_type} features: {long_count} long + {short_count} short = {long_count + short_count} total")
+                return combined_result
+            
+            else:
+                # Handle dict results
+                combined_result = {}
+                
+                # Combine features
+                combined_features = {}
+                combined_feature_names = []
+                
+                # Add long features
+                long_features = long_result.get(f'{feature_type}_features', {})
+                for name, values in long_features.items():
+                    combined_features[f"long_{name}"] = values
+                    combined_feature_names.append(f"long_{name}")
+                
+                # Add short features
+                short_features = short_result.get(f'{feature_type}_features', {})
+                for name, values in short_features.items():
+                    combined_features[f"short_{name}"] = values
+                    combined_feature_names.append(f"short_{name}")
+                
+                combined_result[f'{feature_type}_features'] = combined_features
+                combined_result['feature_names'] = combined_feature_names
+                combined_result['total_features_generated'] = len(combined_feature_names)
+                
+                tprint_success(f"Combined long/short {feature_type} features: {len(combined_feature_names)} total")
+                return combined_result
+                
+        except Exception as e:
+            tprint_error(f"Failed to combine long/short results: {e}")
+            # Return the long result as fallback
+            return long_result if long_result else short_result

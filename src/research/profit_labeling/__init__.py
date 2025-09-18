@@ -127,6 +127,16 @@ from .real_time_monitor import (
     create_real_time_monitor,
     monitor_labeling_quality
 )
+from .bonus_penalty_optimizer import (
+    BonusPenaltyOptimizer,
+    BonusPenaltyOptimizationConfig,
+    DataDrivenQualityScorer,
+    ModifiedMultiHorizonLabeler,
+    RegimeSpecificBonusPenaltyOptimizer,
+    optimize_bonus_penalty_parameters,
+    create_optimized_labeler,
+    get_optimal_bonus_penalty_config
+)
 
 __all__ = [
     # Original components
@@ -168,6 +178,11 @@ __all__ = [
     'LabelingPerformanceTracker',
     'LabelingDriftDetector',
     'AutoRecalibrator',
+    'BonusPenaltyOptimizer',
+    'BonusPenaltyOptimizationConfig',
+    'DataDrivenQualityScorer',
+    'ModifiedMultiHorizonLabeler',
+    'RegimeSpecificBonusPenaltyOptimizer',
     
     # Convenience functions
     'assess_label_quality_ml',
@@ -188,7 +203,10 @@ __all__ = [
     'generate_fully_enhanced_labels',
     'enhance_existing_labeler',
     'create_real_time_monitor',
-    'monitor_labeling_quality'
+    'monitor_labeling_quality',
+    'optimize_bonus_penalty_parameters',
+    'create_optimized_labeler',
+    'get_optimal_bonus_penalty_config'
 ]
 
 __version__ = '1.0.0'

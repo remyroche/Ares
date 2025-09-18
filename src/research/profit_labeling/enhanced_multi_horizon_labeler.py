@@ -67,6 +67,12 @@ from .backtesting_integrated_validator import (
     BacktestingConfig,
     validate_labels_through_backtesting
 )
+from .bonus_penalty_optimizer import (
+    BonusPenaltyOptimizer,
+    BonusPenaltyOptimizationConfig,
+    ModifiedMultiHorizonLabeler,
+    optimize_bonus_penalty_parameters
+)
 
 
 class EnhancementLevel(Enum):
@@ -95,6 +101,7 @@ class EnhancedLabelingConfig:
     optimization_config: Optional[DynamicOptimizationConfig] = None
     feature_config: Optional[ContextualFeatureConfig] = None
     backtesting_config: Optional[BacktestingConfig] = None
+    bonus_penalty_config: Optional[BonusPenaltyOptimizationConfig] = None
     
     # Integration settings
     enable_ml_enhancement: bool = True
@@ -104,6 +111,7 @@ class EnhancedLabelingConfig:
     enable_dynamic_optimization: bool = True
     enable_advanced_validation: bool = True
     enable_backtesting_validation: bool = True
+    enable_bonus_penalty_optimization: bool = True
     
     # Performance monitoring
     enable_performance_monitoring: bool = True
@@ -135,6 +143,7 @@ class EnhancedLabelingResult:
     feature_result: Optional[Any] = None
     validation_results: Optional[Dict[str, Any]] = None
     backtesting_result: Optional[Any] = None
+    bonus_penalty_result: Optional[Any] = None
     
     # Performance metrics
     enhancement_metrics: Dict[str, float] = field(default_factory=dict)
@@ -230,6 +239,12 @@ class EnhancedMultiHorizonProfitLabeler:
             self.config.enhancement_level == EnhancementLevel.FULLY_OPTIMIZED):
             self.components['backtesting_validator'] = BacktestingIntegratedValidator(self.config.backtesting_config)
             self.logger.info('   ✓ Backtesting Validator initialized')
+        
+        # Bonus/Penalty Optimizer
+        if (self.config.enable_bonus_penalty_optimization and 
+            self.config.enhancement_level == EnhancementLevel.FULLY_OPTIMIZED):
+            self.components['bonus_penalty_optimizer'] = BonusPenaltyOptimizer(self.config.bonus_penalty_config)
+            self.logger.info('   ✓ Bonus/Penalty Optimizer initialized')
     
     def generate_enhanced_labels(self, market_data: pd.DataFrame) -> EnhancedLabelingResult:
         """
@@ -265,20 +280,26 @@ class EnhancedMultiHorizonProfitLabeler:
         )
         
         try:
-            # Step 1: Dynamic optimization (if enabled)
+            # Step 1: Bonus/penalty optimization (if enabled)
+            optimized_labeler = self._apply_bonus_penalty_optimization(market_data)
+            if optimized_labeler:
+                self.base_labeler = optimized_labeler
+                self.logger.info('   ✓ Applied bonus/penalty optimization')
+            
+            # Step 2: Dynamic optimization (if enabled)
             optimized_config = self._apply_dynamic_optimization(market_data)
             if optimized_config:
                 self.base_labeler.config = optimized_config
                 self.logger.info('   ✓ Applied dynamic optimization')
             
-            # Step 2: Adaptive configuration (if enabled)
+            # Step 3: Adaptive configuration (if enabled)
             adaptive_config = self._apply_adaptive_configuration(market_data)
             if adaptive_config:
                 self.base_labeler.config = adaptive_config.config
                 result.adaptive_result = adaptive_config
                 self.logger.info('   ✓ Applied adaptive configuration')
             
-            # Step 3: Generate base labels or ensemble labels
+            # Step 4: Generate base labels or ensemble labels
             if 'ensemble_system' in self.components:
                 # Use ensemble approach
                 ensemble_result = self.components['ensemble_system'].generate_ensemble_labels(market_data)
@@ -367,6 +388,28 @@ class EnhancedMultiHorizonProfitLabeler:
             
         except Exception as e:
             self.logger.warning(f'Dynamic optimization failed: {e}')
+        
+        return None
+    
+    def _apply_bonus_penalty_optimization(self, market_data: pd.DataFrame) -> Optional[MultiHorizonProfitLabeler]:
+        """Apply data-driven bonus/penalty optimization."""
+        if 'bonus_penalty_optimizer' not in self.components:
+            return None
+        
+        try:
+            # Optimize bonus/penalty parameters
+            optimization_result = self.components['bonus_penalty_optimizer'].optimize_bonus_penalty_parameters(market_data)
+            
+            if optimization_result.objective_score > 0.4:  # Threshold for accepting optimization
+                # Create modified labeler with optimized parameters
+                modified_labeler = ModifiedMultiHorizonLabeler(optimization_result.parameters)
+                modified_labeler.config = self.base_labeler.config  # Keep existing config
+                
+                self.logger.info(f'   → Bonus/penalty optimization score: {optimization_result.objective_score:.3f}')
+                return modified_labeler
+            
+        except Exception as e:
+            self.logger.warning(f'Bonus/penalty optimization failed: {e}')
         
         return None
     

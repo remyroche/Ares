@@ -802,6 +802,561 @@ class TrendContinuationDiscoverer(BasePatternDiscoverer):
         )
 
 
+class FalseBreakoutDiscoverer(BasePatternDiscoverer):
+    """Discover false breakout patterns."""
+    
+    def __init__(self):
+        super().__init__("FalseBreakout", PatternType.BREAKOUT)
+    
+    def get_pattern_definition(self) -> PatternDefinition:
+        return PatternDefinition(
+            name="False Breakout",
+            pattern_type=PatternType.BREAKOUT,
+            description="Price breaks technical level but quickly reverses back inside range",
+            mathematical_formula="""
+            Let upper_band(t) = MA(t) + 2*STD(t)
+            Let lower_band(t) = MA(t) - 2*STD(t)
+            Let reversal_window = R
+            
+            Pattern exists at time t IF:
+            1. price(t) > upper_band(t) OR price(t) < lower_band(t)
+            2. ≥70% of price(t+k) for k∈[1,R] return inside bands
+            3. Reversal occurs within R periods
+            """,
+            parameters={
+                'bb_window': 20,
+                'bb_std': 2.0,
+                'reversal_window': 3,
+                'reversal_rate': 0.7
+            },
+            frequency_threshold=0.03
+        )
+    
+    def discover_pattern(self,
+                        prices: pd.Series,
+                        bb_window: int = 20,
+                        bb_std: float = 2.0,
+                        reversal_window: int = 3,
+                        reversal_rate: float = 0.7) -> PatternDiscoveryResult:
+        """Discover false breakout patterns."""
+        
+        self.logger.info("🔄 Discovering false breakout patterns")
+        
+        # Calculate Bollinger Bands
+        ma = prices.rolling(bb_window).mean()
+        std = prices.rolling(bb_window).std()
+        upper_band = ma + bb_std * std
+        lower_band = ma - bb_std * std
+        
+        labels = []
+        magnitudes = []
+        
+        for i in range(bb_window, len(prices) - reversal_window):
+            current_price = prices.iloc[i]
+            current_upper = upper_band.iloc[i]
+            current_lower = lower_band.iloc[i]
+            
+            # Check for initial breakout
+            upper_breakout = current_price > current_upper
+            lower_breakout = current_price < current_lower
+            
+            if upper_breakout or lower_breakout:
+                future_prices = prices.iloc[i+1:i+reversal_window+1]
+                
+                if upper_breakout:
+                    # Check for reversal back inside bands
+                    reversal_count = (future_prices < current_upper).sum()
+                    reversal_pct = reversal_count / len(future_prices)
+                    reversal_magnitude = (current_price - future_prices.min()) / current_price
+                    
+                elif lower_breakout:
+                    # Check for reversal back inside bands
+                    reversal_count = (future_prices > current_lower).sum()
+                    reversal_pct = reversal_count / len(future_prices)
+                    reversal_magnitude = (future_prices.max() - current_price) / current_price
+                
+                pattern_exists = reversal_pct >= reversal_rate
+                labels.append(1 if pattern_exists else 0)
+                magnitudes.append(reversal_magnitude if pattern_exists else 0)
+            else:
+                labels.append(0)
+                magnitudes.append(0)
+        
+        pattern_labels = pd.Series(labels, index=prices.index[bb_window:bb_window+len(labels)])
+        pattern_magnitudes = pd.Series(magnitudes, index=prices.index[bb_window:bb_window+len(magnitudes)])
+        
+        stats = self._calculate_pattern_statistics(pattern_labels, prices, pattern_magnitudes)
+        
+        return PatternDiscoveryResult(
+            definition=self.get_pattern_definition(),
+            labels=pattern_labels,
+            frequency=stats['frequency'],
+            duration_stats=stats['duration_stats'],
+            magnitude_stats=stats['magnitude_stats'],
+            predictability_score=stats['predictability_score'],
+            noise_ratio=stats['noise_ratio'],
+            statistical_significance=stats['statistical_significance']
+        )
+
+
+class GapPatternDiscoverer(BasePatternDiscoverer):
+    """Discover gap patterns (price gaps that get filled or persist)."""
+    
+    def __init__(self):
+        super().__init__("GapPattern", PatternType.BREAKOUT)
+    
+    def get_pattern_definition(self) -> PatternDefinition:
+        return PatternDefinition(
+            name="Gap Pattern",
+            pattern_type=PatternType.BREAKOUT,
+            description="Price gaps that either get filled or persist as continuation signals",
+            mathematical_formula="""
+            Let gap(t) = (open(t) - close(t-1)) / close(t-1)
+            Let gap_threshold = 0.01
+            Let fill_window = F
+            
+            Pattern exists at time t IF:
+            1. |gap(t)| > gap_threshold
+            2. Gap either fills within F periods OR persists with continuation
+            """,
+            parameters={
+                'gap_threshold': 0.01,
+                'fill_window': 10,
+                'persistence_window': 5
+            },
+            frequency_threshold=0.02
+        )
+    
+    def discover_pattern(self,
+                        market_data: pd.DataFrame,
+                        gap_threshold: float = 0.01,
+                        fill_window: int = 10,
+                        persistence_window: int = 5) -> PatternDiscoveryResult:
+        """Discover gap patterns."""
+        
+        self.logger.info("📊 Discovering gap patterns")
+        
+        if not all(col in market_data.columns for col in ['open', 'close', 'high', 'low']):
+            raise ValueError("Gap pattern requires OHLC data")
+        
+        # Calculate gaps
+        gaps = (market_data['open'] - market_data['close'].shift(1)) / market_data['close'].shift(1)
+        
+        labels = []
+        magnitudes = []
+        
+        for i in range(1, len(gaps) - fill_window):
+            current_gap = gaps.iloc[i]
+            
+            if abs(current_gap) > gap_threshold:
+                gap_size = abs(current_gap)
+                
+                # Check if gap gets filled
+                if current_gap > 0:  # Up gap
+                    gap_level = market_data['close'].iloc[i-1]
+                    future_lows = market_data['low'].iloc[i+1:i+fill_window+1]
+                    gap_filled = any(future_lows <= gap_level)
+                else:  # Down gap
+                    gap_level = market_data['close'].iloc[i-1]
+                    future_highs = market_data['high'].iloc[i+1:i+fill_window+1]
+                    gap_filled = any(future_highs >= gap_level)
+                
+                # Pattern exists for both filled and unfilled significant gaps
+                pattern_exists = True  # All significant gaps are patterns
+                
+                labels.append(1 if pattern_exists else 0)
+                magnitudes.append(gap_size if pattern_exists else 0)
+            else:
+                labels.append(0)
+                magnitudes.append(0)
+        
+        pattern_labels = pd.Series(labels, index=market_data.index[1:1+len(labels)])
+        pattern_magnitudes = pd.Series(magnitudes, index=market_data.index[1:1+len(magnitudes)])
+        
+        stats = self._calculate_pattern_statistics(pattern_labels, market_data['close'], pattern_magnitudes)
+        
+        return PatternDiscoveryResult(
+            definition=self.get_pattern_definition(),
+            labels=pattern_labels,
+            frequency=stats['frequency'],
+            duration_stats=stats['duration_stats'],
+            magnitude_stats=stats['magnitude_stats'],
+            predictability_score=stats['predictability_score'],
+            noise_ratio=stats['noise_ratio'],
+            statistical_significance=stats['statistical_significance']
+        )
+
+
+class SidewaysConsolidationDiscoverer(BasePatternDiscoverer):
+    """Discover sideways consolidation patterns."""
+    
+    def __init__(self):
+        super().__init__("SidewaysConsolidation", PatternType.CONSOLIDATION)
+    
+    def get_pattern_definition(self) -> PatternDefinition:
+        return PatternDefinition(
+            name="Sideways Consolidation",
+            pattern_type=PatternType.CONSOLIDATION,
+            description="Price moves sideways within narrow range for extended period",
+            mathematical_formula="""
+            Let price_range(t) = (high(t) - low(t)) / close(t)
+            Let consolidation_window = C
+            Let range_threshold = 0.02
+            
+            Pattern exists at time t IF:
+            1. price_range(t+k) < range_threshold for ≥80% of k∈[0,C]
+            2. |close(t+C) - close(t)| / close(t) < range_threshold
+            3. No trend direction for C periods
+            """,
+            parameters={
+                'consolidation_window': 15,
+                'range_threshold': 0.02,
+                'range_consistency': 0.8
+            },
+            frequency_threshold=0.1
+        )
+    
+    def discover_pattern(self,
+                        market_data: pd.DataFrame,
+                        consolidation_window: int = 15,
+                        range_threshold: float = 0.02,
+                        range_consistency: float = 0.8) -> PatternDiscoveryResult:
+        """Discover sideways consolidation patterns."""
+        
+        self.logger.info("↔️ Discovering sideways consolidation patterns")
+        
+        if not all(col in market_data.columns for col in ['high', 'low', 'close']):
+            raise ValueError("Consolidation pattern requires HLC data")
+        
+        # Calculate daily ranges
+        daily_ranges = (market_data['high'] - market_data['low']) / market_data['close']
+        
+        labels = []
+        magnitudes = []
+        
+        for i in range(len(market_data) - consolidation_window):
+            # Check range consistency over consolidation window
+            future_ranges = daily_ranges.iloc[i:i+consolidation_window]
+            narrow_range_count = (future_ranges < range_threshold).sum()
+            range_consistency_pct = narrow_range_count / len(future_ranges)
+            
+            # Check overall price movement
+            start_price = market_data['close'].iloc[i]
+            end_price = market_data['close'].iloc[i+consolidation_window-1]
+            total_movement = abs(end_price - start_price) / start_price
+            
+            pattern_exists = (
+                range_consistency_pct >= range_consistency and
+                total_movement < range_threshold
+            )
+            
+            labels.append(1 if pattern_exists else 0)
+            magnitudes.append(np.mean(future_ranges) if pattern_exists else 0)
+        
+        pattern_labels = pd.Series(labels, index=market_data.index[:len(labels)])
+        pattern_magnitudes = pd.Series(magnitudes, index=market_data.index[:len(magnitudes)])
+        
+        stats = self._calculate_pattern_statistics(pattern_labels, market_data['close'], pattern_magnitudes)
+        
+        return PatternDiscoveryResult(
+            definition=self.get_pattern_definition(),
+            labels=pattern_labels,
+            frequency=stats['frequency'],
+            duration_stats=stats['duration_stats'],
+            magnitude_stats=stats['magnitude_stats'],
+            predictability_score=stats['predictability_score'],
+            noise_ratio=stats['noise_ratio'],
+            statistical_significance=stats['statistical_significance']
+        )
+
+
+class VolumeSpikePriceImpactDiscoverer(BasePatternDiscoverer):
+    """Discover volume spike patterns and their price impact."""
+    
+    def __init__(self):
+        super().__init__("VolumeSpikePriceImpact", PatternType.BREAKOUT)
+    
+    def get_pattern_definition(self) -> PatternDefinition:
+        return PatternDefinition(
+            name="Volume Spike Price Impact",
+            pattern_type=PatternType.BREAKOUT,
+            description="High volume spikes followed by significant price movement",
+            mathematical_formula="""
+            Let volume_ratio(t) = volume(t) / mean(volume[t-19:t])
+            Let volume_threshold = 2.0
+            Let impact_window = I
+            
+            Pattern exists at time t IF:
+            1. volume_ratio(t) > volume_threshold
+            2. |price_change(t+1:t+I)| > price_impact_threshold
+            3. Volume spike precedes price movement
+            """,
+            parameters={
+                'volume_window': 20,
+                'volume_threshold': 2.0,
+                'impact_window': 5,
+                'price_impact_threshold': 0.015
+            },
+            frequency_threshold=0.05
+        )
+    
+    def discover_pattern(self,
+                        market_data: pd.DataFrame,
+                        volume_window: int = 20,
+                        volume_threshold: float = 2.0,
+                        impact_window: int = 5,
+                        price_impact_threshold: float = 0.015) -> PatternDiscoveryResult:
+        """Discover volume spike price impact patterns."""
+        
+        self.logger.info("📊 Discovering volume spike price impact patterns")
+        
+        if not all(col in market_data.columns for col in ['close', 'volume']):
+            raise ValueError("Volume spike pattern requires price and volume data")
+        
+        # Calculate volume ratios
+        avg_volume = market_data['volume'].rolling(volume_window).mean()
+        volume_ratios = market_data['volume'] / avg_volume
+        
+        labels = []
+        magnitudes = []
+        
+        for i in range(volume_window, len(market_data) - impact_window):
+            current_volume_ratio = volume_ratios.iloc[i]
+            
+            if current_volume_ratio > volume_threshold:
+                # Check price impact in following periods
+                current_price = market_data['close'].iloc[i]
+                future_prices = market_data['close'].iloc[i+1:i+impact_window+1]
+                
+                # Calculate maximum price impact
+                max_impact = max(
+                    abs(future_prices.max() - current_price) / current_price,
+                    abs(current_price - future_prices.min()) / current_price
+                )
+                
+                pattern_exists = max_impact > price_impact_threshold
+                
+                labels.append(1 if pattern_exists else 0)
+                magnitudes.append(max_impact if pattern_exists else 0)
+            else:
+                labels.append(0)
+                magnitudes.append(0)
+        
+        pattern_labels = pd.Series(labels, index=market_data.index[volume_window:volume_window+len(labels)])
+        pattern_magnitudes = pd.Series(magnitudes, index=market_data.index[volume_window:volume_window+len(magnitudes)])
+        
+        stats = self._calculate_pattern_statistics(pattern_labels, market_data['close'], pattern_magnitudes)
+        
+        return PatternDiscoveryResult(
+            definition=self.get_pattern_definition(),
+            labels=pattern_labels,
+            frequency=stats['frequency'],
+            duration_stats=stats['duration_stats'],
+            magnitude_stats=stats['magnitude_stats'],
+            predictability_score=stats['predictability_score'],
+            noise_ratio=stats['noise_ratio'],
+            statistical_significance=stats['statistical_significance']
+        )
+
+
+class SeasonalPatternDiscoverer(BasePatternDiscoverer):
+    """Discover seasonal/time-based patterns."""
+    
+    def __init__(self):
+        super().__init__("SeasonalPattern", PatternType.TREND)
+    
+    def get_pattern_definition(self) -> PatternDefinition:
+        return PatternDefinition(
+            name="Seasonal Pattern",
+            pattern_type=PatternType.TREND,
+            description="Recurring patterns based on time of day, week, month, or year",
+            mathematical_formula="""
+            Let time_feature(t) = extract_time_component(t)  # hour, day, month, etc.
+            Let return_by_time = group_returns_by(time_feature)
+            
+            Pattern exists for time_component IF:
+            1. mean_return(time_component) significantly different from overall mean
+            2. Consistency across multiple periods
+            3. Statistical significance of time effect
+            """,
+            parameters={
+                'min_observations': 30,
+                'significance_threshold': 0.05,
+                'consistency_threshold': 0.6
+            },
+            frequency_threshold=0.05
+        )
+    
+    def discover_pattern(self,
+                        market_data: pd.DataFrame,
+                        time_component: str = 'hour',
+                        min_observations: int = 30,
+                        significance_threshold: float = 0.05) -> PatternDiscoveryResult:
+        """Discover seasonal patterns."""
+        
+        self.logger.info(f"📅 Discovering seasonal patterns for {time_component}")
+        
+        if not hasattr(market_data.index, 'hour'):
+            # Create datetime index if needed
+            market_data = market_data.copy()
+            if not isinstance(market_data.index, pd.DatetimeIndex):
+                self.logger.warning("Non-datetime index, using sequential dates")
+                market_data.index = pd.date_range('2020-01-01', periods=len(market_data), freq='H')
+        
+        # Calculate returns
+        returns = market_data['close'].pct_change().fillna(0)
+        
+        # Extract time component
+        if time_component == 'hour':
+            time_feature = market_data.index.hour
+        elif time_component == 'day_of_week':
+            time_feature = market_data.index.dayofweek
+        elif time_component == 'month':
+            time_feature = market_data.index.month
+        else:
+            time_feature = market_data.index.hour  # Default
+        
+        # Group returns by time component
+        time_groups = pd.DataFrame({'returns': returns, 'time_comp': time_feature})
+        grouped_returns = time_groups.groupby('time_comp')['returns']
+        
+        # Find significant time patterns
+        labels = []
+        magnitudes = []
+        overall_mean = returns.mean()
+        
+        for i, (time_val, group_returns) in enumerate(grouped_returns):
+            if len(group_returns) >= min_observations:
+                # Test if this time period has significantly different returns
+                t_stat, p_value = stats.ttest_1samp(group_returns, overall_mean)
+                
+                if p_value < significance_threshold:
+                    mean_return = group_returns.mean()
+                    effect_size = abs(mean_return - overall_mean)
+                    
+                    # Mark all periods with this time component as pattern periods
+                    time_mask = time_feature == time_val
+                    pattern_strength = effect_size
+                else:
+                    time_mask = pd.Series(False, index=market_data.index)
+                    pattern_strength = 0
+            else:
+                time_mask = pd.Series(False, index=market_data.index)
+                pattern_strength = 0
+            
+            # Add to labels
+            for j, is_pattern_time in enumerate(time_mask):
+                if j == len(labels):  # Extend labels as needed
+                    labels.append(1 if is_pattern_time else 0)
+                    magnitudes.append(pattern_strength if is_pattern_time else 0)
+                elif is_pattern_time:
+                    labels[j] = 1
+                    magnitudes[j] = max(magnitudes[j], pattern_strength)
+        
+        # Ensure labels match data length
+        while len(labels) < len(market_data):
+            labels.append(0)
+            magnitudes.append(0)
+        
+        pattern_labels = pd.Series(labels[:len(market_data)], index=market_data.index)
+        pattern_magnitudes = pd.Series(magnitudes[:len(market_data)], index=market_data.index)
+        
+        stats = self._calculate_pattern_statistics(pattern_labels, market_data['close'], pattern_magnitudes)
+        
+        return PatternDiscoveryResult(
+            definition=self.get_pattern_definition(),
+            labels=pattern_labels,
+            frequency=stats['frequency'],
+            duration_stats=stats['duration_stats'],
+            magnitude_stats=stats['magnitude_stats'],
+            predictability_score=stats['predictability_score'],
+            noise_ratio=stats['noise_ratio'],
+            statistical_significance=stats['statistical_significance']
+        )
+
+
+class ExtremeMovementDiscoverer(BasePatternDiscoverer):
+    """Discover extreme price movement patterns."""
+    
+    def __init__(self):
+        super().__init__("ExtremeMovement", PatternType.VOLATILITY)
+    
+    def get_pattern_definition(self) -> PatternDefinition:
+        return PatternDefinition(
+            name="Extreme Movement",
+            pattern_type=PatternType.VOLATILITY,
+            description="Extreme price movements beyond normal volatility bounds",
+            mathematical_formula="""
+            Let return(t) = (close(t) - close(t-1)) / close(t-1)
+            Let volatility(t) = std(return[t-19:t])
+            Let extreme_threshold = 3.0
+            
+            Pattern exists at time t IF:
+            1. |return(t)| > extreme_threshold * volatility(t)
+            2. Movement is statistically extreme (>99th percentile)
+            """,
+            parameters={
+                'volatility_window': 20,
+                'extreme_threshold': 3.0,
+                'percentile_threshold': 0.99
+            },
+            frequency_threshold=0.01
+        )
+    
+    def discover_pattern(self,
+                        prices: pd.Series,
+                        volatility_window: int = 20,
+                        extreme_threshold: float = 3.0,
+                        percentile_threshold: float = 0.99) -> PatternDiscoveryResult:
+        """Discover extreme movement patterns."""
+        
+        self.logger.info("⚡ Discovering extreme movement patterns")
+        
+        returns = prices.pct_change().fillna(0)
+        volatility = returns.rolling(volatility_window).std()
+        
+        labels = []
+        magnitudes = []
+        
+        # Calculate rolling percentiles
+        abs_returns = abs(returns)
+        rolling_percentile = abs_returns.rolling(100).quantile(percentile_threshold)
+        
+        for i in range(volatility_window, len(returns)):
+            current_return = abs(returns.iloc[i])
+            current_volatility = volatility.iloc[i]
+            current_percentile_threshold = rolling_percentile.iloc[i]
+            
+            # Check both volatility-based and percentile-based criteria
+            volatility_extreme = (
+                current_volatility > 0 and 
+                current_return > extreme_threshold * current_volatility
+            )
+            
+            percentile_extreme = current_return > current_percentile_threshold
+            
+            pattern_exists = volatility_extreme or percentile_extreme
+            
+            labels.append(1 if pattern_exists else 0)
+            magnitudes.append(current_return if pattern_exists else 0)
+        
+        pattern_labels = pd.Series(labels, index=prices.index[volatility_window:volatility_window+len(labels)])
+        pattern_magnitudes = pd.Series(magnitudes, index=prices.index[volatility_window:volatility_window+len(magnitudes)])
+        
+        stats = self._calculate_pattern_statistics(pattern_labels, prices, pattern_magnitudes)
+        
+        return PatternDiscoveryResult(
+            definition=self.get_pattern_definition(),
+            labels=pattern_labels,
+            frequency=stats['frequency'],
+            duration_stats=stats['duration_stats'],
+            magnitude_stats=stats['magnitude_stats'],
+            predictability_score=stats['predictability_score'],
+            noise_ratio=stats['noise_ratio'],
+            statistical_significance=stats['statistical_significance']
+        )
+
+
 class PatternDiscoveryOrchestrator:
     """Main orchestrator for pattern discovery and definition."""
     
@@ -810,11 +1365,20 @@ class PatternDiscoveryOrchestrator:
         
         # Initialize all pattern discoverers
         self.discoverers = {
+            # Original 5 patterns
             'momentum_persistence': MomentumPersistenceDiscoverer(),
             'mean_reversion_speed': MeanReversionSpeedDiscoverer(),
             'volatility_expansion': VolatilityExpansionDiscoverer(),
             'breakout_confirmation': BreakoutConfirmationDiscoverer(),
-            'trend_continuation': TrendContinuationDiscoverer()
+            'trend_continuation': TrendContinuationDiscoverer(),
+            
+            # New patterns
+            'false_breakout': FalseBreakoutDiscoverer(),
+            'gap_pattern': GapPatternDiscoverer(),
+            'sideways_consolidation': SidewaysConsolidationDiscoverer(),
+            'volume_spike_impact': VolumeSpikePriceImpactDiscoverer(),
+            'seasonal_pattern': SeasonalPatternDiscoverer(),
+            'extreme_movement': ExtremeMovementDiscoverer()
         }
     
     def discover_all_patterns(self, prices: pd.Series) -> Dict[str, PatternDiscoveryResult]:

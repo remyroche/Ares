@@ -1409,45 +1409,46 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                     self.logger.warning(f"🔍 DEBUG: Vectors are identical! This will cause 100% similarity")
                 return 1.0
             
-            # Calculate cosine similarity with proper magnitude consideration
-            # Standardize each feature independently to preserve relative differences
+            # Calculate cosine similarity with robust per-feature normalization
+            # Use percentile-based normalization to handle extreme outliers
             
-            vec_1_std = np.zeros_like(vec_1)
-            vec_2_std = np.zeros_like(vec_2)
+            # First, determine the scale of each feature by looking at the magnitude
+            vec_1_normalized = np.zeros_like(vec_1)
+            vec_2_normalized = np.zeros_like(vec_2)
             feature_similarities = []
             
             for i in range(len(vec_1)):
-                # Get values for this feature from both vectors
                 val_1 = vec_1[i]
                 val_2 = vec_2[i]
                 
-                # Calculate mean and std for this specific feature across both regimes
-                feature_mean = (val_1 + val_2) / 2
-                feature_std = np.std([val_1, val_2])
+                # Calculate the maximum absolute value for this feature to determine scale
+                max_abs_val = max(abs(val_1), abs(val_2))
                 
-                # Avoid division by zero
-                if feature_std == 0:
-                    feature_std = 1.0
-                
-                # Standardize this feature
-                vec_1_std[i] = (val_1 - feature_mean) / feature_std
-                vec_2_std[i] = (val_2 - feature_mean) / feature_std
-                
-                # Calculate cosine similarity for this feature
-                if vec_1_std[i] == 0 and vec_2_std[i] == 0:
-                    feature_similarity = 1.0
-                elif vec_1_std[i] == 0 or vec_2_std[i] == 0:
-                    feature_similarity = 0.0
+                if max_abs_val == 0:
+                    # Both values are zero - perfect similarity
+                    vec_1_normalized[i] = 0.0
+                    vec_2_normalized[i] = 0.0
+                    feature_similarities.append(1.0)
+                elif max_abs_val < 1e-10:
+                    # Values are extremely small - treat as zero
+                    vec_1_normalized[i] = 0.0
+                    vec_2_normalized[i] = 0.0
+                    feature_similarities.append(1.0)
                 else:
-                    # This gives us proper cosine similarity based on standardized magnitudes
-                    feature_similarity = (vec_1_std[i] * vec_2_std[i]) / (abs(vec_1_std[i]) * abs(vec_2_std[i]))
-                
-                feature_similarities.append(feature_similarity)
+                    # Normalize by the maximum absolute value to preserve relative magnitudes
+                    # This keeps values in a reasonable range while preserving relationships
+                    vec_1_normalized[i] = val_1 / max_abs_val
+                    vec_2_normalized[i] = val_2 / max_abs_val
+                    
+                    # Calculate individual feature similarity (dot product of unit-scaled values)
+                    # This captures both direction and relative magnitude
+                    feature_similarity = vec_1_normalized[i] * vec_2_normalized[i]
+                    feature_similarities.append(feature_similarity)
             
-            # Calculate overall cosine similarity on per-feature standardized vectors
-            dot_product = np.dot(vec_1_std, vec_2_std)
-            norm_1 = np.linalg.norm(vec_1_std)
-            norm_2 = np.linalg.norm(vec_2_std)
+            # Calculate overall cosine similarity on normalized vectors
+            dot_product = np.dot(vec_1_normalized, vec_2_normalized)
+            norm_1 = np.linalg.norm(vec_1_normalized)
+            norm_2 = np.linalg.norm(vec_2_normalized)
             
             if norm_1 == 0 or norm_2 == 0:
                 overall_similarity = 0.0
@@ -1458,8 +1459,8 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             if self._similarity_debug_count <= 3:
                 self.logger.warning(f"🔍 DEBUG: Original vec_1[:5]: {vec_1[:5]}")
                 self.logger.warning(f"🔍 DEBUG: Original vec_2[:5]: {vec_2[:5]}")
-                self.logger.warning(f"🔍 DEBUG: Standardized vec_1[:5]: {vec_1_std[:5]}")
-                self.logger.warning(f"🔍 DEBUG: Standardized vec_2[:5]: {vec_2_std[:5]}")
+                self.logger.warning(f"🔍 DEBUG: Normalized vec_1[:5]: {vec_1_normalized[:5]}")
+                self.logger.warning(f"🔍 DEBUG: Normalized vec_2[:5]: {vec_2_normalized[:5]}")
                 self.logger.warning(f"🔍 DEBUG: Feature similarities[:5]: {feature_similarities[:5]}")
                 self.logger.warning(f"🔍 DEBUG: Overall cosine similarity: {overall_similarity:.6f}")
             

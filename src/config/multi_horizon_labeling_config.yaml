@@ -42,7 +42,20 @@ multi_horizon_labeling:
   
   # Model Integration
   output_format: "probability_distribution"  # vs "binary_classification"
-  target_count: 14                # 8 probability targets + 6 composite scores
+  target_count: 26                # 8 long + 8 short probability targets + 10 composite scores
+  
+  # ENHANCED: Directional Analysis Configuration
+  enable_directional_analysis: true
+  directional_confidence_threshold: 0.05    # Minimum difference to declare directional bias
+  adaptive_threshold: true                  # Use adaptive threshold based on overall opportunity
+  immediate_horizon_weight: 0.7             # Weight for immediate vs short-term in directional scoring
+  
+  # Directional Quality Scoring
+  enable_directional_quality_scoring: true
+  long_speed_bonus: 1.1                     # Bonus multiplier for fast long moves
+  long_adverse_penalty: 0.9                 # Penalty for adverse excursion in longs
+  short_sustained_bonus: 1.05               # Bonus for sustained short moves
+  short_adverse_penalty: 0.85               # Penalty for adverse excursion in shorts (more strict)
   
   # Validation and Quality Control
   min_samples_for_labeling: 50    # Minimum samples needed
@@ -76,19 +89,43 @@ feature_lookback_optimization:
 
 # Integration with PID-Based Feature Generation
 pid_based_feature_generation:
-  # Multi-horizon compatibility
+  # Multi-horizon compatibility with ENHANCED directional support
   target_columns:
-    - "micro_immediate_prob"
-    - "small_immediate_prob"
-    - "medium_immediate_prob"
-    - "good_immediate_prob"
-    - "micro_short_prob"
-    - "small_short_prob"
-    - "medium_short_prob"
-    - "good_short_prob"
-    - "overall_opportunity"
+    # LONG direction targets
+    - "micro_immediate_long_prob"
+    - "small_immediate_long_prob"
+    - "medium_immediate_long_prob"
+    - "good_immediate_long_prob"
+    - "micro_short_long_prob"
+    - "small_short_long_prob"
+    - "medium_short_long_prob"
+    - "good_short_long_prob"
+    
+    # SHORT direction targets
+    - "micro_immediate_short_prob"
+    - "small_immediate_short_prob"
+    - "medium_immediate_short_prob"
+    - "good_immediate_short_prob"
+    - "micro_short_short_prob"
+    - "small_short_short_prob"
+    - "medium_short_short_prob"
+    - "good_short_short_prob"
+    
+    # Composite opportunity scores
+    - "long_overall_opportunity"
+    - "short_overall_opportunity"
+    - "overall_opportunity"  # Backward compatibility
     - "leverage_adjusted_score"
     - "reversal_capture_score"
+    
+    # NEW: Directional analysis targets
+    - "directional_bias"
+    - "directional_confidence"
+    - "opportunity_asymmetry"
+    - "long_directional_strength"
+    - "short_directional_strength"
+    - "long_momentum"
+    - "short_momentum"
   
   # Feature engineering for probability targets
   interaction_features: true
@@ -105,14 +142,31 @@ trading_strategy:
   leverage_multiplier: 50.0
   max_account_risk_per_trade: 0.02  # 2% max account risk
   
-  # Entry thresholds (lowered for more frequent trading)
+  # Entry thresholds (ENHANCED with directional support)
   entry_thresholds:
-    micro_immediate_prob: 0.75      # 75% for micro moves (10 min)
-    small_immediate_prob: 0.70      # 70% for small moves (10 min)
-    medium_immediate_prob: 0.65     # 65% for medium moves (10 min)
-    good_immediate_prob: 0.60       # 60% for good moves (10 min)
-    overall_opportunity: 0.60       # 60% overall (lower for more trades)
-    reversal_capture_score: 0.60    # 60% reversal capture
+    # LONG direction thresholds
+    micro_immediate_long_prob: 0.75      # 75% for micro long moves (10 min)
+    small_immediate_long_prob: 0.70      # 70% for small long moves (10 min)
+    medium_immediate_long_prob: 0.65     # 65% for medium long moves (10 min)
+    good_immediate_long_prob: 0.60       # 60% for good long moves (10 min)
+    
+    # SHORT direction thresholds (slightly higher due to market bias)
+    micro_immediate_short_prob: 0.78     # 78% for micro short moves (10 min)
+    small_immediate_short_prob: 0.73     # 73% for small short moves (10 min)
+    medium_immediate_short_prob: 0.68    # 68% for medium short moves (10 min)
+    good_immediate_short_prob: 0.63      # 63% for good short moves (10 min)
+    
+    # Directional strength thresholds
+    long_directional_strength: 0.55      # 55% long directional strength
+    short_directional_strength: 0.58     # 58% short directional strength (higher bar)
+    
+    # Legacy thresholds (backward compatibility)
+    overall_opportunity: 0.60            # 60% overall (lower for more trades)
+    reversal_capture_score: 0.60         # 60% reversal capture
+    
+    # NEW: Directional bias requirements
+    directional_confidence: 0.10         # Minimum 10% confidence in direction
+    opportunity_asymmetry_threshold: 0.05 # Minimum 5% asymmetry for directional trades
   
   # Exit thresholds
   exit_thresholds:

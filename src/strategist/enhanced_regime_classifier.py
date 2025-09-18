@@ -216,12 +216,83 @@ class EnhancedRegimeClassifier:
             hmm_features = features_df[['return_1', 'return_5', 'return_20', 'volatility_short', 'volatility_medium', 'volume_ratio', 'trend_strength']].dropna().values
             hmm_features_scaled = self.scaler.fit_transform(hmm_features)
             self.hmm_model.fit(hmm_features_scaled)
+            self._validate_and_fix_transition_matrix()
             self.trained = True
             self.logger.info('✅ Enhanced Regime Classifier trained successfully')
             return True
         except Exception as e:
             self.logger.error(f'Failed to train regime classifier: {e}')
             return False
+
+    def _validate_and_fix_transition_matrix(self) -> None:
+        """
+        Validate and fix transition matrix after training to prevent zero-sum rows.
+        """
+        try:
+            if not hasattr(self.hmm_model, 'transmat_') or self.hmm_model.transmat_ is None:
+                return
+            
+            n_components = self.hmm_model.transmat_.shape[0]
+            
+            # Check if transition matrix has any zero-sum rows
+            row_sums = self.hmm_model.transmat_.sum(axis=1)
+            zero_sum_rows = np.where(np.abs(row_sums) < 1e-10)[0]
+            
+            if len(zero_sum_rows) > 0:
+                self.logger.warning(f"⚠️ Found {len(zero_sum_rows)} zero-sum rows in transition matrix: {zero_sum_rows}")
+                
+                # Fix zero-sum rows by setting them to uniform distribution
+                for row_idx in zero_sum_rows:
+                    # Set uniform transition probabilities with slight bias towards self-transition
+                    uniform_prob = (1.0 - 0.7) / (n_components - 1) if n_components > 1 else 1.0
+                    self.hmm_model.transmat_[row_idx, :] = uniform_prob
+                    if n_components > 1:
+                        self.hmm_model.transmat_[row_idx, row_idx] = 0.7  # Higher self-transition probability
+                
+                # Renormalize all rows to ensure they sum to 1
+                self.hmm_model.transmat_ = self.hmm_model.transmat_ / self.hmm_model.transmat_.sum(axis=1, keepdims=True)
+                
+                self.logger.info(f"✅ Fixed {len(zero_sum_rows)} zero-sum rows in transition matrix")
+            
+            # Additional validation: ensure no NaN or infinite values
+            if np.any(np.isnan(self.hmm_model.transmat_)) or np.any(np.isinf(self.hmm_model.transmat_)):
+                self.logger.warning("⚠️ Found NaN or infinite values in transition matrix, applying regularization")
+                
+                # Replace NaN/inf with regularized uniform distribution
+                epsilon = 1e-6
+                regularized_transmat = np.full((n_components, n_components), epsilon)
+                np.fill_diagonal(regularized_transmat, 0.7)
+                
+                # Distribute remaining probability
+                for i in range(n_components):
+                    remaining_prob = 1.0 - regularized_transmat[i, i]
+                    other_states_prob = remaining_prob / (n_components - 1) if n_components > 1 else 0.0
+                    for j in range(n_components):
+                        if i != j:
+                            regularized_transmat[i, j] = other_states_prob
+                
+                # Normalize and assign
+                regularized_transmat = regularized_transmat / regularized_transmat.sum(axis=1, keepdims=True)
+                self.hmm_model.transmat_ = regularized_transmat.astype(np.float64)
+                
+                self.logger.info("✅ Applied regularization to fix NaN/infinite values in transition matrix")
+            
+            # Final validation
+            final_row_sums = self.hmm_model.transmat_.sum(axis=1)
+            if not np.allclose(final_row_sums, 1.0, atol=1e-6):
+                self.logger.warning(f"⚠️ Transition matrix rows do not sum to 1: {final_row_sums}")
+                # Force normalization
+                self.hmm_model.transmat_ = self.hmm_model.transmat_ / self.hmm_model.transmat_.sum(axis=1, keepdims=True)
+                self.logger.info("✅ Forced normalization of transition matrix")
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error validating transition matrix: {e}")
+            # Fallback: create a safe uniform transition matrix
+            if hasattr(self.hmm_model, 'transmat_') and self.hmm_model.transmat_ is not None:
+                n_components = self.hmm_model.transmat_.shape[0]
+                safe_transmat = np.full((n_components, n_components), 1.0 / n_components)
+                self.hmm_model.transmat_ = safe_transmat.astype(np.float64)
+                self.logger.info("✅ Applied fallback uniform transition matrix")
 
     def get_regime_strategy_params(self, regime: str) -> Dict[str, Any]:
         """

@@ -1,6 +1,6 @@
 {
   "pipeline_config": {
-    "mode": "full",
+    "mode": "blank",
     "symbol": "ETHUSDT",
     "exchange": "binance",
     "timeframe": "1m",
@@ -13,51 +13,23 @@
     "enabled_sub_pipelines": {
       "data_collection": [
         "data_download",
-        "data_conversion",
-        "data_validation",
-        "data_preparation",
-        "feature_engineering",
-        "data_quality_check",
-        "data_storage",
-        "data_monitoring"
+        "data_conversion"
       ],
       "market_analysis": [
         "sr_detection",
-        "sr_clustering",
-        "hmm_clustering",
-        "hmm_regime_discovery",
-        "regime_data_splitting",
-        "triple_barrier_labeling",
-        "feature_lookback_optimization",
-        "cross_timeframe_analysis",
-        "sr_feature_integration"
+        "hmm_regime_discovery"
       ],
       "model_training": [
-        "hmm_training",
-        "analyst_model_training",
-        "analyst_ensemble_training",
-        "tactician_model_training",
-        "tactician_ensemble_training"
+        "hmm_training"
       ],
       "backtesting": [
-        "basic_backtesting_pre",
-        "final_parameters_optimization",
-        "basic_backtesting_post",
-        "walk_forward_validation",
-        "monte_carlo_simulation",
-        "ab_testing",
-        "model_persistence",
-        "performance_analytics",
-        "risk_analysis",
-        "trade_analysis",
-        "portfolio_analysis",
-        "reporting"
+        "walk_forward_validation"
       ]
     }
   },
   "execution_metadata": {
-    "start_time": "2025-09-15T23:11:40.334202",
-    "pipeline_id": "pipeline_20250915_231140",
+    "start_time": "2025-09-17T20:38:24.103616",
+    "pipeline_id": "pipeline_20250917_203824",
     "execution_mode": "full_pipeline"
   },
   "monitoring_config": {

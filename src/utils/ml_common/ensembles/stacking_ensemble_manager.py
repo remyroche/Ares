@@ -257,14 +257,13 @@ class StackingEnsembleManager:
         else:
             y_val_array = None
         
-        # Memory optimization context
+        # Memory optimization - direct training without context manager
         if self.m1_memory:
-            self.logger.debug("🧠 Using memory optimization context...")
-            with self.m1_memory.optimization_context():
-                result = self._train_ensemble_internal(X_train_array, y_train_array, X_val_array, y_val_array)
+            self.logger.debug("🧠 Using memory optimization...")
         else:
             self.logger.debug("🧠 No memory optimization available, proceeding normally...")
-            result = self._train_ensemble_internal(X_train_array, y_train_array, X_val_array, y_val_array)
+        
+        result = self._train_ensemble_internal(X_train_array, y_train_array, X_val_array, y_val_array)
         
         execution_time = time.time() - start_time
         result.execution_time = execution_time

@@ -137,6 +137,149 @@ class M1GPUManager:
             self.logger.warning(f"Could not create MPS model, using CPU: {e}")
             return model_class(*args, **kwargs)
 
+    def vector_norm(self, array, axis=None, keepdims=False):
+        """Calculate vector norm using GPU acceleration when available."""
+        if not NUMPY_AVAILABLE:
+            self.logger.warning("Numpy not available, cannot calculate vector norm")
+            return array
+            
+        if not self.mps_available:
+            # Fallback to CPU numpy
+            return np.linalg.norm(array, axis=axis, keepdims=keepdims)
+
+        try:
+            import torch
+            
+            # Convert to torch tensor and move to MPS
+            tensor = torch.from_numpy(np.array(array, dtype=np.float32)).to('mps')
+            
+            # Calculate norm
+            norm_tensor = torch.linalg.norm(tensor, dim=axis, keepdim=keepdims)
+            
+            # Convert back to numpy
+            result = norm_tensor.cpu().numpy()
+            
+            return result
+
+        except Exception as e:
+            self.logger.warning(f"GPU vector norm calculation failed, falling back to CPU: {e}")
+            return np.linalg.norm(array, axis=axis, keepdims=keepdims)
+
+    def abs(self, array):
+        """Calculate absolute values using GPU acceleration when available."""
+        if not NUMPY_AVAILABLE:
+            self.logger.warning("Numpy not available, cannot calculate absolute values")
+            return array
+            
+        if not self.mps_available:
+            # Fallback to CPU numpy
+            return np.abs(array)
+
+        try:
+            import torch
+            
+            # Convert to torch tensor and move to MPS
+            tensor = torch.from_numpy(np.array(array, dtype=np.float32)).to('mps')
+            
+            # Calculate absolute values
+            abs_tensor = torch.abs(tensor)
+            
+            # Convert back to numpy
+            result = abs_tensor.cpu().numpy()
+            
+            return result
+
+        except Exception as e:
+            self.logger.warning(f"GPU abs calculation failed, falling back to CPU: {e}")
+            return np.abs(array)
+
+    def divide(self, array1, array2):
+        """Element-wise division using GPU acceleration when available."""
+        if not NUMPY_AVAILABLE:
+            self.logger.warning("Numpy not available, cannot perform division")
+            return array1
+            
+        if not self.mps_available:
+            # Fallback to CPU numpy
+            return np.divide(array1, array2)
+
+        try:
+            import torch
+            
+            # Convert to torch tensors and move to MPS
+            tensor1 = torch.from_numpy(np.array(array1, dtype=np.float32)).to('mps')
+            tensor2 = torch.from_numpy(np.array(array2, dtype=np.float32)).to('mps')
+            
+            # Perform division
+            result_tensor = torch.div(tensor1, tensor2)
+            
+            # Convert back to numpy
+            result = result_tensor.cpu().numpy()
+            
+            return result
+
+        except Exception as e:
+            self.logger.warning(f"GPU division failed, falling back to CPU: {e}")
+            return np.divide(array1, array2)
+
+    def subtract(self, array1, array2):
+        """Element-wise subtraction using GPU acceleration when available."""
+        if not NUMPY_AVAILABLE:
+            self.logger.warning("Numpy not available, cannot perform subtraction")
+            return array1
+            
+        if not self.mps_available:
+            # Fallback to CPU numpy
+            return np.subtract(array1, array2)
+
+        try:
+            import torch
+            
+            # Convert to torch tensors and move to MPS
+            tensor1 = torch.from_numpy(np.array(array1, dtype=np.float32)).to('mps')
+            tensor2 = torch.from_numpy(np.array(array2, dtype=np.float32)).to('mps')
+            
+            # Perform subtraction
+            result_tensor = torch.sub(tensor1, tensor2)
+            
+            # Convert back to numpy
+            result = result_tensor.cpu().numpy()
+            
+            return result
+
+        except Exception as e:
+            self.logger.warning(f"GPU subtraction failed, falling back to CPU: {e}")
+            return np.subtract(array1, array2)
+
+    def matrix_multiply(self, array1, array2):
+        """Matrix multiplication using GPU acceleration when available."""
+        if not NUMPY_AVAILABLE:
+            self.logger.warning("Numpy not available, cannot perform matrix multiplication")
+            return array1
+            
+        if not self.mps_available:
+            # Fallback to CPU numpy
+            return np.matmul(array1, array2)
+
+        try:
+            import torch
+            
+            # Convert to torch tensors and move to MPS
+            tensor1 = torch.from_numpy(np.array(array1, dtype=np.float32)).to('mps')
+            tensor2 = torch.from_numpy(np.array(array2, dtype=np.float32)).to('mps')
+            
+            # Perform matrix multiplication
+            result_tensor = torch.matmul(tensor1, tensor2)
+            
+            # Convert back to numpy
+            result = result_tensor.cpu().numpy()
+            
+            return result
+
+        except Exception as e:
+            self.logger.warning(f"GPU matrix multiplication failed, falling back to CPU: {e}")
+            return np.matmul(array1, array2)
+
 
 # Global instance
 m1_gpu_manager = M1GPUManager()
@@ -167,6 +310,16 @@ def optimize_dataframe_for_m1(df):
         return df
 
     try:
+        # Type checking: ensure df is a DataFrame
+        if not isinstance(df, pd.DataFrame):
+            logger.warning(f"⚠️ Matrix optimization failed: Expected DataFrame, got {type(df)}. Returning data as-is.")
+            return df
+            
+        # Additional safety check for empty DataFrame
+        if df.empty:
+            logger.info("DataFrame is empty, returning as-is")
+            return df
+
         # Convert numeric columns to float32 for better M1 performance
         numeric_cols = df.select_dtypes(include=[np.number]).columns
 
@@ -177,7 +330,7 @@ def optimize_dataframe_for_m1(df):
         logger.info(f"Optimized {len(numeric_cols)} numeric columns for M1")
 
     except Exception as e:
-        logger.warning(f"DataFrame optimization failed: {e}")
+        logger.warning(f"⚠️ DataFrame optimization failed: {e}")
 
     return df
 
@@ -246,11 +399,15 @@ async def m1_backtesting_simulate(
         # Convert data to PyTorch tensors if needed
         if PANDAS_AVAILABLE and isinstance(gpu_data, pd.DataFrame):
             # Convert DataFrame to tensor
-            numeric_data = gpu_data.select_dtypes(include=[np.number])
-            if not numeric_data.empty:
-                tensor_data = torch.from_numpy(numeric_data.values.astype(np.float32)).to('mps')
-            else:
-                tensor_data = torch.tensor([]).to('mps')
+            try:
+                numeric_data = gpu_data.select_dtypes(include=[np.number])
+                if not numeric_data.empty:
+                    tensor_data = torch.from_numpy(numeric_data.values.astype(np.float32)).to('mps')
+                else:
+                    tensor_data = torch.tensor([]).to('mps')
+            except AttributeError as e:
+                logger.warning(f"⚠️ DataFrame optimization failed: {e}")
+                return await _cpu_backtesting_fallback(gpu_data, strategy_params, config, strategy_func)
         elif isinstance(gpu_data, np.ndarray):
             tensor_data = torch.from_numpy(gpu_data.astype(np.float32)).to('mps')
         else:
@@ -400,11 +557,15 @@ async def m1_monte_carlo_simulate(
         # Convert data to PyTorch tensors if needed
         if PANDAS_AVAILABLE and isinstance(data, pd.DataFrame):
             # Convert DataFrame to tensor
-            numeric_data = data.select_dtypes(include=[np.number])
-            if not numeric_data.empty:
-                tensor_data = torch.from_numpy(numeric_data.values.astype(np.float32)).to('mps')
-            else:
-                tensor_data = torch.tensor([]).to('mps')
+            try:
+                numeric_data = data.select_dtypes(include=[np.number])
+                if not numeric_data.empty:
+                    tensor_data = torch.from_numpy(numeric_data.values.astype(np.float32)).to('mps')
+                else:
+                    tensor_data = torch.tensor([]).to('mps')
+            except AttributeError as e:
+                logger.warning(f"⚠️ DataFrame optimization failed: {e}")
+                return await _cpu_monte_carlo_fallback(data, strategy_params, config, n_simulations)
         elif isinstance(data, np.ndarray):
             tensor_data = torch.from_numpy(data.astype(np.float32)).to('mps')
         else:

@@ -1,0 +1,151 @@
+{
+  "stage": "market_analysis",
+  "sub_pipeline": "feature_lookback_optimization",
+  "timestamp": "2025-09-18T13:23:10.940712",
+  "status": "failed",
+  "output_files": [],
+  "metadata": {
+    "optimization_status": "failed",
+    "error_count": 1,
+    "performance_metrics": {
+      "memory_usage": [
+        1309.84375,
+        1313.265625,
+        1314.078125
+      ],
+      "cpu_usage": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "execution_times": {
+        "start": [
+          1758194590.7449331
+        ],
+        "validation_complete": [
+          1758194590.759356
+        ],
+        "data_loaded": [
+          1758194590.7599611
+        ]
+      },
+      "error_counts": 1
+    }
+  },
+  "artifacts": {},
+  "config": {
+    "symbol": "ETHUSDT",
+    "exchange": "binance",
+    "timeframe": "1m",
+    "mode": "light",
+    "intensity_percentage": 0.025,
+    "training_mode_config": {
+      "description": "Development mode - Minimal data with all features/models",
+      "lookback_days": 10,
+      "training_mode": "light",
+      "enable_blank_training_mode": false,
+      "enable_light_training_mode": true,
+      "enable_full_training_mode": false,
+      "data_collection": {
+        "enable_all_exchanges": false,
+        "enable_aggtrades": false,
+        "enable_futures": false,
+        "data_quality_checks": true
+      },
+      "feature_engineering": {
+        "enable_all_features": true,
+        "enable_advanced_features": true,
+        "enable_autoencoder_features": true,
+        "enable_microstructure_features": true,
+        "enable_multi_timeframe": true,
+        "timeframes": [
+          "1h"
+        ],
+        "max_interactions": 10,
+        "correlation_threshold": 0.8,
+        "max_features": null,
+        "feature_selection_samples": 10000,
+        "feature_selection_method": "full"
+      },
+      "model_training": {
+        "enable_all_models": true,
+        "max_trials": 10,
+        "n_trials": 5,
+        "enable_early_stopping": true,
+        "enable_parallelization": false,
+        "enable_caching": true,
+        "batch_size": 512,
+        "epochs": 10,
+        "early_stopping_patience": 5,
+        "learning_rate": 0.001,
+        "validation_split": 0.2,
+        "cross_validation_folds": 2,
+        "nn_hidden_layers": [
+          64,
+          32
+        ],
+        "nn_dropout": 0.3,
+        "nn_batch_norm": false,
+        "ensemble_models": 3,
+        "ensemble_method": "weighted",
+        "gb_max_depth": 4,
+        "gb_n_estimators": 50,
+        "rf_max_depth": 8,
+        "rf_n_estimators": 25
+      },
+      "validation": {
+        "enable_walk_forward": true,
+        "enable_monte_carlo": true,
+        "enable_ab_testing": true,
+        "validation_splits": 2,
+        "monte_carlo_samples": 100,
+        "ab_test_rounds": 2
+      },
+      "optimization": {
+        "enable_hyperparameter_optimization": true,
+        "enable_feature_selection": true,
+        "enable_model_selection": true,
+        "max_optimization_time": 300,
+        "optuna_trials": 10,
+        "optuna_timeout": 300,
+        "optuna_n_jobs": 1,
+        "feature_selection_method": "recursive",
+        "feature_importance_threshold": 0.01
+      },
+      "computational_intensity": "medium",
+      "estimated_duration_minutes": 60,
+      "exclude_recent_days": 0,
+      "min_data_points": 1000,
+      "enable_advanced_model_training": true,
+      "enable_ensemble_training": true,
+      "enable_multi_timeframe_training": true,
+      "enable_adaptive_training": true
+    }
+  },
+  "next_stage_requirements": {
+    "required_files": [
+      "sr_levels.json",
+      "regime_assignments.parquet",
+      "labels.parquet",
+      "features.parquet"
+    ],
+    "required_artifacts": [
+      "sr_clusters",
+      "regime_model",
+      "feature_metadata"
+    ],
+    "data_dependencies": [],
+    "next_stage": "model_training",
+    "sub_pipelines": [
+      "sr_detection",
+      "sr_clustering",
+      "hmm_clustering",
+      "hmm_regime_discovery",
+      "multi_horizon_profit_labeler",
+      "triple_barrier_labeling",
+      "feature_lookback_optimization",
+      "pid_based_feature_generation",
+      "sr_feature_integration"
+    ]
+  }
+}

@@ -481,7 +481,7 @@ class PIDBasedFeatureOrchestrator:
             data: Input feature matrix
             feature_names: List of feature names
             optimized_lookback_periods: Optimized lookback periods from feature_lookback_optimization
-            target: Target variable for PID analysis (optional)
+            target: Target variable for PID analysis (optional) - now uses multi-horizon profit probabilities
             
         Returns:
             OrchestratorResult with all generated features
@@ -527,12 +527,33 @@ class PIDBasedFeatureOrchestrator:
                 raise ValueError("Input data has no features - fast failing")
             
             # Check for NaN/Inf values with safe operations
-            nan_count = np.sum(np.isnan(X))
-            inf_count = np.sum(np.isinf(X))
-            if nan_count > 0:
-                tprint_warning(f"Input data contains {nan_count} NaN values - this may cause issues")
-            if inf_count > 0:
-                tprint_warning(f"Input data contains {inf_count} Inf values - this may cause issues")
+            try:
+                # Ensure data is numeric before checking for NaN/Inf
+                if X.dtype == 'object' or not np.issubdtype(X.dtype, np.number):
+                    tprint_warning(f"Input data contains non-numeric types: {X.dtype} - attempting conversion")
+                    # Try to convert to numeric, replacing non-numeric with NaN
+                    if isinstance(X, pd.DataFrame):
+                        X_numeric = X.apply(pd.to_numeric, errors='coerce').values
+                    else:
+                        # For numpy arrays, try to convert each column
+                        X_numeric = np.zeros_like(X, dtype=float)
+                        for i in range(X.shape[1]):
+                            try:
+                                X_numeric[:, i] = pd.to_numeric(X[:, i], errors='coerce')
+                            except:
+                                X_numeric[:, i] = np.nan
+                    X = X_numeric
+                
+                # Now safely check for NaN/Inf values
+                nan_count = np.sum(np.isnan(X))
+                inf_count = np.sum(np.isinf(X))
+                if nan_count > 0:
+                    tprint_warning(f"Input data contains {nan_count} NaN values - this may cause issues")
+                if inf_count > 0:
+                    tprint_warning(f"Input data contains {inf_count} Inf values - this may cause issues")
+                    
+            except Exception as e:
+                tprint_warning(f"Could not check for NaN/Inf values: {e} - proceeding with caution")
             
             # Validate feature names match data dimensions
             if len(feature_names) != X.shape[1]:
@@ -677,13 +698,14 @@ class PIDBasedFeatureOrchestrator:
                 result.redundancy_score = 0.0
                 result.stability_score = 0.0
             
-            # Determine final status
-            if successful_generations == len(generation_tasks):
+            # Determine final status based on successful generations
+            total_tasks = 3  # interaction, polynomial, cross_timeframe
+            if successful_generations == total_tasks:
                 result.generation_status = GenerationStatus.COMPLETED
                 tprint_success("All feature generation tasks completed successfully")
             elif successful_generations > 0:
                 result.generation_status = GenerationStatus.PARTIAL
-                tprint_warning(f"Partial success: {successful_generations}/{len(generation_tasks)} tasks completed")
+                tprint_warning(f"Partial success: {successful_generations}/{total_tasks} tasks completed")
             else:
                 result.generation_status = GenerationStatus.FAILED
                 tprint_error("All feature generation tasks failed")

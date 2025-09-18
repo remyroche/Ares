@@ -200,7 +200,7 @@ result = await orchestrator.orchestrate_feature_generation(
     market_data,
     feature_names,
     lookback_result.optimized_lookback_periods,
-    target_variable
+    target_variable  # Now uses multi-horizon profit probabilities instead of triple barrier labels
 )
 
 # Access results

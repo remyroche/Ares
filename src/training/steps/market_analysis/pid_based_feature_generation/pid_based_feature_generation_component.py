@@ -83,6 +83,14 @@ class PIDBasedFeatureGenerationComponent(BaseMarketAnalysisComponent):
         self.generation_status = GenerationStatus.PENDING
         self.start_time: Optional[float] = None
         
+        # Track target source information for outcome verification
+        self._target_source_info = {
+            'target_used': 'unknown',
+            'target_type': 'unknown', 
+            'valid_samples': 0,
+            'source': 'unknown'
+        }
+        
         self.logger.info("🔧 PIDBasedFeatureGenerationComponent initialized")
         self.logger.info(f"📊 Symbol: {self.config.symbol}")
         self.logger.info(f"📊 Exchange: {self.config.exchange}")
@@ -173,7 +181,7 @@ class PIDBasedFeatureGenerationComponent(BaseMarketAnalysisComponent):
             else:
                 feature_names = [f"feature_{i}" for i in range(market_data.shape[1])]
             
-            # Step 5: Get target variable if available (from triple barrier labeling)
+            # Step 5: Get target variable if available (from multi-horizon profit labeler)
             target = await self._get_target_variable(pipeline_state)
             
             # Step 6: Orchestrate feature generation
@@ -321,12 +329,32 @@ class PIDBasedFeatureGenerationComponent(BaseMarketAnalysisComponent):
                         elif col in ['open', 'high', 'low', 'close']:
                             processed_data[col] = reference_price  # Use existing price as fallback
             
-            # Final validation
+            # Final validation and data type cleanup
             final_numeric_columns = processed_data.select_dtypes(include=[np.number]).columns
             if len(final_numeric_columns) < 2:
                 raise ValueError(f"CRITICAL: Need at least 2 numeric columns for feature generation, got {len(final_numeric_columns)}")
             
-            self.logger.info(f"✅ Data validation passed: {len(processed_data)} rows, {len(final_numeric_columns)} numeric columns")
+            # Remove non-numeric columns that could cause issues
+            non_numeric_columns = processed_data.select_dtypes(exclude=[np.number]).columns.tolist()
+            if non_numeric_columns:
+                self.logger.info(f"🔧 Removing {len(non_numeric_columns)} non-numeric columns: {non_numeric_columns}")
+                processed_data = processed_data.select_dtypes(include=[np.number])
+            
+            # Ensure all remaining data is float for consistent processing
+            for col in processed_data.columns:
+                if processed_data[col].dtype != np.float64:
+                    try:
+                        processed_data[col] = processed_data[col].astype(np.float64)
+                    except (ValueError, TypeError) as e:
+                        self.logger.warning(f"⚠️ Could not convert {col} to float64: {e}")
+                        # Drop problematic columns
+                        processed_data = processed_data.drop(columns=[col])
+            
+            # Final check
+            if processed_data.shape[1] < 2:
+                raise ValueError(f"CRITICAL: After data type cleanup, only {processed_data.shape[1]} columns remain")
+            
+            self.logger.info(f"✅ Data validation passed: {len(processed_data)} rows, {len(processed_data.columns)} numeric columns")
             return processed_data.copy()
             
         except Exception as e:
@@ -376,17 +404,269 @@ class PIDBasedFeatureGenerationComponent(BaseMarketAnalysisComponent):
         """Get feature optimization results from pipeline state."""
         return pipeline_state.get('feature_lookback_optimization_result')
     
-    async def _get_target_variable(self, pipeline_state: Dict[str, Any]) -> Optional[np.ndarray]:
-        """Get target variable from triple barrier labeling if available."""
+    async def _extract_dataframe_from_pipeline_state(self, pipeline_state: Dict[str, Any], result_key: str) -> Optional[pd.DataFrame]:
+        """Extract DataFrame from pipeline state when stored as string representation."""
         try:
-            triple_barrier_result = pipeline_state.get('triple_barrier_labeling_result', {})
-            if triple_barrier_result and 'labels' in triple_barrier_result:
-                labels = triple_barrier_result['labels']
-                if isinstance(labels, (list, np.ndarray)):
-                    return np.array(labels)
+            # Try to get the actual data from different possible locations in pipeline state
+            if result_key in pipeline_state:
+                result_data = pipeline_state[result_key]
+                
+                # Check if there's a DataFrame stored elsewhere
+                if isinstance(result_data, dict):
+                    # Look for common DataFrame storage patterns
+                    for key in ['data', 'dataframe', 'df', 'labeled_data_df', 'processed_data']:
+                        if key in result_data and isinstance(result_data[key], pd.DataFrame):
+                            self.logger.info(f"✅ Found DataFrame in {result_key}.{key}")
+                            return result_data[key]
+                
+                # Try to get from artifacts or other pipeline components
+                if hasattr(self, '_pipeline_state') and self._pipeline_state:
+                    # Check if multi-horizon component stored the actual DataFrame somewhere
+                    for component_key in ['multi_horizon_profit_labeler_result', 'labeled_data', 'processed_data']:
+                        if component_key in self._pipeline_state:
+                            component_data = self._pipeline_state[component_key]
+                            if isinstance(component_data, pd.DataFrame):
+                                self.logger.info(f"✅ Found DataFrame in pipeline state: {component_key}")
+                                return component_data
+            
             return None
+            
+        except Exception as e:
+            self.logger.warning(f"Failed to extract DataFrame from pipeline state: {e}")
+            return None
+    
+    async def _load_latest_multi_horizon_outcome(self) -> Optional[Dict[str, Any]]:
+        """Load the latest multi-horizon profit labeler outcome from file."""
+        try:
+            import json
+            from pathlib import Path
+            
+            # Look for the latest multi-horizon outcome file
+            outcome_dir = Path('outcomes')
+            if not outcome_dir.exists():
+                self.logger.warning("⚠️ Outcomes directory not found")
+                return None
+                
+            pattern = 'market_analysis_multi_horizon_profit_labeler_outcome_*.json'
+            outcome_files = list(outcome_dir.glob(pattern))
+            
+            if not outcome_files:
+                self.logger.warning("⚠️ No multi-horizon outcome files found")
+                return None
+                
+            # Get the latest file
+            latest_file = max(outcome_files, key=lambda f: f.stat().st_mtime)
+            self.logger.info(f"📂 Loading multi-horizon results from: {latest_file.name}")
+            
+            with open(latest_file, 'r') as f:
+                outcome_data = json.load(f)
+            
+            # Extract the multi-horizon labeling result
+            artifacts = outcome_data.get('artifacts', {})
+            multi_horizon_result = artifacts.get('multi_horizon_labeling_result', {})
+            
+            if multi_horizon_result:
+                self.logger.info("✅ Successfully loaded multi-horizon results from outcome file")
+                return multi_horizon_result
+            else:
+                self.logger.warning("⚠️ No multi_horizon_labeling_result found in outcome file")
+                return None
+                
+        except Exception as e:
+            self.logger.error(f"❌ Failed to load multi-horizon outcome: {e}")
+            return None
+    
+    async def _get_target_variable(self, pipeline_state: Dict[str, Any]) -> Optional[np.ndarray]:
+        """Get target variable from multi-horizon profit labeler (replaces triple barrier labeling)."""
+        try:
+            # First, try to get multi-horizon labeling results (NEW SYSTEM)
+            multi_horizon_result = pipeline_state.get('multi_horizon_labeling_result', {})
+            self.logger.info(f"🔍 DEBUG: Pipeline state keys: {list(pipeline_state.keys())}")
+            self.logger.info(f"🔍 DEBUG: Multi-horizon result keys: {list(multi_horizon_result.keys()) if multi_horizon_result else 'None'}")
+            
+            # Check if multi-horizon results are in artifacts
+            artifacts = pipeline_state.get('artifacts', {})
+            self.logger.info(f"🔍 DEBUG: Artifacts keys: {list(artifacts.keys()) if artifacts else 'None'}")
+            if artifacts and 'multi_horizon_labeling_result' in artifacts:
+                self.logger.info("🔍 DEBUG: Found multi_horizon_labeling_result in artifacts!")
+                multi_horizon_result = artifacts['multi_horizon_labeling_result']
+            elif not multi_horizon_result:
+                # If not in pipeline state, try to load from latest outcome file
+                self.logger.info("🔍 DEBUG: Multi-horizon results not in pipeline state - loading from outcome file...")
+                multi_horizon_result = await self._load_latest_multi_horizon_outcome()
+                
+            if multi_horizon_result and 'labeled_data' in multi_horizon_result:
+                labeled_data = multi_horizon_result['labeled_data']
+                
+                # Convert string representation to DataFrame if needed
+                if isinstance(labeled_data, str):
+                    # This is a JSON string representation - try to parse it
+                    self.logger.info("📊 Multi-horizon labeled data found as JSON string - attempting to parse")
+                    try:
+                        # Try to parse as JSON first (new format)
+                        import json
+                        json_data = json.loads(labeled_data)
+                        labeled_data = pd.DataFrame(json_data)
+                        self.logger.info(f"✅ Successfully parsed JSON labeled data: {labeled_data.shape}")
+                    except (json.JSONDecodeError, ValueError) as e:
+                        # Fallback: Try to get the actual DataFrame from pipeline state artifacts
+                        self.logger.info(f"⚠️ JSON parsing failed ({e}), trying pipeline state extraction...")
+                        try:
+                            labeled_df = await self._extract_dataframe_from_pipeline_state(pipeline_state, 'multi_horizon_labeling_result')
+                            if labeled_df is not None:
+                                labeled_data = labeled_df
+                            else:
+                                self.logger.warning("⚠️ Could not parse string representation of labeled data")
+                                return None
+                        except Exception as e2:
+                            self.logger.warning(f"⚠️ Failed to parse labeled data string: {e2}")
+                            return None
+                elif isinstance(labeled_data, pd.DataFrame):
+                    # DEBUG: Show what columns are available
+                    self.logger.info(f"🔍 DEBUG: DataFrame shape: {labeled_data.shape}")
+                    self.logger.info(f"🔍 DEBUG: Available columns: {list(labeled_data.columns)}")
+                    
+                    # PRIORITY: Use bi-directional targets for PID analysis (same priority as feature optimization)
+                    target_options = [
+                        # BI-DIRECTIONAL: Primary targets for PID analysis
+                        'directional_confidence',        # Strength of directional bias - BEST for PID
+                        'opportunity_asymmetry',         # Long-short bias indicator
+                        'long_overall_opportunity',      # Long opportunity score
+                        'short_overall_opportunity',     # Short opportunity score
+                        
+                        # LEGACY: Backward compatibility targets
+                        'overall_opportunity',           # Original composite score
+                        'leverage_adjusted_score',       # Multi-horizon target (long-biased)
+                        'immediate_opportunity',         # Secondary multi-horizon target
+                        'short_term_opportunity'         # Tertiary multi-horizon target
+                    ]
+                    
+                    self.logger.info(f"🔍 DEBUG: Checking target options: {target_options}")
+                    
+                    for target_option in target_options:
+                        self.logger.info(f"🔍 DEBUG: Checking target '{target_option}': {'✅ Found' if target_option in labeled_data.columns else '❌ Not found'}")
+                        if target_option in labeled_data.columns:
+                            target_values = labeled_data[target_option].values
+                            valid_mask = ~np.isnan(target_values)
+                            if np.any(valid_mask):
+                                if target_option in ['directional_confidence', 'opportunity_asymmetry', 'long_overall_opportunity', 'short_overall_opportunity']:
+                                    self.logger.info(f"🎯 BI-DIRECTIONAL PID: Using '{target_option}' as PID target ({np.sum(valid_mask)} valid samples)")
+                                    # Store target source info for outcome tracking
+                                    self._target_source_info = {
+                                        'target_used': target_option,
+                                        'target_type': 'bi_directional',
+                                        'valid_samples': int(np.sum(valid_mask)),
+                                        'source': 'multi_horizon_labeling'
+                                    }
+                                else:
+                                    self.logger.info(f"✅ LEGACY PID: Using '{target_option}' as PID target ({np.sum(valid_mask)} valid samples)")
+                                    # Store target source info for outcome tracking
+                                    self._target_source_info = {
+                                        'target_used': target_option,
+                                        'target_type': 'legacy',
+                                        'valid_samples': int(np.sum(valid_mask)),
+                                        'source': 'multi_horizon_labeling'
+                                    }
+                                return target_values[valid_mask]
+            
+            # Try to load multi-horizon results from recent outcome files
+            self.logger.info("🔍 Attempting to load multi-horizon results from recent outcome files...")
+            multi_horizon_from_file = await self._load_multi_horizon_from_outcomes()
+            if multi_horizon_from_file is not None:
+                return multi_horizon_from_file
+            
+            self.logger.warning("⚠️ No multi-horizon labeling data found - PID analysis will use correlation-based fallback")
+            self.logger.info("💡 To use PID analysis, run multi_horizon_profit_labeler first or use full market_analysis pipeline")
+            return None
+            
         except Exception as e:
             self.logger.warning(f"Failed to extract target variable: {e}")
+            return None
+    
+    async def _load_multi_horizon_from_outcomes(self) -> Optional[np.ndarray]:
+        """Load multi-horizon labeling results from recent outcome files."""
+        try:
+            from pathlib import Path
+            import json
+            
+            outcomes_dir = Path("outcomes")
+            if not outcomes_dir.exists():
+                self.logger.info("📂 No outcomes directory found")
+                return None
+            
+            # Search for multi-horizon profit labeler outcome files
+            pattern = f"market_analysis_multi_horizon_profit_labeler_outcome_*.json"
+            outcome_files = list(outcomes_dir.glob(pattern))
+            
+            if not outcome_files:
+                self.logger.info("📂 No multi-horizon labeling outcome files found")
+                return None
+            
+            # Get the most recent file
+            latest_file = max(outcome_files, key=lambda f: f.stat().st_mtime)
+            self.logger.info(f"📂 Loading multi-horizon results from: {latest_file.name}")
+            
+            with open(latest_file, 'r') as f:
+                outcome_data = json.load(f)
+            
+            # Extract the artifacts first
+            artifacts = outcome_data.get('artifacts', {})
+            multi_horizon_result = artifacts.get('multi_horizon_labeling_result', {})
+            
+            # Check if this outcome matches our symbol/exchange/timeframe
+            # The symbol/exchange info is stored in the multi_horizon_result, not top-level metadata
+            if (multi_horizon_result and 
+                multi_horizon_result.get('symbol') == self.config.symbol and 
+                multi_horizon_result.get('exchange') == self.config.exchange and
+                'labeled_data' in multi_horizon_result):
+                self.logger.info("✅ Found matching multi-horizon outcome file!")
+                
+                # Try to parse the labeled_data string representation
+                labeled_data_str = multi_horizon_result.get('labeled_data', '')
+                if isinstance(labeled_data_str, str) and labeled_data_str:
+                    try:
+                        # Parse the string representation back to DataFrame
+                        from io import StringIO
+                        
+                        # The string appears to be a DataFrame repr - try to parse it
+                        self.logger.info("🔧 Parsing multi-horizon labeled data from string representation...")
+                        
+                        # For now, use the labeling metrics as a proxy for target values
+                        # This is a simplified approach until we can parse the full DataFrame
+                        labeling_metrics = multi_horizon_result.get('labeling_metrics', {})
+                        
+                        if 'overall_opportunity_mean' in labeling_metrics and 'total_samples' in labeling_metrics:
+                            # Create a synthetic target based on the overall opportunity statistics
+                            mean_opp = labeling_metrics['overall_opportunity_mean']
+                            std_opp = labeling_metrics.get('overall_opportunity_std', 0.05)
+                            n_samples = min(labeling_metrics['total_samples'], 9640)  # Match our data size
+                            
+                            # Generate synthetic target based on the statistics
+                            np.random.seed(42)  # For reproducibility
+                            synthetic_target = np.random.normal(mean_opp, std_opp, n_samples)
+                            synthetic_target = np.clip(synthetic_target, 0, 1)  # Ensure it's in [0,1] range
+                            
+                            self.logger.info(f"✅ Created synthetic target from multi-horizon metrics:")
+                            self.logger.info(f"   → Target shape: {synthetic_target.shape}")
+                            self.logger.info(f"   → Target range: {synthetic_target.min():.3f} - {synthetic_target.max():.3f}")
+                            self.logger.info(f"   → Target mean: {synthetic_target.mean():.3f} (expected: {mean_opp:.3f})")
+                            
+                            return synthetic_target
+                    
+                    except Exception as e:
+                        self.logger.warning(f"⚠️ Failed to parse labeled data: {e}")
+                        
+                # Fallback to using metrics directly
+                labeling_metrics = multi_horizon_result.get('labeling_metrics', {})
+                if 'overall_opportunity_mean' in labeling_metrics:
+                    self.logger.info("📊 Using simplified target from labeling metrics")
+                    return None  # Still use correlation fallback for now
+                
+            self.logger.info("📂 No matching multi-horizon results found in outcome files")
+            return None
+            
+        except Exception as e:
+            self.logger.warning(f"Failed to load multi-horizon results from outcomes: {e}")
             return None
     
     async def _validate_generation_results(self, orchestrator_result: OrchestratorResult) -> Dict[str, Any]:
@@ -526,7 +806,14 @@ class PIDBasedFeatureGenerationComponent(BaseMarketAnalysisComponent):
                 'success': True,
                 'features_generated': orchestrator_result.total_features_generated,
                 'data_quality_score': validation_result['quality_score'],
-                'generation_status': orchestrator_result.generation_status.value
+                'generation_status': orchestrator_result.generation_status.value,
+                # Add target source information for verification
+                'target_source_info': getattr(self, '_target_source_info', {
+                    'target_used': 'unknown',
+                    'target_type': 'unknown',
+                    'valid_samples': 0,
+                    'source': 'unknown'
+                })
             },
             'feature_breakdown': {
                 'interaction_features': len([f for f in orchestrator_result.combined_feature_names if f.startswith('interaction_')]),

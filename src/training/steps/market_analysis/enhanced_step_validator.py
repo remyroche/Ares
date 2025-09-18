@@ -363,7 +363,18 @@ class EnhancedStepValidator:
                         symbol = parts[1]
                         timeframe = parts[2]
                         klines_manager = get_klines_manager()
-                        df = klines_manager.read_data(symbol, timeframe, data_type="raw")
+                        
+                        # Get date filtering from config if available
+                        start_date = None
+                        end_date = None
+                        if hasattr(self.config, 'start_date') and self.config.start_date:
+                            from datetime import datetime
+                            start_date = datetime.strptime(self.config.start_date, '%Y-%m-%d')
+                        if hasattr(self.config, 'end_date') and self.config.end_date:
+                            from datetime import datetime
+                            end_date = datetime.strptime(self.config.end_date, '%Y-%m-%d')
+                        
+                        df = klines_manager.read_data(symbol, timeframe, start_date=start_date, end_date=end_date, data_type="raw")
                     except Exception as e:
                         # Fallback to direct parquet reading for processed data
                         from src.training.steps.standardized_parquet_handler import standardized_parquet_handler

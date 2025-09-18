@@ -289,6 +289,11 @@ def safe_fillna(df: pd.DataFrame, value: Any = None, method: str = None) -> pd.D
     """Safely fill NaN values in DataFrame."""
     try:
         if method:
+            # Handle deprecated fillna methods
+            if method == 'forward':
+                method = 'ffill'
+            elif method == 'backward':
+                method = 'bfill'
             return df.fillna(method=method)
         return df.fillna(value)
     except Exception as e:

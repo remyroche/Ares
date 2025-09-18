@@ -83,15 +83,12 @@ class HMMCompatibleFeatureGenerators:
     
     def _initialize_legacy_generators(self):
         """Initialize legacy feature generators for fallback."""
-        try:
-            from ..utils.feature_generators import FeatureGenerators
-            self.legacy_generators = FeatureGenerators()
-            self.legacy_available = True
-            self.logger.info("✅ Legacy feature generators available for fallback")
-        except ImportError:
-            self.legacy_generators = None
-            self.legacy_available = False
-            self.logger.warning("⚠️ Legacy feature generators not available")
+        # Skip legacy initialization to avoid circular imports
+        # The circular import chain is:
+        # hmm_compatibility -> utils.feature_generators -> feature_generators_compatibility -> feature_generation.__init__ -> hmm_compatibility
+        self.legacy_generators = None
+        self.legacy_available = False
+        self.logger.info("ℹ️ Legacy feature generators disabled to avoid circular imports")
     
     def generate_features_for_hmm(self, data):
         """
@@ -128,14 +125,9 @@ class HMMCompatibleFeatureGenerators:
             except Exception as e:
                 self.logger.warning(f"⚠️ New feature system failed: {e}, falling back to legacy")
         
-        # Fallback to legacy system
-        if self.legacy_available and self.legacy_generators is not None:
-            try:
-                return self.legacy_generators.generate_features_for_hmm(data)
-            except Exception as e:
-                self.logger.error(f"❌ Legacy feature generation also failed: {e}")
-        
-        # Final fallback - generate basic features
+        # Since legacy generators are disabled to avoid circular imports,
+        # go directly to basic feature generation
+        self.logger.info("🔄 Falling back to basic HMM feature generation")
         return self._generate_basic_hmm_features(data)
     
     def _generate_features_with_new_system(self, data):

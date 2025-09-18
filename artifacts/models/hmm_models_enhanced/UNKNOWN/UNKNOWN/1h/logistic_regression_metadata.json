@@ -1,0 +1,9 @@
+{
+  "model_name": "logistic_regression",
+  "model_type": "hmm_models_enhanced",
+  "symbol": "UNKNOWN",
+  "exchange": "UNKNOWN",
+  "timeframe": "1h",
+  "timestamp": "2025-09-17T23:18:55.428508",
+  "model_class": "LogisticRegression"
+}

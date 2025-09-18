@@ -40,10 +40,10 @@ except ImportError:
 
 # Try to import utilities with fallback
 try:
-    from ...utils.math_validation import safe_divide, safe_log
-    from ...utils.common_operations import create_fallback_logger
-    from ...utils.hardware.m1_gpu_utils import M1GPUManager
-    from ...utils.parallel_processing_optimizer import ParallelProcessor
+    from src.utils.math_validation import safe_divide, safe_log
+    from src.utils.common_operations import create_fallback_logger
+    from src.utils.hardware.m1_gpu_utils import M1GPUManager
+    from src.utils.parallel_processing_optimizer import ParallelProcessor
 except ImportError:
     logger.warning("Some utility imports failed - using fallbacks")
     def safe_divide(a, b, default=0):
@@ -160,11 +160,15 @@ class FeatureGenerationOptimizer:
         
         # Initialize components
         self.logger.debug("🔧 Initializing GPU manager...")
-        self.gpu_manager = M1GPUManager() if self.config.parallel_processing else None
-        if self.gpu_manager:
-            self.logger.debug("✅ GPU manager initialized")
-        else:
-            self.logger.debug("ℹ️ GPU manager not initialized (parallel processing disabled)")
+        try:
+            self.gpu_manager = M1GPUManager() if self.config.parallel_processing else None
+            if self.gpu_manager:
+                self.logger.debug("✅ GPU manager initialized")
+            else:
+                self.logger.debug("ℹ️ GPU manager not initialized (parallel processing disabled)")
+        except Exception as e:
+            self.logger.warning(f"⚠️ Failed to initialize GPU manager: {e}")
+            self.gpu_manager = None
         
         init_time = time.time() - start_time
         self.logger.info(f"✅ FeatureGenerationOptimizer initialized in {init_time:.3f}s")
@@ -961,17 +965,17 @@ class OptimizationConfigManager:
         self.config_dir = Path(config_dir)
         self.config_dir.mkdir(parents=True, exist_ok=True)
         
-        self.default_config = OptimizationSystemConfig()
+        self.default_config = FeatureOptimizationConfig()
         self.current_config = self.default_config
         
         self.logger.info(f"Initialized OptimizationConfigManager with config directory: {self.config_dir}")
     
-    def load_config(self, config_name: str = "default") -> Optional[OptimizationSystemConfig]:
+    def load_config(self, config_name: str = "default") -> Optional[FeatureOptimizationConfig]:
         """Load a configuration by name."""
         config_file = self.config_dir / f"{config_name}.json"
         
         if config_file.exists():
-            config = OptimizationSystemConfig.load_from_file(str(config_file))
+            config = FeatureOptimizationConfig.load_from_file(str(config_file))
             if config:
                 self.current_config = config
                 self.logger.info(f"Loaded configuration: {config_name}")
@@ -981,7 +985,7 @@ class OptimizationConfigManager:
         
         return None
     
-    def save_config(self, config: OptimizationSystemConfig, config_name: str = "default") -> bool:
+    def save_config(self, config: FeatureOptimizationConfig, config_name: str = "default") -> bool:
         """Save a configuration with a given name."""
         config_file = self.config_dir / f"{config_name}.json"
         
@@ -992,7 +996,7 @@ class OptimizationConfigManager:
         
         return False
     
-    def get_current_config(self) -> OptimizationSystemConfig:
+    def get_current_config(self) -> FeatureOptimizationConfig:
         """Get the current configuration."""
         return self.current_config
     
@@ -1023,10 +1027,10 @@ class OptimizationConfigManager:
         config_files = list(self.config_dir.glob("*.json"))
         return [f.stem for f in config_files]
     
-    def create_environment_config(self, environment: str) -> OptimizationSystemConfig:
+    def create_environment_config(self, environment: str) -> FeatureOptimizationConfig:
         """Create environment-specific configuration."""
         if environment == "development":
-            config = OptimizationSystemConfig(
+            config = FeatureOptimizationConfig(
                 validation_level=ValidationLevel.BASIC,
                 parallel_processing=False,
                 max_workers=2,
@@ -1034,7 +1038,7 @@ class OptimizationConfigManager:
                 save_results=False
             )
         elif environment == "testing":
-            config = OptimizationSystemConfig(
+            config = FeatureOptimizationConfig(
                 validation_level=ValidationLevel.STANDARD,
                 parallel_processing=True,
                 max_workers=2,
@@ -1045,7 +1049,7 @@ class OptimizationConfigManager:
                 save_results=True
             )
         elif environment == "production":
-            config = OptimizationSystemConfig(
+            config = FeatureOptimizationConfig(
                 validation_level=ValidationLevel.COMPREHENSIVE,
                 parallel_processing=True,
                 max_workers=8,
@@ -1061,15 +1065,15 @@ class OptimizationConfigManager:
         return config
 
 # Convenience functions
-def get_default_config() -> OptimizationSystemConfig:
+def get_default_config() -> FeatureOptimizationConfig:
     """Get the default optimization configuration."""
-    return OptimizationSystemConfig()
+    return FeatureOptimizationConfig()
 
-def load_config_from_file(filepath: str) -> Optional[OptimizationSystemConfig]:
+def load_config_from_file(filepath: str) -> Optional[FeatureOptimizationConfig]:
     """Load configuration from file."""
-    return OptimizationSystemConfig.load_from_file(filepath)
+    return FeatureOptimizationConfig.load_from_file(filepath)
 
-def create_config_for_environment(environment: str) -> OptimizationSystemConfig:
+def create_config_for_environment(environment: str) -> FeatureOptimizationConfig:
     """Create configuration for specific environment."""
     manager = OptimizationConfigManager()
     return manager.create_environment_config(environment)

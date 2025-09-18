@@ -493,10 +493,10 @@ class TradingMLIntegration:
                     random_state=self.config.random_state
                 )
             elif self.config.classification_model == 'logistic_regression':
-                self.logger.info("Using LogisticRegression with max_iter=1000")
+                self.logger.info("Using LogisticRegression with max_iter=2000")
                 model = LogisticRegression(
                     random_state=self.config.random_state,
-                    max_iter=1000
+                    max_iter=2000
                 )
             elif self.config.classification_model == 'gradient_boosting':
                 self.logger.info("Using GradientBoostingClassifier with 100 estimators, learning_rate=0.1")

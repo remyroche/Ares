@@ -29,7 +29,6 @@ try:
     import optuna
     from optuna.samplers import TPESampler
     from optuna.pruners import MedianPruner, SuccessiveHalvingPruner
-    from optuna.integration import SklearnIntegration
     OPTUNA_AVAILABLE = True
 except ImportError:
     OPTUNA_AVAILABLE = False

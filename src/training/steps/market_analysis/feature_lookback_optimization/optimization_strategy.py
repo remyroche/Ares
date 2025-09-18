@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from dataclasses import dataclass
 from enum import Enum
 import pandas as pd
+import numpy as np
 
 from .constants import OPTIMIZATION_CONSTANTS
 

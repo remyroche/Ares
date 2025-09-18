@@ -341,6 +341,112 @@ class M1MemoryOptimizer:
     def optimize_dataframe(self, df):
         """Alias for optimize_dataframe_memory for compatibility."""
         return self.optimize_dataframe_memory(df)
+    
+    def optimize_memory_usage(self, aggressive: bool = False) -> Dict[str, Any]:
+        """
+        Optimize memory usage for M1 architecture.
+        
+        Args:
+            aggressive: Whether to use aggressive optimization
+            
+        Returns:
+            Dictionary with optimization results
+        """
+        start_time = time.time()
+        initial_stats = self.get_memory_stats()
+        initial_memory = initial_stats.get('current_mb', 0)
+        
+        try:
+            # Force garbage collection
+            collected = gc.collect()
+            
+            # Clear unnecessary caches
+            if hasattr(sys, 'intern'):
+                # Clear string interning cache if possible
+                pass
+            
+            # Optimize memory pressure monitoring
+            if self.monitoring_active and aggressive:
+                self.stop_monitoring()
+                time.sleep(0.1)  # Brief pause
+                self.start_monitoring()
+            
+            # Get final stats
+            final_stats = self.get_memory_stats()
+            final_memory = final_stats.get('current_mb', 0)
+            memory_saved = initial_memory - final_memory
+            
+            optimization_time = time.time() - start_time
+            
+            result = {
+                'success': True,
+                'memory_saved_mb': memory_saved,
+                'initial_memory_mb': initial_memory,
+                'final_memory_mb': final_memory,
+                'optimization_time_s': optimization_time,
+                'gc_collected': collected,
+                'aggressive_mode': aggressive
+            }
+            
+            if memory_saved > 0:
+                self.logger.info(f"🧠 Memory optimized: {memory_saved:.1f} MB saved in {optimization_time:.3f}s")
+            else:
+                self.logger.debug(f"🧠 Memory optimization completed in {optimization_time:.3f}s (no reduction)")
+            
+            return result
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Memory optimization failed: {e}")
+            return {
+                'success': False,
+                'error': str(e),
+                'optimization_time_s': time.time() - start_time
+            }
+
+    @property
+    def optimization_context(self):
+        """Get optimization context for compatibility."""
+        return {
+            'memory_limit_gb': self.memory_limit_gb,
+            'monitoring_active': self.monitoring_active,
+            'memory_stats': self.get_memory_stats(),
+            'protected_objects': len(self.protected_objects)
+        }
+
+    def get_current_memory_usage_mb(self) -> float:
+        """Get current memory usage in MB."""
+        try:
+            import psutil
+            process = psutil.Process()
+            memory_info = process.memory_info()
+            return memory_info.rss / (1024 * 1024)  # Convert to MB
+        except Exception:
+            return 0.0
+
+    def memory_checkpoint(self, checkpoint_name: str):
+        """Create a memory checkpoint context manager."""
+        from contextlib import contextmanager
+        
+        @contextmanager
+        def checkpoint_context():
+            start_memory = self.get_current_memory_usage_mb()
+            start_time = time.time()
+            
+            try:
+                self.logger.debug(f"🧠 Memory checkpoint '{checkpoint_name}' started: {start_memory:.1f} MB")
+                yield
+            finally:
+                end_memory = self.get_current_memory_usage_mb()
+                end_time = time.time()
+                memory_diff = end_memory - start_memory
+                time_diff = end_time - start_time
+                
+                if memory_diff > 10:  # Log if memory increased by more than 10MB
+                    self.logger.info(f"🧠 Memory checkpoint '{checkpoint_name}' completed: +{memory_diff:.1f} MB in {time_diff:.3f}s")
+                else:
+                    self.logger.debug(f"🧠 Memory checkpoint '{checkpoint_name}' completed: {memory_diff:+.1f} MB in {time_diff:.3f}s")
+        
+        return checkpoint_context()
 
 
 # Global instance - lazy initialization to avoid circular import issues

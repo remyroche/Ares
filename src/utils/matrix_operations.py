@@ -160,6 +160,87 @@ class UnifiedMatrixOperations:
             cov += regularization * np.eye(cov.shape[0])
             return cov
     
+    def calculate_pairwise_similarities(self, feature_vectors: np.ndarray, method: str = 'cosine_with_cv_filtering') -> np.ndarray:
+        """
+        Calculate pairwise similarities between feature vectors.
+        
+        Args:
+            feature_vectors: Matrix of feature vectors (n_samples, n_features)
+            method: Similarity calculation method
+            
+        Returns:
+            Similarity matrix (n_samples, n_samples)
+        """
+        if self._ops and hasattr(self._ops, 'calculate_pairwise_similarities'):
+            return self._ops.calculate_pairwise_similarities(feature_vectors, method)
+        else:
+            # Fallback implementation
+            logger.info(f"🔄 Using fallback pairwise similarity calculation with method: {method}")
+            
+            if method == 'cosine_with_cv_filtering' or method == 'cosine':
+                # Normalize feature vectors for cosine similarity
+                norms = np.linalg.norm(feature_vectors, axis=1, keepdims=True)
+                norms[norms == 0] = 1  # Avoid division by zero
+                normalized_vectors = feature_vectors / norms
+                
+                # Calculate cosine similarity matrix
+                similarity_matrix = np.dot(normalized_vectors, normalized_vectors.T)
+                
+                # Ensure diagonal is 1.0 and values are in [0, 1]
+                np.fill_diagonal(similarity_matrix, 1.0)
+                similarity_matrix = np.clip(similarity_matrix, 0.0, 1.0)
+                
+                return similarity_matrix
+            
+            elif method == 'euclidean':
+                # Calculate Euclidean distance and convert to similarity
+                from scipy.spatial.distance import pdist, squareform
+                distances = squareform(pdist(feature_vectors, metric='euclidean'))
+                # Convert distance to similarity (closer = more similar)
+                max_dist = np.max(distances)
+                if max_dist > 0:
+                    similarity_matrix = 1.0 - (distances / max_dist)
+                else:
+                    similarity_matrix = np.ones_like(distances)
+                return similarity_matrix
+            
+            else:
+                logger.warning(f"Unknown similarity method: {method}, using cosine")
+                return self.calculate_pairwise_similarities(feature_vectors, 'cosine')
+    
+    def apply_cv_filtering(self, similarity_matrix: np.ndarray, cv_values: np.ndarray, max_cv_difference: float = 0.5) -> np.ndarray:
+        """
+        Apply CV (coefficient of variation) filtering to similarity matrix.
+        
+        Args:
+            similarity_matrix: Input similarity matrix
+            cv_values: CV values for each sample
+            max_cv_difference: Maximum allowed CV difference for similarity
+            
+        Returns:
+            Filtered similarity matrix
+        """
+        if self._ops and hasattr(self._ops, 'apply_cv_filtering'):
+            return self._ops.apply_cv_filtering(similarity_matrix, cv_values, max_cv_difference)
+        else:
+            # Fallback implementation
+            logger.info(f"🔄 Using fallback CV filtering with max_cv_difference: {max_cv_difference}")
+            
+            filtered_matrix = similarity_matrix.copy()
+            n_samples = len(cv_values)
+            
+            for i in range(n_samples):
+                for j in range(n_samples):
+                    if i != j:  # Don't modify diagonal
+                        cv_diff = abs(cv_values[i] - cv_values[j])
+                        if cv_diff > max_cv_difference:
+                            # Reduce similarity for regimes with very different CVs
+                            reduction_factor = min(cv_diff / max_cv_difference, 5.0)  # Cap at 5x reduction
+                            filtered_matrix[i, j] *= (1.0 / reduction_factor)
+                            filtered_matrix[i, j] = max(filtered_matrix[i, j], 0.01)  # Keep minimum similarity
+            
+            return filtered_matrix
+    
     def is_available(self) -> bool:
         """Check if unified matrix operations are available."""
         return UNIFIED_MATRIX_OPS_AVAILABLE and self._ops is not None

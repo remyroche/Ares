@@ -20,6 +20,7 @@ import numpy as np
 import pandas as pd
 from typing import Any, Dict, List, Optional, Tuple, Union, Set
 import logging
+import os
 from datetime import datetime
 import time
 import warnings
@@ -88,7 +89,7 @@ except ImportError as e:
 # Import ML common utilities
 try:
     from src.utils.ml_common import tprint
-    from src.utils.ml_common.validation.lookahead_bias_detector import (
+    from src.utils.lookahead_bias_detector import (
         get_global_detector, validate_no_future_data, LookaheadBiasError
     )
     from src.utils.ml_common.validation.thresholding import AdaptiveThresholding
@@ -126,10 +127,15 @@ except ImportError:
 @dataclass
 class PIDConfig:
     """Configuration for partial information decomposition."""
-    # Thresholds for information measures
-    synergy_threshold: float = 0.1
-    redundancy_threshold: float = 0.15
-    unique_info_threshold: float = 0.05
+    # Dynamic threshold configuration (percentile-based selection)
+    use_dynamic_thresholds: bool = True
+    top_percentile: float = 0.25  # Select top 25% of feature pairs
+    min_pairs_threshold: int = 5   # Minimum number of pairs to select regardless of percentile
+    
+    # Fallback static thresholds (used when dynamic thresholds disabled)
+    synergy_threshold: float = 0.0001  # Reduced from 0.1 for continuous probability targets
+    redundancy_threshold: float = 0.005  # Reduced from 0.15 for continuous probability targets  
+    unique_info_threshold: float = 0.0001  # Reduced from 0.05 for continuous probability targets
     
     # Cross-timeframe analysis
     cross_timeframe_threshold: float = 0.15
@@ -203,10 +209,10 @@ class PIDConfig:
                 
             except MathValidationError as e:
                 logger.warning(f"⚠️ Configuration validation warning: {e}")
-                # Use default values for invalid parameters
-                self.synergy_threshold = 0.1
-                self.redundancy_threshold = 0.15
-                self.unique_info_threshold = 0.05
+                # Use default values for invalid parameters (adjusted for continuous targets)
+                self.synergy_threshold = 0.0001
+                self.redundancy_threshold = 0.005
+                self.unique_info_threshold = 0.0001
 
 
 @dataclass
@@ -225,6 +231,7 @@ class PIDResult:
     # Analysis metadata
     feature_pairs_analyzed: int = 0
     significant_interactions: int = 0
+    significant_pairs: List[Tuple[str, str]] = field(default_factory=list)  # Store actual significant pairs
     execution_time: float = 0.0
     convergence_info: Dict[str, Any] = field(default_factory=dict)
 
@@ -247,8 +254,10 @@ class PartialInformationDecompositor:
         self._initialize_ml_utilities()
         
         _LOGGER.info("🔍 PartialInformationDecompositor initialized")
-        _LOGGER.info(f"⚙️ Synergy threshold: {self.config.synergy_threshold}")
-        _LOGGER.info(f"⚙️ Redundancy threshold: {self.config.redundancy_threshold}")
+        if self.config.use_dynamic_thresholds:
+            _LOGGER.info(f"⚙️ Dynamic thresholds: top {self.config.top_percentile*100:.1f}% of pairs (min: {self.config.min_pairs_threshold})")
+        else:
+            _LOGGER.info(f"⚙️ Static thresholds - Synergy: {self.config.synergy_threshold}, Redundancy: {self.config.redundancy_threshold}")
         _LOGGER.info(f"⚙️ Max polynomial degree: {self.config.max_polynomial_degree}")
         _LOGGER.info(f"⚙️ Max interaction features: {self.config.max_interaction_features}")
     
@@ -323,14 +332,27 @@ class PartialInformationDecompositor:
         result = PIDResult()
         
         try:
-            # Preprocess data
-            X_processed, y_processed = self._preprocess_data(X, y)
+            # Preprocess data with enhanced error handling
+            _LOGGER.info("🔧 Preprocessing data for PID analysis...")
+            try:
+                X_processed, y_processed = self._preprocess_data(X, y)
+                _LOGGER.info(f"✅ Data preprocessing completed: X{X_processed.shape}, y{y_processed.shape}")
+            except Exception as preprocess_error:
+                _LOGGER.error(f"❌ Data preprocessing failed: {preprocess_error}")
+                raise
             
-            # Calculate pairwise information measures
+            # Calculate pairwise information measures with enhanced error handling
             _LOGGER.info("📊 Calculating pairwise information measures...")
-            redundancy, synergy, unique_info = self._calculate_pairwise_pid(
-                X_processed, y_processed, feature_names
-            )
+            try:
+                redundancy, synergy, unique_info = self._calculate_pairwise_pid(
+                    X_processed, y_processed, feature_names
+                )
+                _LOGGER.info(f"✅ PID calculations completed: {len(redundancy)} pairs analyzed")
+            except Exception as pid_error:
+                _LOGGER.error(f"❌ PID calculations failed: {pid_error}")
+                # Return empty results instead of crashing
+                redundancy, synergy, unique_info = {}, {}, {}
+                _LOGGER.warning("⚠️ Using empty PID results due to calculation failure")
             
             result.redundancy = redundancy
             result.synergy = synergy
@@ -366,6 +388,7 @@ class PartialInformationDecompositor:
             result.cross_timeframe_features = cross_timeframe_features
             result.feature_pairs_analyzed = len(list(combinations(feature_names, 2)))
             result.significant_interactions = len(significant_pairs)
+            result.significant_pairs = significant_pairs  # Store the actual pairs
             
             execution_time = time.time() - start_time
             result.execution_time = execution_time
@@ -385,21 +408,32 @@ class PartialInformationDecompositor:
 
     def _preprocess_data(self, X: np.ndarray, y: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         """Preprocess data for PID analysis with hardware optimizations."""
-        # Memory optimization check
-        if self.memory_optimizer:
-            memory_status = self.memory_optimizer.check_memory_status()
-            if memory_status.get('pressure', False):
-                _LOGGER.info("🧠 Memory pressure detected, using optimized preprocessing")
+        try:
+            # Debug input data
+            _LOGGER.debug(f"🔍 Input data debug: X.shape={X.shape}, X.dtype={X.dtype}")
+            _LOGGER.debug(f"🔍 Input target debug: y.shape={y.shape}, y.dtype={y.dtype}")
+            
+            # Memory optimization check
+            if self.memory_optimizer:
+                try:
+                    memory_status = self.memory_optimizer.check_memory_status()
+                    if memory_status.get('pressure', False):
+                        _LOGGER.info("🧠 Memory pressure detected, using optimized preprocessing")
+                except Exception as mem_error:
+                    _LOGGER.warning(f"⚠️ Memory optimization check failed: {mem_error}")
+        except Exception as debug_error:
+            _LOGGER.error(f"❌ Initial debugging failed: {debug_error}")
+            raise
         
         # Handle infinity and NaN values with math validation
         if MATH_VALIDATION_AVAILABLE:
             X_clean = np.nan_to_num(X, nan=0.0, posinf=1e10, neginf=-1e10)
             y_clean = np.nan_to_num(y, nan=0.0, posinf=1e10, neginf=-1e10)
             
-            # Validate finite values
-            if not validate_finite(X_clean):
+            # Validate finite values (check for any non-finite values)
+            if not np.all(np.isfinite(X_clean)):
                 _LOGGER.warning("⚠️ Non-finite values detected in X after cleaning")
-            if not validate_finite(y_clean):
+            if not np.all(np.isfinite(y_clean)):
                 _LOGGER.warning("⚠️ Non-finite values detected in y after cleaning")
         else:
             X_clean = np.nan_to_num(X, nan=0.0, posinf=1e10, neginf=-1e10)
@@ -413,22 +447,21 @@ class PartialInformationDecompositor:
             except LookaheadBiasError as e:
                 _LOGGER.warning(f"⚠️ Lookahead bias detected: {e}")
         
-        # Standardize features with hardware optimization
-        if SKLEARN_AVAILABLE:
-            scaler = StandardScaler()
-            if self.matrix_ops:
-                # Use optimized matrix operations if available
-                X_scaled = self.matrix_ops.standardize_matrix(X_clean, scaler)
-            else:
+        # Standardize features with simple numpy operations (bypass problematic safe math)
+        try:
+            if SKLEARN_AVAILABLE:
+                scaler = StandardScaler()
                 X_scaled = scaler.fit_transform(X_clean)
-        else:
-            # Manual standardization with safe operations
-            if MATH_VALIDATION_AVAILABLE:
-                X_mean = safe_mean(X_clean, axis=0)
-                X_std = safe_std(X_clean, axis=0)
-                X_scaled = safe_divide(X_clean - X_mean, X_std + 1e-10)
+                _LOGGER.debug("✅ Used sklearn StandardScaler for feature scaling")
             else:
+                # Use simple numpy operations
                 X_scaled = (X_clean - np.mean(X_clean, axis=0)) / (np.std(X_clean, axis=0) + 1e-10)
+                _LOGGER.debug("✅ Used numpy operations for feature scaling")
+        except Exception as scaling_error:
+            _LOGGER.error(f"❌ Feature scaling failed: {scaling_error}")
+            # Use original data if scaling fails
+            X_scaled = X_clean
+            _LOGGER.warning("⚠️ Using unscaled data due to scaling failure")
         
         # Sample data if too large (with memory optimization)
         if self.config.sample_size and len(X_scaled) > self.config.sample_size:
@@ -464,20 +497,21 @@ class PartialInformationDecompositor:
                 try:
                     feature_i, feature_j = feature_names[i], feature_names[j]
                     
-                    # Calculate mutual information
-                    mi_i_y = self._calculate_mutual_info(X[:, i], y)
-                    mi_j_y = self._calculate_mutual_info(X[:, j], y)
-                    mi_ij_y = self._calculate_mutual_info(np.column_stack([X[:, i], X[:, j]]), y)
+                    # Calculate mutual information with safe scalar conversion
+                    mi_i_y = float(self._calculate_mutual_info(X[:, i], y))
+                    mi_j_y = float(self._calculate_mutual_info(X[:, j], y))
+                    mi_ij_y = float(self._calculate_mutual_info(np.column_stack([X[:, i], X[:, j]]), y))
                     
                     # Calculate redundancy (minimum of individual MIs)
-                    redundancy[(feature_i, feature_j)] = min(mi_i_y, mi_j_y)
+                    redundancy[(feature_i, feature_j)] = float(min(mi_i_y, mi_j_y))
                     
                     # Calculate synergy (interaction information)
-                    synergy[(feature_i, feature_j)] = mi_ij_y - mi_i_y - mi_j_y + redundancy[(feature_i, feature_j)]
+                    synergy_value = mi_ij_y - mi_i_y - mi_j_y + redundancy[(feature_i, feature_j)]
+                    synergy[(feature_i, feature_j)] = float(synergy_value)
                     
                     # Calculate unique information
-                    unique_i = mi_i_y - redundancy[(feature_i, feature_j)]
-                    unique_j = mi_j_y - redundancy[(feature_i, feature_j)]
+                    unique_i = float(mi_i_y - redundancy[(feature_i, feature_j)])
+                    unique_j = float(mi_j_y - redundancy[(feature_i, feature_j)])
                     
                     unique_info[feature_i] = unique_info.get(feature_i, 0) + unique_i
                     unique_info[feature_j] = unique_info.get(feature_j, 0) + unique_j
@@ -512,14 +546,45 @@ class PartialInformationDecompositor:
             else:
                 X_reshaped = X
             
-            # Determine if classification or regression
-            unique_y = len(np.unique(y))
-            if unique_y <= 10:  # Classification
-                mi = mutual_info_classif(X_reshaped, y)[0]
-            else:  # Regression
-                mi = mutual_info_regression(X_reshaped, y)[0]
+            # Determine if classification or regression with safe handling
+            try:
+                # Ensure y is a proper numpy array
+                y_array = np.asarray(y).flatten()
+                unique_vals = np.unique(y_array)
+                unique_y = len(unique_vals)
+                
+                # For continuous targets (like multi-horizon probabilities), use regression
+                if unique_y <= 10:  # Classification
+                    _LOGGER.debug(f"Using classification MI: {unique_y} unique values")
+                    mi_result = mutual_info_classif(X_reshaped, y_array)
+                else:  # Regression
+                    _LOGGER.debug(f"Using regression MI: {unique_y} unique values")
+                    mi_result = mutual_info_regression(X_reshaped, y_array)
+                
+                # Handle the result safely
+                if hasattr(mi_result, '__len__') and len(mi_result) > 0:
+                    mi = mi_result[0]
+                else:
+                    mi = mi_result
+                    
+            except Exception as unique_error:
+                _LOGGER.warning(f"⚠️ Unique value calculation failed: {unique_error}")
+                # Default to regression for continuous targets
+                try:
+                    y_array = np.asarray(y).flatten()
+                    mi_result = mutual_info_regression(X_reshaped, y_array)
+                    mi = mi_result[0] if hasattr(mi_result, '__len__') and len(mi_result) > 0 else mi_result
+                except Exception as mi_error:
+                    _LOGGER.warning(f"⚠️ Fallback MI calculation failed: {mi_error}")
+                    return 0.0
             
-            return float(mi)
+            # Ensure we return a scalar float
+            if hasattr(mi, '__len__'):
+                mi = float(mi[0]) if len(mi) > 0 else 0.0
+            else:
+                mi = float(mi)
+            
+            return mi
             
         except Exception as e:
             _LOGGER.warning(f"⚠️ MI calculation failed: {e}")
@@ -527,7 +592,67 @@ class PartialInformationDecompositor:
 
     def _detect_significant_interactions(self, synergy: Dict, redundancy: Dict, 
                                        feature_names: List[str]) -> List[Tuple[str, str]]:
-        """Detect significant feature interactions based on PID measures."""
+        """Detect significant feature interactions using dynamic thresholds."""
+        if not synergy:
+            _LOGGER.info("📊 No synergy data available")
+            return []
+        
+        if self.config.use_dynamic_thresholds:
+            return self._detect_interactions_dynamic_threshold(synergy, redundancy, feature_names)
+        else:
+            return self._detect_interactions_static_threshold(synergy, redundancy, feature_names)
+    
+    def _detect_interactions_dynamic_threshold(self, synergy: Dict, redundancy: Dict, 
+                                             feature_names: List[str]) -> List[Tuple[str, str]]:
+        """Detect interactions using dynamic percentile-based thresholds."""
+        # Calculate combined score for each pair (synergy + redundancy)
+        pair_scores = {}
+        for pair, syn_value in synergy.items():
+            red_value = redundancy.get(pair, 0)
+            # Combined score: prioritize synergy but also consider redundancy
+            combined_score = syn_value + (red_value * 0.3)  # Weight redundancy at 30%
+            pair_scores[pair] = {
+                'combined_score': combined_score,
+                'synergy': syn_value,
+                'redundancy': red_value
+            }
+        
+        # Sort pairs by combined score
+        sorted_pairs = sorted(pair_scores.items(), key=lambda x: x[1]['combined_score'], reverse=True)
+        
+        # Calculate dynamic threshold based on percentile
+        total_pairs = len(sorted_pairs)
+        target_count = max(
+            int(total_pairs * self.config.top_percentile),
+            self.config.min_pairs_threshold
+        )
+        target_count = min(target_count, self.config.max_interaction_features, total_pairs)
+        
+        # Select top pairs
+        significant_pairs = []
+        selected_pairs = sorted_pairs[:target_count]
+        
+        for pair, scores in selected_pairs:
+            significant_pairs.append(pair)
+        
+        # Debug information
+        if selected_pairs:
+            top_score = selected_pairs[0][1]['combined_score']
+            bottom_score = selected_pairs[-1][1]['combined_score'] if len(selected_pairs) > 1 else top_score
+            _LOGGER.info(f"📊 Dynamic threshold: selected top {len(significant_pairs)}/{total_pairs} pairs ({self.config.top_percentile*100:.1f}%)")
+            _LOGGER.info(f"📊 Score range: {bottom_score:.6f} - {top_score:.6f}")
+            
+            # Show top 3 selected pairs
+            for i, (pair, scores) in enumerate(selected_pairs[:3]):
+                feat1, feat2 = pair
+                _LOGGER.info(f"🔍 #{i+1}: {feat1} & {feat2} = {scores['combined_score']:.6f} (syn:{scores['synergy']:.6f}, red:{scores['redundancy']:.6f})")
+        
+        _LOGGER.info(f"📊 Found {len(significant_pairs)} significant interactions using dynamic thresholds")
+        return significant_pairs
+    
+    def _detect_interactions_static_threshold(self, synergy: Dict, redundancy: Dict, 
+                                            feature_names: List[str]) -> List[Tuple[str, str]]:
+        """Detect interactions using static absolute thresholds (fallback method)."""
         significant_pairs = []
         
         for (feat1, feat2), syn_value in synergy.items():
@@ -549,7 +674,14 @@ class PartialInformationDecompositor:
         max_interactions = min(len(significant_pairs), self.config.max_interaction_features)
         significant_pairs = significant_pairs[:max_interactions]
         
-        _LOGGER.info(f"📊 Found {len(significant_pairs)} significant interactions")
+        # Debug: Show actual values vs thresholds
+        if len(synergy) > 0:
+            max_synergy = max(synergy.values())
+            max_redundancy = max(redundancy.values()) if redundancy else 0
+            _LOGGER.info(f"📊 Max synergy found: {max_synergy:.6f} (threshold: {self.config.synergy_threshold})")
+            _LOGGER.info(f"📊 Max redundancy found: {max_redundancy:.6f} (threshold: {self.config.redundancy_threshold})")
+        
+        _LOGGER.info(f"📊 Found {len(significant_pairs)} significant interactions using static thresholds")
         return significant_pairs
 
     def _create_polynomial_features(self, X: np.ndarray, feature_names: List[str],

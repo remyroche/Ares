@@ -18,6 +18,7 @@ import pandas as pd
 from typing import Dict, List, Tuple, Any, Optional
 import logging
 from dataclasses import dataclass
+from datetime import datetime
 from scipy import stats
 from scipy.spatial.distance import pdist, squareform
 import warnings
@@ -450,11 +451,11 @@ class HMMValidationFramework:
             # Higher differentiation = more impact on market structure
             efficiency_metrics = []
             
-            for regime, stats in regime_stats.items():
+            for regime, regime_stat in regime_stats.items():
                 # Calculate regime-specific efficiency indicators
-                sharpe_ratio = stats['sharpe']
-                volatility = stats['volatility']
-                skewness = abs(stats['skewness'])  # Higher absolute skewness = less efficient
+                sharpe_ratio = regime_stat['sharpe']
+                volatility = regime_stat['volatility']
+                skewness = abs(regime_stat['skewness'])  # Higher absolute skewness = less efficient
                 
                 # Combined efficiency score (higher = more efficient)
                 efficiency_score = sharpe_ratio / (1.0 + volatility + skewness)

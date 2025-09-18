@@ -257,9 +257,98 @@ def calibrate_probabilities(
         return estimator
 
 
+class AdaptiveThresholding:
+    """
+    Adaptive thresholding utility class for dynamic threshold optimization.
+    
+    This class provides methods for automatically finding optimal thresholds
+    for classification tasks based on various metrics and criteria.
+    """
+    
+    def __init__(self, metric: str = 'f1_macro', cv_folds: int = 3):
+        """
+        Initialize adaptive thresholding.
+        
+        Args:
+            metric: Metric to optimize ('f1_macro', 'balanced_accuracy', 'youden_j')
+            cv_folds: Number of cross-validation folds for threshold optimization
+        """
+        self.metric = metric
+        self.cv_folds = cv_folds
+        self.best_threshold = 0.5
+        self.best_score = 0.0
+        self.threshold_history = []
+        
+    def find_optimal_threshold(self, y_true: np.ndarray, y_scores: np.ndarray, 
+                             thresholds: Optional[np.ndarray] = None) -> float:
+        """
+        Find optimal threshold for given predictions and ground truth.
+        
+        Args:
+            y_true: True labels
+            y_scores: Predicted probabilities or scores
+            thresholds: Optional array of thresholds to test
+            
+        Returns:
+            Optimal threshold value
+        """
+        if thresholds is None:
+            thresholds = np.linspace(0.1, 0.9, 50)
+        
+        best_threshold = 0.5
+        best_score = -np.inf
+        
+        for threshold in thresholds:
+            y_pred = (y_scores >= threshold).astype(int)
+            score = _score(y_true, y_pred, y_scores, self.metric)
+            
+            if score > best_score:
+                best_score = score
+                best_threshold = threshold
+        
+        self.best_threshold = best_threshold
+        self.best_score = best_score
+        self.threshold_history.append((best_threshold, best_score))
+        
+        return best_threshold
+    
+    def apply_threshold(self, y_scores: np.ndarray, threshold: Optional[float] = None) -> np.ndarray:
+        """
+        Apply threshold to scores to get binary predictions.
+        
+        Args:
+            y_scores: Predicted probabilities or scores
+            threshold: Threshold to use (if None, uses best_threshold)
+            
+        Returns:
+            Binary predictions
+        """
+        thresh = threshold if threshold is not None else self.best_threshold
+        return (y_scores >= thresh).astype(int)
+    
+    def get_threshold_stats(self) -> Dict[str, Any]:
+        """Get statistics about threshold optimization history."""
+        if not self.threshold_history:
+            return {'count': 0, 'best_threshold': self.best_threshold, 'best_score': self.best_score}
+        
+        thresholds = [t for t, s in self.threshold_history]
+        scores = [s for t, s in self.threshold_history]
+        
+        return {
+            'count': len(self.threshold_history),
+            'best_threshold': self.best_threshold,
+            'best_score': self.best_score,
+            'mean_threshold': np.mean(thresholds),
+            'std_threshold': np.std(thresholds),
+            'mean_score': np.mean(scores),
+            'std_score': np.std(scores)
+        }
+
+
 __all__ = [
     'optimize_threshold',
     'calibrate_probabilities',
+    'AdaptiveThresholding',
 ]
 
 

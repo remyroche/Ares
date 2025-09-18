@@ -32,7 +32,7 @@ from .model_evaluation import ModelEvaluationUtilities as ModelEvaluator
 from ..confidence_metrics import calculate_confidence_metrics, log_confidence_metrics
 from ..explainability.model_explanations import explain_model_with_shap_lime
 from ..explainability.model_explainability import ModelExplainabilityManager, with_explainability
-from ..utils.optimization.hpo_utils import HyperparameterOptimization
+from ..optimization.hpo_utils import HyperparameterOptimization
 from ..common_operations import create_fallback_logger
 
 # Enhanced dependency management with fast fail

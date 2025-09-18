@@ -47,6 +47,16 @@ except ImportError:
     OPTIMIZATION_AVAILABLE = False
     logger.warning("⚠️ Optimization utilities not available - using standard operations")
 
+# Import common operations utilities
+try:
+    from src.utils.ml_common.utils import get_memory_usage
+    COMMON_OPERATIONS_AVAILABLE = True
+except ImportError:
+    COMMON_OPERATIONS_AVAILABLE = False
+
+# Set matrix operations availability based on optimization imports
+MATRIX_OPERATIONS_AVAILABLE = OPTIMIZATION_AVAILABLE
+
 
 class TemporalAnalyzer:
     """Temporal analysis for feature selection."""

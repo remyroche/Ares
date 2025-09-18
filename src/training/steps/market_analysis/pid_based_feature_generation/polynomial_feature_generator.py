@@ -242,7 +242,7 @@ class PolynomialFeatureGenerator(BaseFeatureGenerator):
             data: Input feature matrix
             feature_names: List of feature names
             optimized_lookback_periods: Optimized lookback periods from feature_lookback_optimization
-            target: Target variable for PID analysis (optional)
+            target: Target variable for PID analysis (optional) - now uses multi-horizon profit probabilities
             
         Returns:
             PolynomialResult with generated polynomial features
@@ -571,15 +571,26 @@ class PolynomialFeatureGenerator(BaseFeatureGenerator):
                             # Multiple features (e.g., powers)
                             for i, name in enumerate(poly_name):
                                 if poly_feat.ndim == 2:
-                                    polynomial_features.append(poly_feat[:, i])
+                                    # Extract column and ensure it's 1D
+                                    feature_col = poly_feat[:, i].flatten()
+                                    polynomial_features.append(feature_col)
                                 else:
-                                    polynomial_features.append(poly_feat)
+                                    # Ensure it's 1D
+                                    feature_col = poly_feat.flatten()
+                                    polynomial_features.append(feature_col)
                                 polynomial_names.append(name)
                                 
                                 if len(polynomial_names) >= self.config.max_polynomial_features:
                                     break
                         else:
-                            # Single feature
+                            # Single feature - ensure it's 1D numpy array
+                            if not isinstance(poly_feat, np.ndarray):
+                                poly_feat = np.array(poly_feat)
+                            if poly_feat.ndim == 0:
+                                # Scalar - broadcast to match data length
+                                poly_feat = np.full(X.shape[0], poly_feat)
+                            elif poly_feat.ndim > 1:
+                                poly_feat = poly_feat.flatten()
                             polynomial_features.append(poly_feat)
                             polynomial_names.append(poly_name)
                         
@@ -594,7 +605,29 @@ class PolynomialFeatureGenerator(BaseFeatureGenerator):
                 continue
         
         if polynomial_features:
-            return np.column_stack(polynomial_features), polynomial_names
+            # Ensure all features have the same length
+            expected_length = X.shape[0]
+            valid_features = []
+            valid_names = []
+            
+            for i, (feat, name) in enumerate(zip(polynomial_features, polynomial_names)):
+                if len(feat) == expected_length:
+                    valid_features.append(feat.reshape(-1, 1) if feat.ndim == 1 else feat)
+                    valid_names.append(name)
+                else:
+                    tprint_warning(f"Skipping feature {name}: length {len(feat)} != expected {expected_length}")
+            
+            if valid_features:
+                try:
+                    return np.column_stack(valid_features), valid_names
+                except ValueError as e:
+                    tprint_error(f"Failed to stack polynomial features: {e}")
+                    # Debug info
+                    for i, feat in enumerate(valid_features):
+                        tprint_debug(f"Feature {i} ({valid_names[i]}): shape {feat.shape}")
+                    return np.array([]).reshape(X.shape[0], 0), []
+            else:
+                return np.array([]).reshape(X.shape[0], 0), []
         else:
             return np.array([]).reshape(X.shape[0], 0), []
     

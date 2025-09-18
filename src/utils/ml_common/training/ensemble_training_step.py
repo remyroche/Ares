@@ -422,12 +422,11 @@ class EnsembleTrainingStep(BaseTrainingStep):
         
         # Create ensemble configuration
         ensemble_config = StackingEnsembleConfig(
+            ensemble_name=f"hmm_ensemble_regime_{regime}",
+            output_dir=getattr(self.config, 'model_save_path', './models/hmm_ensemble'),
             base_models=base_models,
-            meta_model_type=self.config.meta_model,
-            meta_model_params=self._get_meta_model_params(),
             enable_cross_validation=self.config.enable_cross_validation,
-            cv_folds=self.config.cv_folds,
-            validation_split=self.config.validation_split
+            cv_folds=self.config.cv_folds
         )
         
         # Create ensemble manager
@@ -442,7 +441,7 @@ class EnsembleTrainingStep(BaseTrainingStep):
         
         # Train ensemble
         start_time = time.time()
-        ensemble_manager.train(X, y)
+        ensemble_manager.train_ensemble(X, y)
         training_time = time.time() - start_time
         
         return {
@@ -480,12 +479,11 @@ class EnsembleTrainingStep(BaseTrainingStep):
         
         # Create ensemble configuration
         ensemble_config = StackingEnsembleConfig(
+            ensemble_name=f"hmm_ensemble_regime_{regime}",
+            output_dir=getattr(self.config, 'model_save_path', './models/hmm_ensemble'),
             base_models=base_models,
-            meta_model_type=self.config.meta_model,
-            meta_model_params=self._get_meta_model_params(),
             enable_cross_validation=self.config.enable_cross_validation,
-            cv_folds=self.config.cv_folds,
-            validation_split=self.config.validation_split
+            cv_folds=self.config.cv_folds
         )
         
         # Create ensemble manager
@@ -500,7 +498,7 @@ class EnsembleTrainingStep(BaseTrainingStep):
         
         # Train ensemble
         start_time = time.time()
-        ensemble_manager.train(X, y)
+        ensemble_manager.train_ensemble(X, y)
         training_time = time.time() - start_time
         
         return {
@@ -513,16 +511,42 @@ class EnsembleTrainingStep(BaseTrainingStep):
     
     def _get_meta_model_params(self) -> Dict[str, Any]:
         """
-        Get default parameters for meta model.
+        Get default parameters for meta model based on model type.
         
         Returns:
             Dictionary of meta model parameters
         """
-        return {
-            'alpha': 1.0,
-            'solver': 'auto',
-            'random_state': 42
-        }
+        meta_model = self.config.meta_model
+        
+        if meta_model == 'ElasticNet':
+            return {
+                'alpha': 1.0,
+                'l1_ratio': 0.5,
+                'max_iter': 2000,  # Increased to prevent convergence warnings
+                'random_state': 42,
+                'tol': 1e-4  # Tolerance for convergence
+            }
+        elif meta_model == 'XGBoostClassifier':
+            return {
+                'n_estimators': 100,
+                'max_depth': 6,
+                'learning_rate': 0.1,
+                'random_state': 42,
+                'n_jobs': -1
+            }
+        elif meta_model == 'CatBoostClassifier':
+            return {
+                'iterations': 100,
+                'depth': 6,
+                'learning_rate': 0.1,
+                'random_state': 42,
+                'verbose': False
+            }
+        else:
+            # Fallback for unknown models
+            return {
+                'random_state': 42
+            }
     
     def execute(
         self,
@@ -720,7 +744,7 @@ class EnsembleTrainingStep(BaseTrainingStep):
             ensemble_manager = ensemble_result['ensemble_manager']
             model_paths = self.save_models(
                 models={'ensemble': ensemble_manager},
-                model_type=self.config.model_name,
+                model_type=str(self.config.model_name),
                 symbol=symbol,
                 exchange=exchange,
                 timeframe=timeframe,
@@ -733,7 +757,7 @@ class EnsembleTrainingStep(BaseTrainingStep):
             ensemble_metadata = regime_results['metadata'][regime]
             self.save_metadata(
                 metadata=ensemble_metadata,
-                model_type=self.config.model_name,
+                model_type=str(self.config.model_name),
                 symbol=symbol,
                 exchange=exchange,
                 timeframe=timeframe,

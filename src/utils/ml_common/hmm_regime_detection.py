@@ -108,7 +108,7 @@ class TimeframeType(Enum):
 @dataclass
 class HMMRegimeConfig:
     """Configuration for HMM regime detection."""
-    n_components: int = 4
+    n_components: int = 20  # More reasonable default for regime discovery
     covariance_type: str = "full"
     n_iter: int = 100
     tol: float = 1e-3
@@ -118,10 +118,10 @@ class HMMRegimeConfig:
     max_regime_imbalance: float = 0.8
     economic_significance_threshold: float = 0.05
     
-    # Mode-based regime limits
-    light_mode_max_regimes: int = 2
-    blank_mode_max_regimes: int = 5
-    full_mode_max_regimes: int = 150
+    # Remove artificial regime limits - let data determine optimal count
+    light_mode_max_regimes: int = None  # No artificial limits
+    blank_mode_max_regimes: int = None  # No artificial limits
+    full_mode_max_regimes: int = None   # No artificial limits
     
     # Debug and logging configuration
     debug_mode: bool = False
@@ -392,10 +392,10 @@ class EnhancedHMMRegimeDetector:
         optimization_mode = mode  # Local variable for optimization mode
         start_time = time.time()
         
-        # Apply mode-based regime limits
+        # Apply mode-based regime limits (only if limits are set)
         if mode:
             max_regimes = config.get_max_regimes_for_mode(mode)
-            if config.n_components > max_regimes:
+            if max_regimes is not None and config.n_components > max_regimes:
                 self.logger.info(f"🔧 Limiting n_components from {config.n_components} to {max_regimes} for {mode} mode (range: 2-150)")
                 config.n_components = max_regimes
         
@@ -1529,6 +1529,37 @@ class EnhancedHMMRegimeDetector:
         except Exception as e:
             self.logger.warning(f"⚠️ Correlation analysis failed: {e}, proceeding without correlation filtering")
 
+        # Pre-processing step: detect and handle extremely problematic features
+        if len(df.columns) > 1:
+            # Check for features that are likely to cause numerical issues
+            problematic_features = []
+            for col in df.columns:
+                col_var = df[col].var()
+                col_std = df[col].std()
+                
+                # Detect near-constant features
+                if col_var < 1e-10:
+                    problematic_features.append(col)
+                    self.logger.warning(f"⚠️ 📊 Detected near-constant feature: {col} (var={col_var:.2e})")
+                    
+                # Detect features with extreme values
+                elif col_std > 0:
+                    z_scores = np.abs((df[col] - df[col].mean()) / col_std)
+                    if np.max(z_scores) > 50:  # Extreme outliers
+                        self.logger.warning(f"⚠️ 📊 Detected feature with extreme outliers: {col} (max_z={np.max(z_scores):.1f})")
+                        # Clip extreme values
+                        mean_val = df[col].mean()
+                        clip_threshold = 5 * col_std
+                        df[col] = np.clip(df[col], mean_val - clip_threshold, mean_val + clip_threshold)
+                        
+            # Remove or regularize problematic features before covariance calculation
+            if problematic_features:
+                self.logger.info(f"🔧 Pre-processing {len(problematic_features)} problematic features")
+                for col in problematic_features:
+                    # Add substantial noise to break near-constant behavior
+                    noise_std = max(1e-4, df[col].std() * 0.1)
+                    df[col] = df[col] + np.random.normal(0, noise_std, len(df))
+                    
         # Enhanced regularization approach with condition number check
         if len(df.columns) > 1:
             try:
@@ -1554,9 +1585,10 @@ class EnhancedHMMRegimeDetector:
                     self.logger.warning("⚠️ Data covariance matrix not positive-definite, applying enhanced regularization")
                     # Use more sophisticated regularization approach
                     df = self._apply_enhanced_regularization(df)
-                elif condition_number > 1e12:
-                    self.logger.warning(f"⚠️ Covariance matrix is ill-conditioned (condition number: {condition_number:.2e})")
-                    self.logger.info("🔧 Consider feature selection or dimensionality reduction")
+                elif condition_number > 1e8:  # Much more conservative threshold
+                    self.logger.warning(f"⚠️ 📊 Covariance matrix is ill-conditioned (condition number: {condition_number:.2e})")
+                    self.logger.info("🔧 Applying automatic dimensionality reduction to fix conditioning")
+                    df = self._apply_dimensionality_reduction(df, target_condition_number=1e6)  # More conservative target
                 else:
                     self.logger.info("✅ Data covariance matrix is positive-definite and well-conditioned")
                     
@@ -1564,6 +1596,140 @@ class EnhancedHMMRegimeDetector:
                 self.logger.warning(f"⚠️ Covariance analysis failed: {e}, using original data")
 
         return df
+
+    def _apply_dimensionality_reduction(self, df: pd.DataFrame, target_condition_number: float = 1e10) -> pd.DataFrame:
+        """Apply dimensionality reduction to improve covariance matrix conditioning."""
+        try:
+            from sklearn.decomposition import PCA
+            from sklearn.preprocessing import StandardScaler
+            
+            # Save original column names for reference
+            original_columns = df.columns.tolist()
+            n_original_features = len(original_columns)
+            
+            # Standardize features first
+            scaler = StandardScaler()
+            df_scaled = pd.DataFrame(
+                scaler.fit_transform(df),
+                columns=df.columns,
+                index=df.index
+            )
+            
+            # Start with a reasonable number of components (but not more than samples or features)
+            n_samples = len(df)
+            max_components = min(n_samples - 1, n_original_features - 1, 15)  # Cap at 15 for HMM stability
+            
+            best_df = df_scaled
+            best_condition_number = float('inf')
+            
+            # Try different numbers of PCA components
+            for n_components in range(max_components, max(2, max_components // 4), -1):
+                try:
+                    # Apply PCA
+                    pca = PCA(n_components=n_components, random_state=42)
+                    df_pca = pd.DataFrame(
+                        pca.fit_transform(df_scaled),
+                        columns=[f'PC{i+1}' for i in range(n_components)],
+                        index=df.index
+                    )
+                    
+                    # Check condition number
+                    cov_matrix = df_pca.cov()
+                    eigenvals = np.linalg.eigvals(cov_matrix.values)
+                    min_eigenval = np.max([np.min(eigenvals), 1e-15])  # More conservative floor
+                    max_eigenval = np.max(eigenvals)
+                    condition_number = max_eigenval / min_eigenval
+                    
+                    self.logger.info(f"🔍 PCA with {n_components} components: condition_number={condition_number:.2e}")
+                    
+                    # Check if this is good enough
+                    if condition_number <= target_condition_number:
+                        explained_variance_ratio = np.sum(pca.explained_variance_ratio_)
+                        self.logger.info(f"✅ Found stable PCA solution: {n_components} components, "
+                                       f"condition_number={condition_number:.2e}, "
+                                       f"explained_variance={explained_variance_ratio:.3f}")
+                        return df_pca
+                    
+                    # For extreme cases, accept any reasonable improvement
+                    if condition_number < 1e10 and n_components <= 3:
+                        explained_variance_ratio = np.sum(pca.explained_variance_ratio_)
+                        self.logger.warning(f"⚠️ 📊 Accepting reasonable PCA solution for extreme case: "
+                                          f"{n_components} components, condition_number={condition_number:.2e}")
+                        return df_pca
+                    
+                    # Track the best solution so far
+                    if condition_number < best_condition_number:
+                        best_condition_number = condition_number
+                        best_df = df_pca
+                        
+                except Exception as e:
+                    self.logger.warning(f"⚠️ PCA with {n_components} components failed: {e}")
+                    continue
+            
+            # If no perfect solution found, use the best one
+            if best_condition_number < float('inf'):
+                self.logger.warning(f"⚠️ Using best PCA solution found: condition_number={best_condition_number:.2e}")
+                return best_df
+            else:
+                # Fallback: use diagonal covariance approach
+                self.logger.warning("⚠️ PCA failed, falling back to feature variance filtering")
+                return self._apply_variance_filtering(df_scaled)
+                
+        except ImportError:
+            self.logger.error("❌ sklearn not available for PCA, using variance filtering fallback")
+            return self._apply_variance_filtering(df)
+        except Exception as e:
+            self.logger.error(f"❌ Dimensionality reduction failed: {e}, using original data")
+            return df
+
+    def _apply_variance_filtering(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Apply variance-based feature filtering as a fallback."""
+        try:
+            # Calculate feature variances
+            variances = df.var()
+            
+            # More aggressive variance filtering for extreme cases
+            # Remove features with extremely low or high variance
+            min_variance = max(np.percentile(variances, 25), 1e-8)  # More conservative bottom threshold
+            max_variance = np.percentile(variances, 75)  # More conservative top threshold
+            
+            # Also remove features that are likely causing numerical issues
+            reasonable_features = variances[
+                (variances >= min_variance) & 
+                (variances <= max_variance) & 
+                (variances < variances.median() * 1000)  # Remove extreme outliers
+            ].index
+            
+            if len(reasonable_features) < 2:
+                # Fallback: keep features with moderate variance
+                reasonable_features = variances[
+                    (variances >= 1e-6) & 
+                    (variances <= variances.quantile(0.8))
+                ].index
+                
+            if len(reasonable_features) < 2:
+                # Final fallback: keep top features by variance (but not extreme ones)
+                sorted_vars = variances.sort_values(ascending=False)
+                # Skip the most extreme feature and take next best ones
+                start_idx = 1 if len(sorted_vars) > 3 else 0
+                reasonable_features = sorted_vars.iloc[start_idx:start_idx+min(5, len(sorted_vars)-start_idx)].index
+            
+            df_filtered = df[reasonable_features]
+            self.logger.info(f"🔧 📊 Variance filtering: kept {len(reasonable_features)} out of {len(df.columns)} features")
+            
+            # Additional step: add small regularization to remaining features
+            for col in df_filtered.columns:
+                col_std = df_filtered[col].std()
+                if col_std > 0:
+                    # Add minimal noise to ensure numerical stability
+                    noise_scale = col_std * 1e-6
+                    df_filtered[col] = df_filtered[col] + np.random.normal(0, noise_scale, len(df_filtered))
+            
+            return df_filtered
+            
+        except Exception as e:
+            self.logger.error(f"❌ Variance filtering failed: {e}, using original data")
+            return df
 
     def _validate_data_for_hmm_enhanced(self, data: pd.DataFrame) -> dict:
         """Enhanced validation of data for HMM training to detect potential issues."""
@@ -1652,27 +1818,65 @@ class EnhancedHMMRegimeDetector:
                 # Calculate covariance matrix
                 cov_matrix = df.cov()
                 
-                # Test positive definiteness
+                # Test positive definiteness and condition number
+                eigenvals = np.linalg.eigvals(cov_matrix.values)
+                min_eigenval = np.min(eigenvals)
+                max_eigenval = np.max(eigenvals)
+                condition_number = max_eigenval / max(min_eigenval, 1e-12)
+                
+                # Test Cholesky decomposition
                 np.linalg.cholesky(cov_matrix.values)
-                self.logger.info(f"✅ Applied regularization (factor={regularization_factor:.2e}) to ensure positive-definite covariance")
-                return df
                 
-            except np.linalg.LinAlgError:
-                # Apply regularization
+                # Check if condition number is acceptable (much more conservative)
+                if condition_number <= 1e6:  # Much stricter threshold
+                    self.logger.info(f"✅ Applied regularization (factor={regularization_factor:.2e}) - condition_number={condition_number:.2e}")
+                    return df
+                else:
+                    # Continue regularization even if positive definite but ill-conditioned
+                    raise np.linalg.LinAlgError(f"Still ill-conditioned: {condition_number:.2e}")
+                
+            except np.linalg.LinAlgError as e:
+                self.logger.info(f"🔧 Regularization attempt {attempt + 1}: {e}")
+                
+                # Apply more aggressive regularization with better numerical stability
                 for col in df.columns:
-                    if df[col].var() < 1e-10:  # Very small variance
-                        df[col] = df[col] + np.random.normal(0, regularization_factor, len(df))
-                        self.logger.info(f"🔧 Added noise to low-variance feature: {col}")
+                    col_std = df[col].std()
+                    col_var = df[col].var()
+                    
+                    if col_var < 1e-6:  # Even more aggressive threshold for near-constant features
+                        # Remove or heavily regularize near-constant features
+                        self.logger.warning(f"⚠️ 📊 Removing near-constant feature: {col} (var={col_var:.2e})")
+                        # Add substantial noise to break singularity
+                        noise_std = max(1e-3, col_std * 0.5, regularization_factor * 100)
+                        df[col] = df[col] + np.random.normal(0, noise_std, len(df))
+                        self.logger.info(f"🔧 Added substantial noise to feature: {col} (std={noise_std:.2e})")
                     else:
-                        # Add proportional noise to break perfect correlations
-                        noise_scale = df[col].std() * regularization_factor
+                        # Add proportional noise to break correlations, but more aggressively
+                        noise_scale = max(col_std * regularization_factor, 1e-6)
                         df[col] = df[col] + np.random.normal(0, noise_scale, len(df))
+                        
+                    # Additional step: clip extreme values to prevent numerical issues
+                    if col_std > 0:
+                        # Clip to ±5 standard deviations to prevent extreme outliers
+                        mean_val = df[col].mean()
+                        clip_threshold = 5 * col_std
+                        df[col] = np.clip(df[col], mean_val - clip_threshold, mean_val + clip_threshold)
                 
-                # Increase regularization for next attempt
-                regularization_factor *= 10
+                # Increase regularization more aggressively for extreme cases
+                if attempt >= 2:
+                    regularization_factor *= 1000  # Much more aggressive scaling for extreme cases
+                else:
+                    regularization_factor *= 50  # More aggressive initial scaling
                 
                 if attempt == max_attempts - 1:
-                    self.logger.warning("⚠️ Maximum regularization attempts reached, using diagonal covariance fallback")
+                    self.logger.warning("⚠️ Maximum regularization attempts reached, applying final fallback")
+                    # Final fallback: use PCA or variance filtering with very conservative targets
+                    try:
+                        self.logger.warning("⚠️ 📊 Applying final fallback with very conservative conditioning")
+                        return self._apply_dimensionality_reduction(df, target_condition_number=1e4)
+                    except Exception as fallback_e:
+                        self.logger.error(f"❌ PCA fallback failed: {fallback_e}, using variance filtering")
+                        return self._apply_variance_filtering(df)
         
         return df
 

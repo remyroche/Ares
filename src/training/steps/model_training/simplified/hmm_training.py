@@ -512,7 +512,7 @@ class HMMTrainingPipeline:
                     l1_ratio=0.5,
                     solver='saga',
                     random_state=42,
-                    max_iter=1000
+                    max_iter=2000
                 )
             else:
                 raise ValueError(f"Unknown base model: {model_name}")

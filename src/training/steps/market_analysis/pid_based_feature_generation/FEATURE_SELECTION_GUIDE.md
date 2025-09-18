@@ -120,6 +120,8 @@ for (feat1, feat2), synergy_score in timeframe_synergy.items():
 
 If PID analysis fails or target variable is not available, the system falls back to correlation-based selection:
 
+**Note**: The system now uses multi-horizon profit probabilities as targets instead of triple barrier categorical labels, providing richer continuous targets for PID analysis.
+
 #### **Correlation-Based Interaction Features**
 - Calculate correlation matrix between all features
 - Select pairs with correlation between `min_synergy_score` and `max_redundancy_score`

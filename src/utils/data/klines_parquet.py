@@ -248,7 +248,14 @@ class KlinesParquetManager:
             if not combined_df.empty and len(combined_df.index) > 0:
                 # Convert all index values to pandas Timestamp if they aren't already
                 try:
-                    combined_df.index = pd.to_datetime(combined_df.index)
+                    # Handle mixed timezone values more robustly
+                    if hasattr(combined_df.index, 'dtype') and 'datetime' in str(combined_df.index.dtype):
+                        # If already datetime, normalize timezone info
+                        if hasattr(combined_df.index, 'tz') and combined_df.index.tz is not None:
+                            combined_df.index = combined_df.index.tz_convert('UTC').tz_localize(None)
+                    else:
+                        # Convert non-datetime index, forcing timezone-naive
+                        combined_df.index = pd.to_datetime(combined_df.index, utc=True).tz_localize(None)
                 except Exception as e:
                     self.logger.warning(f"Could not convert index to datetime: {e}")
                     # If conversion fails, try to sort by converting to numeric
@@ -337,7 +344,14 @@ class KlinesParquetManager:
                             # Normalize index types before sorting to prevent Timestamp vs int comparison errors
                             if not combined_df.empty and len(combined_df.index) > 0:
                                 try:
-                                    combined_df.index = pd.to_datetime(combined_df.index)
+                                    # Handle mixed timezone values more robustly
+                                    if hasattr(combined_df.index, 'dtype') and 'datetime' in str(combined_df.index.dtype):
+                                        # If already datetime, normalize timezone info
+                                        if hasattr(combined_df.index, 'tz') and combined_df.index.tz is not None:
+                                            combined_df.index = combined_df.index.tz_convert('UTC').tz_localize(None)
+                                    else:
+                                        # Convert non-datetime index, forcing timezone-naive
+                                        combined_df.index = pd.to_datetime(combined_df.index, utc=True).tz_localize(None)
                                 except Exception as e:
                                     self.logger.warning(f"Could not convert index to datetime: {e}")
                                     try:
@@ -656,6 +670,131 @@ def read_ethusdt_data(
     return manager.read_data("ETHUSDT", interval, start_date, end_date, data_type)
 
 
+# Backward compatibility functions
+def save_klines_to_parquet(
+    df: pd.DataFrame,
+    symbol: str,
+    interval: str,
+    data_type: str = "raw",
+    overwrite: bool = False,
+    data_dir: str = "historical_data"
+) -> bool:
+    """Save klines data to parquet files (backward compatibility function).
+    
+    Args:
+        df: DataFrame to write
+        symbol: Trading symbol
+        interval: Data interval
+        data_type: 'raw' or 'processed'
+        overwrite: Whether to overwrite existing files
+        data_dir: Base directory for data storage
+        
+    Returns:
+        True if successful, False otherwise
+    """
+    manager = get_klines_manager(data_dir)
+    return manager.write_data(df, symbol, interval, data_type, overwrite)
+
+
+def load_klines_from_parquet(
+    symbol: str,
+    interval: str,
+    start_date: Optional[datetime] = None,
+    end_date: Optional[datetime] = None,
+    data_type: str = "raw",
+    columns: Optional[List[str]] = None,
+    data_dir: str = "historical_data"
+) -> Optional[pd.DataFrame]:
+    """Load klines data from parquet files (backward compatibility function).
+    
+    Args:
+        symbol: Trading symbol
+        interval: Data interval
+        start_date: Start date for filtering
+        end_date: End date for filtering
+        data_type: 'raw' or 'processed'
+        columns: List of columns to read
+        data_dir: Base directory for data storage
+        
+    Returns:
+        DataFrame with klines data or None if not found
+    """
+    manager = get_klines_manager(data_dir)
+    return manager.read_data(symbol, interval, start_date, end_date, data_type, columns)
+
+
+def validate_klines_data(df: pd.DataFrame) -> Dict[str, Any]:
+    """Validate klines data (backward compatibility function).
+    
+    Args:
+        df: DataFrame to validate
+        
+    Returns:
+        Dictionary with validation results
+    """
+    if df is None or df.empty:
+        return {
+            "valid": False,
+            "errors": ["DataFrame is empty or None"],
+            "warnings": [],
+            "info": {}
+        }
+    
+    errors = []
+    warnings = []
+    info = {}
+    
+    # Basic structure validation
+    required_columns = ['open', 'high', 'low', 'close', 'volume']
+    missing_columns = [col for col in required_columns if col not in df.columns]
+    if missing_columns:
+        errors.append(f"Missing required columns: {missing_columns}")
+    
+    # Data type validation
+    numeric_columns = ['open', 'high', 'low', 'close', 'volume']
+    for col in numeric_columns:
+        if col in df.columns:
+            if not pd.api.types.is_numeric_dtype(df[col]):
+                warnings.append(f"Column '{col}' is not numeric")
+    
+    # Price validation (high >= low >= 0, etc.)
+    if all(col in df.columns for col in ['open', 'high', 'low', 'close']):
+        price_issues = df[(df['high'] < df['low']) | (df['low'] < 0)].index
+        if len(price_issues) > 0:
+            errors.append(f"Invalid price relationships found in {len(price_issues)} rows")
+    
+    # Volume validation
+    if 'volume' in df.columns:
+        negative_volume = (df['volume'] < 0).sum()
+        if negative_volume > 0:
+            warnings.append(f"Found {negative_volume} rows with negative volume")
+    
+    # Timestamp validation
+    if hasattr(df.index, 'dtype') and pd.api.types.is_datetime64_any_dtype(df.index):
+        if not df.index.is_monotonic_increasing:
+            warnings.append("Timestamp index is not monotonic increasing")
+        
+        # Check for duplicates
+        duplicates = df.index.duplicated().sum()
+        if duplicates > 0:
+            warnings.append(f"Found {duplicates} duplicate timestamps")
+    
+    # Calculate basic info
+    info = {
+        "rows": len(df),
+        "columns": len(df.columns),
+        "memory_usage_mb": df.memory_usage(deep=True).sum() / (1024 * 1024),
+        "null_counts": df.isnull().sum().to_dict()
+    }
+    
+    return {
+        "valid": len(errors) == 0,
+        "errors": errors,
+        "warnings": warnings,
+        "info": info
+    }
+
+
 if __name__ == "__main__":
     # Example usage
     manager = get_klines_manager()
@@ -674,3 +813,11 @@ if __name__ == "__main__":
         print(f"Loaded {len(data)} records")
         print(f"Columns: {list(data.columns)}")
         print(f"Date range: {data.index.min()} to {data.index.max()}")
+        
+        # Test backward compatibility functions
+        validation_result = validate_klines_data(data)
+        print(f"Validation result: {validation_result['valid']}")
+        if validation_result['errors']:
+            print(f"Errors: {validation_result['errors']}")
+        if validation_result['warnings']:
+            print(f"Warnings: {validation_result['warnings']}")

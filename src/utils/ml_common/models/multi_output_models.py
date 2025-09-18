@@ -173,16 +173,19 @@ class MultiOutputModel(ABC):
     
     def validate_outputs(self, y: np.ndarray) -> bool:
         """Validate output data format."""
-        if len(y.shape) != 2:
-            self.logger.error(f"❌ Output data must be 2D, got shape: {y.shape}")
+        if len(y.shape) == 1:
+            # This should not happen if reshape was done properly in fit()
+            self.logger.warning(f"⚠️ Received 1D output data with shape: {y.shape} - this should have been reshaped already")
             return False
-        
-        if y.shape[1] != self.config.n_outputs:
-            self.logger.error(f"❌ Expected {self.config.n_outputs} outputs, got {y.shape[1]}")
+        elif len(y.shape) == 2:
+            if y.shape[1] != self.config.n_outputs:
+                self.logger.error(f"❌ Expected {self.config.n_outputs} outputs, got {y.shape[1]}")
+                return False
+            self.logger.debug(f"✅ Output validation passed: {y.shape}")
+            return True
+        else:
+            self.logger.error(f"❌ Output data must be 2D after reshaping, got {y.ndim}D shape: {y.shape}")
             return False
-        
-        self.logger.debug(f"✅ Output validation passed: {y.shape}")
-        return True
     
     def calculate_output_correlations(self, y: np.ndarray) -> np.ndarray:
         """Calculate correlations between outputs."""
@@ -312,6 +315,45 @@ class MultiOutputStackingModel(MultiOutputModel):
         self.meta_models[output_name] = model
         self.logger.info(f"➕ Added meta model for output {output_name}")
     
+    def _create_default_base_models(self, output_name: str) -> None:
+        """Create default base models for an output if none exist."""
+        if output_name not in self.base_models:
+            self.base_models[output_name] = {}
+        
+        if len(self.base_models[output_name]) == 0:
+            try:
+                from sklearn.ensemble import RandomForestRegressor
+                from sklearn.linear_model import LinearRegression
+                from sklearn.ensemble import GradientBoostingRegressor
+                
+                # Create simple base models
+                default_models = {
+                    'rf': RandomForestRegressor(n_estimators=10, random_state=42),
+                    'lr': LinearRegression(),
+                    'gbr': GradientBoostingRegressor(n_estimators=10, random_state=42)
+                }
+                
+                for model_name, model in default_models.items():
+                    self.base_models[output_name][model_name] = model
+                
+                self.logger.info(f"🔧 Created {len(default_models)} default base models for output {output_name}")
+                
+            except ImportError as e:
+                self.logger.warning(f"⚠️ Could not create default base models for {output_name}: {e}")
+    
+    def _create_default_meta_model(self, output_name: str) -> None:
+        """Create default meta model for an output if none exist."""
+        if output_name not in self.meta_models:
+            try:
+                from sklearn.linear_model import LinearRegression
+                
+                # Create simple meta model
+                self.meta_models[output_name] = LinearRegression()
+                self.logger.info(f"🔧 Created default meta model for output {output_name}")
+                
+            except ImportError as e:
+                self.logger.warning(f"⚠️ Could not create default meta model for {output_name}: {e}")
+    
     def fit(self, X: np.ndarray, y: np.ndarray) -> 'MultiOutputStackingModel':
         """Fit the multi-output stacking model."""
         
@@ -319,8 +361,28 @@ class MultiOutputStackingModel(MultiOutputModel):
         start_time = time.time()
         
         try:
-            # Validate inputs
+            # Handle 1D input data by reshaping to 2D
+            if len(y.shape) == 1:
+                self.logger.info(f"📊 Converting 1D target data from {y.shape} to ({y.shape[0]}, 1)")
+                y = y.reshape(-1, 1)
+                # Update config for single output
+                if self.config.n_outputs != 1:
+                    self.logger.info(f"📊 Updating config from {self.config.n_outputs} outputs to 1 output")
+                    self.config.n_outputs = 1
+                    self.config.output_names = ["output_1"]
+                    # Update output weights to match the new number of outputs
+                    self.output_weights = [1.0]
+                    self.output_loss_weights = [1.0]
+            
+            # Ensure y is 2D for consistent indexing
+            if len(y.shape) != 2:
+                self.logger.error(f"❌ Target data must be 2D after reshaping, got {y.ndim}D shape: {y.shape}")
+                raise ValidationError(f"Invalid target data format: expected 2D, got {y.ndim}D")
+            
+            # Validate inputs after reshaping
+            self.logger.debug(f"📊 Validating output data with shape: {y.shape}")
             if not self.validate_outputs(y):
+                self.logger.error(f"❌ Output validation failed for shape: {y.shape}")
                 raise ValidationError("Invalid output data format")
             
             # Store training data
@@ -337,31 +399,54 @@ class MultiOutputStackingModel(MultiOutputModel):
             for output_idx, output_name in enumerate(self.config.output_names):
                 self.logger.debug(f"🔄 Training base models for output {output_name}...")
                 
-                if output_name not in self.base_models:
+                if output_name not in self.base_models or len(self.base_models[output_name]) == 0:
+                    self.logger.debug(f"🔧 Creating default base models for output {output_name}")
+                    self._create_default_base_models(output_name)
+                
+                if output_name not in self.base_models or len(self.base_models[output_name]) == 0:
                     self.logger.warning(f"⚠️ No base models for output {output_name}")
                     continue
                 
-                # Get target for this output
-                y_output = y[:, output_idx]
+                # Get target for this output with bounds checking
+                if y.shape[1] > output_idx:
+                    y_output = y[:, output_idx]
+                else:
+                    self.logger.error(f"❌ No target data for output {output_idx} (output {output_name}), expected {y.shape[1]} outputs")
+                    continue
                 
-                # Train base models
+                # Use base models (should already be trained)
                 output_predictions = []
                 for model_name, model in self.base_models[output_name].items():
-                    self.logger.debug(f"🔄 Training {model_name} for {output_name}...")
+                    self.logger.debug(f"🔄 Using {model_name} for {output_name}...")
                     
-                    # Train model
-                    model.fit(X, y_output)
-                    
-                    # Make predictions for meta-training
-                    if hasattr(model, 'predict_proba'):
-                        pred = model.predict_proba(X)
-                        if pred.ndim > 1 and pred.shape[1] > 1:
-                            pred = pred[:, 1]  # Use positive class probability
-                    else:
-                        pred = model.predict(X)
+                    # Check if model is already trained, if not train it
+                    try:
+                        # Try to make a prediction first to see if model is trained
+                        if hasattr(model, 'predict_proba'):
+                            pred = model.predict_proba(X)
+                            if pred.ndim > 1 and pred.shape[1] > 1:
+                                pred = pred[:, 1]  # Use positive class probability
+                        else:
+                            pred = model.predict(X)
+                        
+                        self.logger.debug(f"✅ Using pre-trained {model_name} for {output_name}")
+                        
+                    except (AttributeError, ValueError, Exception) as e:
+                        # Model not trained yet, train it now
+                        self.logger.debug(f"🔄 Training {model_name} for {output_name} (not pre-trained)...")
+                        model.fit(X, y_output)
+                        
+                        # Make predictions for meta-training
+                        if hasattr(model, 'predict_proba'):
+                            pred = model.predict_proba(X)
+                            if pred.ndim > 1 and pred.shape[1] > 1:
+                                pred = pred[:, 1]  # Use positive class probability
+                        else:
+                            pred = model.predict(X)
+                        
+                        self.logger.debug(f"✅ {model_name} trained for {output_name}")
                     
                     output_predictions.append(pred)
-                    self.logger.debug(f"✅ {model_name} trained for {output_name}")
                 
                 # Store base predictions
                 base_predictions[output_name] = np.column_stack(output_predictions)
@@ -371,6 +456,10 @@ class MultiOutputStackingModel(MultiOutputModel):
             self.logger.info("🔄 Training meta models...")
             for output_idx, output_name in enumerate(self.config.output_names):
                 if output_name not in self.meta_models:
+                    self.logger.debug(f"🔧 Creating default meta model for output {output_name}")
+                    self._create_default_meta_model(output_name)
+                
+                if output_name not in self.meta_models:
                     self.logger.warning(f"⚠️ No meta model for output {output_name}")
                     continue
                 
@@ -378,8 +467,12 @@ class MultiOutputStackingModel(MultiOutputModel):
                     self.logger.warning(f"⚠️ No base predictions for output {output_name}")
                     continue
                 
-                # Get target for this output
-                y_output = y[:, output_idx]
+                # Get target for this output with bounds checking
+                if y.shape[1] > output_idx:
+                    y_output = y[:, output_idx]
+                else:
+                    self.logger.error(f"❌ No target data for output {output_idx} (output {output_name}), expected {y.shape[1]} outputs")
+                    continue
                 
                 # Train meta model on features + base model predictions
                 meta_model = self.meta_models[output_name]
@@ -431,6 +524,17 @@ class MultiOutputStackingModel(MultiOutputModel):
             predictions = []
             
             for output_idx, output_name in enumerate(self.config.output_names):
+                # Check and create missing base models
+                if output_name not in self.base_models or len(self.base_models[output_name]) == 0:
+                    self.logger.debug(f"🔧 Creating default base models for prediction: {output_name}")
+                    self._create_default_base_models(output_name)
+                
+                # Check and create missing meta models
+                if output_name not in self.meta_models:
+                    self.logger.debug(f"🔧 Creating default meta model for prediction: {output_name}")
+                    self._create_default_meta_model(output_name)
+                
+                # If still missing models after creation attempts, use zeros
                 if output_name not in self.base_models or output_name not in self.meta_models:
                     self.logger.warning(f"⚠️ Missing models for output {output_name}, using zeros")
                     predictions.append(np.zeros(X.shape[0]))
@@ -545,13 +649,45 @@ class MultiOutputStackingModel(MultiOutputModel):
             # Make predictions
             y_pred = self.predict(X)
             
+            # Ensure y and y_pred are 2D arrays for consistent indexing
+            if len(y.shape) == 1:
+                self.logger.info(f"📊 Reshaping 1D y array from {y.shape} to ({y.shape[0]}, 1)")
+                y = y.reshape(-1, 1)
+            
+            if len(y_pred.shape) == 1:
+                self.logger.info(f"📊 Reshaping 1D y_pred array from {y_pred.shape} to ({y_pred.shape[0]}, 1)")
+                y_pred = y_pred.reshape(-1, 1)
+            
+            # Validate that we have the expected number of outputs
+            expected_outputs = len(self.config.output_names)
+            actual_outputs = y.shape[1] if len(y.shape) > 1 else 1
+            
+            if actual_outputs != expected_outputs:
+                self.logger.warning(f"⚠️ Output count mismatch: expected {expected_outputs}, got {actual_outputs}")
+                # Adjust to handle the actual number of outputs
+                num_outputs_to_process = min(expected_outputs, actual_outputs)
+            else:
+                num_outputs_to_process = expected_outputs
+            
             # Calculate metrics for each output
             per_output_metrics = {}
             overall_metrics = {}
             
-            for output_idx, output_name in enumerate(self.config.output_names):
-                y_true_output = y[:, output_idx]
-                y_pred_output = y_pred[:, output_idx]
+            for output_idx in range(num_outputs_to_process):
+                output_name = self.config.output_names[output_idx] if output_idx < len(self.config.output_names) else f"output_{output_idx + 1}"
+                
+                # Safe indexing with bounds checking
+                if y.shape[1] > output_idx:
+                    y_true_output = y[:, output_idx]
+                else:
+                    self.logger.warning(f"⚠️ No target data for output {output_idx}, using zeros")
+                    y_true_output = np.zeros(y.shape[0])
+                
+                if y_pred.shape[1] > output_idx:
+                    y_pred_output = y_pred[:, output_idx]
+                else:
+                    self.logger.warning(f"⚠️ No prediction data for output {output_idx}, using zeros")
+                    y_pred_output = np.zeros(y_pred.shape[0])
                 
                 # Calculate basic metrics
                 mse = np.mean((y_true_output - y_pred_output) ** 2)

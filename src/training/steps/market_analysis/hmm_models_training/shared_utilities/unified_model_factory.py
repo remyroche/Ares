@@ -33,7 +33,7 @@ class UnifiedModelFactory:
             'class': 'sklearn.linear_model.LogisticRegression',
             'default_params': {
                 'C': 1.0,
-                'max_iter': 1000,
+                'max_iter': 2000,
                 'random_state': 42,
                 'class_weight': 'balanced',
                 'penalty': 'elasticnet',
@@ -76,7 +76,7 @@ class UnifiedModelFactory:
             'class': 'sklearn.linear_model.LogisticRegression',
             'default_params': {
                 'C': 1.0,
-                'max_iter': 1000,
+                'max_iter': 2000,
                 'random_state': 42,
                 'class_weight': 'balanced'
             }

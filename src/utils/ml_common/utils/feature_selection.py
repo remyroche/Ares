@@ -701,7 +701,7 @@ class FeatureSelectionFramework:
                 model = LinearRegression()
             else:
                 from sklearn.linear_model import LogisticRegression
-                model = LogisticRegression(random_state=42, max_iter=1000)
+                model = LogisticRegression(random_state=42, max_iter=2000)
 
             model.fit(X_train, y_train)
             y_pred = model.predict(X_test)

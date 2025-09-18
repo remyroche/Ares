@@ -216,11 +216,16 @@ class SRParameterOptimizationComponent(BaseMarketAnalysisComponent):
                     sample_timestamps = data.index[:5]
                     self.logger.info(f"Sample timestamps before conversion: {sample_timestamps.tolist()}")
 
+                    # First normalize timezone info if present
+                    if hasattr(data.index, 'tz') and data.index.tz is not None:
+                        # If already timezone-aware, convert to UTC and then remove timezone
+                        data.index = data.index.tz_convert('UTC').tz_localize(None)
+
                     if sample_timestamps.max() > 1e10:  # Likely milliseconds
-                        data.index = pd.to_datetime(data.index, unit='ms')
+                        data.index = pd.to_datetime(data.index, unit='ms', utc=False)
                         self.logger.info("Converted index to datetime (milliseconds)")
                     else:
-                        data.index = pd.to_datetime(data.index)
+                        data.index = pd.to_datetime(data.index, utc=False)
                         self.logger.info("Converted index to datetime")
                 except Exception as e:
                     self.logger.warning(f"Could not convert index to datetime: {e}")

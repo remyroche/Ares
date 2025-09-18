@@ -378,8 +378,19 @@ class HardwareOptimizedMatrixProcessor:
             Standardized data as numpy array
         """
         with self.performance_context("optimized_standard_scaling"):
-            # Convert to numpy array if needed
-            if isinstance(data, pd.DataFrame):
+            # Validate input data type
+            if isinstance(data, dict):
+                self.logger.error(f"❌ Hardware-optimized processing failed: Expected DataFrame or array but got dict")
+                return np.array([])  # Return empty array as fallback
+            
+            if not isinstance(data, (pd.DataFrame, np.ndarray)):
+                self.logger.error(f"❌ Hardware-optimized processing failed: Expected DataFrame or array but got {type(data)}")
+                try:
+                    data_array = np.array(data, dtype=np.float32)
+                except Exception as e:
+                    self.logger.error(f"❌ Cannot convert {type(data)} to array: {e}")
+                    return np.array([])
+            elif isinstance(data, pd.DataFrame):
                 data_array = data.values.astype(np.float32)
             else:
                 data_array = np.array(data, dtype=np.float32)

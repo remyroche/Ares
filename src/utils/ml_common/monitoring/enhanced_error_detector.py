@@ -742,3 +742,9 @@ def detect_error(error: Exception, context: Dict[str, Any]) -> ErrorRecord:
     """Convenience function to detect and classify an error."""
     detector = get_global_error_detector()
     return detector.detect_and_classify_error(error, context)
+
+
+# Export aliases for backward compatibility
+ErrorDetector = EnhancedErrorDetector
+ErrorHandler = EnhancedErrorDetector  # The detector handles errors
+ErrorReporter = EnhancedErrorDetector  # The detector also reports errors

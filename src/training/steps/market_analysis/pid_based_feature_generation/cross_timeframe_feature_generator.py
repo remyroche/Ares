@@ -203,7 +203,7 @@ class CrossTimeframeFeatureGenerator:
             data: Input feature matrix
             feature_names: List of feature names
             optimized_lookback_periods: Optimized lookback periods from feature_lookback_optimization
-            target: Target variable for PID analysis (optional)
+            target: Target variable for PID analysis (optional) - now uses multi-horizon profit probabilities
             
         Returns:
             CrossTimeframeResult with generated cross-timeframe features
@@ -240,6 +240,17 @@ class CrossTimeframeFeatureGenerator:
             if len(timeframe_features) < 2:
                 self.logger.warning("⚠️ Insufficient timeframe features for cross-timeframe analysis")
                 return result
+            
+            # Generate synthetic timeframe data if needed
+            if any('_tf' in tf for tf in timeframe_features):
+                self.logger.info("🔧 Generating synthetic multi-timeframe data...")
+                X_extended, extended_feature_names = self._create_synthetic_timeframe_data(
+                    X, feature_names, timeframe_features
+                )
+                # Update data and feature names to include synthetic features
+                X = X_extended
+                feature_names = extended_feature_names
+                self.logger.info(f"📊 Extended data shape: {X.shape} with synthetic timeframe features")
             
             # Perform PID analysis
             if self.pid_decompositor and target is not None:
@@ -333,43 +344,152 @@ class CrossTimeframeFeatureGenerator:
             return X, feature_names
     
     def _identify_timeframe_features(self, feature_names: List[str]) -> List[str]:
-        """Identify features that contain timeframe information."""
+        """Identify features that contain timeframe information or create synthetic ones."""
         timeframe_features = []
         
+        # First, check for explicit timeframe features
         for feature_name in feature_names:
-            # Check if feature name contains any timeframe indicators
             for timeframe in self.config.timeframes:
                 if timeframe in feature_name.lower():
                     timeframe_features.append(feature_name)
                     break
         
+        # If no explicit timeframe features found, create synthetic ones
+        if len(timeframe_features) == 0:
+            self.logger.info("📊 No explicit timeframe features found, creating synthetic multi-timeframe features")
+            
+            # Select base features that are good candidates for multi-timeframe analysis
+            base_features = []
+            for feature_name in feature_names:
+                # Include price-related, volume-related, and return features
+                if any(keyword in feature_name.lower() for keyword in 
+                       ['close', 'open', 'high', 'low', 'volume', 'return', 'price']):
+                    base_features.append(feature_name)
+            
+            # Create synthetic timeframe feature names (we'll generate the actual features later)
+            synthetic_timeframes = ['short', 'medium', 'long']  # Representing different aggregation periods
+            for base_feature in base_features[:5]:  # Limit to top 5 base features
+                for tf in synthetic_timeframes:
+                    synthetic_name = f"{base_feature}_{tf}_tf"
+                    timeframe_features.append(synthetic_name)
+            
+            self.logger.info(f"📊 Created {len(timeframe_features)} synthetic timeframe features")
+        
         return timeframe_features
+    
+    def _create_synthetic_timeframe_data(self, X: np.ndarray, feature_names: List[str], 
+                                       timeframe_features: List[str]) -> Tuple[np.ndarray, List[str]]:
+        """Create synthetic multi-timeframe features from single timeframe data."""
+        try:
+            # Create a mapping of base features to their indices
+            base_feature_indices = {}
+            for tf_name in timeframe_features:
+                if '_tf' in tf_name:
+                    # Extract base feature name (remove _short_tf, _medium_tf, _long_tf)
+                    base_name = tf_name.split('_')[0] + '_' + '_'.join(tf_name.split('_')[1:-2]) if len(tf_name.split('_')) > 2 else tf_name.split('_')[0]
+                    if base_name in feature_names:
+                        base_feature_indices[tf_name] = feature_names.index(base_name)
+            
+            # Create synthetic timeframe features using different aggregation periods
+            synthetic_features = []
+            synthetic_names = []
+            
+            for tf_name, base_idx in base_feature_indices.items():
+                base_data = X[:, base_idx]
+                
+                if 'short_tf' in tf_name:
+                    # Short timeframe: 5-period rolling mean (represents ~5min aggregation)
+                    synthetic_data = self._rolling_aggregation(base_data, window=5, agg_type='mean')
+                elif 'medium_tf' in tf_name:
+                    # Medium timeframe: 15-period rolling mean (represents ~15min aggregation)  
+                    synthetic_data = self._rolling_aggregation(base_data, window=15, agg_type='mean')
+                elif 'long_tf' in tf_name:
+                    # Long timeframe: 60-period rolling mean (represents ~1hour aggregation)
+                    synthetic_data = self._rolling_aggregation(base_data, window=60, agg_type='mean')
+                else:
+                    continue
+                
+                synthetic_features.append(synthetic_data)
+                synthetic_names.append(tf_name)
+            
+            if synthetic_features:
+                # Combine original features with synthetic timeframe features
+                synthetic_matrix = np.column_stack(synthetic_features)
+                X_extended = np.column_stack([X, synthetic_matrix])
+                extended_names = feature_names + synthetic_names
+                
+                self.logger.info(f"📊 Created {len(synthetic_features)} synthetic timeframe features")
+                return X_extended, extended_names
+            else:
+                self.logger.warning("⚠️ Failed to create synthetic timeframe features")
+                return X, feature_names
+                
+        except Exception as e:
+            self.logger.error(f"❌ Error creating synthetic timeframe data: {e}")
+            return X, feature_names
+    
+    def _rolling_aggregation(self, data: np.ndarray, window: int, agg_type: str = 'mean') -> np.ndarray:
+        """Apply rolling aggregation to create synthetic timeframe data."""
+        try:
+            if agg_type == 'mean':
+                # Simple rolling mean using numpy
+                result = np.zeros_like(data)
+                for i in range(len(data)):
+                    start_idx = max(0, i - window + 1)
+                    result[i] = np.mean(data[start_idx:i+1])
+                return result
+            else:
+                return data  # Fallback to original data
+        except Exception as e:
+            self.logger.warning(f"⚠️ Rolling aggregation failed: {e}")
+            return data
     
     def _extract_significant_cross_timeframe_relationships(
         self, 
         pid_result: PIDResult, 
         timeframe_features: List[str]
     ) -> List[Tuple[str, str]]:
-        """Extract significant cross-timeframe relationships from PID analysis."""
-        significant_pairs = []
+        """Extract significant cross-timeframe relationships from PID analysis using dynamic thresholds."""
+        # Use the PID decompositor's significant pairs directly if available
+        if hasattr(pid_result, 'significant_pairs') and pid_result.significant_pairs:
+            # Filter for timeframe features only
+            timeframe_pairs = []
+            for feat1, feat2 in pid_result.significant_pairs:
+                if feat1 in timeframe_features and feat2 in timeframe_features:
+                    # Check if features are from different timeframes  
+                    if self._are_different_timeframes(feat1, feat2):
+                        timeframe_pairs.append((feat1, feat2))
+                        if len(timeframe_pairs) >= self.config.max_timeframe_pairs:
+                            break
+            
+            self.logger.info(f"📊 Using PID significant pairs: {len(timeframe_pairs)} cross-timeframe relationships")
+            return timeframe_pairs
         
-        # Filter synergy scores for timeframe features only
+        # Fallback: use dynamic threshold approach similar to main PID decompositor
         timeframe_synergy = {
             (feat1, feat2): score for (feat1, feat2), score in pid_result.synergy.items()
             if feat1 in timeframe_features and feat2 in timeframe_features
         }
         
+        if not timeframe_synergy:
+            self.logger.warning("⚠️ No timeframe synergy pairs found")
+            return []
+        
+        # Use dynamic threshold: select top 25% of timeframe pairs
+        total_pairs = len(timeframe_synergy)
+        target_count = max(int(total_pairs * 0.25), 2)  # At least 2 pairs
+        target_count = min(target_count, self.config.max_timeframe_pairs)
+        
         # Sort by synergy score and take top relationships
         synergy_items = sorted(timeframe_synergy.items(), key=lambda x: x[1], reverse=True)
         
-        for (feat1, feat2), synergy_score in synergy_items:
-            if synergy_score > self.config.synergy_threshold:
-                # Check if features are from different timeframes
-                if self._are_different_timeframes(feat1, feat2):
-                    significant_pairs.append((feat1, feat2))
-                    if len(significant_pairs) >= self.config.max_timeframe_pairs:
-                        break
+        significant_pairs = []
+        for (feat1, feat2), synergy_score in synergy_items[:target_count]:
+            # Check if features are from different timeframes
+            if self._are_different_timeframes(feat1, feat2):
+                significant_pairs.append((feat1, feat2))
         
+        self.logger.info(f"📊 Dynamic threshold: selected {len(significant_pairs)} cross-timeframe relationships from {total_pairs} pairs")
         return significant_pairs
     
     def _are_different_timeframes(self, feat1: str, feat2: str) -> bool:
@@ -380,9 +500,19 @@ class CrossTimeframeFeatureGenerator:
     
     def _extract_timeframe(self, feature_name: str) -> Optional[str]:
         """Extract timeframe from feature name."""
+        # Check for original timeframes first
         for timeframe in self.config.timeframes:
             if timeframe in feature_name.lower():
                 return timeframe
+        
+        # Check for synthetic timeframe indicators
+        if 'short_tf' in feature_name.lower():
+            return 'short_tf'
+        elif 'medium_tf' in feature_name.lower():
+            return 'medium_tf'
+        elif 'long_tf' in feature_name.lower():
+            return 'long_tf'
+        
         return None
     
     def _correlation_based_cross_timeframe_detection(

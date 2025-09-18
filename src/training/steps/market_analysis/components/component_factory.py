@@ -26,6 +26,96 @@ except ImportError:
     PID_COMPONENT_AVAILABLE = False
 
 
+class MultiHorizonComponentWrapper(BaseMarketAnalysisComponent):
+    """Wrapper for Multi-Horizon Profit Labeler to work as a component."""
+    
+    def __init__(self, adapter_class, config: Optional[ComponentConfig] = None):
+        super().__init__(config)
+        self.adapter_class = adapter_class
+        self.adapter_instance = None
+    
+    def get_required_artifacts(self) -> list[str]:
+        """Get list of required artifacts this component must produce."""
+        return ['multi_horizon_labeling_result']
+    
+    async def execute(self, data, pipeline_state: Dict[str, Any]) -> 'ComponentResult':
+        """Execute multi-horizon labeling as a component."""
+        try:
+            # Create adapter instance if not exists
+            if self.adapter_instance is None:
+                self.adapter_instance = self.adapter_class()
+            
+            # Extract configuration from component config
+            labeling_config = {}
+            if self.config and hasattr(self.config, 'custom_params'):
+                labeling_config = self.config.custom_params.get('multi_horizon_labeling', {})
+            
+            # Execute multi-horizon labeling with proper execution mode detection
+            execution_mode = 'full'  # Default
+            
+            # Try multiple sources for execution mode
+            if pipeline_state.get('execution_mode'):
+                execution_mode = pipeline_state.get('execution_mode')
+            elif self.config and hasattr(self.config, 'mode'):
+                execution_mode = self.config.mode.value if hasattr(self.config.mode, 'value') else str(self.config.mode)
+            elif pipeline_state.get('mode'):
+                execution_mode = pipeline_state.get('mode')
+            
+            # Force data filtering before calling the adapter
+            original_data_size = len(data)
+            if execution_mode.lower() == 'light' and original_data_size > 20000:
+                data = data.tail(14400).copy()  # 10 days for 1m data
+                print(f"🔥 COMPONENT FACTORY LIGHT FILTERING: {original_data_size:,} → {len(data):,} rows")
+            elif execution_mode.lower() == 'blank' and original_data_size > 300000:
+                data = data.tail(259200).copy()  # 180 days for 1m data  
+                print(f"🔥 COMPONENT FACTORY BLANK FILTERING: {original_data_size:,} → {len(data):,} rows")
+            
+            result = self.adapter_instance.execute_multi_horizon_labeling_step(
+                data=data,
+                regime_labels=pipeline_state.get('regime_labels'),
+                config=labeling_config,
+                symbol=pipeline_state.get('symbol', 'UNKNOWN'),
+                exchange=pipeline_state.get('exchange', 'UNKNOWN'),
+                timeframe=pipeline_state.get('timeframe', 'UNKNOWN'),
+                mode=execution_mode
+            )
+            
+            # Convert to ComponentResult
+            from .base_component import ComponentResult
+            
+            # Handle case where result is None
+            if result is None:
+                return ComponentResult(
+                    success=False,
+                    artifacts={},
+                    metadata={},
+                    error_message="Multi-horizon labeling returned None result"
+                )
+            
+            if result.get('status') == 'completed':
+                return ComponentResult(
+                    success=True,
+                    artifacts=result.get('artifacts', {}),
+                    metadata=result.get('metadata', {}),
+                    error_message=None
+                )
+            else:
+                return ComponentResult(
+                    success=False,
+                    artifacts=result.get('artifacts', {}),
+                    metadata=result.get('metadata', {}),
+                    error_message=result.get('error', 'Unknown error in multi-horizon labeling')
+                )
+                
+        except Exception as e:
+            from .base_component import ComponentResult
+            return ComponentResult(
+                success=False,
+                artifacts={},
+                metadata={},
+                error_message=f"Multi-horizon labeling component failed: {str(e)}"
+            )
+
 class HMMModelsTrainingComponentWrapper(BaseMarketAnalysisComponent):
     """Wrapper for HMM Models Training Enhanced to work as a component."""
     
@@ -58,6 +148,85 @@ class HMMModelsTrainingComponentWrapper(BaseMarketAnalysisComponent):
                 if cluster_assignments is not None:
                     print(f"✅ Found cluster_assignments in hmm_clusters: {len(cluster_assignments)} samples")
             
+            # If still missing, try to load from artifacts (previous outcome files)
+            if cluster_assignments is None:
+                artifacts = pipeline_state.get('artifacts', {})
+                
+                # Check hmm_clustering artifacts
+                hmm_clustering_result = artifacts.get('hmm_clustering_result', {})
+                if hmm_clustering_result:
+                    cluster_assignments = hmm_clustering_result.get('cluster_assignments')
+                    if cluster_assignments is not None:
+                        print(f"✅ Found cluster_assignments in hmm_clustering artifacts: {len(cluster_assignments)} samples")
+                
+                # Check hmm_regime_discovery artifacts if still missing
+                if cluster_assignments is None:
+                    hmm_regime_result = artifacts.get('hmm_regime_discovery_result', {})
+                    if hmm_regime_result:
+                        # Try to get regime assignments as cluster assignments
+                        regime_assignments = hmm_regime_result.get('regime_assignments')
+                        if regime_assignments is not None:
+                            cluster_assignments = regime_assignments
+                            print(f"✅ Found regime_assignments as cluster_assignments: {len(cluster_assignments)} samples")
+                        
+                        # Also try direct cluster_assignments from regime discovery
+                        if cluster_assignments is None:
+                            cluster_assignments = hmm_regime_result.get('cluster_assignments')
+                            if cluster_assignments is not None:
+                                print(f"✅ Found cluster_assignments in hmm_regime_discovery artifacts: {len(cluster_assignments)} samples")
+            
+            # If still missing, try to load from the most recent outcome files
+            if cluster_assignments is None:
+                print("🔍 Attempting to load cluster_assignments from recent outcome files...")
+                try:
+                    from pathlib import Path
+                    import json
+                    
+                    outcome_dir = Path("outcomes")
+                    if outcome_dir.exists():
+                        # Look for the most recent hmm_clustering outcome
+                        clustering_files = list(outcome_dir.glob("market_analysis_hmm_clustering_outcome_*.json"))
+                        if clustering_files:
+                            latest_clustering = max(clustering_files, key=lambda f: f.stat().st_mtime)
+                            print(f"📂 Loading from: {latest_clustering}")
+                            
+                            with open(latest_clustering, 'r') as f:
+                                clustering_data = json.load(f)
+                            
+                            clustering_artifacts = clustering_data.get('artifacts', {})
+                            hmm_clustering_result = clustering_artifacts.get('hmm_clustering_result', {})
+                            cluster_assignments = hmm_clustering_result.get('cluster_assignments')
+                            
+                            if cluster_assignments is not None:
+                                print(f"✅ Loaded cluster_assignments from outcome file: {len(cluster_assignments)} samples")
+                        
+                        # If still missing, try hmm_regime_discovery outcomes
+                        if cluster_assignments is None:
+                            regime_files = list(outcome_dir.glob("market_analysis_hmm_regime_discovery_outcome_*.json"))
+                            if regime_files:
+                                latest_regime = max(regime_files, key=lambda f: f.stat().st_mtime)
+                                print(f"📂 Loading from: {latest_regime}")
+                                
+                                with open(latest_regime, 'r') as f:
+                                    regime_data = json.load(f)
+                                
+                                regime_artifacts = regime_data.get('artifacts', {})
+                                hmm_regime_result = regime_artifacts.get('hmm_regime_discovery_result', {})
+                                
+                                # Try regime assignments first
+                                regime_assignments = hmm_regime_result.get('regime_assignments')
+                                if regime_assignments is not None:
+                                    cluster_assignments = regime_assignments
+                                    print(f"✅ Loaded regime_assignments as cluster_assignments: {len(cluster_assignments)} samples")
+                                else:
+                                    # Try direct cluster assignments
+                                    cluster_assignments = hmm_regime_result.get('cluster_assignments')
+                                    if cluster_assignments is not None:
+                                        print(f"✅ Loaded cluster_assignments from regime discovery: {len(cluster_assignments)} samples")
+                                
+                except Exception as e:
+                    print(f"⚠️ Failed to load from outcome files: {e}")
+            
             # If we don't have features/targets, try to extract from dataframe
             if X is None or y is None:
                 dataframe = pipeline_state.get('dataframe')
@@ -70,17 +239,33 @@ class HMMModelsTrainingComponentWrapper(BaseMarketAnalysisComponent):
                         # Simple features: returns, volatility, etc.
                         returns = dataframe['close'].pct_change().fillna(0)
                         volatility = returns.rolling(20).std().fillna(0)
-                        volume_ratio = (dataframe['volume'] / dataframe['volume'].rolling(20).mean()).fillna(1) if 'volume' in dataframe.columns else pd.Series([1] * len(dataframe), index=dataframe.index)
+                        # 30-day volume average (30 days * 96 15-min periods = 2880 periods)
+                        # Use available data for extrapolation when insufficient historical data
+                        min_periods_30d = min(len(dataframe), 96)  # At least 1 day of data
+                        volume_30d_avg = dataframe['volume'].rolling(window=2880, min_periods=min_periods_30d).mean()
+                        # Handle division by zero and missing values robustly
+                        volume_ratio_30d = (dataframe['volume'] / volume_30d_avg.replace(0, dataframe['volume'].mean())).fillna(1) if 'volume' in dataframe.columns else pd.Series([1] * len(dataframe), index=dataframe.index)
                         
-                        X = np.column_stack([returns.values, volatility.values, volume_ratio.values])
-                        feature_names = ['returns', 'volatility', 'volume_ratio']
+                        X = np.column_stack([returns.values, volatility.values, volume_ratio_30d.values])
+                        feature_names = ['returns', 'volatility', 'volume_ratio_30d']
                         
-                        # Create targets (future returns)
-                        y = returns.shift(-1).fillna(0).values
+                        # Create targets (current returns) - convert to discrete classes for on-the-spot classification
+                        current_returns = returns  # Use current returns, not future ones
                         
-                        # Remove last row where target is NaN
-                        X = X[:-1]
-                        y = y[:-1]
+                        # Convert continuous returns to discrete classes for on-the-spot market condition
+                        # Class 0: Strong Down (< -2%), Class 1: Down (-2% to -0.5%), 
+                        # Class 2: Sideways (-0.5% to 0.5%), Class 3: Up (0.5% to 2%), Class 4: Strong Up (> 2%)
+                        y_continuous = current_returns.values
+                        y = np.zeros_like(y_continuous, dtype=int)
+                        y[y_continuous < -0.02] = 0  # Strong Down
+                        y[(y_continuous >= -0.02) & (y_continuous < -0.005)] = 1  # Down
+                        y[(y_continuous >= -0.005) & (y_continuous <= 0.005)] = 2  # Sideways
+                        y[(y_continuous > 0.005) & (y_continuous <= 0.02)] = 3  # Up
+                        y[y_continuous > 0.02] = 4  # Strong Up
+                        
+                        # Remove first row where returns is NaN (due to pct_change)
+                        X = X[1:]
+                        y = y[1:]
                         
                         # Adjust cluster_assignments length if necessary
                         if cluster_assignments is not None and len(cluster_assignments) > len(X):
@@ -93,8 +278,8 @@ class HMMModelsTrainingComponentWrapper(BaseMarketAnalysisComponent):
                   missing_data.append("features")
               if y is None:
                   missing_data.append("targets")
-              if regime_labels is None:
-                  missing_data.append("regime_labels")
+              if cluster_assignments is None:
+                  missing_data.append("cluster_assignments")
 
               if missing_data:
                   available_keys = list(pipeline_state.keys())
@@ -141,6 +326,14 @@ class HMMEnsembleTrainingComponentWrapper(BaseMarketAnalysisComponent):
         self.training_class = training_class
         self.training_instance = None
     
+    def _convert_to_numpy_array(self, data):
+        """Convert list data to numpy array if needed."""
+        if data is not None:
+            import numpy as np
+            if isinstance(data, list):
+                return np.array(data)
+        return data
+    
     def get_required_artifacts(self) -> list[str]:
         """Get list of required artifacts this component must produce."""
         return ['hmm_ensemble_training_result']
@@ -168,6 +361,85 @@ class HMMEnsembleTrainingComponentWrapper(BaseMarketAnalysisComponent):
                 if cluster_assignments is not None:
                     print(f"✅ Found cluster_assignments in hmm_clusters: {len(cluster_assignments)} samples")
             
+            # If still missing, try to load from artifacts (previous outcome files)
+            if cluster_assignments is None:
+                artifacts = pipeline_state.get('artifacts', {})
+                
+                # Check hmm_clustering artifacts
+                hmm_clustering_result = artifacts.get('hmm_clustering_result', {})
+                if hmm_clustering_result:
+                    cluster_assignments = hmm_clustering_result.get('cluster_assignments')
+                    if cluster_assignments is not None:
+                        print(f"✅ Found cluster_assignments in hmm_clustering artifacts: {len(cluster_assignments)} samples")
+                
+                # Check hmm_regime_discovery artifacts if still missing
+                if cluster_assignments is None:
+                    hmm_regime_result = artifacts.get('hmm_regime_discovery_result', {})
+                    if hmm_regime_result:
+                        # Try to get regime assignments as cluster assignments
+                        regime_assignments = hmm_regime_result.get('regime_assignments')
+                        if regime_assignments is not None:
+                            cluster_assignments = regime_assignments
+                            print(f"✅ Found regime_assignments as cluster_assignments: {len(cluster_assignments)} samples")
+                        
+                        # Also try direct cluster_assignments from regime discovery
+                        if cluster_assignments is None:
+                            cluster_assignments = hmm_regime_result.get('cluster_assignments')
+                            if cluster_assignments is not None:
+                                print(f"✅ Found cluster_assignments in hmm_regime_discovery artifacts: {len(cluster_assignments)} samples")
+            
+            # If still missing, try to load from the most recent outcome files
+            if cluster_assignments is None:
+                print("🔍 Attempting to load cluster_assignments from recent outcome files...")
+                try:
+                    from pathlib import Path
+                    import json
+                    
+                    outcome_dir = Path("outcomes")
+                    if outcome_dir.exists():
+                        # Look for the most recent hmm_clustering outcome
+                        clustering_files = list(outcome_dir.glob("market_analysis_hmm_clustering_outcome_*.json"))
+                        if clustering_files:
+                            latest_clustering = max(clustering_files, key=lambda f: f.stat().st_mtime)
+                            print(f"📂 Loading from: {latest_clustering}")
+                            
+                            with open(latest_clustering, 'r') as f:
+                                clustering_data = json.load(f)
+                            
+                            clustering_artifacts = clustering_data.get('artifacts', {})
+                            hmm_clustering_result = clustering_artifacts.get('hmm_clustering_result', {})
+                            cluster_assignments = hmm_clustering_result.get('cluster_assignments')
+                            
+                            if cluster_assignments is not None:
+                                print(f"✅ Loaded cluster_assignments from outcome file: {len(cluster_assignments)} samples")
+                        
+                        # If still missing, try hmm_regime_discovery outcomes
+                        if cluster_assignments is None:
+                            regime_files = list(outcome_dir.glob("market_analysis_hmm_regime_discovery_outcome_*.json"))
+                            if regime_files:
+                                latest_regime = max(regime_files, key=lambda f: f.stat().st_mtime)
+                                print(f"📂 Loading from: {latest_regime}")
+                                
+                                with open(latest_regime, 'r') as f:
+                                    regime_data = json.load(f)
+                                
+                                regime_artifacts = regime_data.get('artifacts', {})
+                                hmm_regime_result = regime_artifacts.get('hmm_regime_discovery_result', {})
+                                
+                                # Try regime assignments first
+                                regime_assignments = hmm_regime_result.get('regime_assignments')
+                                if regime_assignments is not None:
+                                    cluster_assignments = regime_assignments
+                                    print(f"✅ Loaded regime_assignments as cluster_assignments: {len(cluster_assignments)} samples")
+                                else:
+                                    # Try direct cluster assignments
+                                    cluster_assignments = hmm_regime_result.get('cluster_assignments')
+                                    if cluster_assignments is not None:
+                                        print(f"✅ Loaded cluster_assignments from regime discovery: {len(cluster_assignments)} samples")
+                                
+                except Exception as e:
+                    print(f"⚠️ Failed to load from outcome files: {e}")
+            
             # If we don't have features/targets, try to extract from dataframe
             if X is None or y is None:
                 dataframe = pipeline_state.get('dataframe')
@@ -180,17 +452,33 @@ class HMMEnsembleTrainingComponentWrapper(BaseMarketAnalysisComponent):
                         # Simple features: returns, volatility, etc.
                         returns = dataframe['close'].pct_change().fillna(0)
                         volatility = returns.rolling(20).std().fillna(0)
-                        volume_ratio = (dataframe['volume'] / dataframe['volume'].rolling(20).mean()).fillna(1) if 'volume' in dataframe.columns else pd.Series([1] * len(dataframe), index=dataframe.index)
+                        # 30-day volume average (30 days * 96 15-min periods = 2880 periods)
+                        # Use available data for extrapolation when insufficient historical data
+                        min_periods_30d = min(len(dataframe), 96)  # At least 1 day of data
+                        volume_30d_avg = dataframe['volume'].rolling(window=2880, min_periods=min_periods_30d).mean()
+                        # Handle division by zero and missing values robustly
+                        volume_ratio_30d = (dataframe['volume'] / volume_30d_avg.replace(0, dataframe['volume'].mean())).fillna(1) if 'volume' in dataframe.columns else pd.Series([1] * len(dataframe), index=dataframe.index)
                         
-                        X = np.column_stack([returns.values, volatility.values, volume_ratio.values])
-                        feature_names = ['returns', 'volatility', 'volume_ratio']
+                        X = np.column_stack([returns.values, volatility.values, volume_ratio_30d.values])
+                        feature_names = ['returns', 'volatility', 'volume_ratio_30d']
                         
-                        # Create targets (future returns)
-                        y = returns.shift(-1).fillna(0).values
+                        # Create targets (current returns) - convert to discrete classes for on-the-spot classification
+                        current_returns = returns  # Use current returns, not future ones
                         
-                        # Remove last row where target is NaN
-                        X = X[:-1]
-                        y = y[:-1]
+                        # Convert continuous returns to discrete classes for on-the-spot market condition
+                        # Class 0: Strong Down (< -2%), Class 1: Down (-2% to -0.5%), 
+                        # Class 2: Sideways (-0.5% to 0.5%), Class 3: Up (0.5% to 2%), Class 4: Strong Up (> 2%)
+                        y_continuous = current_returns.values
+                        y = np.zeros_like(y_continuous, dtype=int)
+                        y[y_continuous < -0.02] = 0  # Strong Down
+                        y[(y_continuous >= -0.02) & (y_continuous < -0.005)] = 1  # Down
+                        y[(y_continuous >= -0.005) & (y_continuous <= 0.005)] = 2  # Sideways
+                        y[(y_continuous > 0.005) & (y_continuous <= 0.02)] = 3  # Up
+                        y[y_continuous > 0.02] = 4  # Strong Up
+                        
+                        # Remove first row where returns is NaN (due to pct_change)
+                        X = X[1:]
+                        y = y[1:]
                         
                         # Adjust cluster_assignments length if necessary
                         if cluster_assignments is not None and len(cluster_assignments) > len(X):
@@ -202,6 +490,9 @@ class HMMEnsembleTrainingComponentWrapper(BaseMarketAnalysisComponent):
                 if y is None: missing_items.append("targets")
                 if cluster_assignments is None: missing_items.append("cluster_assignments")
                 raise ValueError(f"Missing required data: {', '.join(missing_items)}")
+            
+            # Ensure all data is in proper numpy format before training
+            cluster_assignments = self._convert_to_numpy_array(cluster_assignments)
             
             # Execute training
             results = self.training_instance.execute(
@@ -286,6 +577,14 @@ class ComponentFactory:
             except ImportError as e:
                 raise ValueError(f"Failed to import RegimeDataSplittingComponent: {e}")
         
+        # Handle multi-horizon profit labeler
+        if component_name == 'multi_horizon_profit_labeler':
+            try:
+                from ..multi_horizon_sub_pipeline_adapter import MultiHorizonSubPipelineAdapter
+                return MultiHorizonComponentWrapper(MultiHorizonSubPipelineAdapter, config)
+            except ImportError as e:
+                raise ValueError(f"Failed to import MultiHorizonSubPipelineAdapter: {e}")
+        
         # Handle HMM training components (moved to hmm_models_training module)
         if component_name == 'hmm_models_training':
             try:
@@ -340,7 +639,7 @@ class ComponentFactory:
             List of component names
         """
         # Include both registered components and lazy-loaded components
-        lazy_components = ['regime_data_splitting', 'hmm_models_training', 'hmm_ensemble_training']
+        lazy_components = ['regime_data_splitting', 'multi_horizon_profit_labeler', 'hmm_models_training', 'hmm_ensemble_training']
         return list(self._components.keys()) + lazy_components
     
     @classmethod

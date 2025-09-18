@@ -1,0 +1,3586 @@
+{
+  "stage": "market_analysis",
+  "sub_pipeline": "hmm_clustering",
+  "timestamp": "2025-09-18T17:59:17.953203",
+  "status": "completed",
+  "output_files": [],
+  "metadata": {
+    "symbol": "ETHUSDT",
+    "exchange": "binance",
+    "timeframe": "1h",
+    "cluster_count": 15,
+    "regime_to_cluster_reduction": "394 \u2192 15"
+  },
+  "artifacts": {
+    "hmm_clustering_result": {
+      "hmm_models": [
+        {
+          "cluster_id": 0,
+          "model_type": "advanced_clustering_placeholder",
+          "n_components": 1,
+          "method_used": "gmm"
+        },
+        {
+          "cluster_id": 1,
+          "model_type": "advanced_clustering_placeholder",
+          "n_components": 1,
+          "method_used": "gmm"
+        },
+        {
+          "cluster_id": 2,
+          "model_type": "advanced_clustering_placeholder",
+          "n_components": 1,
+          "method_used": "gmm"
+        },
+        {
+          "cluster_id": 3,
+          "model_type": "advanced_clustering_placeholder",
+          "n_components": 1,
+          "method_used": "gmm"
+        },
+        {
+          "cluster_id": 4,
+          "model_type": "advanced_clustering_placeholder",
+          "n_components": 1,
+          "method_used": "gmm"
+        },
+        {
+          "cluster_id": 5,
+          "model_type": "advanced_clustering_placeholder",
+          "n_components": 1,
+          "method_used": "gmm"
+        },
+        {
+          "cluster_id": 6,
+          "model_type": "advanced_clustering_placeholder",
+          "n_components": 1,
+          "method_used": "gmm"
+        },
+        {
+          "cluster_id": 7,
+          "model_type": "advanced_clustering_placeholder",
+          "n_components": 1,
+          "method_used": "gmm"
+        },
+        {
+          "cluster_id": 8,
+          "model_type": "advanced_clustering_placeholder",
+          "n_components": 1,
+          "method_used": "gmm"
+        },
+        {
+          "cluster_id": 9,
+          "model_type": "advanced_clustering_placeholder",
+          "n_components": 1,
+          "method_used": "gmm"
+        },
+        {
+          "cluster_id": 10,
+          "model_type": "advanced_clustering_placeholder",
+          "n_components": 1,
+          "method_used": "gmm"
+        },
+        {
+          "cluster_id": 11,
+          "model_type": "advanced_clustering_placeholder",
+          "n_components": 1,
+          "method_used": "gmm"
+        },
+        {
+          "cluster_id": 12,
+          "model_type": "advanced_clustering_placeholder",
+          "n_components": 1,
+          "method_used": "gmm"
+        },
+        {
+          "cluster_id": 13,
+          "model_type": "advanced_clustering_placeholder",
+          "n_components": 1,
+          "method_used": "gmm"
+        },
+        {
+          "cluster_id": 14,
+          "model_type": "advanced_clustering_placeholder",
+          "n_components": 1,
+          "method_used": "gmm"
+        }
+      ],
+      "cluster_assignments": [
+        8,
+        4,
+        2,
+        10,
+        11,
+        4,
+        9,
+        9,
+        4,
+        9,
+        8,
+        12,
+        13,
+        8,
+        6,
+        6,
+        13,
+        8,
+        8,
+        1,
+        11,
+        12,
+        11,
+        4,
+        8,
+        6,
+        1,
+        6,
+        8,
+        8,
+        8,
+        8,
+        6,
+        6,
+        6,
+        4,
+        2,
+        8,
+        8,
+        13,
+        13,
+        8,
+        1,
+        8,
+        6,
+        6,
+        6,
+        6,
+        6,
+        1,
+        1,
+        10,
+        9,
+        2,
+        2,
+        7,
+        8,
+        12,
+        8,
+        13,
+        8,
+        6,
+        6,
+        13,
+        6,
+        4,
+        1,
+        6,
+        1,
+        8,
+        6,
+        6,
+        1,
+        1,
+        6,
+        6,
+        6,
+        8,
+        8,
+        1,
+        8,
+        11,
+        8,
+        6,
+        8,
+        6,
+        6,
+        6,
+        6,
+        1,
+        8,
+        6,
+        6,
+        6,
+        6,
+        6,
+        8,
+        8,
+        8,
+        6,
+        8,
+        1,
+        1,
+        8,
+        1,
+        1,
+        8,
+        8,
+        6,
+        6,
+        6,
+        8,
+        1,
+        8,
+        8,
+        1,
+        6,
+        6,
+        8,
+        8,
+        8,
+        8,
+        1,
+        8,
+        1,
+        8,
+        8,
+        8,
+        4,
+        8,
+        4
+      ],
+      "cluster_metrics": {
+        "clustering_method": "advanced_multi_method",
+        "target_clusters": 15,
+        "actual_clusters": 11,
+        "total_samples": 131,
+        "method_used": "gmm",
+        "regime_reduction_ratio": 26.266666666666666
+      },
+      "cluster_quality_metrics": {
+        "persistence_analysis": {
+          "avg_duration": 1.4886363636363635,
+          "median_duration": 1.0,
+          "std_duration": 0.9169405426076906,
+          "stability_score": 0.6920199704218444,
+          "total_transitions": 87,
+          "cluster_durations": [
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            2,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            2,
+            1,
+            2,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            4,
+            3,
+            1,
+            1,
+            2,
+            2,
+            1,
+            1,
+            1,
+            5,
+            2,
+            1,
+            1,
+            2,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            2,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            2,
+            2,
+            3,
+            2,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            4,
+            1,
+            1,
+            5,
+            3,
+            1,
+            1,
+            2,
+            1,
+            2,
+            2,
+            3,
+            1,
+            1,
+            2,
+            1,
+            2,
+            4,
+            1,
+            1,
+            1,
+            3,
+            1,
+            1,
+            1
+          ]
+        },
+        "economic_significance": {
+          "cluster_returns": {
+            "1": 0.005591663997620344,
+            "2": 0.0003245075640734285,
+            "4": 0.01392484549432993,
+            "6": 0.0018881261348724365,
+            "8": 0.0023125906009227037,
+            "9": 0.0015612641582265496,
+            "10": 0.001987457275390625,
+            "11": 0.009137432090938091,
+            "12": 0.0014682412147521973,
+            "13": 0.003927302546799183
+          },
+          "cluster_volatilities": {
+            "1": 0.008915391750633717,
+            "2": 0.008427295833826065,
+            "4": 0.030767006799578667,
+            "6": 0.009068209677934647,
+            "8": 0.006685550324618816,
+            "9": 0.004188957158476114,
+            "10": NaN,
+            "11": 0.013287688605487347,
+            "12": 0.001124225091189146,
+            "13": 0.011038408614695072
+          },
+          "return_spread": 0.0136003379302565,
+          "volatility_spread": 0.02964278170838952,
+          "economic_significance_score": 1.0,
+          "is_economically_significant": true
+        },
+        "momentum_analysis": {
+          "cluster_1": {
+            "price_momentum_5": 0.049846213310956955,
+            "price_momentum_10": 0.08648402243852615,
+            "mean_roc": 0.005591663997620344,
+            "std_roc": 0.008915391750633717,
+            "roc_skewness": 1.0941885709762573,
+            "roc_kurtosis": 0.8861494660377502,
+            "volume_momentum": 0.5732750296592712,
+            "volatility_momentum": 0.00012532295659184456,
+            "overall_momentum_score": 0.62324656592682,
+            "momentum_direction": "bullish",
+            "momentum_strength": "strong"
+          },
+          "cluster_2": {
+            "mean_roc": 0.0003245075640734285,
+            "std_roc": 0.008427295833826065,
+            "roc_skewness": -0.3755567669868469,
+            "roc_kurtosis": 0.0,
+            "overall_momentum_score": 0,
+            "momentum_direction": "neutral",
+            "momentum_strength": "weak"
+          },
+          "cluster_4": {
+            "price_momentum_5": 0.09631108492612839,
+            "mean_roc": 0.01392484549432993,
+            "std_roc": 0.030767006799578667,
+            "roc_skewness": 2.5603110790252686,
+            "roc_kurtosis": 6.646211624145508,
+            "volume_momentum": -0.36656707525253296,
+            "volatility_momentum": NaN,
+            "overall_momentum_score": NaN,
+            "momentum_direction": "bullish",
+            "momentum_strength": "moderate"
+          },
+          "cluster_6": {
+            "price_momentum_5": 0.03201606869697571,
+            "price_momentum_10": 0.05110389366745949,
+            "price_momentum_20": 0.0699525997042656,
+            "mean_roc": 0.0018881261348724365,
+            "std_roc": 0.009068209677934647,
+            "roc_skewness": 1.0300509929656982,
+            "roc_kurtosis": 3.9201951026916504,
+            "volume_momentum": 0.23611970245838165,
+            "volume_trend_strength": 0.3777382243783709,
+            "volatility_momentum": 0.0020327365724369887,
+            "overall_momentum_score": 0.2701685077277943,
+            "momentum_direction": "bullish",
+            "momentum_strength": "strong"
+          },
+          "cluster_8": {
+            "price_momentum_5": 0.006814137101173401,
+            "price_momentum_10": 0.025898315012454987,
+            "price_momentum_20": 0.06923989951610565,
+            "mean_roc": 0.0023125906009227037,
+            "std_roc": 0.006685550324618816,
+            "roc_skewness": 0.9299556016921997,
+            "roc_kurtosis": 0.6107129454612732,
+            "volume_momentum": -0.45819181203842163,
+            "volume_trend_strength": -0.02050926365917764,
+            "volatility_momentum": -0.0016169233014807103,
+            "overall_momentum_score": 0.46662287244107575,
+            "momentum_direction": "neutral",
+            "momentum_strength": "strong"
+          },
+          "cluster_9": {
+            "mean_roc": 0.0015612641582265496,
+            "std_roc": 0.004188957158476114,
+            "roc_skewness": 1.5040496587753296,
+            "roc_kurtosis": 0.0,
+            "overall_momentum_score": 0,
+            "momentum_direction": "neutral",
+            "momentum_strength": "weak"
+          },
+          "cluster_10": {
+            "mean_roc": 0.001987457275390625,
+            "std_roc": NaN,
+            "roc_skewness": 0.0,
+            "roc_kurtosis": 0.0,
+            "overall_momentum_score": 0,
+            "momentum_direction": "neutral",
+            "momentum_strength": "weak"
+          },
+          "cluster_11": {
+            "mean_roc": 0.009137432090938091,
+            "std_roc": 0.013287688605487347,
+            "roc_skewness": 1.6408134698867798,
+            "roc_kurtosis": 0.0,
+            "overall_momentum_score": 0,
+            "momentum_direction": "neutral",
+            "momentum_strength": "weak"
+          },
+          "cluster_12": {
+            "mean_roc": 0.0014682412147521973,
+            "std_roc": 0.001124225091189146,
+            "roc_skewness": 0.0,
+            "roc_kurtosis": 0.0,
+            "overall_momentum_score": 0,
+            "momentum_direction": "neutral",
+            "momentum_strength": "weak"
+          },
+          "cluster_13": {
+            "price_momentum_5": 0.019544200971722603,
+            "mean_roc": 0.003927302546799183,
+            "std_roc": 0.011038408614695072,
+            "roc_skewness": -0.6117453575134277,
+            "roc_kurtosis": 0.657673180103302,
+            "volume_momentum": 1.2097562551498413,
+            "volatility_momentum": NaN,
+            "overall_momentum_score": NaN,
+            "momentum_direction": "neutral",
+            "momentum_strength": "moderate"
+          }
+        },
+        "statistical_significance": {
+          "error": "Regime characteristics and regime-to-cluster mapping required for regime-level analysis"
+        },
+        "stability_analysis": {
+          "train_distribution": {
+            "cluster_8": 26.153846153846157,
+            "cluster_4": 7.6923076923076925,
+            "cluster_2": 6.153846153846154,
+            "cluster_10": 3.076923076923077,
+            "cluster_11": 4.615384615384616,
+            "cluster_9": 6.153846153846154,
+            "cluster_12": 4.615384615384616,
+            "cluster_13": 9.230769230769232,
+            "cluster_6": 23.076923076923077,
+            "cluster_1": 7.6923076923076925,
+            "cluster_7": 1.5384615384615385
+          },
+          "test_distribution": {
+            "cluster_4": 4.545454545454546,
+            "cluster_1": 21.21212121212121,
+            "cluster_6": 33.33333333333333,
+            "cluster_8": 39.39393939393939,
+            "cluster_11": 1.5151515151515151
+          },
+          "stability_score": 0.9225972383664739,
+          "is_stable": "True"
+        },
+        "transition_analysis": {
+          "transitions": {
+            "8->9": 1,
+            "9->6": 1,
+            "6->8": 6,
+            "8->6": 4,
+            "8->13": 1,
+            "13->6": 1,
+            "6->1": 2,
+            "1->2": 1,
+            "2->6": 1,
+            "1->6": 1,
+            "8->1": 1,
+            "1->8": 1,
+            "8->4": 1
+          },
+          "raw_transitions": {
+            "8->4": 3,
+            "4->2": 2,
+            "2->10": 1,
+            "10->11": 1,
+            "11->4": 2,
+            "4->9": 2,
+            "9->4": 1,
+            "9->8": 1,
+            "8->12": 2,
+            "12->13": 1,
+            "13->8": 4,
+            "8->6": 11,
+            "6->13": 2,
+            "8->1": 9,
+            "1->11": 1,
+            "11->12": 1,
+            "12->11": 1,
+            "4->8": 2,
+            "6->1": 5,
+            "1->6": 4,
+            "6->8": 7,
+            "6->4": 2,
+            "2->8": 1,
+            "8->13": 2,
+            "1->8": 9,
+            "1->10": 1,
+            "10->9": 1,
+            "9->2": 1,
+            "2->7": 1,
+            "7->8": 1,
+            "12->8": 1,
+            "13->6": 1,
+            "4->1": 1,
+            "8->11": 1,
+            "11->8": 1
+          },
+          "filtered_transitions": {
+            "8->9": 1,
+            "9->6": 1,
+            "6->8": 6,
+            "8->6": 4,
+            "8->13": 1,
+            "13->6": 1,
+            "6->1": 2,
+            "1->2": 1,
+            "2->6": 1,
+            "1->6": 1,
+            "8->1": 1,
+            "1->8": 1,
+            "8->4": 1
+          },
+          "transition_probabilities": {
+            "8->9": 0.018867924528301886,
+            "9->6": 0.125,
+            "6->8": 0.13333333333333333,
+            "8->6": 0.07547169811320754,
+            "8->13": 0.018867924528301886,
+            "13->6": 0.2,
+            "6->1": 0.044444444444444446,
+            "1->2": 0.09090909090909091,
+            "2->6": 0.125,
+            "1->6": 0.09090909090909091,
+            "8->1": 0.018867924528301886,
+            "1->8": 0.09090909090909091,
+            "8->4": 0.018867924528301886
+          },
+          "raw_transition_probabilities": {
+            "8->4": 0.06976744186046512,
+            "4->2": 0.25,
+            "2->10": 0.25,
+            "10->11": 0.5,
+            "11->4": 0.5,
+            "4->9": 0.25,
+            "9->4": 0.25,
+            "9->8": 0.25,
+            "8->12": 0.046511627906976744,
+            "12->13": 0.3333333333333333,
+            "13->8": 0.6666666666666666,
+            "8->6": 0.2558139534883721,
+            "6->13": 0.05405405405405406,
+            "8->1": 0.20930232558139536,
+            "1->11": 0.05263157894736842,
+            "11->12": 0.25,
+            "12->11": 0.3333333333333333,
+            "4->8": 0.25,
+            "6->1": 0.13513513513513514,
+            "1->6": 0.21052631578947367,
+            "6->8": 0.1891891891891892,
+            "6->4": 0.05405405405405406,
+            "2->8": 0.25,
+            "8->13": 0.046511627906976744,
+            "1->8": 0.47368421052631576,
+            "1->10": 0.05263157894736842,
+            "10->9": 0.5,
+            "9->2": 0.25,
+            "2->7": 0.25,
+            "7->8": 1.0,
+            "12->8": 0.3333333333333333,
+            "13->6": 0.16666666666666666,
+            "4->1": 0.125,
+            "8->11": 0.023255813953488372,
+            "11->8": 0.25
+          },
+          "total_transitions": 22,
+          "raw_total_transitions": 87,
+          "transition_entropy": 3.29989639116789,
+          "raw_entropy": 4.567904297435217,
+          "filtered_entropy": 3.29989639116789,
+          "transition_frequency": 0.16793893129770993,
+          "is_transition_stable": "False",
+          "filtering_stats": {
+            "transition_reduction": 0.7471264367816092,
+            "entropy_improvement": 1.2680079062673273,
+            "noise_filtered_count": 0,
+            "smoothing_applied": true,
+            "min_probability_threshold": 0.005
+          }
+        },
+        "model_selection_criteria": {},
+        "validation_gates": {
+          "persistence_gate": {
+            "passed": "True",
+            "score": 0.6920199704218444,
+            "threshold": 0.5
+          },
+          "economic_gate": {
+            "passed": true,
+            "score": 1.0,
+            "threshold": 0.5
+          },
+          "stability_gate": {
+            "passed": "True",
+            "score": 0.9225972383664739,
+            "threshold": 0.7
+          },
+          "transition_gate": {
+            "passed": "False",
+            "score": -0.09996546372262993,
+            "threshold": 0.5
+          },
+          "overall_passed": false
+        },
+        "overall_quality_score": 0.6536543021970795,
+        "validation_passed": "True",
+        "recommendations": [
+          "High transition entropy - consider cluster smoothing or filtering"
+        ],
+        "validation_time": 0.00917196273803711
+      },
+      "cluster_detailed_metrics": {
+        "cluster_1": {
+          "cluster_id": 1,
+          "sample_count": 19,
+          "sample_percentage": 14.50381679389313,
+          "regime_composition_analysis": {
+            "total_regimes": 23,
+            "regime_ids": [
+              "regime_2",
+              "regime_10",
+              "regime_20",
+              "regime_22",
+              "regime_26",
+              "regime_54",
+              "regime_58",
+              "regime_61",
+              "regime_95",
+              "regime_116"
+            ],
+            "feature_diversity_analysis": {
+              "volatility": {
+                "volatility_1h": {
+                  "range": "0.005276 - 0.018590",
+                  "mean": 0.008815635681531734,
+                  "std": 0.0033669619243220012,
+                  "cv": 0.38193070198846796,
+                  "is_diverse": "False"
+                },
+                "volatility_3h": {
+                  "range": "3.090208 - 21.542546",
+                  "mean": 11.431181174160756,
+                  "std": 5.774950666992947,
+                  "cv": 0.5051928211974058,
+                  "is_diverse": "True"
+                },
+                "volatility_6h": {
+                  "range": "3.359426 - 43.651592",
+                  "mean": 17.40707533522635,
+                  "std": 10.600363613790261,
+                  "cv": 0.6089686756475695,
+                  "is_diverse": "True"
+                }
+              },
+              "momentum": {
+                "momentum_1h": {
+                  "range": "-0.008482 - 0.006149",
+                  "mean": 0.00010164790457345451,
+                  "std": 0.003802612982474574,
+                  "cv": 37.409654418666996,
+                  "is_diverse": "True"
+                },
+                "momentum_2h": {
+                  "range": "-0.014239 - 0.022166",
+                  "mean": 0.0009365826917215714,
+                  "std": 0.008480005823090811,
+                  "cv": 9.054198735515133,
+                  "is_diverse": "True"
+                },
+                "momentum_3h": {
+                  "range": "-0.023775 - 0.022218",
+                  "mean": -0.0006889066369035043,
+                  "std": 0.01148057358920769,
+                  "cv": 16.664919416091767,
+                  "is_diverse": "True"
+                },
+                "momentum_6h": {
+                  "range": "-0.036613 - 0.028920",
+                  "mean": -0.00048504416658237193,
+                  "std": 0.015747448085500437,
+                  "cv": 32.466008603829174,
+                  "is_diverse": "True"
+                },
+                "volume_momentum_1h": {
+                  "range": "-0.689266 - 1.963143",
+                  "mean": -0.13931906602099742,
+                  "std": 0.5373221347391898,
+                  "cv": 3.8567738794502646,
+                  "is_diverse": "True"
+                },
+                "volume_momentum_3h": {
+                  "range": "-0.658335 - 2.871296",
+                  "mean": 0.03583613541306889,
+                  "std": 0.8875291611507456,
+                  "cv": 24.766318993958187,
+                  "is_diverse": "True"
+                },
+                "volume_momentum_6h": {
+                  "range": "-0.755423 - 1.788227",
+                  "mean": -0.10971332327298253,
+                  "std": 0.6307351852300198,
+                  "cv": 5.748938838181576,
+                  "is_diverse": "True"
+                }
+              },
+              "volume": {
+                "volume_ratio": {
+                  "range": "0.379 - 1.924",
+                  "mean": 0.7730688456739664,
+                  "std": 0.36485225942806254,
+                  "cv": 0.47195312742163603,
+                  "is_diverse": "False"
+                },
+                "volume_weighted_price": {
+                  "range": "19309308.336 - 37345849.333",
+                  "mean": 26391367.158641767,
+                  "std": 5022947.619188462,
+                  "cv": 0.1903254040988064,
+                  "is_diverse": "False"
+                }
+              }
+            },
+            "diversity_summary": {
+              "mean_cv_across_features": 11.010431968003916,
+              "high_diversity_features": [
+                "momentum:momentum_1h",
+                "momentum:momentum_2h",
+                "momentum:momentum_3h",
+                "momentum:momentum_6h",
+                "momentum:volume_momentum_1h",
+                "momentum:volume_momentum_3h",
+                "momentum:volume_momentum_6h"
+              ],
+              "constant_features": [],
+              "diversity_assessment": "HIGH"
+            }
+          },
+          "returns_analysis": {
+            "bars_per_year": 8760.0,
+            "annualized_return": 1.6359928594604234e+21,
+            "annualized_volatility": 0.8344349466490874,
+            "annualized_sharpe": 58.70197169456935,
+            "mean_return_bar": 0.005591663997620344,
+            "std_return_bar": 0.008915391750633717,
+            "ci95_bar": [
+              0.0014729631412659762,
+              0.009710364853974713
+            ],
+            "ci95_annualized": [
+              12.903157117489952,
+              85.06279612081849
+            ]
+          },
+          "dwell_time": {
+            "count": 15,
+            "mean": 1.2666666666666666,
+            "median": 1.0,
+            "min": 1,
+            "max": 2,
+            "p25": 1.0,
+            "p75": 1.5
+          },
+          "transition_row": {
+            "to_0": 0.0,
+            "to_1": 0.21052631578947367,
+            "to_2": 0.0,
+            "to_3": 0.0,
+            "to_4": 0.0,
+            "to_5": 0.0,
+            "to_6": 0.21052631578947367,
+            "to_7": 0.0,
+            "to_8": 0.47368421052631576,
+            "to_9": 0.0,
+            "to_10": 0.05263157894736842
+          },
+          "volume_analysis": {
+            "volume_stats": {
+              "mean_volume": 15535.0673828125,
+              "median_volume": 12780.2568359375,
+              "std_volume": 5373.8486328125,
+              "min_volume": 8256.7626953125,
+              "max_volume": 28618.52734375
+            },
+            "volume_volatility": {
+              "volume_cv": 0.34591731429100037,
+              "volume_trend": "decreasing"
+            },
+            "volume_anomalies": {
+              "high_volume_threshold": 21884.466796875,
+              "low_volume_threshold": 10918.9162109375,
+              "high_volume_samples": 2,
+              "low_volume_samples": 2
+            }
+          },
+          "volatility_analysis": {
+            "volatility_metrics": {
+              "mean_daily_range_pct": 0.643373966217041,
+              "std_daily_range_pct": 0.240492045879364,
+              "max_daily_range_pct": 1.067144513130188,
+              "min_daily_range_pct": 0.33453547954559326,
+              "mean_atr": 44.318719773065474,
+              "atr_volatility": 4.996839376521254
+            },
+            "volatility_classification": {
+              "volatility_level": "low",
+              "volatility_consistency": "consistent"
+            }
+          },
+          "trend_analysis": {
+            "trend_metrics": {
+              "trend_direction": "upward",
+              "trend_strength": 4.2173444813336225,
+              "trend_consistency": "moderate"
+            },
+            "moving_averages": {
+              "sma_5": 4638.78203125,
+              "sma_20": 4451.065275493421,
+              "ma_cross": "golden"
+            }
+          },
+          "hmm_model_analysis": {
+            "model_type": "dict",
+            "model_available": true
+          },
+          "economic_interpretability": {
+            "label": "trend-up"
+          }
+        },
+        "cluster_2": {
+          "cluster_id": 2,
+          "sample_count": 4,
+          "sample_percentage": 3.0534351145038165,
+          "regime_composition_analysis": {
+            "total_regimes": 31,
+            "regime_ids": [
+              "regime_81",
+              "regime_84",
+              "regime_88",
+              "regime_92",
+              "regime_94",
+              "regime_126",
+              "regime_128",
+              "regime_130",
+              "regime_134",
+              "regime_141"
+            ],
+            "feature_diversity_analysis": {
+              "volatility": {
+                "volatility_1h": {
+                  "range": "0.006535 - 0.019900",
+                  "mean": 0.011354348599909294,
+                  "std": 0.00323705988321779,
+                  "cv": 0.2850942838978583,
+                  "is_diverse": "False"
+                },
+                "volatility_3h": {
+                  "range": "3.176498 - 33.309436",
+                  "mean": 12.869198874300597,
+                  "std": 7.271046778885276,
+                  "cv": 0.5649960692895452,
+                  "is_diverse": "True"
+                },
+                "volatility_6h": {
+                  "range": "4.706277 - 41.868943",
+                  "mean": 17.485770030169657,
+                  "std": 8.437451883519863,
+                  "cv": 0.48253247463291715,
+                  "is_diverse": "False"
+                }
+              },
+              "momentum": {
+                "momentum_1h": {
+                  "range": "-0.012976 - 0.007947",
+                  "mean": -0.0012004860725131372,
+                  "std": 0.004777411744166526,
+                  "cv": 3.9795644893783186,
+                  "is_diverse": "True"
+                },
+                "momentum_2h": {
+                  "range": "-0.026227 - 0.014393",
+                  "mean": -0.002980309481140162,
+                  "std": 0.008421327025021843,
+                  "cv": 2.825655214102174,
+                  "is_diverse": "True"
+                },
+                "momentum_3h": {
+                  "range": "-0.028811 - 0.022514",
+                  "mean": -0.002923857310796184,
+                  "std": 0.010255502489914194,
+                  "cv": 3.50752495754369,
+                  "is_diverse": "True"
+                },
+                "momentum_6h": {
+                  "range": "-0.032947 - 0.032316",
+                  "mean": -0.000737335556805188,
+                  "std": 0.015711730894479737,
+                  "cv": 21.308793193912045,
+                  "is_diverse": "True"
+                },
+                "volume_momentum_1h": {
+                  "range": "-0.379931 - 2.159890",
+                  "mean": 0.35739680913817856,
+                  "std": 0.6911196245245478,
+                  "cv": 1.9337599185373353,
+                  "is_diverse": "True"
+                },
+                "volume_momentum_3h": {
+                  "range": "-0.604141 - 5.589241",
+                  "mean": 0.5568201217172811,
+                  "std": 1.3180945497286203,
+                  "cv": 2.3671819647312735,
+                  "is_diverse": "True"
+                },
+                "volume_momentum_6h": {
+                  "range": "-0.481365 - 3.885880",
+                  "mean": 0.5907616835467383,
+                  "std": 1.1150991567251602,
+                  "cv": 1.8875617491481043,
+                  "is_diverse": "True"
+                }
+              },
+              "volume": {
+                "volume_ratio": {
+                  "range": "0.536 - 2.500",
+                  "mean": 1.1528621571064603,
+                  "std": 0.5815088998007929,
+                  "cv": 0.5044045345892066,
+                  "is_diverse": "True"
+                },
+                "volume_weighted_price": {
+                  "range": "38873192.000 - 77287120.000",
+                  "mean": 51920242.93446588,
+                  "std": 7911100.227112956,
+                  "cv": 0.15237024674746624,
+                  "is_diverse": "False"
+                }
+              }
+            },
+            "diversity_summary": {
+              "mean_cv_across_features": 3.3166199247091614,
+              "high_diversity_features": [
+                "momentum:momentum_1h",
+                "momentum:momentum_2h",
+                "momentum:momentum_3h",
+                "momentum:momentum_6h",
+                "momentum:volume_momentum_1h",
+                "momentum:volume_momentum_3h",
+                "momentum:volume_momentum_6h"
+              ],
+              "constant_features": [],
+              "diversity_assessment": "HIGH"
+            }
+          },
+          "returns_analysis": {
+            "bars_per_year": 8760.0,
+            "annualized_return": 16.15389264849164,
+            "annualized_volatility": 0.7887516719604479,
+            "annualized_sharpe": 3.6040319942748478,
+            "mean_return_bar": 0.0003245075640734285,
+            "std_return_bar": 0.008427295833826065,
+            "ci95_bar": [
+              -0.00921187541159875,
+              0.009860890539745606
+            ],
+            "ci95_annualized": [
+              -80.69602860560505,
+              86.38140112817152
+            ]
+          },
+          "dwell_time": {
+            "count": 3,
+            "mean": 1.3333333333333333,
+            "median": 1.0,
+            "min": 1,
+            "max": 2,
+            "p25": 1.0,
+            "p75": 1.5
+          },
+          "transition_row": {
+            "to_0": 0.0,
+            "to_1": 0.0,
+            "to_2": 0.25,
+            "to_3": 0.0,
+            "to_4": 0.0,
+            "to_5": 0.0,
+            "to_6": 0.0,
+            "to_7": 0.25,
+            "to_8": 0.25,
+            "to_9": 0.0,
+            "to_10": 0.25
+          },
+          "volume_analysis": {
+            "volume_stats": {
+              "mean_volume": 14838.4892578125,
+              "median_volume": 14295.80859375,
+              "std_volume": 2308.853271484375,
+              "min_volume": 12670.087890625,
+              "max_volume": 18092.25390625
+            },
+            "volume_volatility": {
+              "volume_cv": 0.1555989384651184,
+              "volume_trend": "increasing"
+            },
+            "volume_anomalies": {
+              "high_volume_threshold": 17025.08740234375,
+              "low_volume_threshold": 13086.03701171875,
+              "high_volume_samples": 1,
+              "low_volume_samples": 1
+            }
+          },
+          "volatility_analysis": {
+            "volatility_metrics": {
+              "mean_daily_range_pct": 0.6499366164207458,
+              "std_daily_range_pct": 0.18038484454154968,
+              "max_daily_range_pct": 0.8818906545639038,
+              "min_daily_range_pct": 0.48550865054130554,
+              "mean_atr": NaN,
+              "atr_volatility": NaN
+            },
+            "volatility_classification": {
+              "volatility_level": "low",
+              "volatility_consistency": "consistent"
+            }
+          },
+          "trend_analysis": {
+            "trend_metrics": {
+              "trend_direction": "downward",
+              "trend_strength": NaN,
+              "trend_consistency": "inconsistent"
+            },
+            "moving_averages": {
+              "sma_5": NaN,
+              "sma_20": 4318.955078125,
+              "ma_cross": "death"
+            }
+          },
+          "hmm_model_analysis": {
+            "model_type": "dict",
+            "model_available": true
+          },
+          "economic_interpretability": {
+            "label": "illiquid chop"
+          }
+        },
+        "cluster_4": {
+          "cluster_id": 4,
+          "sample_count": 8,
+          "sample_percentage": 6.106870229007633,
+          "regime_composition_analysis": {
+            "total_regimes": 24,
+            "regime_ids": [
+              "regime_7",
+              "regime_72",
+              "regime_73",
+              "regime_85",
+              "regime_101",
+              "regime_104",
+              "regime_106",
+              "regime_132",
+              "regime_137",
+              "regime_146"
+            ],
+            "feature_diversity_analysis": {
+              "volatility": {
+                "volatility_1h": {
+                  "range": "0.005880 - 0.016859",
+                  "mean": 0.0096803808089515,
+                  "std": 0.00304314075671965,
+                  "cv": 0.31436167820026684,
+                  "is_diverse": "False"
+                },
+                "volatility_3h": {
+                  "range": "3.067957 - 39.640160",
+                  "mean": 12.694062536224195,
+                  "std": 8.415701910028394,
+                  "cv": 0.6629636403643885,
+                  "is_diverse": "True"
+                },
+                "volatility_6h": {
+                  "range": "3.445539 - 37.443164",
+                  "mean": 17.797769886309467,
+                  "std": 10.166839055924008,
+                  "cv": 0.5712423028766441,
+                  "is_diverse": "True"
+                }
+              },
+              "momentum": {
+                "momentum_1h": {
+                  "range": "-0.007779 - 0.009221",
+                  "mean": 0.0006418508514893442,
+                  "std": 0.004328206590772842,
+                  "cv": 6.7433214129570995,
+                  "is_diverse": "True"
+                },
+                "momentum_2h": {
+                  "range": "-0.009887 - 0.024055",
+                  "mean": 0.0038299956220106024,
+                  "std": 0.00883664930217381,
+                  "cv": 2.307221776283625,
+                  "is_diverse": "True"
+                },
+                "momentum_3h": {
+                  "range": "-0.016070 - 0.029850",
+                  "mean": 0.005265731790468783,
+                  "std": 0.01263221050476565,
+                  "cv": 2.3989468145017434,
+                  "is_diverse": "True"
+                },
+                "momentum_6h": {
+                  "range": "-0.021084 - 0.033844",
+                  "mean": 0.005866213994491084,
+                  "std": 0.01619916621484557,
+                  "cv": 2.7614345862694543,
+                  "is_diverse": "True"
+                },
+                "volume_momentum_1h": {
+                  "range": "-0.632710 - 1.783683",
+                  "mean": 0.060033980678637765,
+                  "std": 0.48119138217985685,
+                  "cv": 8.015316937846867,
+                  "is_diverse": "True"
+                },
+                "volume_momentum_3h": {
+                  "range": "-0.638848 - 1.892866",
+                  "mean": 0.3520999846265321,
+                  "std": 0.7055111128652779,
+                  "cv": 2.0037237820774245,
+                  "is_diverse": "True"
+                },
+                "volume_momentum_6h": {
+                  "range": "-0.535124 - 1.816932",
+                  "mean": 0.3350932951989789,
+                  "std": 0.5768025614418424,
+                  "cv": 1.7213193152651298,
+                  "is_diverse": "True"
+                }
+              },
+              "volume": {
+                "volume_ratio": {
+                  "range": "0.468 - 1.995",
+                  "mean": 1.017631690081475,
+                  "std": 0.32828616245249026,
+                  "cv": 0.32259821077919315,
+                  "is_diverse": "False"
+                },
+                "volume_weighted_price": {
+                  "range": "27616336.000 - 60962016.000",
+                  "mean": 38307342.620420896,
+                  "std": 8320873.335543932,
+                  "cv": 0.21721353574414315,
+                  "is_diverse": "False"
+                }
+              }
+            },
+            "diversity_summary": {
+              "mean_cv_across_features": 2.336638666097165,
+              "high_diversity_features": [
+                "momentum:momentum_1h",
+                "momentum:momentum_2h",
+                "momentum:momentum_3h",
+                "momentum:momentum_6h",
+                "momentum:volume_momentum_1h",
+                "momentum:volume_momentum_3h",
+                "momentum:volume_momentum_6h"
+              ],
+              "constant_features": [],
+              "diversity_assessment": "HIGH"
+            }
+          },
+          "returns_analysis": {
+            "bars_per_year": 8760.0,
+            "annualized_return": 4.0785299046220784e+52,
+            "annualized_volatility": 2.8796340525960242,
+            "annualized_sharpe": 42.36012087034541,
+            "mean_return_bar": 0.01392484549432993,
+            "std_return_bar": 0.030767006799578667,
+            "ci95_bar": [
+              -0.00886767210737523,
+              0.036717363096035086
+            ],
+            "ci95_annualized": [
+              -77.68080766060702,
+              321.64410072126736
+            ]
+          },
+          "dwell_time": {
+            "count": 8,
+            "mean": 1.0,
+            "median": 1.0,
+            "min": 1,
+            "max": 1,
+            "p25": 1.0,
+            "p75": 1.0
+          },
+          "transition_row": {
+            "to_0": 0.0,
+            "to_1": 0.14285714285714285,
+            "to_2": 0.2857142857142857,
+            "to_3": 0.0,
+            "to_4": 0.0,
+            "to_5": 0.0,
+            "to_6": 0.0,
+            "to_7": 0.0,
+            "to_8": 0.2857142857142857,
+            "to_9": 0.2857142857142857,
+            "to_10": 0.0
+          },
+          "volume_analysis": {
+            "volume_stats": {
+              "mean_volume": 11722.96484375,
+              "median_volume": 9102.72265625,
+              "std_volume": 6708.568359375,
+              "min_volume": 5625.39453125,
+              "max_volume": 26962.84765625
+            },
+            "volume_volatility": {
+              "volume_cv": 0.5722586512565613,
+              "volume_trend": "decreasing"
+            },
+            "volume_anomalies": {
+              "high_volume_threshold": 17546.952148437496,
+              "low_volume_threshold": 7230.861962890625,
+              "high_volume_samples": 1,
+              "low_volume_samples": 1
+            }
+          },
+          "volatility_analysis": {
+            "volatility_metrics": {
+              "mean_daily_range_pct": 0.508674144744873,
+              "std_daily_range_pct": 0.3094569444656372,
+              "max_daily_range_pct": 1.2452058792114258,
+              "min_daily_range_pct": 0.26360857486724854,
+              "mean_atr": NaN,
+              "atr_volatility": NaN
+            },
+            "volatility_classification": {
+              "volatility_level": "low",
+              "volatility_consistency": "inconsistent"
+            }
+          },
+          "trend_analysis": {
+            "trend_metrics": {
+              "trend_direction": "upward",
+              "trend_strength": 1.666024779571535,
+              "trend_consistency": "very_consistent"
+            },
+            "moving_averages": {
+              "sma_5": 4493.4400390625,
+              "sma_20": 4419.804992675781,
+              "ma_cross": "golden"
+            }
+          },
+          "hmm_model_analysis": {
+            "model_type": "dict",
+            "model_available": true
+          },
+          "economic_interpretability": {
+            "label": "trend-up"
+          }
+        },
+        "cluster_6": {
+          "cluster_id": 6,
+          "sample_count": 37,
+          "sample_percentage": 28.24427480916031,
+          "regime_composition_analysis": {
+            "total_regimes": 7,
+            "regime_ids": [
+              "regime_33",
+              "regime_36",
+              "regime_44",
+              "regime_520",
+              "regime_527",
+              "regime_540",
+              "regime_542"
+            ],
+            "feature_diversity_analysis": {
+              "volatility": {
+                "volatility_1h": {
+                  "range": "0.003509 - 0.012606",
+                  "mean": 0.006147560466237996,
+                  "std": 0.0031928322136297194,
+                  "cv": 0.5193657274563702,
+                  "is_diverse": "True"
+                },
+                "volatility_3h": {
+                  "range": "2.030555 - 32.414481",
+                  "mean": 12.014672961648289,
+                  "std": 11.925020696189398,
+                  "cv": 0.9925381018904911,
+                  "is_diverse": "True"
+                },
+                "volatility_6h": {
+                  "range": "2.352307 - 33.511885",
+                  "mean": 13.035089749166016,
+                  "std": 12.623079990737262,
+                  "cv": 0.9683922576401812,
+                  "is_diverse": "True"
+                }
+              },
+              "momentum": {
+                "momentum_1h": {
+                  "range": "-0.001671 - 0.009080",
+                  "mean": 0.0013549996021972983,
+                  "std": 0.0037073624671699855,
+                  "cv": 2.7360616646366847,
+                  "is_diverse": "True"
+                },
+                "momentum_2h": {
+                  "range": "-0.019882 - 0.019797",
+                  "mean": -0.002596386093389026,
+                  "std": 0.012311190398463205,
+                  "cv": 4.74166397278518,
+                  "is_diverse": "True"
+                },
+                "momentum_3h": {
+                  "range": "-0.026670 - 0.014785",
+                  "mean": -0.0020055953498489707,
+                  "std": 0.012545737204370853,
+                  "cv": 6.2553681156648056,
+                  "is_diverse": "True"
+                },
+                "momentum_6h": {
+                  "range": "-0.014865 - 0.011590",
+                  "mean": -0.0028937336343867193,
+                  "std": 0.00935905519823918,
+                  "cv": 3.2342490293591526,
+                  "is_diverse": "True"
+                },
+                "volume_momentum_1h": {
+                  "range": "-0.689266 - 0.136330",
+                  "mean": -0.26640252899377764,
+                  "std": 0.26020646102120637,
+                  "cv": 0.9767417073855331,
+                  "is_diverse": "True"
+                },
+                "volume_momentum_3h": {
+                  "range": "-0.642409 - -0.055844",
+                  "mean": -0.3664623159963896,
+                  "std": 0.19260114629858419,
+                  "cv": 0.5255687635300588,
+                  "is_diverse": "True"
+                },
+                "volume_momentum_6h": {
+                  "range": "-0.695786 - -0.327465",
+                  "mean": -0.47267661534623,
+                  "std": 0.15080668127233404,
+                  "cv": 0.31904832262935184,
+                  "is_diverse": "False"
+                }
+              },
+              "volume": {
+                "volume_ratio": {
+                  "range": "0.382 - 0.718",
+                  "mean": 0.5165293858855328,
+                  "std": 0.13900742326669238,
+                  "cv": 0.26911813164004106,
+                  "is_diverse": "False"
+                },
+                "volume_weighted_price": {
+                  "range": "10927241.214 - 24200930.000",
+                  "mean": 15301808.84852891,
+                  "std": 5110897.966501701,
+                  "cv": 0.33400613071918317,
+                  "is_diverse": "False"
+                }
+              }
+            },
+            "diversity_summary": {
+              "mean_cv_across_features": 1.8226768271114198,
+              "high_diversity_features": [
+                "momentum:momentum_1h",
+                "momentum:momentum_2h",
+                "momentum:momentum_3h",
+                "momentum:momentum_6h"
+              ],
+              "constant_features": [],
+              "diversity_assessment": "HIGH"
+            }
+          },
+          "returns_analysis": {
+            "bars_per_year": 8760.0,
+            "annualized_return": 15012439.46848143,
+            "annualized_volatility": 0.8487379209413064,
+            "annualized_sharpe": 19.487741190046755,
+            "mean_return_bar": 0.0018881261348724365,
+            "std_return_bar": 0.009068209677934647,
+            "ci95_bar": [
+              -0.0010741556932528811,
+              0.004850407962997754
+            ],
+            "ci95_annualized": [
+              -9.40960387289524,
+              42.48957375586032
+            ]
+          },
+          "dwell_time": {
+            "count": 16,
+            "mean": 2.3125,
+            "median": 2.0,
+            "min": 1,
+            "max": 5,
+            "p25": 1.0,
+            "p75": 3.0
+          },
+          "transition_row": {
+            "to_0": 0.0,
+            "to_1": 0.13513513513513514,
+            "to_2": 0.0,
+            "to_3": 0.0,
+            "to_4": 0.05405405405405406,
+            "to_5": 0.0,
+            "to_6": 0.5675675675675675,
+            "to_7": 0.0,
+            "to_8": 0.1891891891891892,
+            "to_9": 0.0,
+            "to_10": 0.0
+          },
+          "volume_analysis": {
+            "volume_stats": {
+              "mean_volume": 18180.716796875,
+              "median_volume": 12954.173828125,
+              "std_volume": 13921.099609375,
+              "min_volume": 4831.10595703125,
+              "max_volume": 70322.8203125
+            },
+            "volume_volatility": {
+              "volume_cv": 0.7657068371772766,
+              "volume_trend": "decreasing"
+            },
+            "volume_anomalies": {
+              "high_volume_threshold": 34827.84218749999,
+              "low_volume_threshold": 6776.8005859375,
+              "high_volume_samples": 4,
+              "low_volume_samples": 4
+            }
+          },
+          "volatility_analysis": {
+            "volatility_metrics": {
+              "mean_daily_range_pct": 0.6913899183273315,
+              "std_daily_range_pct": 0.3547151982784271,
+              "max_daily_range_pct": 1.8710198402404785,
+              "min_daily_range_pct": 0.2621540427207947,
+              "mean_atr": 40.10841732933408,
+              "atr_volatility": 7.63977883622527
+            },
+            "volatility_classification": {
+              "volatility_level": "low",
+              "volatility_consistency": "inconsistent"
+            }
+          },
+          "trend_analysis": {
+            "trend_metrics": {
+              "trend_direction": "upward",
+              "trend_strength": 2.7391311661452473,
+              "trend_consistency": "consistent"
+            },
+            "moving_averages": {
+              "sma_5": 4586.71396484375,
+              "sma_20": 4464.42744140625,
+              "ma_cross": "golden"
+            }
+          },
+          "hmm_model_analysis": {
+            "model_type": "dict",
+            "model_available": true
+          },
+          "economic_interpretability": {
+            "label": "trend-up"
+          }
+        },
+        "cluster_7": {
+          "error": "Insufficient data for cluster 7"
+        },
+        "cluster_8": {
+          "cluster_id": 8,
+          "sample_count": 43,
+          "sample_percentage": 32.82442748091603,
+          "regime_composition_analysis": {
+            "total_regimes": 23,
+            "regime_ids": [
+              "regime_0",
+              "regime_1",
+              "regime_8",
+              "regime_9",
+              "regime_18",
+              "regime_34",
+              "regime_56",
+              "regime_60",
+              "regime_174",
+              "regime_188"
+            ],
+            "feature_diversity_analysis": {
+              "volatility": {
+                "volatility_1h": {
+                  "range": "0.004234 - 0.012231",
+                  "mean": 0.006623636431786683,
+                  "std": 0.001800173811335444,
+                  "cv": 0.2717802871390178,
+                  "is_diverse": "False"
+                },
+                "volatility_3h": {
+                  "range": "2.782518 - 31.478265",
+                  "mean": 10.264146763332679,
+                  "std": 6.733909811659174,
+                  "cv": 0.6560613333896574,
+                  "is_diverse": "True"
+                },
+                "volatility_6h": {
+                  "range": "3.518255 - 43.768940",
+                  "mean": 17.54438299432379,
+                  "std": 9.804876677874844,
+                  "cv": 0.5588612994282591,
+                  "is_diverse": "True"
+                }
+              },
+              "momentum": {
+                "momentum_1h": {
+                  "range": "-0.004403 - 0.009448",
+                  "mean": 0.0005090172165474419,
+                  "std": 0.0029349451074105657,
+                  "cv": 5.765905380013841,
+                  "is_diverse": "True"
+                },
+                "momentum_2h": {
+                  "range": "-0.016487 - 0.010188",
+                  "mean": -0.0019510799293058173,
+                  "std": 0.005835544538578403,
+                  "cv": 2.990930535918462,
+                  "is_diverse": "True"
+                },
+                "momentum_3h": {
+                  "range": "-0.017326 - 0.011067",
+                  "mean": -0.0029194542998463523,
+                  "std": 0.0078028564341539,
+                  "cv": 2.6727105934025257,
+                  "is_diverse": "True"
+                },
+                "momentum_6h": {
+                  "range": "-0.036547 - 0.027309",
+                  "mean": -0.002313511952593024,
+                  "std": 0.015742498503457523,
+                  "cv": 6.8045892245393675,
+                  "is_diverse": "True"
+                },
+                "volume_momentum_1h": {
+                  "range": "-0.630582 - 0.112372",
+                  "mean": -0.3168201537053315,
+                  "std": 0.16382615250221458,
+                  "cv": 0.5170951108577083,
+                  "is_diverse": "True"
+                },
+                "volume_momentum_3h": {
+                  "range": "-0.725096 - 0.114386",
+                  "mean": -0.4771345543239009,
+                  "std": 0.19707338695552945,
+                  "cv": 0.4130352437684632,
+                  "is_diverse": "False"
+                },
+                "volume_momentum_6h": {
+                  "range": "-0.750779 - 0.038611",
+                  "mean": -0.47174481876662705,
+                  "std": 0.23623242319840926,
+                  "cv": 0.5007631537237377,
+                  "is_diverse": "True"
+                }
+              },
+              "volume": {
+                "volume_ratio": {
+                  "range": "0.314 - 0.986",
+                  "mean": 0.534063080677817,
+                  "std": 0.17041871334533787,
+                  "cv": 0.319098472654293,
+                  "is_diverse": "False"
+                },
+                "volume_weighted_price": {
+                  "range": "15453186.482 - 31883314.000",
+                  "mean": 21616411.143358056,
+                  "std": 3869181.2939546932,
+                  "cv": 0.1789927693498536,
+                  "is_diverse": "False"
+                }
+              }
+            },
+            "diversity_summary": {
+              "mean_cv_across_features": 1.8041519503487657,
+              "high_diversity_features": [
+                "momentum:momentum_1h",
+                "momentum:momentum_2h",
+                "momentum:momentum_3h",
+                "momentum:momentum_6h"
+              ],
+              "constant_features": [],
+              "diversity_assessment": "HIGH"
+            }
+          },
+          "returns_analysis": {
+            "bars_per_year": 8760.0,
+            "annualized_return": 613631500.8527468,
+            "annualized_volatility": 0.6257332245716015,
+            "annualized_sharpe": 32.37528849127743,
+            "mean_return_bar": 0.0023125906009227037,
+            "std_return_bar": 0.006685550324618816,
+            "ci95_bar": [
+              0.0002906490905221883,
+              0.004334532111323219
+            ],
+            "ci95_annualized": [
+              2.5460860329743693,
+              37.9705012951914
+            ]
+          },
+          "dwell_time": {
+            "count": 28,
+            "mean": 1.5357142857142858,
+            "median": 1.0,
+            "min": 1,
+            "max": 4,
+            "p25": 1.0,
+            "p75": 2.0
+          },
+          "transition_row": {
+            "to_0": 0.0,
+            "to_1": 0.20930232558139536,
+            "to_2": 0.0,
+            "to_3": 0.0,
+            "to_4": 0.06976744186046512,
+            "to_5": 0.0,
+            "to_6": 0.2558139534883721,
+            "to_7": 0.0,
+            "to_8": 0.3488372093023256,
+            "to_9": 0.0,
+            "to_10": 0.0
+          },
+          "volume_analysis": {
+            "volume_stats": {
+              "mean_volume": 23002.0,
+              "median_volume": 15547.5927734375,
+              "std_volume": 18687.62890625,
+              "min_volume": 6265.36181640625,
+              "max_volume": 96208.203125
+            },
+            "volume_volatility": {
+              "volume_cv": 0.81243497133255,
+              "volume_trend": "increasing"
+            },
+            "volume_anomalies": {
+              "high_volume_threshold": 46812.93984375002,
+              "low_volume_threshold": 8247.420703125,
+              "high_volume_samples": 5,
+              "low_volume_samples": 5
+            }
+          },
+          "volatility_analysis": {
+            "volatility_metrics": {
+              "mean_daily_range_pct": 0.7995251417160034,
+              "std_daily_range_pct": 0.5648210048675537,
+              "max_daily_range_pct": 2.961552143096924,
+              "min_daily_range_pct": 0.2670910358428955,
+              "mean_atr": 43.61439383370536,
+              "atr_volatility": 4.7092530683422025
+            },
+            "volatility_classification": {
+              "volatility_level": "low",
+              "volatility_consistency": "inconsistent"
+            }
+          },
+          "trend_analysis": {
+            "trend_metrics": {
+              "trend_direction": "upward",
+              "trend_strength": 2.4849602348573065,
+              "trend_consistency": "moderate"
+            },
+            "moving_averages": {
+              "sma_5": 4727.11005859375,
+              "sma_20": 4612.491479492188,
+              "ma_cross": "golden"
+            }
+          },
+          "hmm_model_analysis": {
+            "model_type": "dict",
+            "model_available": true
+          },
+          "economic_interpretability": {
+            "label": "trend-up"
+          }
+        },
+        "cluster_9": {
+          "cluster_id": 9,
+          "sample_count": 4,
+          "sample_percentage": 3.0534351145038165,
+          "regime_composition_analysis": {
+            "total_regimes": 38,
+            "regime_ids": [
+              "regime_24",
+              "regime_70",
+              "regime_112",
+              "regime_144",
+              "regime_145",
+              "regime_148",
+              "regime_152",
+              "regime_153",
+              "regime_154",
+              "regime_159"
+            ],
+            "feature_diversity_analysis": {
+              "volatility": {
+                "volatility_1h": {
+                  "range": "0.004632 - 0.019289",
+                  "mean": 0.008209620318659225,
+                  "std": 0.0026834326777691563,
+                  "cv": 0.3268644070749679,
+                  "is_diverse": "False"
+                },
+                "volatility_3h": {
+                  "range": "1.770832 - 33.710373",
+                  "mean": 10.845912202224946,
+                  "std": 7.173586313010267,
+                  "cv": 0.6614092184462518,
+                  "is_diverse": "True"
+                },
+                "volatility_6h": {
+                  "range": "2.832549 - 35.505150",
+                  "mean": 14.053426719170444,
+                  "std": 7.26883796691302,
+                  "cv": 0.5172288661097519,
+                  "is_diverse": "True"
+                }
+              },
+              "momentum": {
+                "momentum_1h": {
+                  "range": "-0.016909 - 0.006087",
+                  "mean": -0.00029166611694978194,
+                  "std": 0.0043737417572971195,
+                  "cv": 14.995714288095298,
+                  "is_diverse": "True"
+                },
+                "momentum_2h": {
+                  "range": "-0.015611 - 0.018413",
+                  "mean": -0.00022243846377339766,
+                  "std": 0.007341676073279929,
+                  "cv": 33.00542518023787,
+                  "is_diverse": "True"
+                },
+                "momentum_3h": {
+                  "range": "-0.014850 - 0.014897",
+                  "mean": -0.0012132521179102056,
+                  "std": 0.008552310676540952,
+                  "cv": 7.049079536141325,
+                  "is_diverse": "True"
+                },
+                "momentum_6h": {
+                  "range": "-0.022442 - 0.030509",
+                  "mean": 0.0026302244874189013,
+                  "std": 0.014381364672425902,
+                  "cv": 5.467732789051272,
+                  "is_diverse": "True"
+                },
+                "volume_momentum_1h": {
+                  "range": "-0.623255 - 0.820744",
+                  "mean": -0.05703631599887469,
+                  "std": 0.29099494360062417,
+                  "cv": 5.101923897159932,
+                  "is_diverse": "True"
+                },
+                "volume_momentum_3h": {
+                  "range": "-0.667888 - 3.076202",
+                  "mean": 0.13919118964321733,
+                  "std": 0.6424929488591327,
+                  "cv": 4.615902418148782,
+                  "is_diverse": "True"
+                },
+                "volume_momentum_6h": {
+                  "range": "-0.643656 - 4.335845",
+                  "mean": 0.33287504135346424,
+                  "std": 0.8890535407875969,
+                  "cv": 2.670832685961436,
+                  "is_diverse": "True"
+                }
+              },
+              "volume": {
+                "volume_ratio": {
+                  "range": "0.353 - 1.512",
+                  "mean": 0.8641892646418261,
+                  "std": 0.22347287995473655,
+                  "cv": 0.2585925202939863,
+                  "is_diverse": "False"
+                },
+                "volume_weighted_price": {
+                  "range": "20984639.706 - 44705520.000",
+                  "mean": 30116004.351472773,
+                  "std": 5104552.180837445,
+                  "cv": 0.16949632897060646,
+                  "is_diverse": "False"
+                }
+              }
+            },
+            "diversity_summary": {
+              "mean_cv_across_features": 6.236683511307624,
+              "high_diversity_features": [
+                "momentum:momentum_1h",
+                "momentum:momentum_2h",
+                "momentum:momentum_3h",
+                "momentum:momentum_6h",
+                "momentum:volume_momentum_1h",
+                "momentum:volume_momentum_3h",
+                "momentum:volume_momentum_6h"
+              ],
+              "constant_features": [],
+              "diversity_assessment": "HIGH"
+            }
+          },
+          "returns_analysis": {
+            "bars_per_year": 8760.0,
+            "annualized_return": 861135.8166098039,
+            "annualized_volatility": 0.3920649076132713,
+            "annualized_sharpe": 34.88369849095268,
+            "mean_return_bar": 0.0015612641582265496,
+            "std_return_bar": 0.004188957158476114,
+            "ci95_bar": [
+              -0.003178987106190639,
+              0.006301515422643738
+            ],
+            "ci95_annualized": [
+              -27.84792705023,
+              55.20127510235915
+            ]
+          },
+          "dwell_time": {
+            "count": 3,
+            "mean": 1.3333333333333333,
+            "median": 1.0,
+            "min": 1,
+            "max": 2,
+            "p25": 1.0,
+            "p75": 1.5
+          },
+          "transition_row": {
+            "to_0": 0.0,
+            "to_1": 0.0,
+            "to_2": 0.25,
+            "to_3": 0.0,
+            "to_4": 0.25,
+            "to_5": 0.0,
+            "to_6": 0.0,
+            "to_7": 0.0,
+            "to_8": 0.25,
+            "to_9": 0.25,
+            "to_10": 0.0
+          },
+          "volume_analysis": {
+            "volume_stats": {
+              "mean_volume": 13444.66796875,
+              "median_volume": 10402.98828125,
+              "std_volume": 9758.87890625,
+              "min_volume": 5701.5546875,
+              "max_volume": 27271.142578125
+            },
+            "volume_volatility": {
+              "volume_cv": 0.7258549332618713,
+              "volume_trend": "decreasing"
+            },
+            "volume_anomalies": {
+              "high_volume_threshold": 23061.245507812502,
+              "low_volume_threshold": 6261.43525390625,
+              "high_volume_samples": 1,
+              "low_volume_samples": 1
+            }
+          },
+          "volatility_analysis": {
+            "volatility_metrics": {
+              "mean_daily_range_pct": 0.5101730227470398,
+              "std_daily_range_pct": 0.2683410346508026,
+              "max_daily_range_pct": 0.8703508377075195,
+              "min_daily_range_pct": 0.2938222885131836,
+              "mean_atr": NaN,
+              "atr_volatility": NaN
+            },
+            "volatility_classification": {
+              "volatility_level": "low",
+              "volatility_consistency": "inconsistent"
+            }
+          },
+          "trend_analysis": {
+            "trend_metrics": {
+              "trend_direction": "downward",
+              "trend_strength": NaN,
+              "trend_consistency": "inconsistent"
+            },
+            "moving_averages": {
+              "sma_5": NaN,
+              "sma_20": 4303.7974853515625,
+              "ma_cross": "death"
+            }
+          },
+          "hmm_model_analysis": {
+            "model_type": "dict",
+            "model_available": true
+          },
+          "economic_interpretability": {
+            "label": "neutral"
+          }
+        },
+        "cluster_10": {
+          "cluster_id": 10,
+          "sample_count": 2,
+          "sample_percentage": 1.5267175572519083,
+          "regime_composition_analysis": {
+            "total_regimes": 42,
+            "regime_ids": [
+              "regime_224",
+              "regime_225",
+              "regime_230",
+              "regime_231",
+              "regime_234",
+              "regime_235",
+              "regime_238",
+              "regime_240",
+              "regime_246",
+              "regime_271"
+            ],
+            "feature_diversity_analysis": {
+              "volatility": {
+                "volatility_1h": {
+                  "range": "0.009046 - 0.035060",
+                  "mean": 0.016560856667498337,
+                  "std": 0.00554395392347231,
+                  "cv": 0.33476250865407514,
+                  "is_diverse": "False"
+                },
+                "volatility_3h": {
+                  "range": "2.517499 - 56.982282",
+                  "mean": 20.80427648618528,
+                  "std": 13.583580310290053,
+                  "cv": 0.6529225046259116,
+                  "is_diverse": "True"
+                },
+                "volatility_6h": {
+                  "range": "5.868275 - 64.326343",
+                  "mean": 23.42336936402306,
+                  "std": 15.039002581826923,
+                  "cv": 0.6420512074119431,
+                  "is_diverse": "True"
+                }
+              },
+              "momentum": {
+                "momentum_1h": {
+                  "range": "-0.014718 - 0.019647",
+                  "mean": 0.0003566738421927424,
+                  "std": 0.007573378798875767,
+                  "cv": 21.233345154543745,
+                  "is_diverse": "True"
+                },
+                "momentum_2h": {
+                  "range": "-0.026336 - 0.027600",
+                  "mean": -0.00023265151863673299,
+                  "std": 0.012434346226750631,
+                  "cv": 53.44622850352369,
+                  "is_diverse": "True"
+                },
+                "momentum_3h": {
+                  "range": "-0.031745 - 0.031914",
+                  "mean": -0.0012049373089016396,
+                  "std": 0.014208394516137209,
+                  "cv": 11.791812247135802,
+                  "is_diverse": "True"
+                },
+                "momentum_6h": {
+                  "range": "-0.048530 - 0.039946",
+                  "mean": -0.0025503478685613345,
+                  "std": 0.01942496067817491,
+                  "cv": 7.616592590222854,
+                  "is_diverse": "True"
+                },
+                "volume_momentum_1h": {
+                  "range": "-0.261303 - 3.145692",
+                  "mean": 0.8033468578392926,
+                  "std": 0.9575830799393031,
+                  "cv": 1.191992064940478,
+                  "is_diverse": "True"
+                },
+                "volume_momentum_3h": {
+                  "range": "-0.590708 - 4.952256",
+                  "mean": 1.8955335689015258,
+                  "std": 1.4700871958652788,
+                  "cv": 0.7755532373489983,
+                  "is_diverse": "True"
+                },
+                "volume_momentum_6h": {
+                  "range": "0.060330 - 4.572681",
+                  "mean": 1.7732584140890064,
+                  "std": 1.1493883136474676,
+                  "cv": 0.6481786887434307,
+                  "is_diverse": "True"
+                }
+              },
+              "volume": {
+                "volume_ratio": {
+                  "range": "0.626 - 2.600",
+                  "mean": 1.66296483962665,
+                  "std": 0.5451703281333322,
+                  "cv": 0.3278303396094217,
+                  "is_diverse": "False"
+                },
+                "volume_weighted_price": {
+                  "range": "81525474.435 - 245924009.995",
+                  "mean": 125316789.06727818,
+                  "std": 40702807.423109956,
+                  "cv": 0.32479931640490767,
+                  "is_diverse": "False"
+                }
+              }
+            },
+            "diversity_summary": {
+              "mean_cv_across_features": 8.248839030263772,
+              "high_diversity_features": [
+                "momentum:momentum_1h",
+                "momentum:momentum_2h",
+                "momentum:momentum_3h",
+                "momentum:momentum_6h",
+                "momentum:volume_momentum_1h"
+              ],
+              "constant_features": [],
+              "diversity_assessment": "HIGH"
+            }
+          },
+          "returns_analysis": {
+            "bars_per_year": 8760.0,
+            "annualized_return": 0.0,
+            "annualized_volatility": 0.0,
+            "annualized_sharpe": 0.0,
+            "mean_return_bar": 0.0,
+            "std_return_bar": 0.0,
+            "ci95_bar": [
+              0.0,
+              0.0
+            ],
+            "ci95_annualized": [
+              0.0,
+              0.0
+            ]
+          },
+          "dwell_time": {
+            "count": 2,
+            "mean": 1.0,
+            "median": 1.0,
+            "min": 1,
+            "max": 1,
+            "p25": 1.0,
+            "p75": 1.0
+          },
+          "transition_row": {
+            "to_0": 0.0,
+            "to_1": 0.0,
+            "to_2": 0.0,
+            "to_3": 0.0,
+            "to_4": 0.0,
+            "to_5": 0.0,
+            "to_6": 0.0,
+            "to_7": 0.0,
+            "to_8": 0.0,
+            "to_9": 0.5,
+            "to_10": 0.0
+          },
+          "volume_analysis": {
+            "volume_stats": {
+              "mean_volume": 11158.255859375,
+              "median_volume": 11158.255859375,
+              "std_volume": 5466.85595703125,
+              "min_volume": 7292.60498046875,
+              "max_volume": 15023.9072265625
+            },
+            "volume_volatility": {
+              "volume_cv": 0.48993822932243347,
+              "volume_trend": "decreasing"
+            },
+            "volume_anomalies": {
+              "high_volume_threshold": 14250.777001953125,
+              "low_volume_threshold": 8065.735205078125,
+              "high_volume_samples": 1,
+              "low_volume_samples": 1
+            }
+          },
+          "volatility_analysis": {
+            "volatility_metrics": {
+              "mean_daily_range_pct": 0.49155229330062866,
+              "std_daily_range_pct": 0.18843629956245422,
+              "max_daily_range_pct": 0.6247968673706055,
+              "min_daily_range_pct": 0.35830768942832947,
+              "mean_atr": NaN,
+              "atr_volatility": NaN
+            },
+            "volatility_classification": {
+              "volatility_level": "low",
+              "volatility_consistency": "consistent"
+            }
+          },
+          "trend_analysis": {
+            "trend_metrics": {
+              "trend_direction": "downward",
+              "trend_strength": NaN,
+              "trend_consistency": "insufficient_data"
+            },
+            "moving_averages": {
+              "sma_5": NaN,
+              "sma_20": 4316.155029296875,
+              "ma_cross": "death"
+            }
+          },
+          "hmm_model_analysis": {
+            "model_type": "dict",
+            "model_available": true
+          },
+          "economic_interpretability": {
+            "label": "neutral"
+          }
+        },
+        "cluster_11": {
+          "cluster_id": 11,
+          "sample_count": 4,
+          "sample_percentage": 3.0534351145038165,
+          "regime_composition_analysis": {
+            "total_regimes": 19,
+            "regime_ids": [
+              "regime_4",
+              "regime_6",
+              "regime_19",
+              "regime_23",
+              "regime_40",
+              "regime_55",
+              "regime_62",
+              "regime_63",
+              "regime_64",
+              "regime_65"
+            ],
+            "feature_diversity_analysis": {
+              "volatility": {
+                "volatility_1h": {
+                  "range": "0.004995 - 0.008563",
+                  "mean": 0.006376328517042631,
+                  "std": 0.001057685857746134,
+                  "cv": 0.16587693920085117,
+                  "is_diverse": "False"
+                },
+                "volatility_3h": {
+                  "range": "2.563079 - 13.475977",
+                  "mean": 7.37273733820457,
+                  "std": 2.75588641204727,
+                  "cv": 0.3737941941545406,
+                  "is_diverse": "False"
+                },
+                "volatility_6h": {
+                  "range": "3.768618 - 24.088996",
+                  "mean": 13.15063621308307,
+                  "std": 5.8829741347778945,
+                  "cv": 0.4473528154421264,
+                  "is_diverse": "False"
+                }
+              },
+              "momentum": {
+                "momentum_1h": {
+                  "range": "-0.005748 - 0.005033",
+                  "mean": 0.00029073407746200655,
+                  "std": 0.0025996454891355192,
+                  "cv": 8.94166075002076,
+                  "is_diverse": "True"
+                },
+                "momentum_2h": {
+                  "range": "-0.007447 - 0.012255",
+                  "mean": 0.001703742976030256,
+                  "std": 0.005371507454562046,
+                  "cv": 3.152768657088014,
+                  "is_diverse": "True"
+                },
+                "momentum_3h": {
+                  "range": "-0.011789 - 0.019651",
+                  "mean": 0.0014264032440748041,
+                  "std": 0.007935631950613567,
+                  "cv": 5.563386078640608,
+                  "is_diverse": "True"
+                },
+                "momentum_6h": {
+                  "range": "-0.019986 - 0.017035",
+                  "mean": -0.0004487412984560913,
+                  "std": 0.011571050782231232,
+                  "cv": 25.785571379415714,
+                  "is_diverse": "True"
+                },
+                "volume_momentum_1h": {
+                  "range": "-0.645505 - 0.437384",
+                  "mean": -0.2501603128146426,
+                  "std": 0.20984401774791137,
+                  "cv": 0.8388381649626262,
+                  "is_diverse": "True"
+                },
+                "volume_momentum_3h": {
+                  "range": "-0.692160 - 0.710608",
+                  "mean": -0.3134524201876957,
+                  "std": 0.3084048604616048,
+                  "cv": 0.9838968870520496,
+                  "is_diverse": "True"
+                },
+                "volume_momentum_6h": {
+                  "range": "-0.795063 - 0.784825",
+                  "mean": -0.2865440839707471,
+                  "std": 0.3398187973515647,
+                  "cv": 1.1859215260792346,
+                  "is_diverse": "True"
+                }
+              },
+              "volume": {
+                "volume_ratio": {
+                  "range": "0.314 - 1.386",
+                  "mean": 0.618039581952051,
+                  "std": 0.21934460006708434,
+                  "cv": 0.3549038062809732,
+                  "is_diverse": "False"
+                },
+                "volume_weighted_price": {
+                  "range": "17086106.929 - 24875825.692",
+                  "mean": 21115735.204946075,
+                  "std": 2305261.210238875,
+                  "cv": 0.10917267089515778,
+                  "is_diverse": "False"
+                }
+              }
+            },
+            "diversity_summary": {
+              "mean_cv_across_features": 3.9919286557693874,
+              "high_diversity_features": [
+                "momentum:momentum_1h",
+                "momentum:momentum_2h",
+                "momentum:momentum_3h",
+                "momentum:momentum_6h",
+                "momentum:volume_momentum_6h"
+              ],
+              "constant_features": [],
+              "diversity_assessment": "HIGH"
+            }
+          },
+          "returns_analysis": {
+            "bars_per_year": 8760.0,
+            "annualized_return": 4.025006872699546e+34,
+            "annualized_volatility": 1.2436595096139653,
+            "annualized_sharpe": 64.36159133416146,
+            "mean_return_bar": 0.009137432090938091,
+            "std_return_bar": 0.013287688605487347,
+            "ci95_bar": [
+              -0.005899003071902553,
+              0.024173867253778736
+            ],
+            "ci95_annualized": [
+              -51.675266909866366,
+              211.76307714310173
+            ]
+          },
+          "dwell_time": {
+            "count": 4,
+            "mean": 1.0,
+            "median": 1.0,
+            "min": 1,
+            "max": 1,
+            "p25": 1.0,
+            "p75": 1.0
+          },
+          "transition_row": {
+            "to_0": 0.0,
+            "to_1": 0.0,
+            "to_2": 0.0,
+            "to_3": 0.0,
+            "to_4": 0.5,
+            "to_5": 0.0,
+            "to_6": 0.0,
+            "to_7": 0.0,
+            "to_8": 0.25,
+            "to_9": 0.0,
+            "to_10": 0.0
+          },
+          "volume_analysis": {
+            "volume_stats": {
+              "mean_volume": 11482.75,
+              "median_volume": 11397.4404296875,
+              "std_volume": 4727.0703125,
+              "min_volume": 5780.9404296875,
+              "max_volume": 17355.1796875
+            },
+            "volume_volatility": {
+              "volume_cv": 0.4116670787334442,
+              "volume_trend": "increasing"
+            },
+            "volume_anomalies": {
+              "high_volume_threshold": 15601.368261718751,
+              "low_volume_threshold": 7432.380078125,
+              "high_volume_samples": 1,
+              "low_volume_samples": 1
+            }
+          },
+          "volatility_analysis": {
+            "volatility_metrics": {
+              "mean_daily_range_pct": 0.5269862413406372,
+              "std_daily_range_pct": 0.10300534218549728,
+              "max_daily_range_pct": 0.644431471824646,
+              "min_daily_range_pct": 0.41738754510879517,
+              "mean_atr": NaN,
+              "atr_volatility": NaN
+            },
+            "volatility_classification": {
+              "volatility_level": "low",
+              "volatility_consistency": "consistent"
+            }
+          },
+          "trend_analysis": {
+            "trend_metrics": {
+              "trend_direction": "downward",
+              "trend_strength": NaN,
+              "trend_consistency": "very_consistent"
+            },
+            "moving_averages": {
+              "sma_5": NaN,
+              "sma_20": 4331.007568359375,
+              "ma_cross": "death"
+            }
+          },
+          "hmm_model_analysis": {
+            "model_type": "dict",
+            "model_available": true
+          },
+          "economic_interpretability": {
+            "label": "neutral"
+          }
+        },
+        "cluster_12": {
+          "cluster_id": 12,
+          "sample_count": 3,
+          "sample_percentage": 2.2900763358778624,
+          "regime_composition_analysis": {
+            "total_regimes": 9,
+            "regime_ids": [
+              "regime_15",
+              "regime_180",
+              "regime_332",
+              "regime_504",
+              "regime_511",
+              "regime_512",
+              "regime_514",
+              "regime_533",
+              "regime_544"
+            ],
+            "feature_diversity_analysis": {
+              "volatility": {
+                "volatility_1h": {
+                  "range": "0.003966 - 0.010521",
+                  "mean": 0.005620859613618173,
+                  "std": 0.002020801327778255,
+                  "cv": 0.359518199472955,
+                  "is_diverse": "False"
+                },
+                "volatility_3h": {
+                  "range": "2.412082 - 25.881982",
+                  "mean": 9.823159876505123,
+                  "std": 9.397983552942556,
+                  "cv": 0.9567169496467733,
+                  "is_diverse": "True"
+                },
+                "volatility_6h": {
+                  "range": "4.235157 - 34.806698",
+                  "mean": 12.990285511716328,
+                  "std": 11.401068415060564,
+                  "cv": 0.877661111049299,
+                  "is_diverse": "True"
+                }
+              },
+              "momentum": {
+                "momentum_1h": {
+                  "range": "-0.002052 - 0.008474",
+                  "mean": 0.0014828530399466967,
+                  "std": 0.003051409932406127,
+                  "cv": 2.057796592247479,
+                  "is_diverse": "True"
+                },
+                "momentum_2h": {
+                  "range": "-0.012465 - 0.011992",
+                  "mean": 0.00020883867504441328,
+                  "std": 0.007000687816947771,
+                  "cv": 33.52198923623198,
+                  "is_diverse": "True"
+                },
+                "momentum_3h": {
+                  "range": "-0.013266 - 0.008217",
+                  "mean": -0.0009719961037842671,
+                  "std": 0.005943669714115584,
+                  "cv": 6.114911048485819,
+                  "is_diverse": "True"
+                },
+                "momentum_6h": {
+                  "range": "-0.016819 - 0.028009",
+                  "mean": -0.00045334225512685917,
+                  "std": 0.012931243407864532,
+                  "cv": 28.52424026577,
+                  "is_diverse": "True"
+                },
+                "volume_momentum_1h": {
+                  "range": "-0.572625 - 0.042678",
+                  "mean": -0.35597267761819185,
+                  "std": 0.1953862911405187,
+                  "cv": 0.5488800220506967,
+                  "is_diverse": "True"
+                },
+                "volume_momentum_3h": {
+                  "range": "-0.682498 - 0.170807",
+                  "mean": -0.3873380997137768,
+                  "std": 0.3453999128565056,
+                  "cv": 0.8917271838523982,
+                  "is_diverse": "True"
+                },
+                "volume_momentum_6h": {
+                  "range": "-0.706055 - 1.545771",
+                  "mean": -0.20079147789531687,
+                  "std": 0.7142474333106356,
+                  "cv": 3.5571600986124032,
+                  "is_diverse": "True"
+                }
+              },
+              "volume": {
+                "volume_ratio": {
+                  "range": "0.314 - 0.999",
+                  "mean": 0.5248754158419981,
+                  "std": 0.21682545102931963,
+                  "cv": 0.4130988887743792,
+                  "is_diverse": "False"
+                },
+                "volume_weighted_price": {
+                  "range": "13552413.011 - 24278140.000",
+                  "mean": 17236495.60308881,
+                  "std": 4199485.053231705,
+                  "cv": 0.2436391450985634,
+                  "is_diverse": "False"
+                }
+              }
+            },
+            "diversity_summary": {
+              "mean_cv_across_features": 6.505611561774397,
+              "high_diversity_features": [
+                "momentum:momentum_1h",
+                "momentum:momentum_2h",
+                "momentum:momentum_3h",
+                "momentum:momentum_6h",
+                "momentum:volume_momentum_6h"
+              ],
+              "constant_features": [],
+              "diversity_assessment": "HIGH"
+            }
+          },
+          "returns_analysis": {
+            "bars_per_year": 8760.0,
+            "annualized_return": 381687.5213868403,
+            "annualized_volatility": 0.1052217031204826,
+            "annualized_sharpe": 122.23517259079182,
+            "mean_return_bar": 0.0014682412147521973,
+            "std_return_bar": 0.001124225091189146,
+            "ci95_bar": [
+              -8.985526894522591e-05,
+              0.0030263376984496207
+            ],
+            "ci95_annualized": [
+              -0.7871321559601789,
+              26.510718238418676
+            ]
+          },
+          "dwell_time": {
+            "count": 3,
+            "mean": 1.0,
+            "median": 1.0,
+            "min": 1,
+            "max": 1,
+            "p25": 1.0,
+            "p75": 1.0
+          },
+          "transition_row": {
+            "to_0": 0.0,
+            "to_1": 0.0,
+            "to_2": 0.0,
+            "to_3": 0.0,
+            "to_4": 0.0,
+            "to_5": 0.0,
+            "to_6": 0.0,
+            "to_7": 0.0,
+            "to_8": 0.3333333333333333,
+            "to_9": 0.0,
+            "to_10": 0.0
+          },
+          "volume_analysis": {
+            "volume_stats": {
+              "mean_volume": 15653.9208984375,
+              "median_volume": 14067.68359375,
+              "std_volume": 4854.044921875,
+              "min_volume": 11791.4365234375,
+              "max_volume": 21102.642578125
+            },
+            "volume_volatility": {
+              "volume_cv": 0.3100849390029907,
+              "volume_trend": "decreasing"
+            },
+            "volume_anomalies": {
+              "high_volume_threshold": 19695.65078125,
+              "low_volume_threshold": 12246.6859375,
+              "high_volume_samples": 1,
+              "low_volume_samples": 1
+            }
+          },
+          "volatility_analysis": {
+            "volatility_metrics": {
+              "mean_daily_range_pct": 0.6291676163673401,
+              "std_daily_range_pct": 0.07068950682878494,
+              "max_daily_range_pct": 0.6900959014892578,
+              "min_daily_range_pct": 0.5516629219055176,
+              "mean_atr": NaN,
+              "atr_volatility": NaN
+            },
+            "volatility_classification": {
+              "volatility_level": "low",
+              "volatility_consistency": "consistent"
+            }
+          },
+          "trend_analysis": {
+            "trend_metrics": {
+              "trend_direction": "downward",
+              "trend_strength": NaN,
+              "trend_consistency": "very_consistent"
+            },
+            "moving_averages": {
+              "sma_5": NaN,
+              "sma_20": 4319.88671875,
+              "ma_cross": "death"
+            }
+          },
+          "hmm_model_analysis": {
+            "model_type": "dict",
+            "model_available": true
+          },
+          "economic_interpretability": {
+            "label": "neutral"
+          }
+        },
+        "cluster_13": {
+          "cluster_id": 13,
+          "sample_count": 6,
+          "sample_percentage": 4.580152671755725,
+          "regime_composition_analysis": {
+            "error": "Insufficient regimes in cluster 13"
+          },
+          "returns_analysis": {
+            "bars_per_year": 8760.0,
+            "annualized_return": 816290029629368.6,
+            "annualized_volatility": 1.0331384375609958,
+            "annualized_sharpe": 33.29967123397217,
+            "mean_return_bar": 0.003927302546799183,
+            "std_return_bar": 0.011038408614695072,
+            "ci95_bar": [
+              -0.005748289207344784,
+              0.01360289430094315
+            ],
+            "ci95_annualized": [
+              -50.35501345634031,
+              119.16135407626199
+            ]
+          },
+          "dwell_time": {
+            "count": 5,
+            "mean": 1.2,
+            "median": 1.0,
+            "min": 1,
+            "max": 2,
+            "p25": 1.0,
+            "p75": 1.0
+          },
+          "transition_row": {
+            "to_0": 0.0,
+            "to_1": 0.0,
+            "to_2": 0.0,
+            "to_3": 0.0,
+            "to_4": 0.0,
+            "to_5": 0.0,
+            "to_6": 0.16666666666666666,
+            "to_7": 0.0,
+            "to_8": 0.6666666666666666,
+            "to_9": 0.0,
+            "to_10": 0.0
+          },
+          "volume_analysis": {
+            "volume_stats": {
+              "mean_volume": 20566.6796875,
+              "median_volume": 13339.7744140625,
+              "std_volume": 15448.0810546875,
+              "min_volume": 9523.513671875,
+              "max_volume": 49887.0390625
+            },
+            "volume_volatility": {
+              "volume_cv": 0.7511217594146729,
+              "volume_trend": "increasing"
+            },
+            "volume_anomalies": {
+              "high_volume_threshold": 37786.5439453125,
+              "low_volume_threshold": 10573.72119140625,
+              "high_volume_samples": 1,
+              "low_volume_samples": 1
+            }
+          },
+          "volatility_analysis": {
+            "volatility_metrics": {
+              "mean_daily_range_pct": 0.5665629506111145,
+              "std_daily_range_pct": 0.249755397439003,
+              "max_daily_range_pct": 0.9015887975692749,
+              "min_daily_range_pct": 0.24911721050739288,
+              "mean_atr": NaN,
+              "atr_volatility": NaN
+            },
+            "volatility_classification": {
+              "volatility_level": "low",
+              "volatility_consistency": "consistent"
+            }
+          },
+          "trend_analysis": {
+            "trend_metrics": {
+              "trend_direction": "upward",
+              "trend_strength": 0.03541179196088776,
+              "trend_consistency": "moderate"
+            },
+            "moving_averages": {
+              "sma_5": 4329.65595703125,
+              "sma_20": 4328.123291015625,
+              "ma_cross": "golden"
+            }
+          },
+          "hmm_model_analysis": {
+            "model_type": "dict",
+            "model_available": true
+          },
+          "economic_interpretability": {
+            "label": "neutral"
+          }
+        },
+        "cluster_comparison": {
+          "cluster_count": 11,
+          "cluster_distribution": {
+            "cluster_8": 32.82442748091603,
+            "cluster_4": 6.106870229007633,
+            "cluster_2": 3.0534351145038165,
+            "cluster_10": 1.5267175572519083,
+            "cluster_11": 3.0534351145038165,
+            "cluster_9": 3.0534351145038165,
+            "cluster_12": 2.2900763358778624,
+            "cluster_13": 4.580152671755725,
+            "cluster_6": 28.24427480916031,
+            "cluster_1": 14.50381679389313,
+            "cluster_7": 0.7633587786259541
+          },
+          "cluster_rankings": {
+            "by_sample_count": {
+              "best": [
+                8,
+                32.82442748091603
+              ],
+              "worst": [
+                10,
+                1.5267175572519083
+              ],
+              "all_rankings": [
+                [
+                  8,
+                  32.82442748091603
+                ],
+                [
+                  6,
+                  28.24427480916031
+                ],
+                [
+                  1,
+                  14.50381679389313
+                ],
+                [
+                  4,
+                  6.106870229007633
+                ],
+                [
+                  13,
+                  4.580152671755725
+                ],
+                [
+                  2,
+                  3.0534351145038165
+                ],
+                [
+                  9,
+                  3.0534351145038165
+                ],
+                [
+                  11,
+                  3.0534351145038165
+                ],
+                [
+                  12,
+                  2.2900763358778624
+                ],
+                [
+                  10,
+                  1.5267175572519083
+                ]
+              ]
+            },
+            "by_volatility": {
+              "best": [
+                8,
+                0.7995251417160034
+              ],
+              "worst": [
+                10,
+                0.49155229330062866
+              ],
+              "all_rankings": [
+                [
+                  8,
+                  0.7995251417160034
+                ],
+                [
+                  6,
+                  0.6913899183273315
+                ],
+                [
+                  2,
+                  0.6499366164207458
+                ],
+                [
+                  1,
+                  0.643373966217041
+                ],
+                [
+                  12,
+                  0.6291676163673401
+                ],
+                [
+                  13,
+                  0.5665629506111145
+                ],
+                [
+                  11,
+                  0.5269862413406372
+                ],
+                [
+                  9,
+                  0.5101730227470398
+                ],
+                [
+                  4,
+                  0.508674144744873
+                ],
+                [
+                  10,
+                  0.49155229330062866
+                ]
+              ]
+            },
+            "by_volume": {
+              "best": [
+                8,
+                23002.0
+              ],
+              "worst": [
+                10,
+                11158.255859375
+              ],
+              "all_rankings": [
+                [
+                  8,
+                  23002.0
+                ],
+                [
+                  13,
+                  20566.6796875
+                ],
+                [
+                  6,
+                  18180.716796875
+                ],
+                [
+                  12,
+                  15653.9208984375
+                ],
+                [
+                  1,
+                  15535.0673828125
+                ],
+                [
+                  2,
+                  14838.4892578125
+                ],
+                [
+                  9,
+                  13444.66796875
+                ],
+                [
+                  4,
+                  11722.96484375
+                ],
+                [
+                  11,
+                  11482.75
+                ],
+                [
+                  10,
+                  11158.255859375
+                ]
+              ]
+            },
+            "by_trend": {
+              "best": [
+                1,
+                4.2173444813336225
+              ],
+              "worst": [
+                13,
+                0.03541179196088776
+              ],
+              "all_rankings": [
+                [
+                  1,
+                  4.2173444813336225
+                ],
+                [
+                  2,
+                  NaN
+                ],
+                [
+                  6,
+                  2.7391311661452473
+                ],
+                [
+                  8,
+                  2.4849602348573065
+                ],
+                [
+                  4,
+                  1.666024779571535
+                ],
+                [
+                  9,
+                  NaN
+                ],
+                [
+                  10,
+                  NaN
+                ],
+                [
+                  11,
+                  NaN
+                ],
+                [
+                  12,
+                  NaN
+                ],
+                [
+                  13,
+                  0.03541179196088776
+                ]
+              ]
+            }
+          }
+        },
+        "cluster_performance": {
+          "overall_performance": {
+            "total_clusters": 11,
+            "total_samples": 131,
+            "avg_samples_per_cluster": 11.909090909090908,
+            "cluster_balance": {
+              "balance_score": 0,
+              "is_balanced": false,
+              "cluster_counts": {
+                "8": 43,
+                "4": 8,
+                "2": 4,
+                "10": 2,
+                "11": 4,
+                "9": 4,
+                "12": 3,
+                "13": 6,
+                "6": 37,
+                "1": 19,
+                "7": 1
+              },
+              "count_std": 14.08064142040118,
+              "count_mean": 11.909090909090908
+            }
+          },
+          "cluster_performance": {
+            "cluster_1": {
+              "sample_efficiency": 14.50381679389313,
+              "data_quality": {
+                "quality_score": 0.4,
+                "quality_level": "low",
+                "quality_factors": [
+                  "all_analyses_available"
+                ]
+              },
+              "market_impact": {
+                "impact_score": 0.2,
+                "impact_level": "low",
+                "impact_factors": [
+                  "moderate_trend_impact"
+                ]
+              }
+            },
+            "cluster_2": {
+              "sample_efficiency": 3.0534351145038165,
+              "data_quality": {
+                "quality_score": 0.4,
+                "quality_level": "low",
+                "quality_factors": [
+                  "all_analyses_available"
+                ]
+              },
+              "market_impact": {
+                "impact_score": 0.0,
+                "impact_level": "low",
+                "impact_factors": []
+              }
+            },
+            "cluster_4": {
+              "sample_efficiency": 6.106870229007633,
+              "data_quality": {
+                "quality_score": 0.4,
+                "quality_level": "low",
+                "quality_factors": [
+                  "all_analyses_available"
+                ]
+              },
+              "market_impact": {
+                "impact_score": 0.0,
+                "impact_level": "low",
+                "impact_factors": []
+              }
+            },
+            "cluster_6": {
+              "sample_efficiency": 28.24427480916031,
+              "data_quality": {
+                "quality_score": 0.6000000000000001,
+                "quality_level": "medium",
+                "quality_factors": [
+                  "all_analyses_available",
+                  "moderate_samples"
+                ]
+              },
+              "market_impact": {
+                "impact_score": 0.2,
+                "impact_level": "low",
+                "impact_factors": [
+                  "moderate_trend_impact"
+                ]
+              }
+            },
+            "cluster_8": {
+              "sample_efficiency": 32.82442748091603,
+              "data_quality": {
+                "quality_score": 0.7,
+                "quality_level": "medium",
+                "quality_factors": [
+                  "all_analyses_available",
+                  "sufficient_samples"
+                ]
+              },
+              "market_impact": {
+                "impact_score": 0.2,
+                "impact_level": "low",
+                "impact_factors": [
+                  "moderate_trend_impact"
+                ]
+              }
+            },
+            "cluster_9": {
+              "sample_efficiency": 3.0534351145038165,
+              "data_quality": {
+                "quality_score": 0.4,
+                "quality_level": "low",
+                "quality_factors": [
+                  "all_analyses_available"
+                ]
+              },
+              "market_impact": {
+                "impact_score": 0.0,
+                "impact_level": "low",
+                "impact_factors": []
+              }
+            },
+            "cluster_10": {
+              "sample_efficiency": 1.5267175572519083,
+              "data_quality": {
+                "quality_score": 0.4,
+                "quality_level": "low",
+                "quality_factors": [
+                  "all_analyses_available"
+                ]
+              },
+              "market_impact": {
+                "impact_score": 0.0,
+                "impact_level": "low",
+                "impact_factors": []
+              }
+            },
+            "cluster_11": {
+              "sample_efficiency": 3.0534351145038165,
+              "data_quality": {
+                "quality_score": 0.4,
+                "quality_level": "low",
+                "quality_factors": [
+                  "all_analyses_available"
+                ]
+              },
+              "market_impact": {
+                "impact_score": 0.0,
+                "impact_level": "low",
+                "impact_factors": []
+              }
+            },
+            "cluster_12": {
+              "sample_efficiency": 2.2900763358778624,
+              "data_quality": {
+                "quality_score": 0.4,
+                "quality_level": "low",
+                "quality_factors": [
+                  "all_analyses_available"
+                ]
+              },
+              "market_impact": {
+                "impact_score": 0.0,
+                "impact_level": "low",
+                "impact_factors": []
+              }
+            },
+            "cluster_13": {
+              "sample_efficiency": 4.580152671755725,
+              "data_quality": {
+                "quality_score": 0.4,
+                "quality_level": "low",
+                "quality_factors": [
+                  "all_analyses_available"
+                ]
+              },
+              "market_impact": {
+                "impact_score": 0.0,
+                "impact_level": "low",
+                "impact_factors": []
+              }
+            },
+            "cluster_0": {
+              "sample_efficiency": 0,
+              "data_quality": {
+                "quality_score": 0.0,
+                "quality_level": "low",
+                "quality_factors": []
+              },
+              "market_impact": {
+                "impact_score": 0.0,
+                "impact_level": "low",
+                "impact_factors": []
+              }
+            }
+          },
+          "performance_insights": []
+        },
+        "transition_matrix_rows": {
+          "cluster_1": {
+            "to_0": 0.0,
+            "to_1": 0.21052631578947367,
+            "to_2": 0.0,
+            "to_3": 0.0,
+            "to_4": 0.0,
+            "to_5": 0.0,
+            "to_6": 0.21052631578947367,
+            "to_7": 0.0,
+            "to_8": 0.47368421052631576,
+            "to_9": 0.0,
+            "to_10": 0.05263157894736842
+          },
+          "cluster_2": {
+            "to_0": 0.0,
+            "to_1": 0.0,
+            "to_2": 0.25,
+            "to_3": 0.0,
+            "to_4": 0.0,
+            "to_5": 0.0,
+            "to_6": 0.0,
+            "to_7": 0.25,
+            "to_8": 0.25,
+            "to_9": 0.0,
+            "to_10": 0.25
+          },
+          "cluster_4": {
+            "to_0": 0.0,
+            "to_1": 0.14285714285714285,
+            "to_2": 0.2857142857142857,
+            "to_3": 0.0,
+            "to_4": 0.0,
+            "to_5": 0.0,
+            "to_6": 0.0,
+            "to_7": 0.0,
+            "to_8": 0.2857142857142857,
+            "to_9": 0.2857142857142857,
+            "to_10": 0.0
+          },
+          "cluster_6": {
+            "to_0": 0.0,
+            "to_1": 0.13513513513513514,
+            "to_2": 0.0,
+            "to_3": 0.0,
+            "to_4": 0.05405405405405406,
+            "to_5": 0.0,
+            "to_6": 0.5675675675675675,
+            "to_7": 0.0,
+            "to_8": 0.1891891891891892,
+            "to_9": 0.0,
+            "to_10": 0.0
+          },
+          "cluster_8": {
+            "to_0": 0.0,
+            "to_1": 0.20930232558139536,
+            "to_2": 0.0,
+            "to_3": 0.0,
+            "to_4": 0.06976744186046512,
+            "to_5": 0.0,
+            "to_6": 0.2558139534883721,
+            "to_7": 0.0,
+            "to_8": 0.3488372093023256,
+            "to_9": 0.0,
+            "to_10": 0.0
+          },
+          "cluster_9": {
+            "to_0": 0.0,
+            "to_1": 0.0,
+            "to_2": 0.25,
+            "to_3": 0.0,
+            "to_4": 0.25,
+            "to_5": 0.0,
+            "to_6": 0.0,
+            "to_7": 0.0,
+            "to_8": 0.25,
+            "to_9": 0.25,
+            "to_10": 0.0
+          },
+          "cluster_10": {
+            "to_0": 0.0,
+            "to_1": 0.0,
+            "to_2": 0.0,
+            "to_3": 0.0,
+            "to_4": 0.0,
+            "to_5": 0.0,
+            "to_6": 0.0,
+            "to_7": 0.0,
+            "to_8": 0.0,
+            "to_9": 0.5,
+            "to_10": 0.0
+          },
+          "cluster_11": {
+            "to_0": 0.0,
+            "to_1": 0.0,
+            "to_2": 0.0,
+            "to_3": 0.0,
+            "to_4": 0.5,
+            "to_5": 0.0,
+            "to_6": 0.0,
+            "to_7": 0.0,
+            "to_8": 0.25,
+            "to_9": 0.0,
+            "to_10": 0.0
+          },
+          "cluster_12": {
+            "to_0": 0.0,
+            "to_1": 0.0,
+            "to_2": 0.0,
+            "to_3": 0.0,
+            "to_4": 0.0,
+            "to_5": 0.0,
+            "to_6": 0.0,
+            "to_7": 0.0,
+            "to_8": 0.3333333333333333,
+            "to_9": 0.0,
+            "to_10": 0.0
+          },
+          "cluster_13": {
+            "to_0": 0.0,
+            "to_1": 0.0,
+            "to_2": 0.0,
+            "to_3": 0.0,
+            "to_4": 0.0,
+            "to_5": 0.0,
+            "to_6": 0.16666666666666666,
+            "to_7": 0.0,
+            "to_8": 0.6666666666666666,
+            "to_9": 0.0,
+            "to_10": 0.0
+          }
+        },
+        "dwell_time_distribution": {
+          "cluster_1": {
+            "count": 15,
+            "mean": 1.2666666666666666,
+            "median": 1.0,
+            "min": 1,
+            "max": 2,
+            "p25": 1.0,
+            "p75": 1.5
+          },
+          "cluster_2": {
+            "count": 3,
+            "mean": 1.3333333333333333,
+            "median": 1.0,
+            "min": 1,
+            "max": 2,
+            "p25": 1.0,
+            "p75": 1.5
+          },
+          "cluster_4": {
+            "count": 8,
+            "mean": 1.0,
+            "median": 1.0,
+            "min": 1,
+            "max": 1,
+            "p25": 1.0,
+            "p75": 1.0
+          },
+          "cluster_6": {
+            "count": 16,
+            "mean": 2.3125,
+            "median": 2.0,
+            "min": 1,
+            "max": 5,
+            "p25": 1.0,
+            "p75": 3.0
+          },
+          "cluster_8": {
+            "count": 28,
+            "mean": 1.5357142857142858,
+            "median": 1.0,
+            "min": 1,
+            "max": 4,
+            "p25": 1.0,
+            "p75": 2.0
+          },
+          "cluster_9": {
+            "count": 3,
+            "mean": 1.3333333333333333,
+            "median": 1.0,
+            "min": 1,
+            "max": 2,
+            "p25": 1.0,
+            "p75": 1.5
+          },
+          "cluster_10": {
+            "count": 2,
+            "mean": 1.0,
+            "median": 1.0,
+            "min": 1,
+            "max": 1,
+            "p25": 1.0,
+            "p75": 1.0
+          },
+          "cluster_11": {
+            "count": 4,
+            "mean": 1.0,
+            "median": 1.0,
+            "min": 1,
+            "max": 1,
+            "p25": 1.0,
+            "p75": 1.0
+          },
+          "cluster_12": {
+            "count": 3,
+            "mean": 1.0,
+            "median": 1.0,
+            "min": 1,
+            "max": 1,
+            "p25": 1.0,
+            "p75": 1.0
+          },
+          "cluster_13": {
+            "count": 5,
+            "mean": 1.2,
+            "median": 1.0,
+            "min": 1,
+            "max": 2,
+            "p25": 1.0,
+            "p75": 1.0
+          }
+        },
+        "generation_time": 0.03658485412597656
+      },
+      "advanced_clustering_analysis": {
+        "cluster_selection_methods": {},
+        "elbow_analysis": {},
+        "validation_metrics": {},
+        "information_criteria": {},
+        "gmm_analysis": {},
+        "spectral_analysis": {},
+        "optimal_k_selection": {}
+      },
+      "statistical_analysis": {
+        "unique_clusters_found": 11,
+        "cluster_coverage": 73.33333333333333
+      },
+      "market_dynamics": {
+        "total_samples": 131,
+        "clustering_time": 0.0
+      },
+      "clustering_summary": {
+        "total_clusters": 15,
+        "total_assignments": 131,
+        "cluster_distribution": {
+          "cluster_8": 32.82442748091603,
+          "cluster_4": 6.106870229007633,
+          "cluster_2": 3.0534351145038165,
+          "cluster_10": 1.5267175572519083,
+          "cluster_11": 3.0534351145038165,
+          "cluster_9": 3.0534351145038165,
+          "cluster_12": 2.2900763358778624,
+          "cluster_13": 4.580152671755725,
+          "cluster_6": 28.24427480916031,
+          "cluster_1": 14.50381679389313,
+          "cluster_7": 0.7633587786259541
+        },
+        "clustering_time": 0.0,
+        "quality_score": 0.6536543021970795,
+        "validation_passed": "True",
+        "clustering_mode": 50,
+        "data_driven_selection": true,
+        "regime_reduction": {
+          "input_regimes": 394,
+          "output_clusters": 15,
+          "reduction_ratio": 0.03807106598984772
+        },
+        "advanced_methods_used": {
+          "information_criteria": true,
+          "gmm_confidence_optimization": false,
+          "spectral_clustering": false,
+          "multi_method_consensus": true,
+          "economic_validation": true
+        }
+      },
+      "metadata": {
+        "symbol": "ETHUSDT",
+        "exchange": "binance",
+        "timeframe": "1h",
+        "data_points": 131,
+        "execution_timestamp": "2025-09-18T17:59:17.951830",
+        "clustering_info": {
+          "input_regimes": 394,
+          "output_clusters": 15,
+          "max_regimes_supported": 150,
+          "max_clusters_allowed": 50,
+          "clustering_method": "advanced_multi_method_consensus",
+          "validation_dimensions": [
+            "statistical",
+            "economic",
+            "financial",
+            "stability"
+          ]
+        }
+      }
+    },
+    "clustering_summary": {
+      "method": "Advanced Multi-Method Consensus HMM Clustering",
+      "cluster_count": 15,
+      "regime_reduction": "394 \u2192 15",
+      "data_driven_selection": true,
+      "advanced_methods_used": {
+        "information_criteria": true,
+        "gmm_confidence_optimization": false,
+        "spectral_clustering": false,
+        "economic_validation": true,
+        "multi_dimensional_validation": true
+      },
+      "quality_assessment": {
+        "overall_score": 0.0,
+        "quality_level": "unknown",
+        "economic_validation_passed": false
+      },
+      "market_insights": {
+        "primary_driver": "unknown",
+        "aspects_tested": [
+          "momentum",
+          "volatility",
+          "volume"
+        ],
+        "financial_validation": [
+          "volatility_regimes",
+          "momentum_patterns",
+          "volume_patterns",
+          "market_stress"
+        ]
+      }
+    }
+  },
+  "config": {
+    "symbol": "ETHUSDT",
+    "exchange": "binance",
+    "timeframe": "1h",
+    "mode": "light",
+    "intensity_percentage": 0.025,
+    "training_mode_config": {
+      "description": "Development mode - Minimal data with all features/models",
+      "lookback_days": 10,
+      "training_mode": "light",
+      "enable_blank_training_mode": false,
+      "enable_light_training_mode": true,
+      "enable_full_training_mode": false,
+      "data_collection": {
+        "enable_all_exchanges": false,
+        "enable_aggtrades": false,
+        "enable_futures": false,
+        "data_quality_checks": true
+      },
+      "feature_engineering": {
+        "enable_all_features": true,
+        "enable_advanced_features": true,
+        "enable_autoencoder_features": true,
+        "enable_microstructure_features": true,
+        "enable_multi_timeframe": true,
+        "timeframes": [
+          "1h"
+        ],
+        "max_interactions": 10,
+        "correlation_threshold": 0.8,
+        "max_features": null,
+        "feature_selection_samples": 10000,
+        "feature_selection_method": "full"
+      },
+      "model_training": {
+        "enable_all_models": true,
+        "max_trials": 10,
+        "n_trials": 5,
+        "enable_early_stopping": true,
+        "enable_parallelization": false,
+        "enable_caching": true,
+        "batch_size": 512,
+        "epochs": 10,
+        "early_stopping_patience": 5,
+        "learning_rate": 0.001,
+        "validation_split": 0.2,
+        "cross_validation_folds": 2,
+        "nn_hidden_layers": [
+          64,
+          32
+        ],
+        "nn_dropout": 0.3,
+        "nn_batch_norm": false,
+        "ensemble_models": 3,
+        "ensemble_method": "weighted",
+        "gb_max_depth": 4,
+        "gb_n_estimators": 50,
+        "rf_max_depth": 8,
+        "rf_n_estimators": 25
+      },
+      "validation": {
+        "enable_walk_forward": true,
+        "enable_monte_carlo": true,
+        "enable_ab_testing": true,
+        "validation_splits": 2,
+        "monte_carlo_samples": 100,
+        "ab_test_rounds": 2
+      },
+      "optimization": {
+        "enable_hyperparameter_optimization": true,
+        "enable_feature_selection": true,
+        "enable_model_selection": true,
+        "max_optimization_time": 300,
+        "optuna_trials": 10,
+        "optuna_timeout": 300,
+        "optuna_n_jobs": 1,
+        "feature_selection_method": "recursive",
+        "feature_importance_threshold": 0.01
+      },
+      "computational_intensity": "medium",
+      "estimated_duration_minutes": 60,
+      "exclude_recent_days": 0,
+      "min_data_points": 1000,
+      "enable_advanced_model_training": true,
+      "enable_ensemble_training": true,
+      "enable_multi_timeframe_training": true,
+      "enable_adaptive_training": true
+    }
+  },
+  "next_stage_requirements": {
+    "required_files": [
+      "sr_levels.json",
+      "regime_assignments.parquet",
+      "labels.parquet",
+      "features.parquet"
+    ],
+    "required_artifacts": [
+      "sr_clusters",
+      "regime_model",
+      "feature_metadata"
+    ],
+    "data_dependencies": [],
+    "next_stage": "model_training",
+    "sub_pipelines": [
+      "sr_detection",
+      "sr_clustering",
+      "hmm_clustering",
+      "hmm_regime_discovery",
+      "multi_horizon_profit_labeler",
+      "triple_barrier_labeling",
+      "feature_lookback_optimization",
+      "pid_based_feature_generation",
+      "sr_feature_integration"
+    ]
+  }
+}

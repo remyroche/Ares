@@ -164,7 +164,7 @@ class MutualInformationAnalyzer(BaseImportanceAnalyzer):
         if is_classification:
             # Ensure target is properly encoded for classification
             le = LabelEncoder()
-            y = le.fit_transform(target)
+            y = le.fit_transform(target.to_numpy() if hasattr(target, 'to_numpy') else target.ravel())
             scores = mutual_info_classif(X, y, random_state=self.config.random_state)
         else:
             scores = mutual_info_regression(X, target, random_state=self.config.random_state)
@@ -228,7 +228,7 @@ class ANOVAAnalyzer(BaseImportanceAnalyzer):
         
         if is_classification:
             le = LabelEncoder()
-            y = le.fit_transform(target)
+            y = le.fit_transform(target.to_numpy() if hasattr(target, 'to_numpy') else target.ravel())
             f_scores, p_values = f_classif(X, y)
         else:
             f_scores, p_values = f_regression(X, target)
@@ -270,7 +270,7 @@ class RandomForestAnalyzer(BaseImportanceAnalyzer):
         
         if is_classification:
             le = LabelEncoder()
-            y = le.fit_transform(target)
+            y = le.fit_transform(target.to_numpy() if hasattr(target, 'to_numpy') else target.ravel())
             model = RandomForestClassifier(**self.config.rf_params)
         else:
             y = target
@@ -318,7 +318,7 @@ class XGBoostAnalyzer(BaseImportanceAnalyzer):
         
         if is_classification:
             le = LabelEncoder()
-            y = le.fit_transform(target)
+            y = le.fit_transform(target.to_numpy() if hasattr(target, 'to_numpy') else target.ravel())
             model = xgb.XGBClassifier(**self.config.xgb_params)
         else:
             y = target
@@ -363,7 +363,7 @@ class PermutationAnalyzer(BaseImportanceAnalyzer):
         
         if is_classification:
             le = LabelEncoder()
-            y = le.fit_transform(target)
+            y = le.fit_transform(target.to_numpy() if hasattr(target, 'to_numpy') else target.ravel())
             model = RandomForestClassifier(**self.config.rf_params)
         else:
             y = target
@@ -434,7 +434,7 @@ class SHAPAnalyzer(BaseImportanceAnalyzer):
         
         if is_classification:
             le = LabelEncoder()
-            y_sample = le.fit_transform(target_sample)
+            y_sample = le.fit_transform(target_sample.ravel())
             model = RandomForestClassifier(**self.config.rf_params)
         else:
             y_sample = target_sample
@@ -494,7 +494,7 @@ class LassoAnalyzer(BaseImportanceAnalyzer):
         
         if is_classification:
             le = LabelEncoder()
-            y = le.fit_transform(target)
+            y = le.fit_transform(target.to_numpy() if hasattr(target, 'to_numpy') else target.ravel())
             # Use LogisticRegression with L1 penalty for classification
             model = LogisticRegression(penalty='l1', solver='liblinear', random_state=self.config.random_state)
         else:

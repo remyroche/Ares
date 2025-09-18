@@ -1,0 +1,126 @@
+{
+  "stage": "market_analysis",
+  "sub_pipeline": "multi_horizon_profit_labeler",
+  "timestamp": "2025-09-18T09:52:08.218019",
+  "status": "failed",
+  "output_files": [],
+  "metadata": {},
+  "artifacts": {},
+  "config": {
+    "symbol": "ETHUSDT",
+    "exchange": "binance",
+    "timeframe": "1m",
+    "mode": "blank",
+    "intensity_percentage": 0.1,
+    "training_mode_config": {
+      "description": "Quick testing mode - All features/models with shorter lookback",
+      "lookback_days": 180,
+      "training_mode": "blank",
+      "enable_blank_training_mode": true,
+      "enable_light_training_mode": false,
+      "enable_full_training_mode": false,
+      "data_collection": {
+        "enable_all_exchanges": false,
+        "enable_aggtrades": false,
+        "enable_futures": false,
+        "data_quality_checks": true
+      },
+      "feature_engineering": {
+        "enable_all_features": true,
+        "enable_advanced_features": true,
+        "enable_autoencoder_features": true,
+        "enable_microstructure_features": true,
+        "enable_multi_timeframe": true,
+        "timeframes": [
+          "1h"
+        ],
+        "max_interactions": 50,
+        "correlation_threshold": 0.8,
+        "max_features": null,
+        "feature_selection_samples": 50000,
+        "feature_selection_method": "full"
+      },
+      "model_training": {
+        "enable_all_models": true,
+        "max_trials": 50,
+        "n_trials": 25,
+        "enable_early_stopping": true,
+        "enable_parallelization": true,
+        "enable_caching": true,
+        "batch_size": 2048,
+        "epochs": 50,
+        "early_stopping_patience": 10,
+        "learning_rate": 0.001,
+        "validation_split": 0.2,
+        "cross_validation_folds": 3,
+        "nn_hidden_layers": [
+          256,
+          128,
+          64
+        ],
+        "nn_dropout": 0.3,
+        "nn_batch_norm": true,
+        "ensemble_models": 5,
+        "ensemble_method": "weighted",
+        "gb_max_depth": 6,
+        "gb_n_estimators": 100,
+        "rf_max_depth": 15,
+        "rf_n_estimators": 50
+      },
+      "validation": {
+        "enable_walk_forward": true,
+        "enable_monte_carlo": true,
+        "enable_ab_testing": true,
+        "validation_splits": 3,
+        "monte_carlo_samples": 1000,
+        "ab_test_rounds": 3
+      },
+      "optimization": {
+        "enable_hyperparameter_optimization": true,
+        "enable_feature_selection": true,
+        "enable_model_selection": true,
+        "max_optimization_time": 900,
+        "optuna_trials": 50,
+        "optuna_timeout": 900,
+        "optuna_n_jobs": 2,
+        "feature_selection_method": "recursive",
+        "feature_importance_threshold": 0.01
+      },
+      "computational_intensity": "medium",
+      "estimated_duration_minutes": 60,
+      "exclude_recent_days": 0,
+      "min_data_points": 1000,
+      "enable_advanced_model_training": true,
+      "enable_ensemble_training": true,
+      "enable_multi_timeframe_training": true,
+      "enable_adaptive_training": true
+    }
+  },
+  "next_stage_requirements": {
+    "required_files": [
+      "sr_levels.json",
+      "regime_assignments.parquet",
+      "labels.parquet",
+      "features.parquet"
+    ],
+    "required_artifacts": [
+      "sr_clusters",
+      "regime_model",
+      "feature_metadata"
+    ],
+    "data_dependencies": [],
+    "next_stage": "model_training",
+    "sub_pipelines": [
+      "sr_detection",
+      "sr_clustering",
+      "hmm_clustering",
+      "hmm_regime_discovery",
+      "multi_horizon_profit_labeler",
+      "triple_barrier_labeling",
+      "feature_lookback_optimization",
+      "fractional_differentiation",
+      "pid_based_feature_generation",
+      "sr_feature_integration"
+    ]
+  }
+}

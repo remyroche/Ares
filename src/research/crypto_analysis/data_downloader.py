@@ -1,6 +1,4 @@
 #!/usr/bin/env python3
-from src.utils.tprint import tprint
-
 """
 Cryptocurrency Data Downloader for Scalping/Swinging Analysis
 Downloads 15-minute klines from Binance for multiple assets over 2 years
@@ -289,20 +287,20 @@ def main():
         return
 
     # Print summary statistics
-    tprint("\n" + "="*50)
-    tprint("DOWNLOAD SUMMARY")
-    tprint("="*50)
-    tprint(f"Total klines: {len(df):,}")
-    tprint(f"Assets: {df['symbol'].nunique()}")
-    tprint(f"Date range: {df.index.min()} to {df.index.max()}")
-    tprint(f"File size: {output_file.stat().st_size / (1024*1024):.2f} MB")
+    print("\n" + "="*50)
+    print("DOWNLOAD SUMMARY")
+    print("="*50)
+    print(f"Total klines: {len(df):,}")
+    print(f"Assets: {df['symbol'].nunique()}")
+    print(f"Date range: {df.index.min()} to {df.index.max()}")
+    print(f"File size: {output_file.stat().st_size / (1024*1024):.2f} MB")
 
     # Per-asset summary
-    tprint("\nPer-asset summary:")
-    tprint("-" * 30)
+    print("\nPer-asset summary:")
+    print("-" * 30)
     for symbol in sorted(df["symbol"].unique()):
         asset_data = df[df["symbol"] == symbol]
-        tprint(f"{symbol:10} | {len(asset_data):8,} klines | "
+        print(f"{symbol:10} | {len(asset_data):8,} klines | "
               f"Volume: {asset_data['volume'].sum():12.0f}")
 
 if __name__ == "__main__":

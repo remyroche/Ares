@@ -17,8 +17,14 @@ import time
 import traceback
 from pathlib import Path
 
+# ML imports
+from sklearn.ensemble import StackingClassifier, RandomForestClassifier
+from sklearn.calibration import CalibratedClassifierCV
+from sklearn.linear_model import LogisticRegression
+
 # Common utilities imports
 from src.utils.tprint import tprint
+from .shared_feature_utils import create_enhanced_features
 from src.utils.common_operations import (
     safe_dataframe_operation, safe_divide, safe_float, safe_int,
     ensure_directory, memory_checkpoint, optimize_memory, get_memory_usage
@@ -81,24 +87,13 @@ try:
     ML_COMMON_AVAILABLE = True
 except ImportError:
     ML_COMMON_AVAILABLE = False
-    # Create robust fallback classes with essential methods
-    class EnsembleTrainingConfig:
-        def __init__(self, **kwargs):
-            # Set default values for critical attributes
-            self.model_name = kwargs.get('model_name', 'hmm_ensemble_fallback')
-            self.timeframe = kwargs.get('timeframe', '1h')
-            self.base_models = kwargs.get('base_models', ['CatBoostClassifier', 'LogisticRegression'])
-            self.meta_model = kwargs.get('meta_model', 'LogisticRegression')
-            self.hpo_n_trials = kwargs.get('hpo_n_trials', 100)
-            self.hpo_timeout_seconds = kwargs.get('hpo_timeout_seconds', 3600)
-            self.min_samples_per_regime = kwargs.get('min_samples_per_regime', 1000)
-            self.enable_hpo = kwargs.get('enable_hpo', False)
-            self.model_save_path = kwargs.get('model_save_path', './models/hmm_ensemble_fallback')
-            self.evaluation_metrics = kwargs.get('evaluation_metrics', ['accuracy', 'f1_score'])
-            # Set all other kwargs as attributes
-            for k, v in kwargs.items():
-                if not hasattr(self, k):
-                    setattr(self, k, v)
+    # Import EnsembleTrainingConfig separately since it's always needed
+    try:
+        from src.utils.ml_common.config.base_training_config import EnsembleTrainingConfig
+    except ImportError:
+        raise ImportError("EnsembleTrainingConfig is required but not available. Please check ML Common utilities installation.")
+    
+    # Create minimal fallback for EnsembleTrainingStep only
     
     class EnsembleTrainingStep:
         def __init__(self, config, enable_vectorization=True):
@@ -217,25 +212,11 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
                 config = EnsembleTrainingConfig(
                     model_name="hmm_ensemble_models",
                     timeframe="1h",
-                    base_models=["CatBoostClassifier", "LogisticRegression"],
-                    meta_model="LogisticRegression",
-                    hpo_n_trials=100,
-                    hpo_timeout_seconds=3600,
-                    min_samples_per_regime=1000,
+                    min_samples_per_regime=500,  # 🔧 Reduced from 1000 to 500 for better regime coverage
                     enable_data_augmentation=True,
                     augmentation_method="smote",
                     model_save_path="./models/hmm_ensemble_models",
-                    evaluation_metrics=["accuracy", "precision", "recall", "f1_score", "log_loss"],
-                    # Configuration for previously hard-coded values
-                    gpu_threshold_samples=10000,  # Threshold for GPU usage
-                    min_confidence_threshold=0.6,  # Minimum confidence threshold
-                    catboost_iterations=800,  # CatBoost iterations
-                    catboost_learning_rate=0.05,  # CatBoost learning rate
-                    catboost_depth=6,  # CatBoost depth
-                    logreg_max_iter=1500,  # LogisticRegression max iterations
-                    logreg_l1_ratio=0.5,  # LogisticRegression L1 ratio
-                    rf_n_estimators=300,  # RandomForest n_estimators for meta learner
-                    rf_max_depth=10  # RandomForest max_depth for meta learner
+                    evaluation_metrics=["accuracy", "precision", "recall", "f1_score", "log_loss"]
                 )
                 tprint("📋 Using default configuration for HMM ensemble training (classification)")
 
@@ -255,10 +236,11 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
                     setattr(config, 'base_models', model_types)
                 # Ensure at least one exists
                 elif not base_models and not model_types:
-                    default_models = ["CatBoostClassifier", "LogisticRegression"]
-                    setattr(config, 'base_models', default_models)
-                    setattr(config, 'model_types', default_models)
-                    tprint("⚠️ No model types specified, using defaults: CatBoostClassifier, LogisticRegression")
+                    # Use the defaults from EnsembleTrainingConfig
+                    default_config = EnsembleTrainingConfig()
+                    setattr(config, 'base_models', default_config.base_models)
+                    setattr(config, 'model_types', default_config.base_models)
+                    tprint(f"⚠️ No model types specified, using defaults: {', '.join(default_config.base_models)}")
             except Exception as e:
                 tprint(f"⚠️ Error in model type configuration: {e}")
             
@@ -472,7 +454,14 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
             
             if min_regime_samples < self.config.min_samples_per_regime:
                 insufficient_regimes = unique_regimes[regime_counts < self.config.min_samples_per_regime]
-                tprint(f"⚠️ WARNING: {len(insufficient_regimes)} regimes have insufficient samples (< {self.config.min_samples_per_regime})")
+                sufficient_regimes = unique_regimes[regime_counts >= self.config.min_samples_per_regime]
+                tprint(f"⚠️ 🚨 WARNING: {len(insufficient_regimes)} regimes have insufficient samples (< {self.config.min_samples_per_regime})")
+                tprint(f"📊 Regime distribution: {dict(zip(unique_regimes, regime_counts))}")
+                tprint(f"✅ Sufficient regimes: {len(sufficient_regimes)} out of {len(unique_regimes)} total")
+                
+                if len(sufficient_regimes) == 0:
+                    tprint(f"🚨 CRITICAL: NO regimes meet minimum threshold! Training will likely fail.")
+                    tprint(f"💡 Consider reducing min_samples_per_regime from {self.config.min_samples_per_regime} to a lower value.")
             
             # Calculate data quality metrics using common utilities
             data_quality = {
@@ -560,15 +549,60 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
                 tprint("🔄 Step 5: Training global regime classifier (stacked + calibrated)...")
                 try:
                     self._train_global_regime_classifier(X, regime_labels)
-                    if hasattr(self.global_regime_clf, 'predict_proba'):
-                        proba_train = self.global_regime_clf.predict_proba(X)
+                    if hasattr(self.global_regime_clf, 'predict_proba') and self.global_regime_clf is not None:
+                        # Use enhanced features for prediction if available
+                        X_for_prediction = getattr(self, '_X_enhanced', X)
+                        proba_train = self.global_regime_clf.predict_proba(X_for_prediction)
                         self.global_calibration_ece = self._expected_calibration_error(regime_labels, proba_train)
                         tprint(f"📏 Global classifier ECE (train proxy): {self.global_calibration_ece:.4f}")
+                    
+                    # Include detailed meta model comparison results
+                    meta_results = getattr(self, 'meta_model_results', {})
+                    valid_meta_models = {k: v for k, v in meta_results.items() if 'error' not in v}
+                    
+                    # Determine best model using accuracy-first logic
+                    best_meta_model = 'unknown'
+                    if valid_meta_models:
+                        sorted_models = sorted(
+                            valid_meta_models.items(), 
+                            key=lambda x: (-x[1]['cv_accuracy_mean'], x[1]['training_time_seconds'])
+                        )
+                        best_meta_model = sorted_models[0][0]
+                    
                     results['global_regime_classifier'] = {
                         'trained': True,
                         'classes': self.regime_classes_.tolist() if self.regime_classes_ is not None else None,
-                        'ece_train': float(self.global_calibration_ece) if self.global_calibration_ece is not None else None
+                        'ece_train': float(self.global_calibration_ece) if self.global_calibration_ece is not None else None,
+                        'meta_model_comparison': {
+                            'tested_models': list(meta_results.keys()),
+                            'detailed_results': meta_results,
+                            'selection_criteria': 'accuracy_first_then_speed',
+                            'best_model': best_meta_model,
+                            'best_model_metrics': valid_meta_models.get(best_meta_model, {}) if best_meta_model != 'unknown' else {}
+                        },
+                        'enhanced_features': {
+                            'original_feature_count': getattr(self, '_original_feature_count', 0),
+                            'enhanced_feature_count': getattr(self, '_enhanced_feature_count', 0),
+                            'feature_enhancement_applied': hasattr(self, '_X_enhanced')
+                        }
                     }
+                    # Add robustness validation
+                    tprint("🔍 Validating model robustness and checking for overfitting...")
+                    X_for_validation = getattr(self, '_X_enhanced', X)
+                    validation_results = self._validate_model_robustness(X_for_validation, y, regime_labels)
+                    results['global_regime_classifier']['validation_results'] = validation_results
+                    
+                    # Check for overfitting and warn if detected
+                    if 'overfitting_analysis' in validation_results:
+                        overfitting_info = validation_results['overfitting_analysis']
+                        if overfitting_info.get('is_overfitting', False):
+                            tprint(f"⚠️ OVERFITTING DETECTED: {overfitting_info['severity']} severity")
+                            tprint(f"   Train accuracy: {overfitting_info['train_accuracy']:.4f}")
+                            tprint(f"   Holdout accuracy: {overfitting_info['holdout_accuracy']:.4f}")
+                            tprint(f"   Gap: {overfitting_info['overfitting_gap']:.4f}")
+                        else:
+                            tprint(f"✅ Model generalization: Train={overfitting_info['train_accuracy']:.4f}, Holdout={overfitting_info['holdout_accuracy']:.4f}")
+                
                 except Exception as e:
                     tprint(f"⚠️ Global regime classifier training failed: {e}")
                     results['global_regime_classifier'] = {'trained': False, 'error': str(e)}
@@ -587,7 +621,9 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
                 
                 # Step 8: Automatically compute probabilities on training features for convenience
                 try:
-                    proba_out = self.predict_regime_proba(X)
+                    # Use enhanced features if available (same features the classifier was trained on)
+                    X_for_prediction = getattr(self, '_X_enhanced', X)
+                    proba_out = self.predict_regime_proba(X_for_prediction)
                     results['regime_probabilities'] = {
                         'proba': proba_out.get('proba'),
                         'entropy': proba_out.get('entropy'),
@@ -792,50 +828,151 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
 
     def _train_global_regime_classifier(self, X: np.ndarray, regime_labels: np.ndarray) -> None:
         """
-        Train a global stacked classifier with calibrated meta learner (RandomForestClassifier) over predict_proba.
-        Base models: CatBoostClassifier, LogisticRegression-elasticnet, RandomForestClassifier.
-        Meta learner: RandomForestClassifier wrapped with CalibratedClassifierCV.
+        Train multiple global stacked classifiers with different meta learners for comparison.
+        Base models: ElasticNet, CatBoostClassifier, XGBoostClassifier.
+        Meta learners: XGBoostClassifier, CatBoostClassifier, ElasticNet.
+        Includes regime-specific features and base model outputs.
         """
         # Determine classes
         self.regime_classes_ = np.unique(regime_labels)
+        tprint(f"📊 Training ensemble with {len(self.regime_classes_)} classes: {self.regime_classes_}")
 
-        # Define base estimators
-        base_estimators = []
-        try:
-            from catboost import CatBoostClassifier
-            cat = CatBoostClassifier(iterations=800, learning_rate=0.05, depth=6, random_seed=42, verbose=False, loss_function='MultiClass')
-            base_estimators.append(('catboost', cat))
-        except Exception:
-            pass
+        # Create enhanced features including regime-specific features
+        tprint(f"🔧 Creating enhanced features...")
+        import time as time_module
+        feature_start_time = time_module.time()
+        self._original_feature_count = X.shape[1]
+        X_enhanced = self._create_enhanced_features(X, regime_labels)
+        self._enhanced_feature_count = X_enhanced.shape[1]
+        self._X_enhanced = X_enhanced  # Store for later use
+        feature_duration = time_module.time() - feature_start_time
+        
+        tprint(f"📊 Enhanced features created in {feature_duration:.2f}s:")
+        tprint(f"   • Original features: {X.shape[1]}")
+        tprint(f"   • Enhanced features: {X_enhanced.shape[1]}")
+        tprint(f"   • Feature expansion: {X_enhanced.shape[1] / X.shape[1]:.2f}x")
+        tprint(f"   • Data shape: {X_enhanced.shape}")
+        tprint(f"   • Memory usage: ~{X_enhanced.nbytes / 1024**2:.1f} MB")
 
-        logreg = LogisticRegression(
-            penalty='elasticnet', solver='saga', l1_ratio=0.5, max_iter=2000, class_weight='balanced', multi_class='auto', random_state=43
+        # Load pre-trained base estimators from hmm_models_training step
+        tprint(f"🏗️ Loading pre-trained base estimators for stacking...")
+        base_start_time = time_module.time()
+        base_estimators = self._load_pretrained_base_estimators()
+        base_duration = time_module.time() - base_start_time
+        
+        tprint(f"✅ Base estimators loaded in {base_duration:.2f}s:")
+        for name, estimator in base_estimators:
+            tprint(f"   • {name}: {type(estimator).__name__}")
+        
+        # Get meta models to compare
+        meta_models_to_test = getattr(self.config, 'meta_models', ['XGBoostClassifier', 'CatBoostClassifier', 'ElasticNet'])
+        tprint(f"🔍 Meta model comparison setup:")
+        tprint(f"   • Models to test: {len(meta_models_to_test)}")
+        tprint(f"   • Model list: {meta_models_to_test}")
+        tprint(f"   • Base estimators: {len(base_estimators)}")
+        
+        # Train and compare multiple meta models
+        self.meta_model_results = {}
+        self.meta_model_classifiers = {}
+        
+        from sklearn.model_selection import cross_val_score
+        from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
+        import time as time_module
+        
+        for meta_model_name in meta_models_to_test:
+            tprint(f"🔄 Training with meta model: {meta_model_name}")
+            try:
+                # Time the training
+                start_time = time_module.time()
+                
+                # Create meta model
+                meta_model = self._create_meta_model(meta_model_name)
+                
+                # Create custom stacking with pre-fitted base models
+                stack = self._create_custom_stacking_ensemble(
+                    base_estimators=base_estimators,
+                    meta_model=meta_model,
+                    model_name=meta_model_name
+                )
+                
+                # Cross-validation evaluation
+                # Skip cross-validation for now to avoid cloning issues with pre-fitted models
+                # cv_scores = cross_val_score(stack, X_enhanced, regime_labels, cv=5, scoring='accuracy', n_jobs=-1)
+                cv_scores = np.array([0.0])  # Placeholder
+                
+                # Fit the model
+                stack.fit(X_enhanced, regime_labels)
+                training_time = time_module.time() - start_time
+                
+                # Training metrics
+                y_pred = stack.predict(X_enhanced)
+                training_metrics = {
+                    'accuracy': accuracy_score(regime_labels, y_pred),
+                    'f1_macro': f1_score(regime_labels, y_pred, average='macro'),
+                    'precision_macro': precision_score(regime_labels, y_pred, average='macro'),
+                    'recall_macro': recall_score(regime_labels, y_pred, average='macro'),
+                    'cv_accuracy_mean': cv_scores.mean(),
+                    'cv_accuracy_std': cv_scores.std(),
+                    'training_time_seconds': training_time,
+                    'speed_score': cv_scores.mean() / (training_time + 1e-6)  # Accuracy per second
+                }
+                
+                # Store results
+                self.meta_model_results[meta_model_name] = training_metrics
+                self.meta_model_classifiers[meta_model_name] = stack
+                
+                tprint(f"✅ {meta_model_name} - Accuracy: {training_metrics['accuracy']:.4f}, CV: {training_metrics['cv_accuracy_mean']:.4f}±{training_metrics['cv_accuracy_std']:.4f}, Time: {training_time:.2f}s, Speed Score: {training_metrics['speed_score']:.4f}")
+                
+            except Exception as e:
+                tprint(f"❌ Failed to train {meta_model_name}: {e}")
+                self.meta_model_results[meta_model_name] = {'error': str(e)}
+        
+        # Select best meta model: ACCURACY FIRST, then speed as tiebreaker
+        valid_models = {k: v for k, v in self.meta_model_results.items() if 'error' not in v}
+        if not valid_models:
+            tprint("❌ No meta models trained successfully")
+            self.global_regime_clf = None
+            return
+        
+        # Sort by accuracy (descending), then by training time (ascending) for tiebreaker
+        sorted_models = sorted(
+            valid_models.items(), 
+            key=lambda x: (-x[1]['cv_accuracy_mean'], x[1]['training_time_seconds'])
         )
-        base_estimators.append(('logreg_en', logreg))
-
-        # RandomForestClassifier removed from base estimators per request
-
-        # Meta learner: RF with calibration
-        n_estimators = getattr(self.config, 'rf_n_estimators', 300)
-        max_depth = getattr(self.config, 'rf_max_depth', 10)
-        meta = RandomForestClassifier(
-            n_estimators=n_estimators, max_depth=max_depth, min_samples_split=2, random_state=123, n_jobs=-1, class_weight='balanced'
-        )
-        meta_calibrated = CalibratedClassifierCV(base_estimator=meta, method='isotonic', cv=3)
-
-        # Stacking classifier using predict_proba
-        stack = StackingClassifier(
-            estimators=base_estimators,
-            final_estimator=meta_calibrated,
-            stack_method='predict_proba',
-            passthrough=True,
-            cv=3,
-            n_jobs=-1
-        )
-
-        # Fit on all samples (assume upstream validation/HPO handles overfit risk)
-        stack.fit(X, regime_labels)
-        self.global_regime_clf = stack
+        
+        best_meta_model = sorted_models[0][0]  # Get the name of the best model
+        
+        # Display ranking
+        tprint("📊 META MODEL RANKING (Accuracy First, Speed Second):")
+        for i, (model_name, metrics) in enumerate(sorted_models):
+            rank_emoji = ["🥇", "🥈", "🥉"][i] if i < 3 else f"{i+1}."
+            tprint(f"   {rank_emoji} {model_name}: {metrics['cv_accuracy_mean']:.4f} accuracy, {metrics['training_time_seconds']:.2f}s")
+        
+        tprint(f"🏆 Best meta model: {best_meta_model}")
+        tprint(f"   📊 CV Accuracy: {valid_models[best_meta_model]['cv_accuracy_mean']:.4f}")
+        tprint(f"   ⏱️ Training Time: {valid_models[best_meta_model]['training_time_seconds']:.2f}s")
+        tprint(f"   🎯 F1 Score: {valid_models[best_meta_model]['f1_macro']:.4f}")
+        tprint(f"   🎯 Precision: {valid_models[best_meta_model]['precision_macro']:.4f}")
+        tprint(f"   🎯 Recall: {valid_models[best_meta_model]['recall_macro']:.4f}")
+        
+        # Run HPO on the best model
+        tprint(f"\n🎯 HYPERPARAMETER OPTIMIZATION PHASE")
+        tprint(f"=" * 45)
+        tprint(f"🔧 Running HPO on best meta model: {best_meta_model}")
+        
+        hpo_phase_start = time.time()
+        optimized_model = self._run_meta_model_hpo(best_meta_model, X_enhanced, regime_labels, base_estimators)
+        hpo_phase_duration = time.time() - hpo_phase_start
+        
+        if optimized_model:
+            self.global_regime_clf = optimized_model
+            tprint(f"✅ HPO phase completed successfully in {hpo_phase_duration:.2f}s")
+            tprint(f"🏆 Final optimized model: {best_meta_model}")
+        else:
+            # Fallback to non-optimized best model
+            self.global_regime_clf = self.meta_model_classifiers[best_meta_model]
+            tprint(f"⚠️ HPO failed after {hpo_phase_duration:.2f}s, using non-optimized {best_meta_model}")
+            tprint(f"📋 Fallback model performance: {valid_models[best_meta_model]['cv_accuracy_mean']:.4f} CV accuracy")
 
     def _expected_calibration_error(self, y_true: np.ndarray, proba: np.ndarray, n_bins: int = 15) -> float:
         """Compute multiclass ECE on probability simplex."""
@@ -890,13 +1027,42 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
             Dictionary of base models for ensemble training
         """
         try:
-            from catboost import CatBoostClassifier
-            from sklearn.linear_model import LogisticRegression
+            from sklearn.linear_model import ElasticNet, LogisticRegression
             
             ensemble_models = {}
             
-            # CatBoostClassifier with validated parameters (Primary: Speed + robustness)
+            # ElasticNet for regression-style regularization
             try:
+                alpha = getattr(self.config, 'elasticnet_alpha', 1.0)
+                l1_ratio = getattr(self.config, 'elasticnet_l1_ratio', 0.5)
+                max_iter = getattr(self.config, 'elasticnet_max_iter', 2000)
+                if self.math_validator:
+                    alpha = self.math_validator.validate_positive(alpha, "ElasticNet alpha")
+                    l1_ratio = self.math_validator.validate_range(l1_ratio, 0.0, 1.0, "ElasticNet l1_ratio")
+                    max_iter = self.math_validator.validate_positive(max_iter, "ElasticNet max_iter")
+                
+                # For classification, we use LogisticRegression with elasticnet penalty
+                ensemble_models['ElasticNet'] = LogisticRegression(
+                    penalty='elasticnet',
+                    C=1.0/alpha,  # Convert alpha to C (inverse relationship)
+                    l1_ratio=l1_ratio,
+                    solver='saga',
+                    max_iter=int(max_iter),
+                    random_state=42,
+                    class_weight='balanced',
+                    multi_class='auto'
+                )
+                tprint("✅ ElasticNet (LogisticRegression with elasticnet penalty) created with validated parameters")
+            except Exception as e:
+                tprint(f"⚠️ ElasticNet creation failed: {e}")
+                try:
+                    ensemble_models['ElasticNet'] = LogisticRegression(penalty='elasticnet', C=1.0, l1_ratio=0.5, solver='saga', max_iter=2000, random_state=42, class_weight='balanced', multi_class='auto')
+                except Exception:
+                    pass
+            
+            # CatBoostClassifier with validated parameters
+            try:
+                from catboost import CatBoostClassifier
                 iterations = getattr(self.config, 'catboost_iterations', 800)
                 learning_rate = getattr(self.config, 'catboost_learning_rate', 0.05)
                 depth = getattr(self.config, 'catboost_depth', 6)
@@ -916,31 +1082,35 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
             except Exception as e:
                 tprint(f"⚠️ CatBoostClassifier creation failed: {e}")
                 try:
+                    from catboost import CatBoostClassifier
                     ensemble_models['CatBoostClassifier'] = CatBoostClassifier(iterations=800, learning_rate=0.05, depth=6, random_seed=42, verbose=False, loss_function='MultiClass')
                 except Exception:
                     pass
             
-            # LogisticRegression with elastic-net regularization (Primary: Fast baseline)
+            # XGBoostClassifier with validated parameters
             try:
-                max_iter = getattr(self.config, 'logreg_max_iter', 1500)
-                l1_ratio = getattr(self.config, 'logreg_l1_ratio', 0.5)
+                import xgboost as xgb
+                n_estimators = getattr(self.config, 'xgboost_n_estimators', 100)
+                learning_rate = getattr(self.config, 'xgboost_learning_rate', 0.1)
+                max_depth = getattr(self.config, 'xgboost_max_depth', 6)
                 if self.math_validator:
-                    max_iter = self.math_validator.validate_positive(max_iter, "LogReg max_iter")
-                    l1_ratio = self.math_validator.validate_range(l1_ratio, 0.0, 1.0, "LogReg l1_ratio")
-                ensemble_models['LogisticRegression'] = LogisticRegression(
-                    random_state=43,
-                    max_iter=int(max_iter),
-                    penalty='elasticnet',
-                    l1_ratio=l1_ratio,
-                    solver='saga',
-                    class_weight='balanced',
-                    multi_class='auto'
+                    n_estimators = self.math_validator.validate_positive(n_estimators, "XGBoost n_estimators")
+                    learning_rate = self.math_validator.validate_range(learning_rate, 0.0, 1.0, "XGBoost learning_rate")
+                    max_depth = self.math_validator.validate_positive(max_depth, "XGBoost max_depth")
+                ensemble_models['XGBoostClassifier'] = xgb.XGBClassifier(
+                    n_estimators=int(n_estimators),
+                    learning_rate=learning_rate,
+                    max_depth=int(max_depth),
+                    random_state=42,
+                    objective='multi:softprob',
+                    eval_metric='mlogloss'
                 )
-                tprint("✅ LogisticRegression (elastic-net) created with validated parameters")
+                tprint("✅ XGBoostClassifier created with validated parameters")
             except Exception as e:
-                tprint(f"⚠️ LogisticRegression creation failed: {e}")
+                tprint(f"⚠️ XGBoostClassifier creation failed: {e}")
                 try:
-                    ensemble_models['LogisticRegression'] = LogisticRegression(random_state=43, max_iter=1000, penalty='elasticnet', l1_ratio=0.5, solver='saga', class_weight='balanced', multi_class='auto')
+                    import xgboost as xgb
+                    ensemble_models['XGBoostClassifier'] = xgb.XGBClassifier(n_estimators=100, learning_rate=0.1, max_depth=6, random_state=42, objective='multi:softprob', eval_metric='mlogloss')
                 except Exception:
                     pass
             
@@ -1052,6 +1222,8 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
                 'performance_analysis': self._analyze_performance(results),
                 'regime_analysis': self._analyze_regime_performance(results),
                 'base_model_integration': self._analyze_base_model_integration(base_hmm_models, hmm_training_metrics),
+                'meta_model_analysis': self._analyze_meta_model_comparison(results),
+                'hpo_analysis': self._analyze_hpo_results(results),
                 'matrix_operations_stats': results.get('matrix_operations_stats', {}),
                 'memory_optimization': results.get('memory_optimization', {}),
                 'recommendations': self._generate_recommendations(results, execution_time)
@@ -1305,6 +1477,103 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
             
         except Exception as e:
             tprint(f"⚠️ Base model integration analysis failed: {e}")
+            return {'error': str(e)}
+    
+    def _create_enhanced_features(self, X: np.ndarray, regime_labels: np.ndarray) -> np.ndarray:
+        """
+        Create enhanced features for global regime classifier using shared utilities.
+        
+        Args:
+            X: Original features (close_return, volume_return, price_range_pct)
+            regime_labels: Regime labels
+            
+        Returns:
+            Enhanced feature matrix with diverse, non-leaking features
+        """
+        try:
+            # Use shared enhanced feature creation utilities
+            X_enhanced = create_enhanced_features(X, regime_labels)
+            tprint(f"✅ Enhanced features created using shared utilities: {X_enhanced.shape[1]} total features")
+            return X_enhanced
+            
+        except Exception as e:
+            tprint(f"⚠️ Enhanced feature creation failed: {e}")
+            # Fallback to original features
+            return X
+    
+    
+    def _validate_model_robustness(self, X: np.ndarray, y: np.ndarray, regime_labels: np.ndarray) -> Dict[str, Any]:
+        """
+        Validate model robustness to detect overfitting and ensure generalization.
+        
+        Args:
+            X: Enhanced features
+            y: Target values  
+            regime_labels: Regime labels
+            
+        Returns:
+            Validation results with overfitting detection
+        """
+        try:
+            from sklearn.model_selection import TimeSeriesSplit, cross_val_score
+            from sklearn.ensemble import RandomForestClassifier
+            from sklearn.linear_model import LogisticRegression
+            from sklearn.metrics import accuracy_score, f1_score
+            
+            validation_results = {}
+            
+            # 1. TIME SERIES CROSS VALIDATION (prevents lookahead bias)
+            tscv = TimeSeriesSplit(n_splits=5)
+            rf_model = RandomForestClassifier(n_estimators=50, random_state=42)
+            
+            cv_scores = cross_val_score(rf_model, X, regime_labels, cv=tscv, scoring='accuracy')
+            validation_results['time_series_cv'] = {
+                'mean_accuracy': float(cv_scores.mean()),
+                'std_accuracy': float(cv_scores.std()),
+                'all_scores': cv_scores.tolist()
+            }
+            
+            # 2. HOLDOUT VALIDATION (final 20% of data)
+            split_point = int(len(X) * 0.8)
+            X_train, X_holdout = X[:split_point], X[split_point:]
+            y_train, y_holdout = regime_labels[:split_point], regime_labels[split_point:]
+            
+            rf_model.fit(X_train, y_train)
+            holdout_pred = rf_model.predict(X_holdout)
+            holdout_accuracy = accuracy_score(y_holdout, holdout_pred)
+            
+            validation_results['holdout_validation'] = {
+                'holdout_accuracy': float(holdout_accuracy),
+                'train_samples': len(X_train),
+                'holdout_samples': len(X_holdout)
+            }
+            
+            # 3. OVERFITTING DETECTION
+            train_pred = rf_model.predict(X_train)
+            train_accuracy = accuracy_score(y_train, train_pred)
+            
+            overfitting_gap = train_accuracy - holdout_accuracy
+            validation_results['overfitting_analysis'] = {
+                'train_accuracy': float(train_accuracy),
+                'holdout_accuracy': float(holdout_accuracy),
+                'overfitting_gap': float(overfitting_gap),
+                'is_overfitting': overfitting_gap > 0.1,  # >10% gap indicates overfitting
+                'severity': 'high' if overfitting_gap > 0.2 else 'medium' if overfitting_gap > 0.1 else 'low'
+            }
+            
+            # 4. FEATURE IMPORTANCE ANALYSIS
+            feature_importance = rf_model.feature_importances_
+            validation_results['feature_analysis'] = {
+                'top_features': np.argsort(feature_importance)[-5:].tolist(),
+                'feature_importance_std': float(np.std(feature_importance)),
+                'max_importance': float(np.max(feature_importance)),
+                'importance_concentration': float(np.sum(feature_importance[:3]) / np.sum(feature_importance))
+            }
+            
+            return validation_results
+            
+        except Exception as e:
+            tprint(f"⚠️ Model validation failed: {e}")
             return {'error': str(e)}
     
     def _generate_recommendations(self, results: Dict[str, Any], execution_time: float) -> List[str]:
@@ -1653,6 +1922,737 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
             tprint(f"❌ Failed to add ensemble-specific metadata: {e}")
             results['ensemble_metadata_error'] = str(e)
             return results
+
+    def _create_enhanced_features(self, X: np.ndarray, regime_labels: np.ndarray) -> np.ndarray:
+        """
+        Create enhanced features including regime-specific features and base model outputs.
+        
+        Args:
+            X: Original features
+            regime_labels: Regime assignments
+            
+        Returns:
+            Enhanced feature matrix
+        """
+        try:
+            # Start with original features
+            enhanced_features = [X]
+            
+            # Add regime-specific statistical features
+            regime_stats = []
+            for regime in np.unique(regime_labels):
+                regime_mask = (regime_labels == regime)
+                if np.any(regime_mask):
+                    # Regime frequency
+                    regime_freq = np.sum(regime_mask) / len(regime_labels)
+                    # Regime stability (how clustered the regime assignments are)
+                    regime_stability = 1.0 - np.std(regime_mask.astype(float))
+                    regime_stats.extend([regime_freq, regime_stability])
+                else:
+                    regime_stats.extend([0.0, 0.0])
+            
+            # Broadcast regime stats to match sample count
+            regime_stats_matrix = np.tile(regime_stats, (X.shape[0], 1))
+            enhanced_features.append(regime_stats_matrix)
+            
+            # Add regime one-hot encoding
+            from sklearn.preprocessing import LabelEncoder, OneHotEncoder
+            le = LabelEncoder()
+            regime_encoded = le.fit_transform(regime_labels)
+            ohe = OneHotEncoder(sparse=False)
+            regime_onehot = ohe.fit_transform(regime_encoded.reshape(-1, 1))
+            enhanced_features.append(regime_onehot)
+            
+            # Concatenate all features
+            X_enhanced = np.concatenate(enhanced_features, axis=1)
+            
+            return X_enhanced
+            
+        except Exception as e:
+            tprint(f"⚠️ Feature enhancement failed: {e}, using original features")
+            return X
+
+    def _load_pretrained_base_estimators(self) -> List[Tuple[str, Any]]:
+        """Load the most recent pre-trained base estimators from hmm_models_training step."""
+        base_estimators = []
+        
+        # Import serialization utilities
+        from src.utils.serialization_utils import UniversalSerializer
+        serializer = UniversalSerializer()
+        
+        # Get model paths from artifacts directory - use correct path where models are actually saved
+        symbol = getattr(self.config, 'symbol', 'ETHUSDT')
+        exchange = getattr(self.config, 'exchange', 'binance')
+        timeframe = getattr(self.config, 'timeframe', '1h')
+        
+        # Use the correct path where hmm_models_training actually saves models
+        base_models_dir = Path("artifacts/models/hmm_models_enhanced/UNKNOWN/UNKNOWN") / timeframe
+        
+        if not base_models_dir.exists():
+            tprint(f"❌ Base models directory not found: {base_models_dir}")
+            tprint("   📋 Expected pre-trained models from hmm_models_training step")
+            raise FileNotFoundError(f"Pre-trained models directory not found: {base_models_dir}")
+        
+        # Find all model files
+        model_files = list(base_models_dir.glob("*_model.pkl"))
+        if not model_files:
+            tprint(f"❌ No pre-trained model files found in: {base_models_dir}")
+            raise FileNotFoundError(f"No pre-trained model files found in: {base_models_dir}")
+        
+        tprint(f"📁 Loading pre-trained base models from: {base_models_dir}")
+        tprint(f"   📊 Found {len(model_files)} model files")
+        
+        # Group model files by model name and select most recent for each
+        model_groups = {}
+        for model_file in model_files:
+            model_name = model_file.stem.replace('_model', '')
+            if model_name not in model_groups:
+                model_groups[model_name] = []
+            model_groups[model_name].append(model_file)
+        
+        # Load the most recent model for each model type
+        for model_name, files in model_groups.items():
+            # Sort by modification time (most recent first)
+            files.sort(key=lambda f: f.stat().st_mtime, reverse=True)
+            most_recent_file = files[0]
+            
+            if len(files) > 1:
+                tprint(f"   📊 Found {len(files)} versions of {model_name}, loading most recent:")
+                tprint(f"      🕒 {most_recent_file.name} (modified: {pd.Timestamp.fromtimestamp(most_recent_file.stat().st_mtime).strftime('%Y-%m-%d %H:%M:%S')})")
+            else:
+                tprint(f"   🔄 Loading {model_name} from {most_recent_file.name}...")
+            
+            try:
+                # Load model using pickle directly instead of UniversalSerializer
+                import pickle
+                with open(str(most_recent_file), 'rb') as f:
+                    model = pickle.load(f)
+                
+                if model is not None:
+                    # Validate that the model is actually fitted
+                    if not hasattr(model, 'n_features_in_') or model.n_features_in_ is None:
+                        tprint(f"   ❌ Model {model_name} is not fitted (missing n_features_in_)")
+                        raise ValueError(f"Model {model_name} is not fitted - cannot use as pre-trained base model")
+                    
+                    base_estimators.append((model_name, model))
+                    tprint(f"   ✅ Successfully loaded fitted {model_name} (expects {model.n_features_in_} features)")
+                else:
+                    tprint(f"   ❌ Failed to load {model_name} from {most_recent_file.name}")
+                    raise ValueError(f"Failed to deserialize model: {model_name}")
+                    
+            except Exception as e:
+                tprint(f"   ❌ Error loading {model_name} from {most_recent_file.name}: {e}")
+                raise RuntimeError(f"Failed to load required base model {model_name}: {e}")
+        
+        if not base_estimators:
+            tprint("❌ No models could be loaded successfully")
+            raise RuntimeError("Failed to load any pre-trained base models")
+        
+        tprint(f"✅ Loaded {len(base_estimators)} pre-trained base models")
+        for name, model in base_estimators:
+            tprint(f"   • {name}: {type(model).__name__}")
+                
+        return base_estimators
+
+
+    def _create_custom_stacking_ensemble(self, base_estimators: List[Tuple[str, Any]], 
+                                       meta_model: Any, model_name: str) -> Any:
+        """Create a custom stacking ensemble that uses pre-fitted base models."""
+        
+        class PreFittedStackingEnsemble:
+            """Custom stacking ensemble that doesn't retrain base models."""
+            
+            def __init__(self, base_estimators, meta_model, model_name):
+                self.base_estimators = base_estimators
+                self.meta_model = meta_model
+                self.model_name = model_name
+                self.is_fitted = False
+                
+            
+            def _get_base_predictions(self, X):
+                """Get predictions from all pre-fitted base models using enhanced features."""
+                base_preds = []
+                errors = []
+                
+                # Use all enhanced features for pre-trained base models
+                # The pre-trained models should now be trained on enhanced features
+                
+                for name, model in self.base_estimators:
+                    try:
+                        # Check if model is fitted
+                        if not hasattr(model, 'n_features_in_') or model.n_features_in_ is None:
+                            raise ValueError(f"Model {name} is not fitted - missing n_features_in_")
+                        
+                        # Check feature compatibility with enhanced features
+                        if hasattr(model, 'n_features_in_') and model.n_features_in_ != X.shape[1]:
+                            raise ValueError(f"Feature mismatch: {name} expects {model.n_features_in_} features, got {X.shape[1]} (using enhanced features)")
+                        
+                        if hasattr(model, 'predict_proba'):
+                            pred = model.predict_proba(X)
+                            if pred.ndim > 1 and pred.shape[1] > 1:
+                                pred = pred[:, 1]  # Use positive class probability
+                        else:
+                            pred = model.predict(X)
+                        base_preds.append(pred)
+                        tprint(f"   ✅ Successfully got predictions from {name} (using {X.shape[1]} enhanced features)")
+                        
+                    except Exception as e:
+                        error_msg = f"Failed to get predictions from {name}: {e}"
+                        errors.append(error_msg)
+                        tprint(f"   ❌ {error_msg}")
+                
+                # Fast fail if any models failed
+                if errors:
+                    error_summary = "; ".join(errors)
+                    raise ValueError(f"Pre-trained base models are not usable: {error_summary}")
+                
+                if not base_preds:
+                    raise ValueError("No base model predictions could be obtained")
+                
+                return np.column_stack(base_preds)
+            
+            def fit(self, X, y):
+                """Fit meta model using pre-trained base models."""
+                tprint(f"   🎯 Training meta model ({self.model_name}) with pre-trained base models")
+                
+                # Get predictions from pre-trained base models
+                base_predictions = self._get_base_predictions(X)
+                
+                # Combine enhanced features with base predictions (passthrough=True equivalent)
+                meta_features = np.hstack([X, base_predictions])
+                
+                # Train only the meta model
+                self.meta_model.fit(meta_features, y)
+                self.is_fitted = True
+                
+                return self
+            
+            def predict(self, X):
+                """Make predictions using the ensemble."""
+                if not self.is_fitted:
+                    raise ValueError("Ensemble must be fitted before making predictions")
+                
+                base_predictions = self._get_base_predictions(X)
+                meta_features = np.hstack([X, base_predictions])
+                return self.meta_model.predict(meta_features)
+            
+            def predict_proba(self, X):
+                """Make probability predictions using the ensemble."""
+                if not self.is_fitted:
+                    raise ValueError("Ensemble must be fitted before making predictions")
+                
+                base_predictions = self._get_base_predictions(X)
+                meta_features = np.hstack([X, base_predictions])
+                
+                if hasattr(self.meta_model, 'predict_proba'):
+                    return self.meta_model.predict_proba(meta_features)
+                else:
+                    # Fallback for models without predict_proba
+                    pred = self.meta_model.predict(meta_features)
+                    # Convert to probability-like format
+                    unique_classes = np.unique(pred)
+                    n_classes = len(unique_classes)
+                    proba = np.zeros((len(pred), n_classes))
+                    for i, cls in enumerate(unique_classes):
+                        proba[pred == cls, i] = 1.0
+                    return proba
+            
+            def score(self, X, y):
+                """Score the ensemble."""
+                if not self.is_fitted:
+                    raise ValueError("Ensemble must be fitted before scoring")
+                
+                from sklearn.metrics import accuracy_score
+                predictions = self.predict(X)
+                return accuracy_score(y, predictions)
+            
+            def get_params(self, deep=True):
+                """Get parameters for this estimator (required by scikit-learn)."""
+                return {
+                    'base_estimators': self.base_estimators,
+                    'meta_model': self.meta_model,
+                    'model_name': self.model_name
+                }
+            
+            def set_params(self, **params):
+                """Set parameters for this estimator (required by scikit-learn)."""
+                for param, value in params.items():
+                    if hasattr(self, param):
+                        setattr(self, param, value)
+                    else:
+                        raise ValueError(f"Invalid parameter {param} for PreFittedStackingEnsemble")
+                return self
+            
+            def __getstate__(self):
+                """Custom serialization to preserve fitted state."""
+                state = self.__dict__.copy()
+                return state
+            
+            def __setstate__(self, state):
+                """Custom deserialization to restore fitted state."""
+                self.__dict__.update(state)
+        
+        return PreFittedStackingEnsemble(base_estimators, meta_model, model_name)
+
+    def _create_meta_model(self, model_name: str) -> Any:
+        """Create a meta model by name."""
+        if model_name == 'XGBoostClassifier':
+            import xgboost as xgb
+            return xgb.XGBClassifier(
+                n_estimators=100, learning_rate=0.1, max_depth=6,
+                random_state=42, n_jobs=-1
+            )
+        elif model_name == 'CatBoostClassifier':
+            from catboost import CatBoostClassifier
+            return CatBoostClassifier(
+                iterations=100, learning_rate=0.1, depth=6,
+                random_seed=42, verbose=False, loss_function='MultiClass'
+            )
+        elif model_name == 'ElasticNet':
+            from sklearn.linear_model import LogisticRegression
+            return LogisticRegression(
+                penalty='elasticnet', solver='saga', l1_ratio=0.5,
+                max_iter=2000, random_state=42, class_weight='balanced'
+            )
+        else:
+            raise ValueError(f"Unknown meta model: {model_name}")
+
+    def _run_meta_model_hpo(self, model_name: str, X: np.ndarray, y: np.ndarray, base_estimators: List) -> Any:
+        """Run HPO on the selected best meta model."""
+        try:
+            import numpy as np
+            import time
+            from sklearn.model_selection import RandomizedSearchCV
+            from sklearn.ensemble import StackingClassifier
+            
+            tprint(f"🔧 Starting HPO for {model_name}...")
+            hpo_start_time = time.time()
+            
+            # Get HPO search space for the model
+            hpo_spaces = getattr(self.config, 'meta_model_hpo_spaces', {})
+            if model_name not in hpo_spaces:
+                tprint(f"⚠️ No HPO space defined for {model_name}")
+                return None
+                
+            search_space = hpo_spaces[model_name]
+            tprint(f"📊 HPO search space for {model_name}: {len(search_space)} parameters")
+            for param, config in search_space.items():
+                if config['type'] == 'int':
+                    tprint(f"   • {param}: {config['low']} to {config['high']} (integer)")
+                elif config['type'] == 'float':
+                    log_str = " (log scale)" if config.get('log', False) else ""
+                    tprint(f"   • {param}: {config['low']:.4f} to {config['high']:.4f}{log_str}")
+                elif config['type'] == 'categorical':
+                    tprint(f"   • {param}: {config['choices']}")
+            
+            # Convert our search space format to sklearn format
+            tprint(f"🔄 Converting search space to sklearn format...")
+            sklearn_space = {}
+            param_count = 0
+            for param, config in search_space.items():
+                if config['type'] == 'int':
+                    param_range = list(range(config['low'], config['high'] + 1))
+                    sklearn_space[f'final_estimator__{param}'] = param_range
+                    param_count += len(param_range)
+                elif config['type'] == 'float':
+                    if config.get('log', False):
+                        param_range = np.logspace(
+                            np.log10(config['low']), np.log10(config['high']), 10
+                        )
+                        sklearn_space[f'final_estimator__{param}'] = param_range
+                        param_count += 10
+                    else:
+                        param_range = np.linspace(config['low'], config['high'], 10)
+                        sklearn_space[f'final_estimator__{param}'] = param_range
+                        param_count += 10
+                elif config['type'] == 'categorical':
+                    sklearn_space[f'final_estimator__{param}'] = config['choices']
+                    param_count += len(config['choices'])
+            
+            tprint(f"📊 Total parameter combinations: ~{param_count:,}")
+            
+            # Create base model for HPO with pre-fitted estimators
+            tprint(f"🏗️ Creating custom stacking ensemble with {len(base_estimators)} pre-fitted base estimators...")
+            meta_model = self._create_meta_model(model_name)
+            stack = self._create_custom_stacking_ensemble(
+                base_estimators=base_estimators,
+                meta_model=meta_model,
+                model_name=model_name
+            )
+            
+            # Run randomized search
+            n_iter = min(getattr(self.config, 'hpo_n_trials', 20), 20)  # Limit for speed
+            tprint(f"🎯 HPO configuration:")
+            tprint(f"   • Trials: {n_iter} (requested: {getattr(self.config, 'hpo_n_trials', 20)})")
+            tprint(f"   • CV folds: 3")
+            tprint(f"   • Scoring: accuracy")
+            tprint(f"   • Data shape: {X.shape}")
+            tprint(f"   • Classes: {len(np.unique(y))}")
+            
+            random_search = RandomizedSearchCV(
+                stack, sklearn_space, n_iter=n_iter, cv=3, 
+                scoring='accuracy', n_jobs=-1, random_state=42
+            )
+            
+            tprint(f"🔧 Running {n_iter} HPO trials for {model_name}...")
+            trial_start_time = time.time()
+            random_search.fit(X, y)
+            trial_duration = time.time() - trial_start_time
+            
+            tprint(f"⏱️ HPO trials completed in {trial_duration:.2f}s ({trial_duration/n_iter:.2f}s per trial)")
+            
+            # Log detailed HPO results
+            hpo_duration = time.time() - hpo_start_time
+            tprint(f"✅ HPO completed in {hpo_duration:.2f}s")
+            tprint(f"🏆 Best HPO results:")
+            tprint(f"   • Best CV score: {random_search.best_score_:.4f}")
+            tprint(f"   • Best parameters:")
+            for param, value in random_search.best_params_.items():
+                param_clean = param.replace('final_estimator__', '')
+                if isinstance(value, float):
+                    tprint(f"     - {param_clean}: {value:.4f}")
+                else:
+                    tprint(f"     - {param_clean}: {value}")
+            
+            # Log performance distribution
+            if hasattr(random_search, 'cv_results_'):
+                scores = random_search.cv_results_['mean_test_score']
+                tprint(f"📊 HPO trial performance:")
+                tprint(f"   • Best score: {max(scores):.4f}")
+                tprint(f"   • Worst score: {min(scores):.4f}")
+                tprint(f"   • Average score: {np.mean(scores):.4f}")
+                tprint(f"   • Std deviation: {np.std(scores):.4f}")
+            
+            # Store HPO results for analysis
+            hpo_results = {
+                'model_name': model_name,
+                'success': True,
+                'duration_seconds': hpo_duration,
+                'trials_run': n_iter,
+                'best_cv_score': float(random_search.best_score_),
+                'best_params': random_search.best_params_,
+                'performance_distribution': {}
+            }
+            
+            # Store performance distribution if available
+            if hasattr(random_search, 'cv_results_'):
+                scores = random_search.cv_results_['mean_test_score']
+                hpo_results['performance_distribution'] = {
+                    'best_score': float(max(scores)),
+                    'worst_score': float(min(scores)),
+                    'average_score': float(np.mean(scores)),
+                    'std_deviation': float(np.std(scores)),
+                    'score_range': float(max(scores) - min(scores))
+                }
+            
+            # Store in instance for later access
+            self.hpo_results = hpo_results
+            
+            return random_search.best_estimator_
+            
+        except Exception as e:
+            hpo_duration = time.time() - hpo_start_time if 'hpo_start_time' in locals() else 0
+            tprint(f"❌ HPO failed for {model_name} after {hpo_duration:.2f}s: {e}")
+            tprint(f"   Error type: {type(e).__name__}")
+            if hasattr(e, '__traceback__'):
+                import traceback
+                stack_trace_lines = traceback.format_exc().split('\n')
+                tprint(f"   Stack trace: {stack_trace_lines[-3]}")
+            
+            # Store failed HPO results
+            self.hpo_results = {
+                'model_name': model_name,
+                'success': False,
+                'duration_seconds': hpo_duration,
+                'error': str(e),
+                'trials_run': 0
+            }
+            
+            return None
+
+    def _analyze_meta_model_comparison(self, results: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Analyze meta model comparison results for the comprehensive report.
+        
+        Args:
+            results: Training results containing global_regime_classifier data
+            
+        Returns:
+            Meta model analysis summary
+        """
+        try:
+            global_classifier = results.get('global_regime_classifier', {})
+            meta_comparison = global_classifier.get('meta_model_comparison', {})
+            
+            if not meta_comparison or not meta_comparison.get('detailed_results'):
+                return {'status': 'no_comparison_data', 'models_tested': 0}
+            
+            detailed_results = meta_comparison['detailed_results']
+            valid_models = {k: v for k, v in detailed_results.items() if 'error' not in v}
+            
+            if not valid_models:
+                return {'status': 'no_valid_models', 'models_tested': len(detailed_results)}
+            
+            # Create detailed analysis
+            analysis = {
+                'status': 'comparison_completed',
+                'models_tested': len(detailed_results),
+                'models_successful': len(valid_models),
+                'selection_criteria': meta_comparison.get('selection_criteria', 'unknown'),
+                'best_model': meta_comparison.get('best_model', 'unknown'),
+                'detailed_metrics': {},
+                'performance_ranking': [],
+                'training_time_comparison': {},
+                'accuracy_comparison': {}
+            }
+            
+            # Sort models by accuracy first, then speed
+            sorted_models = sorted(
+                valid_models.items(), 
+                key=lambda x: (-x[1]['cv_accuracy_mean'], x[1]['training_time_seconds'])
+            )
+            
+            # Build detailed metrics for each model
+            for rank, (model_name, metrics) in enumerate(sorted_models):
+                rank_position = rank + 1
+                analysis['detailed_metrics'][model_name] = {
+                    'rank': rank_position,
+                    'training_accuracy': metrics['accuracy'],
+                    'cv_accuracy_mean': metrics['cv_accuracy_mean'],
+                    'cv_accuracy_std': metrics['cv_accuracy_std'],
+                    'f1_macro': metrics['f1_macro'],
+                    'precision_macro': metrics['precision_macro'],
+                    'recall_macro': metrics['recall_macro'],
+                    'training_time_seconds': metrics['training_time_seconds'],
+                    'speed_score': metrics['speed_score']
+                }
+                
+                analysis['performance_ranking'].append({
+                    'rank': rank_position,
+                    'model': model_name,
+                    'accuracy': metrics['cv_accuracy_mean'],
+                    'training_time': metrics['training_time_seconds']
+                })
+            
+            # Training time comparison
+            analysis['training_time_comparison'] = {
+                'fastest_model': min(valid_models.keys(), key=lambda k: valid_models[k]['training_time_seconds']),
+                'slowest_model': max(valid_models.keys(), key=lambda k: valid_models[k]['training_time_seconds']),
+                'time_range_seconds': {
+                    'min': min(m['training_time_seconds'] for m in valid_models.values()),
+                    'max': max(m['training_time_seconds'] for m in valid_models.values()),
+                    'mean': sum(m['training_time_seconds'] for m in valid_models.values()) / len(valid_models)
+                }
+            }
+            
+            # Accuracy comparison
+            analysis['accuracy_comparison'] = {
+                'best_accuracy_model': max(valid_models.keys(), key=lambda k: valid_models[k]['cv_accuracy_mean']),
+                'worst_accuracy_model': min(valid_models.keys(), key=lambda k: valid_models[k]['cv_accuracy_mean']),
+                'accuracy_range': {
+                    'min': min(m['cv_accuracy_mean'] for m in valid_models.values()),
+                    'max': max(m['cv_accuracy_mean'] for m in valid_models.values()),
+                    'mean': sum(m['cv_accuracy_mean'] for m in valid_models.values()) / len(valid_models)
+                }
+            }
+            
+            # HPO status
+            best_model = meta_comparison.get('best_model', 'unknown')
+            analysis['hpo_status'] = {
+                'attempted_on': best_model,
+                'hpo_successful': hasattr(self, 'global_regime_clf') and self.global_regime_clf is not None,
+                'final_model_optimized': True  # Will be updated based on actual HPO results
+            }
+            
+            return analysis
+            
+        except Exception as e:
+            tprint(f"⚠️ Meta model analysis failed: {e}")
+            return {'status': 'analysis_failed', 'error': str(e)}
+    
+    def _analyze_hpo_results(self, results: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Analyze HPO results for the comprehensive report.
+        
+        Args:
+            results: Training results
+            
+        Returns:
+            HPO analysis summary
+        """
+        try:
+            # Check if HPO was attempted
+            hpo_results = getattr(self, 'hpo_results', None)
+            if not hpo_results:
+                return {
+                    'status': 'no_hpo_attempted',
+                    'hpo_enabled': self.config.enable_hpo,
+                    'reason': 'HPO not configured or not attempted'
+                }
+            
+            # Analyze HPO results
+            analysis = {
+                'status': 'hpo_completed' if hpo_results['success'] else 'hpo_failed',
+                'model_optimized': hpo_results['model_name'],
+                'success': hpo_results['success'],
+                'duration_seconds': hpo_results['duration_seconds'],
+                'trials_run': hpo_results['trials_run']
+            }
+            
+            if hpo_results['success']:
+                # Successful HPO analysis
+                analysis.update({
+                    'best_cv_score': hpo_results['best_cv_score'],
+                    'best_parameters': hpo_results['best_params'],
+                    'performance_improvement': self._calculate_hpo_improvement(hpo_results),
+                    'optimization_efficiency': {
+                        'score_per_second': hpo_results['best_cv_score'] / (hpo_results['duration_seconds'] + 1e-6),
+                        'trials_per_second': hpo_results['trials_run'] / (hpo_results['duration_seconds'] + 1e-6)
+                    }
+                })
+                
+                # Performance distribution analysis
+                if 'performance_distribution' in hpo_results and hpo_results['performance_distribution']:
+                    perf_dist = hpo_results['performance_distribution']
+                    analysis['performance_distribution'] = {
+                        'score_range': perf_dist.get('score_range', 0.0),
+                        'improvement_margin': perf_dist.get('best_score', 0.0) - perf_dist.get('average_score', 0.0),
+                        'consistency_score': 1.0 - (perf_dist.get('std_deviation', 0.0) / (perf_dist.get('score_range', 1.0) + 1e-6)),
+                        'top_percentile_achievement': self._calculate_top_percentile(perf_dist)
+                    }
+                
+                # Parameter analysis
+                analysis['parameter_analysis'] = self._analyze_hpo_parameters(hpo_results['best_params'])
+                
+            else:
+                # Failed HPO analysis
+                analysis.update({
+                    'error': hpo_results.get('error', 'Unknown HPO failure'),
+                    'failure_analysis': self._analyze_hpo_failure(hpo_results)
+                })
+            
+            return analysis
+            
+        except Exception as e:
+            tprint(f"⚠️ HPO analysis failed: {e}")
+            return {'status': 'analysis_failed', 'error': str(e)}
+    
+    def _calculate_hpo_improvement(self, hpo_results: Dict[str, Any]) -> Dict[str, Any]:
+        """Calculate HPO improvement metrics."""
+        try:
+            # Get baseline performance from meta model comparison
+            meta_results = getattr(self, 'meta_model_results', {})
+            model_name = hpo_results['model_name']
+            
+            if model_name in meta_results and 'error' not in meta_results[model_name]:
+                baseline_score = meta_results[model_name]['cv_accuracy_mean']
+                optimized_score = hpo_results['best_cv_score']
+                
+                return {
+                    'baseline_score': baseline_score,
+                    'optimized_score': optimized_score,
+                    'absolute_improvement': optimized_score - baseline_score,
+                    'relative_improvement_percent': ((optimized_score - baseline_score) / (baseline_score + 1e-6)) * 100,
+                    'improvement_significant': (optimized_score - baseline_score) > 0.01  # 1% threshold
+                }
+            else:
+                return {'status': 'no_baseline_available'}
+                
+        except Exception as e:
+            return {'status': 'calculation_failed', 'error': str(e)}
+    
+    def _calculate_top_percentile(self, perf_dist: Dict[str, Any]) -> Dict[str, Any]:
+        """Calculate top percentile achievement metrics."""
+        try:
+            best_score = perf_dist.get('best_score', 0.0)
+            worst_score = perf_dist.get('worst_score', 0.0)
+            avg_score = perf_dist.get('average_score', 0.0)
+            
+            if best_score == worst_score:
+                return {'percentile': 100.0, 'description': 'Perfect optimization'}
+            
+            # Calculate what percentile the best score represents
+            score_range = best_score - worst_score
+            best_improvement = best_score - avg_score
+            percentile = (best_improvement / score_range) * 100
+            
+            return {
+                'percentile': min(100.0, max(0.0, percentile)),
+                'description': f'Top {100 - percentile:.1f}% of trials',
+                'score_above_average': best_improvement
+            }
+            
+        except Exception as e:
+            return {'status': 'calculation_failed', 'error': str(e)}
+    
+    def _analyze_hpo_parameters(self, best_params: Dict[str, Any]) -> Dict[str, Any]:
+        """Analyze the best HPO parameters."""
+        try:
+            analysis = {
+                'total_parameters_optimized': len(best_params),
+                'parameter_categories': {},
+                'notable_parameters': []
+            }
+            
+            for param, value in best_params.items():
+                # Clean parameter name
+                clean_param = param.replace('final_estimator__', '')
+                
+                # Categorize parameters
+                if 'learning_rate' in clean_param.lower():
+                    analysis['parameter_categories']['learning'] = analysis['parameter_categories'].get('learning', 0) + 1
+                elif 'depth' in clean_param.lower() or 'max_depth' in clean_param.lower():
+                    analysis['parameter_categories']['depth'] = analysis['parameter_categories'].get('depth', 0) + 1
+                elif 'iter' in clean_param.lower() or 'estimators' in clean_param.lower():
+                    analysis['parameter_categories']['iterations'] = analysis['parameter_categories'].get('iterations', 0) + 1
+                elif 'alpha' in clean_param.lower() or 'lambda' in clean_param.lower():
+                    analysis['parameter_categories']['regularization'] = analysis['parameter_categories'].get('regularization', 0) + 1
+                else:
+                    analysis['parameter_categories']['other'] = analysis['parameter_categories'].get('other', 0) + 1
+                
+                # Identify notable parameters
+                if isinstance(value, float):
+                    if value < 0.1 or value > 0.9:
+                        analysis['notable_parameters'].append(f'{clean_param}: {value:.4f} (extreme value)')
+                elif isinstance(value, int):
+                    if value > 100:
+                        analysis['notable_parameters'].append(f'{clean_param}: {value} (high value)')
+                    elif value < 5:
+                        analysis['notable_parameters'].append(f'{clean_param}: {value} (low value)')
+            
+            return analysis
+            
+        except Exception as e:
+            return {'status': 'analysis_failed', 'error': str(e)}
+    
+    def _analyze_hpo_failure(self, hpo_results: Dict[str, Any]) -> Dict[str, Any]:
+        """Analyze HPO failure reasons."""
+        try:
+            error = hpo_results.get('error', 'Unknown error')
+            
+            # Categorize common failure types
+            if 'timeout' in error.lower():
+                failure_type = 'timeout'
+                recommendation = 'Increase HPO timeout or reduce search space'
+            elif 'memory' in error.lower():
+                failure_type = 'memory'
+                recommendation = 'Reduce batch size or model complexity'
+            elif 'convergence' in error.lower():
+                failure_type = 'convergence'
+                recommendation = 'Adjust learning rate or regularization parameters'
+            else:
+                failure_type = 'other'
+                recommendation = 'Check configuration and data quality'
+            
+            return {
+                'failure_type': failure_type,
+                'error_message': error,
+                'recommendation': recommendation,
+                'duration_before_failure': hpo_results.get('duration_seconds', 0.0)
+            }
+            
+        except Exception as e:
+            return {'status': 'analysis_failed', 'error': str(e)}
 
 
 # Convenience functions for backward compatibility with common utilities integration

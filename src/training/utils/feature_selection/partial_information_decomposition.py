@@ -425,4 +425,216 @@ class PIDCalculator:
         conditional_mi = mi_xy - min(mi_xz, mi_yz)
         return max(0, conditional_mi)
 
-# Continue with the main PID class in the next part...
+class PartialInformationDecomposition:
+    """
+    Main class for Partial Information Decomposition analysis.
+    
+    This class provides a comprehensive interface for computing PID measures
+    and analyzing information decomposition in multivariate systems.
+    """
+    
+    def __init__(self, config: Optional[PIDConfig] = None):
+        """Initialize PID analyzer."""
+        self.config = config or PIDConfig()
+        self.calculator = PIDCalculator(self.config)
+        self.logger = logger.getChild('PID')
+        
+        # Initialize utility components if available
+        if UTILITIES_AVAILABLE:
+            try:
+                self.cache_manager = get_cache_manager()
+                self.matrix_ops = get_unified_matrix_operations()
+                self.hardware_manager = get_unified_hardware_manager()
+            except Exception as e:
+                self.logger.warning(f"Failed to initialize utilities: {e}")
+                self.cache_manager = None
+                self.matrix_ops = None
+                self.hardware_manager = None
+        else:
+            self.cache_manager = None
+            self.matrix_ops = None
+            self.hardware_manager = None
+    
+    def compute(self, x1: np.ndarray, x2: np.ndarray, y: np.ndarray) -> Dict[str, Any]:
+        """
+        Compute PID decomposition for given variables.
+        
+        Args:
+            x1: First predictor variable
+            x2: Second predictor variable  
+            y: Target variable
+            
+        Returns:
+            Dictionary containing PID results for all measures
+        """
+        start_time = time.time()
+        
+        try:
+            # Validate inputs
+            self._validate_inputs(x1, x2, y)
+            
+            # Compute PID for all measures
+            pid_results = self.calculator.compute_pid(x1, x2, y)
+            
+            # Prepare output
+            results = {
+                'pid_measures': {},
+                'summary': {},
+                'computation_time': time.time() - start_time,
+                'config': self.config.__dict__
+            }
+            
+            # Process each measure result
+            for measure, result in pid_results.items():
+                results['pid_measures'][measure.value] = {
+                    'unique_x1': result.unique_x1,
+                    'unique_x2': result.unique_x2,
+                    'redundant': result.redundant,
+                    'synergistic': result.synergistic,
+                    'total_mi': result.total_mi,
+                    'computation_time': result.computation_time
+                }
+            
+            # Generate summary statistics
+            results['summary'] = self._generate_summary(pid_results)
+            
+            self.logger.info(f"PID computation completed in {results['computation_time']:.3f}s")
+            
+            return results
+            
+        except Exception as e:
+            self.logger.error(f"PID computation failed: {e}")
+            raise
+    
+    def compute_bivariate(self, x1: np.ndarray, x2: np.ndarray, y: np.ndarray) -> Dict[str, Any]:
+        """Compute bivariate PID decomposition."""
+        return self.compute(x1, x2, y)
+    
+    def compute_batch(self, data_batches: List[Tuple[np.ndarray, np.ndarray, np.ndarray]]) -> List[Dict[str, Any]]:
+        """
+        Compute PID for multiple data batches.
+        
+        Args:
+            data_batches: List of (x1, x2, y) tuples
+            
+        Returns:
+            List of PID results for each batch
+        """
+        results = []
+        
+        for i, (x1, x2, y) in enumerate(data_batches):
+            try:
+                self.logger.info(f"Processing batch {i+1}/{len(data_batches)}")
+                batch_result = self.compute(x1, x2, y)
+                batch_result['batch_id'] = i
+                results.append(batch_result)
+            except Exception as e:
+                self.logger.error(f"Batch {i} failed: {e}")
+                results.append({'batch_id': i, 'error': str(e)})
+        
+        return results
+    
+    def _validate_inputs(self, x1: np.ndarray, x2: np.ndarray, y: np.ndarray) -> None:
+        """Validate input arrays."""
+        # Check for None values
+        if x1 is None or x2 is None or y is None:
+            raise ValueError("Input arrays cannot be None")
+        
+        # Convert to numpy arrays if needed
+        x1 = np.asarray(x1)
+        x2 = np.asarray(x2)
+        y = np.asarray(y)
+        
+        # Check shapes
+        if len(x1) != len(x2) or len(x1) != len(y):
+            raise ValueError(f"Input arrays must have same length: {len(x1)}, {len(x2)}, {len(y)}")
+        
+        # Check for minimum samples
+        if len(x1) < 10:
+            raise ValueError(f"Insufficient samples: {len(x1)} (minimum: 10)")
+        
+        # Check for constant arrays
+        if np.var(x1) == 0 or np.var(x2) == 0 or np.var(y) == 0:
+            self.logger.warning("One or more variables have zero variance")
+    
+    def _generate_summary(self, pid_results: Dict[PIDMeasure, PIDResult]) -> Dict[str, Any]:
+        """Generate summary statistics across all measures."""
+        summary = {
+            'measures_computed': len(pid_results),
+            'average_total_mi': 0.0,
+            'average_redundant': 0.0,
+            'average_synergistic': 0.0,
+            'average_unique_x1': 0.0,
+            'average_unique_x2': 0.0
+        }
+        
+        if not pid_results:
+            return summary
+        
+        # Calculate averages
+        total_mi_sum = sum(r.total_mi for r in pid_results.values())
+        redundant_sum = sum(r.redundant for r in pid_results.values())
+        synergistic_sum = sum(r.synergistic for r in pid_results.values())
+        unique_x1_sum = sum(r.unique_x1 for r in pid_results.values())
+        unique_x2_sum = sum(r.unique_x2 for r in pid_results.values())
+        
+        n_measures = len(pid_results)
+        summary.update({
+            'average_total_mi': total_mi_sum / n_measures,
+            'average_redundant': redundant_sum / n_measures,
+            'average_synergistic': synergistic_sum / n_measures,
+            'average_unique_x1': unique_x1_sum / n_measures,
+            'average_unique_x2': unique_x2_sum / n_measures
+        })
+        
+        return summary
+    
+    def get_config(self) -> PIDConfig:
+        """Get current configuration."""
+        return self.config
+    
+    def set_config(self, config: PIDConfig) -> None:
+        """Update configuration."""
+        self.config = config
+        self.calculator = PIDCalculator(config)
+
+
+# Convenience functions for easy usage
+def compute_pid_simple(x1: np.ndarray, x2: np.ndarray, y: np.ndarray, 
+                      measure: str = "i_min") -> Dict[str, float]:
+    """
+    Simple PID computation with minimal configuration.
+    
+    Args:
+        x1: First predictor variable
+        x2: Second predictor variable
+        y: Target variable
+        measure: PID measure to use ("i_min", "i_ccs", "i_dep", "i_mmi")
+    
+    Returns:
+        Dictionary with PID components
+    """
+    config = PIDConfig(pid_measures=[PIDMeasure(measure)])
+    pid = PartialInformationDecomposition(config)
+    
+    results = pid.compute(x1, x2, y)
+    return results['pid_measures'][measure]
+
+
+def compute_pid_all_measures(x1: np.ndarray, x2: np.ndarray, y: np.ndarray) -> Dict[str, Dict[str, float]]:
+    """
+    Compute PID using all available measures.
+    
+    Args:
+        x1: First predictor variable
+        x2: Second predictor variable
+        y: Target variable
+    
+    Returns:
+        Dictionary with results for all measures
+    """
+    config = PIDConfig(pid_measures=list(PIDMeasure))
+    pid = PartialInformationDecomposition(config)
+    
+    results = pid.compute(x1, x2, y)
+    return results['pid_measures']

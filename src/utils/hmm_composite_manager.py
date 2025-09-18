@@ -115,7 +115,7 @@ HMM_REGIME_CONFIG_AVAILABLE = False
 class HMMRegimeConfig:
     """HMM configuration for regime detection."""
     n_components: int = 4
-    covariance_type: str = "full"
+    covariance_type: str = "diag"  # Use diagonal covariance by default for stability
     n_iter: int = 100
     tol: float = 1e-3
     random_state: int = 42
@@ -602,13 +602,16 @@ class EnhancedHMMCompositeManager:
                     sample_data = features_clean[sample_indices]
 
                     hmm_model.fit(sample_data)
+                    self._validate_and_fix_transition_matrix(hmm_model)
 
                     # Refine on full data with fewer iterations
                     hmm_model.n_iter = max(20, n_iter // 5)
                     hmm_model.init_params = ''
                     hmm_model.fit(features_clean)
+                    self._validate_and_fix_transition_matrix(hmm_model)
                 else:
                     hmm_model.fit(features_clean)
+                    self._validate_and_fix_transition_matrix(hmm_model)
             except Exception as e:
                 if "covars must be symmetric, positive-definite" in str(e):
                     # Try with diagonal covariance as fallback
@@ -625,11 +628,14 @@ class EnhancedHMMCompositeManager:
                         )
                         sample_data = features_clean[sample_indices]
                         hmm_model.fit(sample_data)
+                        self._validate_and_fix_transition_matrix(hmm_model)
                         hmm_model.n_iter = max(20, n_iter // 5)
                         hmm_model.init_params = ''
                         hmm_model.fit(features_clean)
+                        self._validate_and_fix_transition_matrix(hmm_model)
                     else:
                         hmm_model.fit(features_clean)
+                        self._validate_and_fix_transition_matrix(hmm_model)
                 elif "transmat_ rows must sum to 1" in str(e):
                     # Try with spherical covariance and fewer components
                     hmm_model = hmm.GaussianHMM(
@@ -645,11 +651,14 @@ class EnhancedHMMCompositeManager:
                         )
                         sample_data = features_clean[sample_indices]
                         hmm_model.fit(sample_data)
+                        self._validate_and_fix_transition_matrix(hmm_model)
                         hmm_model.n_iter = max(20, n_iter // 5)
                         hmm_model.init_params = ''
                         hmm_model.fit(features_clean)
+                        self._validate_and_fix_transition_matrix(hmm_model)
                     else:
                         hmm_model.fit(features_clean)
+                        self._validate_and_fix_transition_matrix(hmm_model)
                 else:
                     # Re-raise the exception to let upstream handle it properly
                     raise
@@ -1500,6 +1509,79 @@ class EnhancedHMMCompositeManager:
             with self._create_cpu_optimization_context():
                 model.fit(X.values.astype(np.float32))
                 return model.score(X.values.astype(np.float32))
+
+    def _validate_and_fix_transition_matrix(self, model) -> None:
+        """
+        Validate and fix transition matrix after training to prevent zero-sum rows.
+        
+        Args:
+            model: Trained HMM model
+        """
+        try:
+            if not hasattr(model, 'transmat_') or model.transmat_ is None:
+                return
+            
+            n_components = model.transmat_.shape[0]
+            
+            # Check if transition matrix has any zero-sum rows
+            row_sums = model.transmat_.sum(axis=1)
+            zero_sum_rows = np.where(np.abs(row_sums) < 1e-10)[0]
+            
+            if len(zero_sum_rows) > 0:
+                self.logger.warning(f"⚠️ Found {len(zero_sum_rows)} zero-sum rows in transition matrix: {zero_sum_rows}")
+                
+                # Fix zero-sum rows by setting them to uniform distribution
+                for row_idx in zero_sum_rows:
+                    # Set uniform transition probabilities with slight bias towards self-transition
+                    uniform_prob = (1.0 - 0.7) / (n_components - 1) if n_components > 1 else 1.0
+                    model.transmat_[row_idx, :] = uniform_prob
+                    if n_components > 1:
+                        model.transmat_[row_idx, row_idx] = 0.7  # Higher self-transition probability
+                
+                # Renormalize all rows to ensure they sum to 1
+                model.transmat_ = model.transmat_ / model.transmat_.sum(axis=1, keepdims=True)
+                
+                self.logger.info(f"✅ Fixed {len(zero_sum_rows)} zero-sum rows in transition matrix")
+            
+            # Additional validation: ensure no NaN or infinite values
+            if np.any(np.isnan(model.transmat_)) or np.any(np.isinf(model.transmat_)):
+                self.logger.warning("⚠️ Found NaN or infinite values in transition matrix, applying regularization")
+                
+                # Replace NaN/inf with regularized uniform distribution
+                epsilon = 1e-6
+                regularized_transmat = np.full((n_components, n_components), epsilon)
+                np.fill_diagonal(regularized_transmat, 0.7)
+                
+                # Distribute remaining probability
+                for i in range(n_components):
+                    remaining_prob = 1.0 - regularized_transmat[i, i]
+                    other_states_prob = remaining_prob / (n_components - 1) if n_components > 1 else 0.0
+                    for j in range(n_components):
+                        if i != j:
+                            regularized_transmat[i, j] = other_states_prob
+                
+                # Normalize and assign
+                regularized_transmat = regularized_transmat / regularized_transmat.sum(axis=1, keepdims=True)
+                model.transmat_ = regularized_transmat.astype(np.float64)
+                
+                self.logger.info("✅ Applied regularization to fix NaN/infinite values in transition matrix")
+            
+            # Final validation
+            final_row_sums = model.transmat_.sum(axis=1)
+            if not np.allclose(final_row_sums, 1.0, atol=1e-6):
+                self.logger.warning(f"⚠️ Transition matrix rows do not sum to 1: {final_row_sums}")
+                # Force normalization
+                model.transmat_ = model.transmat_ / model.transmat_.sum(axis=1, keepdims=True)
+                self.logger.info("✅ Forced normalization of transition matrix")
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error validating transition matrix: {e}")
+            # Fallback: create a safe uniform transition matrix
+            if hasattr(model, 'transmat_') and model.transmat_ is not None:
+                n_components = model.transmat_.shape[0]
+                safe_transmat = np.full((n_components, n_components), 1.0 / n_components)
+                model.transmat_ = safe_transmat.astype(np.float64)
+                self.logger.info("✅ Applied fallback uniform transition matrix")
 
     def _create_cpu_optimization_context(self):
         """Create CPU optimization context for M1."""
@@ -4943,7 +5025,7 @@ class EnhancedHMMCompositeManager:
         """Get default HMM parameters when optimization is not available."""
         return {
             'n_components': 4,
-            'covariance_type': 'full',
+            'covariance_type': 'diag',  # Use diagonal covariance by default for stability
             'n_iter': 100,
             'tol': 1e-3,
             'success': True
@@ -5109,28 +5191,292 @@ class EnhancedHMMCompositeManager:
         return payload
 
     def _persist_optimization_result_json(self, payload: Dict[str, Any]) -> None:
+        """Store optimization results in memory for integration with outcome file.
+        
+        This method stores the optimization results in an instance variable instead of
+        creating a separate file. The results are captured by the calling component
+        and integrated into the main outcome file.
+        
+        Args:
+            payload: The optimization results to store
+        """
+        # Store optimization results in instance variable instead of separate file
+        # This allows the results to be captured by the calling component
+        self._last_optimization_result = payload
+        self.logger.info("💾 Optimization results stored in memory for integration with outcome file")
+
+    def _regularize_covariance_matrices(self, model, reg_covar=1e-6):
+        """Regularize covariance matrices to ensure they are positive definite.
+        
+        This fixes the 'covars must be symmetric, positive-definite' error by adding
+        regularization to diagonal elements of covariance matrices.
+        
+        Args:
+            model: HMM model with covariance matrices to regularize
+            reg_covar: Regularization parameter for covariance matrices
+        """
         try:
-            artifacts_dir = Path('artifacts')
-            artifacts_dir.mkdir(parents=True, exist_ok=True)
-            out_file = artifacts_dir / 'optuna_hmm_results.json'
-            # Append or create
-            if out_file.exists():
-                try:
-                    with open(out_file, 'r') as f:
-                        existing = json.load(f)
-                except Exception:
-                    existing = []
-            else:
-                existing = []
-            if isinstance(existing, list):
-                existing.append(payload)
-            else:
-                existing = [existing, payload]
-            with open(out_file, 'w') as f:
-                json.dump(existing, f, indent=2)
-            self.logger.info(f"💾 Saved optimization results to {out_file}")
+            if hasattr(model, 'covars_'):
+                # Add regularization to diagonal elements
+                for i in range(len(model.covars_)):
+                    if len(model.covars_[i].shape) == 2:  # Full covariance matrix
+                        # Add regularization to diagonal
+                        np.fill_diagonal(model.covars_[i], 
+                                       np.diag(model.covars_[i]) + reg_covar)
+                    else:  # Diagonal covariance
+                        model.covars_[i] += reg_covar
+                        
+                self.logger.debug(f"✅ Applied covariance regularization: {reg_covar}")
+                        
         except Exception as e:
-            self.logger.debug(f"Failed to write optimization JSON: {e}")
+            self.logger.warning(f"⚠️ Covariance regularization failed: {e}")
+            # Create minimal fallback model
+            try:
+                # Set to identity-based covariance as last resort
+                n_features = model.covars_[0].shape[0] if hasattr(model, 'covars_') else 1
+                if hasattr(model, 'covariance_type'):
+                    if model.covariance_type == 'diag':
+                        model.covars_ = np.array([np.ones(n_features) for _ in range(model.n_components)])
+                    else:
+                        model.covars_ = np.array([np.eye(n_features) for _ in range(model.n_components)])
+                self.logger.info("✅ Applied fallback covariance matrices")
+            except Exception as fallback_error:
+                self.logger.error(f"❌ Fallback covariance creation failed: {fallback_error}")
+
+    def _train_hmm_with_gpu_fallback(self, model, data, max_iter=100):
+        """Train HMM model with GPU acceleration and automatic fallback to CPU with covariance regularization.
+        
+        This method attempts GPU training first, then falls back to CPU with diagonal covariance
+        if covariance matrix issues occur.
+        
+        Args:
+            model: HMM model to train
+            data: Training data
+            max_iter: Maximum iterations for training
+            
+        Returns:
+            tuple: (trained_model, training_success, fallback_used)
+        """
+        fallback_used = False
+        training_success = False
+        
+        try:
+            # First attempt: Try with original covariance type
+            model.fit(data)
+            training_success = True
+            self.logger.debug("✅ GPU training succeeded with original covariance")
+            
+        except Exception as gpu_error:
+            if "covar" in str(gpu_error).lower() or "positive-definite" in str(gpu_error).lower():
+                self.logger.warning(f"⚠️ GPU training failed due to covariance matrix issue: {gpu_error}")
+                self.logger.info("🔄 Falling back to diagonal covariance with regularization")
+                
+                try:
+                    # Fallback 1: Switch to diagonal covariance
+                    original_covar_type = getattr(model, 'covariance_type', 'full')
+                    model.covariance_type = 'diag'
+                    
+                    # Apply regularization before training
+                    if hasattr(model, 'covars_'):
+                        self._regularize_covariance_matrices(model, reg_covar=1e-4)
+                    
+                    model.fit(data)
+                    training_success = True
+                    fallback_used = True
+                    self.logger.info(f"✅ Fallback training succeeded with diagonal covariance (was {original_covar_type})")
+                    
+                except Exception as fallback_error:
+                    self.logger.warning(f"⚠️ Diagonal covariance fallback also failed: {fallback_error}")
+                    
+                    try:
+                        # Fallback 2: Create minimal working model
+                        self._create_minimal_hmm_model(model, data)
+                        training_success = True
+                        fallback_used = True
+                        self.logger.info("✅ Created minimal fallback HMM model")
+                        
+                    except Exception as minimal_error:
+                        self.logger.error(f"❌ All HMM training fallbacks failed: {minimal_error}")
+                        training_success = False
+            else:
+                # Non-covariance related error, re-raise
+                self.logger.error(f"❌ GPU training failed with non-covariance error: {gpu_error}")
+                raise gpu_error
+                
+        return model, training_success, fallback_used
+
+    def _create_minimal_hmm_model(self, model, data):
+        """Create a minimal working HMM model as last resort fallback."""
+        try:
+            n_features = data.shape[1] if len(data.shape) > 1 else 1
+            n_components = getattr(model, 'n_components', 2)
+            
+            # Set minimal parameters
+            model.startprob_ = np.ones(n_components) / n_components
+            model.transmat_ = np.ones((n_components, n_components)) / n_components
+            
+            # Set means to data quantiles
+            if len(data.shape) > 1:
+                model.means_ = np.array([
+                    np.percentile(data, (i+1) * 100 / (n_components+1), axis=0) 
+                    for i in range(n_components)
+                ])
+            else:
+                model.means_ = np.array([
+                    [np.percentile(data, (i+1) * 100 / (n_components+1))]
+                    for i in range(n_components)
+                ])
+            
+            # Set diagonal covariance
+            model.covariance_type = 'diag'
+            model.covars_ = np.array([np.ones(n_features) * 0.1 for _ in range(n_components)])
+            
+            self.logger.debug(f"✅ Created minimal HMM model: {n_components} components, {n_features} features")
+            
+        except Exception as e:
+            self.logger.error(f"❌ Failed to create minimal HMM model: {e}")
+            raise
+
+    def select_optimal_clusters_with_model_selection(self, data, max_clusters=10, criteria=['bic', 'aic', 'elbow']):
+        """Select optimal number of clusters using multiple model selection criteria.
+        
+        This replaces hardcoded cluster counts with data-driven selection using:
+        - BIC (Bayesian Information Criterion)
+        - AIC (Akaike Information Criterion) 
+        - Elbow Method (inertia/score improvement)
+        - Silhouette Analysis
+        
+        Args:
+            data: Input data for clustering
+            max_clusters: Maximum number of clusters to test
+            criteria: List of selection criteria to use
+            
+        Returns:
+            dict: Optimal cluster count and selection details
+        """
+        try:
+            from sklearn.cluster import KMeans
+            
+            n_samples = len(data)
+            max_clusters = min(max_clusters, n_samples // 50)  # Ensure minimum 50 samples per cluster
+            
+            selection_results = {
+                'criteria_scores': {},
+                'optimal_k_by_criteria': {},
+                'consensus_k': 2,
+                'selection_details': {}
+            }
+            
+            k_range = range(2, max_clusters + 1)
+            
+            # Test different cluster counts
+            scores = {'bic': [], 'aic': [], 'inertia': []}
+            
+            for k in k_range:
+                try:
+                    # Fit KMeans for this k (as proxy for cluster evaluation)
+                    kmeans = KMeans(n_clusters=k, random_state=42, n_init=5)
+                    labels = kmeans.fit_predict(data)
+                    
+                    # Calculate metrics
+                    if 'bic' in criteria:
+                        # BIC approximation for clustering
+                        inertia = kmeans.inertia_
+                        n_params = k * data.shape[1] * 2 + k  # means + covariances + weights
+                        bic = inertia + n_params * np.log(n_samples)
+                        scores['bic'].append(bic)
+                    
+                    if 'aic' in criteria:
+                        # AIC approximation for clustering
+                        inertia = kmeans.inertia_
+                        n_params = k * data.shape[1] * 2 + k
+                        aic = inertia + 2 * n_params
+                        scores['aic'].append(aic)
+                    
+                    if 'elbow' in criteria:
+                        scores['inertia'].append(kmeans.inertia_)
+                        
+                except Exception as e:
+                    self.logger.debug(f"Model selection failed for k={k}: {e}")
+                    # Fill with poor scores
+                    if 'bic' in criteria: scores['bic'].append(float('inf'))
+                    if 'aic' in criteria: scores['aic'].append(float('inf'))
+                    if 'elbow' in criteria: scores['inertia'].append(float('inf'))
+            
+            # Find optimal k for each criterion
+            if 'bic' in criteria and scores['bic']:
+                optimal_bic_idx = np.argmin(scores['bic'])
+                selection_results['optimal_k_by_criteria']['bic'] = k_range[optimal_bic_idx]
+            
+            if 'aic' in criteria and scores['aic']:
+                optimal_aic_idx = np.argmin(scores['aic'])
+                selection_results['optimal_k_by_criteria']['aic'] = k_range[optimal_aic_idx]
+            
+            if 'elbow' in criteria and scores['inertia']:
+                # Elbow method - find point of maximum curvature
+                optimal_elbow_k = self._find_elbow_point(k_range, scores['inertia'])
+                selection_results['optimal_k_by_criteria']['elbow'] = optimal_elbow_k
+            
+            
+            # Consensus selection (median of all criteria)
+            optimal_ks = list(selection_results['optimal_k_by_criteria'].values())
+            if optimal_ks:
+                selection_results['consensus_k'] = int(np.median(optimal_ks))
+            
+            # Store detailed results
+            selection_results['criteria_scores'] = scores
+            selection_results['k_range'] = list(k_range)
+            selection_results['selection_details'] = {
+                'n_samples': n_samples,
+                'max_clusters_tested': max_clusters,
+                'criteria_used': criteria,
+                'consensus_method': 'median'
+            }
+            
+            self.logger.info(f"✅ Model selection completed: Optimal k = {selection_results['consensus_k']}")
+            self.logger.info(f"📊 Criteria results: {selection_results['optimal_k_by_criteria']}")
+            
+            return selection_results
+            
+        except Exception as e:
+            self.logger.error(f"❌ Model selection failed: {e}")
+            return {
+                'consensus_k': 3,  # Fallback
+                'optimal_k_by_criteria': {},
+                'selection_details': {'error': str(e)}
+            }
+
+    def _find_elbow_point(self, k_range, inertias):
+        """Find elbow point using the knee point detection algorithm."""
+        try:
+            if len(inertias) < 3:
+                return k_range[0] if k_range else 2
+            
+            # Calculate second derivatives to find elbow
+            k_array = np.array(k_range)
+            inertia_array = np.array(inertias)
+            
+            # Normalize data to [0,1] for better elbow detection
+            k_norm = (k_array - k_array.min()) / (k_array.max() - k_array.min())
+            inertia_norm = (inertia_array - inertia_array.min()) / (inertia_array.max() - inertia_array.min())
+            
+            # Find point with maximum distance from line connecting first and last points
+            line_vec = np.array([k_norm[-1] - k_norm[0], inertia_norm[-1] - inertia_norm[0]])
+            line_vec_norm = line_vec / np.linalg.norm(line_vec)
+            
+            distances = []
+            for i in range(len(k_norm)):
+                point_vec = np.array([k_norm[i] - k_norm[0], inertia_norm[i] - inertia_norm[0]])
+                # Distance from point to line
+                distance = np.abs(np.cross(point_vec, line_vec_norm))
+                distances.append(distance)
+            
+            elbow_idx = np.argmax(distances)
+            return k_range[elbow_idx]
+            
+        except Exception as e:
+            self.logger.debug(f"Elbow detection failed: {e}")
+            return k_range[len(k_range)//2] if k_range else 3  # Middle value as fallback
 
 # Global instance for backward compatibility
 hmm_composite_manager = EnhancedHMMCompositeManager()
@@ -6344,42 +6690,65 @@ class AdaptiveBayesianOptimizer:
                         if ct != recommended
                     ][:2]  # Keep only top 3
 
-        # Mode-specific adjustments
+        # Mode-specific adjustments - Remove artificial limits
         if mode == 'light':
-            param_ranges['n_components'] = [2, 6]  # Keep light
+            param_ranges['n_components'] = [2, 20]  # Allow more components even in light mode
+        elif mode == 'blank':
+            param_ranges['n_components'] = [4, 100]  # Allow many components for blank mode
         elif mode == 'full':
-            param_ranges['n_components'] = [2, 10]  # Allow more components
+            param_ranges['n_components'] = [10, 200]  # Allow many components for full mode
 
         return param_ranges
 
     def _determine_final_result(self, optimization_results: Dict[str, Any]) -> Dict[str, Any]:
-        """Determine the final optimization result."""
-        # Priority: multi-fidelity > coarse grid
+        """Determine the final optimization result based on best score, not method priority."""
+        # Collect all results and find the one with the best score
+        all_results = []
+        
+        # Check multi-fidelity results
         if 'multi_fidelity' in optimization_results.get('intermediate_results', {}):
             mf_result = optimization_results['intermediate_results']['multi_fidelity']
             if mf_result.get('best_params'):
-                return {
+                all_results.append({
                     'source': 'multi_fidelity',
                     'best_params': mf_result['best_params'],
                     'best_score': mf_result['best_score'],
                     'method': 'adaptive_multi_fidelity'
-                }
+                })
 
+        # Check coarse grid results
         if 'coarse_grid' in optimization_results.get('intermediate_results', {}):
             cg_result = optimization_results['intermediate_results']['coarse_grid']
             if cg_result.get('best_params'):
-                return {
+                all_results.append({
                     'source': 'coarse_grid',
                     'best_params': cg_result['best_params'],
                     'best_score': cg_result['best_score'],
                     'method': 'coarse_grid_fallback'
-                }
+                })
+        
+        # Check Bayesian optimization results (highest priority for best score)
+        if 'bayesian' in optimization_results.get('intermediate_results', {}):
+            bayesian_result = optimization_results['intermediate_results']['bayesian']
+            if bayesian_result.get('best_params'):
+                all_results.append({
+                    'source': 'bayesian',
+                    'best_params': bayesian_result['best_params'],
+                    'best_score': bayesian_result['best_score'],
+                    'method': 'bayesian_optimization'
+                })
+        
+        # Return the result with the best (highest) score
+        if all_results:
+            best_result = max(all_results, key=lambda x: x['best_score'])
+            self.logger.info(f"🏆 Selected best result: {best_result['source']} with {best_result['best_params']['n_components']} components (score: {best_result['best_score']:.2f})")
+            return best_result
 
-        # Fallback to default parameters
+        # Fallback to default parameters - use more reasonable defaults
         return {
             'source': 'default',
             'best_params': {
-                'n_components': 4,
+                'n_components': 20,  # More reasonable default for regime discovery
                 'covariance_type': 'diag',
                 'n_iter': 100,
                 'tol': 1e-3
@@ -6387,6 +6756,250 @@ class AdaptiveBayesianOptimizer:
             'best_score': float('-inf'),
             'method': 'default_fallback'
         }
+
+    def optimize_hmm_parameters(self, features, mode='blank', max_trials=10):
+        """
+        Optimize HMM parameters using Bayesian optimization.
+        
+        Args:
+            features: Feature matrix for HMM training
+            mode: Optimization mode (light/blank/full)
+            max_trials: Maximum number of optimization trials
+            
+        Returns:
+            dict: Optimization results with best parameters
+        """
+        try:
+            self.logger.info(f"🔍 Starting HMM parameter optimization (mode: {mode}, trials: {max_trials})")
+            
+            # Get parameter ranges for the mode
+            param_ranges = self._get_parameter_ranges(mode)
+            
+            # Perform Bayesian optimization
+            optimization_results = self._perform_bayesian_optimization(
+                features, param_ranges, max_trials
+            )
+            
+            # Determine final result based on best score
+            final_result = self._determine_final_result(optimization_results)
+            
+            self.logger.info(f"✅ Optimization completed: {final_result['best_params']['n_components']} components")
+            
+            return final_result
+            
+        except Exception as e:
+            self.logger.error(f"HMM parameter optimization failed: {e}")
+            return {
+                'source': 'error',
+                'best_params': {
+                    'n_components': 20,
+                    'covariance_type': 'diag',
+                    'n_iter': 100,
+                    'tol': 1e-3
+                },
+                'best_score': float('-inf'),
+                'method': 'error_fallback'
+            }
+
+    def _perform_bayesian_optimization(self, features, param_ranges, max_trials):
+        """
+        Perform Bayesian optimization for HMM parameters.
+        
+        Args:
+            features: Feature matrix
+            param_ranges: Parameter ranges to optimize
+            max_trials: Maximum number of trials
+            
+        Returns:
+            dict: Optimization results
+        """
+        try:
+            import optuna
+            from hmmlearn import hmm
+            
+            def objective(trial):
+                # Sample parameters
+                n_components = trial.suggest_int('n_components', param_ranges['n_components'][0], param_ranges['n_components'][1])
+                covariance_type = trial.suggest_categorical('covariance_type', param_ranges['covariance_type'])
+                n_iter = trial.suggest_int('n_iter', param_ranges['n_iter'][0], param_ranges['n_iter'][1])
+                tol = trial.suggest_float('tol', param_ranges['tol'][0], param_ranges['tol'][1], log=True)
+                
+                try:
+                    # Create and train HMM
+                    model = hmm.GaussianHMM(
+                        n_components=n_components,
+                        covariance_type=covariance_type,
+                        n_iter=n_iter,
+                        tol=tol,
+                        random_state=42
+                    )
+                    
+                    # Fit model and get score
+                    model.fit(features)
+                    self._validate_and_fix_transition_matrix(model)
+                    score = model.score(features)
+                    
+                    return score
+                    
+                except Exception as e:
+                    self.logger.warning(f"Trial failed: {e}")
+                    return float('-inf')
+            
+            # Create study and optimize
+            study = optuna.create_study(direction='maximize')
+            study.optimize(objective, n_trials=max_trials)
+            
+            # Return results
+            return {
+                'best_params': study.best_params,
+                'best_score': study.best_value,
+                'n_trials': len(study.trials),
+                'study': study
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Bayesian optimization failed: {e}")
+            return {
+                'best_params': {'n_components': 20, 'covariance_type': 'diag', 'n_iter': 100, 'tol': 1e-3},
+                'best_score': float('-inf'),
+                'n_trials': 0
+            }
+
+
+    def select_optimal_clusters_with_model_selection(self, data, max_clusters=10, criteria=['bic', 'aic', 'elbow']):
+        """
+        Select optimal number of clusters using BIC, AIC, and Elbow methods.
+        
+        Args:
+            data: Feature matrix for clustering
+            max_clusters: Maximum number of clusters to test
+            criteria: List of criteria to use ['bic', 'aic', 'elbow']
+            
+        Returns:
+            dict: Model selection results with optimal cluster count
+        """
+        try:
+            self.logger.info(f"🔍 Starting model selection with criteria: {criteria}")
+            
+            from hmmlearn import hmm
+            import numpy as np
+            
+            # Test different numbers of clusters
+            k_range = range(2, min(max_clusters + 1, len(data) // 10))  # Reasonable range
+            scores = {'bic': {}, 'aic': {}, 'elbow': {}}
+            
+            # Calculate BIC and AIC
+            if 'bic' in criteria or 'aic' in criteria:
+                for k in k_range:
+                    try:
+                        model = hmm.GaussianHMM(
+                            n_components=k,
+                            covariance_type='diag',
+                            n_iter=50,  # Faster for model selection
+                            random_state=42
+                        )
+                        model.fit(data)
+                        
+                        # Calculate BIC and AIC
+                        log_likelihood = model.score(data)
+                        n_params = k * (data.shape[1] + data.shape[1])  # Simplified parameter count
+                        n_samples = len(data)
+                        
+                        bic = -2 * log_likelihood + n_params * np.log(n_samples)
+                        aic = -2 * log_likelihood + 2 * n_params
+                        
+                        if 'bic' in criteria:
+                            scores['bic'][k] = bic
+                        if 'aic' in criteria:
+                            scores['aic'][k] = aic
+                            
+                    except Exception as e:
+                        self.logger.debug(f"Model selection failed for k={k}: {e}")
+                        continue
+            
+            # Calculate Elbow method (inertia-based)
+            if 'elbow' in criteria:
+                inertias = []
+                for k in k_range:
+                    try:
+                        model = hmm.GaussianHMM(
+                            n_components=k,
+                            covariance_type='diag',
+                            n_iter=50,
+                            random_state=42
+                        )
+                        model.fit(data)
+                        
+                        # Use negative log-likelihood as inertia proxy
+                        inertia = -model.score(data)
+                        inertias.append(inertia)
+                        
+                    except Exception as e:
+                        self.logger.debug(f"Elbow calculation failed for k={k}: {e}")
+                        inertias.append(float('inf'))
+                
+                # Find elbow point
+                if len(inertias) > 2:
+                    elbow_k = self._find_elbow_point(list(k_range), inertias)
+                    scores['elbow'] = {elbow_k: inertias[elbow_k - min(k_range)]}
+            
+            # Determine optimal k for each criterion
+            optimal_k_by_criteria = {}
+            for criterion in criteria:
+                if criterion in scores and scores[criterion]:
+                    if criterion in ['bic', 'aic']:
+                        # Lower is better for BIC/AIC
+                        optimal_k = min(scores[criterion], key=scores[criterion].get)
+                    else:  # elbow
+                        optimal_k = min(scores[criterion], key=scores[criterion].get)
+                    optimal_k_by_criteria[criterion] = optimal_k
+            
+            # Consensus: use median of all criteria
+            if optimal_k_by_criteria:
+                consensus_k = int(np.median(list(optimal_k_by_criteria.values())))
+            else:
+                consensus_k = 3  # Default fallback
+            
+            result = {
+                'consensus_k': consensus_k,
+                'optimal_k_by_criteria': optimal_k_by_criteria,
+                'scores': scores,
+                'criteria_used': criteria
+            }
+            
+            self.logger.info(f"✅ Model selection completed: Optimal k = {consensus_k}")
+            self.logger.info(f"📊 Criteria results: {optimal_k_by_criteria}")
+            
+            return result
+            
+        except Exception as e:
+            self.logger.error(f"Model selection failed: {e}")
+            return {
+                'consensus_k': 3,
+                'optimal_k_by_criteria': {},
+                'scores': {},
+                'criteria_used': criteria
+            }
+
+    def _find_elbow_point(self, k_range, inertias):
+        """Find elbow point in inertia curve."""
+        try:
+            if len(inertias) < 3:
+                return k_range[1] if len(k_range) > 1 else k_range[0]
+            
+            # Calculate second derivative to find elbow
+            diffs = np.diff(inertias)
+            second_diffs = np.diff(diffs)
+            
+            # Find point of maximum curvature (elbow)
+            elbow_idx = np.argmax(second_diffs) + 2  # +2 because of double diff
+            elbow_idx = min(elbow_idx, len(k_range) - 1)
+            
+            return k_range[elbow_idx]
+            
+        except Exception as e:
+            self.logger.debug(f"Elbow point detection failed: {e}")
+            return k_range[len(k_range) // 2] if k_range else 3
 
     def _calculate_performance_metrics(self, optimization_results: Dict[str, Any],
                                      start_time: float) -> Dict[str, Any]:

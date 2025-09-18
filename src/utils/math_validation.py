@@ -64,6 +64,28 @@ def validate_range(value: float, min_val: float = None, max_val: float = None, n
         raise ValueError(f"{name} must be <= {max_val}, got {value}")
     return value
 
+def validate_numeric_array(array: np.ndarray, name: str = "array") -> np.ndarray:
+    """Validate that an array contains only numeric values and is finite."""
+    if array is None:
+        raise ValueError(f"{name} cannot be None")
+    
+    if not isinstance(array, np.ndarray):
+        raise TypeError(f"{name} must be a numpy array, got {type(array)}")
+    
+    if array.size == 0:
+        raise ValueError(f"{name} cannot be empty")
+    
+    # Check for non-finite values
+    if not np.all(np.isfinite(array)):
+        non_finite_count = np.sum(~np.isfinite(array))
+        raise ValueError(f"{name} contains {non_finite_count} non-finite values (NaN or inf)")
+    
+    # Check if array contains numeric data
+    if not np.issubdtype(array.dtype, np.number):
+        raise TypeError(f"{name} must contain numeric data, got dtype {array.dtype}")
+    
+    return array
+
 def safe_kelly_calculation(win_rate: float, avg_win: float, avg_loss: float) -> float:
     """Safely calculate Kelly criterion."""
     try:

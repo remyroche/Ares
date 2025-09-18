@@ -24,13 +24,16 @@ __all__ = [
     'optimize_dataframe_advanced', 'record_performance_adaptive',
     
     # Legacy compatibility
-    'm1_cpu_optimizer', 'm1_gpu_manager', 'm1_memory_optimizer'
+    'get_m1_cpu_optimizer', 'm1_gpu_manager', 'm1_memory_optimizer'
 ]
 
 # Import core components
-from .m1_cpu_optimizer import M1CPUOptimizer, m1_cpu_optimizer
+from .m1_cpu_optimizer import M1CPUOptimizer, get_m1_cpu_optimizer
 from .m1_gpu_utils import M1GPUManager, m1_gpu_manager
 from .m1_memory_optimizer import M1MemoryOptimizer, m1_memory_optimizer
+
+# Legacy compatibility aliases
+m1_cpu_optimizer = get_m1_cpu_optimizer()
 
 # Import advanced components
 try:

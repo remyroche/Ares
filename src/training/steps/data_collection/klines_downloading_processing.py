@@ -70,7 +70,7 @@ class KlinesDataProcessingPipeline:
     ) -> Dict[str, Any]:
         """Create a consolidated features parquet file with required columns.
 
-        This creates a file with the format: historical_data/features_binance_ETHUSDT_consolidated.parquet
+        This creates a file with the format: historical_data/features_binance_{SYMBOL}_consolidated.parquet
         containing the required columns: ['timestamp', 'exchange', 'timeframe']
 
         Args:
@@ -85,7 +85,7 @@ class KlinesDataProcessingPipeline:
             self.logger.info(f"📦 Creating consolidated features file for {symbol} {interval}")
 
             # Define output file path
-            output_file = Path(self.data_dir) / "features_binance_ETHUSDT_consolidated.parquet"
+            output_file = Path(self.data_dir) / f"features_{exchange.lower()}_{symbol.upper()}_consolidated.parquet"
 
             # Find processed data files
             data_path = Path(self.data_dir) / "binance" / symbol.lower() / "processed" / f"{symbol.lower()}_{interval}"
@@ -211,7 +211,7 @@ class KlinesDataProcessingPipeline:
     async def run_complete_pipeline(
         self,
         symbol: str = "ETHUSDT",
-        years: int = 3,
+        years: int = 2,
         interval: str = "1m",
         api_key: str = "",
         api_secret: str = "",
@@ -221,8 +221,8 @@ class KlinesDataProcessingPipeline:
         """Run the complete klines processing pipeline.
 
         Args:
-            symbol: Trading symbol (e.g., "ETHUSDT")
-            years: Number of years of data to download
+            symbol: Trading symbol (e.g., "ETHUSDT", default: "ETHUSDT")
+            years: Number of years of data to download (default: 2)
             interval: Kline interval (e.g., "1m")
             api_key: Binance API key
             api_secret: Binance API secret
@@ -1167,7 +1167,7 @@ def create_consolidated_features_file(
 ) -> Dict[str, Any]:
     """Convenience function to create consolidated features file.
 
-    Creates a file with the format: historical_data/features_binance_ETHUSDT_consolidated.parquet
+    Creates a file with the format: historical_data/features_binance_{SYMBOL}_consolidated.parquet
     containing the required columns: ['timestamp', 'exchange', 'timeframe']
 
     Args:
@@ -1377,6 +1377,8 @@ def resolve_duplicates_in_files(input_files: List[str],
 
 # Convenience functions for the complete pipeline
 async def run_ethusdt_3year_pipeline(
+    symbol: str = "ETHUSDT",
+    years: int = 2,
     data_dir: str = "historical_data",
     api_key: str = "",
     api_secret: str = "",
@@ -1384,10 +1386,10 @@ async def run_ethusdt_3year_pipeline(
     max_gap_minutes: int = 1,
     create_consolidated: bool = True
 ) -> Dict[str, Any]:
-    """Run the complete pipeline for downloading 3 years of ETHUSDT 1m klines data.
+    """Run the complete pipeline for downloading klines data for any symbol.
 
     This function:
-    - Downloads 3 years of ETHUSDT data using HistoricalDataPipeline
+    - Downloads data for the specified symbol using HistoricalDataPipeline
     - Removes taker_buy_base, taker_buy_quote, year columns
     - Detects gaps > 1m and re-downloads if needed (with column removal)
     - Analyzes duplicates (warns on false duplicates, removes true duplicates)
@@ -1395,6 +1397,8 @@ async def run_ethusdt_3year_pipeline(
     - Creates consolidated features file with required columns: ['timestamp', 'exchange', 'timeframe']
 
     Args:
+        symbol: Trading symbol (default: "ETHUSDT")
+        years: Number of years of data to download (default: 2)
         data_dir: Base directory for data storage
         api_key: Binance API key
         api_secret: Binance API secret
@@ -1407,15 +1411,15 @@ async def run_ethusdt_3year_pipeline(
     """
     pipeline = KlinesDataProcessingPipeline(data_dir)
 
-    print(f"🚀 Starting ETHUSDT {interval} data pipeline (3 years)")
+    print(f"🚀 Starting {symbol} {interval} data pipeline ({years} years)")
     print(f"📁 Data directory: {data_dir}")
     print(f"⏱️  Interval: {interval}")
     print(f"🎯 Max gap threshold: {max_gap_minutes} minutes")
     print()
 
     results = await pipeline.run_complete_pipeline(
-        symbol="ETHUSDT",
-        years=3,
+        symbol=symbol,
+        years=years,
         interval=interval,
         api_key=api_key,
         api_secret=api_secret,
@@ -1462,7 +1466,7 @@ async def run_ethusdt_3year_pipeline(
 
 async def run_custom_symbol_pipeline(
     symbol: str,
-    years: int = 3,
+    years: int = 2,
     interval: str = "1m",
     data_dir: str = "historical_data",
     api_key: str = "",
@@ -1474,7 +1478,7 @@ async def run_custom_symbol_pipeline(
 
     Args:
         symbol: Trading symbol (e.g., "BTCUSDT")
-        years: Number of years of data to download
+        years: Number of years of data to download (default: 2)
         interval: Kline interval (e.g., "1m")
         data_dir: Base directory for data storage
         api_key: Binance API key
@@ -1566,18 +1570,42 @@ if __name__ == "__main__":
             test_add_required_columns()
         else:
             print("Usage:")
-            print("  python klines_downloading_processing.py")
+            print("  python klines_downloading_processing.py [SYMBOL] [YEARS]")
             print("  python klines_downloading_processing.py test_consolidated")
             print("  python klines_downloading_processing.py test_columns")
+            print("")
+            print("Examples:")
+            print("  python klines_downloading_processing.py                    # ETHUSDT, 2 years (default)")
+            print("  python klines_downloading_processing.py BTCUSDT           # BTCUSDT, 2 years")
+            print("  python klines_downloading_processing.py ETHUSDT 3         # ETHUSDT, 3 years")
+            print("  python klines_downloading_processing.py BTCUSDT 1         # BTCUSDT, 1 year")
     else:
-        # Example usage - download 3 years of ETHUSDT 1m data
+        # Example usage - download klines data with configurable symbol and years
         async def main():
-            print("Starting ETHUSDT 3-year 1m klines data download pipeline...")
+            # Parse command line arguments for symbol and years
+            symbol = "ETHUSDT"  # default
+            years = 2  # default
+            
+            # Check for additional command line arguments
+            if len(sys.argv) > 1:
+                # Try to parse symbol from command line
+                potential_symbol = sys.argv[1].upper()
+                if potential_symbol not in ["TEST_CONSOLIDATED", "TEST_COLUMNS"]:
+                    symbol = potential_symbol
+                    
+                # Try to parse years from command line
+                if len(sys.argv) > 2:
+                    try:
+                        years = int(sys.argv[2])
+                    except ValueError:
+                        print(f"⚠️ Invalid years argument '{sys.argv[2]}', using default: {years}")
+            
+            print(f"Starting {symbol} {years}-year 1m klines data download pipeline...")
 
             # Run the complete pipeline
-            results = await run_ethusdt_3year_pipeline()
+            results = await run_ethusdt_3year_pipeline(symbol=symbol, years=years)
 
-            print(f"\nPipeline completed with success: {results['pipeline_success']}")
+            print(f"\nPipeline completed with success: {results.get('pipeline_success', False)}")
 
             # Print any warnings or errors
             if results.get('warnings'):

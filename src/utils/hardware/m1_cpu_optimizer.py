@@ -214,35 +214,99 @@ class M1CPUOptimizer:
                 self.optimizer.logger.info("🧠 M1 optimization context deactivated")
 
         return M1OptimizationContext(self)
+    
+    def optimize_cpu_usage(self, target_utilization: float = 0.8, aggressive: bool = False) -> Dict[str, Any]:
+        """
+        Optimize CPU usage for M1 architecture.
+        
+        Args:
+            target_utilization: Target CPU utilization (0.0 to 1.0)
+            aggressive: Whether to use aggressive optimization
+            
+        Returns:
+            Dictionary with optimization results
+        """
+        start_time = time.time()
+        
+        try:
+            # Get current CPU info
+            cpu_info = {
+                'total_cores': self.cpu_count,
+                'performance_cores': self.performance_cores,
+                'efficiency_cores': self.efficiency_cores,
+                'is_m1': self.is_m1,
+                'optimal_workers': self.get_optimal_worker_count()
+            }
+            
+            # Calculate optimal settings based on target utilization
+            if aggressive:
+                # Use more cores but with lower utilization per core
+                recommended_workers = min(self.cpu_count, int(self.cpu_count * target_utilization))
+                thread_multiplier = 1.5
+            else:
+                # Conservative approach - use performance cores primarily
+                recommended_workers = min(self.performance_cores, int(self.performance_cores * target_utilization))
+                thread_multiplier = 1.0
+            
+            # Ensure at least 1 worker
+            recommended_workers = max(1, recommended_workers)
+            
+            optimization_time = time.time() - start_time
+            
+            result = {
+                'success': True,
+                'recommended_workers': recommended_workers,
+                'thread_multiplier': thread_multiplier,
+                'target_utilization': target_utilization,
+                'cpu_info': cpu_info,
+                'optimization_time_s': optimization_time,
+                'aggressive_mode': aggressive,
+                'optimization_applied': True
+            }
+            
+            self.logger.info(f"🖥️ CPU optimized: {recommended_workers} workers recommended (target: {target_utilization:.1%})")
+            
+            return result
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ CPU optimization failed: {e}")
+            return {
+                'success': False,
+                'error': str(e),
+                'optimization_time_s': time.time() - start_time
+            }
 
 
-# Global instance
-m1_cpu_optimizer = M1CPUOptimizer()
+# Global instance - lazy initialization to include new methods
+_m1_cpu_optimizer_instance = None
 
 
 def get_m1_cpu_optimizer() -> M1CPUOptimizer:
     """Get the global M1 CPU optimizer instance."""
-    return m1_cpu_optimizer
+    global _m1_cpu_optimizer_instance
+    if _m1_cpu_optimizer_instance is None:
+        _m1_cpu_optimizer_instance = M1CPUOptimizer()
+    return _m1_cpu_optimizer_instance
 
 
 def optimize_function_for_m1(func: Callable) -> Callable:
     """Optimize function for M1 execution."""
-    return m1_cpu_optimizer.optimize_function_for_m1(func)
+    return get_m1_cpu_optimizer().optimize_function_for_m1(func)
 
 
 def parallel_map_m1(func: Callable, items: List[Any], max_workers: Optional[int] = None) -> List[Any]:
     """Parallel map optimized for M1."""
-    return m1_cpu_optimizer.parallel_map_m1(func, items, max_workers)
+    return get_m1_cpu_optimizer().parallel_map_m1(func, items, max_workers)
 
 
 def create_m1_optimized_thread_pool(max_workers: Optional[int] = None):
     """Create thread pool optimized for M1."""
-    return m1_cpu_optimizer.create_optimized_thread_pool(max_workers)
+    return get_m1_cpu_optimizer().create_optimized_thread_pool(max_workers)
 
 
 def run_cpu_intensive_task(func: Callable, *args, **kwargs):
     """Run CPU-intensive task optimized for M1."""
-    return m1_cpu_optimizer.run_cpu_intensive_task(func, *args, **kwargs)
+    return get_m1_cpu_optimizer().run_cpu_intensive_task(func, *args, **kwargs)
 
 
 async def parallel_backtesting_worker(

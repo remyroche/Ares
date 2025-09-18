@@ -214,10 +214,10 @@ class ValidationFramework:
         """Initialize pipeline state validation rules."""
         self.validation_rules['pipeline'] = [
             ValidationRule(
-                name="triple_barrier_labeling_present",
-                description="Triple barrier labeling results are present",
+                name="labeling_results_present",
+                description="Labeling results are present (multi-horizon or triple barrier)",
                 level=ValidationLevel.CRITICAL,
-                validator_func=self._validate_triple_barrier_labeling,
+                validator_func=self._validate_labeling_results,
                 required=True
             ),
             ValidationRule(
@@ -727,41 +727,124 @@ class ValidationFramework:
         }
     
     # Pipeline validation methods
-    def _validate_triple_barrier_labeling(self, pipeline_state: Dict[str, Any]) -> Tuple[bool, str, Optional[Dict[str, Any]]]:
-        """Validate triple barrier labeling results."""
+    def _validate_labeling_results(self, pipeline_state: Dict[str, Any]) -> Tuple[bool, str, Optional[Dict[str, Any]]]:
+        """Validate labeling results (multi-horizon or triple barrier)."""
+        # First check for multi-horizon labeling results (preferred)
+        multi_horizon_labeling = pipeline_state.get('multi_horizon_labeling_result', {})
+        if multi_horizon_labeling:
+            required_keys = ['labeled_data', 'labeling_metrics', 'method']
+            missing_keys = [key for key in required_keys if key not in multi_horizon_labeling]
+            
+            if missing_keys:
+                return False, f"Missing multi-horizon labeling keys: {missing_keys}", {
+                    'missing_keys': missing_keys
+                }
+            
+            return True, "Multi-horizon labeling results are present", None
+        
+        # Fallback to triple barrier labeling for backward compatibility
         triple_barrier_labeling = pipeline_state.get('triple_barrier_labeling_result', {})
+        if triple_barrier_labeling:
+            required_keys = ['labels', 'barriers', 'metadata']
+            missing_keys = [key for key in required_keys if key not in triple_barrier_labeling]
+            
+            if missing_keys:
+                return False, f"Missing triple barrier labeling keys: {missing_keys}", {
+                    'missing_keys': missing_keys
+                }
+            
+            return True, "Triple barrier labeling results are present", None
         
-        if not triple_barrier_labeling:
-            return False, "No triple barrier labeling results found", None
+        # Try to load from recent outcomes if not in pipeline state
+        try:
+            import json
+            from pathlib import Path
+            
+            outcomes_dir = Path("outcomes")
+            if outcomes_dir.exists():
+                # Search for multi-horizon profit labeler outcome files
+                pattern = f"market_analysis_multi_horizon_profit_labeler_outcome_*.json"
+                outcome_files = list(outcomes_dir.glob(pattern))
+                
+                if outcome_files:
+                    # Get the most recent file
+                    latest_file = max(outcome_files, key=lambda f: f.stat().st_mtime)
+                    
+                    with open(latest_file, 'r') as f:
+                        outcome_data = json.load(f)
+                    
+                    # Check if we have valid artifacts
+                    artifacts = outcome_data.get('artifacts', {})
+                    multi_horizon_result = artifacts.get('multi_horizon_labeling_result', {})
+                    
+                    if multi_horizon_result and 'labeled_data' in multi_horizon_result:
+                        return True, f"Multi-horizon labeling results loaded from recent outcomes: {latest_file.name}", None
+        except Exception as e:
+            pass  # Continue to return the original error
         
-        required_keys = ['labels', 'barriers', 'metadata']
-        missing_keys = [key for key in required_keys if key not in triple_barrier_labeling]
-        
-        if missing_keys:
-            return False, f"Missing triple barrier labeling keys: {missing_keys}", {
-                'missing_keys': missing_keys
-            }
-        
-        return True, "Triple barrier labeling results are present", None
+        return False, "No labeling results found (neither multi-horizon nor triple barrier)", None
     
     def _validate_regime_data_present(self, pipeline_state: Dict[str, Any]) -> Tuple[bool, str, Optional[Dict[str, Any]]]:
         """Validate regime data splitting results."""
         regime_data_splitting = pipeline_state.get('regime_data_splitting_result', {})
         
         if not regime_data_splitting:
-            return False, "No regime data splitting results found", None
+            # Try to load from recent outcomes if not in pipeline state
+            try:
+                import json
+                from pathlib import Path
+                
+                outcomes_dir = Path("outcomes")
+                if outcomes_dir.exists():
+                    # Search for regime data splitting outcome files
+                    pattern = f"market_analysis_regime_data_splitting_outcome_*.json"
+                    outcome_files = list(outcomes_dir.glob(pattern))
+                    
+                    if outcome_files:
+                        # Get the most recent file
+                        latest_file = max(outcome_files, key=lambda f: f.stat().st_mtime)
+                        
+                        with open(latest_file, 'r') as f:
+                            outcome_data = json.load(f)
+                        
+                        # Check if the outcome contains regime data
+                        if 'artifacts' in outcome_data and 'regime_data_splitting_result' in outcome_data['artifacts']:
+                            return True, f"Regime data splitting results loaded from {latest_file.name}", {
+                                'source': 'outcome_file',
+                                'file': str(latest_file)
+                            }
+                
+                return False, "No regime data splitting results found - required for proper optimization", {
+                    'severity': 'warning',
+                    'impact': 'reduced_optimization_effectiveness'
+                }
+                
+            except Exception as e:
+                return False, f"Failed to load regime data splitting results: {e}", {
+                    'severity': 'warning'
+                }
+        
+        # Validate the structure of regime data
+        required_keys = ['regime_data', 'regime_metadata']
+        missing_keys = [key for key in required_keys if key not in regime_data_splitting]
+        
+        if missing_keys:
+            return False, f"Missing regime data splitting keys: {missing_keys}", {
+                'missing_keys': missing_keys,
+                'severity': 'warning'
+            }
         
         return True, "Regime data splitting results are present", None
     
     def _validate_pipeline_state_consistency(self, pipeline_state: Dict[str, Any]) -> Tuple[bool, str, Optional[Dict[str, Any]]]:
         """Validate pipeline state consistency."""
-        # Check for required dependencies
-        required_results = ['triple_barrier_labeling_result']
-        missing_results = [result for result in required_results if result not in pipeline_state]
+        # Check for required dependencies - accept either multi-horizon or triple barrier labeling
+        has_multi_horizon = 'multi_horizon_labeling_result' in pipeline_state
+        has_triple_barrier = 'triple_barrier_labeling_result' in pipeline_state
         
-        if missing_results:
-            return False, f"Missing required pipeline results: {missing_results}", {
-                'missing_results': missing_results
+        if not (has_multi_horizon or has_triple_barrier):
+            return False, "Missing required labeling results (need either multi_horizon_labeling_result or triple_barrier_labeling_result)", {
+                'missing_results': ['multi_horizon_labeling_result or triple_barrier_labeling_result']
             }
         
         return True, "Pipeline state is consistent", None
@@ -788,3 +871,60 @@ class ValidationFramework:
             recommendations.append("All validations passed - no recommendations needed")
         
         return recommendations
+    
+    def validate_optimization_results(self, optimization_result: Dict[str, Any]) -> Tuple[bool, List[ValidationResult]]:
+        """Validate optimization results structure and content."""
+        validation_results = []
+        
+        # Check if results exist
+        has_results = False
+        has_features = False
+        
+        if 'results' in optimization_result:
+            # New format
+            results = optimization_result.get('results', {})
+            has_results = bool(results)
+            has_features = len(results) > 0
+        elif 'optimization_results' in optimization_result:
+            # Legacy format
+            results = optimization_result.get('optimization_results', {})
+            has_results = bool(results)
+            has_features = len(results) > 0
+        
+        # Validate results presence
+        if not has_results:
+            validation_results.append(ValidationResult(
+                rule_name="optimization_results_present",
+                status=ValidationStatus.FAILED,
+                level=ValidationLevel.CRITICAL,
+                message="No optimization results found"
+            ))
+        else:
+            validation_results.append(ValidationResult(
+                rule_name="optimization_results_present", 
+                status=ValidationStatus.PASSED,
+                level=ValidationLevel.CRITICAL,
+                message="Optimization results found"
+            ))
+        
+        # Validate features presence
+        if not has_features:
+            validation_results.append(ValidationResult(
+                rule_name="optimized_features_present",
+                status=ValidationStatus.FAILED,
+                level=ValidationLevel.CRITICAL,
+                message="No optimized features found"
+            ))
+        else:
+            validation_results.append(ValidationResult(
+                rule_name="optimized_features_present",
+                status=ValidationStatus.PASSED, 
+                level=ValidationLevel.CRITICAL,
+                message=f"Found {len(results)} optimized features"
+            ))
+        
+        # Overall validation status
+        critical_failures = [r for r in validation_results if r.status == ValidationStatus.FAILED and r.level == ValidationLevel.CRITICAL]
+        is_valid = len(critical_failures) == 0
+        
+        return is_valid, validation_results

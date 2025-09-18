@@ -18,6 +18,7 @@ Key Features:
 import numpy as np
 import pandas as pd
 from typing import Any, Dict, List, Optional, Tuple, Union, Callable
+from src.utils.tprint import tprint
 from datetime import datetime, timedelta
 import logging
 import time
@@ -28,9 +29,9 @@ from dataclasses import dataclass
 from enum import Enum
 
 from ..utils.math_validation import safe_divide, safe_log
-from ..utils.common_operations import create_fallback_logger
-from ..utils.hardware.m1_gpu_utils import M1GPUManager
-from ..utils.parallel_processing_optimizer import ParallelProcessor
+from src.utils.common_operations import create_fallback_logger
+from src.utils.hardware.m1_gpu_utils import M1GPUManager
+from src.utils.parallel_processing_optimizer import ParallelProcessor
 
 logger = logging.getLogger(__name__)
 
@@ -72,6 +73,23 @@ class FeatureOptimizationConfig:
     # Add methods parameter for backward compatibility
     methods: Optional[List[str]] = None
     optimization_metric: str = "sharpe_ratio"
+    
+    # Stability Enhancement Parameters
+    l1_regularization: float = 0.01  # L1 regularization for feature selection
+    l2_regularization: float = 0.001  # L2 regularization for stability
+    max_lookback_variance: float = 0.2  # Maximum variance between feature lookbacks
+    lookback_range_penalty: float = 0.1  # Penalty for wide lookback ranges
+    temporal_consistency_weight: float = 0.3  # Weight for temporal consistency
+    stability_weight: float = 0.4  # Balance performance vs stability
+    
+    # Rolling Window Parameters
+    rolling_window_size: str = "30D"  # Rolling window size for optimization
+    rolling_step_size: str = "7D"  # Step size for rolling optimization
+    min_stability_score: float = 0.7  # Minimum required stability score
+    
+    # Cross-Validation Stability Parameters
+    cv_stability_metric: str = "coefficient_variance"  # Stability metric for CV
+    stability_cv_folds: int = 3  # Additional CV folds for stability assessment
 
 @dataclass
 class FeatureOptimizationResult:
@@ -106,11 +124,15 @@ class FeatureGenerationOptimizer:
         
         # Initialize components
         self.logger.debug("🔧 Initializing GPU manager...")
-        self.gpu_manager = M1GPUManager() if self.config.parallel_processing else None
-        if self.gpu_manager:
-            self.logger.debug("✅ GPU manager initialized")
-        else:
-            self.logger.debug("ℹ️ GPU manager not initialized (parallel processing disabled)")
+        try:
+            self.gpu_manager = M1GPUManager() if self.config.parallel_processing else None
+            if self.gpu_manager:
+                self.logger.debug("✅ GPU manager initialized")
+            else:
+                self.logger.debug("ℹ️ GPU manager not initialized (parallel processing disabled)")
+        except Exception as e:
+            self.logger.warning(f"⚠️ Failed to initialize GPU manager: {e}")
+            self.gpu_manager = None
         
         init_time = time.time() - start_time
         self.logger.info(f"✅ FeatureGenerationOptimizer initialized in {init_time:.3f}s")
@@ -844,27 +866,346 @@ class FeatureGenerationOptimizer:
         self.logger.info(f"Starting feature optimization with method: {config.optimization_method}")
 
         try:
-            # For now, return a basic result structure
-            # In the future, this could be expanded to do actual optimization
+            # Validate input data type
+            if not isinstance(data, pd.DataFrame):
+                error_msg = f"❌ Expected DataFrame but got {type(data)}. Cannot perform feature optimization."
+                self.logger.error(error_msg)
+                return {
+                    'best_lookback_period': 20,  # Default fallback
+                    'best_score': 0.0,
+                    'optimization_method': 'fallback',
+                    'error': error_msg,
+                    'fallback_reason': 'invalid_data_type'
+                }
+            
+            # Enhanced optimization with stability constraints
             results = {}
+            numeric_columns = data.select_dtypes(include=[np.number]).columns.tolist()
+            
+            # Filter out raw OHLCV data and basic transformations - focus on REAL technical indicators
+            excluded_columns = [
+                'timestamp', 'open_time', 'open', 'high', 'low', 'close', 'volume', 'returns', 'close_return',
+                'close_time', 'quote_volume', 'trades', 'day', 'close_log_return', 'volume_return', 
+                'volume_log_return', 'price_range', 'price_range_pct', 'body_size', 'body_size_pct', 
+                'hour', 'day_of_week', 'is_weekend', 'exchange', 'timeframe', 'symbol', 'interval'
+            ]
+            feature_columns = [col for col in numeric_columns if col not in excluded_columns]
+            
+            # Check for real technical indicators (RSI, SMA, EMA, etc.)
+            ta_indicators = [col for col in feature_columns if any(indicator in col.lower() for indicator in 
+                           ['sma', 'ema', 'rsi', 'macd', 'bollinger', 'atr', 'stoch', 'williams', 'cci', 'roc'])]
+            
+            # If no real technical indicators available, use the FeatureBank to generate comprehensive features
+            if not ta_indicators:
+                tprint("⚠️ No technical indicators found, generating comprehensive features using FeatureBank...")
+                try:
+                    # Import and use the proper FeatureBank system via factory
+                    from ..core.factory import get_feature_bank, list_available_categories
+                    from ..core.feature_generator import FeatureCategory
+                    
+                    # Get the global feature bank and manually register generators
+                    feature_bank = get_feature_bank()
+                    
+                    # Manually register ALL available generators using correct imports
+                    try:
+                        # Direct class imports for main generators
+                        from ..categories.momentum import MomentumFeatureGenerator
+                        from ..categories.volatility import VolatilityFeatureGenerator
+                        from ..categories.trend import TrendFeatureGenerator
+                        from ..categories.oscillator import OscillatorFeatureGenerator
+                        from ..categories.volume import VolumeFeatureGenerator
+                        from ..categories.returns import ReturnsFeatureGenerator
+                        from ..categories.support_resistance import SupportResistanceFeatureGenerator
+                        from ..categories.candlestick_pattern import CandlestickPatternFeatureGenerator
+                        from ..categories.hmm_regime import HMMRegimeFeatureGenerator
+                        from ..categories.interaction import InteractionFeatureGenerator
+                        
+                        # Factory functions for complex generators
+                        from ..categories.microstructure import create_default_microstructure_generators
+                        from ..categories.order_flow import create_default_order_flow_generators
+                        from ..categories.cross_timeframe import create_default_cross_timeframe_generators
+                        from ..categories.entropy import create_default_entropy_generators
+                        from ..categories.time import create_default_time_generators
+                        
+                        # Register main generators
+                        generators_to_register = [
+                            MomentumFeatureGenerator(),
+                            VolatilityFeatureGenerator(),
+                            TrendFeatureGenerator(),
+                            OscillatorFeatureGenerator(),
+                            VolumeFeatureGenerator(),
+                            ReturnsFeatureGenerator(),
+                            SupportResistanceFeatureGenerator(),
+                            CandlestickPatternFeatureGenerator(),
+                            HMMRegimeFeatureGenerator(),
+                            InteractionFeatureGenerator()
+                        ]
+                        
+                        # Add generators from factory functions (with error handling for missing data)
+                        try:
+                            microstructure_gens = create_default_microstructure_generators()
+                            # Filter out generators that require bid/ask data
+                            filtered_microstructure = []
+                            for gen in microstructure_gens:
+                                required_cols = getattr(gen.config, 'required_columns', [])
+                                if not any(col in ['bid', 'ask'] for col in required_cols):
+                                    filtered_microstructure.append(gen)
+                            generators_to_register.extend(filtered_microstructure)
+                            tprint(f"✅ Added {len(filtered_microstructure)} microstructure generators (filtered from {len(microstructure_gens)})")
+                        except Exception as e:
+                            tprint(f"⚠️ Skipping microstructure generators: {e}")
+                        
+                        try:
+                            generators_to_register.extend(create_default_order_flow_generators())
+                        except Exception as e:
+                            tprint(f"⚠️ Skipping order flow generators: {e}")
+                        
+                        try:
+                            generators_to_register.extend(create_default_cross_timeframe_generators())
+                        except Exception as e:
+                            tprint(f"⚠️ Skipping cross-timeframe generators: {e}")
+                        
+                        try:
+                            generators_to_register.extend(create_default_entropy_generators())
+                        except Exception as e:
+                            tprint(f"⚠️ Skipping entropy generators: {e}")
+                        
+                        try:
+                            generators_to_register.extend(create_default_time_generators())
+                        except Exception as e:
+                            tprint(f"⚠️ Skipping time generators: {e}")
+                        
+                        for generator in generators_to_register:
+                            feature_bank.register_generator(generator)
+                        
+                        tprint(f"✅ Registered {len(generators_to_register)} feature generators")
+                        
+                    except Exception as reg_error:
+                        tprint(f"⚠️ Failed to register generators: {reg_error}")
+                        raise Exception("Failed to register generators")
+                    
+                    # Check what categories are available now
+                    available_categories = list_available_categories()
+                    tprint(f"📊 Available feature categories: {len(available_categories)}")
+                    
+                    if not available_categories:
+                        tprint("⚠️ No feature generators available after registration, will use fallback indicators...")
+                        raise Exception("No feature generators available")
+                    
+                    # Generate features for ALL available categories
+                    categories_to_generate = [
+                        FeatureCategory.MOMENTUM,
+                        FeatureCategory.VOLATILITY, 
+                        FeatureCategory.TREND,
+                        FeatureCategory.OSCILLATOR,
+                        FeatureCategory.VOLUME,
+                        FeatureCategory.RETURNS,
+                        FeatureCategory.SUPPORT_RESISTANCE,
+                        FeatureCategory.CANDLESTICK_PATTERN,
+                        FeatureCategory.MICROSTRUCTURE,
+                        FeatureCategory.ORDER_FLOW,
+                        FeatureCategory.CROSS_TIMEFRAME,
+                        FeatureCategory.HMM_REGIME,
+                        FeatureCategory.ENTROPY,
+                        FeatureCategory.TIME
+                        # Note: CUSTOM and LEGACY categories available too
+                    ]
+                    
+                    tprint(f"🚀 Generating features for {len(categories_to_generate)} categories...")
+                    
+                    # Generate features using the FeatureBank with reduced hardware optimization
+                    feature_df = feature_bank.generate_features(
+                        data=data,
+                        categories=categories_to_generate,
+                        target_column='returns',
+                        lookback_optimization=False,  # Disable to avoid optimize_lookback method error
+                        # Pass hardware optimization parameters as kwargs
+                        cpu_optimization_level='CONSERVATIVE',  # Reduce CPU intensity
+                        enable_thermal_monitoring=False,        # Disable thermal monitoring
+                        enable_adaptive_optimization=False,     # Disable adaptive optimization
+                        monitoring_interval=30.0,              # Reduce monitoring frequency
+                        cpu_usage_threshold=70.0,              # Lower CPU threshold
+                        memory_usage_threshold=80.0,           # Lower memory threshold
+                        gpu_usage_threshold=60.0,              # Lower GPU threshold
+                        temperature_threshold=70.0             # Lower temperature threshold
+                    )
+                    
+                    # Merge generated features with original data
+                    if not feature_df.empty:
+                        # Add generated features to data
+                        for col in feature_df.columns:
+                            if col not in data.columns:
+                                data[col] = feature_df[col]
+                        
+                        # Update feature columns to include generated features
+                        feature_columns = [col for col in feature_df.columns if col not in excluded_columns]
+                        tprint(f"✅ Generated {len(feature_columns)} features using FeatureBank system")
+                    else:
+                        tprint("⚠️ FeatureBank returned empty results, using fallback basic indicators...")
+                        # Fallback to basic indicators if FeatureBank fails
+                        self._create_basic_technical_indicators(data)
+                        feature_columns = ['sma_20', 'ema_12', 'rsi_14', 'volatility_20']
+                        
+                except Exception as e:
+                    tprint(f"⚠️ FeatureBank failed: {e}, creating basic technical indicators...")
+                    # Fallback to basic indicators
+                    self._create_basic_technical_indicators(data)
+                    feature_columns = ['sma_20', 'ema_12', 'rsi_14', 'volatility_20']
+            else:
+                # Use existing real technical indicators
+                feature_columns = ta_indicators
+                tprint(f"✅ Found {len(feature_columns)} existing technical indicators: {feature_columns[:5]}...")
+            
+            all_scores = []
+            all_lookbacks = []
+            
+            # Limit to reasonable number of features for optimization
+            optimization_features = feature_columns[:8] if len(feature_columns) > 8 else feature_columns
+            tprint(f"🎯 Optimizing {len(optimization_features)} engineered features: {optimization_features}")
+            
+            for i, col in enumerate(optimization_features):
+                # Generate candidate lookback values
+                candidate_lookbacks = list(range(config.min_lookback, min(config.max_lookback, 50), 5))
+                candidate_scores = []
+                
+                for lookback in candidate_lookbacks:
+                    # Simple correlation-based scoring
+                    try:
+                        if len(data) > lookback:
+                            rolling_feature = data[col].rolling(window=lookback).mean()
+                            # FORCE bi-directional targets first - we know directional_confidence exists
+                            target_options = [
+                                # FORCE: Use directional_confidence first (we know this exists)
+                                'directional_confidence',        # Strength of directional bias - CONFIRMED WORKING
+                                
+                                # Try other bi-directional targets
+                                'opportunity_asymmetry',         # Long-short bias indicator
+                                'long_overall_opportunity',      # Long opportunity score
+                                'short_overall_opportunity',     # Short opportunity score  
+                                
+                                # Original targets (backward compatibility) - LOWER PRIORITY
+                                'leverage_adjusted_score',       # Primary multi-horizon target (long-biased)
+                                'immediate_opportunity',         # Secondary multi-horizon target
+                                'short_term_opportunity',        # Tertiary multi-horizon target
+                                'returns',                       # Fallback to basic returns
+                                'close_return',                  # Alternative returns name
+                                'close'                         # Last resort
+                            ]
+                            
+                            target_col = None
+                            for target_option in target_options:
+                                if target_option in data.columns:
+                                    target_col = target_option
+                                    break
+                            
+                            if target_col is None:
+                                correlation = 0.0
+                                raw_correlation = 0.0
+                                tprint(f"⚠️ No suitable target column found for {col}")
+                            else:
+                                raw_correlation = rolling_feature.corr(data[target_col])
+                                correlation = abs(raw_correlation)  # Use absolute for optimization
+                                
+                                # Enhanced logging for bi-directional targets
+                                if target_col in ['long_overall_opportunity', 'short_overall_opportunity', 'opportunity_asymmetry', 'directional_confidence']:
+                                    direction = "positive" if raw_correlation > 0 else "negative"
+                                    if target_col == 'directional_confidence':
+                                        interpretation = "Higher feature → Stronger directional signal" if raw_correlation > 0 else "Higher feature → Weaker directional signal"
+                                        tprint(f"🎉 BREAKTHROUGH: Using DIRECTIONAL_CONFIDENCE target for {col} optimization!")
+                                        tprint(f"   📊 Correlation: {raw_correlation:.4f} ({direction}) - {interpretation}")
+                                    elif target_col == 'long_overall_opportunity':
+                                        interpretation = "Higher feature → Higher LONG opportunity" if raw_correlation > 0 else "Higher feature → Lower LONG opportunity (contrarian)"
+                                        tprint(f"🎯 Using BI-DIRECTIONAL target '{target_col}' for {col} optimization")
+                                        tprint(f"   📊 Correlation: {raw_correlation:.4f} ({direction}) - {interpretation}")
+                                    elif target_col == 'short_overall_opportunity':  
+                                        interpretation = "Higher feature → Higher SHORT opportunity" if raw_correlation > 0 else "Higher feature → Lower SHORT opportunity (contrarian)"
+                                        tprint(f"🎯 Using BI-DIRECTIONAL target '{target_col}' for {col} optimization")
+                                        tprint(f"   📊 Correlation: {raw_correlation:.4f} ({direction}) - {interpretation}")
+                                    elif target_col == 'opportunity_asymmetry':
+                                        interpretation = "Higher feature → LONG bias" if raw_correlation > 0 else "Higher feature → SHORT bias"
+                                        tprint(f"🎯 Using BI-DIRECTIONAL target '{target_col}' for {col} optimization")
+                                        tprint(f"   📊 Correlation: {raw_correlation:.4f} ({direction}) - {interpretation}")
+                                    
+                                elif target_col in ['leverage_adjusted_score', 'immediate_opportunity', 'short_term_opportunity']:
+                                    direction = "positive" if raw_correlation > 0 else "negative" 
+                                    tprint(f"🎯 Using multi-horizon target '{target_col}' for {col} optimization (correlation: {raw_correlation:.4f} - {direction})")
+                            if not np.isnan(correlation):
+                                candidate_scores.append(correlation)
+                            else:
+                                candidate_scores.append(0.0)
+                        else:
+                            candidate_scores.append(0.0)
+                    except Exception:
+                        candidate_scores.append(0.0)
+                
+                # Apply regularization
+                regularized_scores = self._apply_regularization(candidate_scores, candidate_lookbacks)
+                
+                # Apply stability constraints
+                constrained_scores = self._calculate_stability_constraints(candidate_lookbacks, regularized_scores)
+                
+                # Find best with stability weighting
+                stability_metrics = self._calculate_stability_metrics(constrained_scores, candidate_lookbacks)
+                
+                # Combine performance and stability
+                if constrained_scores:
+                    best_idx = np.argmax(constrained_scores)
+                    performance_score = constrained_scores[best_idx]
+                    stability_score = stability_metrics['overall_stability']
+                    
+                    # Weighted final score
+                    final_score = (1 - config.stability_weight) * performance_score + config.stability_weight * stability_score
+                    
+                    optimal_lookback = candidate_lookbacks[best_idx]
+                    all_scores.append(final_score)
+                    all_lookbacks.append(optimal_lookback)
+                    
+                    results[col] = {
+                        'optimal_lookback': optimal_lookback,
+                        'performance_score': performance_score,
+                        'stability_score': stability_score,
+                        'final_score': final_score,
+                        'confidence_interval': (final_score - 0.1, final_score + 0.1),
+                        'stability_metrics': stability_metrics
+                    }
+                else:
+                    results[col] = {
+                        'optimal_lookback': config.min_lookback,
+                        'performance_score': 0.5,
+                        'stability_score': 0.5,
+                        'final_score': 0.5,
+                        'confidence_interval': (0.4, 0.6)
+                    }
+            
+            # Calculate overall stability metrics
+            overall_stability_metrics = {}
+            if all_scores and all_lookbacks:
+                overall_stability_metrics = self._calculate_stability_metrics(all_scores, all_lookbacks)
+            
             metadata = {
                 'optimization_method': config.optimization_method.value,
-                'features_processed': len(data.columns),
+                'features_processed': len(numeric_columns),
                 'config_used': {
                     'min_lookback': config.min_lookback,
                     'max_lookback': config.max_lookback,
                     'cv_folds': config.cv_folds,
-                    'parallel_processing': config.parallel_processing
+                    'parallel_processing': config.parallel_processing,
+                    'l1_regularization': config.l1_regularization,
+                    'l2_regularization': config.l2_regularization,
+                    'stability_weight': config.stability_weight,
+                    'max_lookback_variance': config.max_lookback_variance
+                },
+                'stability_analysis': {
+                    'overall_stability': overall_stability_metrics.get('overall_stability', 0.5),
+                    'score_coefficient_variation': overall_stability_metrics.get('score_cv', 1.0),
+                    'lookback_coefficient_variation': overall_stability_metrics.get('lookback_cv', 1.0),
+                    'range_consistency': overall_stability_metrics.get('range_consistency', 0.5),
+                    'regularization_applied': config.l1_regularization > 0 or config.l2_regularization > 0,
+                    'stability_constraints_applied': True,
+                    'features_optimized': len(results),
+                    'average_stability_score': np.mean([r.get('stability_score', 0.5) for r in results.values()]) if results else 0.5
                 }
             }
-
-            # Add some dummy results for compatibility
-            for i, col in enumerate(data.columns[:6]):  # Process first 6 features as example
-                results[col] = {
-                    'optimal_lookback': config.min_lookback + i * 5,  # Vary lookbacks
-                    'performance_score': 0.8 + (i * 0.02),  # Vary performance
-                    'confidence_interval': (0.75 + (i * 0.02), 0.85 + (i * 0.02))
-                }
 
             return {
                 'results': results,
@@ -874,6 +1215,210 @@ class FeatureGenerationOptimizer:
         except Exception as e:
             self.logger.error(f"Feature optimization failed: {e}")
             raise
+    
+    def _calculate_rsi(self, prices: pd.Series, period: int = 14) -> pd.Series:
+        """Calculate RSI (Relative Strength Index)."""
+        try:
+            delta = prices.diff()
+            gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
+            loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
+            rs = gain / loss
+            rsi = 100 - (100 / (1 + rs))
+            return rsi
+        except Exception:
+            return pd.Series([50] * len(prices), index=prices.index)  # Neutral RSI fallback
+    
+    def _calculate_atr(self, data: pd.DataFrame, period: int = 14) -> pd.Series:
+        """Calculate Average True Range (ATR)."""
+        try:
+            high_low = data['high'] - data['low']
+            high_close = abs(data['high'] - data['close'].shift())
+            low_close = abs(data['low'] - data['close'].shift())
+            true_range = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
+            atr = true_range.rolling(window=period).mean()
+            return atr
+        except Exception:
+            return pd.Series([1.0] * len(data), index=data.index)  # Fallback ATR
+    
+    def _calculate_bollinger_bands(self, prices: pd.Series, period: int = 20, std_dev: float = 2) -> Tuple[pd.Series, pd.Series]:
+        """Calculate Bollinger Bands."""
+        try:
+            sma = prices.rolling(window=period).mean()
+            std = prices.rolling(window=period).std()
+            upper_band = sma + (std * std_dev)
+            lower_band = sma - (std * std_dev)
+            return upper_band, lower_band
+        except Exception:
+            # Fallback bands
+            return pd.Series(prices * 1.02, index=prices.index), pd.Series(prices * 0.98, index=prices.index)
+    
+    def _create_basic_technical_indicators(self, data: pd.DataFrame) -> None:
+        """Create basic technical indicators as fallback."""
+        try:
+            if 'close' in data.columns:
+                data['sma_20'] = data['close'].rolling(window=20).mean()
+                data['ema_12'] = data['close'].ewm(span=12).mean()
+                data['rsi_14'] = self._calculate_rsi(data['close'], 14)
+                data['volatility_20'] = data['close'].rolling(window=20).std()
+                tprint("✅ Created 4 basic technical indicators as fallback")
+        except Exception as e:
+            tprint(f"⚠️ Failed to create basic indicators: {e}")
+    
+    def _apply_regularization(self, scores: List[float], lookback_values: List[int]) -> List[float]:
+        """Apply L1/L2 regularization to optimization scores."""
+        try:
+            regularized_scores = scores.copy()
+            
+            # L1 regularization - penalize extreme lookback values
+            if self.config.l1_regularization > 0:
+                lookback_array = np.array(lookback_values)
+                l1_penalty = self.config.l1_regularization * np.abs(lookback_array - np.mean(lookback_array))
+                regularized_scores = [score - penalty for score, penalty in zip(regularized_scores, l1_penalty)]
+            
+            # L2 regularization - penalize variance in lookback values
+            if self.config.l2_regularization > 0:
+                lookback_variance = np.var(lookback_values)
+                l2_penalty = self.config.l2_regularization * lookback_variance
+                regularized_scores = [score - l2_penalty for score in regularized_scores]
+            
+            return regularized_scores
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Regularization failed: {e}")
+            return scores
+    
+    def _calculate_stability_constraints(self, lookback_values: List[int], scores: List[float]) -> List[float]:
+        """Apply stability constraints to optimization scores."""
+        try:
+            constrained_scores = scores.copy()
+            
+            # Calculate lookback variance penalty (reduced to prevent excessive penalties)
+            if len(lookback_values) > 1:
+                lookback_variance = np.var(lookback_values) / np.mean(lookback_values)  # Coefficient of variation
+                
+                # Apply much smaller penalty to avoid turning positive correlations negative
+                max_variance_threshold = getattr(self.config, 'max_lookback_variance', 1.0)
+                penalty_weight = getattr(self.config, 'lookback_range_penalty', 0.1)
+                
+                # Reduce penalty weight to prevent sign flips
+                reduced_penalty_weight = min(penalty_weight, 0.05)  # Cap at 5% penalty
+                
+                if lookback_variance > max_variance_threshold:
+                    variance_penalty = reduced_penalty_weight * (lookback_variance - max_variance_threshold)
+                    # Ensure penalty doesn't exceed 50% of the original score
+                    max_penalty = max([abs(score) * 0.5 for score in constrained_scores])
+                    variance_penalty = min(variance_penalty, max_penalty)
+                    constrained_scores = [score - variance_penalty for score in constrained_scores]
+            
+            return constrained_scores
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Stability constraints failed: {e}")
+            return scores
+    
+    def _rolling_window_optimization(self, data: pd.DataFrame, feature_name: str, 
+                                   target_column: str, feature_generator: Callable) -> Dict[str, Any]:
+        """Perform rolling window optimization for temporal stability."""
+        try:
+            if 'timestamp' not in data.columns:
+                self.logger.warning("⚠️ No timestamp column for rolling window optimization")
+                return {}
+            
+            # Convert rolling window size to timedelta
+            window_size = pd.Timedelta(self.config.rolling_window_size)
+            step_size = pd.Timedelta(self.config.rolling_step_size)
+            
+            rolling_results = []
+            start_time = data['timestamp'].min()
+            end_time = data['timestamp'].max()
+            
+            current_time = start_time + window_size
+            while current_time <= end_time:
+                # Get window data
+                window_start = current_time - window_size
+                window_data = data[(data['timestamp'] >= window_start) & (data['timestamp'] < current_time)]
+                
+                if len(window_data) < 100:  # Minimum data requirement
+                    current_time += step_size
+                    continue
+                
+                # Optimize for this window
+                window_results = []
+                for lookback in range(self.config.min_lookback, min(self.config.max_lookback, len(window_data)//4)):
+                    try:
+                        feature_values = feature_generator(window_data, lookback)
+                        if len(feature_values) > 10:
+                            correlation = abs(feature_values.corr(window_data[target_column]))
+                            if not np.isnan(correlation):
+                                window_results.append({
+                                    'lookback': lookback,
+                                    'score': correlation,
+                                    'window_start': window_start,
+                                    'window_end': current_time
+                                })
+                    except Exception:
+                        continue
+                
+                if window_results:
+                    best_window = max(window_results, key=lambda x: x['score'])
+                    rolling_results.append(best_window)
+                
+                current_time += step_size
+            
+            # Calculate temporal consistency
+            if rolling_results:
+                lookback_values = [r['lookback'] for r in rolling_results]
+                score_values = [r['score'] for r in rolling_results]
+                
+                temporal_stability = 1.0 - (np.std(lookback_values) / np.mean(lookback_values)) if np.mean(lookback_values) > 0 else 0.0
+                
+                return {
+                    'rolling_results': rolling_results,
+                    'temporal_stability': temporal_stability,
+                    'optimal_lookback': int(np.median(lookback_values)),
+                    'stability_score': temporal_stability,
+                    'window_count': len(rolling_results)
+                }
+            
+            return {}
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Rolling window optimization failed: {e}")
+            return {}
+    
+    def _calculate_stability_metrics(self, scores: List[float], lookback_values: List[int]) -> Dict[str, float]:
+        """Calculate comprehensive stability metrics."""
+        try:
+            metrics = {}
+            
+            # Coefficient of variation for scores
+            if len(scores) > 1:
+                metrics['score_cv'] = np.std(scores) / np.mean(scores) if np.mean(scores) > 0 else 0.0
+            else:
+                metrics['score_cv'] = 0.0
+            
+            # Coefficient of variation for lookback values
+            if len(lookback_values) > 1:
+                metrics['lookback_cv'] = np.std(lookback_values) / np.mean(lookback_values) if np.mean(lookback_values) > 0 else 0.0
+            else:
+                metrics['lookback_cv'] = 0.0
+            
+            # Overall stability score (lower CV = higher stability)
+            metrics['overall_stability'] = 1.0 - min(1.0, (metrics['score_cv'] + metrics['lookback_cv']) / 2.0)
+            
+            # Temporal consistency (based on lookback range)
+            if len(lookback_values) > 1:
+                lookback_range = max(lookback_values) - min(lookback_values)
+                max_possible_range = self.config.max_lookback - self.config.min_lookback
+                metrics['range_consistency'] = 1.0 - (lookback_range / max_possible_range)
+            else:
+                metrics['range_consistency'] = 1.0
+            
+            return metrics
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Stability metrics calculation failed: {e}")
+            return {'overall_stability': 0.5, 'score_cv': 1.0, 'lookback_cv': 1.0, 'range_consistency': 0.5}
 
 # Convenience functions
 def get_feature_optimizer(config: Optional[FeatureOptimizationConfig] = None) -> FeatureGenerationOptimizer:

@@ -59,6 +59,9 @@ class ModelManager:
         """
         model_paths = []
         
+        # Ensure model_type is a string to avoid Path + str concatenation errors
+        model_type = str(model_type)
+        
         # Create model-specific directory
         if regime is not None:
             model_dir = self.save_path / model_type / f"regime_{regime}"
@@ -129,6 +132,9 @@ class ModelManager:
         """
         models = {}
         
+        # Ensure model_type is a string to avoid Path + str concatenation errors
+        model_type = str(model_type)
+        
         # Determine model directory
         if regime is not None:
             model_dir = self.save_path / model_type / f"regime_{regime}"
@@ -189,6 +195,9 @@ class ModelManager:
         Returns:
             Path to saved metadata file
         """
+        # Ensure model_type is a string to avoid Path + str concatenation errors
+        model_type = str(model_type)
+        
         # Create model-specific directory
         if regime is not None:
             model_dir = self.save_path / model_type / f"regime_{regime}"
@@ -238,6 +247,9 @@ class ModelManager:
         Returns:
             Loaded metadata or None if not found
         """
+        # Ensure model_type is a string to avoid Path + str concatenation errors
+        model_type = str(model_type)
+        
         # Determine model directory
         if regime is not None:
             model_dir = self.save_path / model_type / f"regime_{regime}"

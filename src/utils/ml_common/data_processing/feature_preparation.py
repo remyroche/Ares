@@ -7,6 +7,7 @@ Uses existing data utilities for consistency and efficiency.
 
 import numpy as np
 import pandas as pd
+import time
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 # Use existing utilities
@@ -261,3 +262,250 @@ class FeaturePreparator:
                 logger.warning(f"⚠️ No Analyst ensemble found for regime {regime}")
         
         return analyst_outputs
+    
+    @staticmethod
+    def prepare_features(
+        data: Union[np.ndarray, pd.DataFrame],
+        feature_config: Optional[Dict[str, Any]] = None,
+        target_column: Optional[str] = None,
+        regime_labels: Optional[np.ndarray] = None,
+        hmm_states: Optional[np.ndarray] = None,
+        analyst_outputs: Optional[np.ndarray] = None,
+        feature_names: Optional[List[str]] = None
+    ) -> Tuple[np.ndarray, List[str], Dict[str, Any]]:
+        """
+        Comprehensive feature preparation pipeline.
+        
+        Args:
+            data: Input data (DataFrame or numpy array)
+            feature_config: Feature preparation configuration
+            target_column: Name of target column (if applicable)
+            regime_labels: Array of regime labels
+            hmm_states: Optional HMM cluster/regime states
+            analyst_outputs: Optional analyst model outputs
+            feature_names: Names of input features
+            
+        Returns:
+            Tuple of (prepared_features, feature_names, preparation_metadata)
+        """
+        logger.info("🔄 Starting comprehensive feature preparation...")
+        
+        start_time = time.time()
+        preparation_metadata = {
+            'start_time': start_time,
+            'operations_performed': [],
+            'feature_counts': {},
+            'warnings': [],
+            'errors': []
+        }
+        
+        try:
+            # Convert input to numpy array if needed
+            if isinstance(data, pd.DataFrame):
+                if target_column and target_column in data.columns:
+                    # Separate target column
+                    target_data = data[target_column].values
+                    feature_data = data.drop(columns=[target_column]).values
+                    if feature_names is None:
+                        feature_names = data.drop(columns=[target_column]).columns.tolist()
+                    preparation_metadata['target_separated'] = True
+                else:
+                    feature_data = data.values
+                    if feature_names is None:
+                        feature_names = data.columns.tolist()
+                    preparation_metadata['target_separated'] = False
+            else:
+                feature_data = data.copy()
+                if feature_names is None:
+                    feature_names = [f"feature_{i}" for i in range(feature_data.shape[1])]
+                preparation_metadata['target_separated'] = False
+            
+            preparation_metadata['feature_counts']['original'] = feature_data.shape[1]
+            preparation_metadata['operations_performed'].append('data_conversion')
+            
+            # Apply feature configuration if provided
+            if feature_config:
+                feature_data, feature_names = FeaturePreparator._apply_feature_config(
+                    feature_data, feature_names, feature_config, preparation_metadata
+                )
+            
+            # Add regime-based features if regime labels are provided
+            if regime_labels is not None:
+                logger.info("🔄 Adding regime-based features...")
+                regime_features, regime_names = FeaturePreparator.create_regime_features(
+                    regime_labels, feature_data
+                )
+                feature_data = np.hstack([feature_data, regime_features])
+                feature_names.extend(regime_names)
+                preparation_metadata['feature_counts']['after_regime'] = feature_data.shape[1]
+                preparation_metadata['operations_performed'].append('regime_features')
+            
+            # Add HMM features if available
+            if hmm_states is not None:
+                logger.info("🔄 Adding HMM features...")
+                enhanced_features, hmm_names = FeaturePreparator.add_hmm_features(
+                    feature_data, hmm_states
+                )
+                feature_data = enhanced_features
+                feature_names.extend(hmm_names)
+                preparation_metadata['feature_counts']['after_hmm'] = feature_data.shape[1]
+                preparation_metadata['operations_performed'].append('hmm_features')
+            
+            # Add analyst outputs if available
+            if analyst_outputs is not None:
+                logger.info("🔄 Adding analyst output features...")
+                feature_data = np.hstack([feature_data, analyst_outputs])
+                analyst_names = [f"analyst_output_{i}" for i in range(analyst_outputs.shape[1])]
+                feature_names.extend(analyst_names)
+                preparation_metadata['feature_counts']['after_analyst'] = feature_data.shape[1]
+                preparation_metadata['operations_performed'].append('analyst_features')
+            
+            # Final validation and cleanup
+            feature_data, feature_names = FeaturePreparator._validate_and_cleanup_features(
+                feature_data, feature_names, preparation_metadata
+            )
+            
+            # Calculate final statistics
+            preparation_metadata['feature_counts']['final'] = feature_data.shape[1]
+            preparation_metadata['sample_count'] = feature_data.shape[0]
+            preparation_metadata['end_time'] = time.time()
+            preparation_metadata['total_duration'] = preparation_metadata['end_time'] - start_time
+            preparation_metadata['success'] = True
+            
+            logger.info(f"✅ Feature preparation completed in {preparation_metadata['total_duration']:.3f}s")
+            logger.info(f"📊 Final feature count: {preparation_metadata['feature_counts']['final']}")
+            
+            return feature_data, feature_names, preparation_metadata
+            
+        except Exception as e:
+            logger.error(f"❌ Feature preparation failed: {e}")
+            preparation_metadata['errors'].append(str(e))
+            preparation_metadata['success'] = False
+            preparation_metadata['end_time'] = time.time()
+            
+            # Return original data on failure
+            if isinstance(data, pd.DataFrame):
+                fallback_data = data.values
+                fallback_names = data.columns.tolist()
+            else:
+                fallback_data = data.copy()
+                fallback_names = feature_names or [f"feature_{i}" for i in range(data.shape[1])]
+            
+            return fallback_data, fallback_names, preparation_metadata
+    
+    @staticmethod
+    def _apply_feature_config(
+        data: np.ndarray, 
+        feature_names: List[str], 
+        config: Dict[str, Any],
+        metadata: Dict[str, Any]
+    ) -> Tuple[np.ndarray, List[str]]:
+        """Apply feature configuration transformations."""
+        try:
+            # Feature scaling
+            if config.get('scale_features', False):
+                from sklearn.preprocessing import StandardScaler
+                scaler = StandardScaler()
+                data = scaler.fit_transform(data)
+                metadata['operations_performed'].append('feature_scaling')
+            
+            # Feature selection by importance
+            if 'feature_importance_threshold' in config:
+                threshold = config['feature_importance_threshold']
+                # Simple variance-based selection as fallback
+                feature_variances = np.var(data, axis=0)
+                selected_indices = feature_variances > threshold
+                
+                if np.sum(selected_indices) > 0:
+                    data = data[:, selected_indices]
+                    feature_names = [name for i, name in enumerate(feature_names) if selected_indices[i]]
+                    metadata['operations_performed'].append('feature_selection')
+                    metadata['features_removed'] = np.sum(~selected_indices)
+            
+            # Dimensionality reduction
+            if config.get('apply_pca', False) and 'n_components' in config:
+                from sklearn.decomposition import PCA
+                n_components = min(config['n_components'], data.shape[1])
+                pca = PCA(n_components=n_components)
+                data = pca.fit_transform(data)
+                feature_names = [f"pca_component_{i}" for i in range(n_components)]
+                metadata['operations_performed'].append('pca')
+                metadata['explained_variance_ratio'] = pca.explained_variance_ratio_.tolist()
+            
+            return data, feature_names
+            
+        except Exception as e:
+            logger.warning(f"⚠️ Feature config application failed: {e}")
+            metadata['warnings'].append(f"Feature config failed: {e}")
+            return data, feature_names
+    
+    @staticmethod
+    def _validate_and_cleanup_features(
+        data: np.ndarray, 
+        feature_names: List[str],
+        metadata: Dict[str, Any]
+    ) -> Tuple[np.ndarray, List[str]]:
+        """Validate and cleanup prepared features."""
+        try:
+            original_shape = data.shape
+            
+            # Ensure data is numeric and convert if needed
+            try:
+                # Convert to float64 to ensure compatibility with isfinite
+                if data.dtype == object or not np.issubdtype(data.dtype, np.number):
+                    logger.info("🔄 Converting non-numeric data to float64...")
+                    # Try to convert object arrays or non-numeric types
+                    data = pd.DataFrame(data).apply(pd.to_numeric, errors='coerce').values.astype(np.float64)
+                elif data.dtype != np.float64:
+                    # Convert numeric types to float64 for consistency
+                    data = data.astype(np.float64)
+            except Exception as conv_error:
+                logger.warning(f"⚠️ Data conversion failed: {conv_error}. Attempting fallback...")
+                # Fallback: try to handle mixed types
+                try:
+                    data = np.array(data, dtype=np.float64)
+                except (ValueError, TypeError):
+                    # Last resort: convert via pandas
+                    data = pd.DataFrame(data).select_dtypes(include=[np.number]).values.astype(np.float64)
+            
+            # Remove features with all NaN or infinite values
+            valid_features = np.isfinite(data).all(axis=0)
+            if not valid_features.all():
+                invalid_count = np.sum(~valid_features)
+                logger.warning(f"⚠️ 🚨 Removing {invalid_count} features with invalid values")
+                data = data[:, valid_features]
+                feature_names = [name for i, name in enumerate(feature_names) if valid_features[i]]
+                metadata['warnings'].append(f"Removed {invalid_count} invalid features")
+            
+            # Remove constant features (zero variance)
+            if data.shape[1] > 1:
+                try:
+                    feature_variances = np.var(data, axis=0)
+                    # Ensure variances are finite
+                    finite_variances = np.isfinite(feature_variances)
+                    non_constant = (feature_variances > 1e-10) & finite_variances
+                    if not non_constant.all():
+                        constant_count = np.sum(~non_constant)
+                        logger.warning(f"⚠️ 🚨 Removing {constant_count} constant/invalid variance features")
+                        data = data[:, non_constant]
+                        feature_names = [name for i, name in enumerate(feature_names) if non_constant[i]]
+                        metadata['warnings'].append(f"Removed {constant_count} constant/invalid features")
+                except Exception as var_error:
+                    logger.warning(f"⚠️ Variance calculation failed: {var_error}. Skipping constant feature removal.")
+                    metadata['warnings'].append(f"Variance calculation failed: {var_error}")
+            
+            # Ensure feature names match data dimensions
+            if len(feature_names) != data.shape[1]:
+                logger.warning("⚠️ Feature names count mismatch - generating new names")
+                feature_names = [f"feature_{i}" for i in range(data.shape[1])]
+                metadata['warnings'].append("Feature names regenerated due to mismatch")
+            
+            metadata['cleanup_performed'] = True
+            metadata['shape_change'] = f"{original_shape} -> {data.shape}"
+            
+            return data, feature_names
+            
+        except Exception as e:
+            logger.warning(f"⚠️ Feature validation failed: {e}")
+            metadata['warnings'].append(f"Validation failed: {e}")
+            return data, feature_names

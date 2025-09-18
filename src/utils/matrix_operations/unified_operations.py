@@ -764,6 +764,301 @@ class UnifiedMatrixOperations:
 
         return info
 
+    def optimize_dataframe(self, df: Union['pd.DataFrame', 'np.ndarray'], 
+                          operations: Optional[List[str]] = None) -> Union['pd.DataFrame', 'np.ndarray']:
+        """
+        Optimize dataframe operations using available hardware acceleration.
+
+        Args:
+            df: Input dataframe or numpy array
+            operations: List of operations to perform (optional)
+
+        Returns:
+            Optimized dataframe or array
+        """
+        self.logger.info("🔧 Starting dataframe optimization...")
+        
+        start_time = time.time()
+        
+        try:
+            # Convert to appropriate format for processing
+            if isinstance(df, pd.DataFrame):
+                data = df.values
+                is_dataframe = True
+                columns = df.columns
+                index = df.index
+            else:
+                data = df.copy()
+                is_dataframe = False
+                columns = None
+                index = None
+            
+            # Default operations if none specified
+            if operations is None:
+                operations = ['memory_optimization', 'dtype_optimization', 'nan_handling']
+            
+            # Apply memory optimization
+            if 'memory_optimization' in operations:
+                self.logger.debug("🧠 Applying memory optimization...")
+                memory_stats = self.optimize_memory_usage()
+                if memory_stats.get('status') == 'success':
+                    self.logger.debug("✅ Memory optimization completed")
+            
+            # Apply dtype optimization
+            if 'dtype_optimization' in operations and is_dataframe:
+                self.logger.debug("🔢 Applying dtype optimization...")
+                # Optimize numeric dtypes
+                numeric_columns = df.select_dtypes(include=[np.number]).columns
+                for col in numeric_columns:
+                    if df[col].dtype == 'float64':
+                        # Check if we can downcast to float32
+                        if df[col].abs().max() < np.finfo(np.float32).max:
+                            df[col] = df[col].astype(np.float32)
+                    elif df[col].dtype == 'int64':
+                        # Check if we can downcast to int32
+                        if df[col].min() >= np.iinfo(np.int32).min and df[col].max() <= np.iinfo(np.int32).max:
+                            df[col] = df[col].astype(np.int32)
+                
+                # Update data array
+                data = df.values
+            
+            # Apply NaN handling
+            if 'nan_handling' in operations:
+                self.logger.debug("🔍 Handling NaN values...")
+                if np.isnan(data).any():
+                    # Use safe operations for NaN handling
+                    nan_count = np.isnan(data).sum()
+                    self.logger.debug(f"Found {nan_count} NaN values")
+                    
+                    # Replace NaN with median for numeric data
+                    if data.dtype.kind in 'biufc':  # numeric types
+                        for col_idx in range(data.shape[1]):
+                            col_data = data[:, col_idx]
+                            if np.isnan(col_data).any():
+                                median_val = np.nanmedian(col_data)
+                                if not np.isnan(median_val):
+                                    data[:, col_idx] = np.where(np.isnan(col_data), median_val, col_data)
+            
+            # Apply vectorized operations if available
+            if 'vectorized_operations' in operations and self.vectorized_core:
+                self.logger.debug("⚡ Applying vectorized optimizations...")
+                try:
+                    # Use vectorized processing for large datasets
+                    if hasattr(self.vectorized_core, 'optimize_array'):
+                        data = self.vectorized_core.optimize_array(data)
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Vectorized optimization failed: {e}")
+            
+            # Apply parallel processing for large datasets
+            if 'parallel_processing' in operations and data.size > 100000:
+                self.logger.debug("🔄 Applying parallel processing optimizations...")
+                if self.enable_parallel and self.cpu_optimizer:
+                    try:
+                        # Use parallel processing for large operations
+                        if hasattr(self.cpu_optimizer, 'optimize_large_array'):
+                            data = self.cpu_optimizer.optimize_large_array(data)
+                    except Exception as e:
+                        self.logger.warning(f"⚠️ Parallel optimization failed: {e}")
+            
+            # Convert back to original format
+            if is_dataframe:
+                result = pd.DataFrame(data, columns=columns, index=index)
+            else:
+                result = data
+            
+            # Update performance stats
+            execution_time = time.time() - start_time
+            self.performance_stats['total_operations'] += 1
+            self.performance_stats['average_execution_time'] = (
+                (self.performance_stats['average_execution_time'] *
+                 (self.performance_stats['total_operations'] - 1)) + execution_time
+            ) / self.performance_stats['total_operations']
+            
+            self.logger.info(f"✅ Dataframe optimization completed in {execution_time:.3f}s")
+            return result
+            
+        except Exception as e:
+            self.logger.error(f"❌ Dataframe optimization failed: {e}")
+            # Return original data on failure
+            return df
+    
+    def calculate_pairwise_similarities(self, feature_vectors: 'np.ndarray', method: str = 'cosine_with_cv_filtering') -> 'np.ndarray':
+        """
+        Calculate pairwise similarities between feature vectors with M1 optimization.
+        
+        Args:
+            feature_vectors: Matrix of feature vectors (n_samples, n_features)
+            method: Similarity calculation method
+            
+        Returns:
+            Similarity matrix (n_samples, n_samples)
+        """
+        if not NUMPY_AVAILABLE:
+            raise ImportError("NumPy is required for similarity calculations")
+            
+        try:
+            self.logger.info(f"🔄 Calculating pairwise similarities using method: {method}")
+            start_time = time.time()
+            
+            n_samples = feature_vectors.shape[0]
+            
+            if method == 'cosine_with_cv_filtering' or method == 'cosine':
+                # Normalize feature vectors for cosine similarity
+                if self.enable_gpu and self.gpu_manager and n_samples > 100:
+                    try:
+                        # GPU-accelerated normalization
+                        norms = self.gpu_manager.vector_norm(feature_vectors, axis=1, keepdims=True)
+                        norms = np.where(norms == 0, 1, norms)  # Avoid division by zero
+                        normalized_vectors = self.gpu_manager.divide(feature_vectors, norms)
+                        
+                        # GPU-accelerated similarity calculation
+                        similarity_matrix = self.gpu_manager.matrix_multiply(normalized_vectors, normalized_vectors.T)
+                        
+                        self.logger.info("🚀 Used GPU acceleration for similarity calculation")
+                    except Exception as gpu_error:
+                        self.logger.warning(f"⚠️ GPU similarity calculation failed: {gpu_error}, using CPU")
+                        # Fallback to CPU
+                        norms = np.linalg.norm(feature_vectors, axis=1, keepdims=True)
+                        norms[norms == 0] = 1
+                        normalized_vectors = feature_vectors / norms
+                        similarity_matrix = np.dot(normalized_vectors, normalized_vectors.T)
+                else:
+                    # CPU calculation
+                    norms = np.linalg.norm(feature_vectors, axis=1, keepdims=True)
+                    norms[norms == 0] = 1
+                    normalized_vectors = feature_vectors / norms
+                    similarity_matrix = np.dot(normalized_vectors, normalized_vectors.T)
+                
+                # Ensure diagonal is 1.0 and values are in [0, 1]
+                np.fill_diagonal(similarity_matrix, 1.0)
+                similarity_matrix = np.clip(similarity_matrix, 0.0, 1.0)
+                
+            elif method == 'euclidean':
+                # Calculate Euclidean distance and convert to similarity
+                try:
+                    from scipy.spatial.distance import pdist, squareform
+                    distances = squareform(pdist(feature_vectors, metric='euclidean'))
+                    # Convert distance to similarity (closer = more similar)
+                    max_dist = np.max(distances)
+                    if max_dist > 0:
+                        similarity_matrix = 1.0 - (distances / max_dist)
+                    else:
+                        similarity_matrix = np.ones_like(distances)
+                except ImportError:
+                    self.logger.warning("SciPy not available, using manual Euclidean calculation")
+                    # Manual calculation
+                    similarity_matrix = np.zeros((n_samples, n_samples))
+                    for i in range(n_samples):
+                        for j in range(n_samples):
+                            if i == j:
+                                similarity_matrix[i, j] = 1.0
+                            else:
+                                dist = np.linalg.norm(feature_vectors[i] - feature_vectors[j])
+                                similarity_matrix[i, j] = 1.0 / (1.0 + dist)  # Convert to similarity
+            
+            else:
+                self.logger.warning(f"Unknown similarity method: {method}, using cosine")
+                return self.calculate_pairwise_similarities(feature_vectors, 'cosine')
+            
+            execution_time = time.time() - start_time
+            self.logger.info(f"✅ Similarity matrix calculated in {execution_time:.3f}s: {similarity_matrix.shape}")
+            
+            # Update performance stats
+            self.performance_stats['total_operations'] += 1
+            self.performance_stats['average_execution_time'] = (
+                (self.performance_stats['average_execution_time'] *
+                 (self.performance_stats['total_operations'] - 1)) + execution_time
+            ) / self.performance_stats['total_operations']
+            
+            return similarity_matrix
+            
+        except Exception as e:
+            self.logger.error(f"❌ Similarity calculation failed: {e}")
+            # Return identity matrix as fallback
+            return np.eye(feature_vectors.shape[0])
+    
+    def apply_cv_filtering(self, similarity_matrix: 'np.ndarray', cv_values: 'np.ndarray', max_cv_difference: float = 0.5) -> 'np.ndarray':
+        """
+        Apply CV (coefficient of variation) filtering to similarity matrix with M1 optimization.
+        
+        Args:
+            similarity_matrix: Input similarity matrix
+            cv_values: CV values for each sample
+            max_cv_difference: Maximum allowed CV difference for similarity
+            
+        Returns:
+            Filtered similarity matrix
+        """
+        if not NUMPY_AVAILABLE:
+            raise ImportError("NumPy is required for CV filtering")
+            
+        try:
+            self.logger.info(f"🔄 Applying CV filtering with max_cv_difference: {max_cv_difference}")
+            start_time = time.time()
+            
+            filtered_matrix = similarity_matrix.copy()
+            n_samples = len(cv_values)
+            
+            if self.enable_gpu and self.gpu_manager and n_samples > 100:
+                try:
+                    # GPU-accelerated CV filtering
+                    cv_diff_matrix = self.gpu_manager.abs(
+                        self.gpu_manager.subtract(cv_values.reshape(-1, 1), cv_values.reshape(1, -1))
+                    )
+                    
+                    # Create reduction factor matrix
+                    reduction_factors = np.where(
+                        cv_diff_matrix > max_cv_difference,
+                        np.minimum(cv_diff_matrix / max_cv_difference, 5.0),
+                        1.0
+                    )
+                    
+                    # Apply filtering (keep diagonal unchanged)
+                    mask = ~np.eye(n_samples, dtype=bool)
+                    filtered_matrix[mask] = (similarity_matrix[mask] / reduction_factors[mask])
+                    filtered_matrix[mask] = np.maximum(filtered_matrix[mask], 0.01)  # Minimum similarity
+                    
+                    self.logger.info("🚀 Used GPU acceleration for CV filtering")
+                    
+                except Exception as gpu_error:
+                    self.logger.warning(f"⚠️ GPU CV filtering failed: {gpu_error}, using CPU")
+                    # Fallback to CPU
+                    for i in range(n_samples):
+                        for j in range(n_samples):
+                            if i != j:  # Don't modify diagonal
+                                cv_diff = abs(cv_values[i] - cv_values[j])
+                                if cv_diff > max_cv_difference:
+                                    reduction_factor = min(cv_diff / max_cv_difference, 5.0)
+                                    filtered_matrix[i, j] *= (1.0 / reduction_factor)
+                                    filtered_matrix[i, j] = max(filtered_matrix[i, j], 0.01)
+            else:
+                # CPU calculation
+                for i in range(n_samples):
+                    for j in range(n_samples):
+                        if i != j:  # Don't modify diagonal
+                            cv_diff = abs(cv_values[i] - cv_values[j])
+                            if cv_diff > max_cv_difference:
+                                reduction_factor = min(cv_diff / max_cv_difference, 5.0)
+                                filtered_matrix[i, j] *= (1.0 / reduction_factor)
+                                filtered_matrix[i, j] = max(filtered_matrix[i, j], 0.01)
+            
+            execution_time = time.time() - start_time
+            self.logger.info(f"✅ CV filtering completed in {execution_time:.3f}s")
+            
+            # Update performance stats
+            self.performance_stats['total_operations'] += 1
+            self.performance_stats['average_execution_time'] = (
+                (self.performance_stats['average_execution_time'] *
+                 (self.performance_stats['total_operations'] - 1)) + execution_time
+            ) / self.performance_stats['total_operations']
+            
+            return filtered_matrix
+            
+        except Exception as e:
+            self.logger.error(f"❌ CV filtering failed: {e}")
+            # Return original matrix on failure
+            return similarity_matrix
+
 
 # Alias for backward compatibility
 M1EnhancedMatrixOperations = UnifiedMatrixOperations

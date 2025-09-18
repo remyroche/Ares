@@ -44,6 +44,7 @@ from src.utils.tprint import tprint
 from src.utils.logger import system_logger
 from .utils import StandardizedLogger, safe_execute, performance_monitor, ConfigurationValidator
 from .constants import TrainingLimits, LoggingConstants
+from .shared_feature_utils import create_enhanced_features_with_names
 from src.utils.ml_common.config.base_training_config import HMMTrainingConfig
 from src.utils.ml_common.training.base_training_step import BaseTrainingStep
 
@@ -127,7 +128,8 @@ try:
 except ImportError as e:
     SHARED_UTILITIES_AVAILABLE = False
     tprint(f"❌ Shared utilities import failed: {e}")
-    logger.error(f"Critical dependency missing: {e}")
+    # Note: logger will be defined later, using tprint for now
+    tprint(f"Critical dependency missing: {e}")
     
     # Create robust fallback classes with proper error handling
     from dataclasses import dataclass
@@ -193,20 +195,20 @@ except ImportError as e:
                         raise ImportError(f"Scikit-learn not available for model type: {model_type}")
                     from sklearn.ensemble import RandomForestClassifier
                     return RandomForestClassifier(n_estimators=100, random_state=42, **kwargs)
-                elif model_type in ['logistic_regression', 'lr']:
-                    if not ML_LIBRARIES_STATUS.get('sklearn', False):
-                        raise ImportError(f"Scikit-learn not available for model type: {model_type}")
-                    from sklearn.linear_model import LogisticRegression
-                    return LogisticRegression(random_state=42, max_iter=1000, **kwargs)
-                elif model_type in ['elastic_net_lr', 'elastic_net']:
-                    if not ML_LIBRARIES_STATUS.get('sklearn', False):
-                        raise ImportError(f"Scikit-learn not available for model type: {model_type}")
-                    from sklearn.linear_model import LogisticRegression
-                    # Ensure compatible parameters for elastic net
-                    safe_kwargs = {k: v for k, v in kwargs.items() if k not in ['penalty', 'solver', 'l1_ratio']}
-                    return LogisticRegression(penalty='elasticnet', l1_ratio=0.5, solver='saga', random_state=42, max_iter=1000, **safe_kwargs)
+                # elif model_type in ['logistic_regression', 'lr']:  # REMOVED LOGISTIC REGRESSION
+                #     if not ML_LIBRARIES_STATUS.get('sklearn', False):
+                #         raise ImportError(f"Scikit-learn not available for model type: {model_type}")
+                #     from sklearn.linear_model import LogisticRegression
+                #     return LogisticRegression(random_state=42, max_iter=1000, **kwargs)
+                # elif model_type in ['elastic_net_lr', 'elastic_net']:  # COMMENTED OUT ELASTIC NET
+                #     if not ML_LIBRARIES_STATUS.get('sklearn', False):
+                #         raise ImportError(f"Scikit-learn not available for model type: {model_type}")
+                #     from sklearn.linear_model import LogisticRegression
+                #     # Ensure compatible parameters for elastic net
+                #     safe_kwargs = {k: v for k, v in kwargs.items() if k not in ['penalty', 'solver', 'l1_ratio']}
+                #     return LogisticRegression(penalty='elasticnet', l1_ratio=0.5, solver='saga', random_state=42, max_iter=1000, **safe_kwargs)
                 else:
-                    available_models = ['lightgbm', 'xgboost', 'random_forest', 'logistic_regression', 'elastic_net_lr']
+                    available_models = ['lightgbm', 'random_forest']  # Updated to match current configuration
                     raise ValueError(f"Unknown model type: {model_type}. Available: {available_models}")
             except Exception as e:
                 logger.error(f"Failed to create model {model_type}: {e}")
@@ -320,18 +322,19 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
             config: HMM training configuration object or dictionary of parameters
         """
         if config is None:
-            # Use only available model types
+            # Use only Random Forest and LightGBM
             available_models = []
             if ML_LIBRARIES_STATUS.get('sklearn', False):
-                available_models.extend(['logistic_regression', 'random_forest', 'elastic_net_lr'])
+                available_models.extend(['random_forest'])  # Only Random Forest from sklearn
+                # available_models.extend(['logistic_regression', 'elastic_net_lr'])  # Commented out
             if ML_LIBRARIES_STATUS.get('lightgbm', False):
                 available_models.append('lightgbm')
-            if ML_LIBRARIES_STATUS.get('xgboost', False):
-                available_models.append('xgboost')
+            # if ML_LIBRARIES_STATUS.get('xgboost', False):  # Commented out XGBoost
+            #     available_models.append('xgboost')
             
             # Fallback to sklearn models if nothing else available
             if not available_models:
-                available_models = ['logistic_regression', 'random_forest']
+                available_models = ['random_forest']  # Only Random Forest as fallback
                 
             config = HMMTrainingConfig(
                 model_name="hmm_models_enhanced",
@@ -355,7 +358,7 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
         super().__init__(config)
         self.logger = logger.getChild('HMMModelsTrainingEnhanced')
 
-        self.circuit_breaker = CircuitBreaker(failure_threshold=2, timeout=60)
+        self.circuit_breaker = CircuitBreaker(failure_threshold=5, timeout=30)
         self.progress_reporter = None
         self.memory_tracker = MemoryTracker()
         
@@ -431,7 +434,7 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
                 raise ValueError(f"Invalid numeric parameter: {e}")
             
             # Validate model types are supported
-            available_model_types = ['lightgbm', 'xgboost', 'random_forest', 'logistic_regression', 'elastic_net_lr']
+            available_model_types = ['lightgbm', 'random_forest']  # Updated to match current configuration
             unsupported_models = [m for m in config.model_types if m not in available_model_types]
             if unsupported_models:
                 supported_models = [m for m in config.model_types if m in available_model_types]
@@ -659,7 +662,7 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
             tprint(f"❌ Validation error: {e}")
             return False
     
-    def _prepare_features(self, X: Union[np.ndarray, pd.DataFrame], feature_names: Optional[List[str]] = None) -> Tuple[pd.DataFrame, List[str]]:
+    def _prepare_features(self, X: Union[np.ndarray, pd.DataFrame], feature_names: Optional[List[str]] = None, cluster_assignments: Optional[np.ndarray] = None) -> Tuple[pd.DataFrame, List[str]]:
         """
         Prepare and enhance features with optimized performance and comprehensive error handling.
         Uses in-place operations where possible to reduce memory usage.
@@ -705,21 +708,38 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
                 if null_percentage > 0.1:
                     tprint(f"⚠️ High null percentage: {null_percentage:.2%}")
             
-            # Enhance features if generator is available
-            if self.feature_generator is not None:
-                try:
-                    X_enhanced = self.feature_generator.generate_features_for_hmm(X_numeric)
-                    tprint(f"✅ Enhanced features: {X_enhanced.shape[1]} total features")
-                    return X_enhanced, list(X_enhanced.columns)
-                except Exception as e:
-                    tprint(f"⚠️ Feature enhancement failed: {e}, using original features")
-                    return X_numeric, list(X_numeric.columns)
-            else:
+            # Use shared enhanced feature creation utilities
+            # This ensures consistency between hmm_models_training and ensemble_training
+            try:
+                # Convert DataFrame to numpy array for feature enhancement
+                X_array = X_numeric.values
+                
+                # Use real cluster assignments for feature enhancement
+                if cluster_assignments is not None:
+                    regime_labels = cluster_assignments
+                else:
+                    # Fallback to dummy labels if cluster_assignments not available
+                    regime_labels = np.zeros(X_array.shape[0])
+                
+                # Use shared enhanced feature creation method
+                X_enhanced_array, enhanced_feature_names = create_enhanced_features_with_names(
+                    X_array, regime_labels, list(X_numeric.columns)
+                )
+                
+                # Convert back to DataFrame with enhanced feature names
+                X_enhanced = pd.DataFrame(X_enhanced_array, columns=enhanced_feature_names, index=X_numeric.index)
+                
+                tprint(f"✅ Enhanced features: {X_enhanced.shape[1]} total features (using shared utilities)")
+                return X_enhanced, enhanced_feature_names
+                
+            except Exception as e:
+                tprint(f"⚠️ Enhanced feature creation failed: {e}, using original features")
                 return X_numeric, list(X_numeric.columns)
                 
         except Exception as e:
             tprint(f"❌ Feature preparation failed: {e}")
             raise
+    
     
     def _select_features(self, X: pd.DataFrame, y: np.ndarray, is_classification: bool = True) -> Tuple[pd.DataFrame, List[str]]:
         """
@@ -884,66 +904,93 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
                         logger.warning(f"CPU optimization failed for {model_type}: {e}")
                 
                 # Memory management before training using common operations
-                initial_memory = get_memory_usage()
-                if initial_memory > 80:
-                    tprint(f"⚠️ High memory usage ({initial_memory}%) before training {model_type}")
+                initial_memory_bytes = get_memory_usage()
+                initial_memory_mb = initial_memory_bytes / (1024 * 1024)  # Convert to MB
+                initial_memory_pct = (initial_memory_bytes / (8 * 1024 * 1024 * 1024)) * 100  # Assume 8GB total for M1
+                if initial_memory_pct > 90:
+                    tprint(f"⚠️ High memory usage ({initial_memory_pct:.1f}%) before training {model_type}")
                     optimize_memory()  # Use common memory optimization
-            
-            # Create model with circuit breaker protection and timeout
-            def create_and_train_model():
-                # Add timeout for model creation and training with proper cleanup
-                import signal
-                import threading
                 
-                # Use threading-based timeout for better cross-platform compatibility
-                timeout_seconds = 60 if hasattr(self.config, 'training_mode_config') and \
-                                     self.config.training_mode_config and \
-                                     self.config.training_mode_config.get('training_mode') == 'light' else 300
+                # Create model with circuit breaker protection and timeout
+                def create_and_train_model():
+                    # Add timeout for model creation and training with proper cleanup
+                    import signal
+                    import threading
+                    
+                    # Use threading-based timeout for better cross-platform compatibility
+                    timeout_seconds = 60 if hasattr(self.config, 'training_mode_config') and \
+                                         self.config.training_mode_config and \
+                                         self.config.training_mode_config.get('training_mode') == 'light' else 300
+                    
+                    result = {'model': None, 'exception': None}
+                    
+                    def training_worker():
+                        try:
+                            model = self._create_model(model_type)
+                            
+                            # Check memory before training using common operations
+                            current_memory_bytes = get_memory_usage()
+                            current_memory_pct = (current_memory_bytes / (8 * 1024 * 1024 * 1024)) * 100  # Assume 8GB total for M1
+                            if current_memory_pct > 95:
+                                tprint(f"⚠️ Memory usage critical ({current_memory_pct:.1f}%) - skipping {model_type}")
+                                raise MemoryError(f"Insufficient memory for {model_type} training")
+                            
+                            # Train model
+                            model.fit(X, y)
+                            
+                            # Get predictions
+                            predictions = model.predict(X)
+                            
+                            # Get feature importance if available
+                            feature_importance = None
+                            try:
+                                if hasattr(model, 'feature_importances_'):
+                                    feature_importance = model.feature_importances_
+                                elif hasattr(model, 'coef_'):
+                                    feature_importance = np.abs(model.coef_).flatten() if model.coef_.ndim > 1 else np.abs(model.coef_)
+                            except Exception as e:
+                                tprint(f"Could not get feature importance: {e}")
+                            
+                            # Get hyperparameters
+                            hyperparameters = None
+                            try:
+                                if hasattr(model, 'get_params'):
+                                    hyperparameters = model.get_params()
+                            except Exception as e:
+                                tprint(f"Could not get hyperparameters: {e}")
+                            
+                            result['model'] = (model, predictions, feature_importance, hyperparameters)
+                            
+                        except Exception as e:
+                            result['exception'] = e
+                    
+                    # Start training in a separate thread
+                    training_thread = threading.Thread(target=training_worker)
+                    training_thread.daemon = True
+                    training_thread.start()
+                    training_thread.join(timeout=timeout_seconds)
+                    
+                    # Check if training completed or timed out
+                    if training_thread.is_alive():
+                        # Training timed out
+                        tprint(f"⏰ Training timeout for {model_type} after {timeout_seconds}s")
+                        raise TimeoutError(f"Training timeout for {model_type} after {timeout_seconds}s")
+                    
+                    # Check for exceptions
+                    if result['exception']:
+                        if isinstance(result['exception'], MemoryError):
+                            optimize_memory()  # Use common memory optimization
+                        raise result['exception']
+                    
+                    if result['model'] is None:
+                        raise RuntimeError(f"Training failed for unknown reason: {model_type}")
+                    
+                    return result['model']
                 
-                result = {'model': None, 'exception': None}
+                # Execute with circuit breaker protection
+                model, predictions, feature_importance, hyperparameters = self.circuit_breaker.call(create_and_train_model)
                 
-                def training_worker():
-                    try:
-                        model = self._create_model(model_type)
-                        
-                        # Check memory before training using common operations
-                        current_memory = get_memory_usage()
-                        if current_memory > 85:
-                            tprint(f"⚠️ Memory usage critical ({current_memory}%) - skipping {model_type}")
-                            raise MemoryError(f"Insufficient memory for {model_type} training")
-                        
-                        # Train model
-                        model.fit(X, y)
-                        result['model'] = model
-                        
-                    except Exception as e:
-                        result['exception'] = e
-                
-                # Start training in a separate thread
-                training_thread = threading.Thread(target=training_worker)
-                training_thread.daemon = True
-                training_thread.start()
-                training_thread.join(timeout=timeout_seconds)
-                
-                # Check if training completed or timed out
-                if training_thread.is_alive():
-                    # Training timed out
-                    tprint(f"⏰ Training timeout for {model_type} after {timeout_seconds}s")
-                    raise TimeoutError(f"Training timeout for {model_type} after {timeout_seconds}s")
-                
-                # Check for exceptions
-                if result['exception']:
-                    if isinstance(result['exception'], MemoryError):
-                        optimize_memory()  # Use common memory optimization
-                    raise result['exception']
-                
-                if result['model'] is None:
-                    raise RuntimeError(f"Training failed for unknown reason: {model_type}")
-                
-                return result['model']
-                
-                # Evaluate model using safe math operations
-                predictions = model.predict(X)
+                # Calculate accuracy using safe math operations
                 accuracy = safe_divide(np.sum(predictions == y), len(y), 0.0)
                 
                 # Use evaluation utilities if available
@@ -981,28 +1028,6 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
                         metrics.warnings.append(f"Fallback metrics calculation failed: {e}")
                         metrics.accuracy = validate_finite(accuracy, "accuracy")
                 
-                # Get feature importance using safe operations
-                feature_importance = None
-                try:
-                    if hasattr(model, 'feature_importances_'):
-                        importances = model.feature_importances_
-                        feature_importance = dict(zip(range(len(importances)), [validate_finite(x, f"importance_{i}") for i, x in enumerate(importances)]))
-                    elif hasattr(model, 'coef_'):
-                        coefs = np.abs(model.coef_[0])
-                        feature_importance = dict(zip(range(len(coefs)), [validate_finite(x, f"coef_{i}") for i, x in enumerate(coefs)]))
-                except Exception as e:
-                    tprint(f"Feature importance not available for {model_type}: {e}")
-                
-                # Get hyperparameters
-                hyperparameters = None
-                try:
-                    if hasattr(model, 'get_params'):
-                        hyperparameters = model.get_params()
-                except Exception as e:
-                    tprint(f"Could not get hyperparameters: {e}")
-                
-                return model, predictions, feature_importance, hyperparameters
-            
                 # Execute with circuit breaker protection
                 model, predictions, feature_importance, hyperparameters = self.circuit_breaker.call(create_and_train_model)
                 
@@ -1010,8 +1035,9 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
                 metrics.training_time = validate_finite(training_time, "training_time")
                 
                 # Calculate memory usage using common operations
-                final_memory = get_memory_usage()
-                memory_increase = safe_float(final_memory - initial_memory, 0.0)
+                final_memory_bytes = get_memory_usage()
+                final_memory = final_memory_bytes / (1024 * 1024)  # Convert to MB
+                memory_increase = safe_float(final_memory - initial_memory_mb, 0.0)
                 metrics.memory_usage_mb = validate_finite(memory_increase, "memory_usage")
                 
                 # Get probabilities if available
@@ -1025,8 +1051,9 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
                 tprint(f"✅ {model_type} trained successfully (accuracy: {metrics.accuracy:.4f}, time: {training_time:.2f}s, memory: {metrics.memory_usage_mb:.1f}MB)")
                 
                 # Cleanup memory using common operations
-                if final_memory > initial_memory + 10:
-                    tprint(f"⚠️ Memory usage increased significantly: {initial_memory}% → {final_memory}%")
+                final_memory_pct = (final_memory_bytes / (8 * 1024 * 1024 * 1024)) * 100  # Convert to percentage
+                if final_memory_pct > initial_memory_pct + 10:
+                    tprint(f"⚠️ Memory usage increased significantly: {initial_memory_pct:.1f}% → {final_memory_pct:.1f}%")
                     optimize_memory()  # Use common memory optimization
                 
                 return ModelResult(
@@ -1044,8 +1071,9 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
                 metrics.error_message = str(e)
                 
                 # Calculate memory usage even on failure using common operations
-                final_memory = get_memory_usage()
-                memory_increase = safe_float(final_memory - initial_memory, 0.0)
+                final_memory_bytes = get_memory_usage()
+                final_memory = final_memory_bytes / (1024 * 1024)  # Convert to MB
+                memory_increase = safe_float(final_memory - initial_memory_mb, 0.0)
                 metrics.memory_usage_mb = validate_finite(memory_increase, "memory_usage")
                 
                 tprint(f"❌ Failed to train {model_type}: {e}")
@@ -1302,7 +1330,7 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
                 raise ValueError("Input validation failed")
         
         # Step 2: Feature preparation and selection
-        X_selected, selected_features = self._prepare_and_select_features(X, y, feature_names, **kwargs)
+        X_selected, selected_features = self._prepare_and_select_features(X, y, cluster_assignments, feature_names, **kwargs)
         
         # Step 3: Train models
         model_results = self._train_all_models(X_selected, y)
@@ -1324,13 +1352,14 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
         self,
         X: np.ndarray,
         y: np.ndarray,
+        cluster_assignments: np.ndarray,
         feature_names: Optional[List[str]] = None,
         **kwargs
     ) -> Tuple[pd.DataFrame, List[str]]:
         """Prepare and select features."""
         
         with performance_monitor("Feature_Preparation"):
-            X_enhanced, enhanced_feature_names = self._prepare_features(X, feature_names)
+            X_enhanced, enhanced_feature_names = self._prepare_features(X, feature_names, cluster_assignments)
         
         with performance_monitor("Feature_Selection"):
             X_selected, selected_features = self._select_features(

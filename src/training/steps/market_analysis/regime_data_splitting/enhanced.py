@@ -27,9 +27,9 @@ warnings.filterwarnings('ignore')
 
 # Import existing infrastructure
 try:
-    from ..hmm_training.hmm_models_training_refactored import HMMModelsTrainingRefactored as HMMModelsTraining
-    from ..hmm_training.hmm_ensemble_training import HMMEnsembleTrainingRefactored as HMMEnsembleTraining
-    from src.feature_generation.utils.feature_generators import FeatureGenerator
+    from ..hmm_models_training.hmm_models_training_enhanced import HMMModelsTrainingEnhanced as HMMModelsTraining
+    from ..hmm_models_training.hmm_ensemble_training import HMMEnsembleTrainingComponent as HMMEnsembleTraining
+    from src.feature_generation.core.feature_generator import FeatureGenerator
     from src.training.utils.feature_selection.main_framework import FeatureSelectionFramework
     HMM_TRAINING_AVAILABLE = True
 except ImportError as e:
@@ -586,7 +586,18 @@ class RegimeDataSplittingEnhanced:
                     symbol = parts[1]  # Assuming format: exchange_symbol_timeframe.parquet
                     timeframe = parts[2]
                     klines_manager = get_klines_manager()
-                    market_data = klines_manager.read_data(symbol, timeframe, data_type="raw")
+                    
+                    # Get date filtering from config if available
+                    start_date = None
+                    end_date = None
+                    if hasattr(self.config, 'start_date') and self.config.start_date:
+                        from datetime import datetime
+                        start_date = datetime.strptime(self.config.start_date, '%Y-%m-%d')
+                    if hasattr(self.config, 'end_date') and self.config.end_date:
+                        from datetime import datetime
+                        end_date = datetime.strptime(self.config.end_date, '%Y-%m-%d')
+                    
+                    market_data = klines_manager.read_data(symbol, timeframe, start_date=start_date, end_date=end_date, data_type="raw")
                 else:
                     market_data = pd.read_parquet(data_path)
             except Exception as e:

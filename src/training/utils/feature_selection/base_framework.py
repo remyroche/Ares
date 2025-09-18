@@ -839,3 +839,7 @@ Stack Trace:
             return 'neural_network'
         else:
             return 'default'
+
+
+# Alias for backward compatibility
+FeatureSelectionFramework = BaseFeatureSelectionFramework

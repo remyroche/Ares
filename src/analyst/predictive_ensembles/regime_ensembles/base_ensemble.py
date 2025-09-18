@@ -123,7 +123,7 @@ class BaseEnsemble:
             self.logger.warning(f'Aligned data is empty for {self.ensemble_name} after dropping NaNs. Skipping training.')
             return
         try:
-            y_encoded = self.label_encoder.fit_transform(aligned_data['target'])
+            y_encoded = self.label_encoder.fit_transform(aligned_data['target'].to_numpy())
         except ValueError as e:
             self.logger.error(f'Error encoding labels for {self.ensemble_name}: {e}. Skipping training.', exc_info = True)
             return
@@ -205,7 +205,7 @@ class BaseEnsemble:
             return
         
         try:
-            y_encoded = self.label_encoder.fit_transform(aligned_data['target'])
+            y_encoded = self.label_encoder.fit_transform(aligned_data['target'].to_numpy())
         except ValueError as e:
             self.logger.error(f'Error encoding labels for {self.ensemble_name}: {e}. Skipping training.', exc_info=True)
             return
@@ -533,10 +533,10 @@ class BaseEnsemble:
         """Create a LogisticRegression model with L1-L2 regularization."""
         if self.regularization_config and 'sklearn' in self.regularization_config:
             sklearn_config = self.regularization_config['sklearn']
-            model = LogisticRegression(penalty='elasticnet', C = sklearn_config.get('C', 1.0), l1_ratio = sklearn_config.get('l1_ratio', 0.5), solver='saga', random_state = 42, max_iter = 1000)
+            model = LogisticRegression(penalty='elasticnet', C = sklearn_config.get('C', 1.0), l1_ratio = sklearn_config.get('l1_ratio', 0.5), solver='saga', random_state = 42, max_iter = 2000)
             self.logger.info(f"Created regularized LogisticRegression with C={sklearn_config.get('C')}, l1_ratio={sklearn_config.get('l1_ratio')}")
         else:
-            model = LogisticRegression(random_state = 42, max_iter = 1000, solver='liblinear')
+            model = LogisticRegression(random_state = 42, max_iter = 2000, solver='liblinear')
             self.logger.info('Created standard LogisticRegression (no regularization config available)')
         return model
 

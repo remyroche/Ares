@@ -1,0 +1,990 @@
+{
+  "stage": "market_analysis",
+  "sub_pipeline": "feature_lookback_optimization",
+  "timestamp": "2025-09-18T15:02:52.389055",
+  "status": "completed",
+  "output_files": [],
+  "metadata": {
+    "symbol": "ETHUSDT",
+    "exchange": "binance",
+    "timeframe": "1m",
+    "features_optimized": 3,
+    "optimization_status": "completed",
+    "data_quality_score": 1.0,
+    "performance_metrics": {
+      "memory_usage": [
+        625.234375,
+        634.15625,
+        634.703125,
+        661.828125,
+        661.84375,
+        825.765625,
+        842.453125
+      ],
+      "cpu_usage": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "execution_times": {
+        "start": [
+          1758200571.274217
+        ],
+        "validation_complete": [
+          1758200571.2979488
+        ],
+        "data_loaded": [
+          1758200571.298589
+        ],
+        "config_created": [
+          1758200571.521857
+        ],
+        "optimizer_ready": [
+          1758200571.539149
+        ],
+        "data_prepared": [
+          1758200571.863965
+        ],
+        "optimization_complete": [
+          1758200572.263615
+        ]
+      },
+      "error_counts": 1
+    }
+  },
+  "artifacts": {
+    "feature_lookback_optimization_result": {
+      "optimization_results": {
+        "best_lookback_period": 20,
+        "best_score": 0.0,
+        "optimization_method": "fallback",
+        "error": "name 'tprint' is not defined",
+        "fallback_reason": "optimization_process_failed"
+      },
+      "optimized_features": {
+        "rsi": {
+          "lookback": 14,
+          "score": 0.0,
+          "method": "fallback"
+        },
+        "sma": {
+          "lookback": 20,
+          "score": 0.0,
+          "method": "fallback"
+        },
+        "ema": {
+          "lookback": 12,
+          "score": 0.0,
+          "method": "fallback"
+        }
+      },
+      "optimization_metrics": {
+        "optimization_method": "fallback",
+        "error": "name 'tprint' is not defined",
+        "convergence_iterations": 0,
+        "fallback_used": true
+      },
+      "optimization_summary": {
+        "best_lookback_period": 20,
+        "best_score": 0.0,
+        "total_features_optimized": 3,
+        "optimization_time": 0.7225899696350098,
+        "validation_score": 0.5,
+        "stability_score": 0.7284783478957219
+      },
+      "detailed_report": {
+        "report_metadata": {
+          "report_id": "ETHUSDT_binance_1m_2025-09-18",
+          "generation_timestamp": "2025-09-18T15:02:52.265752",
+          "symbol": "ETHUSDT",
+          "exchange": "binance",
+          "timeframe": "1m",
+          "reporter_version": "2.0.0"
+        },
+        "executive_summary": {
+          "status": "FAILED",
+          "key_metrics": {
+            "best_lookback_period": 20,
+            "best_score": 0.0,
+            "total_features_optimized": 3,
+            "optimization_method": "fallback"
+          },
+          "performance_indicators": {
+            "validation_score": 0.5,
+            "stability_score": 0.7284783478957219,
+            "regime_coverage": 0.0,
+            "error_rate": 0.3333333333333333
+          },
+          "optimization_time": 0.7225899696350098,
+          "convergence_iterations": 0,
+          "performance_rating": "POOR"
+        },
+        "optimization_results": {
+          "overall_results": {
+            "best_lookback_period": 20,
+            "best_score": 0.0,
+            "optimization_method": "fallback",
+            "convergence_achieved": false
+          },
+          "feature_results": {
+            "rsi": {
+              "optimal_lookback": 14,
+              "performance_score": 0.0,
+              "optimization_method": "fallback",
+              "confidence_level": "LOW"
+            },
+            "sma": {
+              "optimal_lookback": 20,
+              "performance_score": 0.0,
+              "optimization_method": "fallback",
+              "confidence_level": "LOW"
+            },
+            "ema": {
+              "optimal_lookback": 12,
+              "performance_score": 0.0,
+              "optimization_method": "fallback",
+              "confidence_level": "LOW"
+            }
+          },
+          "top_performing_features": [
+            "rsi",
+            "sma",
+            "ema"
+          ],
+          "optimization_metadata": {
+            "optimization_method": "fallback",
+            "error": "name 'tprint' is not defined",
+            "convergence_iterations": 0,
+            "fallback_used": true
+          }
+        },
+        "performance_analysis": {
+          "resource_usage": {
+            "memory_usage_mb": 842.453125,
+            "cpu_usage_percent": 0.0,
+            "optimization_time": 0.7225899696350098
+          },
+          "efficiency_metrics": {
+            "convergence_iterations": 0,
+            "features_per_second": 3.0,
+            "memory_efficiency": 280.8177083333333
+          },
+          "performance_trends": {
+            "memory_trend": "STABLE",
+            "cpu_trend": "STABLE",
+            "execution_time_trend": "STABLE"
+          },
+          "bottlenecks": [],
+          "performance_assessment": "MODERATE"
+        },
+        "data_quality_assessment": {
+          "overall_quality_score": 1.0,
+          "validation_status": {
+            "data_valid": true,
+            "pipeline_valid": true
+          },
+          "quality_issues": {
+            "data_warnings": [],
+            "pipeline_warnings": [
+              "No regime data splitting results found (optional for individual sub-pipeline execution)",
+              "Missing required labeling results (need either multi_horizon_labeling_result or triple_barrier_labeling_result)"
+            ]
+          },
+          "quality_rating": "EXCELLENT"
+        },
+        "feature_analysis": {
+          "feature_statistics": {
+            "total_features": 3,
+            "average_lookback": 15.333333333333334,
+            "median_lookback": 14.0,
+            "lookback_std": 3.39934634239519,
+            "average_score": 0.0,
+            "score_std": 0.0
+          },
+          "feature_categories": {
+            "technical_indicators": [
+              "rsi",
+              "sma",
+              "ema"
+            ],
+            "price_features": [],
+            "volume_features": [],
+            "other": []
+          },
+          "performance_distribution": {
+            "mean": 0.0,
+            "median": 0.0,
+            "std": 0.0,
+            "min": 0.0,
+            "max": 0.0,
+            "quartiles": {
+              "q1": 0.0,
+              "q3": 0.0
+            }
+          },
+          "lookback_patterns": {
+            "range": [
+              12,
+              20
+            ],
+            "most_common": 20,
+            "distribution": {
+              "short_term": 0,
+              "medium_term": 3,
+              "long_term": 0
+            }
+          }
+        },
+        "recommendations": [
+          {
+            "category": "DATA_QUALITY",
+            "priority": "HIGH",
+            "title": "Improve Data Quality",
+            "description": "Low validation score indicates data quality issues",
+            "action": "Review data preprocessing and cleaning procedures",
+            "expected_impact": "HIGH"
+          },
+          {
+            "category": "REGIME_AWARENESS",
+            "priority": "MEDIUM",
+            "title": "Enhance Regime Coverage",
+            "description": "Low regime coverage may limit optimization effectiveness",
+            "action": "Implement regime-aware optimization strategies",
+            "expected_impact": "MEDIUM"
+          }
+        ],
+        "risk_assessment": {
+          "overfitting_risk": {
+            "risk_level": "MEDIUM",
+            "score": 0.5,
+            "description": "Overfitting risk based on validation score of 0.500"
+          },
+          "data_quality_risk": {
+            "risk_level": "LOW",
+            "score": 0.2,
+            "description": "Data quality risk assessment"
+          },
+          "performance_risk": {
+            "risk_level": "LOW",
+            "score": 0.2,
+            "description": "Performance risk based on memory usage of 842.5MB"
+          },
+          "stability_risk": {
+            "risk_level": "LOW",
+            "score": 0.2,
+            "description": "Stability risk based on stability score of 0.728"
+          },
+          "overall_risk_level": "LOW"
+        },
+        "next_steps": [
+          {
+            "step": "VALIDATION",
+            "description": "Validate optimization results on out-of-sample data",
+            "priority": "HIGH",
+            "estimated_effort": "MEDIUM"
+          },
+          {
+            "step": "REGIME_ENHANCEMENT",
+            "description": "Enhance regime detection and regime-aware optimization",
+            "priority": "MEDIUM",
+            "estimated_effort": "HIGH"
+          },
+          {
+            "step": "MONITORING_SETUP",
+            "description": "Set up monitoring for optimized features in production",
+            "priority": "MEDIUM",
+            "estimated_effort": "MEDIUM"
+          }
+        ],
+        "technical_details": {
+          "optimization_parameters": {
+            "optimization_method": "fallback",
+            "error": "name 'tprint' is not defined",
+            "convergence_iterations": 0,
+            "fallback_used": true
+          },
+          "performance_metrics": {
+            "memory_usage": [
+              625.234375,
+              634.15625,
+              634.703125,
+              661.828125,
+              661.84375,
+              825.765625,
+              842.453125
+            ],
+            "cpu_usage": [
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            "execution_times": {
+              "start": [
+                1758200571.274217
+              ],
+              "validation_complete": [
+                1758200571.2979488
+              ],
+              "data_loaded": [
+                1758200571.298589
+              ],
+              "config_created": [
+                1758200571.521857
+              ],
+              "optimizer_ready": [
+                1758200571.539149
+              ],
+              "data_prepared": [
+                1758200571.863965
+              ],
+              "optimization_complete": [
+                1758200572.263615
+              ]
+            },
+            "error_counts": 1
+          },
+          "convergence_details": {
+            "iterations": 0,
+            "final_score": 0.0,
+            "optimization_time": 0.7225899696350098
+          },
+          "resource_utilization": {
+            "memory_usage_mb": 842.453125,
+            "cpu_usage_percent": 0.0,
+            "error_rate": 0.3333333333333333
+          },
+          "algorithm_details": {
+            "best_lookback_period": 20,
+            "best_score": 0.0,
+            "optimization_method": "fallback",
+            "error": "name 'tprint' is not defined",
+            "fallback_reason": "optimization_process_failed"
+          },
+          "feature_details": {
+            "rsi": {
+              "lookback": 14,
+              "score": 0.0,
+              "method": "fallback"
+            },
+            "sma": {
+              "lookback": 20,
+              "score": 0.0,
+              "method": "fallback"
+            },
+            "ema": {
+              "lookback": 12,
+              "score": 0.0,
+              "method": "fallback"
+            }
+          }
+        }
+      },
+      "comprehensive_report": {
+        "report_metadata": {
+          "report_id": "ETHUSDT_binance_1m_2025-09-18",
+          "generation_timestamp": "2025-09-18T15:02:52.265752",
+          "symbol": "ETHUSDT",
+          "exchange": "binance",
+          "timeframe": "1m",
+          "reporter_version": "2.0.0"
+        },
+        "executive_summary": {
+          "status": "FAILED",
+          "key_metrics": {
+            "best_lookback_period": 20,
+            "best_score": 0.0,
+            "total_features_optimized": 3,
+            "optimization_method": "fallback"
+          },
+          "performance_indicators": {
+            "validation_score": 0.5,
+            "stability_score": 0.7284783478957219,
+            "regime_coverage": 0.0,
+            "error_rate": 0.3333333333333333
+          },
+          "optimization_time": 0.7225899696350098,
+          "convergence_iterations": 0,
+          "performance_rating": "POOR"
+        },
+        "optimization_results": {
+          "overall_results": {
+            "best_lookback_period": 20,
+            "best_score": 0.0,
+            "optimization_method": "fallback",
+            "convergence_achieved": false
+          },
+          "feature_results": {
+            "rsi": {
+              "optimal_lookback": 14,
+              "performance_score": 0.0,
+              "optimization_method": "fallback",
+              "confidence_level": "LOW"
+            },
+            "sma": {
+              "optimal_lookback": 20,
+              "performance_score": 0.0,
+              "optimization_method": "fallback",
+              "confidence_level": "LOW"
+            },
+            "ema": {
+              "optimal_lookback": 12,
+              "performance_score": 0.0,
+              "optimization_method": "fallback",
+              "confidence_level": "LOW"
+            }
+          },
+          "top_performing_features": [
+            "rsi",
+            "sma",
+            "ema"
+          ],
+          "optimization_metadata": {
+            "optimization_method": "fallback",
+            "error": "name 'tprint' is not defined",
+            "convergence_iterations": 0,
+            "fallback_used": true
+          }
+        },
+        "performance_analysis": {
+          "resource_usage": {
+            "memory_usage_mb": 842.453125,
+            "cpu_usage_percent": 0.0,
+            "optimization_time": 0.7225899696350098
+          },
+          "efficiency_metrics": {
+            "convergence_iterations": 0,
+            "features_per_second": 3.0,
+            "memory_efficiency": 280.8177083333333
+          },
+          "performance_trends": {
+            "memory_trend": "STABLE",
+            "cpu_trend": "STABLE",
+            "execution_time_trend": "STABLE"
+          },
+          "bottlenecks": [],
+          "performance_assessment": "MODERATE"
+        },
+        "data_quality_assessment": {
+          "overall_quality_score": 1.0,
+          "validation_status": {
+            "data_valid": true,
+            "pipeline_valid": true
+          },
+          "quality_issues": {
+            "data_warnings": [],
+            "pipeline_warnings": [
+              "No regime data splitting results found (optional for individual sub-pipeline execution)",
+              "Missing required labeling results (need either multi_horizon_labeling_result or triple_barrier_labeling_result)"
+            ]
+          },
+          "quality_rating": "EXCELLENT"
+        },
+        "feature_analysis": {
+          "feature_statistics": {
+            "total_features": 3,
+            "average_lookback": 15.333333333333334,
+            "median_lookback": 14.0,
+            "lookback_std": 3.39934634239519,
+            "average_score": 0.0,
+            "score_std": 0.0
+          },
+          "feature_categories": {
+            "technical_indicators": [
+              "rsi",
+              "sma",
+              "ema"
+            ],
+            "price_features": [],
+            "volume_features": [],
+            "other": []
+          },
+          "performance_distribution": {
+            "mean": 0.0,
+            "median": 0.0,
+            "std": 0.0,
+            "min": 0.0,
+            "max": 0.0,
+            "quartiles": {
+              "q1": 0.0,
+              "q3": 0.0
+            }
+          },
+          "lookback_patterns": {
+            "range": [
+              12,
+              20
+            ],
+            "most_common": 20,
+            "distribution": {
+              "short_term": 0,
+              "medium_term": 3,
+              "long_term": 0
+            }
+          }
+        },
+        "recommendations": [
+          {
+            "category": "DATA_QUALITY",
+            "priority": "HIGH",
+            "title": "Improve Data Quality",
+            "description": "Low validation score indicates data quality issues",
+            "action": "Review data preprocessing and cleaning procedures",
+            "expected_impact": "HIGH"
+          },
+          {
+            "category": "REGIME_AWARENESS",
+            "priority": "MEDIUM",
+            "title": "Enhance Regime Coverage",
+            "description": "Low regime coverage may limit optimization effectiveness",
+            "action": "Implement regime-aware optimization strategies",
+            "expected_impact": "MEDIUM"
+          }
+        ],
+        "risk_assessment": {
+          "overfitting_risk": {
+            "risk_level": "MEDIUM",
+            "score": 0.5,
+            "description": "Overfitting risk based on validation score of 0.500"
+          },
+          "data_quality_risk": {
+            "risk_level": "LOW",
+            "score": 0.2,
+            "description": "Data quality risk assessment"
+          },
+          "performance_risk": {
+            "risk_level": "LOW",
+            "score": 0.2,
+            "description": "Performance risk based on memory usage of 842.5MB"
+          },
+          "stability_risk": {
+            "risk_level": "LOW",
+            "score": 0.2,
+            "description": "Stability risk based on stability score of 0.728"
+          },
+          "overall_risk_level": "LOW"
+        },
+        "next_steps": [
+          {
+            "step": "VALIDATION",
+            "description": "Validate optimization results on out-of-sample data",
+            "priority": "HIGH",
+            "estimated_effort": "MEDIUM"
+          },
+          {
+            "step": "REGIME_ENHANCEMENT",
+            "description": "Enhance regime detection and regime-aware optimization",
+            "priority": "MEDIUM",
+            "estimated_effort": "HIGH"
+          },
+          {
+            "step": "MONITORING_SETUP",
+            "description": "Set up monitoring for optimized features in production",
+            "priority": "MEDIUM",
+            "estimated_effort": "MEDIUM"
+          }
+        ],
+        "technical_details": {
+          "optimization_parameters": {
+            "optimization_method": "fallback",
+            "error": "name 'tprint' is not defined",
+            "convergence_iterations": 0,
+            "fallback_used": true
+          },
+          "performance_metrics": {
+            "memory_usage": [
+              625.234375,
+              634.15625,
+              634.703125,
+              661.828125,
+              661.84375,
+              825.765625,
+              842.453125
+            ],
+            "cpu_usage": [
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            "execution_times": {
+              "start": [
+                1758200571.274217
+              ],
+              "validation_complete": [
+                1758200571.2979488
+              ],
+              "data_loaded": [
+                1758200571.298589
+              ],
+              "config_created": [
+                1758200571.521857
+              ],
+              "optimizer_ready": [
+                1758200571.539149
+              ],
+              "data_prepared": [
+                1758200571.863965
+              ],
+              "optimization_complete": [
+                1758200572.263615
+              ]
+            },
+            "error_counts": 1
+          },
+          "convergence_details": {
+            "iterations": 0,
+            "final_score": 0.0,
+            "optimization_time": 0.7225899696350098
+          },
+          "resource_utilization": {
+            "memory_usage_mb": 842.453125,
+            "cpu_usage_percent": 0.0,
+            "error_rate": 0.3333333333333333
+          },
+          "algorithm_details": {
+            "best_lookback_period": 20,
+            "best_score": 0.0,
+            "optimization_method": "fallback",
+            "error": "name 'tprint' is not defined",
+            "fallback_reason": "optimization_process_failed"
+          },
+          "feature_details": {
+            "rsi": {
+              "lookback": 14,
+              "score": 0.0,
+              "method": "fallback"
+            },
+            "sma": {
+              "lookback": 20,
+              "score": 0.0,
+              "method": "fallback"
+            },
+            "ema": {
+              "lookback": 12,
+              "score": 0.0,
+              "method": "fallback"
+            }
+          }
+        }
+      },
+      "validation_results": {
+        "data_validation": {
+          "summary": {
+            "overall_status": "passed",
+            "quality_score": 1.0,
+            "total_rules": 8,
+            "passed": 8,
+            "failed": 0,
+            "warnings": 0,
+            "critical_failures": 0
+          },
+          "recommendations": [
+            "All validations passed - no recommendations needed"
+          ]
+        },
+        "pipeline_validation": {
+          "summary": {
+            "overall_status": "passed",
+            "quality_score": 0.3333333333333333,
+            "total_rules": 3,
+            "passed": 1,
+            "failed": 0,
+            "warnings": 2,
+            "critical_failures": 0
+          },
+          "recommendations": [
+            "All validations passed - no recommendations needed"
+          ]
+        },
+        "optimization_validation": {
+          "summary": {
+            "overall_status": "passed",
+            "quality_score": 1.0,
+            "total_rules": 2,
+            "passed": 2,
+            "failed": 0,
+            "warnings": 0,
+            "critical_failures": 0
+          },
+          "recommendations": [
+            "All validations passed - no recommendations needed"
+          ]
+        }
+      },
+      "performance_metrics": {
+        "memory_usage": [
+          625.234375,
+          634.15625,
+          634.703125,
+          661.828125,
+          661.84375,
+          825.765625,
+          842.453125
+        ],
+        "cpu_usage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "execution_times": {
+          "start": [
+            1758200571.274217
+          ],
+          "validation_complete": [
+            1758200571.2979488
+          ],
+          "data_loaded": [
+            1758200571.298589
+          ],
+          "config_created": [
+            1758200571.521857
+          ],
+          "optimizer_ready": [
+            1758200571.539149
+          ],
+          "data_prepared": [
+            1758200571.863965
+          ],
+          "optimization_complete": [
+            1758200572.263615
+          ]
+        },
+        "error_counts": 1
+      },
+      "monitoring_metrics": {
+        "total_metrics": 11,
+        "unique_metric_names": 11,
+        "summaries": {
+          "monitoring_started": "MetricSummary(name='monitoring_started', count=1, min_value=1, max_value=1, mean_value=1.0, median_value=1, std_value=0.0, last_value=1, first_timestamp=datetime.datetime(2025, 9, 18, 15, 2, 51, 170565), last_timestamp=datetime.datetime(2025, 9, 18, 15, 2, 51, 170565), level_distribution={'info': 1, 'warning': 0, 'error': 0, 'critical': 0})",
+          "system_memory_usage": "MetricSummary(name='system_memory_usage', count=1, min_value=625.15625, max_value=625.15625, mean_value=625.15625, median_value=625.15625, std_value=0.0, last_value=625.15625, first_timestamp=datetime.datetime(2025, 9, 18, 15, 2, 51, 170716), last_timestamp=datetime.datetime(2025, 9, 18, 15, 2, 51, 170716), level_distribution={'info': 1, 'warning': 0, 'error': 0, 'critical': 0})",
+          "system_cpu_usage": "MetricSummary(name='system_cpu_usage', count=1, min_value=0.1, max_value=0.1, mean_value=0.1, median_value=0.1, std_value=0.0, last_value=0.1, first_timestamp=datetime.datetime(2025, 9, 18, 15, 2, 51, 273733), last_timestamp=datetime.datetime(2025, 9, 18, 15, 2, 51, 273733), level_distribution={'info': 1, 'warning': 0, 'error': 0, 'critical': 0})",
+          "optimization_started": "MetricSummary(name='optimization_started', count=1, min_value=1, max_value=1, mean_value=1.0, median_value=1, std_value=0.0, last_value=1, first_timestamp=datetime.datetime(2025, 9, 18, 15, 2, 51, 274249), last_timestamp=datetime.datetime(2025, 9, 18, 15, 2, 51, 274249), level_distribution={'info': 1, 'warning': 0, 'error': 0, 'critical': 0})",
+          "quality_data_validation_score": "MetricSummary(name='quality_data_validation_score', count=1, min_value=1.0, max_value=1.0, mean_value=1.0, median_value=1.0, std_value=0.0, last_value=1.0, first_timestamp=datetime.datetime(2025, 9, 18, 15, 2, 51, 297738), last_timestamp=datetime.datetime(2025, 9, 18, 15, 2, 51, 297738), level_distribution={'info': 1, 'warning': 0, 'error': 0, 'critical': 0})",
+          "quality_pipeline_validation_score": "MetricSummary(name='quality_pipeline_validation_score', count=1, min_value=0.3333333333333333, max_value=0.3333333333333333, mean_value=0.3333333333333333, median_value=0.3333333333333333, std_value=0.0, last_value=0.3333333333333333, first_timestamp=datetime.datetime(2025, 9, 18, 15, 2, 51, 297749), last_timestamp=datetime.datetime(2025, 9, 18, 15, 2, 51, 297749), level_distribution={'info': 0, 'warning': 0, 'error': 1, 'critical': 0})",
+          "technical_validation_rules_passed": "MetricSummary(name='technical_validation_rules_passed', count=1, min_value=9, max_value=9, mean_value=9.0, median_value=9, std_value=0.0, last_value=9, first_timestamp=datetime.datetime(2025, 9, 18, 15, 2, 51, 297803), last_timestamp=datetime.datetime(2025, 9, 18, 15, 2, 51, 297803), level_distribution={'info': 1, 'warning': 0, 'error': 0, 'critical': 0})",
+          "technical_validation_rules_failed": "MetricSummary(name='technical_validation_rules_failed', count=1, min_value=0, max_value=0, mean_value=0.0, median_value=0, std_value=0.0, last_value=0, first_timestamp=datetime.datetime(2025, 9, 18, 15, 2, 51, 297811), last_timestamp=datetime.datetime(2025, 9, 18, 15, 2, 51, 297811), level_distribution={'info': 1, 'warning': 0, 'error': 0, 'critical': 0})",
+          "quality_optimization_validation_score": "MetricSummary(name='quality_optimization_validation_score', count=1, min_value=1.0, max_value=1.0, mean_value=1.0, median_value=1.0, std_value=0.0, last_value=1.0, first_timestamp=datetime.datetime(2025, 9, 18, 15, 2, 52, 263887), last_timestamp=datetime.datetime(2025, 9, 18, 15, 2, 52, 263887), level_distribution={'info': 1, 'warning': 0, 'error': 0, 'critical': 0})",
+          "business_features_optimized": "MetricSummary(name='business_features_optimized', count=1, min_value=3, max_value=3, mean_value=3.0, median_value=3, std_value=0.0, last_value=3, first_timestamp=datetime.datetime(2025, 9, 18, 15, 2, 52, 263940), last_timestamp=datetime.datetime(2025, 9, 18, 15, 2, 52, 263940), level_distribution={'info': 1, 'warning': 0, 'error': 0, 'critical': 0})",
+          "quality_best_optimization_score": "MetricSummary(name='quality_best_optimization_score', count=1, min_value=0.0, max_value=0.0, mean_value=0.0, median_value=0.0, std_value=0.0, last_value=0.0, first_timestamp=datetime.datetime(2025, 9, 18, 15, 2, 52, 263951), last_timestamp=datetime.datetime(2025, 9, 18, 15, 2, 52, 263951), level_distribution={'info': 0, 'warning': 0, 'error': 1, 'critical': 0})"
+        },
+        "performance_metrics": {
+          "memory_usage": [
+            625.15625,
+            842.46875
+          ],
+          "cpu_usage": [
+            0.1,
+            0.0
+          ],
+          "execution_times": {
+            "total_optimization": [
+              1.1106009483337402
+            ]
+          },
+          "error_counts": 0,
+          "warning_counts": 0
+        },
+        "quality_metrics": {
+          "data_quality_score": 0.0,
+          "validation_score": 0.0,
+          "optimization_score": 0.0,
+          "stability_score": 0.0,
+          "data_validation_score": 1.0,
+          "pipeline_validation_score": 0.3333333333333333,
+          "optimization_validation_score": 1.0,
+          "best_optimization_score": 0.0
+        },
+        "business_metrics": {
+          "features_optimized": 3,
+          "optimization_success_rate": 1.0,
+          "time_to_optimization": 0.0,
+          "cost_efficiency": 0.0
+        },
+        "technical_metrics": {
+          "dependencies_available": 0,
+          "fallbacks_used": 0,
+          "validation_rules_passed": 9,
+          "validation_rules_failed": 0
+        }
+      },
+      "monitoring_report": {
+        "execution_times": {
+          "total_optimization": [
+            1.1106009483337402
+          ]
+        },
+        "memory_usage": {
+          "values": [
+            625.15625,
+            842.46875
+          ],
+          "average": 625.15625,
+          "maximum": 625.15625,
+          "minimum": 625.15625
+        },
+        "cpu_usage": {
+          "values": [
+            0.1,
+            0.0
+          ],
+          "average": 0.1,
+          "maximum": 0.1,
+          "minimum": 0.1
+        },
+        "error_count": 0,
+        "warning_count": 0
+      },
+      "common_utilities_integration": {
+        "ml_common_available": true,
+        "matrix_ops_available": true,
+        "m1_optimization_available": true,
+        "data_quality_checker_used": true,
+        "feature_preparator_used": true,
+        "hyperparameter_optimizer_used": false,
+        "cross_validator_used": false,
+        "matrix_ops_used": true,
+        "vectorized_ops_used": false
+      },
+      "metadata": {
+        "symbol": "ETHUSDT",
+        "exchange": "binance",
+        "timeframe": "1m",
+        "execution_timestamp": "2025-09-18T15:02:52.275244",
+        "optimization_status": "in_progress",
+        "component_version": "2.1.0",
+        "common_utilities_version": "1.0.0"
+      },
+      "artifact_path": "artifacts/feature_lookback_optimization_artifacts.json"
+    }
+  },
+  "config": {
+    "symbol": "ETHUSDT",
+    "exchange": "binance",
+    "timeframe": "1m",
+    "mode": "light",
+    "intensity_percentage": 0.025,
+    "training_mode_config": {
+      "description": "Development mode - Minimal data with all features/models",
+      "lookback_days": 10,
+      "training_mode": "light",
+      "enable_blank_training_mode": false,
+      "enable_light_training_mode": true,
+      "enable_full_training_mode": false,
+      "data_collection": {
+        "enable_all_exchanges": false,
+        "enable_aggtrades": false,
+        "enable_futures": false,
+        "data_quality_checks": true
+      },
+      "feature_engineering": {
+        "enable_all_features": true,
+        "enable_advanced_features": true,
+        "enable_autoencoder_features": true,
+        "enable_microstructure_features": true,
+        "enable_multi_timeframe": true,
+        "timeframes": [
+          "1h"
+        ],
+        "max_interactions": 10,
+        "correlation_threshold": 0.8,
+        "max_features": null,
+        "feature_selection_samples": 10000,
+        "feature_selection_method": "full"
+      },
+      "model_training": {
+        "enable_all_models": true,
+        "max_trials": 10,
+        "n_trials": 5,
+        "enable_early_stopping": true,
+        "enable_parallelization": false,
+        "enable_caching": true,
+        "batch_size": 512,
+        "epochs": 10,
+        "early_stopping_patience": 5,
+        "learning_rate": 0.001,
+        "validation_split": 0.2,
+        "cross_validation_folds": 2,
+        "nn_hidden_layers": [
+          64,
+          32
+        ],
+        "nn_dropout": 0.3,
+        "nn_batch_norm": false,
+        "ensemble_models": 3,
+        "ensemble_method": "weighted",
+        "gb_max_depth": 4,
+        "gb_n_estimators": 50,
+        "rf_max_depth": 8,
+        "rf_n_estimators": 25
+      },
+      "validation": {
+        "enable_walk_forward": true,
+        "enable_monte_carlo": true,
+        "enable_ab_testing": true,
+        "validation_splits": 2,
+        "monte_carlo_samples": 100,
+        "ab_test_rounds": 2
+      },
+      "optimization": {
+        "enable_hyperparameter_optimization": true,
+        "enable_feature_selection": true,
+        "enable_model_selection": true,
+        "max_optimization_time": 300,
+        "optuna_trials": 10,
+        "optuna_timeout": 300,
+        "optuna_n_jobs": 1,
+        "feature_selection_method": "recursive",
+        "feature_importance_threshold": 0.01
+      },
+      "computational_intensity": "medium",
+      "estimated_duration_minutes": 60,
+      "exclude_recent_days": 0,
+      "min_data_points": 1000,
+      "enable_advanced_model_training": true,
+      "enable_ensemble_training": true,
+      "enable_multi_timeframe_training": true,
+      "enable_adaptive_training": true
+    }
+  },
+  "next_stage_requirements": {
+    "required_files": [
+      "sr_levels.json",
+      "regime_assignments.parquet",
+      "labels.parquet",
+      "features.parquet"
+    ],
+    "required_artifacts": [
+      "sr_clusters",
+      "regime_model",
+      "feature_metadata"
+    ],
+    "data_dependencies": [],
+    "next_stage": "model_training",
+    "sub_pipelines": [
+      "sr_detection",
+      "sr_clustering",
+      "hmm_clustering",
+      "hmm_regime_discovery",
+      "multi_horizon_profit_labeler",
+      "triple_barrier_labeling",
+      "feature_lookback_optimization",
+      "pid_based_feature_generation",
+      "sr_feature_integration"
+    ]
+  }
+}

@@ -52,6 +52,29 @@ class RegimeProcessor:
         sufficient_regimes = unique_regimes[regime_counts >= min_samples]
         insufficient_regimes = unique_regimes[regime_counts < min_samples]
         
+        # 🔧 CRITICAL FIX: If no regimes meet minimum threshold, use adaptive threshold
+        if len(sufficient_regimes) == 0 and len(unique_regimes) > 0:
+            logger.warning(f"⚠️ 🚨 NO regimes meet minimum threshold of {min_samples} samples!")
+            logger.warning(f"⚠️ 🚨 Regime distribution: {dict(zip(unique_regimes, regime_counts))}")
+            
+            # Use adaptive threshold: 50% of largest regime or 10% of total samples, whichever is smaller
+            adaptive_threshold = min(
+                int(regime_counts.max() * 0.5),  # 50% of largest regime
+                int(len(regime_labels) * 0.1)    # 10% of total samples
+            )
+            adaptive_threshold = max(adaptive_threshold, 100)  # But at least 100 samples
+            
+            logger.warning(f"⚠️ 🔧 Using adaptive threshold: {adaptive_threshold} samples")
+            sufficient_regimes = unique_regimes[regime_counts >= adaptive_threshold]
+            insufficient_regimes = unique_regimes[regime_counts < adaptive_threshold]
+            
+            # Update regime analysis with adaptive threshold info
+            regime_analysis['adaptive_threshold_used'] = True
+            regime_analysis['adaptive_threshold'] = adaptive_threshold
+            regime_analysis['original_threshold'] = min_samples
+        else:
+            regime_analysis['adaptive_threshold_used'] = False
+        
         regime_analysis['sufficient_regimes'] = sufficient_regimes
         regime_analysis['insufficient_regimes'] = insufficient_regimes
         
@@ -64,9 +87,12 @@ class RegimeProcessor:
         
         logger.info(f"📊 Regime analysis:")
         logger.info(f"📊 - Total regimes: {len(unique_regimes)}")
-        logger.info(f"📊 - Sufficient data: {len(sufficient_regimes)}")
-        logger.info(f"📊 - Insufficient data: {len(insufficient_regimes)}")
+        logger.info(f"📊 - Regime distribution: {dict(zip(unique_regimes, regime_counts))}")
+        logger.info(f"📊 - Sufficient data: {len(sufficient_regimes)} regimes")
+        logger.info(f"📊 - Insufficient data: {len(insufficient_regimes)} regimes")
         logger.info(f"📊 - Merge candidates: {len(regime_analysis['merge_candidates'])}")
+        if regime_analysis.get('adaptive_threshold_used', False):
+            logger.warning(f"⚠️ 🔧 Used adaptive threshold: {regime_analysis['adaptive_threshold']} (original: {regime_analysis['original_threshold']})")
         
         return regime_analysis
     

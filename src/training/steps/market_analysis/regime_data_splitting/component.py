@@ -82,7 +82,7 @@ from src.utils.data.klines_parquet import (
 )
 
 from src.utils.matrix_operations.unified_operations import (
-    safe_matrix_operation, validate_matrix, optimize_matrix_operations
+    safe_matrix_multiply, safe_correlation_matrix, safe_matrix_inverse
 )
 
 from src.utils.hardware.m1_gpu_utils import (
@@ -102,7 +102,7 @@ from src.utils.hardware.m1_cpu_optimizer import (
 )
 
 from src.utils.ml_common.common_operations import (
-    safe_ml_operation, validate_ml_data, optimize_ml_performance
+    safe_json_dump, safe_json_load, ensure_directory
 )
 
 

@@ -529,6 +529,108 @@ class DataQualityUtilities:
 
         return improvements
 
+    def check_data_quality(self, data: pd.DataFrame, target_column: Optional[str] = None, 
+                          quality_threshold: float = 0.7) -> Dict[str, Any]:
+        """
+        Check data quality and return assessment results.
+
+        Args:
+            data: Input dataframe to check
+            target_column: Name of target column (if applicable)
+            quality_threshold: Minimum quality threshold (0-1)
+
+        Returns:
+            Dictionary containing quality assessment results
+        """
+        self.logger.info("🔍 Starting data quality check")
+
+        try:
+            # Perform comprehensive quality assessment
+            quality_assessment = self._assess_data_quality(data, target_column)
+            
+            # Determine overall quality status
+            quality_score = quality_assessment.get('quality_score', 0)
+            quality_status = 'good' if quality_score >= quality_threshold else 'poor'
+            
+            # Create quality report
+            quality_report = {
+                'overall_quality_score': quality_score,
+                'quality_status': quality_status,
+                'quality_threshold': quality_threshold,
+                'data_shape': data.shape,
+                'assessment_timestamp': time.time(),
+                'detailed_assessment': quality_assessment,
+                'recommendations': self._generate_quality_recommendations(quality_assessment, quality_threshold)
+            }
+            
+            # Log quality status
+            if quality_status == 'good':
+                self.logger.info(f"✅ Data quality check passed (score: {quality_score:.3f})")
+            else:
+                self.logger.warning(f"⚠️ Data quality check failed (score: {quality_score:.3f}, threshold: {quality_threshold})")
+            
+            return quality_report
+
+        except Exception as e:
+            self.logger.error(f"❌ Data quality check failed: {e}")
+            return {
+                'overall_quality_score': 0.0,
+                'quality_status': 'error',
+                'error': str(e),
+                'assessment_timestamp': time.time()
+            }
+
+    def _generate_quality_recommendations(self, quality_assessment: Dict[str, Any], 
+                                        quality_threshold: float) -> List[str]:
+        """Generate recommendations based on quality assessment."""
+        recommendations = []
+
+        try:
+            # Missing values recommendations
+            missing_info = quality_assessment.get('missing_values', {})
+            missing_percentage = missing_info.get('missing_percentage', 0)
+            
+            if missing_percentage > 20:
+                recommendations.append(f"🚨 High missing data rate ({missing_percentage:.1f}%) - consider imputation or feature removal")
+            elif missing_percentage > 5:
+                recommendations.append(f"⚠️ Moderate missing data rate ({missing_percentage:.1f}%) - consider imputation strategies")
+
+            # Duplicate recommendations
+            duplicate_info = quality_assessment.get('duplicates', {})
+            duplicate_percentage = duplicate_info.get('duplicate_percentage', 0)
+            
+            if duplicate_percentage > 10:
+                recommendations.append(f"🚨 High duplicate rate ({duplicate_percentage:.1f}%) - remove duplicates")
+            elif duplicate_percentage > 1:
+                recommendations.append(f"⚠️ Some duplicates detected ({duplicate_percentage:.1f}%) - consider removal")
+
+            # Outlier recommendations
+            outlier_info = quality_assessment.get('outliers', {})
+            total_outliers = outlier_info.get('total_outliers', 0)
+            
+            if total_outliers > len(quality_assessment.get('shape', [0])[0]) * 0.1:
+                recommendations.append("🚨 High outlier rate - consider outlier treatment")
+
+            # Type consistency recommendations
+            type_info = quality_assessment.get('type_consistency', {})
+            inconsistent_columns = type_info.get('inconsistent_columns', [])
+            
+            if inconsistent_columns:
+                recommendations.append(f"⚠️ Type inconsistencies in columns: {inconsistent_columns}")
+
+            # Overall quality recommendations
+            quality_score = quality_assessment.get('quality_score', 0)
+            if quality_score < quality_threshold:
+                recommendations.append(f"📈 Overall quality below threshold - comprehensive data cleaning recommended")
+
+            if not recommendations:
+                recommendations.append("✅ Data quality is acceptable - no major issues detected")
+
+        except Exception as e:
+            recommendations.append(f"❌ Error generating recommendations: {e}")
+
+        return recommendations
+
 
 # Global instance for easy access
 _data_quality_instance = None

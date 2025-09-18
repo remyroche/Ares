@@ -264,7 +264,7 @@ class InteractionFeatureGenerator(BaseFeatureGenerator):
             data: Input feature matrix
             feature_names: List of feature names
             optimized_lookback_periods: Optimized lookback periods from feature_lookback_optimization
-            target: Target variable for PID analysis (optional)
+            target: Target variable for PID analysis (optional) - now uses multi-horizon profit probabilities
             
         Returns:
             InteractionResult with generated interaction features
@@ -408,16 +408,18 @@ class InteractionFeatureGenerator(BaseFeatureGenerator):
     
     def _extract_significant_interactions(self, pid_result: PIDResult) -> List[Tuple[str, str]]:
         """Extract significant feature interactions from PID analysis."""
-        significant_pairs = []
+        # The PID decompositor has already applied its own thresholds (dynamic or static)
+        # We should trust its results instead of re-filtering with our own thresholds
         
-        # Sort synergy scores and take top interactions
-        synergy_items = sorted(pid_result.synergy.items(), key=lambda x: x[1], reverse=True)
-        
-        for (feat1, feat2), synergy_score in synergy_items:
-            if synergy_score > self.config.synergy_threshold:
-                significant_pairs.append((feat1, feat2))
-                if len(significant_pairs) >= self.config.max_feature_pairs:
-                    break
+        if hasattr(pid_result, 'significant_pairs') and pid_result.significant_pairs:
+            # Use the significant pairs already identified by PID decompositor
+            significant_pairs = pid_result.significant_pairs[:self.config.max_feature_pairs]
+            self.logger.info(f"📊 Using PID decompositor's significant pairs: {len(significant_pairs)} pairs")
+        else:
+            # Fallback: use top synergy scores (without threshold filtering)
+            synergy_items = sorted(pid_result.synergy.items(), key=lambda x: x[1], reverse=True)
+            significant_pairs = [pair for pair, score in synergy_items[:self.config.max_feature_pairs]]
+            self.logger.info(f"📊 Using top synergy pairs as fallback: {len(significant_pairs)} pairs")
         
         return significant_pairs
     

@@ -1,0 +1,571 @@
+
+================================================================================
+CRYPTOCURRENCY PRICE MOVEMENT ANALYSIS REPORT
+================================================================================
+
+METHODOLOGY: COMPOSITE TRADING OPPORTUNITY SCORE
+==================================================
+The Composite Score combines three weighted factors to rank trading opportunities:
+
+1. PROFIT SCORE (40% weight):
+   - Measures average profit per successful trade
+   - Formula: avg_profit / 0.02 (normalized to max expected ~2%)
+   - Higher profits = better score
+
+2. FREQUENCY SCORE (40% weight):
+   - Measures how often trading opportunities occur
+   - Formula: success_rate / 0.30 (normalized to max expected ~30%)
+   - More frequent opportunities = better score
+
+3. CONSISTENCY SCORE (20% weight):
+   - Measures reliability of opportunities
+   - Formula: min(1.0, total_trades / 20,000)
+   - More total trades = more consistent pattern
+
+FINAL FORMULA: (Profit_Score × 0.4) + (Frequency_Score × 0.4) + (Consistency_Score × 0.2)
+
+DAILY PROFIT POTENTIAL CALCULATION:
+  Formula: Average Profit per Trade (%) × Number of Daily Opportunities
+  Daily Opportunities = Total Opportunities ÷ Number of Days in Dataset
+  Example: 18,544 total opportunities ÷ 730 days = 25.4 opportunities/day
+  Daily ROI = 1.44% profit × 25.4 opportunities = 36.6% potential daily ROI
+  Note: This represents the maximum theoretical daily ROI if all opportunities are captured
+
+EXAMPLE - ALGOUSDT:
+  Profit Score: 1.44% / 2% = 0.720
+  Frequency Score: 26.5% / 30% = 0.883
+  Consistency Score: min(1.0, 18,544/20,000) = 0.927
+  Composite: (0.720×0.4) + (0.883×0.4) + (0.927×0.2) = 0.827
+  Daily Opportunities: 18,544 total ÷ 730 days = 25.4 opportunities/day
+  Daily ROI: 1.44% × 25.4 opportunities = 36.6% potential daily ROI
+
+INTERPRETATION:
+  Score 0.8+: Excellent trading opportunities
+  Score 0.6-0.8: Good trading opportunities
+  Score 0.4-0.6: Moderate trading opportunities
+  Score <0.4: Limited trading opportunities
+
+
+BASIC PRICE MOVEMENT METRICS:
+------------------------------------------------------------
+   Symbol  Total_Return  Volatility  Avg_Daily_Range  Avg_Intraday_Movement  Avg_Price_Change   Avg_Volume
+  ETHUSDT        1.7477      0.0341           0.0539                 0.0539            0.0023    4851.4283
+  SOLUSDT       11.1002      0.0497           0.0767                 0.0767            0.0034   49825.0264
+  BTCUSDT        3.3184      0.0254           0.0383                 0.0383            0.0017     316.7395
+  DOTUSDT        0.0343      0.0470           0.0706                 0.0706            0.0032   72909.0544
+ LINKUSDT        2.5506      0.0501           0.0775                 0.0775            0.0035   52955.2151
+MATICUSDT       -0.2779      0.0434           0.0673                 0.0673            0.0030  903062.7073
+ ALGOUSDT        1.4613      0.0558           0.0836                 0.0836            0.0038  730630.7308
+ AVAXUSDT        2.2840      0.0527           0.0820                 0.0820            0.0037   31776.2661
+ ATOMUSDT       -0.3827      0.0444           0.0675                 0.0675            0.0031   29596.1273
+  UNIUSDT        1.1344      0.0548           0.0841                 0.0841            0.0037   49625.8520
+  ADAUSDT        2.4972      0.0508           0.0743                 0.0743            0.0034 1776853.4365
+  LTCUSDT        0.7297      0.0423           0.0615                 0.0615            0.0028    7283.2017
+  XRPUSDT        4.9867      0.0463           0.0647                 0.0647            0.0028 3603244.3469
+  BCHUSDT        1.7693      0.0453           0.0681                 0.0681            0.0029     950.1656
+  BNBUSDT        3.4295      0.0300           0.0433                 0.0433            0.0020    4901.0776
+
+TRIPLE BARRIER PROFIT ANALYSIS:
+------------------------------------------------------------
+   Symbol Barrier_Level  Total_Trades  Avg_Profit  Long_Trades  Short_Trades  Profit_Frequency  Max_Profit  Total_Potential_Profit
+  ETHUSDT          0.3%         33737      0.0058        16596         17141            0.4814      0.1646                194.2821
+  ETHUSDT          0.4%         21352      0.0071        10401         10951            0.3047      0.1646                151.4457
+  ETHUSDT          0.5%         14162      0.0084         6812          7350            0.2021      0.1646                119.3966
+  ETHUSDT          0.6%          9731      0.0098         4628          5103            0.1389      0.1646                 95.2333
+  ETHUSDT          0.7%          6867      0.0112         3242          3625            0.0980      0.1646                 76.7230
+  ETHUSDT          0.8%          5044      0.0125         2342          2702            0.0720      0.1646                 63.1158
+  ETHUSDT          0.9%          3809      0.0138         1747          2062            0.0544      0.1646                 52.6709
+  ETHUSDT          1.0%          2873      0.0153         1301          1572            0.0410      0.1646                 43.8208
+  ETHUSDT          1.1%          2231      0.0166          998          1233            0.0318      0.1646                 37.0978
+  ETHUSDT          1.2%          1733      0.0181          763           970            0.0247      0.1646                 31.3796
+  ETHUSDT          1.3%          1390      0.0195          614           776            0.0198      0.1646                 27.1020
+  ETHUSDT          1.4%          1122      0.0209          485           637            0.0160      0.1646                 23.4906
+  ETHUSDT          1.5%           902      0.0225          383           519            0.0129      0.1646                 20.3035
+  SOLUSDT          0.3%         57738      0.0065        28575         29163            0.8239      0.1782                375.9797
+  SOLUSDT          0.4%         41667      0.0077        20535         21132            0.5946      0.1782                320.2623
+  SOLUSDT          0.5%         30061      0.0089        14779         15282            0.4290      0.1782                268.3329
+  SOLUSDT          0.6%         22008      0.0102        10770         11238            0.3140      0.1782                224.2932
+  SOLUSDT          0.7%         16324      0.0115         7965          8359            0.2329      0.1782                187.5120
+  SOLUSDT          0.8%         12353      0.0128         6013          6340            0.1763      0.1782                157.8502
+  SOLUSDT          0.9%          9533      0.0141         4640          4893            0.1360      0.1782                133.9472
+  SOLUSDT          1.0%          7418      0.0154         3635          3783            0.1059      0.1782                113.9185
+  SOLUSDT          1.1%          5820      0.0167         2875          2945            0.0830      0.1782                 97.1808
+  SOLUSDT          1.2%          4653      0.0180         2312          2341            0.0664      0.1782                 83.8011
+  SOLUSDT          1.3%          3765      0.0193         1843          1922            0.0537      0.1782                 72.7187
+  SOLUSDT          1.4%          3018      0.0208         1471          1547            0.0431      0.1782                 62.6499
+  SOLUSDT          1.5%          2484      0.0221         1198          1286            0.0354      0.1782                 54.9173
+  BTCUSDT          0.3%         20528      0.0053        10178         10350            0.2929      0.0815                108.9434
+  BTCUSDT          0.4%         11909      0.0067         5819          6090            0.1699      0.0815                 79.2485
+  BTCUSDT          0.5%          7399      0.0080         3577          3822            0.1056      0.0815                 59.1760
+  BTCUSDT          0.6%          4836      0.0093         2306          2530            0.0690      0.0815                 45.1824
+  BTCUSDT          0.7%          3282      0.0107         1567          1715            0.0468      0.0815                 35.1438
+  BTCUSDT          0.8%          2324      0.0120         1073          1251            0.0332      0.0815                 27.9908
+  BTCUSDT          0.9%          1695      0.0134          775           920            0.0242      0.0815                 22.6628
+  BTCUSDT          1.0%          1264      0.0147          580           684            0.0180      0.0815                 18.5780
+  BTCUSDT          1.1%           971      0.0160          438           533            0.0139      0.0815                 15.5099
+  BTCUSDT          1.2%           744      0.0173          330           414            0.0106      0.0815                 12.9077
+  BTCUSDT          1.3%           552      0.0190          236           316            0.0079      0.0815                 10.5132
+  BTCUSDT          1.4%           424      0.0207          181           243            0.0061      0.0815                  8.7929
+  BTCUSDT          1.5%           343      0.0222          141           202            0.0049      0.0815                  7.6225
+  DOTUSDT          0.3%         51827      0.0063        25411         26416            0.7395      0.2011                325.9953
+  DOTUSDT          0.4%         36663      0.0075        17953         18710            0.5232      0.2011                273.3691
+  DOTUSDT          0.5%         25943      0.0087        12617         13326            0.3702      0.2011                225.4731
+  DOTUSDT          0.6%         18537      0.0100         8945          9592            0.2645      0.2011                184.9934
+  DOTUSDT          0.7%         13486      0.0113         6441          7045            0.1924      0.2011                152.2732
+  DOTUSDT          0.8%         10103      0.0126         4771          5332            0.1442      0.2011                126.9965
+  DOTUSDT          0.9%          7558      0.0139         3529          4029            0.1078      0.2011                105.4182
+  DOTUSDT          1.0%          5780      0.0153         2674          3106            0.0825      0.2011                 88.5601
+  DOTUSDT          1.1%          4525      0.0167         2070          2455            0.0646      0.2011                 75.4185
+  DOTUSDT          1.2%          3603      0.0180         1665          1938            0.0514      0.2011                 64.8389
+  DOTUSDT          1.3%          2864      0.0194         1327          1537            0.0409      0.2011                 55.6090
+  DOTUSDT          1.4%          2306      0.0209         1061          1245            0.0329      0.2011                 48.0952
+  DOTUSDT          1.5%          1847      0.0224          855           992            0.0264      0.2011                 41.4473
+ LINKUSDT          0.3%         59597      0.0064        29550         30047            0.8504      0.1834                383.2875
+ LINKUSDT          0.4%         43005      0.0076        21308         21697            0.6137      0.1834                325.3232
+ LINKUSDT          0.5%         31206      0.0087        15423         15783            0.4453      0.1834                272.4457
+ LINKUSDT          0.6%         22610      0.0100        11236         11374            0.3226      0.1834                225.4560
+ LINKUSDT          0.7%         16722      0.0112         8281          8441            0.2386      0.1834                187.3679
+ LINKUSDT          0.8%         12397      0.0125         6107          6290            0.1769      0.1834                155.0476
+ LINKUSDT          0.9%          9418      0.0138         4652          4766            0.1344      0.1834                129.8062
+ LINKUSDT          1.0%          7240      0.0151         3593          3647            0.1033      0.1834                109.1952
+ LINKUSDT          1.1%          5625      0.0164         2794          2831            0.0803      0.1834                 92.2574
+ LINKUSDT          1.2%          4428      0.0177         2194          2234            0.0632      0.1834                 78.5168
+ LINKUSDT          1.3%          3501      0.0191         1741          1760            0.0500      0.1834                 66.9512
+ LINKUSDT          1.4%          2803      0.0205         1386          1417            0.0400      0.1834                 57.5444
+ LINKUSDT          1.5%          2281      0.0219         1131          1150            0.0325      0.1834                 49.9866
+MATICUSDT          0.3%         22952      0.0061        11209         11743            0.6692      0.2157                139.4927
+MATICUSDT          0.4%         15777      0.0073         7620          8157            0.4600      0.2157                114.6742
+MATICUSDT          0.5%         10866      0.0085         5182          5684            0.3168      0.2157                 92.7167
+MATICUSDT          0.6%          7510      0.0099         3572          3938            0.2190      0.2157                 74.3862
+MATICUSDT          0.7%          5373      0.0113         2489          2884            0.1567      0.2157                 60.5789
+MATICUSDT          0.8%          4008      0.0126         1800          2208            0.1169      0.2157                 50.3682
+MATICUSDT          0.9%          3002      0.0139         1318          1684            0.0875      0.2157                 41.8677
+MATICUSDT          1.0%          2322      0.0153         1010          1312            0.0677      0.2157                 35.4203
+MATICUSDT          1.1%          1769      0.0167          748          1021            0.0516      0.2157                 29.6288
+MATICUSDT          1.2%          1398      0.0182          590           808            0.0408      0.2157                 25.3852
+MATICUSDT          1.3%          1111      0.0196          474           637            0.0324      0.2157                 21.8100
+MATICUSDT          1.4%           892      0.0211          378           514            0.0260      0.2157                 18.8570
+MATICUSDT          1.5%           730      0.0226          302           428            0.0213      0.2157                 16.5101
+ ALGOUSDT          0.3%         60844      0.0068        30059         30785            0.8682      0.2485                412.7745
+ ALGOUSDT          0.4%         44924      0.0080        22149         22775            0.6410      0.2485                357.7302
+ ALGOUSDT          0.5%         33230      0.0092        16369         16861            0.4742      0.2485                305.4600
+ ALGOUSDT          0.6%         24887      0.0104        12286         12601            0.3551      0.2485                259.7986
+ ALGOUSDT          0.7%         18855      0.0117         9306          9549            0.2690      0.2485                220.7427
+ ALGOUSDT          0.8%         14382      0.0130         7136          7246            0.2052      0.2485                187.2869
+ ALGOUSDT          0.9%         11128      0.0144         5540          5588            0.1588      0.2485                159.7012
+ ALGOUSDT          1.0%          8834      0.0156         4421          4413            0.1261      0.2485                137.9873
+ ALGOUSDT          1.1%          6932      0.0170         3478          3454            0.0989      0.2485                118.0654
+ ALGOUSDT          1.2%          5617      0.0183         2818          2799            0.0802      0.2485                102.9709
+ ALGOUSDT          1.3%          4602      0.0196         2321          2281            0.0657      0.2485                 90.3070
+ ALGOUSDT          1.4%          3746      0.0210         1911          1835            0.0535      0.2485                 78.7650
+ ALGOUSDT          1.5%          3117      0.0223         1608          1509            0.0445      0.2485                 69.6637
+ AVAXUSDT          0.3%         61018      0.0066        30275         30743            0.8707      0.1594                400.8828
+ AVAXUSDT          0.4%         44640      0.0077        22026         22614            0.6370      0.1594                344.0073
+ AVAXUSDT          0.5%         32664      0.0089        16172         16492            0.4661      0.1594                290.4330
+ AVAXUSDT          0.6%         23945      0.0101        11856         12089            0.3417      0.1594                242.7305
+ AVAXUSDT          0.7%         17965      0.0114         8920          9045            0.2563      0.1594                204.0284
+ AVAXUSDT          0.8%         13527      0.0126         6674          6853            0.1930      0.1594                170.8971
+ AVAXUSDT          0.9%         10339      0.0139         5084          5255            0.1475      0.1594                143.8738
+ AVAXUSDT          1.0%          7988      0.0152         3970          4018            0.1140      0.1594                121.5945
+ AVAXUSDT          1.1%          6307      0.0165         3114          3193            0.0900      0.1594                103.9960
+ AVAXUSDT          1.2%          4980      0.0178         2464          2516            0.0711      0.1594                 88.7853
+ AVAXUSDT          1.3%          3959      0.0192         1960          1999            0.0565      0.1594                 76.0406
+ AVAXUSDT          1.4%          3199      0.0206         1585          1614            0.0456      0.1594                 65.7937
+ AVAXUSDT          1.5%          2615      0.0219         1289          1326            0.0373      0.1594                 57.3301
+ ATOMUSDT          0.3%         49709      0.0061        24405         25304            0.7093      0.1636                303.5067
+ ATOMUSDT          0.4%         34486      0.0073        16792         17694            0.4921      0.1636                250.7252
+ ATOMUSDT          0.5%         24085      0.0085        11624         12461            0.3437      0.1636                204.2969
+ ATOMUSDT          0.6%         16969      0.0097         8105          8864            0.2421      0.1636                165.3953
+ ATOMUSDT          0.7%         12156      0.0110         5763          6393            0.1735      0.1636                134.2446
+ ATOMUSDT          0.8%          8855      0.0124         4141          4714            0.1264      0.1636                109.5787
+ ATOMUSDT          0.9%          6638      0.0137         3076          3562            0.0947      0.1636                 90.7959
+ ATOMUSDT          1.0%          4984      0.0151         2270          2714            0.0711      0.1636                 75.1091
+ ATOMUSDT          1.1%          3849      0.0164         1723          2126            0.0549      0.1636                 63.2307
+ ATOMUSDT          1.2%          3006      0.0178         1332          1674            0.0429      0.1636                 53.5606
+ ATOMUSDT          1.3%          2377      0.0192         1042          1335            0.0339      0.1636                 45.7124
+ ATOMUSDT          1.4%          1919      0.0206          828          1091            0.0274      0.1636                 39.5314
+ ATOMUSDT          1.5%          1548      0.0221          656           892            0.0221      0.1636                 34.1576
+  UNIUSDT          0.3%         60032      0.0068        29674         30358            0.8566      0.2713                405.6950
+  UNIUSDT          0.4%         44559      0.0079        21946         22613            0.6358      0.2713                351.9639
+  UNIUSDT          0.5%         32942      0.0091        16236         16706            0.4701      0.2713                300.0314
+  UNIUSDT          0.6%         24523      0.0104        12110         12413            0.3499      0.2713                253.9493
+  UNIUSDT          0.7%         18390      0.0117         9044          9346            0.2624      0.2713                214.2582
+  UNIUSDT          0.8%         13946      0.0130         6897          7049            0.1990      0.2713                181.0337
+  UNIUSDT          0.9%         10792      0.0143         5367          5425            0.1540      0.2713                154.3119
+  UNIUSDT          1.0%          8494      0.0156         4294          4200            0.1212      0.2713                132.5471
+  UNIUSDT          1.1%          6697      0.0170         3379          3318            0.0956      0.2713                113.7152
+  UNIUSDT          1.2%          5317      0.0184         2685          2632            0.0759      0.2713                 97.8648
+  UNIUSDT          1.3%          4302      0.0198         2171          2131            0.0614      0.2713                 85.1958
+  UNIUSDT          1.4%          3498      0.0213         1788          1710            0.0499      0.2713                 74.3688
+  UNIUSDT          1.5%          2898      0.0227         1490          1408            0.0414      0.2713                 65.6638
+  ADAUSDT          0.3%         54105      0.0065        26703         27402            0.7720      0.2177                354.3344
+  ADAUSDT          0.4%         38578      0.0078        19005         19573            0.5505      0.2177                300.4236
+  ADAUSDT          0.5%         27871      0.0091        13687         14184            0.3977      0.2177                252.5811
+  ADAUSDT          0.6%         20387      0.0104         9978         10409            0.2909      0.2177                211.6525
+  ADAUSDT          0.7%         15253      0.0117         7472          7781            0.2177      0.2177                178.3950
+  ADAUSDT          0.8%         11551      0.0130         5652          5899            0.1648      0.2177                150.7278
+  ADAUSDT          0.9%          8932      0.0144         4371          4561            0.1275      0.2177                128.5342
+  ADAUSDT          1.0%          6966      0.0158         3383          3583            0.0994      0.2177                109.8761
+  ADAUSDT          1.1%          5555      0.0171         2678          2877            0.0793      0.2177                 95.0896
+  ADAUSDT          1.2%          4409      0.0186         2116          2293            0.0629      0.2177                 81.9265
+  ADAUSDT          1.3%          3573      0.0200         1707          1866            0.0510      0.2177                 71.4938
+  ADAUSDT          1.4%          2930      0.0214         1391          1539            0.0418      0.2177                 62.8272
+  ADAUSDT          1.5%          2420      0.0229         1140          1280            0.0345      0.2177                 55.4376
+  LTCUSDT          0.3%         42988      0.0062        21001         21987            0.6134      0.1967                268.2364
+  LTCUSDT          0.4%         29413      0.0075        14235         15178            0.4197      0.1967                221.1781
+  LTCUSDT          0.5%         20603      0.0088         9912         10691            0.2940      0.1967                181.8278
+  LTCUSDT          0.6%         14861      0.0101         7061          7800            0.2121      0.1967                150.4569
+  LTCUSDT          0.7%         10911      0.0114         5147          5764            0.1557      0.1967                124.9167
+  LTCUSDT          0.8%          8127      0.0128         3806          4321            0.1160      0.1967                104.1255
+  LTCUSDT          0.9%          6225      0.0141         2898          3327            0.0888      0.1967                 88.0189
+  LTCUSDT          1.0%          4855      0.0155         2230          2625            0.0693      0.1967                 75.0447
+  LTCUSDT          1.1%          3735      0.0169         1706          2029            0.0533      0.1967                 63.3058
+  LTCUSDT          1.2%          2925      0.0185         1330          1595            0.0417      0.1967                 54.0210
+  LTCUSDT          1.3%          2384      0.0198         1087          1297            0.0340      0.1967                 47.2604
+  LTCUSDT          1.4%          1938      0.0213          895          1043            0.0277      0.1967                 41.2453
+  LTCUSDT          1.5%          1588      0.0228          737           851            0.0227      0.1967                 36.1671
+  XRPUSDT          0.3%         41991      0.0067        20408         21583            0.5992      0.1917                279.8310
+  XRPUSDT          0.4%         28993      0.0081        13932         15061            0.4137      0.1917                234.8774
+  XRPUSDT          0.5%         20772      0.0095         9928         10844            0.2964      0.1917                198.1706
+  XRPUSDT          0.6%         15376      0.0110         7334          8042            0.2194      0.1917                168.6733
+  XRPUSDT          0.7%         11638      0.0124         5517          6121            0.1661      0.1917                144.4669
+  XRPUSDT          0.8%          8973      0.0139         4231          4742            0.1280      0.1917                124.5577
+  XRPUSDT          0.9%          7108      0.0153         3351          3757            0.1014      0.1917                108.7368
+  XRPUSDT          1.0%          5695      0.0167         2681          3014            0.0813      0.1917                 95.3609
+  XRPUSDT          1.1%          4679      0.0181         2222          2457            0.0668      0.1917                 84.7269
+  XRPUSDT          1.2%          3793      0.0197         1825          1968            0.0541      0.1917                 74.5688
+  XRPUSDT          1.3%          3214      0.0210         1563          1651            0.0459      0.1917                 67.3492
+  XRPUSDT          1.4%          2688      0.0224         1309          1379            0.0384      0.1917                 60.2595
+  XRPUSDT          1.5%          2281      0.0238         1122          1159            0.0325      0.1917                 54.3622
+  BCHUSDT          0.3%         45892      0.0064        22513         23379            0.6549      0.1644                294.2854
+  BCHUSDT          0.4%         31746      0.0077        15521         16225            0.4530      0.1644                245.2208
+  BCHUSDT          0.5%         22325      0.0091        10876         11449            0.3186      0.1644                203.1760
+  BCHUSDT          0.6%         16037      0.0105         7812          8225            0.2288      0.1644                168.8056
+  BCHUSDT          0.7%         12051      0.0119         5895          6156            0.1720      0.1644                143.0263
+  BCHUSDT          0.8%          9209      0.0132         4527          4682            0.1314      0.1644                121.8116
+  BCHUSDT          0.9%          7128      0.0146         3566          3562            0.1017      0.1644                104.1712
+  BCHUSDT          1.0%          5635      0.0160         2807          2828            0.0804      0.1644                 90.0346
+  BCHUSDT          1.1%          4481      0.0174         2257          2224            0.0639      0.1644                 77.9373
+  BCHUSDT          1.2%          3612      0.0188         1842          1770            0.0515      0.1644                 67.9537
+  BCHUSDT          1.3%          2970      0.0202         1523          1447            0.0424      0.1644                 59.9400
+  BCHUSDT          1.4%          2438      0.0216         1271          1167            0.0348      0.1644                 52.7637
+  BCHUSDT          1.5%          2060      0.0230         1098           962            0.0294      0.1644                 47.2907
+  BNBUSDT          0.3%         26822      0.0055        12841         13981            0.3827      0.1001                147.8697
+  BNBUSDT          0.4%         16330      0.0068         7678          8652            0.2330      0.1001                111.5937
+  BNBUSDT          0.5%         10424      0.0082         4816          5608            0.1487      0.1001                 85.2375
+  BNBUSDT          0.6%          7024      0.0095         3179          3845            0.1002      0.1001                 66.6836
+  BNBUSDT          0.7%          4880      0.0108         2182          2698            0.0696      0.1001                 52.8332
+  BNBUSDT          0.8%          3457      0.0122         1546          1911            0.0493      0.1001                 42.2174
+  BNBUSDT          0.9%          2494      0.0137         1105          1389            0.0356      0.1001                 34.0653
+  BNBUSDT          1.0%          1855      0.0151          808          1047            0.0265      0.1001                 28.0190
+  BNBUSDT          1.1%          1411      0.0166          600           811            0.0201      0.1001                 23.3603
+  BNBUSDT          1.2%          1109      0.0179          467           642            0.0158      0.1001                 19.8920
+  BNBUSDT          1.3%           885      0.0193          380           505            0.0126      0.1001                 17.1023
+  BNBUSDT          1.4%           709      0.0208          297           412            0.0101      0.1001                 14.7305
+  BNBUSDT          1.5%           572      0.0223          248           324            0.0082      0.1001                 12.7405
+
+TOP PERFORMERS BY BARRIER LEVEL:
+------------------------------------------------------------
+
+Top 5 for 0.3% barrier:
+  Symbol Barrier_Level  Avg_Profit  Total_Trades  Long_Trades  Short_Trades
+ALGOUSDT          0.3%      0.0068         60844        30059         30785
+ UNIUSDT          0.3%      0.0068         60032        29674         30358
+ XRPUSDT          0.3%      0.0067         41991        20408         21583
+AVAXUSDT          0.3%      0.0066         61018        30275         30743
+ ADAUSDT          0.3%      0.0065         54105        26703         27402
+
+Top 5 for 0.4% barrier:
+  Symbol Barrier_Level  Avg_Profit  Total_Trades  Long_Trades  Short_Trades
+ XRPUSDT          0.4%      0.0081         28993        13932         15061
+ALGOUSDT          0.4%      0.0080         44924        22149         22775
+ UNIUSDT          0.4%      0.0079         44559        21946         22613
+ ADAUSDT          0.4%      0.0078         38578        19005         19573
+ BCHUSDT          0.4%      0.0077         31746        15521         16225
+
+Top 5 for 0.5% barrier:
+  Symbol Barrier_Level  Avg_Profit  Total_Trades  Long_Trades  Short_Trades
+ XRPUSDT          0.5%      0.0095         20772         9928         10844
+ALGOUSDT          0.5%      0.0092         33230        16369         16861
+ UNIUSDT          0.5%      0.0091         32942        16236         16706
+ BCHUSDT          0.5%      0.0091         22325        10876         11449
+ ADAUSDT          0.5%      0.0091         27871        13687         14184
+
+Top 5 for 0.6% barrier:
+  Symbol Barrier_Level  Avg_Profit  Total_Trades  Long_Trades  Short_Trades
+ XRPUSDT          0.6%      0.0110         15376         7334          8042
+ BCHUSDT          0.6%      0.0105         16037         7812          8225
+ALGOUSDT          0.6%      0.0104         24887        12286         12601
+ ADAUSDT          0.6%      0.0104         20387         9978         10409
+ UNIUSDT          0.6%      0.0104         24523        12110         12413
+
+Top 5 for 0.7% barrier:
+  Symbol Barrier_Level  Avg_Profit  Total_Trades  Long_Trades  Short_Trades
+ XRPUSDT          0.7%      0.0124         11638         5517          6121
+ BCHUSDT          0.7%      0.0119         12051         5895          6156
+ALGOUSDT          0.7%      0.0117         18855         9306          9549
+ ADAUSDT          0.7%      0.0117         15253         7472          7781
+ UNIUSDT          0.7%      0.0117         18390         9044          9346
+
+Top 5 for 0.8% barrier:
+  Symbol Barrier_Level  Avg_Profit  Total_Trades  Long_Trades  Short_Trades
+ XRPUSDT          0.8%      0.0139          8973         4231          4742
+ BCHUSDT          0.8%      0.0132          9209         4527          4682
+ ADAUSDT          0.8%      0.0130         11551         5652          5899
+ALGOUSDT          0.8%      0.0130         14382         7136          7246
+ UNIUSDT          0.8%      0.0130         13946         6897          7049
+
+Top 5 for 0.9% barrier:
+  Symbol Barrier_Level  Avg_Profit  Total_Trades  Long_Trades  Short_Trades
+ XRPUSDT          0.9%      0.0153          7108         3351          3757
+ BCHUSDT          0.9%      0.0146          7128         3566          3562
+ ADAUSDT          0.9%      0.0144          8932         4371          4561
+ALGOUSDT          0.9%      0.0144         11128         5540          5588
+ UNIUSDT          0.9%      0.0143         10792         5367          5425
+
+Top 5 for 1.0% barrier:
+  Symbol Barrier_Level  Avg_Profit  Total_Trades  Long_Trades  Short_Trades
+ XRPUSDT          1.0%      0.0167          5695         2681          3014
+ BCHUSDT          1.0%      0.0160          5635         2807          2828
+ ADAUSDT          1.0%      0.0158          6966         3383          3583
+ALGOUSDT          1.0%      0.0156          8834         4421          4413
+ UNIUSDT          1.0%      0.0156          8494         4294          4200
+
+Top 5 for 1.1% barrier:
+  Symbol Barrier_Level  Avg_Profit  Total_Trades  Long_Trades  Short_Trades
+ XRPUSDT          1.1%      0.0181          4679         2222          2457
+ BCHUSDT          1.1%      0.0174          4481         2257          2224
+ ADAUSDT          1.1%      0.0171          5555         2678          2877
+ALGOUSDT          1.1%      0.0170          6932         3478          3454
+ UNIUSDT          1.1%      0.0170          6697         3379          3318
+
+Top 5 for 1.2% barrier:
+ Symbol Barrier_Level  Avg_Profit  Total_Trades  Long_Trades  Short_Trades
+XRPUSDT          1.2%      0.0197          3793         1825          1968
+BCHUSDT          1.2%      0.0188          3612         1842          1770
+ADAUSDT          1.2%      0.0186          4409         2116          2293
+LTCUSDT          1.2%      0.0185          2925         1330          1595
+UNIUSDT          1.2%      0.0184          5317         2685          2632
+
+Top 5 for 1.3% barrier:
+ Symbol Barrier_Level  Avg_Profit  Total_Trades  Long_Trades  Short_Trades
+XRPUSDT          1.3%      0.0210          3214         1563          1651
+BCHUSDT          1.3%      0.0202          2970         1523          1447
+ADAUSDT          1.3%      0.0200          3573         1707          1866
+LTCUSDT          1.3%      0.0198          2384         1087          1297
+UNIUSDT          1.3%      0.0198          4302         2171          2131
+
+Top 5 for 1.4% barrier:
+ Symbol Barrier_Level  Avg_Profit  Total_Trades  Long_Trades  Short_Trades
+XRPUSDT          1.4%      0.0224          2688         1309          1379
+BCHUSDT          1.4%      0.0216          2438         1271          1167
+ADAUSDT          1.4%      0.0214          2930         1391          1539
+LTCUSDT          1.4%      0.0213          1938          895          1043
+UNIUSDT          1.4%      0.0213          3498         1788          1710
+
+Top 5 for 1.5% barrier:
+ Symbol Barrier_Level  Avg_Profit  Total_Trades  Long_Trades  Short_Trades
+XRPUSDT          1.5%      0.0238          2281         1122          1159
+BCHUSDT          1.5%      0.0230          2060         1098           962
+ADAUSDT          1.5%      0.0229          2420         1140          1280
+LTCUSDT          1.5%      0.0228          1588          737           851
+UNIUSDT          1.5%      0.0227          2898         1490          1408
+
+BEST OVERALL PERFORMERS:
+------------------------------------------------------------
+Average profit across all barriers:
+  XRPUSDT: 0.0153
+  BCHUSDT: 0.0146
+  ADAUSDT: 0.0145
+  UNIUSDT: 0.0144
+  ALGOUSDT: 0.0144
+  LTCUSDT: 0.0143
+  SOLUSDT: 0.0141
+  MATICUSDT: 0.0141
+  DOTUSDT: 0.0141
+  AVAXUSDT: 0.0140
+
+Most active assets (total trades across all barriers):
+  ALGOUSDT: 241098 trades
+  UNIUSDT: 236390 trades
+  AVAXUSDT: 233146 trades
+  LINKUSDT: 220833 trades
+  SOLUSDT: 216842 trades
+  ADAUSDT: 202530 trades
+  DOTUSDT: 185042 trades
+  ATOMUSDT: 170581 trades
+  BCHUSDT: 165584 trades
+  XRPUSDT: 157201 trades
+
+Assets with most long trades:
+  ALGOUSDT: 119402 long trades
+  UNIUSDT: 117081 long trades
+  AVAXUSDT: 115389 long trades
+  LINKUSDT: 109396 long trades
+  SOLUSDT: 106611 long trades
+
+Assets with most short trades:
+  ALGOUSDT: 121696 short trades
+  UNIUSDT: 119309 short trades
+  AVAXUSDT: 117757 short trades
+  LINKUSDT: 111437 short trades
+  SOLUSDT: 110231 short trades
+
+COMPOSITE TRADING OPPORTUNITY SCORES:
+==================================================
+Ranking assets by overall trading opportunity quality
+
+RANK | SYMBOL   | COMPOSITE | PROFIT | FREQUENCY | CONSISTENCY | DAILY ROI | INTERPRETATION
+-------------------------------------------------------------------------------------
+   1 | ALGOUSDT |     0.841 |  0.721 |     0.882 |       1.000 |   36.63% | Excellent
+   2 | UNIUSDT  |     0.835 |  0.722 |     0.865 |       1.000 |   35.98% | Excellent
+   3 | AVAXUSDT |     0.822 |  0.702 |     0.853 |       1.000 |   34.48% | Excellent
+   4 | LINKUSDT |     0.802 |  0.696 |     0.808 |       1.000 |   32.39% | Excellent
+   5 | SOLUSDT  |     0.800 |  0.707 |     0.793 |       1.000 |   32.32% | Excellent
+   6 | ADAUSDT  |     0.787 |  0.726 |     0.741 |       1.000 |   30.99% | Good
+   7 | DOTUSDT  |     0.752 |  0.704 |     0.677 |       1.000 |   27.44% | Good
+   8 | XRPUSDT  |     0.736 |  0.764 |     0.575 |       1.000 |   25.30% | Good
+   9 | BCHUSDT  |     0.735 |  0.732 |     0.606 |       1.000 |   25.56% | Good
+  10 | ATOMUSDT |     0.726 |  0.692 |     0.624 |       1.000 |   24.88% | Good
+  11 | MATICUSDT |     0.714 |  0.704 |     0.581 |       1.000 |   23.57% | Good
+  12 | LTCUSDT  |     0.706 |  0.715 |     0.551 |       1.000 |   22.68% | Good
+  13 | ETHUSDT  |     0.633 |  0.698 |     0.384 |       1.000 |   15.44% | Good
+  14 | BNBUSDT  |     0.589 |  0.687 |     0.285 |       1.000 |   11.29% | Moderate
+  15 | BTCUSDT  |     0.552 |  0.675 |     0.206 |       1.000 |    8.00% | Moderate
+
+DETAILED BREAKDOWN:
+------------------------------
+1. ALGOUSDT:
+   Composite Score: 0.841
+   Average Profit per Trade: 1.44%
+   Average Success Rate: 26.5%
+   Total Trading Opportunities: 241,098
+   Daily Opportunities: 25.4 trades/day
+   Daily Profit Potential: 36.63% ROI/day
+   Component Scores: P=0.721, F=0.882, C=1.000
+
+2. UNIUSDT:
+   Composite Score: 0.835
+   Average Profit per Trade: 1.44%
+   Average Success Rate: 25.9%
+   Total Trading Opportunities: 236,390
+   Daily Opportunities: 24.9 trades/day
+   Daily Profit Potential: 35.98% ROI/day
+   Component Scores: P=0.722, F=0.865, C=1.000
+
+3. AVAXUSDT:
+   Composite Score: 0.822
+   Average Profit per Trade: 1.40%
+   Average Success Rate: 25.6%
+   Total Trading Opportunities: 233,146
+   Daily Opportunities: 24.6 trades/day
+   Daily Profit Potential: 34.48% ROI/day
+   Component Scores: P=0.702, F=0.853, C=1.000
+
+4. LINKUSDT:
+   Composite Score: 0.802
+   Average Profit per Trade: 1.39%
+   Average Success Rate: 24.2%
+   Total Trading Opportunities: 220,833
+   Daily Opportunities: 23.3 trades/day
+   Daily Profit Potential: 32.39% ROI/day
+   Component Scores: P=0.696, F=0.808, C=1.000
+
+5. SOLUSDT:
+   Composite Score: 0.800
+   Average Profit per Trade: 1.41%
+   Average Success Rate: 23.8%
+   Total Trading Opportunities: 216,842
+   Daily Opportunities: 22.8 trades/day
+   Daily Profit Potential: 32.32% ROI/day
+   Component Scores: P=0.707, F=0.793, C=1.000
+
+
+VOLUME ANALYSIS SUMMARY (Value-Weighted USD):
+------------------------------------------------------------
+Total Volume USD Mean: $259,219,902,122.18
+Total Volume USD Median: $62,389,705,523.69
+Total Volume USD Std Dev: $437,546,865,452.26
+Avg Volume USD Mean: $3,722,876.62
+Avg Volume USD Median: $890,264.06
+Volume Consistency USD Mean: 0.34
+Volume Volatility USD Mean: 1.41
+Volume Price Correlation Mean: 0.10
+Volume Spike Frequency USD Mean: 0.11
+
+VOLUME RANKINGS (Value-Weighted USD):
+------------------------------------------------------------
+Top 10 Assets by Total Volume (USD Value):
+  BTCUSDT: $1,530,859,784,287.48
+  ETHUSDT: $976,498,726,188.94
+  SOLUSDT: $492,436,198,182.61
+  XRPUSDT: $312,785,150,640.86
+  BNBUSDT: $170,172,303,552.12
+  ADAUSDT: $86,180,118,115.53
+  AVAXUSDT: $67,625,446,066.26
+  LINKUSDT: $62,389,705,523.69
+  LTCUSDT: $47,385,927,750.28
+  DOTUSDT: $31,572,928,805.54
+
+Top 10 Assets by Volume Consistency (USD):
+  SOLUSDT: 0.4366
+  BTCUSDT: 0.4327
+  ETHUSDT: 0.4006
+  BNBUSDT: 0.3782
+  MATICUSDT: 0.3624
+  LINKUSDT: 0.3613
+  AVAXUSDT: 0.3493
+  DOTUSDT: 0.3340
+  XRPUSDT: 0.3275
+  LTCUSDT: 0.3254
+
+Top 10 Assets by Volume-Price Correlation:
+  ALGOUSDT: 0.3105
+  LTCUSDT: 0.2551
+  ADAUSDT: 0.2546
+  MATICUSDT: 0.2370
+  DOTUSDT: 0.1933
+  LINKUSDT: 0.1830
+  ATOMUSDT: 0.1666
+  UNIUSDT: 0.1363
+  AVAXUSDT: 0.1239
+  BCHUSDT: 0.0805
+
+VOLUME CATEGORIES (Value-Weighted USD):
+------------------------------------------------------------
+High Volume Assets (USD): ETHUSDT, SOLUSDT, BTCUSDT, XRPUSDT
+Medium Volume Assets (USD): DOTUSDT, LINKUSDT, AVAXUSDT, UNIUSDT, ADAUSDT, LTCUSDT, BNBUSDT
+Low Volume Assets (USD): MATICUSDT, ALGOUSDT, ATOMUSDT, BCHUSDT
+
+VOLUME PATTERNS SUMMARY:
+------------------------------------------------------------
+
+ETHUSDT:
+  Peak Hours: [14, 15, 13]
+  Peak Days: [0, 1, 2]
+  Volume Autocorrelation: 0.6811
+  Weekly Seasonality: 0.4316
+
+SOLUSDT:
+  Peak Hours: [14, 15, 16]
+  Peak Days: [0, 2, 1]
+  Volume Autocorrelation: 0.7199
+  Weekly Seasonality: 0.4851
+
+BTCUSDT:
+  Peak Hours: [14, 15, 16]
+  Peak Days: [0, 1, 2]
+  Volume Autocorrelation: 0.7087
+  Weekly Seasonality: 0.4317
+
+DOTUSDT:
+  Peak Hours: [14, 15, 13]
+  Peak Days: [0, 4, 1]
+  Volume Autocorrelation: 0.6843
+  Weekly Seasonality: 0.6556
+
+LINKUSDT:
+  Peak Hours: [14, 15, 13]
+  Peak Days: [0, 1, 4]
+  Volume Autocorrelation: 0.6806
+  Weekly Seasonality: 0.5785

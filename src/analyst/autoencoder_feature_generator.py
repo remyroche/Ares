@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 import yaml
 from ...utils.logger import system_logger
+from ...utils.data.cli import setup_logging
 import time
 import numpy as np
 import pandas as pd
@@ -16,6 +17,7 @@ try:
     from optuna.integration import TFKerasPruningCallback
     from sklearn.ensemble import RandomForestClassifier
     from sklearn.preprocessing import MinMaxScaler, RobustScaler, StandardScaler
+    import tensorflow as tf
     from tensorflow.keras import Model, layers
     from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
     DEPENDENCIES_AVAILABLE = True
@@ -926,7 +928,7 @@ class AutoencoderFeatureAnalyzer:
                 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size = 0.3, random_state = 42, stratify = y if len(np.unique(y)) <= 10 else None)
                 from sklearn.linear_model import LogisticRegression
 
-                perm_model = LogisticRegression(random_state = 42, max_iter = 1000)
+                perm_model = LogisticRegression(random_state = 42, max_iter = 2000)
                 perm_model.fit(X_train, y_train)
                 perm_importance = permutation_importance(perm_model, X_test, y_test, n_repeats = 10, random_state = 42, n_jobs=-1)
                 perm_df = pd.DataFrame({'feature': X.columns, 'importance': perm_importance.importances_mean, 'std': perm_importance.importances_std}).sort_values('importance', ascending = False)

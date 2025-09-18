@@ -61,7 +61,7 @@ from src.utils.ml_common.models.model_manager import ModelManager
 from src.utils.ml_common.optimization.hierarchical_hpo import HierarchicalHPO, HierarchicalHPOConfig, HPOPhaseConfig
 from src.utils.ml_common.optimization.overfitting_prevention import OverfittingPrevention, OverfittingPreventionConfig
 from src.utils.ml_common.ensembles.stacking_ensemble_manager import StackingEnsembleManager, StackingEnsembleConfig
-from src.utils.ml_common.post_training.model_persistence import ModelPersistence
+from src.utils.ml_common.post_training.model_persistence import ModelPersistence, PersistenceConfig
 from src.utils.ml_common.post_training.model_validation import ModelValidator
 from src.utils.ml_common.models.model_factory import EnhancedModelFactory
 from src.utils.ml_common.models.model_registry import ModelRegistry
@@ -140,7 +140,13 @@ class VectorizedTrainingManager:
                 save_path=model_save_path,
                 save_format="joblib"
             )
-            self.model_persistence = ModelPersistence()
+            self.model_persistence = ModelPersistence(PersistenceConfig(
+                base_model_dir=model_save_path,
+                enable_versioning=True,
+                max_versions=5,
+                save_metadata=True,
+                enable_backup=True
+            ))
             self.model_validation = ModelValidator()
         else:
             self.model_manager = None

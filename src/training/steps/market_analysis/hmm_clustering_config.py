@@ -87,12 +87,11 @@ class UnifiedHMMClusteringConfig:
     
     def __post_init__(self):
         """Post-initialization validation and adjustments."""
-        # Validate n_components
+        # Validate n_components - Remove artificial limits
         if self.n_components < 2:
             logger.warning("n_components < 2, setting to 2")
             self.n_components = 2
-        elif self.n_components > 10:
-            logger.warning("n_components > 10 may lead to overfitting")
+        # Remove artificial upper limit - let optimization determine optimal count
         
         # Validate lookback_windows
         if not self.lookback_windows:
@@ -299,11 +298,10 @@ def validate_config(config: UnifiedHMMClusteringConfig) -> List[str]:
     """Validate configuration and return list of warnings/errors."""
     warnings = []
     
-    # Validate n_components
+    # Validate n_components - Remove artificial limits
     if config.n_components < 2:
         warnings.append("n_components should be at least 2")
-    elif config.n_components > 10:
-        warnings.append("n_components > 10 may lead to overfitting")
+    # Remove artificial upper limit - let optimization determine optimal count
     
     # Validate lookback_windows
     if not config.lookback_windows:

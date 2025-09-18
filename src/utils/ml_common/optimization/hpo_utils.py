@@ -1843,3 +1843,290 @@ class HyperparameterOptimization:
         except Exception as e:
             self.logger.error(f"❌ Random search failed: {e}")
             return {}
+
+
+# ============================================================================
+# PUBLIC API FUNCTIONS
+# ============================================================================
+# These functions provide a simple interface to the HyperparameterOptimization class
+
+def optimize_hyperparameters(model_factory: Callable = None, 
+                           model: Any = None,
+                           X: np.ndarray = None, 
+                           y: np.ndarray = None,
+                           search_space: Dict[str, Any] = None,
+                           n_trials: int = 50,
+                           method: str = 'bayesian',
+                           scoring: Union[str, Callable] = 'accuracy',
+                           cv: Optional[Any] = None,
+                           config: Optional[Dict[str, Any]] = None,
+                           **kwargs) -> Dict[str, Any]:
+    """
+    Optimize hyperparameters for a given model.
+    
+    Args:
+        model_factory: Function that creates model with given parameters
+        model: Model instance (alternative to model_factory)
+        X: Feature matrix
+        y: Target array
+        search_space: Dictionary defining the search space
+        n_trials: Number of optimization trials
+        method: Optimization method ('bayesian', 'staged', 'multi_objective')
+        scoring: Scoring metric
+        cv: Cross-validation strategy
+        config: Configuration dictionary
+        **kwargs: Additional arguments
+    
+    Returns:
+        Optimization results dictionary
+    """
+    try:
+        logger.info(f"🚀 Starting hyperparameter optimization with {method} method")
+        
+        # Handle model factory creation
+        if model_factory is None and model is not None:
+            def model_factory(**params):
+                # Clone the model and set parameters
+                from sklearn.base import clone
+                try:
+                    cloned_model = clone(model)
+                    if hasattr(cloned_model, 'set_params'):
+                        cloned_model.set_params(**params)
+                    return cloned_model
+                except Exception:
+                    # Fallback: create new instance with params
+                    model_class = type(model)
+                    return model_class(**params)
+        
+        if model_factory is None:
+            logger.error("❌ Either model_factory or model must be provided")
+            return {'error': 'Either model_factory or model must be provided'}
+        
+        if X is None or y is None:
+            logger.error("❌ Training data (X, y) must be provided")
+            return {'error': 'Training data (X, y) must be provided'}
+        
+        # Create HPO instance
+        hpo = HyperparameterOptimization(config=config)
+        
+        # Generate search space if not provided
+        if search_space is None:
+            model_name = getattr(model, '__class__.__name__', 'unknown').lower()
+            search_space = create_search_space(model_name, X, y)
+            logger.info(f"📊 Generated search space for {model_name}: {list(search_space.keys())}")
+        
+        # Choose optimization method
+        if method == 'bayesian':
+            results = hpo.bayesian_optimization(
+                model_factory=model_factory,
+                X=X, y=y,
+                search_space=search_space,
+                n_trials=n_trials,
+                scoring=scoring,
+                cv=cv,
+                **kwargs
+            )
+        elif method == 'staged':
+            results = hpo.staged_hpo(
+                model_factory=model_factory,
+                X=X, y=y,
+                search_space=search_space,
+                bayes_n_trials=n_trials,
+                scoring=scoring,
+                cv=cv,
+                **kwargs
+            )
+        elif method == 'multi_objective':
+            objectives = kwargs.get('objectives', ['accuracy'])
+            results = hpo.multi_objective_optimization(
+                model_factory=model_factory,
+                X=X, y=y,
+                objectives=objectives,
+                n_trials=n_trials,
+                search_space=search_space
+            )
+        else:
+            logger.error(f"❌ Unknown optimization method: {method}")
+            return {'error': f'Unknown optimization method: {method}'}
+        
+        logger.info(f"✅ Hyperparameter optimization completed with {method} method")
+        return results
+        
+    except Exception as e:
+        logger.error(f"❌ Hyperparameter optimization failed: {e}")
+        return {'error': str(e)}
+
+
+def create_search_space(model_type: str, 
+                       X: Optional[np.ndarray] = None, 
+                       y: Optional[np.ndarray] = None,
+                       data_characteristics: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """
+    Create search space for hyperparameter optimization.
+    
+    Args:
+        model_type: Type of model ('xgboost', 'lightgbm', 'random_forest', etc.)
+        X: Feature matrix (optional, used for data characteristics)
+        y: Target array (optional, used for data characteristics)
+        data_characteristics: Dictionary with data characteristics
+    
+    Returns:
+        Search space dictionary
+    """
+    try:
+        logger.info(f"🔧 Creating search space for {model_type}")
+        
+        # Extract data characteristics
+        if data_characteristics is None and X is not None and y is not None:
+            data_characteristics = {
+                'n_samples': len(X),
+                'n_features': X.shape[1] if len(X.shape) > 1 else 1,
+                'n_classes': len(np.unique(y)) if y is not None else 2,
+                'task_type': 'classification' if len(np.unique(y)) <= 20 else 'regression'
+            }
+        elif data_characteristics is None:
+            data_characteristics = {
+                'n_samples': 1000,
+                'n_features': 10,
+                'n_classes': 2,
+                'task_type': 'classification'
+            }
+        
+        # Create HPO instance and generate search space
+        hpo = HyperparameterOptimization()
+        search_space = hpo.automated_search_space_generation(model_type, data_characteristics)
+        
+        logger.info(f"✅ Created search space with {len(search_space)} parameters")
+        return search_space
+        
+    except Exception as e:
+        logger.error(f"❌ Search space creation failed: {e}")
+        return {}
+
+
+def validate_hpo_config(config: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Validate hyperparameter optimization configuration.
+    
+    Args:
+        config: HPO configuration dictionary
+    
+    Returns:
+        Validation results dictionary
+    """
+    try:
+        logger.info("🔍 Validating HPO configuration")
+        
+        validation_results = {
+            'valid': True,
+            'warnings': [],
+            'errors': []
+        }
+        
+        # Check required fields
+        if 'n_trials' in config:
+            if not isinstance(config['n_trials'], int) or config['n_trials'] <= 0:
+                validation_results['errors'].append("n_trials must be a positive integer")
+                validation_results['valid'] = False
+        
+        if 'method' in config:
+            valid_methods = ['bayesian', 'staged', 'multi_objective', 'random']
+            if config['method'] not in valid_methods:
+                validation_results['errors'].append(f"method must be one of {valid_methods}")
+                validation_results['valid'] = False
+        
+        if 'scoring' in config:
+            # Basic scoring validation
+            if isinstance(config['scoring'], str):
+                valid_scorings = ['accuracy', 'f1', 'precision', 'recall', 'roc_auc', 'neg_mean_squared_error']
+                if config['scoring'] not in valid_scorings:
+                    validation_results['warnings'].append(f"Scoring '{config['scoring']}' may not be supported")
+        
+        # Check search space if provided
+        if 'search_space' in config:
+            search_space = config['search_space']
+            if not isinstance(search_space, dict):
+                validation_results['errors'].append("search_space must be a dictionary")
+                validation_results['valid'] = False
+            else:
+                for param_name, param_config in search_space.items():
+                    if not isinstance(param_config, dict):
+                        validation_results['warnings'].append(f"Parameter '{param_name}' config should be a dictionary")
+                    elif 'type' not in param_config:
+                        validation_results['warnings'].append(f"Parameter '{param_name}' missing 'type' specification")
+        
+        # Performance warnings
+        if config.get('n_trials', 50) > 200:
+            validation_results['warnings'].append("High number of trials may take significant time")
+        
+        if config.get('enable_parallel', True) and config.get('max_workers', 4) > 8:
+            validation_results['warnings'].append("High number of workers may cause resource contention")
+        
+        if validation_results['valid']:
+            logger.info("✅ HPO configuration is valid")
+        else:
+            logger.warning(f"⚠️ HPO configuration has errors: {validation_results['errors']}")
+        
+        return validation_results
+        
+    except Exception as e:
+        logger.error(f"❌ HPO configuration validation failed: {e}")
+        return {
+            'valid': False,
+            'errors': [f"Validation failed: {str(e)}"],
+            'warnings': []
+        }
+
+
+# ============================================================================
+# HELPER FUNCTIONS
+# ============================================================================
+
+def create_hpo_config(n_trials: int = 50,
+                     method: str = 'bayesian',
+                     scoring: str = 'accuracy',
+                     enable_parallel: bool = True,
+                     max_workers: int = 4,
+                     **kwargs) -> Dict[str, Any]:
+    """
+    Create a standard HPO configuration dictionary.
+    
+    Args:
+        n_trials: Number of optimization trials
+        method: Optimization method
+        scoring: Scoring metric
+        enable_parallel: Enable parallel processing
+        max_workers: Maximum number of parallel workers
+        **kwargs: Additional configuration options
+    
+    Returns:
+        HPO configuration dictionary
+    """
+    config = {
+        'n_trials': n_trials,
+        'method': method,
+        'scoring': scoring,
+        'enable_parallel': enable_parallel,
+        'max_workers': max_workers,
+        'enable_monitoring': kwargs.get('enable_monitoring', True),
+        'use_nonlinear_optimization': kwargs.get('use_nonlinear_optimization', True)
+    }
+    
+    # Add any additional kwargs
+    config.update(kwargs)
+    
+    logger.info(f"📋 Created HPO config: {method} method, {n_trials} trials")
+    return config
+
+
+# Add missing import for defaultdict
+from collections import defaultdict
+
+# Make functions available for import
+__all__ = [
+    'HyperparameterOptimization',
+    'optimize_hyperparameters', 
+    'create_search_space',
+    'validate_hpo_config',
+    'create_hpo_config'
+]

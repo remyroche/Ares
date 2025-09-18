@@ -590,7 +590,16 @@ class UnifiedHardwareManager:
     def _reduce_cpu_intensity(self):
         """Reduce CPU intensity in response to high usage."""
         self.logger.info("🔧 Reducing CPU intensity")
-        # Implementation would reduce thread pool sizes, etc.
+        # Reduce thread pool sizes and processing intensity
+        if hasattr(self, 'cpu_optimizer'):
+            self.cpu_optimizer.set_conservative_mode()
+        
+        # Add a small delay to prevent busy waiting
+        import time
+        time.sleep(0.1)
+        
+        # Set reduced intensity flag
+        self._cpu_intensity_reduced = True
         
     def _trigger_aggressive_memory_cleanup(self):
         """Trigger aggressive memory cleanup."""
@@ -694,11 +703,26 @@ class UnifiedHardwareManager:
 # Global instance
 _unified_hardware_manager: Optional[UnifiedHardwareManager] = None
 
-def get_unified_hardware_manager(config: Optional[HardwareConfig] = None) -> UnifiedHardwareManager:
+def get_unified_hardware_manager(config: Optional[HardwareConfig] = None, conservative_mode: bool = False) -> UnifiedHardwareManager:
     """Get or create the global unified hardware manager instance."""
     global _unified_hardware_manager
     
     if _unified_hardware_manager is None:
+        # Use conservative configuration if requested or if no config provided
+        if conservative_mode or config is None:
+            config = HardwareConfig(
+                cpu_optimization_level=OptimizationLevel.CONSERVATIVE,
+                enable_thermal_monitoring=False,
+                enable_adaptive_optimization=False,
+                monitoring_interval=30.0,
+                alert_thresholds={
+                    'cpu_usage': 70.0,
+                    'memory_usage': 80.0, 
+                    'gpu_usage': 60.0,
+                    'temperature': 70.0
+                }
+            )
+        
         _unified_hardware_manager = UnifiedHardwareManager(config)
         _unified_hardware_manager.initialize()
         

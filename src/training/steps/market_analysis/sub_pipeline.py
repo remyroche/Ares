@@ -20,6 +20,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from datetime import datetime
 from enum import Enum
 from dataclasses import dataclass, field
+import pandas as pd
 
 from src.utils.logger import system_logger
 from src.utils.enhanced_artifact_manager import get_artifact_manager
@@ -523,7 +524,8 @@ class MarketAnalysisSubPipeline:
             
             # Update pipeline state for next components
             self._current_pipeline_state.update({
-                'labeled_data': results['labeled_data']
+                'labeled_data': results['labeled_data'],
+                'multi_horizon_labeling_result': multi_horizon_data  # Add for PID component compatibility
             })
             
             # Stage 10: Feature Lookback Optimization
@@ -723,75 +725,6 @@ class MarketAnalysisSubPipeline:
             self.logger.error(f"❌ {sub_pipeline_name} sub-pipeline failed: {e}")
             return result
     
-    async def execute_sub_pipeline_with_next(
-        self, 
-        sub_pipeline_name: str, 
-        config: SubPipelineConfig
-    ) -> SubPipelineResult:
-        """
-        Execute a specific sub-pipeline and then automatically execute the next sub-pipeline in sequence.
-        
-        Args:
-            sub_pipeline_name: Name of the sub-pipeline to execute
-            config: Configuration for the sub-pipeline
-            
-        Returns:
-            SubPipelineResult with execution details
-        """
-        # Execute the requested sub-pipeline
-        result = await self.execute_sub_pipeline(sub_pipeline_name, config)
-        
-        # If successful, determine and execute the next sub-pipeline
-        if result.success:
-            next_sub_pipeline = self._get_next_sub_pipeline(sub_pipeline_name)
-            if next_sub_pipeline:
-                self.logger.info(f"🔄 Auto-executing next sub-pipeline: {next_sub_pipeline}")
-                next_result = await self.execute_sub_pipeline(next_sub_pipeline, config)
-                
-                # Update the result to include next pipeline execution
-                result.metadata = result.metadata or {}
-                result.metadata['next_pipeline_executed'] = next_sub_pipeline
-                result.metadata['next_pipeline_success'] = next_result.success
-                if not next_result.success:
-                    result.metadata['next_pipeline_error'] = next_result.error_message
-        
-        return result
-    
-    def _get_next_sub_pipeline(self, current_sub_pipeline: str) -> Optional[str]:
-        """
-        Determine the next sub-pipeline to execute based on the current one.
-        
-        Args:
-            current_sub_pipeline: Name of the current sub-pipeline
-            
-        Returns:
-            Name of the next sub-pipeline, or None if no next pipeline
-        """
-        # Define the execution sequence for market analysis sub-pipelines
-        sequence = [
-            'sr_parameter_optimization',
-            'sr_detection', 
-            'sr_clustering',
-            'hmm_regime_discovery',
-            'hmm_clustering',
-            'hmm_models_training',
-            'hmm_ensemble_training',
-            'regime_data_splitting',
-            'multi_horizon_labeling',
-            'feature_lookback_optimization',
-            'pid_based_feature_generation'
-        ]
-        
-        try:
-            current_index = sequence.index(current_sub_pipeline)
-            if current_index < len(sequence) - 1:
-                return sequence[current_index + 1]
-        except ValueError:
-            # Current sub-pipeline not in sequence, no next pipeline
-            pass
-        
-        return None
-    
     def get_available_sub_pipelines(self) -> List[str]:
         """Get list of available sub-pipelines."""
         return list(self.component_factory.get_available_components())
@@ -956,10 +889,22 @@ class MarketAnalysisSubPipeline:
             
             self.logger.info(f'📊 Loading market data for {config.symbol} on {config.exchange} ({config.timeframe})')
             
+            # Get date filtering from config if available
+            start_date = None
+            end_date = None
+            if hasattr(config, 'start_date') and config.start_date:
+                from datetime import datetime
+                start_date = datetime.strptime(config.start_date, '%Y-%m-%d')
+                self.logger.info(f'📅 Using start_date filter: {start_date} (mode: {config.mode.value})')
+            if hasattr(config, 'end_date') and config.end_date:
+                from datetime import datetime
+                end_date = datetime.strptime(config.end_date, '%Y-%m-%d')
+                self.logger.info(f'📅 Using end_date filter: {end_date} (mode: {config.mode.value})')
+            
             # Create data loader
             data_loader = UnifiedDataLoader()
             
-            # Load the data
+            # Load the data (UnifiedDataLoader doesn't support date filtering, so we'll filter after loading)
             market_data = await data_loader.load_unified_data(
                 symbol=config.symbol,
                 exchange=config.exchange,
@@ -970,7 +915,36 @@ class MarketAnalysisSubPipeline:
             if market_data is None or market_data.empty:
                 raise ValueError(f"No market data found for {config.symbol} on {config.exchange} ({config.timeframe})")
             
-            self.logger.info(f'✅ Loaded market data: {market_data.shape[0]} rows, {market_data.shape[1]} columns')
+            self.logger.info(f'📊 Loaded full market data: {market_data.shape[0]} rows, {market_data.shape[1]} columns')
+            
+            # Apply date filtering after loading if dates are specified
+            if start_date is not None or end_date is not None:
+                original_rows = len(market_data)
+                
+                # Convert index to datetime if it isn't already
+                if not isinstance(market_data.index, pd.DatetimeIndex):
+                    try:
+                        if hasattr(market_data.index, 'max') and market_data.index.max() > 1e10:
+                            # Likely millisecond timestamps
+                            market_data.index = pd.to_datetime(market_data.index, unit='ms', utc=True).tz_localize(None)
+                        else:
+                            market_data.index = pd.to_datetime(market_data.index, utc=True).tz_localize(None)
+                    except Exception as e:
+                        self.logger.warning(f"⚠️ Could not convert index to datetime for filtering: {e}")
+                
+                # Apply date filtering
+                if start_date is not None:
+                    market_data = market_data[market_data.index >= start_date]
+                    self.logger.info(f'📅 Applied start_date filter: {start_date}')
+                
+                if end_date is not None:
+                    market_data = market_data[market_data.index <= end_date]
+                    self.logger.info(f'📅 Applied end_date filter: {end_date}')
+                
+                filtered_rows = len(market_data)
+                self.logger.info(f'🔍 Date filtering: {original_rows:,} → {filtered_rows:,} rows ({filtered_rows/original_rows*100:.1f}%)')
+            
+            self.logger.info(f'✅ Final market data: {market_data.shape[0]} rows, {market_data.shape[1]} columns')
             self.logger.info(f'📊 Data columns: {list(market_data.columns)}')
             self.logger.info(f'📅 Date range: {market_data.index.min()} to {market_data.index.max()}')
             

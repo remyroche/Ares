@@ -539,13 +539,28 @@ class MainTrainingPipeline:
 
         # Load market data for analysis using existing klines parquet utility
         from src.utils.data.klines_parquet import get_klines_manager
+        from datetime import datetime
         
         self.logger.info("📂 Loading market data for analysis...")
         klines_manager = get_klines_manager(data_dir=config.data_dir)
+        
+        # Parse start_date and end_date from config if provided
+        start_date = None
+        end_date = None
+        if hasattr(config, 'start_date') and config.start_date:
+            start_date = datetime.strptime(config.start_date, '%Y-%m-%d')
+            self.logger.info(f"📅 Using start_date filter: {start_date} (mode: {config.mode.value})")
+        if hasattr(config, 'end_date') and config.end_date:
+            end_date = datetime.strptime(config.end_date, '%Y-%m-%d')
+            self.logger.info(f"📅 Using end_date filter: {end_date} (mode: {config.mode.value})")
+        
+        # Load data with date filtering if specified
         market_data = klines_manager.read_data(
             symbol=config.symbol,
             interval=config.timeframe,
-            data_type="processed"  # Use processed data
+            data_type="processed",  # Use processed data
+            start_date=start_date,
+            end_date=end_date
         )
         
         if market_data is None or market_data.empty:

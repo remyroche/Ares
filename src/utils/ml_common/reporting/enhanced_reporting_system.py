@@ -791,3 +791,45 @@ def get_global_reporting_system(config: Optional[Dict[str, Any]] = None) -> Enha
         _global_reporting_system.start_monitoring()
     
     return _global_reporting_system
+
+
+def create_training_report(training_results: Dict[str, Any], output_path: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Create a comprehensive training report.
+    
+    Args:
+        training_results: Results from training process
+        output_path: Optional path to save the report
+        
+    Returns:
+        Dictionary containing the training report
+    """
+    reporting_system = get_global_reporting_system()
+    
+    # Create report data
+    report_data = ReportData(
+        report_type=ReportType.TRAINING_PROGRESS,
+        timestamp=datetime.now(),
+        data=training_results,
+        metadata={'generated_by': 'create_training_report'}
+    )
+    
+    # Generate report
+    report = reporting_system.generate_report(report_data)
+    
+    # Save if path provided
+    if output_path:
+        try:
+            Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+            with open(output_path, 'w') as f:
+                json.dump(report, f, indent=2, default=str)
+            logger.info(f"✅ Training report saved to {output_path}")
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to save training report: {e}")
+    
+    return report
+
+
+# Export aliases for backward compatibility
+ReportGenerator = EnhancedReportingSystem
+ReportManager = EnhancedReportingSystem  # The system manages reports

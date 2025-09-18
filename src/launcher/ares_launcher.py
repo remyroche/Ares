@@ -247,8 +247,8 @@ class AresLauncher:
                 'required_files': ['sr_levels.json', 'regime_assignments.parquet', 'labels.parquet', 'features.parquet'],
                 'required_artifacts': ['sr_clusters', 'regime_model', 'feature_metadata'],
                 'sub_pipelines': ['sr_detection', 'sr_clustering', 'hmm_clustering',
-                                'hmm_regime_discovery', 'regime_data_splitting', 'triple_barrier_labeling',
-                                'feature_lookback_optimization', 'fractional_differentiation', 'pid_based_feature_generation',
+                                'hmm_regime_discovery', 'multi_horizon_profit_labeler', 'triple_barrier_labeling',
+                                'feature_lookback_optimization', 'pid_based_feature_generation',
                                 'sr_feature_integration']
             },
             'model_training': {
@@ -786,8 +786,8 @@ class AresLauncher:
             }
         }
         
-        # Save artifacts
-        await self._save_artifacts(artifacts, 'full_pipeline_artifacts.json')
+        # Save artifacts - DISABLED: Only outcome file should be created
+        # await self._save_artifacts(artifacts, 'full_pipeline_artifacts.json')
         
         return artifacts
     
@@ -815,8 +815,8 @@ class AresLauncher:
             }
         }
         
-        # Save artifacts
-        await self._save_artifacts(artifacts, f'{stage.value}_artifacts.json')
+        # Save artifacts - DISABLED: Only outcome file should be created
+        # await self._save_artifacts(artifacts, f'{stage.value}_artifacts.json')
         
         return artifacts
     
@@ -852,8 +852,8 @@ class AresLauncher:
             }
         }
         
-        # Save artifacts
-        await self._save_artifacts(artifacts, f'{sub_pipeline}_artifacts.json')
+        # Save artifacts - DISABLED: Only outcome file should be created
+        # await self._save_artifacts(artifacts, f'{sub_pipeline}_artifacts.json')
         
         return artifacts
     
@@ -898,10 +898,9 @@ class AresLauncher:
             'sr_clustering': "Generate SR clusters",
             'hmm_clustering': "HMM-based regime clustering",
             'hmm_regime_discovery': "Discover market regimes",
-            'regime_data_splitting': "Split data by regimes",
+            'multi_horizon_profit_labeler': "Multi-horizon profit probability labeling (replacement for triple barrier)",
             'triple_barrier_labeling': "Apply triple barrier method",
             'feature_lookback_optimization': "Optimize feature lookback periods",
-            'fractional_differentiation': "Apply fractional differentiation",
             'pid_based_feature_generation': "PID-based feature generation with interaction, polynomial, and cross-timeframe features",
             'sr_feature_integration': "Integrate SR-specific features into feature set",
             
@@ -949,11 +948,10 @@ class AresLauncher:
             'sr_clustering': ['sr_detection'],
             'hmm_clustering': ['sr_clustering'],
             'hmm_regime_discovery': ['hmm_clustering'],
-            'regime_data_splitting': ['hmm_regime_discovery'],
-            'triple_barrier_labeling': ['regime_data_splitting'],
-            'feature_lookback_optimization': ['triple_barrier_labeling'],
-            'fractional_differentiation': ['feature_lookback_optimization'],
-            'pid_based_feature_generation': ['fractional_differentiation'],
+            'multi_horizon_profit_labeler': ['hmm_regime_discovery'],
+            'triple_barrier_labeling': ['hmm_regime_discovery'],
+            'feature_lookback_optimization': ['multi_horizon_profit_labeler'],
+            'pid_based_feature_generation': ['feature_lookback_optimization'],
             'sr_feature_integration': ['pid_based_feature_generation'],
             
             # Model Training dependencies
@@ -1002,10 +1000,9 @@ class AresLauncher:
             'sr_clustering': ['sr_clusters.json'],
             'hmm_clustering': ['hmm_clusters.json'],
             'hmm_regime_discovery': ['regime_assignments.parquet'],
-            'regime_data_splitting': ['regime_splits.parquet'],
+            'multi_horizon_profit_labeler': ['multi_horizon_labels.parquet'],
             'triple_barrier_labeling': ['labels.parquet'],
             'feature_lookback_optimization': ['optimized_features.parquet'],
-            'fractional_differentiation': ['fractional_features.parquet'],
             'pid_based_feature_generation': ['pid_based_features.parquet'],
             'sr_feature_integration': ['sr_features.json'],
             

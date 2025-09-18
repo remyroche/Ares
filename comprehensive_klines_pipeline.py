@@ -30,6 +30,11 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
 from src.utils.data.monthly_data_downloader import download_monthly_ethusdt_data, MonthlyDataDownloader
+from src.training.steps.data_collection.klines_downloading_processing import (
+    KlinesDataProcessingPipeline,
+    run_ethusdt_3year_pipeline,
+    run_custom_symbol_pipeline
+)
 from src.utils.data.gap_detector import GapDetector
 from src.utils.data.quality.comprehensive_duplicate_analyzer import ComprehensiveDuplicateAnalyzer
 from src.utils.logger import system_logger
@@ -52,7 +57,10 @@ class ComprehensiveKlinesPipeline:
         self.data_dir.mkdir(exist_ok=True)
         self.logger = logger.getChild("ComprehensiveKlinesPipeline")
 
-        # Initialize components
+        # Initialize components - now using klines_downloading_processing as primary system
+        self.klines_processor = KlinesDataProcessingPipeline(data_dir=str(self.data_dir))
+        
+        # Keep legacy components for compatibility
         self.monthly_downloader = MonthlyDataDownloader(
             data_cache_path=str(self.data_dir),
             realtime_buffer_hours=realtime_buffer_hours
@@ -78,7 +86,7 @@ class ComprehensiveKlinesPipeline:
         symbol: str = "ETHUSDT",
         exchange: str = "binance",
         timeframe: str = "1m",
-        years: int = 3,
+        years: int = 2,
         max_gap_minutes: int = 1,
         force_redownload: bool = False
     ) -> Dict[str, Any]:
@@ -127,29 +135,87 @@ class ComprehensiveKlinesPipeline:
                 results['errors'].append(f"Download stage failed: {download_results.get('error', 'Unknown error')}")
                 return results
 
-            # Stage 2: Detect gaps
-            self.logger.info("🔍 STAGE 2: Detecting data gaps")
-            gap_results = self._detect_gaps(symbol, timeframe, max_gap_minutes)
-            results['stages']['gap_detection'] = gap_results
+            # Check if klines processor already handled comprehensive processing
+            if download_results.get('comprehensive_processing', False):
+                self.logger.info("✅ STAGES 2-5: Comprehensive processing already completed by klines_downloading_processing")
+                
+                # Extract results from klines processor
+                klines_results = download_results.get('klines_processor_results', {})
+                summary = klines_results.get('summary', {})
+                
+                # Map klines processor results to our stage structure
+                results['stages']['gap_detection'] = {
+                    'handled_by_klines_processor': True,
+                    'gap_handling': summary.get('gap_handling', {}),
+                    'message': 'Gap detection and filling handled by klines_downloading_processing'
+                }
+                
+                results['stages']['gap_filling'] = {
+                    'handled_by_klines_processor': True,
+                    'gap_handling': summary.get('gap_handling', {}),
+                    'message': 'Gap filling handled by klines_downloading_processing'
+                }
+                
+                results['stages']['duplicate_analysis'] = {
+                    'handled_by_klines_processor': True,
+                    'duplicate_handling': summary.get('duplicate_handling', {}),
+                    'message': 'Duplicate analysis handled by klines_downloading_processing'
+                }
+                
+                results['stages']['quality_validation'] = {
+                    'handled_by_klines_processor': True,
+                    'quality_check': summary.get('quality_check', {}),
+                    'message': 'Quality validation handled by klines_downloading_processing'
+                }
+                
+            elif download_results.get('use_existing_data', False):
+                # For existing data, run our gap detection and quality checks
+                self.logger.info("🔍 STAGE 2: Detecting gaps in existing data")
+                gap_results = self._detect_gaps(symbol, timeframe, max_gap_minutes)
+                results['stages']['gap_detection'] = gap_results
 
-            # Stage 3: Fill gaps if any found
-            if gap_results.get('gaps_found', 0) > 0:
-                self.logger.info(f"🔧 STAGE 3: Filling {gap_results['gaps_found']} detected gaps")
-                gap_fill_results = await self._fill_gaps(symbol, exchange, timeframe, gap_results)
-                results['stages']['gap_filling'] = gap_fill_results
+                # Stage 3: Fill gaps if any found
+                if gap_results.get('gaps_found', 0) > 0:
+                    self.logger.info(f"🔧 STAGE 3: Filling {gap_results['gaps_found']} detected gaps")
+                    gap_fill_results = await self._fill_gaps(symbol, exchange, timeframe, gap_results)
+                    results['stages']['gap_filling'] = gap_fill_results
+                else:
+                    self.logger.info("✅ STAGE 3: No gaps detected, skipping gap filling")
+                    results['stages']['gap_filling'] = {'gaps_filled': 0, 'message': 'No gaps to fill'}
+
+                # Stage 4: Analyze duplicates
+                self.logger.info("🔍 STAGE 4: Analyzing duplicates")
+                duplicate_results = self._analyze_duplicates(symbol, timeframe)
+                results['stages']['duplicate_analysis'] = duplicate_results
+
+                # Stage 5: Quality validation
+                self.logger.info("✅ STAGE 5: Quality validation")
+                quality_results = self._validate_quality(symbol, timeframe)
+                results['stages']['quality_validation'] = quality_results
             else:
-                self.logger.info("✅ STAGE 3: No gaps detected, skipping gap filling")
-                results['stages']['gap_filling'] = {'gaps_filled': 0, 'message': 'No gaps to fill'}
+                # Fallback to original pipeline stages
+                self.logger.info("🔍 STAGE 2: Detecting data gaps")
+                gap_results = self._detect_gaps(symbol, timeframe, max_gap_minutes)
+                results['stages']['gap_detection'] = gap_results
 
-            # Stage 4: Analyze duplicates
-            self.logger.info("🔍 STAGE 4: Analyzing duplicates")
-            duplicate_results = self._analyze_duplicates(symbol, timeframe)
-            results['stages']['duplicate_analysis'] = duplicate_results
+                # Stage 3: Fill gaps if any found
+                if gap_results.get('gaps_found', 0) > 0:
+                    self.logger.info(f"🔧 STAGE 3: Filling {gap_results['gaps_found']} detected gaps")
+                    gap_fill_results = await self._fill_gaps(symbol, exchange, timeframe, gap_results)
+                    results['stages']['gap_filling'] = gap_fill_results
+                else:
+                    self.logger.info("✅ STAGE 3: No gaps detected, skipping gap filling")
+                    results['stages']['gap_filling'] = {'gaps_filled': 0, 'message': 'No gaps to fill'}
 
-            # Stage 5: Quality validation
-            self.logger.info("✅ STAGE 5: Quality validation")
-            quality_results = self._validate_quality(symbol, timeframe)
-            results['stages']['quality_validation'] = quality_results
+                # Stage 4: Analyze duplicates
+                self.logger.info("🔍 STAGE 4: Analyzing duplicates")
+                duplicate_results = self._analyze_duplicates(symbol, timeframe)
+                results['stages']['duplicate_analysis'] = duplicate_results
+
+                # Stage 5: Quality validation
+                self.logger.info("✅ STAGE 5: Quality validation")
+                quality_results = self._validate_quality(symbol, timeframe)
+                results['stages']['quality_validation'] = quality_results
 
             # Compile final results
             results['success'] = True
@@ -174,25 +240,88 @@ class ComprehensiveKlinesPipeline:
         return results
 
     async def _download_data(self, symbol: str, exchange: str, timeframe: str, years: int, force_redownload: bool) -> Dict[str, Any]:
-        """Download historical data using the monthly downloader."""
+        """Download historical data using the klines_downloading_processing system."""
         try:
-            self.logger.info(f"📥 Downloading {years} years of {symbol} {timeframe} data")
-
-            download_results = await download_monthly_ethusdt_data(
+            self.logger.info(f"🚀 Using klines_downloading_processing for {years} years of {symbol} {timeframe} data")
+            
+            # Check for existing data first using the legacy system for compatibility
+            existing_months = self.monthly_downloader.get_available_months(symbol, exchange, "klines", timeframe)
+            
+            if existing_months and not force_redownload:
+                self.logger.info(f"📊 Found {len(existing_months)} existing monthly files")
+                self.logger.info(f"📅 Existing data months: {', '.join([f'{y}-{m:02d}' for y, m in sorted(existing_months)])}")
+                
+                # Calculate total records from existing files to provide feedback
+                total_existing_records = 0
+                try:
+                    for year, month in existing_months:
+                        filename = self.monthly_downloader.get_monthly_filename(symbol, exchange, "klines", timeframe, year, month)
+                        filepath = self.monthly_downloader.data_cache_path / exchange.lower() / symbol.lower() / "klines" / filename
+                        if filepath.exists():
+                            import pandas as pd
+                            df = pd.read_parquet(filepath)
+                            total_existing_records += len(df)
+                    
+                    if total_existing_records > 0:
+                        self.logger.info(f"📊 Existing data contains {total_existing_records:,} records")
+                        
+                        # Return success for existing data - the klines processor will handle any gaps
+                        return {
+                            'success': True, 
+                            'quality_summary': {'total_records': total_existing_records},
+                            'message': 'Using existing data - klines processor will handle gaps and quality',
+                            'existing_files': len(existing_months),
+                            'monthly_files': [],
+                            'use_existing_data': True
+                        }
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Could not count existing records: {e}")
+            
+            # Use klines_downloading_processing for comprehensive download, gap detection, and quality checks
+            self.logger.info(f"📥 Running klines processing pipeline for {symbol} ({years} years)")
+            
+            # Use the updated klines processing pipeline (now supports any symbol and years)
+            download_results = await run_ethusdt_3year_pipeline(
+                symbol=symbol,
                 years=years,
-                data_type="klines",
-                timeframe=timeframe,
-                realtime_buffer_hours=self.monthly_downloader.realtime_buffer_hours
+                data_dir=str(self.data_dir),
+                interval=timeframe,
+                max_gap_minutes=1,
+                create_consolidated=True
             )
 
-            if download_results.get('quality_summary', {}).get('total_records', 0) > 0:
-                self.logger.info(f"✅ Downloaded {download_results['quality_summary']['total_records']:,} records")
-                return download_results
+            # Process results from klines_downloading_processing
+            if download_results.get('pipeline_success', False):
+                # Extract relevant information from the comprehensive results
+                steps_completed = download_results.get('steps_completed', [])
+                summary = download_results.get('summary', {})
+                
+                # Get total records from quality check or download summary
+                total_records = 0
+                if 'quality_check' in summary:
+                    total_records = summary['quality_check'].get('total_records', 0)
+                elif 'download' in summary:
+                    total_records = summary['download'].get('total_records', 0)
+                
+                self.logger.info(f"✅ Klines processing pipeline completed successfully")
+                self.logger.info(f"📊 Steps completed: {', '.join(steps_completed)}")
+                self.logger.info(f"📊 Total records processed: {total_records:,}")
+                
+                return {
+                    'success': True,
+                    'quality_summary': {'total_records': total_records},
+                    'klines_processor_results': download_results,
+                    'steps_completed': steps_completed,
+                    'comprehensive_processing': True
+                }
             else:
-                return {'success': False, 'error': 'No data downloaded'}
+                errors = download_results.get('errors', [])
+                error_msg = f"Klines processing pipeline failed: {'; '.join(errors) if errors else 'Unknown error'}"
+                self.logger.error(f"❌ {error_msg}")
+                return {'success': False, 'error': error_msg, 'klines_processor_results': download_results}
 
         except Exception as e:
-            self.logger.error(f"❌ Download failed: {e}")
+            self.logger.error(f"❌ Klines processing pipeline failed: {e}")
             return {'success': False, 'error': str(e)}
 
     def _detect_gaps(self, symbol: str, timeframe: str, max_gap_minutes: int) -> Dict[str, Any]:
@@ -460,7 +589,7 @@ async def main():
         symbol="ETHUSDT",
         exchange="binance",
         timeframe="1m",
-        years=3,
+        years=2,
         max_gap_minutes=1,
         force_redownload=False
     )

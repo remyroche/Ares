@@ -231,7 +231,7 @@ class FeatureSelectionMechanism:
         Args:
             X: Feature matrix (n_samples, n_features)
             feature_names: List of feature names
-            target: Target variable for PID analysis (optional)
+            target: Target variable for PID analysis (optional) - now uses multi-horizon profit probabilities
             
         Returns:
             FeatureSelectionResult with selected features

@@ -310,3 +310,79 @@ class EvaluationUtils:
                 best_model = model_name
         
         return best_model
+
+
+# Export functions for direct import compatibility
+calculate_metrics = EvaluationUtils.calculate_metrics
+evaluate_model_performance = EvaluationUtils.evaluate_model_performance
+evaluate_ensemble_performance = EvaluationUtils.evaluate_ensemble_performance
+evaluate_regime_performance = EvaluationUtils.evaluate_regime_performance
+analyze_regime_distribution = EvaluationUtils.analyze_regime_distribution
+get_best_model = EvaluationUtils.get_best_model
+
+
+def create_evaluation_report(results: Dict[str, Any], output_path: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Create a comprehensive evaluation report.
+    
+    Args:
+        results: Training results containing model performance
+        output_path: Optional path to save the report
+        
+    Returns:
+        Dictionary containing the evaluation report
+    """
+    report = {
+        'summary': {},
+        'detailed_metrics': {},
+        'best_models': {},
+        'recommendations': []
+    }
+    
+    # Get performance metrics
+    performance = results.get('performance', {})
+    
+    if performance:
+        # Summary statistics
+        report['summary'] = {
+            'total_models': len(performance),
+            'models_evaluated': list(performance.keys())
+        }
+        
+        # Detailed metrics
+        report['detailed_metrics'] = performance
+        
+        # Find best models for different metrics
+        common_metrics = ['accuracy', 'f1_score', 'precision', 'recall', 'mse', 'mae', 'r2']
+        for metric in common_metrics:
+            best_model = get_best_model(results, metric)
+            if best_model:
+                report['best_models'][metric] = {
+                    'model': best_model,
+                    'score': performance[best_model].get(metric, 'N/A')
+                }
+        
+        # Generate recommendations
+        if report['best_models']:
+            best_overall = max(report['best_models'].items(), 
+                             key=lambda x: x[1]['score'] if isinstance(x[1]['score'], (int, float)) else 0)
+            report['recommendations'].append(f"Best overall model: {best_overall[1]['model']} ({best_overall[0]}: {best_overall[1]['score']:.4f})")
+        
+        # Check for potential issues
+        for model_name, metrics in performance.items():
+            if 'accuracy' in metrics and metrics['accuracy'] < 0.6:
+                report['recommendations'].append(f"⚠️ {model_name} has low accuracy ({metrics['accuracy']:.4f}) - consider hyperparameter tuning")
+            if 'f1_score' in metrics and metrics['f1_score'] < 0.5:
+                report['recommendations'].append(f"⚠️ {model_name} has low F1 score ({metrics['f1_score']:.4f}) - may indicate class imbalance issues")
+    
+    # Save report if path provided
+    if output_path:
+        try:
+            import json
+            with open(output_path, 'w') as f:
+                json.dump(report, f, indent=2, default=str)
+            logger.info(f"✅ Evaluation report saved to {output_path}")
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to save evaluation report: {e}")
+    
+    return report

@@ -48,10 +48,10 @@ class BaseTrainingConfig:
     augmentation_method: str = "smote"  # smote, adasyn
     augmentation_ratio: float = 1.0
     
-    # Regime configuration
-    min_samples_per_regime: int = 1000
+    # Regime configuration  
+    min_samples_per_regime: int = 500  # 🔧 Reduced from 1000 to 500 for better regime coverage
     enable_regime_merging: bool = True
-    regime_merge_threshold: int = 500
+    regime_merge_threshold: int = 300  # 🔧 Reduced from 500 to 300 to align with new min_samples
 
 
 @dataclass
@@ -99,17 +99,45 @@ class EnsembleTrainingConfig(BaseTrainingConfig):
 
     # Ensemble configuration
     base_models: List[str] = field(default_factory=lambda: [
-        "TCN", "CatBoostRegressor", "LGBMRegressor", "RandomForestRegressor"
+        "ElasticNet", "CatBoostClassifier", "XGBoostClassifier"
     ])
-    meta_model: str = "Ridge"
+    meta_models: List[str] = field(default_factory=lambda: [
+        "XGBoostClassifier", "CatBoostClassifier", "ElasticNet"
+    ])
+    meta_model: str = "XGBoostClassifier"  # Default meta model for backward compatibility
 
+    # Enable meta model comparison
+    compare_meta_models: bool = True
+    
     # Intensity configuration (for scaling training parameters)
     intensity_percentage: float = 1.0
     
-    # Meta model HPO search space
+    # Meta model HPO search spaces for different models
+    meta_model_hpo_spaces: Dict[str, Dict[str, Any]] = field(default_factory=lambda: {
+        'XGBoostClassifier': {
+            'n_estimators': {'type': 'int', 'low': 50, 'high': 300},
+            'max_depth': {'type': 'int', 'low': 3, 'high': 10},
+            'learning_rate': {'type': 'float', 'low': 0.01, 'high': 0.3},
+            'subsample': {'type': 'float', 'low': 0.6, 'high': 1.0}
+        },
+        'CatBoostClassifier': {
+            'iterations': {'type': 'int', 'low': 50, 'high': 300},
+            'depth': {'type': 'int', 'low': 4, 'high': 10},
+            'learning_rate': {'type': 'float', 'low': 0.01, 'high': 0.3},
+            'l2_leaf_reg': {'type': 'float', 'low': 1.0, 'high': 10.0}
+        },
+        'ElasticNet': {
+            'alpha': {'type': 'float', 'low': 0.001, 'high': 10.0, 'log': True},
+            'l1_ratio': {'type': 'float', 'low': 0.1, 'high': 0.9},
+            'max_iter': {'type': 'int', 'low': 500, 'high': 2000}
+        }
+    })
+    
+    # Legacy HPO space for backward compatibility
     meta_model_hpo_space: Dict[str, Any] = field(default_factory=lambda: {
-        'alpha': {'type': 'float', 'low': 0.1, 'high': 10.0, 'log': True},
-        'solver': {'type': 'categorical', 'choices': ['auto', 'svd', 'cholesky', 'lsqr', 'sparse_cg', 'sag', 'saga']}
+        'n_estimators': {'type': 'int', 'low': 50, 'high': 300},
+        'max_depth': {'type': 'int', 'low': 3, 'high': 10},
+        'learning_rate': {'type': 'float', 'low': 0.01, 'high': 0.3}
     })
 
 

@@ -119,11 +119,23 @@ def main():
             
             # Print final results
             print("\n" + "=" * 80)
-            print("🎉 ANALYSIS COMPLETED")
+            print("🎉 ENHANCED ANALYSIS COMPLETED")
             print("=" * 80)
             print(f"✅ Successfully processed: {results['summary']['successfully_processed']}/{results['summary']['total_assets']} assets")
             print(f"📊 Success rate: {results['summary']['success_rate']:.1f}%")
             print(f"📁 Results saved to: {args.output_dir}")
+            
+            # Show optimization status if available
+            if "optimization_status" in results:
+                opt_status = results["optimization_status"]
+                print(f"\n🔧 OPTIMIZATION STATUS:")
+                print(f"   Ares Utilities: {'✅' if opt_status['ares_utilities_available'] else '❌'}")
+                print(f"   Hardware Optimizations: {'✅' if opt_status['hardware_optimizations_available'] else '❌'}")
+                print(f"   Parquet Utils: {'✅' if opt_status['parquet_utils_enabled'] else '❌'}")
+                print(f"   Memory Optimization: {'✅' if opt_status['memory_optimization_enabled'] else '❌'}")
+                print(f"   GPU Acceleration: {'✅' if opt_status['gpu_acceleration_enabled'] else '❌'}")
+                print(f"   CPU Optimization: {'✅' if opt_status['cpu_optimization_enabled'] else '❌'}")
+                print(f"   Enhanced Processing: {'✅' if results.get('enhanced_processing', False) else '❌'}")
             
             if results['assets_processed']:
                 print("\n📈 Processed assets:")

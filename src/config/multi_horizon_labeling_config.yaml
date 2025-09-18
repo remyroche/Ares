@@ -66,6 +66,14 @@ feature_lookback_optimization:
   # Profit target optimization (optional)
   optimize_profit_targets: false  # Keep fixed for now
   
+  # Directional optimization (NEW)
+  enable_directional_optimization: true  # Differentiate between long and short signals
+  directional_optimization:
+    min_samples_per_direction: 50        # Minimum samples needed for each direction
+    enable_directional_comparison: true   # Generate comparison metrics
+    prefer_better_direction: true         # Use better performing direction for each feature
+    fallback_to_unified: true            # Fall back to unified optimization if directional fails
+  
   # Integration settings
   use_multi_horizon_metrics: true
   primary_optimization_metric: "leverage_adjusted_score"

@@ -1197,6 +1197,7 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
                 parallel_processing=True,
                 max_workers=4,
                 memory_efficient=True,
+                enable_directional_optimization=True,  # Enable directional optimization by default
                 optimization_metric='sharpe_ratio',
                 # Performance-focused parameters with balanced regularization
                 l1_regularization=0.001,  # Balanced regularization
@@ -1664,11 +1665,49 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
                 
                 tprint('✅ Enhanced feature optimization with matrix operations completed')
             else:
-                tprint('🚀 Executing standard feature optimization...')
-                # Perform standard feature optimization
-                optimization_result = await feature_optimizer.optimize_features(prepared_data, config)
-                optimization_result['optimization_method'] = 'standard'
-                tprint('✅ Standard feature optimization completed')
+                tprint('🚀 Executing feature optimization...')
+                
+                # Check if we can use directional optimization with MRMR
+                if MRMR_OPTIMIZER_AVAILABLE and self.mrmr_optimizer:
+                    enable_directional = getattr(config, 'enable_directional_optimization', True)
+                    
+                    if enable_directional:
+                        tprint('🎯 Using directional MRMR optimization...')
+                        
+                        # Extract feature columns from prepared data
+                        feature_columns = [col for col in prepared_data.columns 
+                                         if col not in ['returns', 'close_return', 'close_log_return', 'target', 'label', 'signal_direction']]
+                        
+                        # Find target column
+                        target_column = 'returns'
+                        for potential_target in ['returns', 'close_return', 'close_log_return', 'target', 'label']:
+                            if potential_target in prepared_data.columns:
+                                target_column = potential_target
+                                break
+                        
+                        # Use directional MRMR optimization
+                        directional_result = self.optimize_lookback_periods_mrmr_directional(
+                            data=prepared_data,
+                            feature_columns=feature_columns[:10],  # Limit to first 10 features for performance
+                            target_column=target_column,
+                            optimization_config=None,
+                            enable_directional=True
+                        )
+                        
+                        # Convert directional result to standard format
+                        optimization_result = self._convert_directional_to_standard_format(directional_result)
+                        optimization_result['optimization_method'] = 'directional_mrmr'
+                        tprint('✅ Directional MRMR optimization completed')
+                    else:
+                        # Fall back to standard optimization
+                        optimization_result = await feature_optimizer.optimize_features(prepared_data, config)
+                        optimization_result['optimization_method'] = 'standard'
+                        tprint('✅ Standard feature optimization completed')
+                else:
+                    # Perform standard feature optimization
+                    optimization_result = await feature_optimizer.optimize_features(prepared_data, config)
+                    optimization_result['optimization_method'] = 'standard'
+                    tprint('✅ Standard feature optimization completed')
             
             self._monitor_performance('optimization_executed')
             
@@ -2108,6 +2147,129 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
         
         return enhanced_metrics
     
+    def optimize_lookback_periods_mrmr_directional(self, 
+                                                     data: pd.DataFrame,
+                                                     feature_columns: List[str],
+                                                     target_column: str = 'returns',
+                                                     optimization_config: Optional[LookbackOptimizationConfig] = None,
+                                                     enable_directional: bool = True) -> Dict[str, Any]:
+        """
+        Optimize lookback periods using MRMR approach with directional differentiation (longs vs shorts).
+        
+        Args:
+            data: Input data with features and target
+            feature_columns: List of feature columns to optimize
+            target_column: Name of the target column
+            optimization_config: Optional configuration for optimization
+            enable_directional: Whether to differentiate between longs and shorts
+            
+        Returns:
+            Dictionary with optimization results for each feature, separated by direction if enabled
+        """
+        if not MRMR_OPTIMIZER_AVAILABLE or self.mrmr_optimizer is None:
+            raise ImportError("MRMR optimizer is required for directional optimization. Please install required dependencies.")
+        
+        tprint("🔍 Starting directional Bayesian lookback period optimization...")
+        start_time = time.time()
+        
+        optimization_results = {}
+        
+        try:
+            # Create optimization config if not provided
+            if optimization_config is None:
+                optimization_config = LookbackOptimizationConfig(
+                    n_trials=50,  # Reduced for faster execution
+                    min_lookback=5,
+                    max_lookback=50,
+                    max_correlation_threshold=0.7,
+                    min_mutual_info_threshold=0.1,
+                    enable_pruning=True,
+                    enable_parallel=True
+                )
+            
+            if enable_directional:
+                # Split data into long and short signals
+                long_data, short_data = self._split_data_by_direction(data, target_column)
+                tprint(f"📊 Split data: {len(long_data)} long samples, {len(short_data)} short samples")
+                
+                # Optimize for both directions
+                directions = [('long', long_data), ('short', short_data)]
+                
+                for direction, direction_data in directions:
+                    if len(direction_data) < 50:  # Minimum samples for optimization
+                        tprint(f"⚠️ Insufficient {direction} samples ({len(direction_data)}), skipping")
+                        optimization_results[direction] = {'error': f'Insufficient samples: {len(direction_data)}'}
+                        continue
+                    
+                    tprint(f"🚀 Optimizing features for {direction} signals...")
+                    direction_results = {}
+                    
+                    # Optimize each feature for this direction
+                    for feature_name in feature_columns:
+                        tprint(f"📊 Optimizing lookback periods for {feature_name} ({direction})...")
+                        
+                        try:
+                            # Optimize lookback periods for this feature and direction
+                            result = self.mrmr_optimizer.optimize_lookback_periods(
+                                data=direction_data,
+                                feature_name=feature_name,
+                                target_column=target_column,
+                                parameter_type="technical_indicator"
+                            )
+                            
+                            # Store results
+                            direction_results[feature_name] = {
+                                'direction': direction,
+                                'first_lookback_period': result.first_lookback_period,
+                                'second_lookback_period': result.second_lookback_period,
+                                'first_mi_score': result.first_mi_score,
+                                'second_mi_score': result.second_mi_score,
+                                'combined_mi_score': result.combined_mi_score,
+                                'correlation_between_periods': result.correlation_between_periods,
+                                'optimization_time': result.optimization_time,
+                                'n_trials': result.n_trials,
+                                'best_score': result.best_score,
+                                'convergence_rate': result.convergence_rate,
+                                'parameter_importance': result.parameter_importance,
+                                'sample_count': len(direction_data)
+                            }
+                            
+                            tprint(f"✅ {feature_name} ({direction}): First={result.first_lookback_period} (MI={result.first_mi_score:.4f}), "
+                                  f"Second={result.second_lookback_period} (MI={result.second_mi_score:.4f}), "
+                                  f"Correlation={result.correlation_between_periods:.4f}")
+                            
+                        except Exception as e:
+                            tprint(f"❌ Failed to optimize {feature_name} for {direction}: {e}")
+                            direction_results[feature_name] = {
+                                'direction': direction,
+                                'error': str(e),
+                                'first_lookback_period': None,
+                                'second_lookback_period': None,
+                                'sample_count': len(direction_data)
+                            }
+                    
+                    optimization_results[direction] = direction_results
+                
+                # Generate directional comparison
+                optimization_results['directional_comparison'] = self._generate_directional_comparison(optimization_results)
+                
+            else:
+                # Fall back to original non-directional optimization
+                return self.optimize_lookback_periods_mrmr(data, feature_columns, target_column, optimization_config)
+            
+            total_time = time.time() - start_time
+            tprint(f"✅ Directional Bayesian optimization completed in {total_time:.2f} seconds")
+            
+            # Generate summary
+            summary = self._generate_directional_optimization_summary(optimization_results)
+            optimization_results['_summary'] = summary
+            
+            return optimization_results
+            
+        except Exception as e:
+            tprint(f"❌ Directional Bayesian optimization failed: {e}")
+            return {'error': str(e)}
+
     def optimize_lookback_periods_mrmr(self, 
                                          data: pd.DataFrame,
                                          feature_columns: List[str],
@@ -2229,6 +2391,377 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
             summary['worst_features'] = [f for f in sorted_features[-3:]]
         
         return summary
+    
+    def _split_data_by_direction(self, data: pd.DataFrame, target_column: str = 'returns') -> Tuple[pd.DataFrame, pd.DataFrame]:
+        """
+        Split data into long and short signals based on target direction.
+        
+        Args:
+            data: Input dataframe
+            target_column: Column containing returns/target values
+            
+        Returns:
+            Tuple of (long_data, short_data)
+        """
+        try:
+            # Ensure target column exists
+            if target_column not in data.columns:
+                # Try common return column names
+                potential_targets = ['returns', 'close_return', 'close_log_return', 'target', 'label']
+                for col in potential_targets:
+                    if col in data.columns:
+                        target_column = col
+                        tprint(f"📊 Using {target_column} as target column for directional split")
+                        break
+                else:
+                    raise ValueError(f"Target column '{target_column}' not found and no suitable alternatives found")
+            
+            # Split based on positive (long) and negative (short) returns
+            long_mask = data[target_column] > 0
+            short_mask = data[target_column] < 0
+            
+            long_data = data[long_mask].copy()
+            short_data = data[short_mask].copy()
+            
+            # Add directional labels for clarity
+            long_data['signal_direction'] = 'long'
+            short_data['signal_direction'] = 'short'
+            
+            tprint(f"📊 Data split by direction: {len(long_data)} long samples, {len(short_data)} short samples")
+            
+            return long_data, short_data
+            
+        except Exception as e:
+            tprint(f"❌ Error splitting data by direction: {e}")
+            # Return empty dataframes on error
+            empty_df = pd.DataFrame()
+            return empty_df, empty_df
+    
+    def _generate_directional_comparison(self, optimization_results: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Generate comparison metrics between long and short optimization results.
+        
+        Args:
+            optimization_results: Results from directional optimization
+            
+        Returns:
+            Dictionary with comparison metrics
+        """
+        try:
+            comparison = {
+                'feature_comparisons': {},
+                'summary_stats': {},
+                'recommendations': []
+            }
+            
+            long_results = optimization_results.get('long', {})
+            short_results = optimization_results.get('short', {})
+            
+            if not long_results or not short_results:
+                comparison['error'] = 'Insufficient data for comparison'
+                return comparison
+            
+            # Compare each feature across directions
+            common_features = set(long_results.keys()) & set(short_results.keys())
+            common_features = {f for f in common_features if isinstance(long_results.get(f), dict) and isinstance(short_results.get(f), dict)}
+            
+            for feature in common_features:
+                long_feature = long_results[feature]
+                short_feature = short_results[feature]
+                
+                if 'error' in long_feature or 'error' in short_feature:
+                    continue
+                
+                feature_comparison = {
+                    'lookback_difference': {
+                        'first_period': {
+                            'long': long_feature.get('first_lookback_period'),
+                            'short': short_feature.get('first_lookback_period'),
+                            'difference': abs((long_feature.get('first_lookback_period', 0) or 0) - 
+                                            (short_feature.get('first_lookback_period', 0) or 0))
+                        },
+                        'second_period': {
+                            'long': long_feature.get('second_lookback_period'),
+                            'short': short_feature.get('second_lookback_period'),
+                            'difference': abs((long_feature.get('second_lookback_period', 0) or 0) - 
+                                            (short_feature.get('second_lookback_period', 0) or 0))
+                        }
+                    },
+                    'performance_difference': {
+                        'mi_score_long': long_feature.get('combined_mi_score', 0),
+                        'mi_score_short': short_feature.get('combined_mi_score', 0),
+                        'mi_score_difference': abs((long_feature.get('combined_mi_score', 0) or 0) - 
+                                                 (short_feature.get('combined_mi_score', 0) or 0)),
+                        'better_direction': 'long' if (long_feature.get('combined_mi_score', 0) or 0) > (short_feature.get('combined_mi_score', 0) or 0) else 'short'
+                    },
+                    'sample_sizes': {
+                        'long': long_feature.get('sample_count', 0),
+                        'short': short_feature.get('sample_count', 0)
+                    }
+                }
+                
+                comparison['feature_comparisons'][feature] = feature_comparison
+            
+            # Generate summary statistics
+            if comparison['feature_comparisons']:
+                mi_scores_long = [comp['performance_difference']['mi_score_long'] 
+                                for comp in comparison['feature_comparisons'].values()]
+                mi_scores_short = [comp['performance_difference']['mi_score_short'] 
+                                 for comp in comparison['feature_comparisons'].values()]
+                
+                comparison['summary_stats'] = {
+                    'features_compared': len(comparison['feature_comparisons']),
+                    'average_mi_score_long': np.mean(mi_scores_long) if mi_scores_long else 0,
+                    'average_mi_score_short': np.mean(mi_scores_short) if mi_scores_short else 0,
+                    'long_outperforms_count': sum(1 for comp in comparison['feature_comparisons'].values() 
+                                                if comp['performance_difference']['better_direction'] == 'long'),
+                    'short_outperforms_count': sum(1 for comp in comparison['feature_comparisons'].values() 
+                                                 if comp['performance_difference']['better_direction'] == 'short')
+                }
+                
+                # Generate recommendations
+                long_wins = comparison['summary_stats']['long_outperforms_count']
+                short_wins = comparison['summary_stats']['short_outperforms_count']
+                total_features = len(comparison['feature_comparisons'])
+                
+                if long_wins > short_wins * 1.5:
+                    comparison['recommendations'].append("Long signals show consistently better feature optimization - consider long-biased strategy")
+                elif short_wins > long_wins * 1.5:
+                    comparison['recommendations'].append("Short signals show consistently better feature optimization - consider short-biased strategy")
+                else:
+                    comparison['recommendations'].append("Balanced performance between long and short signals - directional strategy recommended")
+                
+                # Check for significant lookback differences
+                avg_lookback_diff = np.mean([
+                    comp['lookback_difference']['first_period']['difference'] 
+                    for comp in comparison['feature_comparisons'].values()
+                ])
+                
+                if avg_lookback_diff > 10:
+                    comparison['recommendations'].append(f"Significant lookback period differences detected (avg: {avg_lookback_diff:.1f}) - use separate optimization for each direction")
+                else:
+                    comparison['recommendations'].append("Similar lookback periods across directions - unified optimization may be sufficient")
+            
+            return comparison
+            
+        except Exception as e:
+            tprint(f"❌ Error generating directional comparison: {e}")
+            return {'error': str(e)}
+    
+    def _generate_directional_optimization_summary(self, optimization_results: Dict[str, Any]) -> Dict[str, Any]:
+        """Generate summary of directional optimization results."""
+        try:
+            summary = {
+                'total_directions': 0,
+                'successful_directions': 0,
+                'failed_directions': 0,
+                'direction_summaries': {},
+                'overall_recommendations': []
+            }
+            
+            directions = ['long', 'short']
+            for direction in directions:
+                if direction not in optimization_results:
+                    continue
+                    
+                summary['total_directions'] += 1
+                direction_data = optimization_results[direction]
+                
+                if 'error' in direction_data:
+                    summary['failed_directions'] += 1
+                    summary['direction_summaries'][direction] = {'status': 'failed', 'error': direction_data['error']}
+                    continue
+                
+                summary['successful_directions'] += 1
+                
+                # Analyze this direction's results
+                successful_features = [k for k, v in direction_data.items() 
+                                     if isinstance(v, dict) and 'error' not in v]
+                failed_features = [k for k, v in direction_data.items() 
+                                 if isinstance(v, dict) and 'error' in v]
+                
+                if successful_features:
+                    mi_scores = [direction_data[f].get('combined_mi_score', 0) for f in successful_features]
+                    avg_mi_score = np.mean(mi_scores) if mi_scores else 0
+                    best_feature = max(successful_features, key=lambda f: direction_data[f].get('combined_mi_score', 0))
+                    
+                    summary['direction_summaries'][direction] = {
+                        'status': 'success',
+                        'features_optimized': len(successful_features),
+                        'features_failed': len(failed_features),
+                        'average_mi_score': avg_mi_score,
+                        'best_feature': best_feature,
+                        'best_mi_score': direction_data[best_feature].get('combined_mi_score', 0)
+                    }
+                else:
+                    summary['direction_summaries'][direction] = {
+                        'status': 'no_successful_features',
+                        'features_failed': len(failed_features)
+                    }
+            
+            # Generate overall recommendations
+            if summary['successful_directions'] == 2:
+                long_summary = summary['direction_summaries'].get('long', {})
+                short_summary = summary['direction_summaries'].get('short', {})
+                
+                if (long_summary.get('average_mi_score', 0) > short_summary.get('average_mi_score', 0) * 1.2):
+                    summary['overall_recommendations'].append("Long signals show superior optimization results - prioritize long-focused features")
+                elif (short_summary.get('average_mi_score', 0) > long_summary.get('average_mi_score', 0) * 1.2):
+                    summary['overall_recommendations'].append("Short signals show superior optimization results - prioritize short-focused features")
+                else:
+                    summary['overall_recommendations'].append("Balanced performance across directions - implement directional feature optimization")
+                    
+                summary['overall_recommendations'].append("Directional optimization successful - use separate lookback periods for long and short signals")
+            elif summary['successful_directions'] == 1:
+                successful_direction = [d for d in directions if summary['direction_summaries'].get(d, {}).get('status') == 'success'][0]
+                summary['overall_recommendations'].append(f"Only {successful_direction} signals optimized successfully - consider {successful_direction}-only strategy")
+            else:
+                summary['overall_recommendations'].append("Directional optimization failed - fallback to unified optimization recommended")
+            
+            return summary
+            
+        except Exception as e:
+            tprint(f"❌ Error generating directional optimization summary: {e}")
+            return {'error': str(e)}
+    
+    def _convert_directional_to_standard_format(self, directional_result: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Convert directional optimization results to standard format expected by the pipeline.
+        
+        Args:
+            directional_result: Results from directional optimization
+            
+        Returns:
+            Standard format optimization results
+        """
+        try:
+            standard_result = {
+                'optimization_results': {},
+                'optimized_features': {},
+                'optimization_metrics': {},
+                'directional_analysis': directional_result.copy()
+            }
+            
+            # Extract summary information
+            summary = directional_result.get('_summary', {})
+            comparison = directional_result.get('directional_comparison', {})
+            
+            # Create consolidated optimization results
+            best_lookback_period = 20  # Default fallback
+            best_score = 0.0
+            total_features = 0
+            
+            # Process long and short results
+            for direction in ['long', 'short']:
+                direction_data = directional_result.get(direction, {})
+                if 'error' in direction_data:
+                    continue
+                
+                for feature_name, feature_result in direction_data.items():
+                    if not isinstance(feature_result, dict) or 'error' in feature_result:
+                        continue
+                    
+                    total_features += 1
+                    
+                    # Use the better performing direction's results for each feature
+                    feature_key = f"{feature_name}_{direction}"
+                    
+                    # Store in optimized_features format
+                    standard_result['optimized_features'][feature_key] = {
+                        'lookback': feature_result.get('first_lookback_period', 20),
+                        'second_lookback': feature_result.get('second_lookback_period'),
+                        'score': feature_result.get('combined_mi_score', 0.0),
+                        'direction': direction,
+                        'method': 'directional_mrmr',
+                        'correlation': feature_result.get('correlation_between_periods', 0.0),
+                        'sample_count': feature_result.get('sample_count', 0)
+                    }
+                    
+                    # Track best overall score
+                    current_score = feature_result.get('combined_mi_score', 0.0)
+                    if current_score > best_score:
+                        best_score = current_score
+                        best_lookback_period = feature_result.get('first_lookback_period', 20)
+            
+            # Create consolidated features with best direction for each
+            consolidated_features = {}
+            feature_names = set()
+            
+            # Extract unique feature names
+            for feature_key in standard_result['optimized_features'].keys():
+                if feature_key.endswith('_long') or feature_key.endswith('_short'):
+                    base_name = feature_key.rsplit('_', 1)[0]
+                    feature_names.add(base_name)
+                else:
+                    feature_names.add(feature_key)
+            
+            # For each feature, choose the better performing direction
+            for feature_name in feature_names:
+                long_key = f"{feature_name}_long"
+                short_key = f"{feature_name}_short"
+                
+                long_result = standard_result['optimized_features'].get(long_key)
+                short_result = standard_result['optimized_features'].get(short_key)
+                
+                if long_result and short_result:
+                    # Choose better performing direction
+                    if long_result['score'] >= short_result['score']:
+                        consolidated_features[feature_name] = long_result.copy()
+                        consolidated_features[feature_name]['alternative_direction'] = short_result
+                    else:
+                        consolidated_features[feature_name] = short_result.copy()
+                        consolidated_features[feature_name]['alternative_direction'] = long_result
+                elif long_result:
+                    consolidated_features[feature_name] = long_result
+                elif short_result:
+                    consolidated_features[feature_name] = short_result
+            
+            # Update optimized_features with consolidated results
+            standard_result['optimized_features'] = consolidated_features
+            
+            # Set optimization_results
+            standard_result['optimization_results'] = {
+                'best_lookback_period': best_lookback_period,
+                'best_score': best_score,
+                'total_features_optimized': total_features,
+                'optimization_method': 'directional_mrmr',
+                'directional_summary': summary,
+                'directional_comparison': comparison,
+                'successful_directions': summary.get('successful_directions', 0),
+                'failed_directions': summary.get('failed_directions', 0)
+            }
+            
+            # Set optimization_metrics
+            standard_result['optimization_metrics'] = {
+                'total_features': total_features,
+                'best_score': best_score,
+                'average_score': np.mean([f['score'] for f in consolidated_features.values()]) if consolidated_features else 0.0,
+                'directional_balance': {
+                    'long_features': len([f for f in consolidated_features.values() if f.get('direction') == 'long']),
+                    'short_features': len([f for f in consolidated_features.values() if f.get('direction') == 'short'])
+                },
+                'recommendations': summary.get('overall_recommendations', [])
+            }
+            
+            tprint(f"✅ Converted directional results: {total_features} features optimized across directions")
+            return standard_result
+            
+        except Exception as e:
+            tprint(f"❌ Error converting directional results to standard format: {e}")
+            # Return fallback standard format
+            return {
+                'optimization_results': {
+                    'best_lookback_period': 20,
+                    'best_score': 0.0,
+                    'optimization_method': 'directional_mrmr_fallback',
+                    'error': str(e)
+                },
+                'optimized_features': {
+                    'fallback_feature': {'lookback': 20, 'score': 0.0, 'method': 'fallback'}
+                },
+                'optimization_metrics': {'error': str(e)},
+                'directional_analysis': directional_result
+            }
     
     def get_mrmr_optimization_metrics(self) -> Dict[str, Any]:
         """Get metrics from MRMR optimization."""

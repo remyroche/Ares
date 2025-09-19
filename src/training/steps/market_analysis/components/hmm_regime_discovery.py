@@ -796,8 +796,8 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
                 'note': 'True 3D regime space with separate dimensional HMMs'
             }
             
-            # Calculate actual feature offset based on max rolling window (balanced approach)
-            max_lookback = 12  # Maximum lookback window (for volatility statistical significance)
+            # Calculate actual feature offset based on max rolling window (6h constraint)
+            max_lookback = 6  # Maximum lookback window (6h constraint)
             feature_offset = max_lookback
             
             # Preserve original index and align properly
@@ -847,12 +847,12 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
         """
         Prepare features grouped by dimension for 3D regime discovery.
         
-        This method implements the 3D dimensional approach with balanced windows:
-        - Momentum dimension: 1h, 2h, 6h price changes (reactivity vs trend confirmation)
-        - Volatility dimension: intrabar volatility, 6h/12h rolling std (statistical significance)
-        - Volume dimension: 1h/3h volume momentum, 12h ratio baseline, weighted price
+        This method implements the 3D dimensional approach within 6h constraint:
+        - Momentum dimension: 1h, 2h, 6h price changes (reactivity to trend confirmation)
+        - Volatility dimension: intrabar volatility, 6h rolling std, 3h volatility velocity
+        - Volume dimension: 1h/3h volume momentum, 6h ratio baseline, weighted price
         
-        Windows are optimized per feature type: short for reactivity, longer for statistical power.
+        All windows respect the 6h maximum constraint while optimizing for feature quality.
         Features are designed to be compatible with HMM clustering expectations.
         
         Args:
@@ -873,13 +873,14 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             momentum_features['momentum_2h'] = market_data['close'].pct_change(2)  # Balance
             momentum_features['momentum_6h'] = market_data['close'].pct_change(6)  # Trend confirmation
             
-            # Volatility features (need longer windows for statistical significance)
+            # Volatility features (optimized within 6h constraint)
             volatility_features = pd.DataFrame(index=market_data.index)
             # Intrabar volatility for immediate reactivity
             volatility_features['volatility_intrabar'] = (market_data['high'] - market_data['low']) / market_data['close']
-            # Rolling volatility needs sufficient samples for statistical meaning
-            volatility_features['volatility_6h'] = market_data['close'].rolling(6).std()  # Minimum for volatility
-            volatility_features['volatility_12h'] = market_data['close'].rolling(12).std()  # Better statistical power
+            # Rolling volatility within constraint
+            volatility_features['volatility_6h'] = market_data['close'].rolling(6).std()  # Maximum allowed
+            # Alternative: Price velocity (rate of change in volatility)
+            volatility_features['volatility_velocity_3h'] = market_data['close'].rolling(3).std().pct_change(1)
             
             # Volume features (mixed windows based on feature type)
             epsilon = 1e-8
@@ -887,18 +888,18 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             # Volume momentum - high reactivity needed
             volume_features['volume_momentum_1h'] = market_data['volume'].pct_change(1)
             volume_features['volume_momentum_3h'] = market_data['volume'].pct_change(3)
-            # Volume ratio - needs baseline, longer window for stability
-            volume_features['volume_ratio'] = market_data['volume'] / (market_data['volume'].rolling(12).mean() + epsilon)
+            # Volume ratio - 6h baseline for stability within constraints
+            volume_features['volume_ratio'] = market_data['volume'] / (market_data['volume'].rolling(6).mean() + epsilon)
             # Price-volume relationship - immediate
             volume_features['volume_weighted_price'] = market_data['close'] * market_data['volume']
             
             # Clean features and align indices
-            max_lookback = 12  # Maximum lookback window used (for 12h volatility)
+            max_lookback = 6  # Maximum lookback window used (6h constraint)
             cleaned_features = []
             
             for i, (features, feature_type) in enumerate(zip([momentum_features, volatility_features, volume_features], 
                                                           ['momentum', 'volatility', 'volume'])):
-                # Skip rows based on max lookback (12h for volatility calculation)
+                # Skip rows based on max lookback (6h constraint)
                 features = features.iloc[max_lookback:]
                 
                 # Apply consistent NaN handling based on feature type
@@ -1028,15 +1029,25 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             # Ensure exact normalization
             model.transmat_ = model.transmat_ / model.transmat_.sum(axis=1, keepdims=True)
             
-            # Initialize means using data statistics (clustering happens in next step)
+            # Initialize means by grouping data samples (no clustering, just grouping)
             try:
                 if len(X) >= n_states:
-                    # Use random samples from data for initialization
-                    indices = np.random.choice(len(X), size=min(n_states, len(X)), replace=False)
-                    model.means_ = X[indices].astype(np.float64)
+                    # Split data into n_states groups and use group means for initialization
+                    group_size = len(X) // n_states
+                    means = []
+                    for i in range(n_states):
+                        start_idx = i * group_size
+                        end_idx = (i + 1) * group_size if i < n_states - 1 else len(X)
+                        group_data = X[start_idx:end_idx]
+                        if len(group_data) > 0:
+                            means.append(np.mean(group_data, axis=0))
+                        else:
+                            # Fallback for empty groups
+                            means.append(X[i % len(X)])
+                    model.means_ = np.array(means, dtype=np.float64)
                 else:
-                    # Fallback: use data statistics
-                    model.means_ = np.random.randn(n_states, X.shape[1]).astype(np.float64) * X.std(axis=0) + X.mean(axis=0)
+                    # Use available samples as means
+                    model.means_ = X[:n_states].astype(np.float64)
             except Exception:
                 # Final fallback: use data statistics
                 model.means_ = np.random.randn(n_states, X.shape[1]).astype(np.float64) * X.std(axis=0) + X.mean(axis=0)

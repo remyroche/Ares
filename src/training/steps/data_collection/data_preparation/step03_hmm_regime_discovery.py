@@ -1272,22 +1272,28 @@ class Step03HMMRegimeDiscovery(BaseStep):
             return {'success': False, 'error': str(e), 'features': []}
 
     def _generate_momentum_features(self, data: pd.DataFrame) -> Dict[str, Any]:
-        """Generate momentum-based features."""
+        """
+        Generate momentum-based features for 3D regime discovery.
+        
+        Note: These technical indicators are used as part of the momentum dimension
+        in the 3D regime space (momentum, volatility, volume). They complement
+        the pure price change features to provide richer momentum characterization.
+        """
         try:
             features = []
 
             if 'close' in data.columns:
                 close_prices = data['close'].values.astype(np.float32)
 
-                # RSI (balanced period for momentum detection)
-                if len(close_prices) > 8:
-                    rsi = self._calculate_rsi(close_prices, period=8)  # Compromise between 3h and traditional 14
+                # RSI (simplified for 3D momentum dimension - captures overbought/oversold)
+                if len(close_prices) > 3:
+                    rsi = self._calculate_rsi(close_prices, period=3)  # Reactive for momentum
                     if rsi is not None:
                         features.append(rsi)
 
-                # MACD (balanced periods for trend detection)
-                if len(close_prices) > 12:
-                    macd_line, signal_line, histogram = self._calculate_macd(close_prices, fast_period=6, slow_period=12, signal_period=4)
+                # MACD (simplified for 3D momentum dimension - captures trend changes)
+                if len(close_prices) > 6:
+                    macd_line, signal_line, histogram = self._calculate_macd(close_prices, fast_period=3, slow_period=6, signal_period=2)
                     if macd_line is not None:
                         features.extend([macd_line, signal_line, histogram])
 
@@ -1304,18 +1310,18 @@ class Step03HMMRegimeDiscovery(BaseStep):
             if 'close' in data.columns:
                 close_prices = data['close'].values.astype(np.float32)
 
-                # Moving averages (balanced for trend detection)
-                if len(close_prices) > 10:
-                    sma_5 = pd.Series(close_prices).rolling(5).mean().values[4:]   # Short-term trend
-                    sma_10 = pd.Series(close_prices).rolling(10).mean().values[9:]  # Medium-term trend
+                # Moving averages (simplified for 3D momentum dimension)
+                if len(close_prices) > 6:
+                    sma_3 = pd.Series(close_prices).rolling(3).mean().values[2:]   # Short-term trend
+                    sma_6 = pd.Series(close_prices).rolling(6).mean().values[5:]   # Medium-term trend
                     # Align lengths
-                    min_len = min(len(sma_5), len(sma_10))
-                    sma_5 = sma_5[-min_len:]
-                    sma_10 = sma_10[-min_len:]
-                    features.extend([sma_5, sma_10])
+                    min_len = min(len(sma_3), len(sma_6))
+                    sma_3 = sma_3[-min_len:]
+                    sma_6 = sma_6[-min_len:]
+                    features.extend([sma_3, sma_6])
 
                     # Trend strength (short vs medium term)
-                    trend_strength = (sma_5 - sma_10) / (sma_10 + 1e-8)
+                    trend_strength = (sma_3 - sma_6) / (sma_6 + 1e-8)
                     features.append(trend_strength)
 
             return {'success': True, 'features': features}
@@ -1323,8 +1329,8 @@ class Step03HMMRegimeDiscovery(BaseStep):
         except Exception as e:
             return {'success': False, 'error': str(e), 'features': []}
 
-    def _calculate_rsi(self, prices: np.ndarray, period: int = 8) -> Optional[np.ndarray]:
-        """Calculate RSI indicator with configurable period (balanced for reactivity and stability)."""
+    def _calculate_rsi(self, prices: np.ndarray, period: int = 3) -> Optional[np.ndarray]:
+        """Calculate RSI indicator with configurable period (optimized for 3D momentum dimension)."""
         try:
             if len(prices) <= period:
                 return None
@@ -1345,7 +1351,7 @@ class Step03HMMRegimeDiscovery(BaseStep):
             return None
 
     def _calculate_macd(self, prices: np.ndarray,
-                        fast_period: int = 6, slow_period: int = 12, signal_period: int = 4) -> Tuple[Optional[np.ndarray], ...]:
+                        fast_period: int = 3, slow_period: int = 6, signal_period: int = 2) -> Tuple[Optional[np.ndarray], ...]:
         """Calculate MACD indicator."""
         try:
             if len(prices) <= slow_period:

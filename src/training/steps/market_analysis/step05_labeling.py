@@ -1763,12 +1763,17 @@ class LabelingStep:
             return False
 
     def _create_regime_labeler(self):
-        """Create and configure the regime labeler."""
+        """Create and configure the regime labeler.
+        
+        NOTE: This uses basic triple barrier labeling with static parameters.
+        For dynamic parameters and multi-horizon analysis, consider migrating
+        to multi_horizon_profit_labeler.
+        """
         try:
             from .triple_barrier_labeling import UnifiedTripleBarrierLabeler, TripleBarrierConfig
             config = TripleBarrierConfig(
-                profit_take_multiplier=0.002,
-                stop_loss_multiplier=0.001,
+                profit_take_multiplier=0.002,  # Static 0.2%
+                stop_loss_multiplier=0.001,    # Static 0.1%
                 time_barrier_minutes=self.time_barrier_minutes,
                 max_lookahead=self.max_lookahead,
                 regime_aware=True

@@ -234,75 +234,85 @@ class ABTestingStep:
         if self.config.enable_performance_monitoring:
             self.performance_monitor.start_monitoring()
         
-        try:
-            # Load or generate data if not provided
-            if control_data is None or treatment_data is None:
-                control_data, treatment_data = await self._load_or_generate_data(
-                    control_strategy_func, treatment_strategy_func
+        # Initialize memory optimizer
+        from .memory_optimizer import get_backtesting_memory_optimizer, memory_managed_backtesting
+        
+        with memory_managed_backtesting("ab_testing") as memory_optimizer:
+            try:
+                # Load or generate data if not provided
+                if control_data is None or treatment_data is None:
+                    control_data, treatment_data = await self._load_or_generate_data(
+                        control_strategy_func, treatment_strategy_func
+                    )
+                
+                # Optimize DataFrames for memory efficiency
+                if control_data is not None:
+                    control_data = memory_optimizer.optimize_dataframe(control_data)
+                if treatment_data is not None:
+                    treatment_data = memory_optimizer.optimize_dataframe(treatment_data)
+                
+                # Validate data
+                self._validate_data(control_data, treatment_data)
+                
+                # Execute A/B testing
+                ab_test_results = await self.ab_testing_engine.execute(
+                    control_data=control_data,
+                    treatment_data=treatment_data,
+                    metric_columns=['total_return', 'sharpe_ratio', 'max_drawdown', 'win_rate']
                 )
-            
-            # Validate data
-            self._validate_data(control_data, treatment_data)
-            
-            # Execute A/B testing
-            ab_test_results = await self.ab_testing_engine.execute(
-                control_data=control_data,
-                treatment_data=treatment_data,
-                metric_columns=['total_return', 'sharpe_ratio', 'max_drawdown', 'win_rate']
-            )
-            
-            # Perform additional analysis
-            performance_comparison = self._compare_performance(control_data, treatment_data)
-            effect_size_analysis = self._analyze_effect_size(ab_test_results)
-            confidence_intervals = self._calculate_confidence_intervals(ab_test_results)
-            recommendations = self._generate_recommendations(ab_test_results)
-            
-            # Create results
-            results = ABTestingResults(
-                symbol=self.config.symbol,
-                exchange=self.config.exchange,
-                timeframe=self.config.timeframe,
-                start_time=datetime.now(),
-                end_time=datetime.now(),
-                total_duration=time.time() - start_time,
-                test_name=self.config.test_name,
-                test_description=self.config.test_description,
-                control_group_size=len(control_data),
-                treatment_group_size=len(treatment_data),
-                total_sample_size=len(control_data) + len(treatment_data),
-                statistical_tests=ab_test_results.test_results,
-                performance_comparison=performance_comparison,
-                effect_size_analysis=effect_size_analysis,
-                confidence_intervals=confidence_intervals,
-                recommendations=recommendations,
-                control_group_data=control_data,
-                treatment_group_data=treatment_data,
-                config=self.config,
-                execution_time=time.time() - start_time,
-                memory_usage_mb=psutil.Process().memory_info().rss / 1024 / 1024,
-                system_metrics=self._get_system_metrics()
-            )
-            
-            # Save results
-            if self.config.save_detailed_results:
-                await self._save_results(results)
-            
-            self.logger.info("✅ A/B testing completed successfully")
-            self.logger.info(f"⏱️ Execution time: {results.execution_time:.2f}s")
-            self.logger.info(f"📊 Total tests: {len(ab_test_results.test_results)}")
-            self.logger.info(f"✅ Significant tests: {ab_test_results.significant_tests}")
-            self.logger.info(f"🎯 Overall conclusion: {ab_test_results.overall_conclusion}")
-            
-            return results
-            
-        except Exception as e:
-            self.logger.error(f"❌ Error in A/B testing: {e}")
-            self.logger.exception("Full traceback:")
-            raise
-        finally:
-            # Stop performance monitoring
-            if self.config.enable_performance_monitoring:
-                self.performance_monitor.stop_monitoring()
+                
+                # Perform additional analysis
+                performance_comparison = self._compare_performance(control_data, treatment_data)
+                effect_size_analysis = self._analyze_effect_size(ab_test_results)
+                confidence_intervals = self._calculate_confidence_intervals(ab_test_results)
+                recommendations = self._generate_recommendations(ab_test_results)
+                
+                # Create results
+                results = ABTestingResults(
+                    symbol=self.config.symbol,
+                    exchange=self.config.exchange,
+                    timeframe=self.config.timeframe,
+                    start_time=datetime.now(),
+                    end_time=datetime.now(),
+                    total_duration=time.time() - start_time,
+                    test_name=self.config.test_name,
+                    test_description=self.config.test_description,
+                    control_group_size=len(control_data),
+                    treatment_group_size=len(treatment_data),
+                    total_sample_size=len(control_data) + len(treatment_data),
+                    statistical_tests=ab_test_results.test_results,
+                    performance_comparison=performance_comparison,
+                    effect_size_analysis=effect_size_analysis,
+                    confidence_intervals=confidence_intervals,
+                    recommendations=recommendations,
+                    control_group_data=control_data,
+                    treatment_group_data=treatment_data,
+                    config=self.config,
+                    execution_time=time.time() - start_time,
+                    memory_usage_mb=memory_optimizer.get_current_memory_stats().process_memory_mb,
+                    system_metrics=self._get_system_metrics()
+                )
+                
+                # Save results
+                if self.config.save_detailed_results:
+                    await self._save_results(results)
+                
+                self.logger.info("✅ A/B testing completed successfully")
+                self.logger.info(f"⏱️ Execution time: {results.execution_time:.2f}s")
+                self.logger.info(f"📊 Total tests: {len(ab_test_results.test_results)}")
+                self.logger.info(f"✅ Significant tests: {ab_test_results.significant_tests}")
+                self.logger.info(f"🎯 Overall conclusion: {ab_test_results.overall_conclusion}")
+                
+                return results
+                
+            except Exception as e:
+                self.logger.error(f"❌ Error in A/B testing: {e}")
+                self.logger.exception("Full traceback:")
+                raise
+            finally:
+                # Stop performance monitoring
+                if self.config.enable_performance_monitoring:
+                    self.performance_monitor.stop_monitoring()
     
     async def _load_or_generate_data(
         self, 
@@ -345,26 +355,29 @@ class ABTestingStep:
         return control_data, treatment_data
     
     async def _load_market_data(self) -> pd.DataFrame:
-        """Load market data."""
-        # Try to load consolidated data first
-        consolidated_file = self.data_dir / f"aggtrades_{self.config.exchange}_{self.config.symbol}_consolidated.parquet"
+        """Load market data using unified data loader."""
+        from .unified_data_loader import DataLoadingConfig, get_unified_data_loader
         
-        if safe_file_exists(consolidated_file):
-            self.logger.info(f"📁 Loading consolidated data: {consolidated_file}")
-            data = standardized_parquet_handler.read_parquet_standardized(consolidated_file)
-        else:
-            # Fallback to individual files
-            self.logger.info("📁 Consolidated file not found, loading individual files...")
-            data = await self._load_individual_files()
+        # Create loading configuration
+        loading_config = DataLoadingConfig(
+            symbol=self.config.symbol,
+            exchange=self.config.exchange,
+            timeframe=self.config.timeframe,
+            data_dir=self.config.data_dir,
+            enable_memory_optimization=True,
+            memory_limit_mb=1000.0
+        )
         
-        return data
-    
-    async def _load_individual_files(self) -> pd.DataFrame:
-        """Load data from individual files."""
-        # This would implement loading from individual parquet files
-        # For now, return empty DataFrame
-        self.logger.warning("⚠️ Individual file loading not implemented")
-        return pd.DataFrame()
+        # Load data using unified loader
+        loader = get_unified_data_loader()
+        loaded_data = loader.load_data(loading_config)
+        
+        self.logger.info(f"✅ Loaded data via unified loader:")
+        self.logger.info(f"   📊 Records: {len(loaded_data.data):,}")
+        self.logger.info(f"   🧠 Memory: {loaded_data.memory_usage_mb:.1f}MB")
+        self.logger.info(f"   🎯 Quality: {loaded_data.data_quality_score:.2f}")
+        
+        return loaded_data.data
     
     async def _load_strategy_data(self, strategy_name: str) -> pd.DataFrame:
         """Load existing strategy data."""
@@ -401,95 +414,230 @@ class ABTestingStep:
         return strategy_data
     
     async def _generate_baseline_strategy_data(self, market_data: pd.DataFrame) -> pd.DataFrame:
-        """Generate baseline strategy data."""
+        """Generate baseline strategy data using improved buy-and-hold implementation."""
+        from .improved_trading_strategies import create_baseline_strategy
+        
         self.logger.info("🔄 Generating baseline strategy data...")
         
-        # Simple buy-and-hold strategy
-        initial_price = market_data['close'].iloc[0]
-        final_price = market_data['close'].iloc[-1]
-        total_return = (final_price - initial_price) / initial_price
+        if market_data.empty or len(market_data) < 10:
+            return pd.DataFrame([{
+                'strategy': 'baseline',
+                'total_return': 0.0,
+                'annualized_return': 0.0,
+                'volatility': 0.0,
+                'sharpe_ratio': 0.0,
+                'max_drawdown': 0.0,
+                'win_rate': 0.0,
+                'total_trades': 0,
+                'profit_factor': 0.0,
+                'calmar_ratio': 0.0
+            }])
         
-        # Calculate additional metrics
-        returns = market_data['close'].pct_change().dropna()
-        volatility = returns.std() * np.sqrt(252)
-        sharpe_ratio = (returns.mean() * 252) / volatility if volatility > 0 else 0
-        max_drawdown = self._calculate_max_drawdown(market_data['close'])
-        
-        baseline_data = pd.DataFrame([{
-            'strategy': 'baseline',
-            'total_return': total_return,
-            'annualized_return': (1 + total_return) ** (252 / len(market_data)) - 1,
-            'volatility': volatility,
-            'sharpe_ratio': sharpe_ratio,
-            'max_drawdown': max_drawdown,
-            'win_rate': 0.5,  # Simplified
-            'total_trades': 1,
-            'profit_factor': 1.0,
-            'calmar_ratio': total_return / abs(max_drawdown) if max_drawdown != 0 else 0
-        }])
-        
-        return baseline_data
+        try:
+            # Create baseline strategy
+            baseline_strategy = create_baseline_strategy()
+            
+            # Simple buy-and-hold execution with validation
+            initial_price = market_data['close'].iloc[0]
+            final_price = market_data['close'].iloc[-1]
+            
+            if not (validate_finite(initial_price) and validate_finite(final_price) and 
+                    validate_positive(initial_price) and validate_positive(final_price)):
+                raise ValueError("Invalid price data")
+            
+            total_return = (final_price - initial_price) / initial_price
+            
+            # Calculate proper metrics
+            returns = market_data['close'].pct_change().dropna()
+            volatility = returns.std() * np.sqrt(252) if len(returns) > 1 else 0
+            sharpe_ratio = (returns.mean() * 252 - 0.02) / volatility if volatility > 0 else 0  # Risk-free rate = 2%
+            
+            # Calculate max drawdown properly
+            cumulative_returns = (1 + returns).cumprod()
+            running_max = cumulative_returns.expanding().max()
+            drawdown = (cumulative_returns - running_max) / running_max
+            max_drawdown = drawdown.min()
+            
+            # Calculate win rate (for buy-and-hold, it's based on positive periods)
+            positive_periods = (returns > 0).sum()
+            win_rate = positive_periods / len(returns) if len(returns) > 0 else 0.0
+            
+            baseline_data = pd.DataFrame([{
+                'strategy': 'baseline',
+                'total_return': total_return,
+                'annualized_return': (1 + total_return) ** (252 / len(market_data)) - 1,
+                'volatility': volatility,
+                'sharpe_ratio': sharpe_ratio,
+                'max_drawdown': max_drawdown,
+                'win_rate': win_rate,
+                'total_trades': 1,
+                'profit_factor': 1.0 if total_return > 0 else 0.0,
+                'calmar_ratio': total_return / abs(max_drawdown) if max_drawdown != 0 else 0
+            }])
+            
+            return baseline_data
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error generating baseline strategy data: {e}")
+            return pd.DataFrame([{
+                'strategy': 'baseline',
+                'total_return': 0.0,
+                'annualized_return': 0.0,
+                'volatility': 0.0,
+                'sharpe_ratio': 0.0,
+                'max_drawdown': 0.0,
+                'win_rate': 0.0,
+                'total_trades': 0,
+                'profit_factor': 0.0,
+                'calmar_ratio': 0.0
+            }])
     
     async def _generate_optimized_strategy_data(self, market_data: pd.DataFrame) -> pd.DataFrame:
-        """Generate optimized strategy data."""
+        """Generate optimized strategy data using improved adaptive strategy."""
+        from .improved_trading_strategies import create_optimized_strategy
+        
         self.logger.info("🔄 Generating optimized strategy data...")
         
-        # Simple moving average strategy
-        ma_period = 20
-        market_data_copy = market_data.copy()
-        market_data_copy['ma'] = market_data_copy['close'].rolling(window=ma_period).mean()
+        if market_data.empty or len(market_data) < 50:
+            return pd.DataFrame([{
+                'strategy': 'optimized',
+                'total_return': 0.0,
+                'annualized_return': 0.0,
+                'volatility': 0.0,
+                'sharpe_ratio': 0.0,
+                'max_drawdown': 0.0,
+                'win_rate': 0.0,
+                'total_trades': 0,
+                'profit_factor': 0.0,
+                'calmar_ratio': 0.0
+            }])
         
-        # Generate signals
-        market_data_copy['signal'] = 0
-        market_data_copy.loc[market_data_copy['close'] > market_data_copy['ma'], 'signal'] = 1
-        market_data_copy.loc[market_data_copy['close'] < market_data_copy['ma'], 'signal'] = -1
-        
-        # Calculate position changes
-        market_data_copy['position'] = market_data_copy['signal'].diff()
-        
-        # Execute trades (simplified)
-        portfolio_value = 100000.0
-        position = 0.0
-        trades = []
-        
-        for i, (timestamp, row) in enumerate(market_data_copy.iterrows()):
-            if row['position'] != 0:  # Position change
-                if row['position'] > 0:  # Buy
-                    position = portfolio_value * 0.1 / row['close']  # 10% position
-                    portfolio_value -= position * row['close']
-                    trades.append({'action': 'buy', 'price': row['close'], 'timestamp': timestamp})
-                elif row['position'] < 0 and position > 0:  # Sell
-                    portfolio_value += position * row['close']
-                    trades.append({'action': 'sell', 'price': row['close'], 'timestamp': timestamp})
-                    position = 0.0
+        try:
+            # Create optimized adaptive strategy
+            optimized_strategy = create_optimized_strategy()
             
-            # Update portfolio value
-            current_value = portfolio_value + (position * row['close'])
-        
-        # Calculate final metrics
-        final_value = portfolio_value + (position * market_data_copy['close'].iloc[-1])
-        total_return = (final_value - 100000.0) / 100000.0
-        
-        # Calculate additional metrics
-        returns = market_data_copy['close'].pct_change().dropna()
-        volatility = returns.std() * np.sqrt(252)
-        sharpe_ratio = (returns.mean() * 252) / volatility if volatility > 0 else 0
-        max_drawdown = self._calculate_max_drawdown(market_data_copy['close'])
-        
-        optimized_data = pd.DataFrame([{
-            'strategy': 'optimized',
-            'total_return': total_return,
-            'annualized_return': (1 + total_return) ** (252 / len(market_data)) - 1,
-            'volatility': volatility,
-            'sharpe_ratio': sharpe_ratio,
-            'max_drawdown': max_drawdown,
-            'win_rate': 0.6,  # Simplified
-            'total_trades': len(trades),
-            'profit_factor': 1.2,  # Simplified
-            'calmar_ratio': total_return / abs(max_drawdown) if max_drawdown != 0 else 0
-        }])
-        
-        return optimized_data
+            # Execute strategy
+            portfolio = {
+                'cash': 100000.0,
+                'shares': 0.0,
+                'trades': []
+            }
+            
+            # Generate signals and execute trades
+            for i in range(50, len(market_data)):  # Start after sufficient lookback
+                timestamp = market_data.index[i]
+                current_price = market_data.loc[timestamp, 'close']
+                
+                # Generate signal
+                signal = optimized_strategy.generate_signal(market_data, timestamp)
+                
+                # Execute trade based on signal
+                if signal.action == 'buy' and portfolio['shares'] == 0:
+                    # Calculate position size
+                    volatility = market_data['close'].pct_change().tail(20).std()
+                    position_size = optimized_strategy.risk_manager.calculate_position_size(
+                        signal, portfolio['cash'] + portfolio['shares'] * current_price, volatility
+                    )
+                    
+                    shares_to_buy = (portfolio['cash'] * position_size) / current_price
+                    cost = shares_to_buy * current_price
+                    
+                    if cost <= portfolio['cash']:
+                        portfolio['cash'] -= cost
+                        portfolio['shares'] += shares_to_buy
+                        portfolio['trades'].append({
+                            'action': 'buy',
+                            'price': current_price,
+                            'timestamp': timestamp,
+                            'shares': shares_to_buy,
+                            'cost': cost,
+                            'pnl': 0
+                        })
+                
+                elif signal.action == 'sell' and portfolio['shares'] > 0:
+                    proceeds = portfolio['shares'] * current_price
+                    
+                    # Calculate P&L
+                    last_buy = next((t for t in reversed(portfolio['trades']) if t['action'] == 'buy'), None)
+                    pnl = proceeds - last_buy['cost'] if last_buy else 0
+                    
+                    portfolio['cash'] += proceeds
+                    portfolio['trades'].append({
+                        'action': 'sell',
+                        'price': current_price,
+                        'timestamp': timestamp,
+                        'shares': portfolio['shares'],
+                        'proceeds': proceeds,
+                        'pnl': pnl
+                    })
+                    portfolio['shares'] = 0.0
+            
+            # Calculate final metrics
+            final_value = portfolio['cash'] + (portfolio['shares'] * market_data['close'].iloc[-1])
+            total_return = (final_value - 100000.0) / 100000.0
+            
+            # Calculate proper performance metrics
+            trade_df = pd.DataFrame(portfolio['trades'])
+            
+            if not trade_df.empty and 'pnl' in trade_df.columns:
+                sell_trades = trade_df[trade_df['action'] == 'sell']
+                if not sell_trades.empty:
+                    winning_trades = len(sell_trades[sell_trades['pnl'] > 0])
+                    total_trades = len(sell_trades)
+                    win_rate = winning_trades / total_trades
+                    
+                    gross_profit = sell_trades[sell_trades['pnl'] > 0]['pnl'].sum()
+                    gross_loss = abs(sell_trades[sell_trades['pnl'] < 0]['pnl'].sum())
+                    profit_factor = gross_profit / gross_loss if gross_loss > 0 else float('inf')
+                else:
+                    win_rate = 0.0
+                    total_trades = 0
+                    profit_factor = 0.0
+            else:
+                win_rate = 0.0
+                total_trades = 0
+                profit_factor = 0.0
+            
+            # Calculate risk metrics
+            returns = market_data['close'].pct_change().dropna()
+            volatility = returns.std() * np.sqrt(252) if len(returns) > 1 else 0
+            sharpe_ratio = (total_return * 252 - 0.02) / volatility if volatility > 0 else 0
+            
+            # Calculate max drawdown
+            cumulative_returns = (1 + returns).cumprod()
+            running_max = cumulative_returns.expanding().max()
+            drawdown = (cumulative_returns - running_max) / running_max
+            max_drawdown = drawdown.min()
+            
+            optimized_data = pd.DataFrame([{
+                'strategy': 'optimized',
+                'total_return': total_return,
+                'annualized_return': (1 + total_return) ** (252 / len(market_data)) - 1,
+                'volatility': volatility,
+                'sharpe_ratio': sharpe_ratio,
+                'max_drawdown': max_drawdown,
+                'win_rate': win_rate,
+                'total_trades': total_trades,
+                'profit_factor': profit_factor,
+                'calmar_ratio': total_return / abs(max_drawdown) if max_drawdown != 0 else 0
+            }])
+            
+            return optimized_data
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error generating optimized strategy data: {e}")
+            return pd.DataFrame([{
+                'strategy': 'optimized',
+                'total_return': 0.0,
+                'annualized_return': 0.0,
+                'volatility': 0.0,
+                'sharpe_ratio': 0.0,
+                'max_drawdown': 0.0,
+                'win_rate': 0.0,
+                'total_trades': 0,
+                'profit_factor': 0.0,
+                'calmar_ratio': 0.0
+            }])
     
     def _calculate_max_drawdown(self, price_series: pd.Series) -> float:
         """Calculate maximum drawdown."""

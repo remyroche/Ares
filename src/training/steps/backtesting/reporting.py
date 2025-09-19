@@ -334,145 +334,160 @@ class ReportingStep:
         if self.config.enable_performance_monitoring:
             self.performance_monitor.start_monitoring()
         
-        try:
-            # Load backtesting results if not provided
-            if backtesting_results is None:
-                backtesting_results = await self._load_backtesting_results()
-            
-            # Load data if not provided
-            if equity_curve is None:
-                equity_curve = await self._load_equity_curve()
-            
-            if trade_data is None:
-                trade_data = await self._load_trade_data()
-            
-            if market_data is None:
-                market_data = await self._load_market_data()
-            
-            # Validate data
-            self._validate_data(equity_curve, trade_data, market_data)
-            
-            # Perform comprehensive analysis
-            self.logger.info("📊 Performing comprehensive analysis...")
-            
-            # Performance analysis
-            performance_metrics = await self._calculate_performance_metrics(equity_curve, trade_data)
-            performance_analysis = await self._perform_performance_analysis(equity_curve, trade_data)
-            performance_attribution = await self._perform_performance_attribution(equity_curve, trade_data)
-            statistical_analysis = await self._perform_statistical_analysis(equity_curve, trade_data)
-            performance_forecasting = await self._perform_performance_forecasting(equity_curve)
-            
-            # Risk analysis
-            risk_metrics = await self._calculate_risk_metrics(equity_curve, trade_data, market_data)
-            risk_analysis = await self._perform_risk_analysis(equity_curve, trade_data, market_data)
-            risk_recommendations = self._generate_risk_recommendations(risk_metrics, {})
-            
-            # Trade analysis
-            trade_statistics = await self._calculate_trade_statistics(trade_data)
-            trade_analysis = await self._perform_trade_analysis(trade_data, market_data)
-            
-            # Portfolio analysis
-            portfolio_metrics = await self._calculate_portfolio_metrics(equity_curve)
-            portfolio_analysis = await self._perform_portfolio_analysis(equity_curve, market_data)
-            
-            # Benchmark comparison
-            benchmark_comparison = await self._compare_with_benchmark(equity_curve)
-            
-            # Generate optimization insights
-            optimization_insights = self._generate_optimization_insights(
-                performance_metrics, risk_metrics, trade_statistics, portfolio_metrics
-            )
-            
-            # Generate visualization data
-            visualization_data = await self._generate_visualization_data(equity_curve, trade_data)
-            
-            # Create detailed data
-            returns_data = self._create_returns_data(equity_curve)
-            risk_data = self._create_risk_data(equity_curve, risk_metrics)
-            portfolio_data = self._create_portfolio_data(equity_curve)
-            
-            # Generate individual reports
-            generated_reports = {}
-            report_summaries = {}
-            
-            for report_type in self.config.report_types:
-                self.logger.info(f"📝 Generating {report_type.value} report...")
+        # Initialize memory optimizer
+        from .memory_optimizer import memory_managed_backtesting
+        
+        with memory_managed_backtesting("comprehensive_reporting") as memory_optimizer:
+            try:
+                # Load backtesting results if not provided
+                if backtesting_results is None:
+                    backtesting_results = await self._load_backtesting_results()
                 
-                report_path, summary = await self._generate_report(report_type, backtesting_results)
-                generated_reports[report_type.value] = report_path
-                report_summaries[report_type.value] = summary
-            
-            # Generate combined report
-            combined_report_path = None
-            if self.config.save_combined_report:
-                self.logger.info("📋 Generating combined report...")
-                combined_report_path = await self._generate_combined_report(
-                    generated_reports, report_summaries, backtesting_results
+                # Load data if not provided
+                if equity_curve is None:
+                    equity_curve = await self._load_equity_curve()
+                
+                if trade_data is None:
+                    trade_data = await self._load_trade_data()
+                
+                if market_data is None:
+                    market_data = await self._load_market_data()
+                
+                # Optimize DataFrames for memory efficiency
+                dataframes = {
+                    'equity_curve': equity_curve,
+                    'trade_data': trade_data,
+                    'market_data': market_data
+                }
+                optimized_dataframes = memory_optimizer.optimize_backtesting_dataframes(dataframes)
+                equity_curve = optimized_dataframes['equity_curve']
+                trade_data = optimized_dataframes['trade_data']
+                market_data = optimized_dataframes['market_data']
+                
+                # Validate data
+                self._validate_data(equity_curve, trade_data, market_data)
+                
+                # Perform comprehensive analysis
+                self.logger.info("📊 Performing comprehensive analysis...")
+                
+                # Performance analysis
+                performance_metrics = await self._calculate_performance_metrics(equity_curve, trade_data)
+                performance_analysis = await self._perform_performance_analysis(equity_curve, trade_data)
+                performance_attribution = await self._perform_performance_attribution(equity_curve, trade_data)
+                statistical_analysis = await self._perform_statistical_analysis(equity_curve, trade_data)
+                performance_forecasting = await self._perform_performance_forecasting(equity_curve)
+                
+                # Risk analysis
+                risk_metrics = await self._calculate_risk_metrics(equity_curve, trade_data, market_data)
+                risk_analysis = await self._perform_risk_analysis(equity_curve, trade_data, market_data)
+                risk_recommendations = self._generate_risk_recommendations(risk_metrics, {})
+                
+                # Trade analysis
+                trade_statistics = await self._calculate_trade_statistics(trade_data)
+                trade_analysis = await self._perform_trade_analysis(trade_data, market_data)
+                
+                # Portfolio analysis
+                portfolio_metrics = await self._calculate_portfolio_metrics(equity_curve)
+                portfolio_analysis = await self._perform_portfolio_analysis(equity_curve, market_data)
+                
+                # Benchmark comparison
+                benchmark_comparison = await self._compare_with_benchmark(equity_curve)
+                
+                # Generate optimization insights
+                optimization_insights = self._generate_optimization_insights(
+                    performance_metrics, risk_metrics, trade_statistics, portfolio_metrics
                 )
-            
-            # Create report metadata
-            report_metadata = self._create_report_metadata(backtesting_results, generated_reports)
-            
-            # Create results
-            results = ReportingResults(
-                symbol=self.config.symbol,
-                exchange=self.config.exchange,
-                timeframe=self.config.timeframe,
-                start_time=datetime.now(),
-                end_time=datetime.now(),
-                total_duration=time.time() - start_time,
-                generated_reports=generated_reports,
-                report_summaries=report_summaries,
-                combined_report_path=combined_report_path,
-                performance_metrics=performance_metrics,
-                risk_metrics=risk_metrics,
-                trade_statistics=trade_statistics,
-                portfolio_metrics=portfolio_metrics,
-                performance_analysis=performance_analysis,
-                risk_analysis=risk_analysis,
-                trade_analysis=trade_analysis,
-                portfolio_analysis=portfolio_analysis,
-                benchmark_comparison=benchmark_comparison,
-                performance_attribution=performance_attribution,
-                statistical_analysis=statistical_analysis,
-                performance_forecasting=performance_forecasting,
-                visualization_data=visualization_data,
-                optimization_insights=optimization_insights,
-                risk_recommendations=risk_recommendations,
-                equity_curve=equity_curve,
-                returns_data=returns_data,
-                trade_data=trade_data,
-                portfolio_data=portfolio_data,
-                risk_data=risk_data,
-                report_metadata=report_metadata,
-                config=self.config,
-                execution_time=time.time() - start_time,
-                memory_usage_mb=psutil.Process().memory_info().rss / 1024 / 1024,
-                system_metrics=self._get_system_metrics()
-            )
-            
-            # Save results
-            if self.config.save_detailed_results:
-                await self._save_results(results)
-            
-            self.logger.info("✅ Comprehensive reporting with analysis completed successfully")
-            self.logger.info(f"⏱️ Execution time: {results.execution_time:.2f}s")
-            self.logger.info(f"📊 Reports generated: {len(generated_reports)}")
-            self.logger.info(f"📈 Performance metrics: {len(performance_metrics)}")
-            self.logger.info(f"⚠️ Risk metrics: {len(risk_metrics)}")
-            self.logger.info(f"📊 Trade statistics: {len(trade_statistics)}")
-            self.logger.info(f"💡 Optimization insights: {len(optimization_insights)}")
-            
-            return results
-            
-        except Exception as e:
-            self.logger.error(f"❌ Error in comprehensive reporting: {e}")
-            self.logger.exception("Full traceback:")
-            raise
-        finally:
-            # Stop performance monitoring
-            if self.config.enable_performance_monitoring:
-                self.performance_monitor.stop_monitoring()
+                
+                # Generate visualization data
+                visualization_data = await self._generate_visualization_data(equity_curve, trade_data)
+                
+                # Create detailed data
+                returns_data = self._create_returns_data(equity_curve)
+                risk_data = self._create_risk_data(equity_curve, risk_metrics)
+                portfolio_data = self._create_portfolio_data(equity_curve)
+                
+                # Generate individual reports
+                generated_reports = {}
+                report_summaries = {}
+                
+                for report_type in self.config.report_types:
+                    self.logger.info(f"📝 Generating {report_type.value} report...")
+                    
+                    report_path, summary = await self._generate_report(report_type, backtesting_results)
+                    generated_reports[report_type.value] = report_path
+                    report_summaries[report_type.value] = summary
+                
+                # Generate combined report
+                combined_report_path = None
+                if self.config.save_combined_report:
+                    self.logger.info("📋 Generating combined report...")
+                    combined_report_path = await self._generate_combined_report(
+                        generated_reports, report_summaries, backtesting_results
+                    )
+                
+                # Create report metadata
+                report_metadata = self._create_report_metadata(backtesting_results, generated_reports)
+                
+                # Create results
+                results = ReportingResults(
+                    symbol=self.config.symbol,
+                    exchange=self.config.exchange,
+                    timeframe=self.config.timeframe,
+                    start_time=datetime.now(),
+                    end_time=datetime.now(),
+                    total_duration=time.time() - start_time,
+                    generated_reports=generated_reports,
+                    report_summaries=report_summaries,
+                    combined_report_path=combined_report_path,
+                    performance_metrics=performance_metrics,
+                    risk_metrics=risk_metrics,
+                    trade_statistics=trade_statistics,
+                    portfolio_metrics=portfolio_metrics,
+                    performance_analysis=performance_analysis,
+                    risk_analysis=risk_analysis,
+                    trade_analysis=trade_analysis,
+                    portfolio_analysis=portfolio_analysis,
+                    benchmark_comparison=benchmark_comparison,
+                    performance_attribution=performance_attribution,
+                    statistical_analysis=statistical_analysis,
+                    performance_forecasting=performance_forecasting,
+                    visualization_data=visualization_data,
+                    optimization_insights=optimization_insights,
+                    risk_recommendations=risk_recommendations,
+                    equity_curve=equity_curve,
+                    returns_data=returns_data,
+                    trade_data=trade_data,
+                    portfolio_data=portfolio_data,
+                    risk_data=risk_data,
+                    report_metadata=report_metadata,
+                    config=self.config,
+                    execution_time=time.time() - start_time,
+                    memory_usage_mb=memory_optimizer.get_current_memory_stats().process_memory_mb,
+                    system_metrics=self._get_system_metrics()
+                )
+                
+                # Save results
+                if self.config.save_detailed_results:
+                    await self._save_results(results)
+                
+                self.logger.info("✅ Comprehensive reporting with analysis completed successfully")
+                self.logger.info(f"⏱️ Execution time: {results.execution_time:.2f}s")
+                self.logger.info(f"📊 Reports generated: {len(generated_reports)}")
+                self.logger.info(f"📈 Performance metrics: {len(performance_metrics)}")
+                self.logger.info(f"⚠️ Risk metrics: {len(risk_metrics)}")
+                self.logger.info(f"📊 Trade statistics: {len(trade_statistics)}")
+                self.logger.info(f"💡 Optimization insights: {len(optimization_insights)}")
+                
+                return results
+                
+            except Exception as e:
+                self.logger.error(f"❌ Error in comprehensive reporting: {e}")
+                self.logger.exception("Full traceback:")
+                raise
+            finally:
+                # Stop performance monitoring
+                if self.config.enable_performance_monitoring:
+                    self.performance_monitor.stop_monitoring()
     
     async def _load_backtesting_results(self) -> Dict[str, Any]:
         """Load backtesting results from various steps."""
@@ -547,17 +562,36 @@ class ReportingStep:
         raise ValidationError("No trade data found. Please ensure backtesting steps have been executed first.")
     
     async def _load_market_data(self) -> pd.DataFrame:
-        """Load market data."""
+        """Load market data using unified data loader."""
+        from .unified_data_loader import DataLoadingConfig, get_unified_data_loader
+        
         self.logger.info("📂 Loading market data...")
         
-        # Try to load consolidated data first
-        consolidated_file = self.data_dir / f"aggtrades_{self.config.exchange}_{self.config.symbol}_consolidated.parquet"
-        
-        if safe_file_exists(consolidated_file):
-            self.logger.info(f"📁 Loading consolidated data: {consolidated_file}")
-            return standardized_parquet_handler.read_parquet_standardized(consolidated_file)
-        else:
-            self.logger.warning("⚠️ No market data found, some analysis features may be limited")
+        try:
+            # Create loading configuration
+            loading_config = DataLoadingConfig(
+                symbol=self.config.symbol,
+                exchange=self.config.exchange,
+                timeframe=self.config.timeframe,
+                data_dir=str(self.data_dir),
+                enable_memory_optimization=True,
+                memory_limit_mb=800.0  # Lower limit for reporting
+            )
+            
+            # Load data using unified loader
+            loader = get_unified_data_loader()
+            loaded_data = loader.load_data(loading_config)
+            
+            self.logger.info(f"✅ Loaded market data via unified loader:")
+            self.logger.info(f"   📊 Records: {len(loaded_data.data):,}")
+            self.logger.info(f"   🧠 Memory: {loaded_data.memory_usage_mb:.1f}MB")
+            self.logger.info(f"   🎯 Quality: {loaded_data.data_quality_score:.2f}")
+            
+            return loaded_data.data
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Could not load market data: {e}")
+            self.logger.warning("⚠️ Some analysis features may be limited")
             return pd.DataFrame()
     
     def _validate_data(self, equity_curve: pd.DataFrame, trade_data: pd.DataFrame, market_data: pd.DataFrame) -> None:

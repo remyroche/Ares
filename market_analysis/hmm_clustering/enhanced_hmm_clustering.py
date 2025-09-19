@@ -227,17 +227,45 @@ class EnhancedHMMClustering:
         if not HMMLEARN_AVAILABLE:
             raise ImportError("hmmlearn is required but not available. Please install with: pip install hmmlearn")
         
-        # Initialize hardware optimizers with availability checks
+        # Initialize hardware optimizers using proper hardware tools
+        self.hardware_manager = None
         self.gpu_manager = None
         self.memory_optimizer = None
         self.cpu_optimizer = None
         
-        if COMMON_OPERATIONS_AVAILABLE and self.config.use_gpu:
-            self.gpu_manager = get_m1_gpu_manager()
-        if COMMON_OPERATIONS_AVAILABLE and self.config.use_memory_optimization:
-            self.memory_optimizer = get_m1_memory_optimizer()
-        if COMMON_OPERATIONS_AVAILABLE and self.config.use_cpu_optimization:
-            self.cpu_optimizer = get_m1_cpu_optimizer()
+        try:
+            # Use unified hardware manager for coordinated optimization
+            from src.utils.hardware.unified_hardware_manager import UnifiedHardwareManager, WorkloadType
+            self.hardware_manager = UnifiedHardwareManager()
+            
+            # Configure for ML training workload
+            if self.config.use_gpu or self.config.use_memory_optimization or self.config.use_cpu_optimization:
+                optimization_config = {
+                    'workload_type': WorkloadType.ML_TRAINING,
+                    'enable_gpu': self.config.use_gpu,
+                    'enable_memory_optimization': self.config.use_memory_optimization,
+                    'enable_cpu_optimization': self.config.use_cpu_optimization
+                }
+                self.hardware_manager.configure_optimization(**optimization_config)
+                
+                # Get individual components if needed
+                if self.config.use_gpu:
+                    self.gpu_manager = self.hardware_manager.gpu_manager
+                if self.config.use_memory_optimization:
+                    self.memory_optimizer = self.hardware_manager.memory_optimizer
+                if self.config.use_cpu_optimization:
+                    self.cpu_optimizer = self.hardware_manager.cpu_optimizer
+                    
+        except ImportError as e:
+            self.logger.warning(f"Unified hardware manager not available: {e}, falling back to individual components")
+            
+            # Fallback to individual components
+            if COMMON_OPERATIONS_AVAILABLE and self.config.use_gpu:
+                self.gpu_manager = get_m1_gpu_manager()
+            if COMMON_OPERATIONS_AVAILABLE and self.config.use_memory_optimization:
+                self.memory_optimizer = get_m1_memory_optimizer()
+            if COMMON_OPERATIONS_AVAILABLE and self.config.use_cpu_optimization:
+                self.cpu_optimizer = get_m1_cpu_optimizer()
         
         # Initialize utilities with availability checks
         self.klines_manager = KlinesParquetManager() if KLINES_AVAILABLE else None
@@ -452,36 +480,70 @@ class EnhancedHMMClustering:
             feature_array = features.values.astype(np.float32)
             self.feature_names = features.columns.tolist()
             
-            # Memory optimization - ensure consistent usage
-            if self.memory_optimizer:
+            # Use unified hardware manager for optimization if available
+            if self.hardware_manager:
                 try:
-                    feature_array = self.memory_optimizer.create_memory_efficient_array(
-                        feature_array, dtype=np.float32
-                    )
-                    self.logger.info("Applied memory optimization to feature array")
+                    with self.hardware_manager.optimization_context():
+                        # Memory optimization
+                        if self.memory_optimizer:
+                            feature_array = self.memory_optimizer.create_memory_efficient_array(
+                                feature_array, dtype=np.float32
+                            )
+                            self.logger.info("Applied unified memory optimization to feature array")
+                        else:
+                            feature_array = np.asarray(feature_array, dtype=np.float32)
+                        
+                        # Scale features
+                        from sklearn.preprocessing import StandardScaler
+                        self.scaler = StandardScaler()
+                        features_scaled = self.scaler.fit_transform(feature_array)
+                        
+                        # Note: HMM training is CPU-only (hmmlearn limitation), so no GPU operations needed
+                        # CPU optimization for HMM training
+                        if self.cpu_optimizer:
+                            features_scaled = self.cpu_optimizer.optimize_array(features_scaled)
+                            self.logger.info("Applied unified CPU optimization to features")
+                        
+                        # Train HMM model (always on CPU due to hmmlearn limitations)
+                        model = self._train_hmm_cpu(features_scaled)
+                        
                 except Exception as e:
-                    self.logger.warning(f"Memory optimization failed, using standard array: {e}")
+                    self.logger.warning(f"Unified hardware optimization failed: {e}, falling back to basic training")
+                    # Fallback to basic training
                     feature_array = np.asarray(feature_array, dtype=np.float32)
+                    from sklearn.preprocessing import StandardScaler
+                    self.scaler = StandardScaler()
+                    features_scaled = self.scaler.fit_transform(feature_array)
+                    model = self._train_hmm_cpu(features_scaled)
             else:
-                feature_array = np.asarray(feature_array, dtype=np.float32)
-            
-            # Scale features
-            from sklearn.preprocessing import StandardScaler
-            self.scaler = StandardScaler()
-            features_scaled = self.scaler.fit_transform(feature_array)
-            
-            # Note: HMM training is CPU-only (hmmlearn limitation), so no GPU operations needed
-            
-            # CPU optimization for actual HMM training
-            if self.cpu_optimizer:
-                try:
-                    features_scaled = self.cpu_optimizer.optimize_array(features_scaled)
-                    self.logger.info("Applied CPU optimization to features")
-                except Exception as e:
-                    self.logger.warning(f"CPU optimization failed: {e}")
-            
-            # Train HMM model (always on CPU due to hmmlearn limitations)
-            model = self._train_hmm_cpu(features_scaled)
+                # Fallback to individual optimizations
+                if self.memory_optimizer:
+                    try:
+                        feature_array = self.memory_optimizer.create_memory_efficient_array(
+                            feature_array, dtype=np.float32
+                        )
+                        self.logger.info("Applied memory optimization to feature array")
+                    except Exception as e:
+                        self.logger.warning(f"Memory optimization failed, using standard array: {e}")
+                        feature_array = np.asarray(feature_array, dtype=np.float32)
+                else:
+                    feature_array = np.asarray(feature_array, dtype=np.float32)
+                
+                # Scale features
+                from sklearn.preprocessing import StandardScaler
+                self.scaler = StandardScaler()
+                features_scaled = self.scaler.fit_transform(feature_array)
+                
+                # CPU optimization for actual HMM training
+                if self.cpu_optimizer:
+                    try:
+                        features_scaled = self.cpu_optimizer.optimize_array(features_scaled)
+                        self.logger.info("Applied CPU optimization to features")
+                    except Exception as e:
+                        self.logger.warning(f"CPU optimization failed: {e}")
+                
+                # Train HMM model (always on CPU due to hmmlearn limitations)
+                model = self._train_hmm_cpu(features_scaled)
             
             # Get regime labels and probabilities
             regime_labels = model.predict(features_scaled)
@@ -502,10 +564,18 @@ class EnhancedHMMClustering:
                 features, regime_labels
             )
             
-            # Memory usage
+            # Memory usage tracking
             memory_usage = {}
-            if self.memory_optimizer:
-                memory_usage = self.memory_optimizer.get_memory_usage()
+            if self.hardware_manager:
+                try:
+                    memory_usage = self.hardware_manager.get_performance_metrics().get('memory', {})
+                except Exception as e:
+                    self.logger.warning(f"Could not get memory usage from hardware manager: {e}")
+            elif self.memory_optimizer:
+                try:
+                    memory_usage = self.memory_optimizer.get_memory_usage()
+                except Exception as e:
+                    self.logger.warning(f"Could not get memory usage from memory optimizer: {e}")
             
             processing_time = time.time() - start_time
             
@@ -592,51 +662,95 @@ class EnhancedHMMClustering:
         regime_labels: np.ndarray, 
         regime_probabilities: np.ndarray
     ) -> Dict[str, float]:
-        """Calculate performance metrics for the HMM model."""
+        """Calculate comprehensive performance metrics for the HMM model."""
         try:
             metrics = {}
             
-            # Fixed regime stability calculation with safe division
+            # Basic regime statistics
+            unique_regimes, counts = np.unique(regime_labels, return_counts=True)
+            n_regimes = len(unique_regimes)
+            total_samples = len(regime_labels)
+            
+            # 1. Regime Stability Metrics
             regime_changes = np.sum(np.diff(regime_labels) != 0)
             total_transitions = len(regime_labels) - 1
             if MATH_VALIDATION_AVAILABLE:
                 metrics['regime_stability'] = 1 - safe_divide(regime_changes, total_transitions, 0.0)
+                metrics['transition_rate'] = safe_divide(regime_changes, total_samples, 0.0)
             else:
                 metrics['regime_stability'] = 1 - (regime_changes / total_transitions) if total_transitions > 0 else 0.0
+                metrics['transition_rate'] = regime_changes / total_samples if total_samples > 0 else 0.0
             
-            # Regime balance using safe division
-            unique_regimes, counts = np.unique(regime_labels, return_counts=True)
+            # 2. Regime Balance Metrics
             if MATH_VALIDATION_AVAILABLE:
                 regime_balance = 1 - safe_divide(np.std(counts), np.mean(counts), 0.0)
+                regime_entropy = -np.sum(safe_divide(counts, total_samples, 0.0) * 
+                                       safe_log(safe_divide(counts, total_samples, 1e-10), 0.0))
             else:
                 mean_count = np.mean(counts)
                 regime_balance = 1 - (np.std(counts) / mean_count) if mean_count != 0 else 0.0
-            metrics['regime_balance'] = regime_balance
+                regime_probs = counts / total_samples
+                regime_entropy = -np.sum(regime_probs * np.log(regime_probs + 1e-10))
             
-            # Probability confidence
+            metrics['regime_balance'] = regime_balance
+            metrics['regime_entropy'] = regime_entropy
+            metrics['regime_gini_coefficient'] = self._calculate_gini_coefficient(counts)
+            
+            # 3. Confidence Metrics
             max_probs = np.max(regime_probabilities, axis=1)
             metrics['avg_confidence'] = np.mean(max_probs)
             metrics['min_confidence'] = np.min(max_probs)
+            metrics['max_confidence'] = np.max(max_probs)
+            metrics['confidence_std'] = np.std(max_probs)
             
-            # Regime duration statistics
-            regime_durations = []
-            current_regime = regime_labels[0]
-            current_duration = 1
+            # Confidence quartiles
+            confidence_quartiles = np.percentile(max_probs, [25, 50, 75])
+            metrics['confidence_q1'] = confidence_quartiles[0]
+            metrics['confidence_median'] = confidence_quartiles[1]
+            metrics['confidence_q3'] = confidence_quartiles[2]
             
-            for i in range(1, len(regime_labels)):
-                if regime_labels[i] == current_regime:
-                    current_duration += 1
-                else:
-                    regime_durations.append(current_duration)
-                    current_regime = regime_labels[i]
-                    current_duration = 1
-            
-            regime_durations.append(current_duration)
-            
+            # 4. Regime Duration Statistics
+            regime_durations = self._calculate_regime_durations(regime_labels)
             if regime_durations:
                 metrics['avg_regime_duration'] = np.mean(regime_durations)
                 metrics['min_regime_duration'] = np.min(regime_durations)
                 metrics['max_regime_duration'] = np.max(regime_durations)
+                metrics['regime_duration_std'] = np.std(regime_durations)
+                metrics['regime_duration_cv'] = safe_divide(np.std(regime_durations), 
+                                                          np.mean(regime_durations), 0.0) if MATH_VALIDATION_AVAILABLE else (np.std(regime_durations) / np.mean(regime_durations) if np.mean(regime_durations) != 0 else 0.0)
+            
+            # 5. Regime Persistence Metrics (how likely a regime is to continue)
+            persistence_scores = []
+            for regime in unique_regimes:
+                regime_mask = regime_labels == regime
+                if np.sum(regime_mask) > 1:
+                    # Calculate how often this regime follows itself
+                    transitions = regime_labels[1:][regime_mask[:-1]]
+                    same_regime_transitions = np.sum(transitions == regime)
+                    total_regime_transitions = len(transitions)
+                    if total_regime_transitions > 0:
+                        persistence = same_regime_transitions / total_regime_transitions
+                        persistence_scores.append(persistence)
+            
+            if persistence_scores:
+                metrics['avg_regime_persistence'] = np.mean(persistence_scores)
+                metrics['min_regime_persistence'] = np.min(persistence_scores)
+                metrics['max_regime_persistence'] = np.max(persistence_scores)
+            
+            # 6. Model Quality Metrics
+            metrics['n_regimes_detected'] = n_regimes
+            metrics['regime_coverage'] = n_regimes / self.config.n_components  # How many of expected regimes were found
+            
+            # 7. Uncertainty Metrics
+            # Average uncertainty (1 - max probability)
+            uncertainties = 1 - max_probs
+            metrics['avg_uncertainty'] = np.mean(uncertainties)
+            metrics['uncertainty_std'] = np.std(uncertainties)
+            
+            # 8. Feature-based Regime Quality (if features available)
+            if not features.empty and 'returns' in features.columns:
+                regime_quality_metrics = self._calculate_regime_quality_metrics(features, regime_labels)
+                metrics.update(regime_quality_metrics)
             
             return metrics
             
@@ -874,239 +988,199 @@ class EnhancedHMMClustering:
         features = features.dropna()
         return features
     
-    # Technical indicator calculation methods - using existing FeatureEngineer
+    # Technical indicator calculation methods - using centralized TechnicalIndicators from hmm_utils
     def _calculate_rsi(self, prices: pd.Series, window: int = 14) -> pd.Series:
-        """Calculate RSI using existing FeatureEngineer with safe math operations."""
-        if self.feature_engineer is not None:
-            return self.feature_engineer._calculate_rsi(prices, window)
-        else:
-            # Safe fallback implementation using math validation
-            try:
-                if prices is None or prices.empty:
-                    return pd.Series(dtype=float, index=prices.index if hasattr(prices, 'index') else [])
-                if window < 1:
-                    window = 14  # Default to safe value
-                if len(prices) < window:
-                    return pd.Series([50.0] * len(prices), index=prices.index)
-                
-                delta = prices.diff()
-                gain = delta.where(delta > 0, 0).rolling(window=window).mean()
-                loss = (-delta.where(delta < 0, 0)).rolling(window=window).mean()
-                
-                # Use safe division from math validation
-                if MATH_VALIDATION_AVAILABLE:
-                    rs = safe_divide(gain, loss, 1.0)  # Default RS to 1.0 if loss is 0
-                    rsi = 100 - safe_divide(100, 1 + rs, 50.0)  # Default to neutral RSI
-                else:
-                    # Fallback safe implementation
-                    rs = np.where(loss != 0, gain / loss, 1.0)
-                    rsi = np.where((rs >= 0) & np.isfinite(rs), 100 - (100 / (1 + rs)), 50.0)
-                
-                # Ensure RSI is within bounds [0, 100]
-                rsi = np.clip(rsi, 0, 100)
-                return pd.Series(rsi, index=prices.index).fillna(50.0)
-                
-            except Exception as e:
-                self.logger.warning(f"RSI calculation failed: {e}, returning neutral values")
-                return pd.Series([50.0] * len(prices), index=prices.index)
+        """Calculate RSI using centralized TechnicalIndicators from hmm_utils."""
+        try:
+            from .hmm_utils import TechnicalIndicators
+            return TechnicalIndicators.calculate_rsi(prices, window)
+        except ImportError:
+            self.logger.warning("Could not import TechnicalIndicators from hmm_utils, using fallback")
+            # Minimal fallback
+            return pd.Series([50.0] * len(prices), index=prices.index)
     
     def _calculate_macd(self, prices: pd.Series, fast: int = 12, slow: int = 26, signal: int = 9) -> Tuple[pd.Series, pd.Series, pd.Series]:
-        """Calculate MACD using existing FeatureEngineer with safe parameters."""
-        if self.feature_engineer is not None:
-            return self.feature_engineer._calculate_macd(prices, fast, slow, signal)
-        else:
-            # Safe fallback implementation with parameter validation
-            try:
-                if prices is None or prices.empty:
-                    empty_series = pd.Series(dtype=float, index=prices.index if hasattr(prices, 'index') else [])
-                    return empty_series, empty_series, empty_series
-                
-                # Validate parameters
-                if fast < 1:
-                    fast = 12
-                if slow < 1:
-                    slow = 26
-                if signal < 1:
-                    signal = 9
-                if fast >= slow:
-                    fast = max(1, slow - 1)
-                
-                if len(prices) < max(fast, slow, signal):
-                    # Not enough data, return zeros
-                    zero_series = pd.Series([0.0] * len(prices), index=prices.index)
-                    return zero_series, zero_series, zero_series
-                
-                ema_fast = prices.ewm(span=fast, adjust=False).mean()
-                ema_slow = prices.ewm(span=slow, adjust=False).mean()
-                macd_line = ema_fast - ema_slow
-                macd_signal = macd_line.ewm(span=signal, adjust=False).mean()
-                macd_hist = macd_line - macd_signal
-                
-                # Fill NaN values
-                macd_line = macd_line.fillna(0.0)
-                macd_signal = macd_signal.fillna(0.0)
-                macd_hist = macd_hist.fillna(0.0)
-                
-                return macd_line, macd_signal, macd_hist
-                
-            except Exception as e:
-                self.logger.warning(f"MACD calculation failed: {e}, returning zero values")
-                zero_series = pd.Series([0.0] * len(prices), index=prices.index)
-                return zero_series, zero_series, zero_series
+        """Calculate MACD using centralized TechnicalIndicators from hmm_utils."""
+        try:
+            from .hmm_utils import TechnicalIndicators
+            macd_line = TechnicalIndicators.calculate_macd(prices, fast, slow, signal)
+            # For compatibility, return MACD line, signal line (smoothed), and histogram
+            macd_signal = macd_line.ewm(span=signal, adjust=False).mean()
+            macd_hist = macd_line - macd_signal
+            return macd_line, macd_signal, macd_hist
+        except ImportError:
+            self.logger.warning("Could not import TechnicalIndicators from hmm_utils, using fallback")
+            # Minimal fallback
+            zero_series = pd.Series([0.0] * len(prices), index=prices.index)
+            return zero_series, zero_series, zero_series
     
     def _calculate_bollinger_bands(self, prices: pd.Series, window: int = 20, num_std: float = 2) -> Tuple[pd.Series, pd.Series, pd.Series]:
-        """Calculate Bollinger Bands using existing FeatureEngineer with safe parameters."""
-        if self.feature_engineer is not None:
-            return self.feature_engineer._calculate_bollinger_bands(prices, window, num_std)
-        else:
-            # Safe fallback implementation with parameter validation
-            try:
-                if prices is None or prices.empty:
-                    empty_series = pd.Series(dtype=float, index=prices.index if hasattr(prices, 'index') else [])
-                    return empty_series, empty_series, empty_series
-                
-                # Validate parameters
-                if window < 1:
-                    window = 20
-                if num_std <= 0:
-                    num_std = 2.0
-                
-                if len(prices) < window:
-                    # Not enough data, return price as middle band, no spread
-                    middle_band = pd.Series([prices.mean()] * len(prices), index=prices.index)
-                    return middle_band, middle_band, middle_band
-                
-                rolling_mean = prices.rolling(window=window, min_periods=1).mean()
-                rolling_std = prices.rolling(window=window, min_periods=1).std()
-                
-                # Handle case where std is 0 (constant prices)
-                rolling_std = rolling_std.fillna(0)
-                rolling_std = np.where(rolling_std == 0, prices.std() * 0.01, rolling_std)  # Small spread if constant
-                
-                upper_band = rolling_mean + (rolling_std * num_std)
-                lower_band = rolling_mean - (rolling_std * num_std)
-                
-                # Fill NaN values
-                rolling_mean = rolling_mean.fillna(prices.mean())
-                upper_band = upper_band.fillna(prices.mean())
-                lower_band = lower_band.fillna(prices.mean())
-                
-                return upper_band, rolling_mean, lower_band
-                
-            except Exception as e:
-                self.logger.warning(f"Bollinger Bands calculation failed: {e}, returning price as bands")
+        """Calculate Bollinger Bands using centralized TechnicalIndicators from hmm_utils."""
+        try:
+            from .hmm_utils import TechnicalIndicators
+            bb_features = TechnicalIndicators.calculate_bollinger_bands(prices, window, num_std)
+            if not bb_features.empty:
+                return bb_features['bb_upper'], bb_features['bb_middle'], bb_features['bb_lower']
+            else:
+                # Fallback to price series
                 price_series = pd.Series([prices.mean()] * len(prices), index=prices.index)
                 return price_series, price_series, price_series
+        except ImportError:
+            self.logger.warning("Could not import TechnicalIndicators from hmm_utils, using fallback")
+            # Minimal fallback
+            price_series = pd.Series([prices.mean()] * len(prices), index=prices.index)
+            return price_series, price_series, price_series
     
     def _calculate_atr(self, data: pd.DataFrame, window: int = 14) -> pd.Series:
-        """Calculate ATR using existing FeatureEngineer with safe operations."""
-        if self.feature_engineer is not None:
-            return self.feature_engineer._calculate_atr(data, window)
-        else:
-            # Safe fallback implementation
-            try:
-                if data is None or data.empty:
-                    return pd.Series(dtype=float)
-                
-                required_cols = ['high', 'low', 'close']
-                missing_cols = [col for col in required_cols if col not in data.columns]
-                if missing_cols:
-                    self.logger.warning(f"Missing columns for ATR: {missing_cols}, returning zero values")
-                    return pd.Series([0.0] * len(data), index=data.index)
-                
-                if window < 1:
-                    window = 14
-                
-                if len(data) < 2:
-                    # Need at least 2 periods for ATR
-                    return pd.Series([0.0] * len(data), index=data.index)
-                
-                high = data['high']
-                low = data['low']
-                close = data['close']
-                
-                tr1 = high - low
-                tr2 = abs(high - close.shift(1))
-                tr3 = abs(low - close.shift(1))
-                
-                # Handle NaN values in true range calculation
-                tr1 = tr1.fillna(0)
-                tr2 = tr2.fillna(tr1)  # If no previous close, use high-low
-                tr3 = tr3.fillna(tr1)  # If no previous close, use high-low
-                
-                true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-                atr = true_range.rolling(window=window, min_periods=1).mean()
-                
-                # Fill any remaining NaN values
-                atr = atr.fillna(0.0)
-                
-                return atr
-                
-            except Exception as e:
-                self.logger.warning(f"ATR calculation failed: {e}, returning zero values")
-                return pd.Series([0.0] * len(data), index=data.index)
+        """Calculate ATR using centralized TechnicalIndicators from hmm_utils."""
+        try:
+            from .hmm_utils import TechnicalIndicators
+            return TechnicalIndicators.calculate_atr(data, window)
+        except ImportError:
+            self.logger.warning("Could not import TechnicalIndicators from hmm_utils, using fallback")
+            # Minimal fallback
+            return pd.Series([0.0] * len(data), index=data.index)
     
     def _calculate_stochastic(self, data: pd.DataFrame, window: int = 14) -> Tuple[pd.Series, pd.Series]:
-        """Calculate Stochastic using existing FeatureEngineer with safe math operations."""
-        if self.feature_engineer is not None:
-            return self.feature_engineer._calculate_stochastic(data, window)
-        else:
-            # Safe fallback implementation using math validation
-            try:
-                if data is None or data.empty:
-                    empty_series = pd.Series(dtype=float)
-                    return empty_series, empty_series
-                
-                required_cols = ['high', 'low', 'close']
-                missing_cols = [col for col in required_cols if col not in data.columns]
-                if missing_cols:
-                    self.logger.warning(f"Missing columns for Stochastic: {missing_cols}, returning neutral values")
-                    neutral_series = pd.Series([50.0] * len(data), index=data.index)
-                    return neutral_series, neutral_series
-                
-                if window < 1:
-                    window = 14  # Default to safe value
-                if len(data) < window:
-                    neutral_series = pd.Series([50.0] * len(data), index=data.index)
-                    return neutral_series, neutral_series
-                
-                high = data['high']
-                low = data['low']
-                close = data['close']
-                
-                lowest_low = low.rolling(window=window).min()
-                highest_high = high.rolling(window=window).max()
-                range_diff = highest_high - lowest_low
-                
-                # Use safe division from math validation
-                if MATH_VALIDATION_AVAILABLE:
-                    k_percent = 100 * safe_divide(close - lowest_low, range_diff, 0.5)  # Default to 50%
+        """Calculate Stochastic using centralized TechnicalIndicators from hmm_utils."""
+        try:
+            from .hmm_utils import TechnicalIndicators
+            return TechnicalIndicators.calculate_stochastic(data, window)
+        except ImportError:
+            self.logger.warning("Could not import TechnicalIndicators from hmm_utils, using fallback")
+            # Minimal fallback
+            neutral_series = pd.Series([50.0] * len(data), index=data.index)
+            return neutral_series, neutral_series
+    
+    def _calculate_gini_coefficient(self, counts: np.ndarray) -> float:
+        """Calculate Gini coefficient for regime distribution balance."""
+        try:
+            if len(counts) <= 1:
+                return 0.0
+            
+            # Sort counts
+            sorted_counts = np.sort(counts)
+            n = len(counts)
+            
+            # Calculate Gini coefficient
+            cumsum = np.cumsum(sorted_counts)
+            gini = (2 * np.sum((np.arange(1, n + 1) * sorted_counts))) / (n * cumsum[-1]) - (n + 1) / n
+            return max(0.0, gini)  # Ensure non-negative
+            
+        except Exception as e:
+            self.logger.warning(f"Gini coefficient calculation failed: {e}")
+            return 0.0
+    
+    def _calculate_regime_durations(self, regime_labels: np.ndarray) -> list:
+        """Calculate list of regime durations."""
+        try:
+            if len(regime_labels) == 0:
+                return []
+            
+            durations = []
+            current_regime = regime_labels[0]
+            current_duration = 1
+            
+            for i in range(1, len(regime_labels)):
+                if regime_labels[i] == current_regime:
+                    current_duration += 1
                 else:
-                    # Fallback safe implementation
-                    k_percent = np.where(
-                        (range_diff > 1e-10),
-                        100 * ((close - lowest_low) / range_diff),
-                        50.0
-                    )
+                    durations.append(current_duration)
+                    current_regime = regime_labels[i]
+                    current_duration = 1
+            
+            durations.append(current_duration)  # Add the last regime duration
+            return durations
+            
+        except Exception as e:
+            self.logger.warning(f"Regime duration calculation failed: {e}")
+            return []
+    
+    def _calculate_regime_quality_metrics(self, features: pd.DataFrame, regime_labels: np.ndarray) -> Dict[str, float]:
+        """Calculate regime quality metrics based on feature characteristics."""
+        try:
+            quality_metrics = {}
+            unique_regimes = np.unique(regime_labels)
+            
+            # Calculate within-regime vs between-regime variance for returns
+            if 'returns' in features.columns:
+                returns = features['returns'].dropna()
+                if len(returns) > 0:
+                    # Within-regime variance
+                    within_regime_vars = []
+                    for regime in unique_regimes:
+                        regime_returns = returns[regime_labels[:len(returns)] == regime]
+                        if len(regime_returns) > 1:
+                            within_regime_vars.append(np.var(regime_returns))
+                    
+                    if within_regime_vars:
+                        avg_within_regime_var = np.mean(within_regime_vars)
+                        total_var = np.var(returns)
+                        
+                        if MATH_VALIDATION_AVAILABLE:
+                            quality_metrics['regime_separation_ratio'] = safe_divide(
+                                total_var - avg_within_regime_var, total_var, 0.0
+                            )
+                        else:
+                            quality_metrics['regime_separation_ratio'] = (
+                                (total_var - avg_within_regime_var) / total_var 
+                                if total_var > 0 else 0.0
+                            )
+            
+            # Calculate regime distinctiveness (how different regimes are from each other)
+            regime_means = {}
+            for regime in unique_regimes:
+                regime_mask = regime_labels == regime
+                if np.sum(regime_mask) > 0:
+                    regime_features = features.iloc[:len(regime_labels)][regime_mask]
+                    if not regime_features.empty:
+                        # Calculate mean of numeric features for this regime
+                        numeric_features = regime_features.select_dtypes(include=[np.number])
+                        if not numeric_features.empty:
+                            regime_means[regime] = numeric_features.mean()
+            
+            # Calculate average pairwise distance between regime centroids
+            if len(regime_means) > 1:
+                distances = []
+                regimes = list(regime_means.keys())
+                for i in range(len(regimes)):
+                    for j in range(i + 1, len(regimes)):
+                        try:
+                            # Calculate Euclidean distance between regime means
+                            mean1 = regime_means[regimes[i]]
+                            mean2 = regime_means[regimes[j]]
+                            common_features = mean1.index.intersection(mean2.index)
+                            if len(common_features) > 0:
+                                dist = np.sqrt(np.sum((mean1[common_features] - mean2[common_features]) ** 2))
+                                distances.append(dist)
+                        except Exception:
+                            continue
                 
-                k_percent = pd.Series(k_percent, index=close.index)
-                
-                # Ensure K% is within bounds [0, 100]
-                k_percent = np.clip(k_percent, 0, 100)
-                
-                # Calculate D% as 3-period moving average of K%
-                d_percent = k_percent.rolling(window=3).mean()
-                
-                # Fill NaN values with neutral values
-                k_percent = k_percent.fillna(50.0)
-                d_percent = d_percent.fillna(50.0)
-                
-                return k_percent, d_percent
-                
-            except Exception as e:
-                self.logger.warning(f"Stochastic calculation failed: {e}, returning neutral values")
-                neutral_series = pd.Series([50.0] * len(data), index=data.index)
-                return neutral_series, neutral_series
+                if distances:
+                    quality_metrics['avg_regime_distance'] = np.mean(distances)
+                    quality_metrics['min_regime_distance'] = np.min(distances)
+                    quality_metrics['max_regime_distance'] = np.max(distances)
+            
+            return quality_metrics
+            
+        except Exception as e:
+            self.logger.warning(f"Regime quality metrics calculation failed: {e}")
+            return {}
+    
+    def get_performance_metrics_as_features(self, performance_metrics: Dict[str, float]) -> pd.DataFrame:
+        """Convert performance metrics to a DataFrame suitable for ML training."""
+        try:
+            # Create a single-row DataFrame with metrics as features
+            metrics_df = pd.DataFrame([performance_metrics])
+            
+            # Add prefixes to avoid naming conflicts
+            metrics_df.columns = ['hmm_' + col for col in metrics_df.columns]
+            
+            return metrics_df
+            
+        except Exception as e:
+            self.logger.error(f"Failed to convert performance metrics to features: {e}")
+            return pd.DataFrame()
 
 
 def run_hmm_clustering_analysis(
@@ -1183,7 +1257,7 @@ def run_hmm_clustering_analysis(
                 if not save_success:
                     logger.warning(f"Failed to save model to {model_path}")
                 
-                # Save results
+                # Save comprehensive results including ML-ready performance metrics
                 results_path = output_path / f"hmm_results_{symbol}_{interval}.json"
                 results_data = {
                     'symbol': symbol,
@@ -1202,7 +1276,15 @@ def run_hmm_clustering_analysis(
                 with open(results_path, 'w') as f:
                     json.dump(results_data, f, indent=2, default=str)
                 
+                # Save performance metrics as ML features
+                ml_features_path = output_path / f"hmm_ml_features_{symbol}_{interval}.csv"
+                ml_features = clustering.get_performance_metrics_as_features(result.performance_metrics)
+                if not ml_features.empty:
+                    ml_features.to_csv(ml_features_path, index=False)
+                    logger.info(f"ML-ready performance metrics saved to {ml_features_path}")
+                
                 logger.info(f"Results saved to {output_path}")
+                logger.info(f"Performance metrics summary: {len(result.performance_metrics)} metrics available for ML training")
             except Exception as save_e:
                 logger.warning(f"Failed to save results: {save_e}")
         elif save_results:

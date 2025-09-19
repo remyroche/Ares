@@ -18,6 +18,29 @@ from src.utils.tprint import tprint
 
 logger = system_logger.getChild('ValidationFramework')
 
+# Import math validation utilities for safe operations
+try:
+    from src.utils.math_validation import (
+        validate_finite, validate_positive, validate_range,
+        safe_mean, safe_std, safe_correlation
+    )
+    from src.utils.core.common import safe_list_get
+    MATH_VALIDATION_AVAILABLE = True
+except ImportError:
+    MATH_VALIDATION_AVAILABLE = False
+    
+    # Fallback implementations
+    def safe_list_get(lst, index, default=None):
+        try:
+            return lst[index] if lst and 0 <= index < len(lst) else default
+        except (IndexError, TypeError):
+            return default
+    
+    def validate_finite(value, name="value"):
+        if not np.isfinite(value):
+            raise ValueError(f"{name} must be finite")
+        return value
+
 class ValidationLevel(Enum):
     """Validation severity levels."""
     CRITICAL = "critical"

@@ -14,6 +14,32 @@ import numpy as np
 
 from .constants import OPTIMIZATION_CONSTANTS
 
+# Import math validation utilities for safe operations
+try:
+    from src.utils.math_validation import (
+        safe_correlation, validate_finite, safe_mean, safe_std
+    )
+    from src.utils.core.common import safe_list_get
+    MATH_VALIDATION_AVAILABLE = True
+except ImportError:
+    MATH_VALIDATION_AVAILABLE = False
+    
+    # Fallback implementations
+    def safe_list_get(lst, index, default=None):
+        try:
+            return lst[index] if lst and 0 <= index < len(lst) else default
+        except (IndexError, TypeError):
+            return default
+    
+    def safe_correlation(x, y, default=0.0):
+        try:
+            if len(x) != len(y) or len(x) < 2:
+                return default
+            corr = np.corrcoef(x, y)[0, 1]
+            return corr if np.isfinite(corr) else default
+        except:
+            return default
+
 
 class OptimizationMethod(Enum):
     """Available optimization methods."""
@@ -146,30 +172,68 @@ class GridSearchStrategy(OptimizationStrategy):
                 feature_values = self._generate_feature_with_lookback(data, feature_name, lookback)
                 target_values = data[target_column].values
                 
-                # Calculate mutual information
+                # Safely align and clean data
+                if len(feature_values) == 0 or len(target_values) == 0:
+                    continue
+                    
                 min_length = min(len(feature_values), len(target_values))
                 feature_values = feature_values[:min_length]
                 target_values = target_values[:min_length]
                 
-                # Remove NaN values
-                mask = ~(np.isnan(feature_values) | np.isnan(target_values))
-                if mask.sum() < 10:  # Need minimum data points
+                # Remove NaN values with safe operations
+                if MATH_VALIDATION_AVAILABLE:
+                    valid_mask = np.isfinite(feature_values) & np.isfinite(target_values)
+                    if not np.any(valid_mask):
+                        continue
+                    feature_clean = feature_values[valid_mask]
+                    target_clean = target_values[valid_mask]
+                else:
+                    mask = ~(np.isnan(feature_values) | np.isnan(target_values))
+                    if mask.sum() < 10:
+                        continue
+                    feature_clean = feature_values[mask]
+                    target_clean = target_values[mask]
+                
+                # Check minimum data requirement (increased for reliability)
+                min_samples = max(30, lookback * 2)
+                if len(feature_clean) < min_samples:
                     continue
                 
-                feature_clean = feature_values[mask]
-                target_clean = target_values[mask]
-                
-                # Calculate score
+                # Calculate score with safe operations
+                score = 0.0
                 try:
-                    score = mutual_info_regression(
+                    mi_scores = mutual_info_regression(
                         feature_clean.reshape(-1, 1), 
                         target_clean,
                         random_state=self.config.get('random_state', 42)
-                    )[0]
-                except:
-                    # Fallback to correlation
-                    score = abs(np.corrcoef(feature_clean, target_clean)[0, 1])
-                    if np.isnan(score):
+                    )
+                    # Safe array access
+                    score = safe_list_get(mi_scores, 0, 0.0)
+                except Exception:
+                    score = 0.0
+                
+                # Fallback to safe correlation if MI failed
+                if score == 0.0:
+                    if MATH_VALIDATION_AVAILABLE:
+                        correlation = safe_correlation(feature_clean, target_clean, default=0.0)
+                    else:
+                        try:
+                            corr_matrix = np.corrcoef(feature_clean, target_clean)
+                            if corr_matrix.shape == (2, 2):
+                                correlation = corr_matrix[0, 1]
+                                correlation = correlation if np.isfinite(correlation) else 0.0
+                            else:
+                                correlation = 0.0
+                        except Exception:
+                            correlation = 0.0
+                    score = abs(correlation)
+                
+                # Validate final score
+                if MATH_VALIDATION_AVAILABLE:
+                    try:
+                        score = validate_finite(score, "optimization_score")
+                        score = max(0.0, score)  # Ensure non-negative
+                    except Exception:
                         score = 0.0
                 
                 total_trials += 1
@@ -207,8 +271,9 @@ class GridSearchStrategy(OptimizationStrategy):
         if target_column not in data.columns:
             return False, f"Target column '{target_column}' not found"
         
-        if len(data) < self.config.get('max_lookback', OPTIMIZATION_CONSTANTS.DEFAULT_MAX_LOOKBACK) * 2:
-            return False, "Insufficient data for optimization"
+        min_required_data = self.config.get('max_lookback', OPTIMIZATION_CONSTANTS.DEFAULT_MAX_LOOKBACK) * 3  # Increased for reliability
+        if len(data) < min_required_data:
+            return False, f"Insufficient data for optimization: {len(data)} < {min_required_data}"
         
         return True, ""
     

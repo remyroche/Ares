@@ -650,10 +650,10 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 'analyst_exit_confidence_weight': {'type': 'float', 'min': 0.2, 'max': 0.6},
                 'exit_confidence_combination_method': {'type': 'categorical', 'choices': ['multiplicative', 'logarithmic', 'weighted_average']},
                 # 0.3% Micro Movement Exit Thresholds (immediate only)
-                'exit_micro_immediate_long_threshold': {'type': 'float', 'min': 0.25, 'max': 0.55},
-                'exit_micro_immediate_short_threshold': {'type': 'float', 'min': 0.20, 'max': 0.50},
+                'exit_micro_immediate_long_threshold': {'type': 'float', 'min': 0.1, 'max': 0.5},
+                'exit_micro_immediate_short_threshold': {'type': 'float', 'min': 0.1, 'max': 0.5},
                 # Directional Reversal Detection (MAIN EXIT TRIGGER)
-                'directional_confidence_min': {'type': 'float', 'min': 0.05, 'max': 0.25}
+                'directional_confidence_min': {'type': 'float', 'min': 0.05, 'max': 0.5}
             },
             'intensity': {
                 # Signal intensity and strength parameters

@@ -73,6 +73,15 @@ feature_lookback_optimization:
     enable_directional_comparison: true   # Generate comparison metrics
     prefer_better_direction: true         # Use better performing direction for each feature
     fallback_to_unified: true            # Fall back to unified optimization if directional fails
+    
+    # Intelligent feature selection (prevents naive feature doubling)
+    intelligent_feature_selection:
+      enabled: true                      # Enable intelligent feature selection
+      max_features: 50                   # Maximum total features to select
+      significance_threshold: 0.1        # Min performance difference for directional split
+      lookback_diff_threshold: 5         # Min lookback difference for directional split
+      create_meta_features: true         # Create directional meta-features
+      priority_order: ["directional", "unified", "meta"]  # Feature selection priority
   
   # Integration settings
   use_multi_horizon_metrics: true

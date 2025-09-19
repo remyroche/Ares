@@ -1694,10 +1694,16 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
                             enable_directional=True
                         )
                         
+                        # Apply intelligent directional feature selection
+                        feature_selection_result = self.intelligent_directional_feature_selection(
+                            directional_result, max_features=50
+                        )
+                        
                         # Convert directional result to standard format
                         optimization_result = self._convert_directional_to_standard_format(directional_result)
                         optimization_result['optimization_method'] = 'directional_mrmr'
-                        tprint('✅ Directional MRMR optimization completed')
+                        optimization_result['intelligent_feature_selection'] = feature_selection_result
+                        tprint('✅ Directional MRMR optimization with intelligent feature selection completed')
                     else:
                         # Fall back to standard optimization
                         optimization_result = await feature_optimizer.optimize_features(prepared_data, config)
@@ -2762,6 +2768,215 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
                 'optimization_metrics': {'error': str(e)},
                 'directional_analysis': directional_result
             }
+    
+    def intelligent_directional_feature_selection(self, optimization_results: Dict[str, Any], 
+                                                   max_features: int = 50,
+                                                   significance_threshold: float = 0.1,
+                                                   lookback_diff_threshold: int = 5) -> Dict[str, Any]:
+        """
+        Intelligently select directional features to avoid naive feature doubling.
+        
+        Args:
+            optimization_results: Results from directional optimization
+            max_features: Maximum number of features to select
+            significance_threshold: Minimum performance difference to warrant directional split
+            lookback_diff_threshold: Minimum lookback difference to warrant directional split
+            
+        Returns:
+            Dictionary with selected features and selection rationale
+        """
+        try:
+            tprint("🎯 Starting intelligent directional feature selection...")
+            
+            selection_result = {
+                'directional_features': [],
+                'unified_features': [],
+                'meta_features': [],
+                'selection_rationale': {},
+                'feature_budget': {
+                    'total_budget': max_features,
+                    'directional_used': 0,
+                    'unified_used': 0,
+                    'meta_used': 0
+                }
+            }
+            
+            comparison = optimization_results.get('directional_comparison', {})
+            feature_comparisons = comparison.get('feature_comparisons', {})
+            
+            if not feature_comparisons:
+                tprint("⚠️ No directional comparison data available, falling back to unified selection")
+                return self._fallback_unified_selection(optimization_results, max_features)
+            
+            # Analyze each feature for directional significance
+            for feature, comp in feature_comparisons.items():
+                perf_diff = comp['performance_difference']['mi_score_difference']
+                lookback_diff = comp['lookback_difference']['first_period']['difference']
+                better_direction = comp['performance_difference']['better_direction']
+                
+                # Decision logic for feature selection strategy
+                if perf_diff > significance_threshold or lookback_diff > lookback_diff_threshold:
+                    # Significant directional difference - create directional features
+                    long_feature = f"{feature}_long"
+                    short_feature = f"{feature}_short"
+                    
+                    selection_result['directional_features'].extend([long_feature, short_feature])
+                    selection_result['selection_rationale'][feature] = {
+                        'strategy': 'directional_split',
+                        'reason': f'Significant difference: perf_diff={perf_diff:.3f}, lookback_diff={lookback_diff}',
+                        'performance_difference': perf_diff,
+                        'lookback_difference': lookback_diff,
+                        'better_direction': better_direction
+                    }
+                    
+                    # Also create meta-features for this significant directional difference
+                    meta_features = self._create_directional_meta_features(feature, comp)
+                    selection_result['meta_features'].extend(meta_features)
+                    
+                else:
+                    # No significant directional difference - use unified feature
+                    unified_feature = f"{feature}_{better_direction}"  # Use better performing direction
+                    selection_result['unified_features'].append(unified_feature)
+                    selection_result['selection_rationale'][feature] = {
+                        'strategy': 'unified_best',
+                        'reason': f'Minimal directional difference, using {better_direction} version',
+                        'performance_difference': perf_diff,
+                        'lookback_difference': lookback_diff,
+                        'chosen_direction': better_direction
+                    }
+            
+            # Apply budget constraints
+            selection_result = self._apply_feature_budget_constraints(selection_result, max_features)
+            
+            # Generate selection summary
+            total_selected = (len(selection_result['directional_features']) + 
+                            len(selection_result['unified_features']) + 
+                            len(selection_result['meta_features']))
+            
+            tprint(f"✅ Intelligent feature selection completed:")
+            tprint(f"   📊 Directional features: {len(selection_result['directional_features'])}")
+            tprint(f"   🎯 Unified features: {len(selection_result['unified_features'])}")
+            tprint(f"   🔗 Meta features: {len(selection_result['meta_features'])}")
+            tprint(f"   📈 Total selected: {total_selected}/{max_features}")
+            
+            return selection_result
+            
+        except Exception as e:
+            tprint(f"❌ Error in intelligent directional feature selection: {e}")
+            return self._fallback_unified_selection(optimization_results, max_features)
+    
+    def _create_directional_meta_features(self, base_feature: str, comparison_data: Dict[str, Any]) -> List[str]:
+        """Create meta-features that capture directional relationships."""
+        meta_features = []
+        
+        # Directional performance difference meta-feature
+        meta_features.append(f"{base_feature}_direction_performance_diff")
+        
+        # Directional lookback difference meta-feature  
+        meta_features.append(f"{base_feature}_direction_lookback_diff")
+        
+        # Directional strength indicator (how much better the better direction is)
+        meta_features.append(f"{base_feature}_direction_strength")
+        
+        return meta_features
+    
+    def _apply_feature_budget_constraints(self, selection_result: Dict[str, Any], max_features: int) -> Dict[str, Any]:
+        """Apply intelligent budget constraints to feature selection."""
+        try:
+            # Count current features
+            directional_count = len(selection_result['directional_features'])
+            unified_count = len(selection_result['unified_features'])
+            meta_count = len(selection_result['meta_features'])
+            total_count = directional_count + unified_count + meta_count
+            
+            if total_count <= max_features:
+                # Within budget, no constraints needed
+                selection_result['feature_budget'].update({
+                    'directional_used': directional_count,
+                    'unified_used': unified_count,
+                    'meta_used': meta_count,
+                    'budget_exceeded': False
+                })
+                return selection_result
+            
+            # Budget exceeded, need to prioritize
+            tprint(f"⚠️ Feature budget exceeded ({total_count} > {max_features}), applying constraints...")
+            
+            # Priority order: directional > unified > meta (directional features are most valuable)
+            remaining_budget = max_features
+            
+            # Keep all directional features (highest priority)
+            if directional_count <= remaining_budget:
+                remaining_budget -= directional_count
+            else:
+                # Even directional features exceed budget - keep top performers
+                selection_result['directional_features'] = selection_result['directional_features'][:remaining_budget]
+                remaining_budget = 0
+            
+            # Keep unified features if budget allows
+            if remaining_budget > 0 and unified_count > 0:
+                kept_unified = min(unified_count, remaining_budget)
+                selection_result['unified_features'] = selection_result['unified_features'][:kept_unified]
+                remaining_budget -= kept_unified
+            else:
+                selection_result['unified_features'] = []
+            
+            # Keep meta features if budget allows
+            if remaining_budget > 0 and meta_count > 0:
+                kept_meta = min(meta_count, remaining_budget)
+                selection_result['meta_features'] = selection_result['meta_features'][:kept_meta]
+                remaining_budget -= kept_meta
+            else:
+                selection_result['meta_features'] = []
+            
+            # Update budget tracking
+            selection_result['feature_budget'].update({
+                'directional_used': len(selection_result['directional_features']),
+                'unified_used': len(selection_result['unified_features']),
+                'meta_used': len(selection_result['meta_features']),
+                'budget_exceeded': True,
+                'features_dropped': total_count - max_features
+            })
+            
+            final_count = (len(selection_result['directional_features']) + 
+                          len(selection_result['unified_features']) + 
+                          len(selection_result['meta_features']))
+            
+            tprint(f"✅ Budget constraints applied: {final_count}/{max_features} features selected")
+            
+            return selection_result
+            
+        except Exception as e:
+            tprint(f"❌ Error applying budget constraints: {e}")
+            return selection_result
+    
+    def _fallback_unified_selection(self, optimization_results: Dict[str, Any], max_features: int) -> Dict[str, Any]:
+        """Fallback to unified feature selection when directional selection fails."""
+        tprint("🔄 Using fallback unified feature selection...")
+        
+        # Extract features from optimization results
+        optimized_features = optimization_results.get('optimized_features', {})
+        
+        # Sort by performance score
+        sorted_features = sorted(optimized_features.items(), 
+                               key=lambda x: x[1].get('score', 0), reverse=True)
+        
+        # Select top features within budget
+        selected_features = [name for name, _ in sorted_features[:max_features]]
+        
+        return {
+            'directional_features': [],
+            'unified_features': selected_features,
+            'meta_features': [],
+            'selection_rationale': {'fallback': 'Used unified selection due to directional selection failure'},
+            'feature_budget': {
+                'total_budget': max_features,
+                'directional_used': 0,
+                'unified_used': len(selected_features),
+                'meta_used': 0,
+                'fallback_used': True
+            }
+        }
     
     def get_mrmr_optimization_metrics(self) -> Dict[str, Any]:
         """Get metrics from MRMR optimization."""

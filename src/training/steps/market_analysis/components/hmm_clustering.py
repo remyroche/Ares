@@ -671,37 +671,68 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                 cluster_sample_pcts = {cluster_id: (count / total_samples) * 100 
                                      for cluster_id, count in cluster_sample_counts.items()}
                 
-                # Exclude clusters that are already too large from merging (freeze at >= 6%)
-                excluded_clusters = {cluster_id for cluster_id, pct in cluster_sample_pcts.items() if pct >= max_sample_pct}
-
-                # Compute within-cluster CV and exclude clusters above threshold
-                cluster_cv = self._compute_cluster_cv(regime_characteristics, regime_to_cluster)
-                # Dynamic threshold suggestion: median + 0.5 * IQR to avoid over-freezing
+                # Compute within-cluster CV by aspect and derive soft penalties
+                cluster_cv_aspects = self._compute_cluster_cv_by_aspect(regime_characteristics, regime_to_cluster)
                 import numpy as np
-                cv_values = np.array(list(cluster_cv.values())) if len(cluster_cv) > 0 else np.array([])
-                if cv_values.size > 0:
-                    cv_median = float(np.median(cv_values))
-                    cv_iqr = float(np.percentile(cv_values, 75) - np.percentile(cv_values, 25))
-                    cv_threshold = max(0.05, cv_median + 0.5 * cv_iqr)
-                else:
-                    cv_threshold = 0.2  # reasonable default if CVs missing
-                high_cv_clusters = {cid for cid, cv in cluster_cv.items() if cv is not None and cv >= cv_threshold}
-                if len(high_cv_clusters) > 0:
-                    self.logger.info(f"   ⚖️ High-CV freeze: threshold={cv_threshold:.3f}, frozen={sorted(list(high_cv_clusters))}")
-                excluded_clusters.update(high_cv_clusters)
+                # Build aspect thresholds: median + 0.5 * IQR per aspect
+                aspect_thresholds: Dict[str, float] = {}
+                for aspect in ['momentum', 'volatility', 'volume']:
+                    vals = [cv_map.get(aspect) for cv_map in cluster_cv_aspects.values() if isinstance(cv_map.get(aspect), (int, float))]
+                    vals = [float(v) for v in vals if v is not None and np.isfinite(v)]
+                    if len(vals) > 0:
+                        med = float(np.median(vals))
+                        iqr = float(np.percentile(vals, 75) - np.percentile(vals, 25))
+                        aspect_thresholds[aspect] = max(0.05, med + 0.5 * iqr)
+                    else:
+                        aspect_thresholds[aspect] = 0.2
+                # Penalty per cluster if dominant aspect exceeds its threshold
+                cluster_penalty: Dict[int, float] = {}
+                base_penalty = 0.002
+                penalized_clusters = []
+                for cid, cv_map in cluster_cv_aspects.items():
+                    # Determine dominant aspect
+                    items = [(k, v) for k, v in cv_map.items() if k in aspect_thresholds and isinstance(v, (int, float))]
+                    if not items:
+                        cluster_penalty[cid] = 0.0
+                        continue
+                    dom_aspect, dom_cv = max(items, key=lambda kv: kv[1])
+                    thr = aspect_thresholds.get(dom_aspect, 0.2)
+                    penalty = base_penalty if (dom_cv is not None and dom_cv >= thr) else 0.0
+                    if penalty > 0.0:
+                        penalized_clusters.append((cid, dom_aspect, dom_cv, thr))
+                    cluster_penalty[cid] = penalty
+                if len(penalized_clusters) > 0:
+                    self.logger.info(
+                        "   ⚖️ High-CV penalties: base=%.3f, aspect_thresholds=%s, penalized=%s" % (
+                            base_penalty,
+                            {k: round(v, 3) for k, v in aspect_thresholds.items()},
+                            [(cid, a, round(cv, 3), round(th, 3)) for cid, a, cv, th in penalized_clusters]
+                        )
+                    )
                 
                 # Find mergeable pairs based on similarity threshold
                 mergeable_pairs = []
                 for i, regime_i in enumerate(regime_ids):
                     for j, regime_j in enumerate(regime_ids[i+1:], i+1):
                         similarity = similarity_matrix[i, j]
-                        if similarity >= threshold:
-                            cluster_i = regime_to_cluster[regime_i]
-                            cluster_j = regime_to_cluster[regime_j]
-                            
-                            # Skip if same cluster or if either cluster is excluded
-                            if cluster_i == cluster_j or cluster_i in excluded_clusters or cluster_j in excluded_clusters:
-                                continue
+                        cluster_i = regime_to_cluster[regime_i]
+                        cluster_j = regime_to_cluster[regime_j]
+                        
+                        # Skip if same cluster
+                        if cluster_i == cluster_j:
+                            continue
+                        
+                        # Enforce 12% max resulting cluster size constraint
+                        merged_size = cluster_sample_counts.get(cluster_i, 0) + cluster_sample_counts.get(cluster_j, 0)
+                        merged_pct = (merged_size / total_samples) * 100 if total_samples > 0 else 0
+                        if merged_pct > 12.0:
+                            # Too big after merge, skip
+                            continue
+                        
+                        # Apply soft CV penalties to similarity requirement
+                        pair_threshold = threshold + cluster_penalty.get(cluster_i, 0.0) + cluster_penalty.get(cluster_j, 0.0)
+                        if similarity < pair_threshold:
+                            continue
                                 
                             # Check CV compatibility
                             regime_1 = regime_characteristics[regime_i]
@@ -772,6 +803,15 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                     similarity_matrix = self._calculate_regime_similarity_matrix(regime_characteristics)
                     
                     self.logger.info(f"   ✅ Updated similarity matrix for {cluster_count} clusters")
+                    # Recompute and log CV summaries to observe penalty relaxation opportunities
+                    cluster_cv_aspects_after = self._compute_cluster_cv_by_aspect(regime_characteristics, regime_to_cluster)
+                    for aspect in ['momentum', 'volatility', 'volume']:
+                        vals = [v.get(aspect) for v in cluster_cv_aspects_after.values() if isinstance(v.get(aspect), (int, float))]
+                        vals = [float(v) for v in vals if np.isfinite(v)]
+                        if len(vals) > 0:
+                            med = float(np.median(vals))
+                            iqr = float(np.percentile(vals, 75) - np.percentile(vals, 25))
+                            self.logger.info(f"   📉 Post-merge CV[{aspect}]: median={med:.3f}, IQR={iqr:.3f}")
                 
                 if cluster_count <= 20:  # Stop if we reach lower bound of optimal range
                     break
@@ -884,6 +924,73 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                     cvs.append(cvj)
             cluster_cv[cid] = float(np.nanmedian(cvs)) if len(cvs) > 0 else 0.0
         return cluster_cv
+
+    def _compute_cluster_cv_by_aspect(self, regime_characteristics: Dict[str, Any], regime_to_cluster: Dict[str, int]) -> Dict[int, Dict[str, float]]:
+        """Compute robust within-cluster CV per aspect: momentum, volatility, volume.
+
+        For each aspect, we collect the corresponding feature values across regimes in the cluster and
+        compute robust CV = (1.4826 * MAD) / (abs(median) + eps). Cluster aspect CV is the median across
+        that aspect's features.
+        """
+        import numpy as np
+        # Define feature groups
+        aspect_features = {
+            'momentum': [
+                'mean_price_momentum_5', 'mean_price_momentum_20', 'mean_rsi', 'mean_macd',
+                'rsi_momentum', 'macd_momentum', 'momentum_strength', 'trend_persistence',
+                'autocorr_1_day', 'autocorr_5_day'
+            ],
+            'volatility': [
+                'mean_volatility_5', 'mean_volatility_10', 'mean_volatility_20',
+                'volatility_momentum', 'volatility_acceleration', 'mean_atr_normalized',
+                'volatility_clustering', 'return_volatility'
+            ],
+            'volume': [
+                'mean_volume_momentum_5', 'mean_volume_momentum_20', 'mean_volume_ratio',
+                'volume_momentum_volatility', 'volume_ratio_volatility'
+            ]
+        }
+        # Build map from regime_id -> raw feature dict
+        regime_ids = list(regime_to_cluster.keys())
+        # Extract per-regime features from provided characteristics (flat in regime['features'] if present),
+        # otherwise look into sub-dicts for consistency with prior code sections
+        regime_feature_maps: Dict[str, Dict[str, float]] = {}
+        for regime_id in regime_ids:
+            reg = regime_characteristics.get(regime_id, {})
+            feats = dict(reg.get('features', {}))
+            # Also merge keys from known characteristic groups if present
+            for grp in ['momentum_characteristics', 'volatility_characteristics', 'volume_characteristics']:
+                sub = reg.get(grp, {})
+                for k, v in sub.items():
+                    if isinstance(v, (int, float)):
+                        feats.setdefault(k, float(v))
+            regime_feature_maps[regime_id] = feats
+        # Group regimes by cluster
+        cluster_to_regimes: Dict[int, list] = {}
+        for regime_id, cid in regime_to_cluster.items():
+            cluster_to_regimes.setdefault(cid, []).append(regime_id)
+        # Compute robust CV per aspect per cluster
+        eps = 1e-8
+        cluster_cv_aspects: Dict[int, Dict[str, float]] = {}
+        for cid, rids in cluster_to_regimes.items():
+            aspect_cvs: Dict[str, float] = {}
+            for aspect, feat_list in aspect_features.items():
+                per_feature_cvs = []
+                for feat in feat_list:
+                    values = [regime_feature_maps[rid].get(feat, np.nan) for rid in rids]
+                    arr = np.array(values, dtype=float)
+                    if np.all(np.isnan(arr)):
+                        continue
+                    med = np.nanmedian(arr)
+                    mad = np.nanmedian(np.abs(arr - med))
+                    robust_scale = 1.4826 * mad
+                    denom = max(abs(med), eps)
+                    cvj = robust_scale / denom
+                    if np.isfinite(cvj):
+                        per_feature_cvs.append(float(cvj))
+                aspect_cvs[aspect] = float(np.nanmedian(per_feature_cvs)) if len(per_feature_cvs) > 0 else 0.0
+            cluster_cv_aspects[cid] = aspect_cvs
+        return cluster_cv_aspects
 
     def _extract_regime_characteristics_from_discovery(self, regime_discovery: Dict[str, Any]) -> Dict[str, Any]:
         """Extract volume, volatility, and momentum characteristics from HMM regime discovery results."""

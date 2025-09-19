@@ -33,6 +33,11 @@ from .hmm_regime import (
     create_advanced_hmm_regime_generators,
     create_minimal_hmm_regime_generators
 )
+from .hmm_performance_metrics import (
+    HMMPerformanceMetricsFeatureGenerator,
+    create_hmm_performance_features_from_result,
+    integrate_hmm_metrics_with_features
+)
 from .interaction import (
     InteractionFeatureGenerator,
     CrossTimeframeInteractionGenerator,
@@ -70,6 +75,9 @@ __all__ = [
     "create_default_hmm_regime_generators",
     "create_advanced_hmm_regime_generators",
     "create_minimal_hmm_regime_generators",
+    "HMMPerformanceMetricsFeatureGenerator",
+    "create_hmm_performance_features_from_result",
+    "integrate_hmm_metrics_with_features",
     "InteractionFeatureGenerator",
     "CrossTimeframeInteractionGenerator",
     "FeatureRatioGenerator",

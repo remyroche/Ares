@@ -1181,6 +1181,159 @@ class EnhancedHMMClustering:
         except Exception as e:
             self.logger.error(f"Failed to convert performance metrics to features: {e}")
             return pd.DataFrame()
+    
+    def create_ml_features_for_training(
+        self,
+        data: pd.DataFrame,
+        result: 'HMMClusteringResult',
+        lookback_window: int = 20,
+        include_dynamic_features: bool = True
+    ) -> pd.DataFrame:
+        """
+        Create comprehensive ML features from HMM results for downstream training.
+        
+        Args:
+            data: Original market data
+            result: HMM clustering result
+            lookback_window: Window size for rolling features
+            include_dynamic_features: Include time-varying features
+            
+        Returns:
+            DataFrame with comprehensive ML features
+        """
+        try:
+            # Import feature generator
+            try:
+                from src.feature_generation.categories.hmm_performance_metrics import (
+                    create_hmm_performance_features_from_result
+                )
+                
+                # Generate comprehensive features
+                ml_features = create_hmm_performance_features_from_result(
+                    data, result, lookback_window
+                )
+                
+                self.logger.info(f"Created {len(ml_features.columns)} ML features from HMM results")
+                return ml_features
+                
+            except ImportError:
+                self.logger.warning("HMM performance metrics feature generator not available, using basic features")
+                
+                # Fallback to basic feature creation
+                basic_features = pd.DataFrame(index=data.index)
+                
+                # Static metrics (broadcast to all rows)
+                for metric_name, metric_value in result.performance_metrics.items():
+                    basic_features[f'hmm_{metric_name}'] = metric_value
+                
+                # Dynamic features if requested
+                if include_dynamic_features:
+                    basic_features['hmm_current_regime'] = result.regime_labels
+                    basic_features['hmm_regime_confidence'] = np.max(result.regime_probabilities, axis=1)
+                    basic_features['hmm_regime_uncertainty'] = 1 - np.max(result.regime_probabilities, axis=1)
+                
+                return basic_features
+                
+        except Exception as e:
+            self.logger.error(f"Failed to create ML features for training: {e}")
+            return pd.DataFrame(index=data.index)
+    
+    def integrate_with_feature_pipeline(
+        self,
+        base_features: pd.DataFrame,
+        result: 'HMMClusteringResult',
+        integration_method: str = 'concatenate',
+        feature_prefix: str = 'hmm_'
+    ) -> pd.DataFrame:
+        """
+        Integrate HMM features with existing feature pipeline.
+        
+        Args:
+            base_features: Existing features DataFrame
+            result: HMM clustering result
+            integration_method: How to integrate features ('concatenate', 'replace', 'selective')
+            feature_prefix: Prefix for HMM features
+            
+        Returns:
+            Integrated features DataFrame
+        """
+        try:
+            # Create HMM features
+            hmm_features = self.create_ml_features_for_training(
+                pd.DataFrame(index=base_features.index), 
+                result, 
+                include_dynamic_features=True
+            )
+            
+            if hmm_features.empty:
+                self.logger.warning("No HMM features generated, returning base features")
+                return base_features
+            
+            # Ensure feature prefix
+            if feature_prefix and not feature_prefix.endswith('_'):
+                feature_prefix += '_'
+            
+            if feature_prefix:
+                hmm_features.columns = [
+                    col if col.startswith(feature_prefix) else f"{feature_prefix}{col}"
+                    for col in hmm_features.columns
+                ]
+            
+            # Integration based on method
+            if integration_method == 'concatenate':
+                # Simply concatenate features
+                integrated_features = pd.concat([base_features, hmm_features], axis=1)
+                
+            elif integration_method == 'replace':
+                # Replace any existing HMM features
+                non_hmm_features = base_features[[
+                    col for col in base_features.columns 
+                    if not col.startswith(feature_prefix)
+                ]]
+                integrated_features = pd.concat([non_hmm_features, hmm_features], axis=1)
+                
+            elif integration_method == 'selective':
+                # Only add HMM features that don't correlate highly with existing features
+                correlation_threshold = 0.9
+                features_to_add = []
+                
+                for hmm_col in hmm_features.columns:
+                    max_corr = 0
+                    for base_col in base_features.columns:
+                        try:
+                            corr = abs(base_features[base_col].corr(hmm_features[hmm_col]))
+                            if not np.isnan(corr):
+                                max_corr = max(max_corr, corr)
+                        except:
+                            continue
+                    
+                    if max_corr < correlation_threshold:
+                        features_to_add.append(hmm_col)
+                
+                if features_to_add:
+                    integrated_features = pd.concat([
+                        base_features, 
+                        hmm_features[features_to_add]
+                    ], axis=1)
+                else:
+                    integrated_features = base_features
+                    self.logger.warning("No HMM features passed correlation filter")
+            
+            else:
+                self.logger.error(f"Unknown integration method: {integration_method}")
+                return base_features
+            
+            # Remove duplicate columns
+            integrated_features = integrated_features.loc[:, ~integrated_features.columns.duplicated()]
+            
+            self.logger.info(f"Integrated features: {len(base_features.columns)} base + "
+                           f"{len(hmm_features.columns)} HMM = {len(integrated_features.columns)} total")
+            
+            return integrated_features
+            
+        except Exception as e:
+            self.logger.error(f"Failed to integrate with feature pipeline: {e}")
+            return base_features
 
 
 def run_hmm_clustering_analysis(

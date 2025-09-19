@@ -735,8 +735,23 @@ class AresLauncher:
         # Create mid-function artifacts for the sub-pipeline
         artifacts = await self._create_sub_pipeline_artifacts(sub_pipeline, config)
         
-        # Execute only the specified sub-pipeline
-        result = await self.pipeline.execute_pipeline(config)
+        # Execute only the specified sub-pipeline with automatic chaining
+        # Use execute_sub_pipeline_with_chain for automatic sequential execution
+        sub_pipeline_result = await self.pipeline.execute_sub_pipeline_with_chain(target_stage, sub_pipeline, config)
+        
+        # Create a MainPipelineResult to maintain compatibility
+        result = MainPipelineResult(
+            pipeline_id=f"sub_pipeline_{sub_pipeline}_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+            status=sub_pipeline_result.status if sub_pipeline_result else SubPipelineStatus.FAILED,
+            start_time=datetime.now(),
+            end_time=datetime.now(),
+            duration_seconds=sub_pipeline_result.duration_seconds if sub_pipeline_result else 0.0,
+            error_message=sub_pipeline_result.error_message if sub_pipeline_result else "Sub-pipeline execution failed"
+        )
+        
+        # Add the sub-pipeline result to the stage results
+        if sub_pipeline_result:
+            result.stage_results[target_stage] = [sub_pipeline_result]
         
         # Calculate overall metrics for sub-pipeline execution
         self.pipeline._calculate_pipeline_metrics(result)

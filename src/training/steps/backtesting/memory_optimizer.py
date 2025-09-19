@@ -48,6 +48,8 @@ except ImportError:
 try:
     from src.utils.hardware.advanced_memory_optimizer import AdvancedMemoryOptimizer
     from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer
+    from src.utils.hardware.unified_hardware_manager import UnifiedHardwareManager, WorkloadType, OptimizationLevel, HardwareConfig
+    from src.utils.hardware.memory_optimization import MemoryOptimizer
     from src.utils.matrix_operations.unified_operations import UnifiedMatrixOperations
     from src.utils.matrix_operations.batch_operations import BatchProcessor
     HARDWARE_OPTIMIZATION_AVAILABLE = True
@@ -83,7 +85,8 @@ class BacktestingMemoryOptimizer:
         self.enable_monitoring = enable_monitoring
         self.logger = logger.getChild('BacktestingMemoryOptimizer')
         
-        # Initialize hardware optimizers
+        # Initialize hardware optimizers using unified hardware manager
+        self.unified_hardware_manager = None
         self.m1_memory_optimizer = None
         self.advanced_memory_optimizer = None
         self.matrix_ops = None
@@ -91,11 +94,25 @@ class BacktestingMemoryOptimizer:
         
         if HARDWARE_OPTIMIZATION_AVAILABLE:
             try:
+                # Initialize unified hardware manager
+                self.unified_hardware_manager = UnifiedHardwareManager()
+                
+                # Configure for backtesting workload
+                hardware_config = HardwareConfig(
+                    memory_optimization_level=OptimizationLevel.BALANCED,
+                    memory_limit_gb=memory_limit_mb / 1024,
+                    enable_memory_pooling=True,
+                    enable_predictive_allocation=True,
+                    enable_compression=True
+                )
+                
+                # Initialize specific optimizers
                 self.m1_memory_optimizer = get_m1_memory_optimizer()
                 self.advanced_memory_optimizer = AdvancedMemoryOptimizer()
                 self.matrix_ops = UnifiedMatrixOperations()
                 self.batch_processor = BatchProcessor()
-                self.logger.info("✅ Hardware optimization enabled")
+                
+                self.logger.info("✅ Unified hardware optimization enabled")
             except Exception as e:
                 self.logger.warning(f"Hardware optimization not available: {e}")
         
@@ -183,7 +200,7 @@ class BacktestingMemoryOptimizer:
         return True
     
     def optimize_dataframe(self, df: pd.DataFrame, inplace: bool = False) -> pd.DataFrame:
-        """Optimize DataFrame memory usage.
+        """Optimize DataFrame memory usage using unified hardware tools.
         
         Args:
             df: DataFrame to optimize
@@ -199,8 +216,22 @@ class BacktestingMemoryOptimizer:
         original_memory = df.memory_usage(deep=True).sum() / 1024 / 1024
         
         try:
-            # Use matrix operations for optimization if available
-            if self.matrix_ops:
+            # Use unified hardware manager for optimization if available
+            if self.unified_hardware_manager:
+                # Configure for data processing optimization
+                optimization_config = {
+                    'workload_type': WorkloadType.DATA_PROCESSING,
+                    'optimization_level': OptimizationLevel.BALANCED
+                }
+                
+                with self.unified_hardware_manager.optimize_for_workload(**optimization_config):
+                    if self.matrix_ops:
+                        target_df = self.matrix_ops.optimize_dataframe_memory(target_df)
+                    else:
+                        target_df = self._basic_dataframe_optimization(target_df)
+                        
+            elif self.matrix_ops:
+                # Use matrix operations for optimization
                 target_df = self.matrix_ops.optimize_dataframe_memory(target_df)
             else:
                 # Fallback optimization
@@ -209,9 +240,10 @@ class BacktestingMemoryOptimizer:
             optimized_memory = target_df.memory_usage(deep=True).sum() / 1024 / 1024
             
             if optimized_memory < original_memory:
+                reduction_percent = ((original_memory - optimized_memory) / original_memory * 100)
                 self.logger.debug(
                     f"🧠 DataFrame optimized: {original_memory:.1f}MB → {optimized_memory:.1f}MB "
-                    f"({((original_memory - optimized_memory) / original_memory * 100):.1f}% reduction)"
+                    f"({reduction_percent:.1f}% reduction)"
                 )
             
             # Track the DataFrame
@@ -275,20 +307,42 @@ class BacktestingMemoryOptimizer:
         return cleaned_count
     
     def force_cleanup(self) -> Dict[str, Any]:
-        """Force comprehensive memory cleanup."""
+        """Force comprehensive memory cleanup using unified hardware manager."""
         start_stats = self.get_current_memory_stats()
         
         # Clean up tracked DataFrames
         cleaned_dfs = self.cleanup_dataframes()
         
-        # Force garbage collection
+        # Use unified hardware manager for comprehensive cleanup
+        if self.unified_hardware_manager:
+            try:
+                # Force comprehensive hardware cleanup
+                hardware_cleanup = self.unified_hardware_manager.force_cleanup()
+                self.logger.debug(f"Hardware cleanup result: {hardware_cleanup}")
+            except Exception as e:
+                self.logger.warning(f"Hardware cleanup failed: {e}")
+        
+        # Force memory optimizer cleanup
         if self.m1_memory_optimizer:
-            self.m1_memory_optimizer.force_cleanup()
-        else:
-            for i in range(3):  # Multiple GC passes
-                collected = gc.collect()
-                if collected == 0:
-                    break
+            try:
+                self.m1_memory_optimizer.force_cleanup()
+            except Exception as e:
+                self.logger.warning(f"M1 memory cleanup failed: {e}")
+        
+        # Force advanced memory optimizer cleanup
+        if self.advanced_memory_optimizer:
+            try:
+                self.advanced_memory_optimizer.cleanup()
+            except Exception as e:
+                self.logger.warning(f"Advanced memory cleanup failed: {e}")
+        
+        # Multiple garbage collection passes
+        gc_collections = 0
+        for i in range(3):
+            collected = gc.collect()
+            gc_collections += collected
+            if collected == 0:
+                break
         
         end_stats = self.get_current_memory_stats()
         
@@ -297,29 +351,44 @@ class BacktestingMemoryOptimizer:
             'memory_before_mb': start_stats.process_memory_mb,
             'memory_after_mb': end_stats.process_memory_mb,
             'memory_freed_mb': start_stats.process_memory_mb - end_stats.process_memory_mb,
-            'gc_collections': end_stats.gc_collections - start_stats.gc_collections
+            'gc_collections': gc_collections,
+            'hardware_optimization_used': self.unified_hardware_manager is not None
         }
         
         self.logger.info(f"🧹 Force cleanup completed:")
         self.logger.info(f"   📊 DataFrames cleaned: {cleaned_dfs}")
         self.logger.info(f"   🧠 Memory freed: {cleanup_result['memory_freed_mb']:.1f}MB")
         self.logger.info(f"   🗑️ GC collections: {cleanup_result['gc_collections']}")
+        self.logger.info(f"   ⚡ Hardware optimization: {cleanup_result['hardware_optimization_used']}")
         
         return cleanup_result
     
     @contextmanager
     def memory_managed_operation(self, operation_name: str = "operation"):
-        """Context manager for memory-managed operations."""
+        """Context manager for memory-managed operations using unified hardware manager."""
         start_stats = self.get_current_memory_stats()
         self.logger.debug(f"🚀 Starting memory-managed {operation_name}")
         
         try:
-            # Use M1 memory optimization if available
-            if self.m1_memory_optimizer:
+            # Use unified hardware manager for comprehensive optimization
+            if self.unified_hardware_manager:
+                operation_config = {
+                    'workload_type': WorkloadType.DATA_PROCESSING,
+                    'optimization_level': OptimizationLevel.BALANCED,
+                    'memory_limit_gb': self.memory_limit_mb / 1024
+                }
+                
+                with self.unified_hardware_manager.optimize_for_workload(**operation_config):
+                    yield
+                    
+            elif self.m1_memory_optimizer:
+                # Fallback to M1 memory optimization
                 with self.m1_memory_optimizer.optimization_context():
                     yield
             else:
+                # Basic operation without hardware optimization
                 yield
+                
         finally:
             # Cleanup after operation
             self.cleanup_dataframes()
@@ -380,7 +449,7 @@ class BacktestingMemoryOptimizer:
         processing_func: Callable[[pd.DataFrame], pd.DataFrame],
         **kwargs
     ) -> pd.DataFrame:
-        """Process large DataFrame in memory-optimized chunks.
+        """Process large DataFrame in memory-optimized chunks using unified hardware tools.
         
         Args:
             df: Large DataFrame to process
@@ -391,15 +460,48 @@ class BacktestingMemoryOptimizer:
         Returns:
             Processed DataFrame
         """
-        if self.batch_processor:
+        # Use unified hardware manager for optimal chunk processing
+        if self.unified_hardware_manager:
+            try:
+                # Configure for data processing workload
+                processing_config = {
+                    'workload_type': WorkloadType.DATA_PROCESSING,
+                    'optimization_level': OptimizationLevel.AGGRESSIVE,
+                    'memory_limit_gb': self.memory_limit_mb / 1024
+                }
+                
+                with self.unified_hardware_manager.optimize_for_workload(**processing_config):
+                    if self.batch_processor:
+                        return self.batch_processor.process_in_batches(
+                            df, batch_size=chunk_size, operation=processing_func, **kwargs
+                        )
+                    else:
+                        return self._fallback_chunk_processing(df, chunk_size, processing_func, **kwargs)
+                        
+            except Exception as e:
+                self.logger.warning(f"Unified hardware processing failed, using fallback: {e}")
+                return self._fallback_chunk_processing(df, chunk_size, processing_func, **kwargs)
+        
+        elif self.batch_processor:
             try:
                 return self.batch_processor.process_in_batches(
                     df, batch_size=chunk_size, operation=processing_func, **kwargs
                 )
             except Exception as e:
                 self.logger.warning(f"Batch processor failed, using fallback: {e}")
+                return self._fallback_chunk_processing(df, chunk_size, processing_func, **kwargs)
         
-        # Fallback implementation
+        else:
+            return self._fallback_chunk_processing(df, chunk_size, processing_func, **kwargs)
+    
+    def _fallback_chunk_processing(
+        self,
+        df: pd.DataFrame,
+        chunk_size: int,
+        processing_func: Callable[[pd.DataFrame], pd.DataFrame],
+        **kwargs
+    ) -> pd.DataFrame:
+        """Fallback chunk processing implementation."""
         chunks = []
         total_chunks = len(df) // chunk_size + (1 if len(df) % chunk_size else 0)
         
@@ -433,7 +535,7 @@ class BacktestingMemoryOptimizer:
         trades: pd.DataFrame,
         initial_capital: float
     ) -> pd.DataFrame:
-        """Memory-optimized equity curve calculation.
+        """Memory-optimized equity curve calculation using unified hardware tools.
         
         Args:
             trades: DataFrame with trade information
@@ -445,10 +547,34 @@ class BacktestingMemoryOptimizer:
         if trades.empty:
             return pd.DataFrame()
         
+        # Use unified hardware manager for optimal vectorized calculation
+        if self.unified_hardware_manager:
+            calculation_config = {
+                'workload_type': WorkloadType.DATA_PROCESSING,
+                'optimization_level': OptimizationLevel.AGGRESSIVE
+            }
+            
+            with self.unified_hardware_manager.optimize_for_workload(**calculation_config):
+                return self._calculate_equity_curve_optimized(trades, initial_capital)
+        else:
+            return self._calculate_equity_curve_optimized(trades, initial_capital)
+    
+    def _calculate_equity_curve_optimized(self, trades: pd.DataFrame, initial_capital: float) -> pd.DataFrame:
+        """Optimized equity curve calculation implementation."""
         with self.memory_managed_operation("equity_curve_calculation"):
             # Use vectorized operations for memory efficiency
             if 'pnl' in trades.columns:
-                cumulative_pnl = trades['pnl'].cumsum()
+                # Use matrix operations for efficient cumulative sum if available
+                if self.matrix_ops:
+                    try:
+                        cumulative_pnl = self.matrix_ops.cumulative_sum(trades['pnl'].values)
+                        cumulative_pnl = pd.Series(cumulative_pnl, index=trades.index)
+                    except Exception as e:
+                        self.logger.debug(f"Matrix ops cumsum failed, using pandas: {e}")
+                        cumulative_pnl = trades['pnl'].cumsum()
+                else:
+                    cumulative_pnl = trades['pnl'].cumsum()
+                
                 equity_curve = pd.DataFrame({
                     'timestamp': trades['timestamp'] if 'timestamp' in trades.columns else trades.index,
                     'equity': initial_capital + cumulative_pnl,
@@ -473,7 +599,7 @@ class BacktestingMemoryOptimizer:
         window: int,
         metrics: List[str]
     ) -> pd.DataFrame:
-        """Calculate rolling metrics with memory optimization.
+        """Calculate rolling metrics with unified hardware optimization.
         
         Args:
             data: Input DataFrame
@@ -486,29 +612,57 @@ class BacktestingMemoryOptimizer:
         if data.empty or 'close' not in data.columns:
             return pd.DataFrame()
         
+        # Use unified hardware manager for optimal rolling calculations
+        if self.unified_hardware_manager:
+            metrics_config = {
+                'workload_type': WorkloadType.DATA_PROCESSING,
+                'optimization_level': OptimizationLevel.BALANCED
+            }
+            
+            with self.unified_hardware_manager.optimize_for_workload(**metrics_config):
+                return self._calculate_rolling_metrics_impl(data, window, metrics)
+        else:
+            return self._calculate_rolling_metrics_impl(data, window, metrics)
+    
+    def _calculate_rolling_metrics_impl(self, data: pd.DataFrame, window: int, metrics: List[str]) -> pd.DataFrame:
+        """Implementation of rolling metrics calculation."""
         with self.memory_managed_operation("rolling_metrics"):
             result_data = {'timestamp': data.index}
             
-            # Calculate metrics efficiently
-            if 'volatility' in metrics:
-                returns = data['close'].pct_change()
-                result_data['volatility'] = returns.rolling(window).std() * np.sqrt(252)
+            # Pre-calculate returns once for efficiency
+            returns = data['close'].pct_change()
             
-            if 'sharpe_ratio' in metrics:
-                if 'volatility' not in result_data:
-                    returns = data['close'].pct_change()
-                    volatility = returns.rolling(window).std() * np.sqrt(252)
-                else:
-                    returns = data['close'].pct_change()
-                    volatility = result_data['volatility']
-                
-                mean_return = returns.rolling(window).mean() * 252
-                result_data['sharpe_ratio'] = mean_return / volatility
-            
-            if 'max_drawdown' in metrics:
-                rolling_max = data['close'].rolling(window).max()
-                drawdown = (data['close'] - rolling_max) / rolling_max
-                result_data['max_drawdown'] = drawdown.rolling(window).min()
+            # Use matrix operations for rolling calculations if available
+            if self.matrix_ops:
+                try:
+                    # Calculate metrics efficiently using matrix operations
+                    if 'volatility' in metrics:
+                        volatility_values = self.matrix_ops.rolling_std(returns.values, window) * np.sqrt(252)
+                        result_data['volatility'] = pd.Series(volatility_values, index=data.index)
+                    
+                    if 'sharpe_ratio' in metrics:
+                        if 'volatility' not in result_data:
+                            volatility_values = self.matrix_ops.rolling_std(returns.values, window) * np.sqrt(252)
+                            volatility = pd.Series(volatility_values, index=data.index)
+                        else:
+                            volatility = result_data['volatility']
+                        
+                        mean_return_values = self.matrix_ops.rolling_mean(returns.values, window) * 252
+                        mean_return = pd.Series(mean_return_values, index=data.index)
+                        result_data['sharpe_ratio'] = mean_return / volatility
+                    
+                    if 'max_drawdown' in metrics:
+                        rolling_max_values = self.matrix_ops.rolling_max(data['close'].values, window)
+                        rolling_max = pd.Series(rolling_max_values, index=data.index)
+                        drawdown = (data['close'] - rolling_max) / rolling_max
+                        drawdown_min_values = self.matrix_ops.rolling_min(drawdown.values, window)
+                        result_data['max_drawdown'] = pd.Series(drawdown_min_values, index=data.index)
+                        
+                except Exception as e:
+                    self.logger.debug(f"Matrix ops rolling calculation failed, using pandas: {e}")
+                    return self._calculate_rolling_metrics_pandas(data, window, metrics, returns)
+            else:
+                return self._calculate_rolling_metrics_pandas(data, window, metrics, returns)
             
             # Create optimized DataFrame
             result_df = pd.DataFrame(result_data)
@@ -516,18 +670,61 @@ class BacktestingMemoryOptimizer:
             
             return result_df
     
+    def _calculate_rolling_metrics_pandas(self, data: pd.DataFrame, window: int, metrics: List[str], returns: pd.Series) -> pd.DataFrame:
+        """Fallback pandas implementation for rolling metrics."""
+        result_data = {'timestamp': data.index}
+        
+        # Calculate metrics efficiently using pandas
+        if 'volatility' in metrics:
+            result_data['volatility'] = returns.rolling(window).std() * np.sqrt(252)
+        
+        if 'sharpe_ratio' in metrics:
+            if 'volatility' not in result_data:
+                volatility = returns.rolling(window).std() * np.sqrt(252)
+            else:
+                volatility = result_data['volatility']
+            
+            mean_return = returns.rolling(window).mean() * 252
+            result_data['sharpe_ratio'] = mean_return / volatility
+        
+        if 'max_drawdown' in metrics:
+            rolling_max = data['close'].rolling(window).max()
+            drawdown = (data['close'] - rolling_max) / rolling_max
+            result_data['max_drawdown'] = drawdown.rolling(window).min()
+        
+        # Create optimized DataFrame
+        result_df = pd.DataFrame(result_data)
+        result_df = self.optimize_dataframe(result_df)
+        
+        return result_df
+    
     @contextmanager
     def backtesting_session(self, session_name: str = "backtesting"):
-        """Context manager for entire backtesting session."""
-        self.logger.info(f"🚀 Starting {session_name} session")
+        """Context manager for entire backtesting session using unified hardware manager."""
+        self.logger.info(f"🚀 Starting {session_name} session with unified hardware optimization")
         start_stats = self.get_current_memory_stats()
         
         try:
-            if self.advanced_memory_optimizer:
+            if self.unified_hardware_manager:
+                # Use unified hardware manager for comprehensive optimization
+                workload_config = {
+                    'workload_type': WorkloadType.BACKTESTING,
+                    'optimization_level': OptimizationLevel.BALANCED,
+                    'memory_limit_gb': self.memory_limit_mb / 1024,
+                    'enable_monitoring': self.enable_monitoring
+                }
+                
+                with self.unified_hardware_manager.optimize_for_workload(**workload_config):
+                    yield self
+                    
+            elif self.advanced_memory_optimizer:
+                # Fallback to advanced memory optimizer
                 with self.advanced_memory_optimizer.optimization_context():
                     yield self
             else:
+                # Basic session without hardware optimization
                 yield self
+                
         finally:
             # Comprehensive cleanup
             cleanup_result = self.force_cleanup()

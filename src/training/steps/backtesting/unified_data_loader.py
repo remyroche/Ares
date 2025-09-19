@@ -54,10 +54,18 @@ from src.utils.common_operations import (
 )
 from src.utils.math_validation import validate_finite, validate_positive
 
+# Import klines parquet utilities
+try:
+    from src.utils.data.klines_parquet import KlinesParquetManager, get_klines_manager
+    KLINES_UTILS_AVAILABLE = True
+except ImportError:
+    KLINES_UTILS_AVAILABLE = False
+
 # Import hardware optimization tools
 try:
     from src.utils.hardware.advanced_memory_optimizer import AdvancedMemoryOptimizer
     from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer
+    from src.utils.hardware.unified_hardware_manager import UnifiedHardwareManager, WorkloadType, OptimizationLevel
     from src.utils.matrix_operations.unified_operations import UnifiedMatrixOperations
     HARDWARE_OPTIMIZATION_AVAILABLE = True
 except ImportError:
@@ -68,6 +76,7 @@ logger = logging.getLogger(__name__)
 
 class DataSourceType(Enum):
     """Types of data sources for backtesting."""
+    KLINES_PARQUET = "klines_parquet"
     CONSOLIDATED_PARQUET = "consolidated_parquet"
     INDIVIDUAL_FILES = "individual_files"
     CACHED_DATA = "cached_data"
@@ -99,6 +108,7 @@ class DataLoadingConfig:
     loading_mode: DataLoadingMode = DataLoadingMode.MEMORY_OPTIMIZED
     data_source_priority: List[DataSourceType] = field(default_factory=lambda: [
         DataSourceType.CACHED_DATA,
+        DataSourceType.KLINES_PARQUET,
         DataSourceType.CONSOLIDATED_PARQUET,
         DataSourceType.INDIVIDUAL_FILES
     ])
@@ -278,17 +288,28 @@ class UnifiedDataLoader:
         # Initialize cache
         self.cache = DataCache()
         
-        # Initialize memory optimizer
+        # Initialize hardware optimization
+        self.hardware_manager = None
         self.memory_optimizer = None
         self.matrix_ops = None
         
         if HARDWARE_OPTIMIZATION_AVAILABLE:
             try:
+                self.hardware_manager = UnifiedHardwareManager()
                 self.memory_optimizer = get_m1_memory_optimizer()
                 self.matrix_ops = UnifiedMatrixOperations()
-                self.logger.info("✅ Hardware optimization enabled")
+                self.logger.info("✅ Unified hardware optimization enabled")
             except Exception as e:
                 self.logger.warning(f"Hardware optimization not available: {e}")
+        
+        # Initialize klines manager
+        self.klines_manager = None
+        if KLINES_UTILS_AVAILABLE:
+            try:
+                self.klines_manager = get_klines_manager(config.data_dir if config else "historical_data")
+                self.logger.info("✅ Klines parquet utilities enabled")
+            except Exception as e:
+                self.logger.warning(f"Klines utilities not available: {e}")
         
         # Track loaded data for cleanup
         self.loaded_data_refs: List[weakref.ref] = []
@@ -297,8 +318,19 @@ class UnifiedDataLoader:
     
     @contextmanager
     def memory_optimized_loading(self, config: DataLoadingConfig):
-        """Context manager for memory-optimized data loading."""
-        if self.memory_optimizer and config.enable_memory_optimization:
+        """Context manager for memory-optimized data loading using unified hardware manager."""
+        if self.hardware_manager and config.enable_memory_optimization:
+            # Configure hardware for backtesting workload
+            hardware_config = {
+                'workload_type': WorkloadType.BACKTESTING,
+                'optimization_level': OptimizationLevel.BALANCED,
+                'memory_limit_gb': config.memory_limit_mb / 1024
+            }
+            
+            with self.hardware_manager.optimize_for_workload(**hardware_config):
+                yield
+        elif self.memory_optimizer and config.enable_memory_optimization:
+            # Fallback to basic memory optimization
             with self.memory_optimizer.optimization_context(
                 memory_limit_gb=config.memory_limit_mb / 1024
             ):
@@ -392,6 +424,46 @@ class UnifiedDataLoader:
         
         self.logger.info(f"Data quality score: {quality_score:.2f}")
         return quality_score
+    
+    def _load_from_klines_parquet(self, config: DataLoadingConfig) -> Optional[pd.DataFrame]:
+        """Load data from klines parquet utilities."""
+        if not self.klines_manager:
+            self.logger.debug("Klines manager not available")
+            return None
+        
+        try:
+            self.logger.info(f"📁 Loading data via klines parquet: {config.symbol} {config.timeframe}")
+            
+            # Try to load processed data first, then raw data
+            data = self.klines_manager.read_data(
+                symbol=config.symbol,
+                interval=config.timeframe,
+                start_date=config.start_date,
+                end_date=config.end_date,
+                data_type="processed"
+            )
+            
+            if data is None or data.empty:
+                # Fallback to raw data
+                self.logger.debug("Processed data not found, trying raw data")
+                data = self.klines_manager.read_data(
+                    symbol=config.symbol,
+                    interval=config.timeframe,
+                    start_date=config.start_date,
+                    end_date=config.end_date,
+                    data_type="raw"
+                )
+            
+            if data is not None and not data.empty:
+                self.logger.info(f"✅ Loaded {len(data):,} records from klines parquet")
+                return data
+            else:
+                self.logger.debug("No data found in klines parquet")
+                return None
+                
+        except Exception as e:
+            self.logger.error(f"❌ Error loading from klines parquet: {e}")
+            return None
     
     def _load_from_consolidated_parquet(self, config: DataLoadingConfig) -> Optional[pd.DataFrame]:
         """Load data from consolidated parquet file."""
@@ -555,7 +627,12 @@ class UnifiedDataLoader:
             source_type = None
             
             for source in config.data_source_priority:
-                if source == DataSourceType.CONSOLIDATED_PARQUET:
+                if source == DataSourceType.KLINES_PARQUET:
+                    data = self._load_from_klines_parquet(config)
+                    if data is not None:
+                        source_type = source
+                        break
+                elif source == DataSourceType.CONSOLIDATED_PARQUET:
                     data = self._load_from_consolidated_parquet(config)
                     if data is not None:
                         source_type = source

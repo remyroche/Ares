@@ -40,6 +40,18 @@ from src.utils.ml_common.optimization.pareto import (
 from src.utils.common_operations import (
     get_m1_gpu_manager, get_m1_memory_optimizer, get_m1_cpu_optimizer
 )
+
+# Import advanced hardware optimization tools
+try:
+    from src.utils.hardware.unified_hardware_manager import (
+        UnifiedHardwareManager, WorkloadType, OptimizationLevel
+    )
+    from src.utils.hardware.adaptive_optimization_engine import (
+        AdaptiveOptimizationEngine, LearningAlgorithm
+    )
+    ADVANCED_HARDWARE_AVAILABLE = True
+except ImportError:
+    ADVANCED_HARDWARE_AVAILABLE = False
 from src.utils.math_validation import (
     safe_divide, safe_log, safe_sqrt, validate_finite
 )
@@ -82,6 +94,21 @@ class DirectionalTacticianTrainingStep(TacticianModelsTrainingStepRefactored):
         
         self.enable_directional_optimization = enable_directional_optimization
         self.logger = logger.getChild('DirectionalTacticianTrainingStep')
+        
+        # Initialize hardware optimization if available
+        if ADVANCED_HARDWARE_AVAILABLE:
+            try:
+                self.unified_hardware_manager = UnifiedHardwareManager()
+                self.unified_hardware_manager.configure_for_workload(
+                    workload_type=WorkloadType.ML_TRAINING,
+                    optimization_level=OptimizationLevel.BALANCED
+                )
+                self.logger.info("✅ Advanced hardware optimization enabled for directional training")
+            except Exception as e:
+                self.logger.warning(f"⚠️ Advanced hardware optimization failed: {e}")
+                self.unified_hardware_manager = None
+        else:
+            self.unified_hardware_manager = None
         
         # Initialize entry timing components
         if enable_directional_optimization:

@@ -133,9 +133,15 @@ class PIDConfig:
     min_pairs_threshold: int = 5   # Minimum number of pairs to select regardless of percentile
     
     # Fallback static thresholds (used when dynamic thresholds disabled)
-    synergy_threshold: float = 0.0001  # Reduced from 0.1 for continuous probability targets
-    redundancy_threshold: float = 0.005  # Reduced from 0.15 for continuous probability targets  
-    unique_info_threshold: float = 0.0001  # Reduced from 0.05 for continuous probability targets
+    synergy_threshold: float = 0.0001  # Optimized for multi-horizon probability targets
+    redundancy_threshold: float = 0.005  # Optimized for multi-horizon probability targets
+    unique_info_threshold: float = 0.0001  # Optimized for multi-horizon probability targets
+    
+    # Multi-horizon specific thresholds
+    multi_horizon_mode: bool = False  # Enable multi-horizon optimizations
+    directional_synergy_boost: float = 1.5  # Boost synergy for directional targets
+    probability_sensitivity: float = 0.8  # Sensitivity to probability variations
+    time_horizon_weight: float = 0.3  # Weight for time horizon considerations
     
     # Cross-timeframe analysis
     cross_timeframe_threshold: float = 0.15
@@ -260,6 +266,11 @@ class PartialInformationDecompositor:
             _LOGGER.info(f"⚙️ Static thresholds - Synergy: {self.config.synergy_threshold}, Redundancy: {self.config.redundancy_threshold}")
         _LOGGER.info(f"⚙️ Max polynomial degree: {self.config.max_polynomial_degree}")
         _LOGGER.info(f"⚙️ Max interaction features: {self.config.max_interaction_features}")
+        
+        if self.config.multi_horizon_mode:
+            _LOGGER.info(f"🎯 Multi-horizon mode enabled - directional boost: {self.config.directional_synergy_boost}x")
+            _LOGGER.info(f"🎯 Probability sensitivity: {self.config.probability_sensitivity}")
+            _LOGGER.info(f"🎯 Time horizon weight: {self.config.time_horizon_weight}")
     
     def _initialize_hardware_optimizations(self):
         """Initialize hardware optimization utilities."""
@@ -528,17 +539,71 @@ class PartialInformationDecompositor:
         _LOGGER.info(f"📊 Completed pairwise PID analysis: {pairs_analyzed} pairs")
         return redundancy, synergy, unique_info
 
-    def _calculate_mutual_info(self, X: np.ndarray, y: np.ndarray) -> float:
-        """Calculate mutual information between features and target."""
+    def _detect_multi_horizon_target(self, y: np.ndarray, target_name: str = None) -> Dict[str, Any]:
+        """Detect if target is from multi-horizon labeling and optimize accordingly."""
+        target_analysis = {
+            'is_multi_horizon': False,
+            'is_directional': False,
+            'is_probability': False,
+            'target_type': 'unknown',
+            'optimization_factor': 1.0
+        }
+        
         try:
+            # Check if target name indicates multi-horizon origin
+            if target_name:
+                if any(keyword in target_name.lower() for keyword in ['long_', 'short_', 'opportunity', 'horizon', 'leverage']):
+                    target_analysis['is_multi_horizon'] = True
+                    _LOGGER.info(f"🎯 Detected multi-horizon target: {target_name}")
+                
+                if 'long_' in target_name.lower() or 'short_' in target_name.lower():
+                    target_analysis['is_directional'] = True
+                    target_analysis['optimization_factor'] = self.config.directional_synergy_boost
+                    _LOGGER.info(f"🎯 Detected directional target with {target_analysis['optimization_factor']}x synergy boost")
+            
+            # Check if target values are probability-like (0-1 range with continuous values)
+            y_min, y_max = np.min(y), np.max(y)
+            unique_vals = len(np.unique(y))
+            
+            if 0 <= y_min and y_max <= 1 and unique_vals > 10:
+                target_analysis['is_probability'] = True
+                target_analysis['target_type'] = 'continuous_probability'
+                _LOGGER.info(f"🎯 Detected probability target: range [{y_min:.3f}, {y_max:.3f}], {unique_vals} unique values")
+            elif unique_vals <= 10:
+                target_analysis['target_type'] = 'categorical'
+            else:
+                target_analysis['target_type'] = 'continuous'
+            
+            # Enable multi-horizon mode if detected
+            if target_analysis['is_multi_horizon'] and not self.config.multi_horizon_mode:
+                _LOGGER.info("🎯 Auto-enabling multi-horizon mode based on target detection")
+                self.config.multi_horizon_mode = True
+                
+        except Exception as e:
+            _LOGGER.warning(f"⚠️ Target analysis failed: {e}")
+        
+        return target_analysis
+    
+    def _calculate_mutual_info(self, X: np.ndarray, y: np.ndarray, target_name: str = None) -> float:
+        """Calculate mutual information between features and target with multi-horizon optimizations."""
+        try:
+            # Analyze target characteristics for optimization
+            if self.config.multi_horizon_mode or target_name:
+                target_analysis = self._detect_multi_horizon_target(y, target_name)
+            else:
+                target_analysis = {'optimization_factor': 1.0, 'is_probability': False}
+            
             if not SKLEARN_AVAILABLE:
                 # Fallback to correlation-based approximation
                 if X.ndim == 1:
-                    return abs(safe_correlation(X, y))
+                    base_mi = abs(safe_correlation(X, y))
                 else:
                     # For multi-dimensional X, use average correlation
                     correlations = [abs(safe_correlation(X[:, i], y)) for i in range(X.shape[1])]
-                    return safe_mean(correlations)
+                    base_mi = safe_mean(correlations)
+                
+                # Apply multi-horizon optimization
+                return base_mi * target_analysis.get('optimization_factor', 1.0)
             
             # Use sklearn for accurate MI calculation
             if X.ndim == 1:
@@ -554,18 +619,25 @@ class PartialInformationDecompositor:
                 unique_y = len(unique_vals)
                 
                 # For continuous targets (like multi-horizon probabilities), use regression
-                if unique_y <= 10:  # Classification
+                # Use target analysis to determine best MI method
+                if target_analysis.get('is_probability', False) or unique_y > 10:  # Regression for probabilities
+                    _LOGGER.debug(f"Using regression MI for {'probability' if target_analysis.get('is_probability') else 'continuous'} target: {unique_y} unique values")
+                    mi_result = mutual_info_regression(X_reshaped, y_array)
+                else:  # Classification
                     _LOGGER.debug(f"Using classification MI: {unique_y} unique values")
                     mi_result = mutual_info_classif(X_reshaped, y_array)
-                else:  # Regression
-                    _LOGGER.debug(f"Using regression MI: {unique_y} unique values")
-                    mi_result = mutual_info_regression(X_reshaped, y_array)
                 
                 # Handle the result safely
                 if hasattr(mi_result, '__len__') and len(mi_result) > 0:
-                    mi = mi_result[0]
+                    base_mi = mi_result[0]
                 else:
-                    mi = mi_result
+                    base_mi = mi_result
+                
+                # Apply multi-horizon optimization factor
+                mi = base_mi * target_analysis.get('optimization_factor', 1.0)
+                
+                if target_analysis.get('optimization_factor', 1.0) != 1.0:
+                    _LOGGER.debug(f"Applied {target_analysis['optimization_factor']}x optimization: {base_mi:.6f} -> {mi:.6f}")
                     
             except Exception as unique_error:
                 _LOGGER.warning(f"⚠️ Unique value calculation failed: {unique_error}")

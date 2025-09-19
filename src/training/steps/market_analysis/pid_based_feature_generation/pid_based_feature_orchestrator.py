@@ -389,6 +389,11 @@ class PIDBasedFeatureOrchestrator:
                     enable_gpu_acceleration=self.config.enable_gpu_acceleration,
                     memory_limit_gb=self.config.memory_limit_gb
                 )
+                # Enable multi-horizon optimizations if available
+                if hasattr(interaction_config, 'multi_horizon_mode'):
+                    interaction_config.multi_horizon_mode = True
+                    interaction_config.directional_synergy_boost = 1.5
+                    interaction_config.probability_sensitivity = 0.8
                 self.interaction_generator = InteractionFeatureGenerator(interaction_config)
                 self.logger.info("✅ Interaction Feature Generator initialized")
             except Exception as e:
@@ -572,6 +577,8 @@ class PIDBasedFeatureOrchestrator:
                         if np.any(np.isnan(target_values)) or np.any(np.isinf(target_values)):
                             tprint_warning(f"Target '{target_type}' contains NaN or Inf values - this may cause issues")
                     tprint_info(f"Using differentiated targets: {list(target.keys())}")
+                    # Detect multi-horizon targets for PID optimization
+                    self._detected_target_info = self._analyze_target_characteristics(target)
                 else:
                     # Handle legacy array format
                     if len(target) != X.shape[0]:
@@ -579,6 +586,7 @@ class PIDBasedFeatureOrchestrator:
                     if np.any(np.isnan(target)) or np.any(np.isinf(target)):
                         tprint_warning("Target contains NaN or Inf values - this may cause issues")
                     tprint_info("Using legacy single target format")
+                    self._detected_target_info = self._analyze_target_characteristics(target)
             
             tprint_info(f"Input data shape: {X.shape}")
             tprint_info(f"Feature count: {len(feature_names)}")
@@ -1755,3 +1763,66 @@ class PIDBasedFeatureOrchestrator:
             tprint_error(f"Failed to combine long/short results: {e}")
             # Return the long result as fallback
             return long_result if long_result else short_result
+    
+    def _analyze_target_characteristics(self, target: Union[np.ndarray, Dict[str, np.ndarray]]) -> Dict[str, Any]:
+        """Analyze target characteristics for PID optimization."""
+        analysis = {
+            'is_multi_horizon': False,
+            'is_directional': False,
+            'is_probability': False,
+            'target_types': [],
+            'optimization_recommendations': []
+        }
+        
+        try:
+            if isinstance(target, dict):
+                # Analyze each target in the dictionary
+                for target_name, target_values in target.items():
+                    # Check for multi-horizon indicators
+                    if any(keyword in target_name.lower() for keyword in ['long_', 'short_', 'opportunity', 'horizon', 'leverage']):
+                        analysis['is_multi_horizon'] = True
+                        tprint_info(f"🎯 Detected multi-horizon target: {target_name}")
+                    
+                    if 'long_' in target_name.lower() or 'short_' in target_name.lower():
+                        analysis['is_directional'] = True
+                        tprint_info(f"🎯 Detected directional target: {target_name}")
+                    
+                    # Check if values are probability-like
+                    if isinstance(target_values, np.ndarray):
+                        t_min, t_max = np.min(target_values), np.max(target_values)
+                        unique_vals = len(np.unique(target_values))
+                        
+                        if 0 <= t_min and t_max <= 1 and unique_vals > 10:
+                            analysis['is_probability'] = True
+                            analysis['target_types'].append(f'{target_name}: probability')
+                            tprint_info(f"🎯 Detected probability target {target_name}: range [{t_min:.3f}, {t_max:.3f}]")
+                        else:
+                            analysis['target_types'].append(f'{target_name}: continuous')
+            else:
+                # Analyze single target
+                if isinstance(target, np.ndarray):
+                    t_min, t_max = np.min(target), np.max(target)
+                    unique_vals = len(np.unique(target))
+                    
+                    if 0 <= t_min and t_max <= 1 and unique_vals > 10:
+                        analysis['is_probability'] = True
+                        analysis['target_types'].append('single: probability')
+                        tprint_info(f"🎯 Detected probability target: range [{t_min:.3f}, {t_max:.3f}]")
+                    else:
+                        analysis['target_types'].append('single: continuous')
+            
+            # Generate optimization recommendations
+            if analysis['is_multi_horizon']:
+                analysis['optimization_recommendations'].append("Enable multi-horizon PID optimizations")
+            if analysis['is_directional']:
+                analysis['optimization_recommendations'].append("Apply directional synergy boost")
+            if analysis['is_probability']:
+                analysis['optimization_recommendations'].append("Use regression-based mutual information")
+            
+            if analysis['optimization_recommendations']:
+                tprint_info(f"🎯 PID Optimization recommendations: {analysis['optimization_recommendations']}")
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Target analysis failed: {e}")
+        
+        return analysis

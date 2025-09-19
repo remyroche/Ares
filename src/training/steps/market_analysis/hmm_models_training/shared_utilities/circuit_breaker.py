@@ -47,6 +47,7 @@ class CircuitBreaker:
         Raises:
             Exception: If circuit breaker is open or function fails
         """
+        # Get current time inside the lock to prevent race conditions
         with self._lock:
             current_time = time.time()
             
@@ -59,6 +60,7 @@ class CircuitBreaker:
                     remaining_time = self.timeout - (current_time - (self.last_failure_time or current_time))
                     error_msg = f"Circuit breaker is OPEN - too many failures detected. Retry in {remaining_time:.1f}s"
                     logger.error(f"🚨 {error_msg}")
+                    # Don't raise exception while holding lock to prevent deadlocks
                     raise Exception(error_msg)
         
         # Execute function outside of lock to avoid deadlocks
@@ -73,8 +75,10 @@ class CircuitBreaker:
             return result
         except Exception as e:
             with self._lock:
+                # Get fresh timestamp inside lock to ensure consistency
+                failure_time = time.time()
                 self.failure_count += 1
-                self.last_failure_time = current_time
+                self.last_failure_time = failure_time
                 
                 if self.failure_count >= self.failure_threshold:
                     self.state = "OPEN"

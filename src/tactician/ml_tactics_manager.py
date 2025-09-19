@@ -1198,61 +1198,65 @@ class MLTacticsManager:
             # Get position direction from context
             position_side = position_context.get('side', '').upper()
             
-            # Evaluate exit conditions based on position direction
+            # Evaluate exit conditions based on position direction (immediate probabilities only)
             if position_side == 'LONG':
                 micro_immediate_prob = current_predictions.get('micro_immediate_long', {}).get('probability', 0.5)
-                micro_short_prob = current_predictions.get('micro_short_long', {}).get('probability', 0.5)
                 
-                # Check if probabilities drop below exit thresholds
+                # Check if immediate probability drops below exit threshold
                 immediate_exit = micro_immediate_prob <= self.exit_thresholds['micro_immediate_long']
-                short_exit = micro_short_prob <= self.exit_thresholds['micro_short_long']
                 
             elif position_side == 'SHORT':
                 micro_immediate_prob = current_predictions.get('micro_immediate_short', {}).get('probability', 0.5)
-                micro_short_prob = current_predictions.get('micro_short_short', {}).get('probability', 0.5)
                 
-                # Check if probabilities drop below exit thresholds
+                # Check if immediate probability drops below exit threshold
                 immediate_exit = micro_immediate_prob <= self.exit_thresholds['micro_immediate_short']
-                short_exit = micro_short_prob <= self.exit_thresholds['micro_short_short']
                 
             else:
                 # No position or unknown direction
                 immediate_exit = False
-                short_exit = False
                 micro_immediate_prob = 0.5
-                micro_short_prob = 0.5
             
-            # Check directional confidence degradation
+            # Check directional confidence degradation (MAIN EXIT TRIGGER for price reversals)
             directional_confidence = directional_analysis.get('directional_confidence', 0.0)
-            directional_exit = directional_confidence < self.exit_thresholds['directional_confidence_min']
+            directional_bias = directional_analysis.get('directional_bias', 'NEUTRAL')
+            
+            # Directional reversal detection - exit when direction confidence drops OR bias changes against position
+            directional_reversal = (
+                directional_confidence < self.exit_thresholds['directional_confidence_min'] or
+                (position_side == 'LONG' and directional_bias == 'SHORT') or
+                (position_side == 'SHORT' and directional_bias == 'LONG')
+            )
             
             # Check combined confidence exit
             combined_exit = combined_confidence <= self.exit_thresholds['combined_exit_threshold']
             
-            # Determine exit signal
-            if combined_exit or (immediate_exit and short_exit) or directional_exit:
+            # Determine exit signal - PRIORITIZE directional reversal as main exit trigger
+            if directional_reversal:
                 exit_signal = 'EXIT'
-                if combined_exit:
-                    reason = f'Combined confidence ({combined_confidence:.3f}) below threshold ({self.exit_thresholds["combined_exit_threshold"]})'
-                elif directional_exit:
-                    reason = f'Directional confidence ({directional_confidence:.3f}) below minimum ({self.exit_thresholds["directional_confidence_min"]})'
+                if directional_bias != 'NEUTRAL' and ((position_side == 'LONG' and directional_bias == 'SHORT') or (position_side == 'SHORT' and directional_bias == 'LONG')):
+                    reason = f'DIRECTIONAL REVERSAL: Price direction changed from {position_side} to {directional_bias} (confidence: {directional_confidence:.3f})'
                 else:
-                    reason = f'Micro movement probabilities degraded - immediate: {micro_immediate_prob:.3f}, short: {micro_short_prob:.3f}'
+                    reason = f'DIRECTIONAL CONFIDENCE LOSS: Direction confidence ({directional_confidence:.3f}) below minimum ({self.exit_thresholds["directional_confidence_min"]})'
+            elif combined_exit:
+                exit_signal = 'EXIT'
+                reason = f'Combined confidence ({combined_confidence:.3f}) below threshold ({self.exit_thresholds["combined_exit_threshold"]})'
+            elif immediate_exit:
+                exit_signal = 'EXIT'
+                reason = f'Immediate probability degraded: {micro_immediate_prob:.3f} below threshold ({self.exit_thresholds[f"micro_immediate_{position_side.lower()}"]})'
             else:
                 exit_signal = 'HOLD'
-                reason = f'Probabilities above exit thresholds - immediate: {micro_immediate_prob:.3f}, short: {micro_short_prob:.3f}, directional: {directional_confidence:.3f}'
+                reason = f'No exit signals - immediate: {micro_immediate_prob:.3f}, directional: {directional_confidence:.3f} ({directional_bias}), combined: {combined_confidence:.3f}'
             
             return {
                 'exit_signal': exit_signal, 
                 'reason': reason, 
                 'immediate_exit': immediate_exit, 
-                'short_exit': short_exit,
-                'directional_exit': directional_exit,
+                'directional_reversal': directional_reversal,
                 'combined_exit': combined_exit, 
                 'combined_confidence': combined_confidence,
                 'directional_confidence': directional_confidence,
+                'directional_bias': directional_bias,
                 'micro_immediate_prob': micro_immediate_prob,
-                'micro_short_prob': micro_short_prob,
                 'exit_thresholds': self.exit_thresholds,
                 'position_side': position_side
             }

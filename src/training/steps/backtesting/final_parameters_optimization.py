@@ -56,7 +56,10 @@ class FinalParametersOptimizer:
             'ensemble', 'sr', 'two_tier', 'technical_indicators',
             'system_monitoring', 'training_optimization', 'regime_transitions',
             'signal_aggregation', 'turnover_cost_penalty', 'entry_timing_optimization', 
-            'confidence_aware_ensemble', 'model_specific_parameters'
+            'confidence_aware_ensemble', 'model_specific_parameters',
+            # New directional categories
+            'long_specific_parameters', 'short_specific_parameters', 
+            'directional_thresholds', 'asymmetric_risk_management'
         ]
         
         # Default search spaces for each category
@@ -88,6 +91,536 @@ class FinalParametersOptimizer:
         self.artifact_manager = get_artifact_manager()
         self.pickup_utils = get_artifact_pickup_utils()
         self.version_manager = get_version_manager()
+
+
+class AsymmetricParametersOptimizer(FinalParametersOptimizer):
+    """Enhanced optimizer with long/short parameter differentiation"""
+    
+    def __init__(self, config: Dict[str, Any], nonlinear_config: Optional[NonLinearConfig] = None):
+        super().__init__(config, nonlinear_config)
+        
+        # Enhanced search spaces with directional parameters
+        self.directional_search_spaces = self._get_directional_search_spaces()
+        self.default_search_spaces.update(self.directional_search_spaces)
+        
+        # Re-create enhanced search spaces with new directional parameters
+        self.enhanced_search_spaces = self._create_enhanced_search_spaces()
+        
+        self.logger.info("🎯 Asymmetric Parameters Optimizer initialized")
+        self.logger.info(f"   Added directional parameter categories: {len(self.directional_search_spaces)}")
+        
+    def _get_directional_search_spaces(self):
+        """Define search spaces for directional parameters"""
+        return {
+            'long_specific_parameters': {
+                'long_entry_patience': {'type': 'float', 'low': 0.5, 'high': 2.0},
+                'long_profit_target_multiplier': {'type': 'float', 'low': 0.8, 'high': 1.5},
+                'long_stop_loss_multiplier': {'type': 'float', 'low': 0.8, 'high': 1.2},
+                'long_position_size_multiplier': {'type': 'float', 'low': 0.8, 'high': 1.3},
+                'long_confidence_threshold': {'type': 'float', 'low': 0.5, 'high': 0.8},
+                'long_momentum_weight': {'type': 'float', 'low': 0.1, 'high': 0.6},
+                'long_support_weight': {'type': 'float', 'low': 0.1, 'high': 0.5},
+            },
+            'short_specific_parameters': {
+                'short_entry_urgency': {'type': 'float', 'low': 0.8, 'high': 1.5},
+                'short_profit_target_multiplier': {'type': 'float', 'low': 0.6, 'high': 1.2},
+                'short_stop_loss_multiplier': {'type': 'float', 'low': 1.0, 'high': 1.4},
+                'short_position_size_multiplier': {'type': 'float', 'low': 0.7, 'high': 1.1},
+                'short_confidence_threshold': {'type': 'float', 'low': 0.6, 'high': 0.85},
+                'short_momentum_weight': {'type': 'float', 'low': 0.2, 'high': 0.7},
+                'short_resistance_weight': {'type': 'float', 'low': 0.1, 'high': 0.5},
+            },
+            'directional_thresholds': {
+                'long_vs_short_bias_threshold': {'type': 'float', 'low': 0.1, 'high': 0.4},
+                'directional_confidence_weight': {'type': 'float', 'low': 0.1, 'high': 0.5},
+                'asymmetric_volatility_adjustment': {'type': 'float', 'low': 0.8, 'high': 1.3},
+                'directional_switch_penalty': {'type': 'float', 'low': 0.0, 'high': 0.1},
+                'long_bias_boost': {'type': 'float', 'low': 0.9, 'high': 1.2},
+                'short_bias_boost': {'type': 'float', 'low': 0.9, 'high': 1.2},
+            },
+            'asymmetric_risk_management': {
+                'long_max_position_duration': {'type': 'int', 'low': 20, 'high': 40},
+                'short_max_position_duration': {'type': 'int', 'low': 10, 'high': 25},
+                'long_reassessment_frequency': {'type': 'int', 'low': 3, 'high': 8},
+                'short_reassessment_frequency': {'type': 'int', 'low': 2, 'high': 5},
+                'long_volatility_tolerance': {'type': 'float', 'low': 0.8, 'high': 1.1},
+                'short_volatility_tolerance': {'type': 'float', 'low': 1.0, 'high': 1.3},
+                'asymmetric_leverage_adjustment': {'type': 'float', 'low': 0.9, 'high': 1.1},
+            }
+        }
+    
+    def optimize_per_regime_with_direction(self, regime_data: Dict[str, Any], regime_id: str):
+        """
+        Optimize parameters per regime with directional differentiation
+        
+        Args:
+            regime_data: Data for specific regime including signals, directions, returns, etc.
+            regime_id: Regime identifier
+        """
+        
+        # Check if regime has enough samples for directional split
+        total_samples = len(regime_data.get('signals', []))
+        directions = regime_data.get('directions', np.array([]))
+        
+        if len(directions) == 0:
+            self.logger.warning(f"⚠️ Regime {regime_id}: No direction data available, using standard optimization")
+            return self.optimize_regime_parameters(regime_data, regime_id)
+        
+        long_samples = np.sum(directions > 0)
+        short_samples = np.sum(directions < 0)
+        
+        min_samples_per_direction = self.config.get('min_samples_per_direction', 100)
+        
+        if long_samples >= min_samples_per_direction and short_samples >= min_samples_per_direction:
+            # Sufficient samples: optimize separately
+            self.logger.info(f"📊 Regime {regime_id}: Sufficient samples for directional optimization")
+            self.logger.info(f"   Long samples: {long_samples}, Short samples: {short_samples}")
+            
+            return self._optimize_directional_parameters(regime_data, regime_id)
+        
+        else:
+            # Insufficient samples: use averaged parameters with directional bias
+            self.logger.info(f"📊 Regime {regime_id}: Using averaged parameters with directional bias")
+            self.logger.info(f"   Long samples: {long_samples}, Short samples: {short_samples}")
+            
+            return self._optimize_averaged_parameters_with_bias(regime_data, regime_id)
+    
+    def _optimize_directional_parameters(self, regime_data: Dict[str, Any], regime_id: str):
+        """Optimize separate parameters for longs and shorts"""
+        
+        results = {}
+        
+        # Separate data by direction
+        directions = regime_data['directions']
+        long_mask = directions > 0
+        short_mask = directions < 0
+        
+        # Optimize long parameters
+        long_data = self._filter_data_by_mask(regime_data, long_mask)
+        
+        long_study = optuna.create_study(
+            direction='maximize',
+            study_name=f'{self.study_name}_regime_{regime_id}_long',
+            sampler=optuna.samplers.TPESampler(seed=42)
+        )
+        
+        long_objective = self._create_directional_objective(long_data, 'long', regime_id)
+        
+        try:
+            long_study.optimize(long_objective, n_trials=self.n_trials // 2, timeout=self.timeout // 2)
+            results['long_parameters'] = long_study.best_params
+            results['long_score'] = long_study.best_value
+            results['long_trials'] = len(long_study.trials)
+        except Exception as e:
+            self.logger.error(f"❌ Long parameter optimization failed for regime {regime_id}: {e}")
+            results['long_parameters'] = {}
+            results['long_score'] = 0.0
+            results['long_trials'] = 0
+        
+        # Optimize short parameters
+        short_data = self._filter_data_by_mask(regime_data, short_mask)
+        
+        short_study = optuna.create_study(
+            direction='maximize',
+            study_name=f'{self.study_name}_regime_{regime_id}_short',
+            sampler=optuna.samplers.TPESampler(seed=43)
+        )
+        
+        short_objective = self._create_directional_objective(short_data, 'short', regime_id)
+        
+        try:
+            short_study.optimize(short_objective, n_trials=self.n_trials // 2, timeout=self.timeout // 2)
+            results['short_parameters'] = short_study.best_params
+            results['short_score'] = short_study.best_value
+            results['short_trials'] = len(short_study.trials)
+        except Exception as e:
+            self.logger.error(f"❌ Short parameter optimization failed for regime {regime_id}: {e}")
+            results['short_parameters'] = {}
+            results['short_score'] = 0.0
+            results['short_trials'] = 0
+        
+        # Create combined parameters
+        results['combined_parameters'] = self._combine_directional_parameters(
+            results.get('long_parameters', {}), 
+            results.get('short_parameters', {})
+        )
+        
+        # Calculate weighted score
+        total_trials = results['long_trials'] + results['short_trials']
+        if total_trials > 0:
+            results['combined_score'] = (
+                (results['long_score'] * results['long_trials'] + 
+                 results['short_score'] * results['short_trials']) / total_trials
+            )
+        else:
+            results['combined_score'] = 0.0
+        
+        self.logger.info(f"✅ Directional optimization completed for regime {regime_id}")
+        self.logger.info(f"   Long score: {results['long_score']:.4f} ({results['long_trials']} trials)")
+        self.logger.info(f"   Short score: {results['short_score']:.4f} ({results['short_trials']} trials)")
+        self.logger.info(f"   Combined score: {results['combined_score']:.4f}")
+        
+        return results
+    
+    def _optimize_averaged_parameters_with_bias(self, regime_data: Dict[str, Any], regime_id: str):
+        """Optimize averaged parameters with directional bias when samples are insufficient"""
+        
+        # Calculate directional bias
+        directions = regime_data['directions']
+        long_ratio = np.sum(directions > 0) / len(directions)
+        short_ratio = np.sum(directions < 0) / len(directions)
+        directional_bias = 'long' if long_ratio > short_ratio else 'short'
+        bias_strength = abs(long_ratio - short_ratio)
+        
+        self.logger.info(f"   Directional bias: {directional_bias} (strength: {bias_strength:.2f})")
+        self.logger.info(f"   Long ratio: {long_ratio:.1%}, Short ratio: {short_ratio:.1%}")
+        
+        # Create biased objective function
+        study = optuna.create_study(
+            direction='maximize',
+            study_name=f'{self.study_name}_regime_{regime_id}_averaged',
+            sampler=optuna.samplers.TPESampler(seed=42)
+        )
+        
+        biased_objective = self._create_biased_objective(
+            regime_data, directional_bias, long_ratio, short_ratio, regime_id
+        )
+        
+        try:
+            study.optimize(biased_objective, n_trials=self.n_trials, timeout=self.timeout)
+            base_parameters = study.best_params
+            base_score = study.best_value
+            trials_completed = len(study.trials)
+        except Exception as e:
+            self.logger.error(f"❌ Biased parameter optimization failed for regime {regime_id}: {e}")
+            base_parameters = {}
+            base_score = 0.0
+            trials_completed = 0
+        
+        # Apply directional bias to parameters
+        biased_parameters = self._apply_directional_bias(
+            base_parameters, directional_bias, long_ratio, short_ratio
+        )
+        
+        results = {
+            'base_parameters': base_parameters,
+            'biased_parameters': biased_parameters,
+            'directional_bias': directional_bias,
+            'bias_strength': bias_strength,
+            'long_ratio': long_ratio,
+            'short_ratio': short_ratio,
+            'score': base_score,
+            'trials_completed': trials_completed
+        }
+        
+        self.logger.info(f"✅ Biased optimization completed for regime {regime_id}")
+        self.logger.info(f"   Base score: {base_score:.4f} ({trials_completed} trials)")
+        self.logger.info(f"   Bias applied: {directional_bias} (strength: {bias_strength:.2f})")
+        
+        return results
+    
+    def _filter_data_by_mask(self, data: Dict[str, Any], mask: np.ndarray) -> Dict[str, Any]:
+        """Filter regime data by directional mask"""
+        filtered_data = {}
+        
+        for key, value in data.items():
+            if isinstance(value, np.ndarray) and len(value) == len(mask):
+                filtered_data[key] = value[mask]
+            elif isinstance(value, list) and len(value) == len(mask):
+                filtered_data[key] = [value[i] for i in range(len(value)) if mask[i]]
+            else:
+                # Keep non-array data as-is
+                filtered_data[key] = value
+                
+        return filtered_data
+    
+    def _create_directional_objective(self, data: Dict[str, Any], direction: str, regime_id: str):
+        """Create objective function for specific direction"""
+        
+        def objective(trial):
+            try:
+                # Sample directional parameters
+                params = {}
+                
+                # Sample direction-specific parameters
+                direction_space = self.directional_search_spaces[f'{direction}_specific_parameters']
+                for param_name, param_config in direction_space.items():
+                    if param_config['type'] == 'float':
+                        params[param_name] = trial.suggest_float(
+                            param_name, param_config['low'], param_config['high']
+                        )
+                    elif param_config['type'] == 'int':
+                        params[param_name] = trial.suggest_int(
+                            param_name, param_config['low'], param_config['high']
+                        )
+                
+                # Sample general directional parameters
+                for category in ['directional_thresholds', 'asymmetric_risk_management']:
+                    if category in self.directional_search_spaces:
+                        category_space = self.directional_search_spaces[category]
+                        for param_name, param_config in category_space.items():
+                            if param_config['type'] == 'float':
+                                params[param_name] = trial.suggest_float(
+                                    param_name, param_config['low'], param_config['high']
+                                )
+                            elif param_config['type'] == 'int':
+                                params[param_name] = trial.suggest_int(
+                                    param_name, param_config['low'], param_config['high']
+                                )
+                
+                # Sample some general parameters with directional adjustments
+                general_params = self._sample_general_parameters_with_direction(trial, direction)
+                params.update(general_params)
+                
+                # Evaluate performance with these parameters
+                performance = self._evaluate_directional_performance(data, params, direction, regime_id)
+                
+                return performance
+                
+            except Exception as e:
+                self.logger.error(f"❌ Objective evaluation failed: {e}")
+                return 0.0  # Return poor score on failure
+        
+        return objective
+    
+    def _create_biased_objective(self, data: Dict[str, Any], bias: str, long_ratio: float, 
+                                short_ratio: float, regime_id: str):
+        """Create objective function with directional bias"""
+        
+        def objective(trial):
+            try:
+                # Sample base parameters
+                params = self._sample_base_parameters(trial)
+                
+                # Apply directional bias during sampling
+                biased_params = self._apply_directional_bias_to_sampling(
+                    params, trial, bias, long_ratio, short_ratio
+                )
+                
+                # Evaluate performance with biased parameters
+                performance = self._evaluate_biased_performance(
+                    data, biased_params, bias, long_ratio, short_ratio, regime_id
+                )
+                
+                return performance
+                
+            except Exception as e:
+                self.logger.error(f"❌ Biased objective evaluation failed: {e}")
+                return 0.0  # Return poor score on failure
+        
+        return objective
+    
+    def _sample_general_parameters_with_direction(self, trial, direction: str) -> Dict[str, Any]:
+        """Sample general parameters with directional adjustments"""
+        params = {}
+        
+        # Adjust confidence thresholds based on direction
+        if direction == 'long':
+            params['confidence_threshold'] = trial.suggest_float('confidence_threshold', 0.5, 0.75)
+            params['position_size_base'] = trial.suggest_float('position_size_base', 0.008, 0.015)
+        else:  # short
+            params['confidence_threshold'] = trial.suggest_float('confidence_threshold', 0.6, 0.85)
+            params['position_size_base'] = trial.suggest_float('position_size_base', 0.006, 0.012)
+        
+        # Direction-agnostic parameters
+        params['leverage_multiplier'] = trial.suggest_float('leverage_multiplier', 0.8, 1.2)
+        params['risk_adjustment'] = trial.suggest_float('risk_adjustment', 0.9, 1.1)
+        
+        return params
+    
+    def _sample_base_parameters(self, trial) -> Dict[str, Any]:
+        """Sample base parameters without directional bias"""
+        return {
+            'confidence_threshold': trial.suggest_float('confidence_threshold', 0.5, 0.8),
+            'position_size_base': trial.suggest_float('position_size_base', 0.005, 0.015),
+            'leverage_multiplier': trial.suggest_float('leverage_multiplier', 0.8, 1.2),
+            'risk_adjustment': trial.suggest_float('risk_adjustment', 0.9, 1.1),
+            'profit_target_multiplier': trial.suggest_float('profit_target_multiplier', 0.8, 1.4),
+            'stop_loss_multiplier': trial.suggest_float('stop_loss_multiplier', 0.8, 1.3),
+        }
+    
+    def _apply_directional_bias_to_sampling(self, params: Dict[str, Any], trial, bias: str, 
+                                          long_ratio: float, short_ratio: float) -> Dict[str, Any]:
+        """Apply directional bias during parameter sampling"""
+        biased_params = params.copy()
+        
+        # Sample directional adjustment factors
+        bias_adjustment = trial.suggest_float('bias_adjustment', 0.9, 1.1)
+        
+        if bias == 'long':
+            # Long-friendly adjustments
+            biased_params['confidence_threshold'] *= 0.95  # Slightly lower
+            biased_params['position_size_base'] *= bias_adjustment * 1.05  # Slightly larger
+            biased_params['profit_target_multiplier'] *= 1.1  # Higher profit targets
+        else:  # short
+            # Short-friendly adjustments
+            biased_params['confidence_threshold'] *= 1.05  # Slightly higher
+            biased_params['position_size_base'] *= bias_adjustment * 0.95  # Slightly smaller
+            biased_params['stop_loss_multiplier'] *= 1.1  # Tighter stops
+        
+        return biased_params
+    
+    def _evaluate_directional_performance(self, data: Dict[str, Any], params: Dict[str, Any], 
+                                        direction: str, regime_id: str) -> float:
+        """Evaluate performance for specific direction"""
+        try:
+            # Extract relevant data
+            signals = data.get('signals', np.array([]))
+            returns = data.get('returns', np.array([]))
+            directions = data.get('directions', np.array([]))
+            
+            if len(signals) == 0 or len(returns) == 0:
+                return 0.0
+            
+            # Apply directional parameters to simulate performance
+            confidence_threshold = params.get('confidence_threshold', 0.6)
+            position_size = params.get('position_size_base', 0.01)
+            
+            # Filter signals by confidence
+            confident_signals = signals >= confidence_threshold
+            
+            # Calculate directional returns
+            directional_returns = returns[confident_signals] * position_size
+            
+            if len(directional_returns) == 0:
+                return 0.0
+            
+            # Direction-specific performance metrics
+            if direction == 'long':
+                # For longs: reward sustained positive returns
+                performance = np.mean(directional_returns) * np.sqrt(len(directional_returns))
+                # Bonus for consistency
+                if np.std(directional_returns) > 0:
+                    sharpe_bonus = np.mean(directional_returns) / np.std(directional_returns) * 0.1
+                    performance += sharpe_bonus
+            else:  # short
+                # For shorts: reward quick, sharp negative moves (positive returns for short positions)
+                performance = np.mean(directional_returns) * np.sqrt(len(directional_returns))
+                # Bonus for capturing volatility
+                volatility_bonus = np.std(directional_returns) * 0.05
+                performance += volatility_bonus
+            
+            # Apply risk adjustment
+            risk_adjustment = params.get('risk_adjustment', 1.0)
+            performance *= risk_adjustment
+            
+            return max(0.0, performance)  # Ensure non-negative
+            
+        except Exception as e:
+            self.logger.error(f"❌ Directional performance evaluation failed: {e}")
+            return 0.0
+    
+    def _evaluate_biased_performance(self, data: Dict[str, Any], params: Dict[str, Any], 
+                                   bias: str, long_ratio: float, short_ratio: float, 
+                                   regime_id: str) -> float:
+        """Evaluate performance with directional bias"""
+        try:
+            # Extract data
+            signals = data.get('signals', np.array([]))
+            returns = data.get('returns', np.array([]))
+            directions = data.get('directions', np.array([]))
+            
+            if len(signals) == 0 or len(returns) == 0:
+                return 0.0
+            
+            # Apply parameters
+            confidence_threshold = params.get('confidence_threshold', 0.6)
+            position_size = params.get('position_size_base', 0.01)
+            
+            # Filter signals
+            confident_signals = signals >= confidence_threshold
+            filtered_returns = returns[confident_signals]
+            filtered_directions = directions[confident_signals]
+            
+            if len(filtered_returns) == 0:
+                return 0.0
+            
+            # Calculate weighted performance based on directional bias
+            long_mask = filtered_directions > 0
+            short_mask = filtered_directions < 0
+            
+            performance = 0.0
+            
+            if np.any(long_mask):
+                long_returns = filtered_returns[long_mask] * position_size
+                long_performance = np.mean(long_returns) * np.sqrt(len(long_returns))
+                performance += long_performance * long_ratio
+            
+            if np.any(short_mask):
+                short_returns = filtered_returns[short_mask] * position_size
+                short_performance = np.mean(short_returns) * np.sqrt(len(short_returns))
+                performance += short_performance * short_ratio
+            
+            # Apply bias boost
+            bias_strength = abs(long_ratio - short_ratio)
+            bias_boost = 1.0 + (bias_strength * 0.1)  # Up to 10% boost for strong bias
+            performance *= bias_boost
+            
+            return max(0.0, performance)
+            
+        except Exception as e:
+            self.logger.error(f"❌ Biased performance evaluation failed: {e}")
+            return 0.0
+    
+    def _combine_directional_parameters(self, long_params: Dict[str, Any], 
+                                      short_params: Dict[str, Any]) -> Dict[str, Any]:
+        """Combine long and short parameters into unified set"""
+        combined = {}
+        
+        # Combine parameters with directional prefixes
+        for key, value in long_params.items():
+            if not key.startswith('long_'):
+                combined[f'long_{key}'] = value
+            else:
+                combined[key] = value
+        
+        for key, value in short_params.items():
+            if not key.startswith('short_'):
+                combined[f'short_{key}'] = value
+            else:
+                combined[key] = value
+        
+        # Create averaged parameters for general use
+        general_params = {}
+        for long_key, long_value in long_params.items():
+            if long_key.startswith('long_'):
+                base_key = long_key[5:]  # Remove 'long_' prefix
+                short_key = f'short_{base_key}'
+                if short_key in short_params:
+                    general_params[base_key] = (long_value + short_params[short_key]) / 2
+        
+        combined.update(general_params)
+        
+        return combined
+    
+    def _apply_directional_bias(self, base_params: Dict[str, Any], bias: str, 
+                              long_ratio: float, short_ratio: float) -> Dict[str, Any]:
+        """Apply directional bias to base parameters"""
+        
+        biased_params = base_params.copy()
+        bias_strength = abs(long_ratio - short_ratio)
+        
+        if bias == 'long':
+            # Bias towards long-friendly parameters
+            biased_params['confidence_threshold'] = biased_params.get('confidence_threshold', 0.6) * (1 - bias_strength * 0.1)
+            biased_params['position_size_base'] = biased_params.get('position_size_base', 0.01) * (1 + bias_strength * 0.2)
+            biased_params['profit_target_multiplier'] = biased_params.get('profit_target_multiplier', 1.0) * (1 + bias_strength * 0.3)
+            biased_params['max_position_duration'] = int(biased_params.get('max_position_duration', 25) * (1 + bias_strength * 0.4))
+            
+        else:  # short bias
+            # Bias towards short-friendly parameters  
+            biased_params['confidence_threshold'] = biased_params.get('confidence_threshold', 0.6) * (1 + bias_strength * 0.1)
+            biased_params['position_size_base'] = biased_params.get('position_size_base', 0.01) * (1 - bias_strength * 0.1)
+            biased_params['stop_loss_multiplier'] = biased_params.get('stop_loss_multiplier', 1.0) * (1 + bias_strength * 0.2)
+            biased_params['max_position_duration'] = int(biased_params.get('max_position_duration', 25) * (1 - bias_strength * 0.3))
+        
+        # Add directional metadata
+        biased_params['directional_bias'] = bias
+        biased_params['bias_strength'] = bias_strength
+        biased_params['long_ratio'] = long_ratio
+        biased_params['short_ratio'] = short_ratio
+        
+        return biased_params
     
     def _create_enhanced_search_spaces(self) -> Dict[str, Dict[str, Any]]:
         """Create enhanced search spaces with non-linear transformation metadata."""

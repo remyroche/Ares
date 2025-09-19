@@ -5760,24 +5760,19 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                     
                     for regime_id in regime_ids:
                         regime = regime_characteristics.get(regime_id, {})
-                        # Use multiple momentum/volatility/volume features for better CV calculation
-                        # Try different possible keys for momentum
-                        momentum_val = (regime.get('momentum_mean', 0.0) or 
-                                      regime.get('momentum_avg', 0.0) or 
-                                      regime.get('momentum', 0.0) or
-                                      regime.get('mean_momentum', 0.0) or 0.0)
                         
-                        # Try different possible keys for volatility
-                        volatility_val = (regime.get('volatility_mean', 0.0) or 
-                                        regime.get('volatility_avg', 0.0) or 
-                                        regime.get('volatility', 0.0) or
-                                        regime.get('mean_volatility', 0.0) or 0.0)
+                        # Get the actual features from regime discovery
+                        features = regime.get('features', {})
+                        feature_means = regime.get('feature_means', {})
                         
-                        # Try different possible keys for volume
-                        volume_val = (regime.get('volume_mean', 0.0) or 
-                                    regime.get('volume_avg', 0.0) or 
-                                    regime.get('volume', 0.0) or
-                                    regime.get('mean_volume', 0.0) or 0.0)
+                        # Calculate momentum value from actual momentum features
+                        momentum_val = self._calculate_momentum_from_features(feature_means)
+                        
+                        # Calculate volatility value from actual volatility features
+                        volatility_val = self._calculate_volatility_from_features(feature_means)
+                        
+                        # Calculate volume value from actual volume features
+                        volume_val = self._calculate_volume_from_features(feature_means)
                         
                         momentum_values.append(momentum_val)
                         volatility_values.append(volatility_val)
@@ -5785,9 +5780,17 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                     
                     # Enhanced debug logging for CV calculation
                     self.logger.info(f"   🔍 Cluster {cluster_id} CV Debug:")
+                    self.logger.info(f"      Regimes in cluster: {len(regime_ids)}")
                     self.logger.info(f"      Momentum values: {momentum_values[:5]}... (showing first 5)")
                     self.logger.info(f"      Volatility values: {volatility_values[:5]}... (showing first 5)")
                     self.logger.info(f"      Volume values: {volume_values[:5]}... (showing first 5)")
+                    
+                    # Show sample feature keys for debugging
+                    if regime_ids:
+                        sample_regime = regime_characteristics.get(regime_ids[0], {})
+                        sample_features = sample_regime.get('feature_means', {})
+                        sample_keys = list(sample_features.keys())[:10]  # Show first 10 keys
+                        self.logger.info(f"      Sample feature keys: {sample_keys}...")
                     
                     # Calculate CV (coefficient of variation) for each aspect
                     def calculate_cv(values, aspect_name):
@@ -5964,4 +5967,80 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             distribution[f'cluster_{cluster_id}'] = (sample_count / total_samples) * 100
         
         return distribution
+    
+    def _calculate_momentum_from_features(self, feature_means: Dict[str, float]) -> float:
+        """Calculate a representative momentum value from the actual momentum features."""
+        try:
+            # Momentum features from regime discovery: momentum_1h, momentum_2h, momentum_4h, momentum_acceleration, rsi_divergence
+            momentum_1h = feature_means.get('momentum_1h', 0.0)
+            momentum_2h = feature_means.get('momentum_2h', 0.0)
+            momentum_4h = feature_means.get('momentum_4h', 0.0)
+            momentum_acceleration = feature_means.get('momentum_acceleration', 0.0)
+            rsi_divergence = feature_means.get('rsi_divergence', 0.0)
+            
+            # Calculate weighted average momentum (short-term gets higher weight)
+            momentum_values = [momentum_1h, momentum_2h, momentum_4h]
+            weights = [0.5, 0.3, 0.2]  # Short-term gets more weight
+            
+            weighted_momentum = sum(v * w for v, w in zip(momentum_values, weights))
+            
+            # Add acceleration and divergence components
+            total_momentum = weighted_momentum + 0.1 * momentum_acceleration + 0.1 * rsi_divergence
+            
+            return total_momentum
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Failed to calculate momentum from features: {e}")
+            return 0.0
+    
+    def _calculate_volatility_from_features(self, feature_means: Dict[str, float]) -> float:
+        """Calculate a representative volatility value from the actual volatility features."""
+        try:
+            # Volatility features from regime discovery: volatility_intrabar, volatility_3h, volatility_6h, volatility_12h, volatility_of_volatility, atr_6h
+            volatility_intrabar = feature_means.get('volatility_intrabar', 0.0)
+            volatility_3h = feature_means.get('volatility_3h', 0.0)
+            volatility_6h = feature_means.get('volatility_6h', 0.0)
+            volatility_12h = feature_means.get('volatility_12h', 0.0)
+            volatility_of_volatility = feature_means.get('volatility_of_volatility', 0.0)
+            atr_6h = feature_means.get('atr_6h', 0.0)
+            
+            # Calculate weighted average volatility (medium-term gets higher weight)
+            volatility_values = [volatility_intrabar, volatility_3h, volatility_6h, volatility_12h]
+            weights = [0.3, 0.3, 0.3, 0.1]  # Balanced weights
+            
+            weighted_volatility = sum(v * w for v, w in zip(volatility_values, weights))
+            
+            # Add volatility clustering and ATR components
+            total_volatility = weighted_volatility + 0.1 * volatility_of_volatility + 0.2 * atr_6h
+            
+            return total_volatility
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Failed to calculate volatility from features: {e}")
+            return 0.0
+    
+    def _calculate_volume_from_features(self, feature_means: Dict[str, float]) -> float:
+        """Calculate a representative volume value from the actual volume features."""
+        try:
+            # Volume features from regime discovery: volume_momentum_1h, volume_momentum_3h, volume_momentum_6h, volume_acceleration, volume_ratio_24h
+            volume_momentum_1h = feature_means.get('volume_momentum_1h', 0.0)
+            volume_momentum_3h = feature_means.get('volume_momentum_3h', 0.0)
+            volume_momentum_6h = feature_means.get('volume_momentum_6h', 0.0)
+            volume_acceleration = feature_means.get('volume_acceleration', 0.0)
+            volume_ratio_24h = feature_means.get('volume_ratio_24h', 0.0)
+            
+            # Calculate weighted average volume momentum (short-term gets higher weight)
+            volume_momentum_values = [volume_momentum_1h, volume_momentum_3h, volume_momentum_6h]
+            weights = [0.4, 0.3, 0.3]  # Short-term gets more weight
+            
+            weighted_volume_momentum = sum(v * w for v, w in zip(volume_momentum_values, weights))
+            
+            # Add acceleration and ratio components
+            total_volume = weighted_volume_momentum + 0.1 * volume_acceleration + 0.2 * (volume_ratio_24h - 1.0)  # Subtract 1 to center around 0
+            
+            return total_volume
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Failed to calculate volume from features: {e}")
+            return 0.0
     

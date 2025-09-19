@@ -969,7 +969,7 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
                         self.logger.warning(f"⚠️ Could not add predictions from {ensemble_name}: {e}")
                         integration_stats['integration_errors'].append(f"Analyst ensemble {ensemble_name} failed: {e}")
             
-            # Combine all features with shape validation
+            # Combine all features with hardware-optimized shape validation
             if len(enhanced_features) > 1:
                 # Validate all arrays have same number of rows before concatenation
                 base_shape = enhanced_features[0].shape[0]
@@ -992,9 +992,39 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
                 
                 if len(valid_features) > 1:
                     try:
-                        X_enhanced = np.column_stack(valid_features)
+                        # Use hardware-optimized array operations if available
+                        if hasattr(self, 'unified_hardware_manager') and self.unified_hardware_manager:
+                            # Calculate total feature count for optimized allocation
+                            total_features = sum(arr.shape[1] for arr in valid_features)
+                            
+                            # Use hardware-optimized memory allocation
+                            try:
+                                X_enhanced = self.unified_hardware_manager.allocate_optimized_array(
+                                    shape=(base_shape, total_features),
+                                    dtype=X.dtype,
+                                    operation_type="feature_concatenation"
+                                )
+                                
+                                # Hardware-optimized feature copying
+                                current_col = 0
+                                for arr in valid_features:
+                                    next_col = current_col + arr.shape[1]
+                                    X_enhanced[:, current_col:next_col] = arr
+                                    current_col = next_col
+                                
+                                self.logger.info(f"📊 Hardware-optimized feature concatenation completed")
+                                
+                            except Exception as hw_e:
+                                self.logger.warning(f"⚠️ Hardware optimization failed: {hw_e}, using standard concatenation")
+                                # Fallback to standard concatenation
+                                X_enhanced = np.column_stack(valid_features)
+                        else:
+                            # Standard concatenation
+                            X_enhanced = np.column_stack(valid_features)
+                        
                         actual_feature_count = X_enhanced.shape[1]
                         self.logger.info(f"📊 Meta-learner features: {X.shape[1]} base + {actual_feature_count - X.shape[1]} model inputs = {actual_feature_count} total")
+                        
                     except ValueError as e:
                         self.logger.error(f"❌ Failed to concatenate features: {e}")
                         self.logger.warning("⚠️ Using base features only due to concatenation failure")

@@ -196,11 +196,21 @@ class MultiHorizonProfitLabeler:
             'short_short_term_opportunity',
             'short_overall_opportunity',
             
-            # NEW: Directional preference indicators
-            'directional_bias',           # 'long', 'short', or 'neutral'
+            # NEW: Enhanced directional preference indicators
+            'directional_bias',           # 1.0 = long, -1.0 = short, 0.0 = neutral
             'directional_confidence',     # How strong the directional bias is
-            'best_direction',            # Direction with highest opportunity
-            'opportunity_asymmetry'      # Difference between long and short opportunities
+            'best_direction',            # Direction with highest opportunity (1.0/-1.0/0.0)
+            'opportunity_asymmetry',     # Difference between long and short opportunities
+            
+            # NEW: Directional consistency and strength
+            'long_directional_consistency',   # How consistent long signals are across horizons
+            'short_directional_consistency',  # How consistent short signals are across horizons
+            'long_directional_strength',      # Combined opportunity and consistency for longs
+            'short_directional_strength',     # Combined opportunity and consistency for shorts
+            
+            # NEW: Directional momentum indicators
+            'long_momentum',             # Long immediate vs short-term momentum
+            'short_momentum'             # Short immediate vs short-term momentum
         ]
         columns_to_add.extend(composite_columns)
         
@@ -310,8 +320,8 @@ class MultiHorizonProfitLabeler:
         
         # Quality adjustments if enabled
         if self.config.enable_quality_scoring:
-            quality_score = self._calculate_quality_score(
-                target_hit, time_to_hit, max_adverse, horizon_periods, net_profit
+            quality_score = self._calculate_directional_quality_score(
+                target_hit, time_to_hit, max_adverse, horizon_periods, net_profit, direction
             )
             final_probability = base_prob * quality_score
         else:
@@ -391,6 +401,53 @@ class MultiHorizonProfitLabeler:
         total_quality = min(1.0, np.sum(quality_factors))
         
         return total_quality
+    
+    def _calculate_directional_quality_score(self, target_hit: bool, time_to_hit: Optional[int], 
+                                           max_adverse: float, total_periods: int, net_profit: float, 
+                                           direction: str) -> float:
+        """
+        Calculate directional-aware quality score for profit opportunities.
+        
+        This method builds on the base quality scoring but adds direction-specific adjustments:
+        - Long trades: Penalize upward adverse excursion more heavily (going against gravity)
+        - Short trades: Penalize downward adverse excursion more heavily (fighting momentum)
+        - Different risk-reward expectations for each direction
+        """
+        if not target_hit:
+            return 0.1  # Small probability for model uncertainty
+        
+        # Start with base quality score
+        base_quality = self._calculate_quality_score(target_hit, time_to_hit, max_adverse, total_periods, net_profit)
+        
+        # Direction-specific adjustments
+        directional_multiplier = 1.0
+        
+        if direction.lower() == 'long':
+            # Long trades: 
+            # - Reward faster moves (bullish momentum is often quick)
+            # - Penalize adverse excursion more heavily (fighting against gravity)
+            if time_to_hit is not None and time_to_hit < total_periods * 0.3:  # Very fast long moves
+                directional_multiplier *= 1.1  # 10% bonus for fast bullish moves
+            
+            if max_adverse > 0.01:  # More than 1% adverse for longs
+                directional_multiplier *= 0.9  # 10% penalty for significant drawdown
+                
+        else:  # direction == 'short'
+            # Short trades:
+            # - Reward sustained moves (bearish momentum can be persistent) 
+            # - Less penalty for time (shorts can take time to develop)
+            # - More penalty for adverse excursion (fighting bullish momentum)
+            if time_to_hit is not None and time_to_hit > total_periods * 0.5:  # Slower short moves are OK
+                directional_multiplier *= 1.05  # 5% bonus for sustained bearish moves
+            
+            if max_adverse > 0.008:  # More than 0.8% adverse for shorts (lower threshold)
+                directional_multiplier *= 0.85  # 15% penalty for adverse excursion in shorts
+        
+        # Market conditions adjustment (could be enhanced with regime detection)
+        # For now, slightly favor the direction that's been working recently
+        # This would be enhanced with actual market regime data
+        
+        return min(1.0, base_quality * directional_multiplier)
     
     def _calculate_composite_scores(self, probability_scores: Dict[str, float], 
                                   sample_labels: Dict[str, float]) -> Dict[str, float]:
@@ -485,38 +542,100 @@ class MultiHorizonProfitLabeler:
             time_values, probability_scores
         )
         
-        # NEW: Directional analysis
+        # ENHANCED: Directional analysis with improved logic
         long_avg = composite_scores.get('long_overall_opportunity', 0.0)
         short_avg = composite_scores.get('short_overall_opportunity', 0.0)
         
-        # Determine directional bias
-        if long_avg > short_avg + 0.05:  # 5% threshold
-            composite_scores['directional_bias'] = hash('long') % 1000
-            composite_scores['best_direction'] = hash('long') % 1000
-        elif short_avg > long_avg + 0.05:
-            composite_scores['directional_bias'] = hash('short') % 1000  
-            composite_scores['best_direction'] = hash('short') % 1000
-        else:
-            composite_scores['directional_bias'] = hash('neutral') % 1000
-            composite_scores['best_direction'] = hash('neutral') % 1000
+        # Calculate directional strength for each horizon
+        long_immediate = composite_scores.get('long_immediate_opportunity', 0.0)
+        long_short_term = composite_scores.get('long_short_opportunity', 0.0)
+        short_immediate = composite_scores.get('short_immediate_opportunity', 0.0)
+        short_short_term = composite_scores.get('short_short_opportunity', 0.0)
         
-        # Directional confidence and asymmetry
-        composite_scores['directional_confidence'] = abs(long_avg - short_avg)
-        composite_scores['opportunity_asymmetry'] = long_avg - short_avg  # Positive = long bias, Negative = short bias
+        # Weighted directional score (immediate gets higher weight for short-term trading)
+        long_weighted = (long_immediate * 0.7) + (long_short_term * 0.3)
+        short_weighted = (short_immediate * 0.7) + (short_short_term * 0.3)
+        
+        # Determine directional bias with adaptive threshold
+        confidence_threshold = max(0.03, min(0.10, (long_avg + short_avg) * 0.1))  # Dynamic threshold
+        
+        if long_weighted > short_weighted + confidence_threshold:
+            composite_scores['directional_bias'] = 1.0  # Long bias
+            composite_scores['best_direction'] = 1.0
+        elif short_weighted > long_weighted + confidence_threshold:
+            composite_scores['directional_bias'] = -1.0  # Short bias
+            composite_scores['best_direction'] = -1.0
+        else:
+            composite_scores['directional_bias'] = 0.0  # Neutral
+            composite_scores['best_direction'] = 0.0
+        
+        # Enhanced directional confidence and asymmetry
+        composite_scores['directional_confidence'] = abs(long_weighted - short_weighted)
+        composite_scores['opportunity_asymmetry'] = long_weighted - short_weighted  # Positive = long bias, Negative = short bias
+        
+        # NEW: Directional consistency score (how consistent the directional bias is across horizons)
+        long_consistency = 1.0 - abs(long_immediate - long_short_term) if (long_immediate + long_short_term) > 0 else 0.0
+        short_consistency = 1.0 - abs(short_immediate - short_short_term) if (short_immediate + short_short_term) > 0 else 0.0
+        composite_scores['long_directional_consistency'] = max(0.0, long_consistency)
+        composite_scores['short_directional_consistency'] = max(0.0, short_consistency)
+        
+        # NEW: Overall directional strength (combines opportunity with consistency)
+        composite_scores['long_directional_strength'] = long_weighted * composite_scores['long_directional_consistency']
+        composite_scores['short_directional_strength'] = short_weighted * composite_scores['short_directional_consistency']
+        
+        # NEW: Directional momentum indicator (immediate vs short-term comparison)
+        if long_short_term > 0:
+            composite_scores['long_momentum'] = (long_immediate - long_short_term) / long_short_term
+        else:
+            composite_scores['long_momentum'] = 0.0
+            
+        if short_short_term > 0:
+            composite_scores['short_momentum'] = (short_immediate - short_short_term) / short_short_term
+        else:
+            composite_scores['short_momentum'] = 0.0
         
         return composite_scores
     
     def _log_labeling_statistics(self, labeled_data: pd.DataFrame, valid_samples: int):
-        """Log labeling statistics."""
-        self.logger.info('📊 Labeling Statistics:')
+        """Log labeling statistics with enhanced directional analysis."""
+        self.logger.info('📊 Enhanced Multi-Horizon Labeling Statistics:')
         
-        # Overall opportunity distribution
+        # Overall opportunity distribution (backward compatibility)
         overall_opp = labeled_data['overall_opportunity'].iloc[:valid_samples]
         self.logger.info(f'   → Overall opportunity: mean={overall_opp.mean():.3f}, std={overall_opp.std():.3f}')
         
-        # High opportunity samples
-        high_opp_count = (overall_opp > 0.7).sum()
-        self.logger.info(f'   → High opportunity samples (>0.7): {high_opp_count} ({high_opp_count/valid_samples*100:.1f}%)')
+        # DIRECTIONAL OPPORTUNITY ANALYSIS
+        long_opp = labeled_data['long_overall_opportunity'].iloc[:valid_samples]
+        short_opp = labeled_data['short_overall_opportunity'].iloc[:valid_samples]
+        
+        self.logger.info(f'   → Long opportunities: mean={long_opp.mean():.3f}, std={long_opp.std():.3f}')
+        self.logger.info(f'   → Short opportunities: mean={short_opp.mean():.3f}, std={short_opp.std():.3f}')
+        
+        # Directional bias analysis
+        directional_bias = labeled_data['directional_bias'].iloc[:valid_samples]
+        long_bias_count = (directional_bias > 0.5).sum()
+        short_bias_count = (directional_bias < -0.5).sum()
+        neutral_count = valid_samples - long_bias_count - short_bias_count
+        
+        self.logger.info(f'   → Directional bias distribution:')
+        self.logger.info(f'     • Long bias: {long_bias_count} ({long_bias_count/valid_samples*100:.1f}%)')
+        self.logger.info(f'     • Short bias: {short_bias_count} ({short_bias_count/valid_samples*100:.1f}%)')
+        self.logger.info(f'     • Neutral: {neutral_count} ({neutral_count/valid_samples*100:.1f}%)')
+        
+        # Directional strength analysis
+        long_strength = labeled_data['long_directional_strength'].iloc[:valid_samples]
+        short_strength = labeled_data['short_directional_strength'].iloc[:valid_samples]
+        
+        self.logger.info(f'   → Directional strength:')
+        self.logger.info(f'     • Long strength: mean={long_strength.mean():.3f}, max={long_strength.max():.3f}')
+        self.logger.info(f'     • Short strength: mean={short_strength.mean():.3f}, max={short_strength.max():.3f}')
+        
+        # High opportunity samples (enhanced)
+        high_long_count = (long_opp > 0.7).sum()
+        high_short_count = (short_opp > 0.7).sum()
+        self.logger.info(f'   → High opportunity samples (>0.7):')
+        self.logger.info(f'     • Long: {high_long_count} ({high_long_count/valid_samples*100:.1f}%)')
+        self.logger.info(f'     • Short: {high_short_count} ({high_short_count/valid_samples*100:.1f}%)')
         
         # Leverage-adjusted scores
         leverage_scores = labeled_data['leverage_adjusted_score'].iloc[:valid_samples]
@@ -528,7 +647,14 @@ class MultiHorizonProfitLabeler:
         if len(valid_times) > 0:
             self.logger.info(f'   → Avg time to target: {valid_times.mean():.1f} periods')
         
-        self.logger.info('✅ Multi-horizon labeling completed successfully')
+        # Directional momentum analysis
+        long_momentum = labeled_data['long_momentum'].iloc[:valid_samples]
+        short_momentum = labeled_data['short_momentum'].iloc[:valid_samples]
+        self.logger.info(f'   → Momentum indicators:')
+        self.logger.info(f'     • Long momentum: mean={long_momentum.mean():.3f}')
+        self.logger.info(f'     • Short momentum: mean={short_momentum.mean():.3f}')
+        
+        self.logger.info('✅ Enhanced multi-horizon directional labeling completed successfully')
     
     def _calculate_reversal_capture_score(self, probability_scores: Dict[str, float], 
                                         sample_labels: Dict[str, float]) -> float:
@@ -650,11 +776,28 @@ if __name__ == '__main__':
     tprint(f'   → Output shape: {labeled_data.shape}')
     tprint(f'   → New columns added: {labeled_data.shape[1] - data.shape[1]}')
     
-    # Show sample results
-    sample_cols = ['overall_opportunity', 'leverage_adjusted_score', 'immediate_opportunity']
-    sample_data = labeled_data[sample_cols].head(10)
-    tprint(f'\n📊 Sample results:')
-    for col in sample_cols:
+    # Show sample results with enhanced directional analysis
+    sample_cols = [
+        'overall_opportunity', 'leverage_adjusted_score', 'immediate_opportunity',
+        'long_overall_opportunity', 'short_overall_opportunity', 
+        'directional_bias', 'directional_confidence', 'opportunity_asymmetry'
+    ]
+    available_cols = [col for col in sample_cols if col in labeled_data.columns]
+    sample_data = labeled_data[available_cols].head(10)
+    
+    tprint(f'\n📊 Enhanced sample results (directional analysis):')
+    for col in available_cols:
         tprint(f'   → {col}: mean={sample_data[col].mean():.3f}')
+    
+    # Show directional distribution
+    if 'directional_bias' in labeled_data.columns:
+        bias_data = labeled_data['directional_bias'].head(100)
+        long_bias = (bias_data > 0.5).sum()
+        short_bias = (bias_data < -0.5).sum()
+        neutral = 100 - long_bias - short_bias
+        tprint(f'\n🎯 Directional bias distribution (first 100 samples):')
+        tprint(f'   → Long bias: {long_bias}%')
+        tprint(f'   → Short bias: {short_bias}%')
+        tprint(f'   → Neutral: {neutral}%')
     
     tprint('✅ Multi-Horizon Profit Labeler test completed successfully!')

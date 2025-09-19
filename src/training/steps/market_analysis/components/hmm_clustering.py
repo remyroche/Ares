@@ -644,13 +644,13 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             regime_to_cluster = {regime_id: i for i, regime_id in enumerate(regime_ids)}
             cluster_count = n_regimes
             
-            # Hierarchical batch merging with VERY CONSERVATIVE similarity thresholds
-            # Only merge regimes that are extremely similar (>99.0% similar)
-            # Start with realistic thresholds based on actual similarity range (97-99%)
-            # Descend from 99.9% to 98.0% in 0.1% steps
-            similarity_thresholds = [0.999, 0.998, 0.997, 0.996, 0.995, 0.994, 0.993, 0.992, 0.991, 0.990, 0.989, 0.988, 0.987, 0.986, 0.985, 0.984, 0.983, 0.982, 0.981, 0.980]
+            # Intelligent hierarchical merging with adaptive similarity thresholds
+            # Automatically detect optimal stopping point based on regime dissimilarity
             min_cv_threshold = 0.01  # Very strict CV difference threshold
-            max_sample_pct = 6.0  # Freeze clusters at or above 6% of samples
+            # Note: Merging logic allows clusters >6% to merge as long as resulting cluster <12%
+            
+            # Calculate adaptive similarity thresholds based on data characteristics
+            similarity_thresholds = self._calculate_adaptive_similarity_thresholds(similarity_matrix)
             
             for threshold in similarity_thresholds:
                 if cluster_count <= 20:  # Stop when we reach lower bound of optimal range (20-40)
@@ -660,6 +660,19 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                 self.logger.info(f"🔄 Batch merging at {threshold*100:.1f}% similarity threshold ({threshold:.3f})...")
                 self.logger.info(f"   📊 Starting with {cluster_count} clusters")
                 
+                # Check CV-based stopping criteria before merging
+                if self._should_stop_merging_due_to_cv(regime_characteristics, regime_to_cluster):
+                    self.logger.info(f"🛑 STOPPING: CV-based quality criteria indicate regimes are too dissimilar")
+                    break
+                
+                # Check if current threshold is too low (regimes too dissimilar)
+                if self._is_similarity_threshold_too_low(threshold, similarity_matrix, regime_to_cluster):
+                    self.logger.info(f"🛑 STOPPING: Similarity threshold {threshold:.4f} is too low - regimes are too dissimilar")
+                    break
+                
+                # Identify clusters that should be excluded from merging due to high CV
+                excluded_clusters = self._get_excluded_clusters_due_to_cv(regime_characteristics, regime_to_cluster)
+                
                 # Calculate cluster sample percentages
                 total_samples = len(regime_assignments)
                 cluster_sample_counts = {}
@@ -667,9 +680,6 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                     if cluster_id not in cluster_sample_counts:
                         cluster_sample_counts[cluster_id] = 0
                     cluster_sample_counts[cluster_id] += regime_characteristics[regime_id].get('sample_count', 1)
-                
-                cluster_sample_pcts = {cluster_id: (count / total_samples) * 100 
-                                     for cluster_id, count in cluster_sample_counts.items()}
                 
                 # Compute within-cluster CV by aspect and derive soft penalties
                 cluster_cv_aspects = self._compute_cluster_cv_by_aspect(regime_characteristics, regime_to_cluster)
@@ -720,6 +730,10 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                         
                         # Skip if same cluster
                         if cluster_i == cluster_j:
+                            continue
+                        
+                        # Skip if either cluster is excluded due to high CV
+                        if cluster_i in excluded_clusters or cluster_j in excluded_clusters:
                             continue
                         
                         # Enforce 12% max resulting cluster size constraint
@@ -1647,65 +1661,421 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                 Z[:, invalid_cols] = 0.0
         return Z
     
-    def _calculate_regime_pair_similarity(self, regime_1: Dict[str, Any], regime_2: Dict[str, Any]) -> float:
-        """Calculate similarity between two regimes using the global robust scaler if available.
-
-        Falls back to a conservative cosine similarity if the global scaler is not set.
+    def _calculate_adaptive_similarity_thresholds(self, similarity_matrix: np.ndarray) -> List[float]:
+        """Calculate adaptive similarity thresholds based on data characteristics.
+        
+        This method analyzes the similarity distribution to automatically determine
+        optimal thresholds that balance cluster quality with meaningful grouping.
+        
+        Returns:
+            List of similarity thresholds in descending order (highest to lowest)
         """
         try:
             import numpy as np
-            # Prefer using the global scaler fitted on all regimes
-            scaler = getattr(self, '_global_feature_scaler', None)
-            if scaler and scaler.get('feature_order'):
-                feature_order = scaler['feature_order']
-                features_1 = regime_1.get('features', {})
-                features_2 = regime_2.get('features', {})
-                # Build 2 x F matrix in the same feature order the scaler expects
-                X_pair = np.full((2, len(feature_order)), np.nan, dtype=float)
-                for i, key in enumerate(feature_order):
-                    v1 = features_1.get(key, np.nan)
-                    v2 = features_2.get(key, np.nan)
-                    X_pair[0, i] = float(v1) if isinstance(v1, (int, float)) else np.nan
-                    X_pair[1, i] = float(v2) if isinstance(v2, (int, float)) else np.nan
-                # Standardize using global scaler and compute cosine
-                Z_pair = self._standardize_with_scaler(X_pair, scaler)
-                norms = np.linalg.norm(Z_pair, axis=1, keepdims=True)
-                norms[norms == 0] = 1.0
-                Z_pair = Z_pair / norms
-                similarity = float(np.clip(np.dot(Z_pair[0], Z_pair[1]), -1.0, 1.0))
-                # Limited debug
-                if not hasattr(self, '_similarity_debug_count'):
-                    self._similarity_debug_count = 0
-                if self._similarity_debug_count < 3:
-                    self.logger.warning(f"🔍 DEBUG: Overall cosine similarity: {similarity:.6f}")
-                    self._similarity_debug_count += 1
-                return similarity
-
-            # Fallback: conservative cosine on intersecting numeric features
+            
+            # Extract upper triangle of similarity matrix (avoid duplicates and diagonal)
+            n_regimes = similarity_matrix.shape[0]
+            similarities = []
+            for i in range(n_regimes):
+                for j in range(i + 1, n_regimes):
+                    similarities.append(similarity_matrix[i, j])
+            
+            if not similarities:
+                # Fallback to conservative thresholds
+                return [0.999, 0.998, 0.997, 0.996, 0.995]
+            
+            similarities = np.array(similarities)
+            
+            # Remove any NaN or infinite values
+            valid_similarities = similarities[np.isfinite(similarities)]
+            if len(valid_similarities) == 0:
+                return [0.999, 0.998, 0.997, 0.996, 0.995]
+            
+            # Calculate distribution statistics
+            mean_sim = np.mean(valid_similarities)
+            std_sim = np.std(valid_similarities)
+            median_sim = np.median(valid_similarities)
+            q75_sim = np.percentile(valid_similarities, 75)
+            q90_sim = np.percentile(valid_similarities, 90)
+            q95_sim = np.percentile(valid_similarities, 95)
+            
+            self.logger.info(f"📊 Similarity distribution analysis:")
+            self.logger.info(f"   Mean: {mean_sim:.4f}, Std: {std_sim:.4f}")
+            self.logger.info(f"   Median: {median_sim:.4f}, Q75: {q75_sim:.4f}, Q90: {q90_sim:.4f}, Q95: {q95_sim:.4f}")
+            
+            # Strategy 1: Start from high similarity and descend gradually
+            # Use percentile-based approach to ensure we have meaningful merges
+            
+            # Start from 95th percentile (very similar regimes)
+            start_threshold = max(0.99, q95_sim)  # At least 99% similarity
+            
+            # Calculate step size based on distribution
+            # Use smaller steps when there's more variation
+            if std_sim > 0.1:  # High variation - use smaller steps
+                step_size = 0.001  # 0.1% steps
+            elif std_sim > 0.05:  # Medium variation
+                step_size = 0.002  # 0.2% steps
+            else:  # Low variation - use larger steps
+                step_size = 0.005  # 0.5% steps
+            
+            # Calculate stop threshold based on data characteristics
+            # Stop when we reach a point where regimes become too dissimilar
+            if mean_sim > 0.5:  # Generally similar regimes
+                # Stop at mean - 1 std (regimes below this are too dissimilar)
+                stop_threshold = max(0.8, mean_sim - std_sim)
+            else:  # Generally dissimilar regimes
+                # Stop at 75th percentile (regimes below this are too dissimilar)
+                stop_threshold = max(0.7, q75_sim)
+            
+            # Generate threshold sequence
+            thresholds = []
+            current_threshold = start_threshold
+            
+            while current_threshold >= stop_threshold and len(thresholds) < 50:  # Safety limit
+                thresholds.append(round(current_threshold, 4))
+                current_threshold -= step_size
+            
+            # Ensure we have at least a few thresholds
+            if len(thresholds) < 3:
+                thresholds = [0.999, 0.995, 0.990, 0.980, 0.970]
+            
+            self.logger.info(f"🎯 Generated {len(thresholds)} adaptive thresholds:")
+            self.logger.info(f"   Start: {thresholds[0]:.4f}, Stop: {thresholds[-1]:.4f}")
+            self.logger.info(f"   Thresholds: {thresholds[:5]}..." + (f" to {thresholds[-1]:.4f}" if len(thresholds) > 5 else ""))
+            
+            return thresholds
+            
+        except Exception as e:
+            self.logger.error(f"❌ Failed to calculate adaptive similarity thresholds: {e}")
+            # Fallback to conservative thresholds
+            return [0.999, 0.998, 0.997, 0.996, 0.995]
+    
+    def _should_stop_merging_due_to_cv(self, regime_characteristics: Dict[str, Any], regime_to_cluster: Dict[str, int]) -> bool:
+        """Determine if merging should stop based on CV-based quality criteria.
+        
+        This method analyzes the current cluster quality and determines if further
+        merging would create clusters that are too heterogeneous.
+        
+        Args:
+            regime_characteristics: Dictionary of regime characteristics
+            regime_to_cluster: Current regime to cluster mapping
+            
+        Returns:
+            True if merging should stop due to poor cluster quality
+        """
+        try:
+            import numpy as np
+            
+            # Calculate current cluster CV metrics
+            cluster_cv_aspects = self._compute_cluster_cv_by_aspect(regime_characteristics, regime_to_cluster)
+            
+            if not cluster_cv_aspects:
+                return False
+            
+            # Extract CV values for each aspect
+            aspect_cvs = {'momentum': [], 'volatility': [], 'volume': []}
+            
+            for cluster_id, cv_map in cluster_cv_aspects.items():
+                for aspect in aspect_cvs.keys():
+                    cv_value = cv_map.get(aspect)
+                    if cv_value is not None and np.isfinite(cv_value):
+                        aspect_cvs[aspect].append(cv_value)
+            
+            # Calculate statistics for each aspect
+            aspect_stats = {}
+            for aspect, cv_values in aspect_cvs.items():
+                if len(cv_values) > 0:
+                    aspect_stats[aspect] = {
+                        'mean': np.mean(cv_values),
+                        'median': np.median(cv_values),
+                        'q75': np.percentile(cv_values, 75),
+                        'q90': np.percentile(cv_values, 90),
+                        'count': len(cv_values)
+                    }
+            
+            # Stop merging if cluster quality is degrading
+            stop_criteria = []
+            
+            # Criterion 1: Aspect-level CV quality check
+            for aspect, stats in aspect_stats.items():
+                if stats['median'] > 0.15:  # 15% CV is high for financial regimes
+                    stop_criteria.append(f"High {aspect} CV (median: {stats['median']:.3f})")
+                
+                # Criterion 2: Many clusters with high CV (>10%)
+                high_cv_count = sum(1 for cv in aspect_cvs[aspect] if cv > 0.10)
+                if high_cv_count > len(aspect_cvs[aspect]) * 0.4:  # More than 40% of clusters
+                    stop_criteria.append(f"Too many high-CV {aspect} clusters ({high_cv_count}/{len(aspect_cvs[aspect])})")
+            
+            # Criterion 3: Overall cluster heterogeneity
+            all_cvs = []
+            for cv_values in aspect_cvs.values():
+                all_cvs.extend(cv_values)
+            
+            if len(all_cvs) > 0:
+                overall_median_cv = np.median(all_cvs)
+                overall_q90_cv = np.percentile(all_cvs, 90)
+                
+                if overall_median_cv > 0.12:  # 12% median CV across all aspects
+                    stop_criteria.append(f"High overall cluster heterogeneity (median CV: {overall_median_cv:.3f})")
+                
+                if overall_q90_cv > 0.20:  # 90th percentile > 20% CV
+                    stop_criteria.append(f"Many very heterogeneous clusters (Q90 CV: {overall_q90_cv:.3f})")
+            
+            # Criterion 4: Check if we have enough clusters for meaningful analysis
+            unique_clusters = len(set(regime_to_cluster.values()))
+            if unique_clusters < 20:  # Too few clusters for meaningful market analysis
+                stop_criteria.append(f"Too few clusters for meaningful analysis ({unique_clusters})")
+            
+            # Log the analysis
+            if stop_criteria:
+                self.logger.info(f"🛑 CV-based stopping criteria triggered:")
+                for criterion in stop_criteria:
+                    self.logger.info(f"   - {criterion}")
+                return True
+            else:
+                self.logger.info(f"✅ CV-based quality check passed - continuing merging")
+                return False
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error in CV-based stopping criteria: {e}")
+            return False  # Don't stop on error, let other criteria handle it
+    
+    def _is_similarity_threshold_too_low(self, threshold: float, similarity_matrix: np.ndarray, regime_to_cluster: Dict[str, int]) -> bool:
+        """Check if the current similarity threshold is too low for meaningful clustering.
+        
+        This method analyzes the similarity distribution at the current threshold to determine
+        if merging would combine regimes that are too dissimilar.
+        
+        Args:
+            threshold: Current similarity threshold
+            similarity_matrix: Matrix of regime similarities
+            regime_to_cluster: Current regime to cluster mapping
+            
+        Returns:
+            True if the threshold is too low and merging should stop
+        """
+        try:
+            import numpy as np
+            
+            # Get all regime pairs that would be considered for merging at this threshold
+            regime_ids = list(regime_to_cluster.keys())
+            n_regimes = len(regime_ids)
+            
+            # Count potential merges at this threshold
+            potential_merges = 0
+            high_similarity_merges = 0  # Similarities above threshold + 0.05
+            low_similarity_merges = 0   # Similarities just above threshold
+            
+            for i in range(n_regimes):
+                for j in range(i + 1, n_regimes):
+                    similarity = similarity_matrix[i, j]
+                    cluster_i = regime_to_cluster[regime_ids[i]]
+                    cluster_j = regime_to_cluster[regime_ids[j]]
+                    
+                    # Only consider pairs from different clusters
+                    if cluster_i != cluster_j and similarity >= threshold:
+                        potential_merges += 1
+                        
+                        if similarity >= threshold + 0.05:  # High similarity
+                            high_similarity_merges += 1
+                        else:  # Low similarity (just above threshold)
+                            low_similarity_merges += 1
+            
+            # If no potential merges, threshold is fine
+            if potential_merges == 0:
+                return False
+            
+            # Calculate ratio of low-similarity merges
+            low_similarity_ratio = low_similarity_merges / potential_merges if potential_merges > 0 else 0
+            
+            # Stop if most merges would be of low similarity
+            if low_similarity_ratio > 0.7:  # More than 70% of merges are low similarity
+                self.logger.info(f"   📊 Similarity analysis at threshold {threshold:.4f}:")
+                self.logger.info(f"      Potential merges: {potential_merges}")
+                self.logger.info(f"      High similarity: {high_similarity_merges}, Low similarity: {low_similarity_merges}")
+                self.logger.info(f"      Low similarity ratio: {low_similarity_ratio:.3f} (too high)")
+                return True
+            
+            # Stop if threshold is below a certain absolute minimum
+            if threshold < 0.5:  # Less than 50% similarity is too low
+                self.logger.info(f"   📊 Threshold {threshold:.4f} is below absolute minimum (0.5)")
+                return True
+            
+            # Stop if we have very few high-similarity merges and many low-similarity ones
+            if potential_merges > 10 and high_similarity_merges < 3 and low_similarity_merges > 7:
+                self.logger.info(f"   📊 Too many low-similarity merges relative to high-similarity ones")
+                self.logger.info(f"      High similarity: {high_similarity_merges}, Low similarity: {low_similarity_merges}")
+                return True
+            
+            return False
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error checking similarity threshold: {e}")
+            return False  # Don't stop on error
+    
+    def _get_excluded_clusters_due_to_cv(self, regime_characteristics: Dict[str, Any], regime_to_cluster: Dict[str, int]) -> set:
+        """Identify clusters that should be excluded from future merging due to high internal CV.
+        
+        Args:
+            regime_characteristics: Dictionary of regime characteristics
+            regime_to_cluster: Current regime to cluster mapping
+            
+        Returns:
+            Set of cluster IDs that should be excluded from merging
+        """
+        try:
+            import numpy as np
+            
+            # Calculate current cluster CV metrics
+            cluster_cv_aspects = self._compute_cluster_cv_by_aspect(regime_characteristics, regime_to_cluster)
+            
+            if not cluster_cv_aspects:
+                return set()
+            
+            excluded_clusters = set()
+            
+            # Calculate cluster sample sizes and total samples
+            cluster_sample_counts = {}
+            total_samples = 0
+            
+            for regime_id, cluster_id in regime_to_cluster.items():
+                sample_count = regime_characteristics[regime_id].get('sample_count', 1)
+                total_samples += sample_count
+                if cluster_id not in cluster_sample_counts:
+                    cluster_sample_counts[cluster_id] = 0
+                cluster_sample_counts[cluster_id] += sample_count
+            
+            for cluster_id, cv_map in cluster_cv_aspects.items():
+                # Get maximum CV across all aspects for this cluster
+                cluster_cvs = [cv for cv in cv_map.values() if cv is not None and np.isfinite(cv)]
+                if not cluster_cvs:
+                    continue
+                
+                max_cv = max(cluster_cvs)
+                sample_count = cluster_sample_counts.get(cluster_id, 0)
+                sample_percentage = (sample_count / total_samples) * 100 if total_samples > 0 else 0
+                
+                # Apply adaptive CV threshold based on sample percentage
+                if sample_percentage > 10.0:  # Large clusters (>10% of total samples)
+                    cv_threshold = 0.05  # 5% CV threshold for large clusters
+                else:  # Small clusters (≤10% of total samples)
+                    cv_threshold = 0.10  # 10% CV threshold for small clusters
+                
+                if max_cv > cv_threshold:
+                    excluded_clusters.add(cluster_id)
+                    self.logger.info(f"   🚫 Excluding cluster {cluster_id} from merging: CV={max_cv:.3f} > {cv_threshold:.3f} (samples: {sample_count}, {sample_percentage:.1f}%)")
+            
+            if excluded_clusters:
+                self.logger.info(f"📊 Excluded {len(excluded_clusters)} clusters from merging due to high internal CV")
+            
+            return excluded_clusters
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error identifying excluded clusters: {e}")
+            return set()
+    
+    def _calculate_regime_pair_similarity(self, regime_1: Dict[str, Any], regime_2: Dict[str, Any]) -> float:
+        """Calculate similarity between two regimes using robust per-feature normalization.
+        
+        This method reuses the existing robust normalization approach but extends it to support
+        negative similarities for opposite directions, enabling proper cosine-like similarity.
+        """
+        try:
+            # Extract features from both regimes
             features_1 = regime_1.get('features', {})
             features_2 = regime_2.get('features', {})
-            keys = sorted((set(features_1.keys()) | set(features_2.keys())))
-            vals_1, vals_2 = [], []
+            
+            # Get common feature keys
+            keys = sorted((set(features_1.keys()) & set(features_2.keys())))
+            if not keys:
+                return 0.0
+            
+            # Calculate similarity for each feature using the shared utility function
+            similarities = []
+            feature_values_1 = []
+            feature_values_2 = []
+            
             for k in keys:
                 v1 = features_1.get(k)
                 v2 = features_2.get(k)
                 if isinstance(v1, (int, float)) and isinstance(v2, (int, float)):
-                    vals_1.append(float(v1))
-                    vals_2.append(float(v2))
-            if not vals_1:
+                    val_1, val_2 = float(v1), float(v2)
+                    feature_values_1.append(val_1)
+                    feature_values_2.append(val_2)
+                    # Use shared utility function with negative similarity support
+                    similarity = self._calculate_feature_similarity(val_1, val_2, support_negative=True)
+                    similarities.append(similarity)
+            
+            if not similarities:
                 return 0.0
-            v1 = np.array(vals_1)
-            v2 = np.array(vals_2)
-            n1 = np.linalg.norm(v1)
-            n2 = np.linalg.norm(v2)
-            if n1 == 0 or n2 == 0:
-                return 0.0
-            return float(np.clip(np.dot(v1, v2) / (n1 * n2), -1.0, 1.0))
+            
+            # Calculate weighted average similarity
+            overall_similarity = np.mean(similarities)
+            
+            # Limited debug output
+            if not hasattr(self, '_similarity_debug_count'):
+                self._similarity_debug_count = 0
+            if self._similarity_debug_count < 3:
+                self.logger.warning(f"🔍 DEBUG: Features 1 keys: {keys[:5]}...")
+                self.logger.warning(f"🔍 DEBUG: Features 2 keys: {keys[:5]}...")
+                self.logger.warning(f"🔍 DEBUG: Features 1 sample values: {feature_values_1[:5]}")
+                self.logger.warning(f"🔍 DEBUG: Features 2 sample values: {feature_values_2[:5]}")
+                self.logger.warning(f"🔍 DEBUG: Feature similarities[:5]: {similarities[:5]}")
+                self.logger.warning(f"🔍 DEBUG: Overall cosine similarity: {overall_similarity:.6f}")
+                self._similarity_debug_count += 1
+            
+            return float(np.clip(overall_similarity, -1.0, 1.0))
 
         except Exception as e:
             self.logger.error(f"❌ Failed to calculate regime pair similarity: {e}")
             return 0.0
     
+    def _calculate_feature_similarity(self, val_1: float, val_2: float, support_negative: bool = False) -> float:
+        """Calculate similarity between two feature values using robust normalization.
+        
+        Args:
+            val_1: First feature value
+            val_2: Second feature value  
+            support_negative: If True, allows negative similarities for opposite directions
+            
+        Returns:
+            Similarity score between -1 and +1 (if support_negative) or 0 and +1 (otherwise)
+        """
+        try:
+            # Handle zero cases
+            if val_1 == 0 and val_2 == 0:
+                return 1.0
+            elif val_1 == 0 or val_2 == 0:
+                return 0.0
+            
+            # Use max absolute value for robust normalization
+            max_val = max(abs(val_1), abs(val_2))
+            if max_val == 0:
+                return 1.0
+            
+            if support_negative:
+                # For cosine-like similarity, normalize both values and compute dot product
+                norm_1 = val_1 / max_val
+                norm_2 = val_2 / max_val
+                
+                # Calculate similarity considering both magnitude and direction
+                # This gives us values between -1 and +1
+                similarity = norm_1 * norm_2
+                
+                # If both values are very small relative to max, they're similar
+                if abs(norm_1) < 0.1 and abs(norm_2) < 0.1:
+                    similarity = 1.0 if (norm_1 >= 0) == (norm_2 >= 0) else -1.0
+                
+                return max(-1.0, min(1.0, similarity))
+            else:
+                # Original distance-based approach (0 to 1 range)
+                distance = abs(val_1 - val_2) / max_val
+                return max(0.0, 1.0 - distance)
+                
+        except Exception as e:
+            self.logger.error(f"❌ Failed to calculate feature similarity: {e}")
+            return 0.0
+
     def _calculate_characteristic_similarity(self, chars_1: Dict[str, Any], chars_2: Dict[str, Any], feature_keys: List[str]) -> float:
         """Calculate similarity between two characteristic dictionaries for specific features."""
         try:
@@ -1719,19 +2089,8 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                 if isinstance(val_1, str) and isinstance(val_2, str):
                     similarity = 1.0 if val_1 == val_2 else 0.0
                 else:
-                    # Handle numeric comparisons
-                    if val_1 == 0 and val_2 == 0:
-                        similarity = 1.0
-                    elif val_1 == 0 or val_2 == 0:
-                        similarity = 0.0
-                    else:
-                        # Normalized similarity (1 - normalized distance)
-                        max_val = max(abs(val_1), abs(val_2))
-                        if max_val == 0:
-                            similarity = 1.0
-                        else:
-                            distance = abs(val_1 - val_2) / max_val
-                            similarity = max(0.0, 1.0 - distance)
+                    # Use shared utility function (original 0-1 range)
+                    similarity = self._calculate_feature_similarity(val_1, val_2, support_negative=False)
                 
                 similarities.append(similarity)
             

@@ -1275,9 +1275,7 @@ class Step03HMMRegimeDiscovery(BaseStep):
         """
         Generate momentum-based features for 3D regime discovery.
         
-        Note: These technical indicators are used as part of the momentum dimension
-        in the 3D regime space (momentum, volatility, volume). They complement
-        the pure price change features to provide richer momentum characterization.
+        Simplified to pure price changes for clean momentum dimension.
         """
         try:
             features = []
@@ -1285,17 +1283,14 @@ class Step03HMMRegimeDiscovery(BaseStep):
             if 'close' in data.columns:
                 close_prices = data['close'].values.astype(np.float32)
 
-                # RSI (simplified for 3D momentum dimension - captures overbought/oversold)
-                if len(close_prices) > 3:
-                    rsi = self._calculate_rsi(close_prices, period=3)  # Reactive for momentum
-                    if rsi is not None:
-                        features.append(rsi)
-
-                # MACD (simplified for 3D momentum dimension - captures trend changes)
-                if len(close_prices) > 6:
-                    macd_line, signal_line, histogram = self._calculate_macd(close_prices, fast_period=3, slow_period=6, signal_period=2)
-                    if macd_line is not None:
-                        features.extend([macd_line, signal_line, histogram])
+                # Simple price momentum (1h and 2h changes)
+                if len(close_prices) > 2:
+                    momentum_1h = np.diff(close_prices) / close_prices[:-1]  # 1h change
+                    features.append(momentum_1h)
+                    
+                    if len(close_prices) > 2:
+                        momentum_2h = (close_prices[2:] - close_prices[:-2]) / close_prices[:-2]  # 2h change
+                        features.append(momentum_2h)
 
             return {'success': True, 'features': features}
 
@@ -1303,26 +1298,18 @@ class Step03HMMRegimeDiscovery(BaseStep):
             return {'success': False, 'error': str(e), 'features': []}
 
     def _generate_trend_features(self, data: pd.DataFrame) -> Dict[str, Any]:
-        """Generate trend-based features."""
+        """Generate trend-based features (simplified for 3D regime discovery)."""
         try:
             features = []
 
             if 'close' in data.columns:
                 close_prices = data['close'].values.astype(np.float32)
 
-                # Moving averages (simplified for 3D momentum dimension)
-                if len(close_prices) > 6:
-                    sma_3 = pd.Series(close_prices).rolling(3).mean().values[2:]   # Short-term trend
-                    sma_6 = pd.Series(close_prices).rolling(6).mean().values[5:]   # Medium-term trend
-                    # Align lengths
-                    min_len = min(len(sma_3), len(sma_6))
-                    sma_3 = sma_3[-min_len:]
-                    sma_6 = sma_6[-min_len:]
-                    features.extend([sma_3, sma_6])
-
-                    # Trend strength (short vs medium term)
-                    trend_strength = (sma_3 - sma_6) / (sma_6 + 1e-8)
-                    features.append(trend_strength)
+                # Simple trend direction (price above/below recent average)
+                if len(close_prices) > 3:
+                    recent_avg = pd.Series(close_prices).rolling(3).mean().values[2:]
+                    trend_position = (close_prices[2:] - recent_avg) / (recent_avg + 1e-8)
+                    features.append(trend_position)
 
             return {'success': True, 'features': features}
 

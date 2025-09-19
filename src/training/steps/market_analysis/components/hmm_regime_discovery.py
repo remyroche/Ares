@@ -796,8 +796,8 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
                 'note': 'True 3D regime space with separate dimensional HMMs'
             }
             
-            # Calculate actual feature offset based on max rolling window (6h constraint)
-            max_lookback = 6  # Maximum lookback window (6h constraint)
+            # Calculate actual feature offset based on max rolling window (24h for volume baseline)
+            max_lookback = 24  # Maximum lookback window (24h for volume baseline)
             feature_offset = max_lookback
             
             # Preserve original index and align properly
@@ -847,12 +847,12 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
         """
         Prepare features grouped by dimension for 3D regime discovery.
         
-        This method implements the 3D dimensional approach within 6h constraint:
-        - Momentum dimension: 1h, 2h, 6h price changes (reactivity to trend confirmation)
-        - Volatility dimension: intrabar volatility, 6h rolling std, 3h volatility velocity
-        - Volume dimension: 1h/3h volume momentum, 6h ratio baseline, weighted price
+        This method implements the simplified 3D dimensional approach:
+        - Momentum dimension: 1h, 2h price changes (pure reactivity)
+        - Volatility dimension: intrabar volatility, 6h rolling std, 6h ATR
+        - Volume dimension: 3h volume momentum, 24h volume ratio baseline
         
-        All windows respect the 6h maximum constraint while optimizing for feature quality.
+        Features are optimized for regime detection without unnecessary complexity.
         Features are designed to be compatible with HMM clustering expectations.
         
         Args:
@@ -866,40 +866,47 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             import pandas as pd
             import numpy as np
             
-            # Momentum features (balanced reactivity vs stability)
+            # Momentum features (simplified - price changes only)
             momentum_features = pd.DataFrame(index=market_data.index)
             # High reactivity for momentum detection
             momentum_features['momentum_1h'] = market_data['close'].pct_change(1)  # Most reactive
             momentum_features['momentum_2h'] = market_data['close'].pct_change(2)  # Balance
-            momentum_features['momentum_6h'] = market_data['close'].pct_change(6)  # Trend confirmation
             
-            # Volatility features (optimized within 6h constraint)
+            # Volatility features (simplified)
             volatility_features = pd.DataFrame(index=market_data.index)
             # Intrabar volatility for immediate reactivity
             volatility_features['volatility_intrabar'] = (market_data['high'] - market_data['low']) / market_data['close']
-            # Rolling volatility within constraint
-            volatility_features['volatility_6h'] = market_data['close'].rolling(6).std()  # Maximum allowed
-            # Alternative: Price velocity (rate of change in volatility)
-            volatility_features['volatility_velocity_3h'] = market_data['close'].rolling(3).std().pct_change(1)
+            # Rolling volatility 
+            volatility_features['volatility_6h'] = market_data['close'].rolling(6).std()
+            # ATR for true range volatility
+            high_vals = market_data['high'].values.astype(np.float32)
+            low_vals = market_data['low'].values.astype(np.float32)
+            close_vals = market_data['close'].values.astype(np.float32)
+            tr1 = high_vals[1:] - low_vals[1:]
+            tr2 = np.abs(high_vals[1:] - close_vals[:-1])
+            tr3 = np.abs(low_vals[1:] - close_vals[:-1])
+            true_range = np.maximum(np.maximum(tr1, tr2), tr3)
+            atr_values = pd.Series(true_range).rolling(6).mean()
+            # Pad with NaN to match original index length
+            atr_padded = np.full(len(market_data), np.nan)
+            atr_padded[1:len(atr_values)+1] = atr_values
+            volatility_features['atr_6h'] = atr_padded
             
-            # Volume features (mixed windows based on feature type)
+            # Volume features (simplified)
             epsilon = 1e-8
             volume_features = pd.DataFrame(index=market_data.index)
-            # Volume momentum - high reactivity needed
-            volume_features['volume_momentum_1h'] = market_data['volume'].pct_change(1)
+            # Volume momentum - 3h only
             volume_features['volume_momentum_3h'] = market_data['volume'].pct_change(3)
-            # Volume ratio - 6h baseline for stability within constraints
-            volume_features['volume_ratio'] = market_data['volume'] / (market_data['volume'].rolling(6).mean() + epsilon)
-            # Price-volume relationship - immediate
-            volume_features['volume_weighted_price'] = market_data['close'] * market_data['volume']
+            # Volume ratio - 24h baseline for stable comparison
+            volume_features['volume_ratio_24h'] = market_data['volume'] / (market_data['volume'].rolling(24).mean() + epsilon)
             
             # Clean features and align indices
-            max_lookback = 6  # Maximum lookback window used (6h constraint)
+            max_lookback = 24  # Maximum lookback window used (24h for volume baseline)
             cleaned_features = []
             
             for i, (features, feature_type) in enumerate(zip([momentum_features, volatility_features, volume_features], 
                                                           ['momentum', 'volatility', 'volume'])):
-                # Skip rows based on max lookback (6h constraint)
+                # Skip rows based on max lookback (24h for volume baseline)
                 features = features.iloc[max_lookback:]
                 
                 # Apply consistent NaN handling based on feature type

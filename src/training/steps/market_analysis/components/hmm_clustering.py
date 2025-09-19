@@ -834,30 +834,55 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             return False # Assume not compatible on error
     
     def _compute_cluster_cv(self, regime_characteristics: Dict[str, Any], regime_to_cluster: Dict[str, int]) -> Dict[int, float]:
-        """Compute weighted mean CV per cluster using regime-level 'mean_cv' weighted by sample_count."""
+        """Compute robust within-cluster CV over feature values, not a weighted average of regime CVs.
+
+        For each cluster, we:
+        - Build the regime-by-feature matrix across all regimes
+        - For the subset of regimes in the cluster, compute per-feature robust CV:
+          robust_cv_feature = (1.4826 * MAD(feature_values)) / (abs(median(feature_values)) + eps)
+        - Aggregate the cluster's per-feature CVs using the median to reduce influence of outliers
+
+        Returns a mapping cluster_id -> robust_within_cv
+        """
         import numpy as np
-        cluster_sums = {}
-        cluster_counts = {}
-        for regime_id, cluster_id in regime_to_cluster.items():
-            regime = regime_characteristics.get(regime_id, {})
-            mean_cv = regime.get('mean_cv', None)
-            if mean_cv is None:
-                # Try to derive mean_cv from specific CV features if available
-                try:
-                    vals = [regime.get(k, None) for k in ['momentum_cv', 'volatility_cv', 'volume_cv']]
-                    vals = [float(v) for v in vals if isinstance(v, (int, float))]
-                    mean_cv = float(np.mean(vals)) if len(vals) > 0 else None
-                except Exception:
-                    mean_cv = None
-            if mean_cv is None:
+        # Build matrix of original features (no scaling) for all regimes
+        regime_ids = list(regime_to_cluster.keys())
+        X, feature_order = self._build_feature_matrix(regime_characteristics, regime_ids)
+        if X.size == 0:
+            return {}
+        cluster_cv: Dict[int, float] = {}
+        # Precompute cluster indices
+        cluster_to_indices: Dict[int, list] = {}
+        for idx, regime_id in enumerate(regime_ids):
+            cid = regime_to_cluster.get(regime_id)
+            if cid is None:
                 continue
-            weight = regime.get('sample_count', 1)
-            cluster_sums[cluster_id] = cluster_sums.get(cluster_id, 0.0) + float(mean_cv) * float(weight)
-            cluster_counts[cluster_id] = cluster_counts.get(cluster_id, 0.0) + float(weight)
-        cluster_cv = {}
-        for cid, s in cluster_sums.items():
-            count = cluster_counts.get(cid, 0.0)
-            cluster_cv[cid] = s / count if count > 0 else 0.0
+            if cid not in cluster_to_indices:
+                cluster_to_indices[cid] = []
+            cluster_to_indices[cid].append(idx)
+        # Compute robust CV per cluster
+        eps = 1e-8
+        for cid, indices in cluster_to_indices.items():
+            if not indices or len(indices) < 2:
+                # Not enough regimes to assess variability meaningfully
+                cluster_cv[cid] = 0.0
+                continue
+            Xc = X[indices, :]
+            # Compute per-feature robust CV; skip all-NaN columns
+            cvs = []
+            for j in range(Xc.shape[1]):
+                col = Xc[:, j]
+                if np.all(np.isnan(col)):
+                    continue
+                # Robust center and scale
+                med = np.nanmedian(col)
+                mad = np.nanmedian(np.abs(col - med))
+                robust_scale = 1.4826 * mad
+                denom = max(abs(med), eps)
+                cvj = robust_scale / denom
+                if np.isfinite(cvj):
+                    cvs.append(cvj)
+            cluster_cv[cid] = float(np.nanmedian(cvs)) if len(cvs) > 0 else 0.0
         return cluster_cv
 
     def _extract_regime_characteristics_from_discovery(self, regime_discovery: Dict[str, Any]) -> Dict[str, Any]:

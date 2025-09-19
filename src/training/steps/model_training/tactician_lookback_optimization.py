@@ -323,21 +323,32 @@ class TacticianLookbackOptimizer:
     
     def _get_indicator_calculator(self, indicator: str):
         """Get calculator function for a specific indicator."""
-        # This would return the actual calculation function for each indicator
-        # For now, return a placeholder
-        def placeholder_calculator(data: pd.DataFrame, lookback: int) -> pd.Series:
-            """Placeholder calculator for indicator."""
-            if indicator == "rsi":
-                return self._calculate_rsi(data, lookback)
-            elif indicator == "macd":
-                return self._calculate_macd(data, lookback)
-            elif indicator == "atr":
-                return self._calculate_atr(data, lookback)
-            else:
-                # Generic SMA as fallback
-                return data['close'].rolling(window=lookback).mean()
+        indicator_calculators = {
+            "rsi": self._calculate_rsi,
+            "macd": self._calculate_macd,
+            "atr": self._calculate_atr,
+            "bollinger_bands": self._calculate_bollinger_bands,
+            "stoch": self._calculate_stochastic,
+            "volume_sma": self._calculate_volume_sma,
+            "vwap": self._calculate_vwap,
+            "obv": self._calculate_obv,
+            "volume_roc": self._calculate_volume_roc,
+            "williams_r": self._calculate_williams_r,
+            "cci": self._calculate_cci,
+            "momentum": self._calculate_momentum,
+            "roc": self._calculate_roc,
+            "volatility_bands": self._calculate_volatility_bands,
+            "keltner_channels": self._calculate_keltner_channels,
+            "sma": self._calculate_sma,
+            "ema": self._calculate_ema
+        }
         
-        return placeholder_calculator
+        calculator = indicator_calculators.get(indicator)
+        if calculator is None:
+            tprint_warning(f"⚠️ Unknown indicator: {indicator}, using SMA as fallback")
+            return self._calculate_sma
+        
+        return calculator
     
     def _calculate_rsi(self, data: pd.DataFrame, lookback: int) -> pd.Series:
         """Calculate RSI with given lookback period."""
@@ -378,6 +389,146 @@ class TacticianLookbackOptimizer:
             return atr
         except Exception as e:
             self.logger.warning(f"ATR calculation failed: {e}")
+            return pd.Series(index=data.index, dtype=float)
+    
+    def _calculate_bollinger_bands(self, data: pd.DataFrame, lookback: int) -> pd.Series:
+        """Calculate Bollinger Bands middle line (SMA) with given lookback period."""
+        try:
+            sma = data['close'].rolling(window=lookback).mean()
+            return sma
+        except Exception as e:
+            self.logger.warning(f"Bollinger Bands calculation failed: {e}")
+            return pd.Series(index=data.index, dtype=float)
+    
+    def _calculate_stochastic(self, data: pd.DataFrame, lookback: int) -> pd.Series:
+        """Calculate Stochastic %K with given lookback period."""
+        try:
+            lowest_low = data['low'].rolling(window=lookback).min()
+            highest_high = data['high'].rolling(window=lookback).max()
+            k_percent = 100 * ((data['close'] - lowest_low) / (highest_high - lowest_low))
+            return k_percent.fillna(50)
+        except Exception as e:
+            self.logger.warning(f"Stochastic calculation failed: {e}")
+            return pd.Series(index=data.index, dtype=float)
+    
+    def _calculate_volume_sma(self, data: pd.DataFrame, lookback: int) -> pd.Series:
+        """Calculate Volume SMA with given lookback period."""
+        try:
+            return data['volume'].rolling(window=lookback).mean()
+        except Exception as e:
+            self.logger.warning(f"Volume SMA calculation failed: {e}")
+            return pd.Series(index=data.index, dtype=float)
+    
+    def _calculate_vwap(self, data: pd.DataFrame, lookback: int) -> pd.Series:
+        """Calculate VWAP with given lookback period."""
+        try:
+            typical_price = (data['high'] + data['low'] + data['close']) / 3
+            volume_price = typical_price * data['volume']
+            cumulative_volume_price = volume_price.rolling(window=lookback).sum()
+            cumulative_volume = data['volume'].rolling(window=lookback).sum()
+            vwap = safe_divide(cumulative_volume_price, cumulative_volume, default_value=data['close'])
+            return vwap
+        except Exception as e:
+            self.logger.warning(f"VWAP calculation failed: {e}")
+            return pd.Series(index=data.index, dtype=float)
+    
+    def _calculate_obv(self, data: pd.DataFrame, lookback: int) -> pd.Series:
+        """Calculate On-Balance Volume with given lookback period."""
+        try:
+            price_change = data['close'].diff()
+            volume_direction = np.where(price_change > 0, data['volume'], 
+                                      np.where(price_change < 0, -data['volume'], 0))
+            obv = pd.Series(volume_direction).cumsum()
+            return obv.rolling(window=lookback).mean()
+        except Exception as e:
+            self.logger.warning(f"OBV calculation failed: {e}")
+            return pd.Series(index=data.index, dtype=float)
+    
+    def _calculate_volume_roc(self, data: pd.DataFrame, lookback: int) -> pd.Series:
+        """Calculate Volume Rate of Change with given lookback period."""
+        try:
+            volume_roc = data['volume'].pct_change(periods=lookback) * 100
+            return volume_roc.fillna(0)
+        except Exception as e:
+            self.logger.warning(f"Volume ROC calculation failed: {e}")
+            return pd.Series(index=data.index, dtype=float)
+    
+    def _calculate_williams_r(self, data: pd.DataFrame, lookback: int) -> pd.Series:
+        """Calculate Williams %R with given lookback period."""
+        try:
+            highest_high = data['high'].rolling(window=lookback).max()
+            lowest_low = data['low'].rolling(window=lookback).min()
+            williams_r = -100 * ((highest_high - data['close']) / (highest_high - lowest_low))
+            return williams_r.fillna(-50)
+        except Exception as e:
+            self.logger.warning(f"Williams %R calculation failed: {e}")
+            return pd.Series(index=data.index, dtype=float)
+    
+    def _calculate_cci(self, data: pd.DataFrame, lookback: int) -> pd.Series:
+        """Calculate Commodity Channel Index with given lookback period."""
+        try:
+            typical_price = (data['high'] + data['low'] + data['close']) / 3
+            sma = typical_price.rolling(window=lookback).mean()
+            mean_deviation = typical_price.rolling(window=lookback).apply(
+                lambda x: np.mean(np.abs(x - np.mean(x)))
+            )
+            cci = (typical_price - sma) / (0.015 * mean_deviation)
+            return cci.fillna(0)
+        except Exception as e:
+            self.logger.warning(f"CCI calculation failed: {e}")
+            return pd.Series(index=data.index, dtype=float)
+    
+    def _calculate_momentum(self, data: pd.DataFrame, lookback: int) -> pd.Series:
+        """Calculate Momentum with given lookback period."""
+        try:
+            momentum = data['close'] - data['close'].shift(lookback)
+            return momentum.fillna(0)
+        except Exception as e:
+            self.logger.warning(f"Momentum calculation failed: {e}")
+            return pd.Series(index=data.index, dtype=float)
+    
+    def _calculate_roc(self, data: pd.DataFrame, lookback: int) -> pd.Series:
+        """Calculate Rate of Change with given lookback period."""
+        try:
+            roc = data['close'].pct_change(periods=lookback) * 100
+            return roc.fillna(0)
+        except Exception as e:
+            self.logger.warning(f"ROC calculation failed: {e}")
+            return pd.Series(index=data.index, dtype=float)
+    
+    def _calculate_volatility_bands(self, data: pd.DataFrame, lookback: int) -> pd.Series:
+        """Calculate Volatility Bands middle line with given lookback period."""
+        try:
+            volatility = data['close'].rolling(window=lookback).std()
+            sma = data['close'].rolling(window=lookback).mean()
+            return sma + volatility  # Return upper band as representative
+        except Exception as e:
+            self.logger.warning(f"Volatility Bands calculation failed: {e}")
+            return pd.Series(index=data.index, dtype=float)
+    
+    def _calculate_keltner_channels(self, data: pd.DataFrame, lookback: int) -> pd.Series:
+        """Calculate Keltner Channels middle line with given lookback period."""
+        try:
+            ema = data['close'].ewm(span=lookback).mean()
+            return ema
+        except Exception as e:
+            self.logger.warning(f"Keltner Channels calculation failed: {e}")
+            return pd.Series(index=data.index, dtype=float)
+    
+    def _calculate_sma(self, data: pd.DataFrame, lookback: int) -> pd.Series:
+        """Calculate Simple Moving Average with given lookback period."""
+        try:
+            return data['close'].rolling(window=lookback).mean()
+        except Exception as e:
+            self.logger.warning(f"SMA calculation failed: {e}")
+            return pd.Series(index=data.index, dtype=float)
+    
+    def _calculate_ema(self, data: pd.DataFrame, lookback: int) -> pd.Series:
+        """Calculate Exponential Moving Average with given lookback period."""
+        try:
+            return data['close'].ewm(span=lookback).mean()
+        except Exception as e:
+            self.logger.warning(f"EMA calculation failed: {e}")
             return pd.Series(index=data.index, dtype=float)
     
     def _create_output_directories(self):

@@ -28,6 +28,13 @@ from dataclasses import dataclass, field
 from src.utils.logger import system_logger
 from src.utils.tprint import tprint
 
+# Import additional tprint functions - fail fast if not available
+try:
+    from src.utils.tprint import tprint_warning, tprint_error, tprint_info, tprint_success
+except ImportError as e:
+    raise ImportError(f"Extended tprint functions required but not available: {e}. "
+                     f"Please ensure src.utils.tprint is properly installed.")
+
 logger = system_logger.getChild('ModelTrainingSubPipeline')
 
 class ExecutionMode(Enum):

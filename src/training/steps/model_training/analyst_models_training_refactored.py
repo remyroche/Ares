@@ -22,178 +22,67 @@ import json
 import time
 import traceback
 
-# Safe psutil import
+# Required psutil import - fail fast if not available for production use
 try:
     import psutil
     PSUTIL_AVAILABLE = True
 except ImportError:
-    print("Warning: psutil not available, using fallback system monitoring")
     PSUTIL_AVAILABLE = False
-    # Create a minimal psutil-like interface
-    class MockPsutil:
-        class Process:
-            def memory_info(self):
-                return type('MockMemoryInfo', (), {'rss': 1024 * 1024 * 100})()  # 100MB
-        
-        def cpu_percent(self, interval=None):
-            return 50.0  # 50% CPU usage
-        
-        def virtual_memory(self):
-            return type('MockVirtualMemory', (), {
-                'total': 8 * 1024 * 1024 * 1024,  # 8GB
-                'available': 4 * 1024 * 1024 * 1024,  # 4GB
-                'percent': 50.0
-            })()
-        
-        def swap_memory(self):
-            return type('MockSwapMemory', (), {
-                'total': 2 * 1024 * 1024 * 1024,  # 2GB
-                'percent': 10.0
-            })()
-        
-        def disk_usage(self, path):
-            return type('MockDiskUsage', (), {
-                'total': 100 * 1024 * 1024 * 1024,  # 100GB
-                'used': 50 * 1024 * 1024 * 1024,   # 50GB
-                'free': 50 * 1024 * 1024 * 1024    # 50GB
-            })()
-        
-        def getloadavg(self):
-            return (1.0, 1.0, 1.0)
-        
-        def cpu_count(self):
-            return 4
-        
-        def Process(self):
-            return self.Process()
-    
-    psutil = MockPsutil()
+    psutil = None
 from contextlib import contextmanager
 import sys
 import os
 
-# Safe numpy import
+# Required numpy import - fail fast if not available
 try:
     import numpy as np
     NUMPY_AVAILABLE = True
 except ImportError:
-    print("Warning: numpy not available, using fallback array operations")
     NUMPY_AVAILABLE = False
-    # Create a minimal numpy-like interface
-    class MockNumpy:
-        def __init__(self):
-            self.inf = float('inf')
-            self.nan = float('nan')
-        
-        def array(self, data, dtype=None):
-            return data
-        
-        def ndarray(self, shape, dtype=None):
-            return [0] * (shape[0] if isinstance(shape, (list, tuple)) else shape)
-        
-        def isnan(self, arr):
-            return [False] * len(arr) if hasattr(arr, '__len__') else False
-        
-        def isinf(self, arr):
-            return [False] * len(arr) if hasattr(arr, '__len__') else False
-        
-        def isfinite(self, val):
-            return True
-        
-        def mean(self, arr):
-            return sum(arr) / len(arr) if hasattr(arr, '__len__') and len(arr) > 0 else 0.0
-        
-        def std(self, arr):
-            if not hasattr(arr, '__len__') or len(arr) <= 1:
-                return 0.0
-            mean_val = self.mean(arr)
-            variance = sum((x - mean_val) ** 2 for x in arr) / (len(arr) - 1)
-            return variance ** 0.5
-        
-        def min(self, arr):
-            return min(arr) if hasattr(arr, '__len__') and len(arr) > 0 else 0
-        
-        def max(self, arr):
-            return max(arr) if hasattr(arr, '__len__') and len(arr) > 0 else 0
-        
-        def unique(self, arr):
-            return list(set(arr)) if hasattr(arr, '__len__') else [arr]
-        
-        def bincount(self, arr):
-            counts = {}
-            for val in arr:
-                counts[val] = counts.get(val, 0) + 1
-            max_val = max(counts.keys()) if counts else 0
-            return [counts.get(i, 0) for i in range(max_val + 1)]
-        
-        def random(self):
-            import random
-            return type('MockRandom', (), {
-                'randn': lambda *args: [random.gauss(0, 1) for _ in range(args[0] if args else 1)],
-                'randint': lambda low, high, size: [random.randint(low, high-1) for _ in range(size)]
-            })()
-    
-    np = MockNumpy()
+    np = None
 
-# Safe pandas import
+# Required pandas import - fail fast if not available
 try:
     import pandas as pd
     PANDAS_AVAILABLE = True
 except ImportError:
-    print("Warning: pandas not available, using fallback DataFrame operations")
     PANDAS_AVAILABLE = False
-    # Create a minimal pandas-like interface
-    class MockDataFrame:
-        def __init__(self, data=None, columns=None):
-            self.data = data if data is not None else []
-            self.columns = columns if columns is not None else []
-            self.shape = (len(self.data), len(self.columns)) if self.data else (0, 0)
-        
-        def isnull(self):
-            return MockDataFrame([[False] * len(self.columns) for _ in self.data])
-        
-        def sum(self):
-            return [0] * len(self.columns)
-        
-        def duplicated(self):
-            return [False] * len(self.data)
-        
-        def select_dtypes(self, include=None):
-            return MockDataFrame()
-        
-        def memory_usage(self, deep=True):
-            return [0] * len(self.columns)
-        
-        def to_parquet(self, path):
-            pass
-        
-        def to_dict(self):
-            return {}
-    
-    class MockSeries:
-        def __init__(self, data=None):
-            self.data = data if data is not None else []
-        
-        def sum(self):
-            return 0
-        
-        def mean(self):
-            return 0.0
-        
-        def std(self):
-            return 0.0
-    
-    pd = type('MockPandas', (), {
-        'DataFrame': MockDataFrame,
-        'Series': MockSeries,
-        'read_parquet': lambda path: MockDataFrame(),
-        'to_datetime': lambda x: x
-    })()
+    pd = None
 
 # Core imports
 from src.utils.logger import system_logger
 from src.utils.ml_common.config import PerRegimeTrainingConfig
 from src.utils.ml_common.training import PerRegimeTrainingStep
+
+# Dependency validation functions
+def validate_critical_dependencies():
+    """Validate that all critical dependencies are available. Fast fail if not."""
+    missing_deps = []
+    
+    if not NUMPY_AVAILABLE:
+        missing_deps.append("numpy")
+    
+    if not PANDAS_AVAILABLE:
+        missing_deps.append("pandas")
+    
+    if not PSUTIL_AVAILABLE:
+        missing_deps.append("psutil")
+    
+    if missing_deps:
+        error_msg = f"Critical dependencies missing: {', '.join(missing_deps)}. " \
+                   f"Install with: pip install {' '.join(missing_deps)}"
+        raise ImportError(error_msg)
+
+def validate_runtime_dependencies():
+    """Validate dependencies at runtime before executing operations."""
+    if np is None:
+        raise RuntimeError("NumPy is required for array operations. Install with: pip install numpy")
+    
+    if pd is None:
+        raise RuntimeError("Pandas is required for data operations. Install with: pip install pandas")
+    
+    if psutil is None:
+        raise RuntimeError("psutil is required for system monitoring. Install with: pip install psutil")
 
 # Enhanced tprint logging
 from src.utils.tprint import (
@@ -499,7 +388,11 @@ logger = system_logger.getChild('AnalystModelsTrainingEnhanced')
 
 @contextmanager
 def monitor_resources(operation_name: str, logger: logging.Logger):
-    """Enhanced context manager for monitoring resource usage with hardware optimization."""
+    """Enhanced context manager for monitoring resource usage - fails fast if psutil unavailable."""
+    # Fast fail if psutil is not available
+    if not PSUTIL_AVAILABLE or psutil is None:
+        raise RuntimeError("psutil is required for resource monitoring. Install with: pip install psutil")
+    
     start_time = time.time()
     start_memory = get_memory_usage() / 1024 / 1024  # MB
     start_cpu = psutil.cpu_percent()
@@ -931,6 +824,9 @@ class AnalystModelsTrainingStepRefactored(PerRegimeTrainingStep):
             config: Per-regime training configuration
         """
         try:
+            # Fast fail if critical dependencies are missing
+            validate_critical_dependencies()
+            
             with monitor_resources("Enhanced Analyst Models Training Initialization", logger):
                 tprint_info("🚀 Initializing Enhanced Analyst Models Training Step")
                 
@@ -1533,6 +1429,9 @@ class AnalystModelsTrainingStepRefactored(PerRegimeTrainingStep):
             RuntimeError: If training fails
         """
         try:
+            # Fast fail if runtime dependencies are missing
+            validate_runtime_dependencies()
+            
             # Initialize training metrics and progress tracking
             self.training_metrics['start_time'] = datetime.now()
             start_time = time.time()
@@ -2714,6 +2613,9 @@ def execute_analyst_models_training_enhanced(
         RuntimeError: If training fails
     """
     try:
+        # Fast fail if critical dependencies are missing
+        validate_critical_dependencies()
+        
         tprint_info("🚀 Starting enhanced analyst models training execution")
         
         # Create enhanced step

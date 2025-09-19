@@ -42,6 +42,21 @@ from src.utils.tprint import tprint
 from .validation_utils import get_validator, ValidationErrorType, ValidationResult, create_standardized_error
 from .config_utils import get_config_manager, get_path_manager
 
+# Use existing error handling utilities
+from src.utils.enhanced_error_handler import (
+    EnhancedErrorHandler, ErrorSeverity, ErrorCategory, ErrorContext
+)
+
+# Use existing hardware utilities  
+from src.utils.hardware.unified_hardware_manager import UnifiedHardwareManager
+from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer
+from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer
+from src.utils.hardware.m1_gpu_utils import get_m1_gpu_manager
+
+# Use existing data validation utilities
+from src.utils.data.validation.validators import CrossStepValidator
+from src.utils.data.quality.data_quality import DataQualityFramework
+
 # Import common utilities
 from src.utils.common_operations import (
     safe_dataframe_operation, validate_dataframe_columns, safe_convert_dtypes,
@@ -157,6 +172,20 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
         super().__init__(config)
         self.logger = system_logger.getChild('RegimeDataSplitting')
         
+        # Initialize error handler using existing utilities
+        error_context = ErrorContext(
+            operation="regime_data_splitting",
+            component="RegimeDataSplittingComponent"
+        )
+        self.error_handler = EnhancedErrorHandler(context=error_context, logger=self.logger)
+        
+        # Initialize hardware manager using existing utilities
+        self.hardware_manager = UnifiedHardwareManager(logger=self.logger)
+        
+        # Initialize data validation using existing utilities
+        self.cross_step_validator = CrossStepValidator()
+        self.data_quality_framework = DataQualityFramework()
+        
         # Validate dependencies and fail fast if missing
         self._validate_dependencies()
         
@@ -164,15 +193,17 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
         self.metrics = RegimeSplittingMetrics()
         self.start_time: Optional[datetime] = None
         
-        # Initialize hardware optimizations
+        # Initialize hardware optimizations using existing utilities
         self._initialize_hardware_optimizations()
         
         # Initialize common utilities
         self.math_validator = MathValidation()
         self.serializer = UniversalSerializer()
-        self.gpu_manager = get_gpu_manager()
-        self.memory_optimizer = get_memory_optimizer()
-        self.cpu_optimizer = get_cpu_optimizer()
+        
+        # Use hardware manager for all hardware operations
+        self.gpu_manager = self.hardware_manager.gpu_manager
+        self.memory_optimizer = self.hardware_manager.memory_optimizer  
+        self.cpu_optimizer = self.hardware_manager.cpu_optimizer
         
         # Initialize standardized validation and configuration
         self.validator = get_validator(self.logger)
@@ -201,26 +232,23 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
             raise
     
     def _initialize_hardware_optimizations(self) -> None:
-        """Initialize hardware optimizations for M1."""
+        """Initialize hardware optimizations using existing hardware manager."""
         try:
-            # Check if M1 hardware is available
-            if is_m1_available():
-                self.logger.info("🧠 M1 hardware detected, initializing optimizations")
-                
-                # Start memory monitoring
-                start_m1_memory_monitoring()
-                
-                # Optimize numpy for M1
-                self.cpu_optimizer.optimize_numpy_operations()
+            # Initialize hardware manager
+            init_result = self.hardware_manager.initialize()
+            
+            if init_result.get('success', False):
+                self.logger.info("🧠 Hardware optimizations initialized successfully")
+                self.logger.info(f"🧠 Hardware capabilities: {init_result.get('capabilities', {})}")
                 
                 # Log hardware info
-                gpu_info = self.gpu_manager.get_gpu_info()
-                cpu_info = self.cpu_optimizer.get_cpu_info()
-                
-                self.logger.info(f"🧠 Hardware Info - GPU: {gpu_info.get('gpu_name', 'N/A')}, "
-                               f"CPU Cores: {cpu_info.get('total_cores', 'N/A')}")
+                try:
+                    hardware_info = self.hardware_manager.get_system_info()
+                    self.logger.info(f"🧠 Hardware Info: {hardware_info}")
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Could not retrieve hardware info: {e}")
             else:
-                self.logger.info("💻 Non-M1 hardware detected, using standard optimizations")
+                self.logger.info("💻 Using standard optimizations")
                 
         except Exception as e:
             self.logger.warning(f"⚠️ Hardware optimization initialization failed: {e}")
@@ -253,26 +281,41 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
         report = RegimeSplittingReport(status=RegimeSplittingStatus.IN_PROGRESS)
         tprint(f'📊 Initialized report with status: {report.status.value}')
         
-        # Fast fail validation for critical inputs with standardized error messages
+        # Fast fail validation for critical inputs using existing error handler
         if data is None:
-            error_msg = "CRITICAL_ERROR: Input data is None. Action required: Provide valid market data for regime splitting."
-            self.logger.error(f"❌ {error_msg}")
+            error_msg = "Input data is None. Action required: Provide valid market data for regime splitting."
+            self.error_handler.handle_error(
+                ValueError(error_msg),
+                severity=ErrorSeverity.CRITICAL,
+                category=ErrorCategory.VALIDATION,
+                recovery_action="Provide valid market data for regime splitting"
+            )
             tprint(f"❌ {error_msg}")
             report.status = RegimeSplittingStatus.FAILED
             report.errors.append(error_msg)
             return self._create_failure_result(report, error_msg)
         
         if not isinstance(pipeline_state, dict):
-            error_msg = "CRITICAL_ERROR: Pipeline state must be a dictionary. Action required: Ensure pipeline_state is properly initialized as a dict."
-            self.logger.error(f"❌ {error_msg}")
+            error_msg = "Pipeline state must be a dictionary. Action required: Ensure pipeline_state is properly initialized as a dict."
+            self.error_handler.handle_error(
+                ValueError(error_msg),
+                severity=ErrorSeverity.CRITICAL,
+                category=ErrorCategory.VALIDATION,
+                recovery_action="Ensure pipeline_state is properly initialized as a dict"
+            )
             tprint(f"❌ {error_msg}")
             report.status = RegimeSplittingStatus.FAILED
             report.errors.append(error_msg)
             return self._create_failure_result(report, error_msg)
         
         if not self.config.symbol or not self.config.exchange:
-            error_msg = "CRITICAL_ERROR: Symbol and exchange must be configured. Action required: Set config.symbol and config.exchange before execution."
-            self.logger.error(f"❌ {error_msg}")
+            error_msg = "Symbol and exchange must be configured. Action required: Set config.symbol and config.exchange before execution."
+            self.error_handler.handle_error(
+                ValueError(error_msg),
+                severity=ErrorSeverity.CRITICAL,
+                category=ErrorCategory.CONFIGURATION,
+                recovery_action="Set config.symbol and config.exchange before execution"
+            )
             tprint(f"❌ {error_msg}")
             report.status = RegimeSplittingStatus.FAILED
             report.errors.append(error_msg)
@@ -281,7 +324,7 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
         try:
             # Step 1: Validate inputs
             tprint('🔍 Step 1: Validating inputs...')
-            validation_result = await self._validate_inputs(data, pipeline_state)
+            validation_result = self._validate_inputs(data, pipeline_state)
             if not validation_result['valid']:
                 tprint(f'❌ Input validation failed: {validation_result["errors"]}')
                 report.status = RegimeSplittingStatus.VALIDATION_FAILED
@@ -291,7 +334,7 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
             
             # Step 2: Load and prepare data
             tprint('📊 Step 2: Loading and preparing market data...')
-            market_data = await self._load_and_prepare_data(data)
+            market_data = self._load_and_prepare_data(data)
             if market_data is None:
                 tprint('❌ Failed to load market data')
                 report.status = RegimeSplittingStatus.FAILED
@@ -301,7 +344,7 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
             
             # Step 3: Get regime discovery results
             tprint('🔍 Step 3: Retrieving regime discovery results...')
-            regime_discovery = await self._get_regime_discovery_results(pipeline_state)
+            regime_discovery = self._get_regime_discovery_results(pipeline_state)
             if not regime_discovery:
                 tprint('❌ No regime discovery results available')
                 report.status = RegimeSplittingStatus.FAILED
@@ -324,7 +367,7 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
             
             # Step 5: Validate results
             tprint('🔍 Step 5: Validating splitting results...')
-            validation_result = await self._validate_splitting_results(splitting_result, report)
+            validation_result = self._validate_splitting_results(splitting_result, report)
             if not validation_result['valid']:
                 tprint(f'❌ Result validation failed: {validation_result["errors"]}')
                 report.status = RegimeSplittingStatus.VALIDATION_FAILED
@@ -334,7 +377,7 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
             
             # Step 6: Generate comprehensive report
             tprint('📊 Step 6: Generating comprehensive report...')
-            report = await self._generate_comprehensive_report(
+            report = self._generate_comprehensive_report(
                 splitting_result, market_data, report
             )
             tprint('✅ Comprehensive report generated')
@@ -377,7 +420,7 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
             
             return self._create_failure_result(report, str(e))
     
-    async def _validate_inputs(self, data: Any, pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
+    def _validate_inputs(self, data: Any, pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
         """Validate input data and pipeline state."""
         self.logger.info("🔍 Validating inputs...")
         tprint("🔍 Validating inputs...")
@@ -422,7 +465,7 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
         
         return validation_result
     
-    async def _load_and_prepare_data(self, data: Any) -> Optional[pd.DataFrame]:
+    def _load_and_prepare_data(self, data: Any) -> Optional[pd.DataFrame]:
         """Load and prepare market data for regime splitting using common utilities."""
         self.logger.info("📊 Loading and preparing market data...")
         tprint("📊 Loading and preparing market data...")
@@ -496,7 +539,7 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
             tprint(f"❌ Error loading market data: {e}")
             return None
     
-    async def _get_regime_discovery_results(self, pipeline_state: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    def _get_regime_discovery_results(self, pipeline_state: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Get regime discovery results from pipeline state."""
         self.logger.info("🔍 Retrieving regime discovery results...")
         
@@ -546,8 +589,8 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
         """Perform the actual regime data splitting process using common utilities and hardware optimizations."""
         self.logger.info("✂️ Performing regime data splitting...")
         
-        # Use memory checkpoint for M1 optimization
-        with memory_checkpoint("regime_splitting"):
+        # Use hardware manager for proper memory management
+        with self.hardware_manager.memory_context("regime_splitting"):
             try:
                 # Extract regime states and probabilities using safe operations
                 regime_states = self._extract_regime_states(regime_discovery)
@@ -560,24 +603,156 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                         'data': None
                     }
                 
-                # Align data lengths with memory optimization
-                min_len = min(len(market_data), len(regime_states))
-                tprint(f"📊 Aligning data lengths: {len(market_data)} -> {min_len}")
+            # Align data lengths with proper validation and temporal consistency checks
+            original_market_len = len(market_data)
+            original_regime_len = len(regime_states)
+            min_len = min(original_market_len, original_regime_len)
+            
+            # Validate data alignment impact
+            data_loss_percentage = ((max(original_market_len, original_regime_len) - min_len) / 
+                                  max(original_market_len, original_regime_len)) * 100
+            
+            # Use existing data quality framework for validation
+            if data_loss_percentage > 5.0:  # More than 5% data loss
+                warning_msg = f"Data alignment will lose {data_loss_percentage:.1f}% of data ({max(original_market_len, original_regime_len) - min_len} rows)"
+                self.logger.warning(f"⚠️ {warning_msg}")
+                tprint(f"⚠️ {warning_msg}")
+                report.warnings.append(warning_msg)
                 
-                # Use safe DataFrame operations
+                if data_loss_percentage > 20.0:  # Critical data loss
+                    error_msg = f"Critical data loss during alignment: {data_loss_percentage:.1f}%"
+                    self.logger.error(f"❌ {error_msg}")
+                    tprint(f"❌ {error_msg}")
+                    report.errors.append(error_msg)
+            
+            if min_len == 0:
+                error_msg = "No overlapping data between market data and regime states. Action required: Ensure market data and regime states have compatible time ranges."
+                self.error_handler.handle_error(
+                    ValueError(error_msg),
+                    severity=ErrorSeverity.CRITICAL,
+                    category=ErrorCategory.DATA_QUALITY,
+                    recovery_action="Ensure market data and regime states have compatible time ranges"
+                )
+                return {
+                    'success': False,
+                    'errors': [error_msg],
+                    'data': None
+                }
+            
+            tprint(f"📊 Aligning data lengths: market_data={original_market_len}, regime_states={original_regime_len} -> {min_len}")
+            
+            # Validate temporal consistency if timestamp columns exist
+            temporal_validation_passed = True
+            if hasattr(market_data, 'index') and hasattr(market_data.index, 'name') and market_data.index.name == 'timestamp':
+                # DataFrame has timestamp index
+                market_timestamps = market_data.index[:min_len]
+                if len(market_timestamps) > 1:
+                    # Check for temporal consistency (monotonic increasing)
+                    if not market_timestamps.is_monotonic_increasing:
+                        warning_msg = "Market data timestamps are not monotonic increasing - temporal consistency may be compromised"
+                        self.logger.warning(f"⚠️ {warning_msg}")
+                        report.warnings.append(warning_msg)
+                        temporal_validation_passed = False
+            elif 'timestamp' in market_data.columns:
+                # DataFrame has timestamp column
+                market_timestamps = market_data['timestamp'].iloc[:min_len]
+                if len(market_timestamps) > 1:
+                    # Check for temporal consistency
+                    if not market_timestamps.is_monotonic_increasing:
+                        warning_msg = "Market data timestamps are not monotonic increasing - temporal consistency may be compromised"
+                        self.logger.warning(f"⚠️ {warning_msg}")
+                        report.warnings.append(warning_msg)
+                        temporal_validation_passed = False
+            
+            # Use safe DataFrame operations with proper error handling
+            try:
                 market_data_aligned = safe_dataframe_operation(
                     market_data, lambda df: df.iloc[:min_len].copy()
                 )
+                if market_data_aligned is None:
+                    raise ValueError("Failed to align market data")
+            except Exception as e:
+                error = self.error_handler.handle_alignment_error(
+                    f"Failed to align market data: {str(e)}",
+                    "Check market data format and ensure it can be properly sliced",
+                    context={'exception': str(e), 'min_len': min_len},
+                    severity=ErrorSeverity.HIGH
+                )
+                return {
+                    'success': False,
+                    'errors': [error.to_string()],
+                    'data': None
+                }
+            
+            try:
                 regime_states_aligned = regime_states[:min_len]
-                
-                if regime_probabilities is not None:
+                # Validate regime states alignment
+                if len(regime_states_aligned) != min_len:
+                    raise ValueError(f"Regime states alignment failed: expected {min_len}, got {len(regime_states_aligned)}")
+            except Exception as e:
+                error = self.error_handler.handle_alignment_error(
+                    f"Failed to align regime states: {str(e)}",
+                    "Check regime states format and ensure it can be properly sliced",
+                    context={'exception': str(e), 'min_len': min_len},
+                    severity=ErrorSeverity.HIGH
+                )
+                return {
+                    'success': False,
+                    'errors': [error.to_string()],
+                    'data': None
+                }
+            
+            if regime_probabilities is not None:
+                try:
                     regime_probabilities_aligned = regime_probabilities[:min_len]
-                else:
+                    # Validate probabilities alignment
+                    if len(regime_probabilities_aligned) != min_len:
+                        self.logger.warning("⚠️ Regime probabilities alignment mismatch, setting to None")
+                        regime_probabilities_aligned = None
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Failed to align regime probabilities: {e}, setting to None")
                     regime_probabilities_aligned = None
-                
-                # Clean up original data references to free memory
-                del market_data
-                mem_optimize()  # Use common memory optimization
+            else:
+                regime_probabilities_aligned = None
+            
+            # Final validation of aligned data
+            if len(market_data_aligned) != len(regime_states_aligned):
+                error = self.error_handler.handle_alignment_error(
+                    f"Data alignment validation failed: market_data={len(market_data_aligned)}, regime_states={len(regime_states_aligned)}",
+                    "Review data alignment logic and ensure consistent processing",
+                    context={
+                        'market_data_length': len(market_data_aligned),
+                        'regime_states_length': len(regime_states_aligned),
+                        'expected_length': min_len
+                    },
+                    severity=ErrorSeverity.CRITICAL
+                )
+                return {
+                    'success': False,
+                    'errors': [error.to_string()],
+                    'data': None
+                }
+            
+            # Log alignment success
+            alignment_info = {
+                'original_market_data_length': original_market_len,
+                'original_regime_states_length': original_regime_len,
+                'aligned_length': min_len,
+                'data_loss_percentage': data_loss_percentage,
+                'temporal_validation_passed': temporal_validation_passed
+            }
+            self.logger.info(f"✅ Data alignment completed successfully: {alignment_info}")
+            
+            # Clean up original data references using hardware manager
+            del market_data
+            
+            # Optimize memory using hardware manager
+            try:
+                memory_result = self.hardware_manager.optimize_memory()
+                self.logger.debug(f"Memory optimization result: {memory_result}")
+            except Exception as e:
+                self.logger.warning(f"⚠️ Memory optimization failed: {e}")
+                # Continue without memory optimization
                 
                 # Add regime information to market data using safe operations
                 market_data_aligned['regime_state'] = regime_states_aligned
@@ -782,7 +957,7 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
             self.logger.error(f"❌ Error in M1-optimized regime statistics: {e}")
             return self._calculate_regime_statistics(market_data)
     
-    async def _validate_splitting_results(
+    def _validate_splitting_results(
         self, 
         splitting_result: Dict[str, Any], 
         report: RegimeSplittingReport
@@ -823,10 +998,12 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                 validation_result['errors'].append("No regime states found")
                 return validation_result
             
-            # Check regime diversity
+            # Check regime diversity using existing validation patterns
             unique_regimes = len(np.unique(regime_states))
             if unique_regimes < 2:
                 validation_result['warnings'].append(f"Only {unique_regimes} regime(s) found - may indicate poor regime discovery")
+            elif unique_regimes > 20:
+                validation_result['warnings'].append(f"Many regimes found ({unique_regimes}) - may indicate over-segmentation"
             
             # Check data alignment
             if len(market_data) != len(regime_states):
@@ -884,7 +1061,7 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                 'warnings': []
             }
     
-    async def _generate_comprehensive_report(
+    def _generate_comprehensive_report(
         self,
         splitting_result: Dict[str, Any],
         market_data: pd.DataFrame,
@@ -1169,26 +1346,39 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
             }
         )
     
-    def cleanup(self) -> None:
-        """Clean up resources and stop hardware optimizations."""
+    def cleanup(self) -> Dict[str, Any]:
+        """Clean up resources using hardware manager."""
         try:
-            # Stop memory monitoring
-            stop_m1_memory_monitoring()
-            
-            # Clean up M1 optimizers
-            cleanup_m1_optimizers()
-            
-            # Clear any cached data
-            mem_optimize()
-            
-            self.logger.info("🧹 Cleanup completed successfully")
+            cleanup_result = self.hardware_manager.cleanup()
+            self.logger.info(f"🧹 Cleanup completed successfully: {cleanup_result}")
+            return cleanup_result
             
         except Exception as e:
             self.logger.warning(f"⚠️ Error during cleanup: {e}")
+            return {'status': 'failed', 'error': str(e)}
+    
+    def get_resource_metrics(self) -> Dict[str, Any]:
+        """Get current resource usage metrics."""
+        try:
+            metrics = self.hardware_manager.get_system_metrics()
+            return metrics
+        except Exception as e:
+            self.logger.warning(f"⚠️ Error getting resource metrics: {e}")
+            return {'error': str(e)}
+    
+    def __enter__(self):
+        """Context manager entry."""
+        return self
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Context manager exit with automatic cleanup."""
+        self.cleanup()
     
     def __del__(self):
-        """Destructor to ensure cleanup on object deletion."""
+        """Destructor with safe cleanup using hardware manager."""
         try:
-            self.cleanup()
+            if hasattr(self, 'hardware_manager'):
+                self.hardware_manager.cleanup()
         except Exception:
-            pass  # Ignore errors during cleanup
+            # Ignore errors during cleanup to avoid issues during interpreter shutdown
+            pass

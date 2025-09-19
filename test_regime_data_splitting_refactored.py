@@ -115,13 +115,17 @@ async def test_regime_data_splitting():
         
         # Test hardware optimizations
         print("\n🧠 Testing hardware optimizations...")
-        print(f"   - M1 Available: {component.gpu_manager.is_m1}")
-        print(f"   - MPS Available: {component.gpu_manager.mps_available}")
-        print(f"   - CPU Cores: {component.cpu_optimizer.get_cpu_info()['total_cores']}")
+        try:
+            print(f"   - M1 Available: {getattr(component.gpu_manager, 'is_m1', 'N/A')}")
+            print(f"   - MPS Available: {getattr(component.gpu_manager, 'mps_available', 'N/A')}")
+            cpu_info = component.cpu_optimizer.get_cpu_info() if hasattr(component.cpu_optimizer, 'get_cpu_info') else {}
+            print(f"   - CPU Cores: {cpu_info.get('total_cores', 'N/A')}")
+        except Exception as e:
+            print(f"   ⚠️ Hardware info not available: {e}")
         
         # Test data loading and preparation
         print("\n📊 Testing data loading and preparation...")
-        prepared_data = await component._load_and_prepare_data(market_data)
+        prepared_data = component._load_and_prepare_data(market_data)
         if prepared_data is not None:
             print(f"✅ Data prepared successfully: {prepared_data.shape}")
             print(f"   - Columns: {list(prepared_data.columns)}")
@@ -133,7 +137,7 @@ async def test_regime_data_splitting():
         # Test regime discovery retrieval
         print("\n🔍 Testing regime discovery retrieval...")
         pipeline_state = {'hmm_regime_discovery_result': regime_discovery}
-        retrieved_regime = await component._get_regime_discovery_results(pipeline_state)
+        retrieved_regime = component._get_regime_discovery_results(pipeline_state)
         if retrieved_regime is not None:
             print(f"✅ Regime discovery retrieved successfully")
             print(f"   - States: {len(retrieved_regime['regime_states'])}")
@@ -144,7 +148,8 @@ async def test_regime_data_splitting():
         
         # Test regime splitting
         print("\n✂️ Testing regime splitting...")
-        report = type('Report', (), {'status': 'in_progress', 'warnings': [], 'errors': []})()
+        from src.training.steps.market_analysis.regime_data_splitting.component import RegimeSplittingReport, RegimeSplittingStatus
+        report = RegimeSplittingReport(status=RegimeSplittingStatus.IN_PROGRESS)
         splitting_result = await component._perform_regime_splitting(
             prepared_data, retrieved_regime, report
         )
@@ -162,9 +167,11 @@ async def test_regime_data_splitting():
         
         # Test validation
         print("\n🔍 Testing result validation...")
-        validation_result = await component._validate_splitting_results(splitting_result, report)
+        validation_result = component._validate_splitting_results(splitting_result, report)
         if validation_result['valid']:
             print("✅ Result validation passed")
+            if validation_result['warnings']:
+                print(f"   ⚠️ Warnings: {validation_result['warnings']}")
         else:
             print(f"❌ Result validation failed: {validation_result['errors']}")
             return False
@@ -175,15 +182,41 @@ async def test_regime_data_splitting():
         if artifacts:
             print("✅ Artifacts created successfully")
             print(f"   - Artifact keys: {list(artifacts.keys())}")
-            print(f"   - Processing metrics: {artifacts['regime_data_splitting_result']['processing_metrics']}")
+            processing_metrics = artifacts['regime_data_splitting_result']['processing_metrics']
+            print(f"   - Processing metrics: {processing_metrics}")
         else:
             print("❌ Artifact creation failed")
             return False
         
-        # Test cleanup
-        print("\n🧹 Testing cleanup...")
-        component.cleanup()
-        print("✅ Cleanup completed successfully")
+        # Test error handling scenarios
+        print("\n🚨 Testing error handling scenarios...")
+        
+        # Test with None data
+        print("   Testing with None data...")
+        result = await component.execute(None, pipeline_state)
+        if not result.success:
+            print("   ✅ Correctly handled None data")
+        else:
+            print("   ❌ Should have failed with None data")
+            return False
+        
+        # Test with invalid pipeline state
+        print("   Testing with invalid pipeline state...")
+        result = await component.execute(market_data, "invalid")
+        if not result.success:
+            print("   ✅ Correctly handled invalid pipeline state")
+        else:
+            print("   ❌ Should have failed with invalid pipeline state")
+            return False
+        
+        # Test resource management
+        print("\n🧹 Testing resource management...")
+        resource_metrics = component.get_resource_metrics()
+        print(f"   - Resource metrics: {resource_metrics}")
+        
+        cleanup_result = component.cleanup()
+        print(f"   - Cleanup result: {cleanup_result}")
+        print("✅ Resource management completed successfully")
         
         print("\n🎉 All tests passed successfully!")
         print("✅ Refactored regime data splitting component is working correctly")

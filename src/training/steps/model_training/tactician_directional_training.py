@@ -243,59 +243,79 @@ class DirectionalTacticianTrainingStep(TacticianModelsTrainingStepRefactored):
                                     feature_names: Optional[List[str]],
                                     hmm_states: Optional[np.ndarray]
                                 ) -> Dict[str, Any]:
-        """Execute directional training with multi-objective optimization."""
+        """Execute directional training with consistent regime handling."""
         training_metrics = {
             'directional_optimization': True,
-            'objectives': list(self.directional_objectives.keys()),
+            'objectives': list(self.entry_timing_objectives.keys()) if self.entry_timing_objectives else [],
             'training_method': 'directional_multi_objective',
+            'regime_handling': self._determine_regime_strategy(regime_labels),
             'errors': [],
             'warnings': [],
             'performance_metrics': {}
         }
         
         try:
-            # Use directional optimizer for training
-            directional_result = self.directional_optimizer.optimize_tactician_directionally(
-                X=X, y=y, regime_labels=regime_labels,
-                feature_names=feature_names, hmm_states=hmm_states,
-                max_trials=getattr(self.config, 'hpo_n_trials', 100)
-            )
+            # Validate regime handling consistency
+            regime_strategy = self._validate_and_normalize_regime_handling(regime_labels, training_metrics)
             
-            # Convert directional result to standard format
-            results = {
-                'models': {
-                    'directional_tactician': directional_result.model
-                },
-                'evaluations': {
-                    'directional_tactician': {
-                        'directional_accuracy': directional_result.directional_accuracy,
-                        'adverse_movement_minimization': directional_result.adverse_movement_minimization,
-                        'directional_profit_efficiency': directional_result.directional_profit_efficiency,
-                        'risk_adjusted_performance': directional_result.risk_adjusted_performance,
-                        'composite_score': directional_result.composite_score
+            # Use entry timing optimizer for training
+            if self.entry_timing_optimizer is not None:
+                optimization_result = self.entry_timing_optimizer.optimize_tactician_entry_timing(
+                    X=X, y=y, regime_labels=regime_labels,
+                    feature_names=feature_names, hmm_states=hmm_states,
+                    max_trials=getattr(self.config, 'hpo_n_trials', 100)
+                )
+                
+                # Convert optimization result to standard format
+                results = {
+                    'models': {
+                        'directional_tactician': optimization_result.model
+                    },
+                    'evaluations': {
+                        'directional_tactician': {
+                            'early_entry_penalty': optimization_result.directional_accuracy,
+                            'late_entry_penalty': optimization_result.adverse_movement_minimization,
+                            'optimal_entry_reward': optimization_result.directional_profit_efficiency,
+                            'entry_timing_efficiency': optimization_result.risk_adjusted_performance,
+                            'composite_score': optimization_result.composite_score
+                        }
+                    },
+                    'training_metrics': training_metrics,
+                    'directional_optimization': {
+                        'enabled': True,
+                        'objectives': self.entry_timing_objectives,
+                        'optimization_time': optimization_result.optimization_time,
+                        'n_trials': optimization_result.n_trials,
+                        'optimization_history': optimization_result.optimization_history,
+                        'regime_strategy': regime_strategy
                     }
-                },
-                'training_metrics': training_metrics,
-                'directional_optimization': {
-                    'enabled': True,
-                    'objectives': self.directional_objectives,
-                    'optimization_time': directional_result.optimization_time,
-                    'n_trials': directional_result.n_trials,
-                    'optimization_history': directional_result.optimization_history
                 }
-            }
+                
+                # Log success metrics
+                self.logger.info(f"✅ Entry timing optimization completed")
+                self.logger.info(f"   Early entry penalty: {optimization_result.directional_accuracy:.4f}")
+                self.logger.info(f"   Late entry penalty: {optimization_result.adverse_movement_minimization:.4f}")
+                self.logger.info(f"   Optimal entry reward: {optimization_result.directional_profit_efficiency:.4f}")
+                self.logger.info(f"   Entry timing efficiency: {optimization_result.risk_adjusted_performance:.4f}")
+                self.logger.info(f"   Composite score: {optimization_result.composite_score:.4f}")
+                
+            else:
+                # Fallback to standard training if optimizer not available
+                self.logger.warning("⚠️ Entry timing optimizer not available, using standard training")
+                results = self._execute_standard_training_fallback(X, y, regime_labels, feature_names, hmm_states)
+                training_metrics['warnings'].append("Used fallback training due to missing optimizer")
             
-            # Add ensemble training if enabled
-            if hasattr(self.config, 'enable_ensemble_training') and self.config.enable_ensemble_training:
-                ensemble_results = self._train_directional_ensemble(X, y, feature_names, results)
-                results.update(ensemble_results)
-            
-            self.logger.info(f"✅ Directional training completed")
-            self.logger.info(f"   Directional accuracy: {directional_result.directional_accuracy:.4f}")
-            self.logger.info(f"   Adverse movement min: {directional_result.adverse_movement_minimization:.4f}")
-            self.logger.info(f"   Profit efficiency: {directional_result.directional_profit_efficiency:.4f}")
-            self.logger.info(f"   Risk-adjusted perf: {directional_result.risk_adjusted_performance:.4f}")
-            self.logger.info(f"   Composite score: {directional_result.composite_score:.4f}")
+            # Add ensemble training if enabled and appropriate
+            if (hasattr(self.config, 'enable_ensemble_training') and 
+                self.config.enable_ensemble_training and 
+                regime_strategy != 'insufficient_data'):
+                
+                try:
+                    ensemble_results = self._train_directional_ensemble(X, y, feature_names, results, regime_strategy)
+                    results.update(ensemble_results)
+                except Exception as ensemble_error:
+                    self.logger.warning(f"⚠️ Ensemble training failed: {ensemble_error}")
+                    training_metrics['warnings'].append(f"Ensemble training failed: {ensemble_error}")
             
             return results
             
@@ -303,6 +323,82 @@ class DirectionalTacticianTrainingStep(TacticianModelsTrainingStepRefactored):
             training_metrics['errors'].append(str(e))
             self.logger.error(f"❌ Directional training execution failed: {e}")
             raise
+    
+    def _determine_regime_strategy(self, regime_labels: np.ndarray) -> str:
+        """Determine the appropriate regime handling strategy."""
+        try:
+            if regime_labels is None or len(regime_labels) == 0:
+                return 'no_regimes'
+            
+            unique_regimes = np.unique(regime_labels)
+            n_regimes = len(unique_regimes)
+            samples_per_regime = len(regime_labels) / n_regimes if n_regimes > 0 else 0
+            
+            # Determine strategy based on data characteristics
+            if n_regimes <= 1:
+                return 'single_regime'
+            elif samples_per_regime < 100:  # Too few samples per regime
+                return 'insufficient_data'
+            elif n_regimes <= 3 and samples_per_regime >= 500:
+                return 'per_regime_training'
+            else:
+                return 'unified_training'  # Too many regimes or unbalanced
+                
+        except Exception as e:
+            self.logger.warning(f"⚠️ Failed to determine regime strategy: {e}")
+            return 'unified_training'  # Safe fallback
+    
+    def _validate_and_normalize_regime_handling(self, regime_labels: np.ndarray, training_metrics: Dict[str, Any]) -> str:
+        """Validate and normalize regime handling approach."""
+        try:
+            regime_strategy = training_metrics.get('regime_handling', 'unified_training')
+            
+            # Validate regime labels
+            if regime_labels is not None and len(regime_labels) > 0:
+                unique_regimes = np.unique(regime_labels)
+                regime_counts = {regime: np.sum(regime_labels == regime) for regime in unique_regimes}
+                
+                training_metrics['regime_statistics'] = {
+                    'total_regimes': len(unique_regimes),
+                    'regime_counts': regime_counts,
+                    'min_regime_size': min(regime_counts.values()) if regime_counts else 0,
+                    'max_regime_size': max(regime_counts.values()) if regime_counts else 0,
+                    'regime_balance': min(regime_counts.values()) / max(regime_counts.values()) if regime_counts and max(regime_counts.values()) > 0 else 0
+                }
+                
+                # Adjust strategy based on actual data
+                min_regime_size = training_metrics['regime_statistics']['min_regime_size']
+                if min_regime_size < 50 and regime_strategy == 'per_regime_training':
+                    regime_strategy = 'unified_training'
+                    training_metrics['warnings'].append(f"Switched to unified training due to small regime size: {min_regime_size}")
+                    self.logger.info(f"🔄 Switched to unified training (min regime size: {min_regime_size})")
+                
+            else:
+                regime_strategy = 'single_regime'
+                training_metrics['regime_statistics'] = {'total_regimes': 0}
+            
+            return regime_strategy
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Regime validation failed: {e}")
+            return 'unified_training'
+    
+    def _execute_standard_training_fallback(self, X: np.ndarray, y: np.ndarray, 
+                                          regime_labels: np.ndarray, feature_names: Optional[List[str]], 
+                                          hmm_states: Optional[np.ndarray]) -> Dict[str, Any]:
+        """Execute standard training as fallback when directional optimization fails."""
+        try:
+            # Use parent class training method
+            return super().execute(X, y, regime_labels, feature_names, hmm_states)
+        except Exception as e:
+            self.logger.error(f"❌ Standard training fallback failed: {e}")
+            # Return minimal result structure
+            return {
+                'models': {},
+                'evaluations': {},
+                'training_metrics': {'error': str(e)},
+                'fallback_used': True
+            }
     
     def _train_directional_ensemble(self,
                                   X: np.ndarray,

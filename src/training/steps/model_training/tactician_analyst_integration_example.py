@@ -171,54 +171,139 @@ class TacticianAnalystIntegration:
         analyst_model_outputs: Optional[np.ndarray],
         all_analyst_models_outputs: Optional[Dict[str, np.ndarray]]
     ) -> Dict[str, Any]:
-        """Prepare combined features including Analyst outputs."""
+        """Prepare combined features with standardized naming conventions."""
         try:
             additional_features = []
             additional_feature_names = []
             analyst_features_added = 0
             hmm_features_added = 0
             
-            # Add HMM regime features
+            # Standardized feature naming convention
+            FEATURE_PREFIX_MAP = {
+                'base': 'tactician_base',
+                'hmm': 'hmm_regime',
+                'analyst_model': 'analyst_ml',
+                'analyst_legacy': 'analyst_legacy',
+                'ensemble': 'analyst_ensemble'
+            }
+            
+            # Add HMM regime features with standardized naming
             if hmm_regime_features is not None:
                 additional_features.append(hmm_regime_features)
-                additional_feature_names.extend([f"hmm_regime_{i}" for i in range(hmm_regime_features.shape[1])])
+                hmm_feature_names = [
+                    f"{FEATURE_PREFIX_MAP['hmm']}_feat_{i:03d}" 
+                    for i in range(hmm_regime_features.shape[1])
+                ]
+                additional_feature_names.extend(hmm_feature_names)
                 hmm_features_added = hmm_regime_features.shape[1]
-                self.logger.info(f"📊 Added {hmm_features_added} HMM regime features")
+                self.logger.info(f"📊 Added {hmm_features_added} HMM regime features with standardized naming")
             
-            # Add all analyst model outputs
+            # Add all analyst model outputs with standardized naming
             if all_analyst_models_outputs is not None:
                 for model_name, model_outputs in all_analyst_models_outputs.items():
+                    # Sanitize model name for feature naming
+                    sanitized_model_name = self._sanitize_feature_name(model_name)
+                    
                     additional_features.append(model_outputs)
-                    additional_feature_names.extend([f"analyst_{model_name}_{i}" for i in range(model_outputs.shape[1])])
+                    model_feature_names = [
+                        f"{FEATURE_PREFIX_MAP['analyst_model']}_{sanitized_model_name}_feat_{i:03d}" 
+                        for i in range(model_outputs.shape[1])
+                    ]
+                    additional_feature_names.extend(model_feature_names)
                     analyst_features_added += model_outputs.shape[1]
                 
                 self.logger.info(f"📊 Added {analyst_features_added} analyst model features from {len(all_analyst_models_outputs)} models")
             
-            # Add legacy analyst outputs
+            # Add legacy analyst outputs with standardized naming
             if analyst_model_outputs is not None:
                 additional_features.append(analyst_model_outputs)
-                additional_feature_names.extend([f"analyst_legacy_{i}" for i in range(analyst_model_outputs.shape[1])])
+                legacy_feature_names = [
+                    f"{FEATURE_PREFIX_MAP['analyst_legacy']}_feat_{i:03d}" 
+                    for i in range(analyst_model_outputs.shape[1])
+                ]
+                additional_feature_names.extend(legacy_feature_names)
                 analyst_features_added += analyst_model_outputs.shape[1]
                 self.logger.info(f"📊 Added {analyst_model_outputs.shape[1]} legacy analyst features")
+            
+            # Prepare base feature names with standardized naming
+            if feature_names is not None:
+                # Sanitize existing feature names
+                base_feature_names = [
+                    f"{FEATURE_PREFIX_MAP['base']}_{self._sanitize_feature_name(name)}" 
+                    for name in feature_names
+                ]
+            else:
+                # Generate standardized base feature names
+                base_feature_names = [
+                    f"{FEATURE_PREFIX_MAP['base']}_feat_{i:03d}" 
+                    for i in range(X.shape[1])
+                ]
             
             # Combine all features
             if additional_features:
                 X_combined = np.column_stack([X] + additional_features)
-                feature_names_combined = (feature_names or [f"feature_{i}" for i in range(X.shape[1])]) + additional_feature_names
+                feature_names_combined = base_feature_names + additional_feature_names
             else:
                 X_combined = X
-                feature_names_combined = feature_names or [f"feature_{i}" for i in range(X.shape[1])]
+                feature_names_combined = base_feature_names
+            
+            # Validate feature name uniqueness
+            if len(set(feature_names_combined)) != len(feature_names_combined):
+                self.logger.warning("⚠️ Duplicate feature names detected, adding suffixes")
+                feature_names_combined = self._ensure_unique_feature_names(feature_names_combined)
             
             return {
                 'X_combined': X_combined,
                 'feature_names': feature_names_combined,
                 'analyst_features_added': analyst_features_added,
-                'hmm_features_added': hmm_features_added
+                'hmm_features_added': hmm_features_added,
+                'naming_convention': FEATURE_PREFIX_MAP,
+                'total_features': len(feature_names_combined)
             }
             
         except Exception as e:
             self.logger.error(f"❌ Feature combination failed: {e}")
             raise
+    
+    def _sanitize_feature_name(self, name: str) -> str:
+        """Sanitize feature names to follow consistent naming convention."""
+        import re
+        
+        # Convert to lowercase and replace spaces/special chars with underscores
+        sanitized = re.sub(r'[^a-zA-Z0-9_]', '_', str(name).lower())
+        
+        # Remove multiple consecutive underscores
+        sanitized = re.sub(r'_+', '_', sanitized)
+        
+        # Remove leading/trailing underscores
+        sanitized = sanitized.strip('_')
+        
+        # Ensure it starts with a letter
+        if sanitized and not sanitized[0].isalpha():
+            sanitized = f"feat_{sanitized}"
+        
+        # Ensure minimum length
+        if len(sanitized) < 3:
+            sanitized = f"feat_{sanitized}"
+        
+        return sanitized
+    
+    def _ensure_unique_feature_names(self, feature_names: list) -> list:
+        """Ensure all feature names are unique by adding suffixes."""
+        unique_names = []
+        name_counts = {}
+        
+        for name in feature_names:
+            if name in name_counts:
+                name_counts[name] += 1
+                unique_name = f"{name}_v{name_counts[name]:02d}"
+            else:
+                name_counts[name] = 0
+                unique_name = name
+            
+            unique_names.append(unique_name)
+        
+        return unique_names
     
     def train_tactician_with_analyst_integration(
         self,

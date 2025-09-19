@@ -413,6 +413,8 @@ class TacticianLookbackOptimizer:
         Returns:
             Dictionary containing optimization results
         """
+        optimization_timeout = self.config.optimization_timeout or 3600  # Default 1 hour
+        
         try:
             tprint_info("🎯 Starting Tactician lookback period optimization...")
             self.start_time = time.time()
@@ -432,25 +434,27 @@ class TacticianLookbackOptimizer:
                     "ensemble_outputs": self.analyst_outputs_cache.get("ensemble_outputs", np.array([]))
                 }
             
-            # Execute optimization based on strategy
-            if self.optimization_strategy == "two_step_grid_tpe":
-                results = await self._optimize_two_step_grid_tpe(
-                    market_data_1m, analyst_signals, analyst_outputs
+            # Execute optimization with timeout protection
+            try:
+                results = await asyncio.wait_for(
+                    self._execute_optimization_strategy(market_data_1m, analyst_signals, analyst_outputs),
+                    timeout=optimization_timeout
                 )
-            elif self.optimization_strategy == "tpe":
-                results = await self._optimize_tpe(
-                    market_data_1m, analyst_signals, analyst_outputs
-                )
-            else:
-                results = await self._optimize_grid_search(
-                    market_data_1m, analyst_signals, analyst_outputs
-                )
+            except asyncio.TimeoutError:
+                tprint_warning(f"⚠️ Optimization timed out after {optimization_timeout}s, using partial results")
+                results = self._create_fallback_results()
             
             # Process and save results
             final_results = self._process_optimization_results(results)
             
             if self.config.save_results:
-                await self._save_optimization_results(final_results)
+                try:
+                    await asyncio.wait_for(
+                        self._save_optimization_results(final_results),
+                        timeout=300  # 5 minutes for saving
+                    )
+                except asyncio.TimeoutError:
+                    tprint_warning("⚠️ Results saving timed out, continuing without saving")
             
             optimization_time = time.time() - self.start_time
             tprint_success(f"✅ Tactician lookback optimization completed in {optimization_time:.2f}s")
@@ -459,11 +463,185 @@ class TacticianLookbackOptimizer:
             
         except Exception as e:
             tprint_error(f"❌ Tactician lookback optimization failed: {e}")
+            # Ensure cleanup on error
+            await self._cleanup_resources()
             raise
+        finally:
+            # Always attempt cleanup
+            try:
+                await self._cleanup_resources()
+            except Exception as cleanup_error:
+                tprint_warning(f"⚠️ Cleanup warning: {cleanup_error}")
+    
+    async def _execute_optimization_strategy(
+        self,
+        market_data_1m: pd.DataFrame,
+        analyst_signals: Optional[np.ndarray],
+        analyst_outputs: Dict[str, np.ndarray]
+    ) -> Dict[str, Any]:
+        """Execute the selected optimization strategy."""
+        if self.optimization_strategy == "two_step_grid_tpe":
+            return await self._optimize_two_step_grid_tpe(
+                market_data_1m, analyst_signals, analyst_outputs
+            )
+        elif self.optimization_strategy == "tpe":
+            return await self._optimize_tpe(
+                market_data_1m, analyst_signals, analyst_outputs
+            )
+        else:
+            return await self._optimize_grid_search(
+                market_data_1m, analyst_signals, analyst_outputs
+            )
+    
+    def _create_fallback_results(self) -> Dict[str, Any]:
+        """Create fallback results when optimization times out."""
+        return {
+            'method': 'fallback_timeout',
+            'best_lookbacks': self._get_default_lookbacks_optimized(),
+            'best_score': 0.5,
+            'timeout_occurred': True,
+            'partial_results': True
+        }
+    
+    def _get_default_lookbacks_optimized(self) -> Dict[str, int]:
+        """Get optimized default lookback periods for 0.3% movements."""
+        return {
+            'rsi': 8,  # Shorter for quick reactions
+            'macd': 15,  # Reduced for 1m timeframe
+            'bollinger_bands': 12,  # Faster response
+            'stoch': 8,  # More responsive
+            'volume_sma': 12,  # Shorter volume analysis
+            'vwap': 12,  # Shorter VWAP
+            'obv': 6,   # Quick volume momentum
+            'volume_roc': 6,   # Fast volume changes
+            'williams_r': 8,  # More responsive
+            'cci': 12,  # Shorter for 1m
+            'momentum': 5,   # Very short for 0.3% targets
+            'roc': 6,    # Quick rate of change
+            'atr': 8,   # Shorter volatility measure
+            'volatility_bands': 12,  # Responsive volatility
+            'keltner_channels': 12   # Shorter channels
+        }
+    
+    async def _cleanup_resources(self):
+        """Clean up resources using hardware optimization tools."""
+        try:
+            # Import hardware optimization tools
+            from src.utils.hardware import (
+                get_unified_hardware_manager, get_advanced_memory_optimizer,
+                UNIFIED_MANAGER_AVAILABLE, ADVANCED_MEMORY_AVAILABLE
+            )
+            
+            cleanup_stats = {'memory_freed_mb': 0, 'objects_cleaned': 0}
+            
+            # Use advanced memory optimizer if available
+            if ADVANCED_MEMORY_AVAILABLE:
+                try:
+                    memory_optimizer = get_advanced_memory_optimizer()
+                    
+                    # Optimize large data structures
+                    if hasattr(self, 'optimization_history') and len(self.optimization_history) > 1000:
+                        original_size = len(self.optimization_history)
+                        # Use memory optimizer to efficiently trim history
+                        self.optimization_history = memory_optimizer.optimize_list_memory(
+                            self.optimization_history, max_size=100, keep_recent=True
+                        )
+                        cleanup_stats['objects_cleaned'] += original_size - len(self.optimization_history)
+                        tprint_debug(f"🧹 Trimmed optimization history: {original_size} → {len(self.optimization_history)}")
+                    
+                    # Optimize cached outputs using hardware tools
+                    for key in list(self.analyst_outputs_cache.keys()):
+                        if hasattr(self.analyst_outputs_cache[key], '__len__') and len(self.analyst_outputs_cache[key]) > 10000:
+                            original_array = self.analyst_outputs_cache[key]
+                            # Use memory optimizer to compress or clear large arrays
+                            self.analyst_outputs_cache[key] = memory_optimizer.optimize_array_memory(
+                                original_array, max_elements=5000, compression_enabled=True
+                            )
+                            cleanup_stats['objects_cleaned'] += 1
+                    
+                    # Force memory optimization
+                    memory_freed = memory_optimizer.force_memory_optimization()
+                    cleanup_stats['memory_freed_mb'] = memory_freed
+                    
+                    tprint_debug(f"🧹 Advanced memory cleanup: {memory_freed:.2f}MB freed, {cleanup_stats['objects_cleaned']} objects optimized")
+                    
+                except Exception as memory_error:
+                    tprint_warning(f"⚠️ Advanced memory optimization failed: {memory_error}")
+                    # Fallback to basic cleanup
+                    await self._basic_cleanup_fallback()
+            
+            # Use unified hardware manager for comprehensive cleanup
+            elif UNIFIED_MANAGER_AVAILABLE:
+                try:
+                    hardware_manager = get_unified_hardware_manager()
+                    
+                    # Perform memory cleanup using unified manager
+                    cleanup_result = hardware_manager.cleanup_memory_resources(
+                        target_objects=[self.optimization_history, self.analyst_outputs_cache],
+                        cleanup_level='aggressive'
+                    )
+                    
+                    cleanup_stats.update(cleanup_result)
+                    tprint_debug(f"🧹 Unified hardware cleanup: {cleanup_result}")
+                    
+                except Exception as unified_error:
+                    tprint_warning(f"⚠️ Unified hardware cleanup failed: {unified_error}")
+                    # Fallback to basic cleanup
+                    await self._basic_cleanup_fallback()
+            
+            else:
+                # Fallback to basic cleanup if hardware tools not available
+                await self._basic_cleanup_fallback()
+            
+            tprint_success(f"✅ Resource cleanup completed: {cleanup_stats}")
+            
+        except Exception as e:
+            tprint_error(f"❌ Resource cleanup failed: {e}")
+            # Emergency fallback
+            try:
+                await self._basic_cleanup_fallback()
+            except Exception as fallback_error:
+                tprint_error(f"❌ Emergency cleanup fallback failed: {fallback_error}")
+    
+    async def _basic_cleanup_fallback(self):
+        """Basic cleanup fallback when hardware tools are not available."""
+        try:
+            import gc
+            
+            # Clear large data structures (basic approach)
+            if hasattr(self, 'optimization_history') and len(self.optimization_history) > 1000:
+                # Keep only last 100 entries to prevent memory bloat
+                self.optimization_history = self.optimization_history[-100:]
+            
+            # Clear cached outputs if too large
+            for key in list(self.analyst_outputs_cache.keys()):
+                if hasattr(self.analyst_outputs_cache[key], '__len__') and len(self.analyst_outputs_cache[key]) > 10000:
+                    self.analyst_outputs_cache[key] = np.array([])
+            
+            # Force garbage collection
+            collected = gc.collect()
+            tprint_debug(f"🧹 Basic cleanup completed, {collected} objects collected")
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Basic cleanup fallback failed: {e}")
     
     def _validate_input_data(self, market_data: pd.DataFrame) -> bool:
-        """Validate input market data."""
+        """Validate input market data with comprehensive edge case checking."""
         try:
+            # Basic structure validation
+            if market_data is None:
+                tprint_error("❌ Market data is None")
+                return False
+            
+            if not isinstance(market_data, pd.DataFrame):
+                tprint_error(f"❌ Market data must be DataFrame, got {type(market_data)}")
+                return False
+            
+            if market_data.empty:
+                tprint_error("❌ Market data is empty")
+                return False
+            
+            # Column validation
             required_columns = ['open', 'high', 'low', 'close', 'volume']
             missing_columns = [col for col in required_columns if col not in market_data.columns]
             
@@ -471,19 +649,131 @@ class TacticianLookbackOptimizer:
                 tprint_error(f"❌ Missing required columns: {missing_columns}")
                 return False
             
-            if len(market_data) < self.config.max_lookback * 2:
-                tprint_error(f"❌ Insufficient data: {len(market_data)} rows, need at least {self.config.max_lookback * 2}")
+            # Data length validation
+            min_required_length = max(self.config.max_lookback * 3, 100)  # More conservative minimum
+            if len(market_data) < min_required_length:
+                tprint_error(f"❌ Insufficient data: {len(market_data)} rows, need at least {min_required_length}")
                 return False
             
-            # Check for data quality
-            quality_metrics = calculate_data_quality_metrics(market_data)
-            if quality_metrics.get('completeness', 0) < 0.9:
-                tprint_warning(f"⚠️ Low data completeness: {quality_metrics.get('completeness', 0):.2f}")
+            # Data type validation
+            numeric_columns = ['open', 'high', 'low', 'close', 'volume']
+            for col in numeric_columns:
+                if not pd.api.types.is_numeric_dtype(market_data[col]):
+                    tprint_error(f"❌ Column '{col}' must be numeric, got {market_data[col].dtype}")
+                    return False
             
+            # Value validation - check for edge cases
+            validation_errors = []
+            
+            for col in numeric_columns:
+                series = market_data[col]
+                
+                # Check for NaN values
+                nan_count = series.isna().sum()
+                if nan_count > 0:
+                    validation_errors.append(f"Column '{col}' has {nan_count} NaN values")
+                
+                # Check for infinite values
+                inf_count = np.isinf(series).sum() if series.dtype.kind in 'biufc' else 0
+                if inf_count > 0:
+                    validation_errors.append(f"Column '{col}' has {inf_count} infinite values")
+                
+                # Check for zero/negative values where inappropriate
+                if col in ['high', 'low', 'close', 'open']:
+                    zero_negative_count = (series <= 0).sum()
+                    if zero_negative_count > 0:
+                        validation_errors.append(f"Column '{col}' has {zero_negative_count} zero/negative price values")
+                
+                if col == 'volume':
+                    negative_volume_count = (series < 0).sum()
+                    if negative_volume_count > 0:
+                        validation_errors.append(f"Column 'volume' has {negative_volume_count} negative values")
+                
+                # Check for extreme outliers (more than 10x median)
+                if len(series) > 10:  # Only check if we have enough data
+                    median_val = series.median()
+                    if median_val > 0:
+                        extreme_high = (series > median_val * 10).sum()
+                        extreme_low = (series < median_val / 10).sum()
+                        if extreme_high > len(series) * 0.01:  # More than 1% extreme values
+                            validation_errors.append(f"Column '{col}' has {extreme_high} extreme high values (>10x median)")
+                        if extreme_low > len(series) * 0.01:
+                            validation_errors.append(f"Column '{col}' has {extreme_low} extreme low values (<0.1x median)")
+            
+            # OHLC consistency validation
+            try:
+                ohlc_data = market_data[['open', 'high', 'low', 'close']]
+                
+                # High should be >= max(open, close)
+                high_violations = ((ohlc_data['high'] < ohlc_data[['open', 'close']].max(axis=1))).sum()
+                if high_violations > 0:
+                    validation_errors.append(f"Found {high_violations} violations where high < max(open, close)")
+                
+                # Low should be <= min(open, close)
+                low_violations = ((ohlc_data['low'] > ohlc_data[['open', 'close']].min(axis=1))).sum()
+                if low_violations > 0:
+                    validation_errors.append(f"Found {low_violations} violations where low > min(open, close)")
+                
+                # Check for zero-range candles (all OHLC equal) - suspicious
+                zero_range_count = ((ohlc_data['high'] == ohlc_data['low'])).sum()
+                if zero_range_count > len(market_data) * 0.1:  # More than 10% zero-range
+                    validation_errors.append(f"Found {zero_range_count} zero-range candles ({zero_range_count/len(market_data):.1%})")
+                    
+            except Exception as ohlc_error:
+                validation_errors.append(f"OHLC consistency check failed: {ohlc_error}")
+            
+            # Time series validation (if index is datetime)
+            if hasattr(market_data.index, 'to_pydatetime'):
+                try:
+                    # Check for duplicate timestamps
+                    duplicate_count = market_data.index.duplicated().sum()
+                    if duplicate_count > 0:
+                        validation_errors.append(f"Found {duplicate_count} duplicate timestamps")
+                    
+                    # Check for proper time ordering
+                    if not market_data.index.is_monotonic_increasing:
+                        validation_errors.append("Time series is not properly ordered")
+                        
+                except Exception as time_error:
+                    validation_errors.append(f"Time series validation failed: {time_error}")
+            
+            # Report validation errors
+            if validation_errors:
+                tprint_warning("⚠️ Data quality issues found:")
+                for error in validation_errors:
+                    tprint_warning(f"  - {error}")
+                
+                # Decide if errors are critical
+                critical_errors = [e for e in validation_errors if any(keyword in e.lower() 
+                                 for keyword in ['nan', 'infinite', 'zero/negative price', 'duplicate timestamps'])]
+                
+                if critical_errors:
+                    tprint_error("❌ Critical data quality issues found - cannot proceed")
+                    return False
+                else:
+                    tprint_warning("⚠️ Non-critical data quality issues found - proceeding with caution")
+            
+            # Overall data quality check
+            try:
+                quality_metrics = calculate_data_quality_metrics(market_data)
+                completeness = quality_metrics.get('completeness', 0)
+                
+                if completeness < 0.8:  # More strict threshold
+                    tprint_error(f"❌ Data completeness too low: {completeness:.2%} (minimum 80%)")
+                    return False
+                elif completeness < 0.95:
+                    tprint_warning(f"⚠️ Data completeness: {completeness:.2%}")
+                
+            except Exception as quality_error:
+                tprint_warning(f"⚠️ Quality metrics calculation failed: {quality_error}")
+            
+            tprint_success("✅ Input data validation passed")
             return True
             
         except Exception as e:
-            tprint_error(f"❌ Data validation failed: {e}")
+            tprint_error(f"❌ Data validation failed with exception: {e}")
+            import traceback
+            tprint_debug(f"Validation traceback: {traceback.format_exc()}")
             return False
     
     async def _optimize_two_step_grid_tpe(

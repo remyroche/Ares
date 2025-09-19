@@ -284,107 +284,66 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
             raise RuntimeError(error_msg) from e
     
     def _initialize_hardware_optimizers(self) -> None:
-        """Initialize hardware optimizers with advanced tools when available."""
+        """Initialize hardware optimizers with graceful degradation."""
         try:
             tprint_info("🧠 Initializing hardware optimizers for ensemble training...")
             
-            if ADVANCED_HARDWARE_AVAILABLE:
-                # Use advanced unified hardware manager
-                tprint_info("🚀 Using advanced unified hardware management...")
+            # Initialize optimizers with fallback capability
+            self.m1_gpu_manager = None
+            self.m1_memory_optimizer = None
+            self.m1_cpu_optimizer = None
+            self.hardware_optimization_enabled = False
+            
+            try:
+                # Try to initialize M1 GPU manager
+                self.m1_gpu_manager = get_m1_gpu_manager()
+                if self.m1_gpu_manager:
+                    tprint_success("✅ M1 GPU manager initialized")
+                else:
+                    tprint_warning("⚠️ M1 GPU manager not available - proceeding without GPU optimization")
                 
-                try:
-                    self.unified_hardware_manager = UnifiedHardwareManager()
-                    
-                    # Configure for ML training workload
-                    config_result = self.unified_hardware_manager.configure_for_workload(
-                        workload_type=WorkloadType.ML_TRAINING,
-                        optimization_level=OptimizationLevel.AGGRESSIVE,
-                        expected_duration_minutes=30  # Typical ensemble training duration
-                    )
-                    
-                    if config_result['success']:
-                        tprint_success("✅ Advanced hardware configuration successful")
-                        tprint_info(f"   CPU cores optimized: {config_result.get('cpu_cores_optimized', 'N/A')}")
-                        tprint_info(f"   Memory optimization: {config_result.get('memory_strategy', 'N/A')}")
-                        tprint_info(f"   GPU acceleration: {config_result.get('gpu_enabled', 'N/A')}")
-                    else:
-                        tprint_warning("⚠️ Advanced hardware configuration had issues, using basic optimization")
-                        raise RuntimeError("Advanced hardware configuration failed")
-                    
-                    # Initialize adaptive optimization engine
+                # Try to initialize M1 memory optimizer
+                self.m1_memory_optimizer = get_m1_memory_optimizer()
+                if self.m1_memory_optimizer:
+                    tprint_success("✅ M1 memory optimizer initialized")
+                else:
+                    tprint_warning("⚠️ M1 memory optimizer not available - proceeding without memory optimization")
+                
+                # Try to initialize M1 CPU optimizer
+                self.m1_cpu_optimizer = get_m1_cpu_optimizer()
+                if self.m1_cpu_optimizer:
+                    tprint_success("✅ M1 CPU optimizer initialized")
+                else:
+                    tprint_warning("⚠️ M1 CPU optimizer not available - proceeding without CPU optimization")
+                
+                # Try integration if any optimizers are available
+                if any([self.m1_gpu_manager, self.m1_memory_optimizer, self.m1_cpu_optimizer]):
                     try:
-                        self.adaptive_optimizer = AdaptiveOptimizationEngine(
-                            hardware_manager=self.unified_hardware_manager,
-                            learning_algorithm=LearningAlgorithm.LINEAR_REGRESSION
-                        )
-                        
-                        # Start learning for ML training workloads
-                        self.adaptive_optimizer.start_learning_session(
-                            workload_name="tactician_ensemble_training",
-                            workload_type="ml_training"
-                        )
-                        
-                        tprint_success("✅ Adaptive optimization engine initialized")
-                        
-                    except Exception as e:
-                        tprint_warning(f"⚠️ Adaptive optimization engine failed to initialize: {e}")
-                        self.adaptive_optimizer = None
-                    
-                    # Set basic optimizers as aliases for compatibility
-                    self.m1_gpu_manager = self.unified_hardware_manager.gpu_manager
-                    self.m1_memory_optimizer = self.unified_hardware_manager.memory_optimizer  
-                    self.m1_cpu_optimizer = self.unified_hardware_manager.cpu_optimizer
-                    
-                except Exception as e:
-                    tprint_warning(f"⚠️ Advanced hardware management failed: {e}")
-                    tprint_info("🔄 Falling back to basic hardware optimization...")
-                    raise e  # Re-raise to trigger fallback
-                    
-            else:
-                # Fallback to basic hardware optimization
-                raise ImportError("Advanced hardware tools not available")
+                        integration_result = integrate_with_m1_optimizers()
+                        if integration_result.get('success', False):
+                            self.hardware_optimization_enabled = True
+                            tprint_success("✅ Hardware optimization enabled")
+                        else:
+                            tprint_warning("⚠️ Hardware integration failed - proceeding without optimization")
+                    except Exception as integration_error:
+                        tprint_warning(f"⚠️ Hardware integration failed: {integration_error} - proceeding without optimization")
+                else:
+                    tprint_info("ℹ️ No hardware optimizers available - using standard processing")
                 
-        except Exception:
-            # Fallback to basic hardware optimization
-            tprint_info("🔄 Using basic M1 hardware optimizers...")
+            except ImportError as import_error:
+                tprint_warning(f"⚠️ Hardware optimization modules not available: {import_error}")
+            except Exception as hardware_error:
+                tprint_warning(f"⚠️ Hardware optimizer initialization failed: {hardware_error}")
             
-            # Initialize M1 GPU manager
-            self.m1_gpu_manager = get_m1_gpu_manager()
-            if not self.m1_gpu_manager:
-                error_msg = "CRITICAL: M1 GPU manager is required but not available for ensemble"
-                tprint_error(f"❌ {error_msg}")
-                raise RuntimeError(error_msg)
-            tprint_success("✅ M1 GPU manager initialized for ensemble")
+            tprint_info(f"🧠 Hardware optimization status: {'Enabled' if self.hardware_optimization_enabled else 'Disabled'}")
             
-            # Initialize M1 memory optimizer
-            self.m1_memory_optimizer = get_m1_memory_optimizer()
-            if not self.m1_memory_optimizer:
-                error_msg = "CRITICAL: M1 memory optimizer is required but not available for ensemble"
-                tprint_error(f"❌ {error_msg}")
-                raise RuntimeError(error_msg)
-            tprint_success("✅ M1 memory optimizer initialized for ensemble")
-            
-            # Initialize M1 CPU optimizer
-            self.m1_cpu_optimizer = get_m1_cpu_optimizer()
-            if not self.m1_cpu_optimizer:
-                error_msg = "CRITICAL: M1 CPU optimizer is required but not available for ensemble"
-                tprint_error(f"❌ {error_msg}")
-                raise RuntimeError(error_msg)
-            tprint_success("✅ M1 CPU optimizer initialized for ensemble")
-            
-            # Integrate with M1 optimizers
-            integration_result = integrate_with_m1_optimizers()
-            if not integration_result.get('success', False):
-                error_msg = "CRITICAL: M1 optimizers integration failed for ensemble"
-                tprint_error(f"❌ {error_msg}")
-                raise RuntimeError(error_msg)
-            tprint_success("✅ M1 optimizers integration successful for ensemble")
-            
-            # Set unified manager to None for basic mode
-            self.unified_hardware_manager = None
-            self.adaptive_optimizer = None
-        
-        tprint_success("✅ Hardware optimizers initialization completed for ensemble")
+        except Exception as e:
+            tprint_warning(f"⚠️ Hardware optimizer setup failed: {e} - proceeding with standard processing")
+            # Set all optimizers to None for safe operation
+            self.m1_gpu_manager = None
+            self.m1_memory_optimizer = None
+            self.m1_cpu_optimizer = None
+            self.hardware_optimization_enabled = False
     
     def _initialize_utility_integrations(self) -> None:
         """Initialize utility integrations - All utilities are required."""
@@ -1447,109 +1406,30 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
             return {'error': str(e)}
     
     def cleanup_resources(self) -> None:
-        """Clean up hardware optimizers and other resources using hardware optimization tools."""
+        """Clean up hardware optimizers and other resources with graceful error handling."""
+        cleanup_stats = {'memory_freed_mb': 0, 'resources_cleaned': 0, 'errors': []}
+        
         try:
-            tprint_info("🧹 Cleaning up ensemble training resources with hardware optimization...")
+            tprint_info("🧹 Cleaning up ensemble training resources...")
             
-            # Import hardware optimization tools
-            from src.utils.hardware import (
-                get_unified_hardware_manager, get_advanced_memory_optimizer,
-                UNIFIED_MANAGER_AVAILABLE, ADVANCED_MEMORY_AVAILABLE
-            )
-            from src.utils.common_operations import cleanup_m1_optimizers
-            
-            cleanup_stats = {'memory_freed_mb': 0, 'resources_cleaned': 0}
-            
-            # Use unified hardware manager for comprehensive cleanup
-            if UNIFIED_MANAGER_AVAILABLE:
+            # Clean up M1 optimizers if available
+            if hasattr(self, 'hardware_optimization_enabled') and self.hardware_optimization_enabled:
                 try:
-                    hardware_manager = get_unified_hardware_manager()
-                    
-                    # Comprehensive hardware resource cleanup
-                    cleanup_result = hardware_manager.cleanup_all_resources(
-                        cleanup_level='aggressive',
-                        target_components=['cpu', 'gpu', 'memory'],
-                        force_cleanup=True
-                    )
-                    
-                    cleanup_stats.update(cleanup_result)
-                    tprint_success(f"✅ Unified hardware cleanup completed: {cleanup_result}")
-                    
-                except Exception as unified_error:
-                    tprint_warning(f"⚠️ Unified hardware cleanup failed: {unified_error}")
-                    # Continue with individual component cleanup
+                    from src.utils.common_operations import cleanup_m1_optimizers
+                    cleanup_result = cleanup_m1_optimizers()
+                    if cleanup_result:
+                        tprint_success("✅ M1 optimizers cleaned up successfully")
+                        cleanup_stats['resources_cleaned'] += 1
+                    else:
+                        tprint_warning("⚠️ M1 optimizer cleanup returned False")
+                except ImportError:
+                    tprint_debug("ℹ️ M1 optimizer cleanup not available")
+                except Exception as cleanup_error:
+                    cleanup_stats['errors'].append(f"M1 cleanup failed: {cleanup_error}")
+                    tprint_warning(f"⚠️ M1 optimizer cleanup failed: {cleanup_error}")
             
-            # Use advanced memory optimizer for memory-specific cleanup
-            if ADVANCED_MEMORY_AVAILABLE:
-                try:
-                    memory_optimizer = get_advanced_memory_optimizer()
-                    
-                    # Clean up training-related memory
-                    training_objects = []
-                    if hasattr(self, 'progress_tracker'):
-                        training_objects.append(self.progress_tracker)
-                    if hasattr(self, 'current_step'):
-                        training_objects.append(self.current_step)
-                    
-                    memory_freed = memory_optimizer.cleanup_training_memory(
-                        training_objects=training_objects,
-                        optimization_level='aggressive'
-                    )
-                    
-                    cleanup_stats['memory_freed_mb'] += memory_freed
-                    tprint_debug(f"🧹 Advanced memory cleanup: {memory_freed:.2f}MB freed")
-                    
-                except Exception as memory_error:
-                    tprint_warning(f"⚠️ Advanced memory cleanup failed: {memory_error}")
-            
-            # Clean up advanced hardware tools if available
-            if hasattr(self, 'adaptive_optimizer') and self.adaptive_optimizer:
-                try:
-                    tprint_info("🔄 Stopping adaptive optimization learning session...")
-                    self.adaptive_optimizer.stop_learning_session()
-                    
-                    # Get optimization insights before cleanup
-                    insights = self.adaptive_optimizer.get_optimization_insights()
-                    if insights.get('total_sessions', 0) > 0:
-                        tprint_info(f"📊 Optimization insights: {insights['total_sessions']} sessions, "
-                                  f"avg improvement: {insights.get('average_improvement', 0):.2%}")
-                    
-                    tprint_success("✅ Adaptive optimization engine cleaned up")
-                except Exception as e:
-                    tprint_warning(f"⚠️ Failed to cleanup adaptive optimizer: {e}")
-            
-            if hasattr(self, 'unified_hardware_manager') and self.unified_hardware_manager:
-                try:
-                    tprint_info("🔄 Shutting down unified hardware manager...")
-                    
-                    # Get performance metrics before cleanup
-                    metrics = self.unified_hardware_manager.get_performance_metrics()
-                    if metrics:
-                        tprint_info(f"📊 Hardware performance: CPU: {metrics.get('cpu_efficiency', 0):.2%}, "
-                                  f"Memory: {metrics.get('memory_efficiency', 0):.2%}, "
-                                  f"GPU: {metrics.get('gpu_efficiency', 0):.2%}")
-                    
-                    self.unified_hardware_manager.shutdown()
-                    tprint_success("✅ Unified hardware manager cleaned up")
-                except Exception as e:
-                    tprint_warning(f"⚠️ Failed to cleanup unified hardware manager: {e}")
-            
-            # Clean up basic M1 optimizers
-            try:
-                cleanup_result = cleanup_m1_optimizers()
-                if not cleanup_result:
-                    error_msg = "CRITICAL: M1 optimizer cleanup failed for ensemble"
-                    tprint_error(f"❌ {error_msg}")
-                    raise RuntimeError(error_msg)
-                tprint_success("✅ M1 optimizers cleaned up successfully for ensemble")
-                cleanup_stats['resources_cleaned'] += 1
-            except Exception as e:
-                error_msg = f"CRITICAL: Failed to cleanup M1 optimizers for ensemble: {e}"
-                tprint_error(f"❌ {error_msg}")
-                raise RuntimeError(error_msg) from e
-            
+            # Clean up individual hardware resources safely
 
-            # Clean up individual hardware resources with hardware tools
             hardware_resources = [
                 ('m1_gpu_manager', 'M1 GPU manager'),
                 ('m1_memory_optimizer', 'M1 memory optimizer'),
@@ -1557,29 +1437,37 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
             ]
             
             for attr_name, resource_name in hardware_resources:
-                if hasattr(self, attr_name) and getattr(self, attr_name):
+                if hasattr(self, attr_name):
                     try:
                         resource = getattr(self, attr_name)
-                        
-                        # Use hardware-optimized cleanup if available
-                        if UNIFIED_MANAGER_AVAILABLE and hasattr(resource, 'cleanup'):
-                            hardware_manager = get_unified_hardware_manager()
-                            hardware_manager.cleanup_resource(resource, resource_type=attr_name)
-                        elif hasattr(resource, 'cleanup'):
+                        if resource and hasattr(resource, 'cleanup'):
                             resource.cleanup()
-                        
-                        tprint_debug(f"🧹 Cleaned up {resource_name} for ensemble")
-                        cleanup_stats['resources_cleaned'] += 1
-                        
+                            tprint_debug(f"🧹 Cleaned up {resource_name}")
+                            cleanup_stats['resources_cleaned'] += 1
+                        # Set to None to prevent reuse
+                        setattr(self, attr_name, None)
                     except Exception as resource_error:
-                        tprint_warning(f"⚠️ Failed to cleanup {resource_name}: {resource_error}")
+                        cleanup_stats['errors'].append(f"{resource_name} cleanup failed: {resource_error}")
+                        tprint_debug(f"⚠️ Failed to cleanup {resource_name}: {resource_error}")
             
-            tprint_success(f"✅ Ensemble resource cleanup completed: {cleanup_stats}")
+            # Clean up training-specific resources
+            training_resources = ['progress_tracker', 'current_step']
+            for resource_name in training_resources:
+                if hasattr(self, resource_name):
+                    try:
+                        setattr(self, resource_name, None)
+                        cleanup_stats['resources_cleaned'] += 1
+                    except Exception as resource_error:
+                        cleanup_stats['errors'].append(f"{resource_name} cleanup failed: {resource_error}")
+            
+            if cleanup_stats['errors']:
+                tprint_warning(f"⚠️ Cleanup completed with {len(cleanup_stats['errors'])} errors")
+            else:
+                tprint_success(f"✅ Resource cleanup completed successfully: {cleanup_stats['resources_cleaned']} resources cleaned")
             
         except Exception as e:
-            error_msg = f"CRITICAL: Ensemble resource cleanup failed: {e}"
-            tprint_error(f"❌ {error_msg}")
-            raise RuntimeError(error_msg) from e
+            tprint_warning(f"⚠️ Resource cleanup failed: {e}")
+            # Don't raise exception in cleanup to avoid masking original errors
     
     def __del__(self):
         """Destructor to ensure cleanup on object deletion."""

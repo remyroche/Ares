@@ -207,13 +207,75 @@ class ATRGenerator(FeatureGenerator):
             atr = base_values.rolling(window=self.period).std()
             return atr
 
+
+class VolatilityBandsGenerator(FeatureGenerator):
+    """Generator for Volatility Bands with different base calculations."""
+    
+    def __init__(self,
+                 period: int = 20,
+                 std_multiplier: float = 2.0,
+                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS,
+                 **base_kwargs):
+        """
+        Initialize Volatility Bands generator.
+        
+        Args:
+            period: Period for volatility calculation
+            std_multiplier: Standard deviation multiplier for bands
+            base_calculation: Base calculation type
+            **base_kwargs: Additional parameters for base calculation
+        """
+        if isinstance(base_calculation, str):
+            base_calculation = BaseCalculationType(base_calculation)
+        
+        # Create base calculator
+        self.base_calculator = create_base_calculator(base_calculation, **base_kwargs)
+        
+        # Update required columns based on base calculation
+        required_columns = self.base_calculator.get_required_columns()
+        
+        config = FeatureConfig(
+            name=f"volatility_bands_{period}_{std_multiplier}_{base_calculation.value}",
+            category=FeatureCategory.VOLATILITY,
+            description=f"Volatility Bands with period={period}, multiplier={std_multiplier} based on {base_calculation.value}",
+            required_columns=required_columns,
+            default_lookback=period,
+            min_lookback=period,
+            max_lookback=period,
+            parameters={
+                'period': period,
+                'std_multiplier': std_multiplier,
+                'base_calculation': base_calculation.value,
+                **base_kwargs
+            }
+        )
+        super().__init__(config)
+        self.period = period
+        self.std_multiplier = std_multiplier
+    
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate Volatility Bands upper band based on the specified base calculation."""
+        base_values = self.base_calculator.calculate(data)
+        
+        # Calculate moving average and standard deviation
+        sma = base_values.rolling(window=self.period).mean()
+        volatility = base_values.rolling(window=self.period).std()
+        
+        # Return upper band as the main feature
+        # Lower band would be: sma - (volatility * multiplier)
+        # Middle line would be: sma
+        upper_band = sma + (volatility * self.std_multiplier)
+        
+        return upper_band
+
 def create_volatility_generators(periods: Dict[str, List[int]] = None) -> List[FeatureGenerator]:
     """Create a set of volatility feature generators."""
     if periods is None:
         periods = {
             'bb': [20],
             'atr': [14],
-            'volatility': [10, 20]
+            'volatility': [10, 20],
+            'volatility_bands': [20]
         }
     
     generators = []
@@ -225,6 +287,10 @@ def create_volatility_generators(periods: Dict[str, List[int]] = None) -> List[F
     # ATR generators
     for period in periods.get('atr', [14]):
         generators.append(ATRGenerator(period))
+    
+    # Volatility Bands generators
+    for period in periods.get('volatility_bands', [20]):
+        generators.append(VolatilityBandsGenerator(period))
     
     return generators
 

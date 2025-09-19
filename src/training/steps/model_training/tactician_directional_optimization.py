@@ -21,13 +21,7 @@ from typing import Dict, Any, Tuple, Optional, List, Callable
 import logging
 import time
 from dataclasses import dataclass
-from concurrent.futures import ThreadPoolExecutor, as_completed
-
 # Core ML imports
-from sklearn.metrics import make_scorer
-from sklearn.model_selection import cross_val_score
-from sklearn.ensemble import StackingRegressor
-from sklearn.linear_model import ElasticNetCV
 import optuna
 from optuna.samplers import TPESampler
 
@@ -39,9 +33,7 @@ from src.utils.ml_common.optimization.pareto import (
 from src.utils.common_operations import (
     get_m1_gpu_manager, get_m1_memory_optimizer, get_m1_cpu_optimizer
 )
-from src.utils.math_validation import (
-    safe_divide, safe_log, safe_sqrt, validate_finite
-)
+from src.utils.math_validation import validate_finite
 
 # Base training imports
 from .tactician_models_training_refactored import TacticianModelsTrainingStepRefactored

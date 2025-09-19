@@ -26,85 +26,124 @@ except Exception as e:
                      f"Please ensure src.core.decorators is properly installed.")
 from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 
-# Import missing utility functions with fallbacks
-try:
-    from src.utils.common_operations import (
-        format_bytes, safe_log_metric, safe_log_params, safe_file_exists,
-        get_current_datetime, format_datetime, safe_read_parquet, safe_json_dump
-    )
-except ImportError:
-    # Fallback implementations for missing functions
-    def format_bytes(bytes_value):
-        """Fallback format_bytes implementation."""
-        if bytes_value < 1024:
-            return f"{bytes_value} B"
-        elif bytes_value < 1024**2:
-            return f"{bytes_value/1024:.1f} KB"
-        elif bytes_value < 1024**3:
-            return f"{bytes_value/1024**2:.1f} MB"
-        else:
-            return f"{bytes_value/1024**3:.1f} GB"
-    
-    def safe_log_metric(key, value):
-        """Fallback safe_log_metric implementation."""
-        try:
-            import logging
-            logging.getLogger('metrics').info(f"Metric {key}: {value}")
-        except Exception:
-            pass
-    
-    def safe_log_params(params_dict):
-        """Fallback safe_log_params implementation."""
-        try:
-            import logging
-            logging.getLogger('params').info(f"Parameters: {params_dict}")
-        except Exception:
-            pass
-    
-    def safe_file_exists(path):
-        """Fallback safe_file_exists implementation."""
-        try:
-            from pathlib import Path
-            return Path(path).exists()
-        except Exception:
-            return False
-    
-    def get_current_datetime():
-        """Fallback get_current_datetime implementation."""
-        from datetime import datetime
-        return datetime.now()
-    
-    def format_datetime(dt):
-        """Fallback format_datetime implementation."""
-        return dt.isoformat() if dt else ""
-    
-    def safe_read_parquet(path):
-        """Fallback safe_read_parquet implementation."""
-        try:
-            import pandas as pd
-            return pd.read_parquet(path)
-        except Exception:
-            return None
-    
-    def safe_json_dump(data, filepath, **kwargs):
-        """Fallback safe_json_dump implementation."""
-        try:
-            import json
-            with open(filepath, 'w') as f:
-                json.dump(data, f, **kwargs)
-            return True
-        except Exception:
-            return False
+# Import required utility functions - fail fast if not available
+from src.utils.common_operations import (
+    format_bytes, safe_log_metric, safe_log_params, safe_file_exists,
+    get_current_datetime, format_datetime, safe_read_parquet, safe_json_dump,
+    validate_dataframe, optimize_dataframe_dtypes, validate_dataframe_schema
+)
 
 """Model Training Package for Trading Pipeline.
 
 This package contains all the components for model training:
-- HMM-based training and multi-timeframe ensembles
+- HMM-based training and multi-timeframe ensembles (1h timeframe, 15-25 regimes)
 - Unified regime intelligence
-- Analyst creation, enhancement, and ensemble creation
-- Tactician labeling and specialist training
+- Analyst creation, enhancement, and ensemble creation (5m timeframe, per-regime training)
+- Tactician labeling and specialist training (1m timeframe, unified training on green-light periods)
 - Model persistence and validation components
+
+REGIME HANDLING STRATEGY:
+- HMM Models: Detect 15-25 regimes on 1h timeframe for macro market state
+- Analyst Models: Per-regime training on 5m timeframe for regime-specific patterns
+- Tactician Models: Unified training on 1m timeframe for precise entry timing
+- This design is intentional: different components optimize for different aspects of trading
 """
+
+def validate_training_data(data: Any, data_name: str, required_columns: Optional[List[str]] = None) -> bool:
+    """
+    Consistent data validation for all training components.
+    
+    Args:
+        data: Data to validate (DataFrame, array, etc.)
+        data_name: Name of the data for error messages
+        required_columns: Required columns for DataFrames
+        
+    Returns:
+        True if validation passes
+        
+    Raises:
+        ValueError: If validation fails
+    """
+    if data is None:
+        raise ValueError(f"{data_name} cannot be None")
+    
+    if isinstance(data, pd.DataFrame):
+        if data.empty:
+            raise ValueError(f"{data_name} DataFrame is empty")
+        
+        # Check for required columns
+        if required_columns:
+            missing_columns = [col for col in required_columns if col not in data.columns]
+            if missing_columns:
+                raise ValueError(f"{data_name} missing required columns: {missing_columns}")
+        
+        # Check for NaN values
+        if data.isnull().any().any():
+            nan_count = data.isnull().sum().sum()
+            tprint(f"⚠️ {data_name} contains {nan_count} NaN values")
+        
+        # Check for infinite values
+        numeric_cols = data.select_dtypes(include=[np.number]).columns
+        if len(numeric_cols) > 0:
+            inf_mask = np.isinf(data[numeric_cols]).any().any()
+            if inf_mask:
+                raise ValueError(f"{data_name} contains infinite values")
+        
+        tprint(f"✅ {data_name} validation passed: {len(data)} rows, {len(data.columns)} columns")
+        
+    elif isinstance(data, np.ndarray):
+        if data.size == 0:
+            raise ValueError(f"{data_name} array is empty")
+        
+        if np.any(np.isnan(data)):
+            raise ValueError(f"{data_name} contains NaN values")
+        
+        if np.any(np.isinf(data)):
+            raise ValueError(f"{data_name} contains infinite values")
+        
+        tprint(f"✅ {data_name} validation passed: shape {data.shape}")
+        
+    else:
+        # Basic validation for other types
+        if hasattr(data, '__len__') and len(data) == 0:
+            raise ValueError(f"{data_name} is empty")
+        
+        tprint(f"✅ {data_name} validation passed: type {type(data).__name__}")
+    
+    return True
+
+def validate_model_inputs(X: np.ndarray, y: np.ndarray, feature_names: Optional[List[str]] = None) -> bool:
+    """
+    Validate standard model training inputs.
+    
+    Args:
+        X: Feature matrix
+        y: Target values
+        feature_names: Optional feature names
+        
+    Returns:
+        True if validation passes
+        
+    Raises:
+        ValueError: If validation fails
+    """
+    validate_training_data(X, "Feature matrix X")
+    validate_training_data(y, "Target values y")
+    
+    if X.shape[0] != y.shape[0]:
+        raise ValueError(f"X and y must have same number of samples: {X.shape[0]} vs {y.shape[0]}")
+    
+    if X.ndim != 2:
+        raise ValueError(f"X must be 2D array, got shape {X.shape}")
+    
+    if y.ndim != 1:
+        raise ValueError(f"y must be 1D array, got shape {y.shape}")
+    
+    if feature_names and len(feature_names) != X.shape[1]:
+        raise ValueError(f"feature_names length ({len(feature_names)}) must match X features ({X.shape[1]})")
+    
+    tprint(f"✅ Model inputs validation passed: {X.shape[0]} samples, {X.shape[1]} features")
+    return True
 # Import from simplified model training structure
 try:
     # from .simplified.general_model_training import GeneralModelTrainer  # Removed from pipeline
@@ -1042,6 +1081,9 @@ __all__ = [
     'execute_analyst_models_training',
     # Pipeline function
     'run_model_training_pipeline',
+    # Data validation utilities
+    'validate_training_data',
+    'validate_model_inputs',
     # Utility constants
     'NUMPY_AVAILABLE',
     'PANDAS_AVAILABLE'

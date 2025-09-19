@@ -77,13 +77,14 @@ class TradingDecisionConfig:
         'min_position_size': 0.002        # 0.2% minimum position size
     })
     
-    # Time-based parameters (SHORT-TERM FOCUSED)
-    max_position_duration: int = 25      # 25 minutes maximum hold time
-    reassessment_frequency: int = 3      # Reassess every 3 minutes (more frequent)
+    # Time-based parameters (SHORT-TERM FOCUSED) - configurable
+    immediate_timeframe_minutes: int = 15    # Immediate opportunity timeframe (configurable)
+    short_term_timeframe_minutes: int = 30   # Short-term opportunity timeframe (configurable)
+    max_position_duration: int = 25          # 25 minutes maximum hold time
+    reassessment_frequency: int = 3          # Reassess every 3 minutes (more frequent)
     
     # Risk management
-    transaction_cost: float = 0.0008     # 0.08% transaction cost
-    slippage_allowance: float = 0.0002   # 0.02% slippage allowance
+    transaction_cost: float = 0.001      # 0.1% transaction cost
     
     # Strategy weights for different scenarios (SHORT-TERM FOCUSED)
     strategy_weights: Dict[str, float] = field(default_factory=lambda: {
@@ -201,11 +202,11 @@ class MultiHorizonDecisionEngine:
             'opportunities': {}
         }
         
-        # Analyze immediate opportunities (15 min)
+        # Analyze immediate opportunities (configurable timeframe)
         immediate_opp = self._analyze_immediate_opportunities(predictions)
         analysis['opportunities']['immediate'] = immediate_opp
         
-        # Analyze short-term opportunities (30 min)
+        # Analyze short-term opportunities (configurable timeframe)
         short_term_opp = self._analyze_short_term_opportunities(predictions)
         analysis['opportunities']['short_term'] = short_term_opp
         
@@ -227,7 +228,7 @@ class MultiHorizonDecisionEngine:
         return analysis
     
     def _analyze_immediate_opportunities(self, predictions: Dict[str, float]) -> Dict[str, Any]:
-        """Analyze immediate opportunities (15 minutes) with safe math operations."""
+        """Analyze immediate opportunities (configurable timeframe, default ~15 minutes) for micro price movements."""
         immediate_probs = {
             'micro': validate_finite(predictions.get('micro_immediate_prob', 0.0), 'micro_immediate_prob'),
             'small': validate_finite(predictions.get('small_immediate_prob', 0.0), 'small_immediate_prob'),
@@ -251,7 +252,7 @@ class MultiHorizonDecisionEngine:
         return {
             'score': weighted_score,
             'strategy': 'immediate_scalp',
-            'time_horizon': 15,
+            'time_horizon': self.config.immediate_timeframe_minutes,
             'probabilities': immediate_probs,
             'reasoning': reasoning
         }
@@ -282,7 +283,7 @@ class MultiHorizonDecisionEngine:
         return {
             'score': weighted_score,
             'strategy': 'short_term_swing',
-            'time_horizon': 30,
+            'time_horizon': self.config.short_term_timeframe_minutes,
             'probabilities': short_term_probs,
             'reasoning': reasoning
         }
@@ -357,7 +358,7 @@ class MultiHorizonDecisionEngine:
         strategy = analysis['best_strategy']
         confidence = analysis['confidence']
         
-        # Calculate position size based on confidence and leverage
+        # Calculate position size based on confidence and strategy
         position_size = self._calculate_position_size(confidence, strategy)
         
         # Estimate expected profit and risk
@@ -393,7 +394,8 @@ class MultiHorizonDecisionEngine:
         strategy_multipliers = {
             'immediate_scalp': 1.2,    # Slightly larger for quick scalps
             'short_term_swing': 1.0,   # Standard size
-            'medium_term_hold': 0.8    # Smaller for longer holds
+            'medium_term_hold': 0.8,   # Smaller for longer holds
+            'reversal_capture': 0.9    # Moderate size for reversal trades
         }
         
         strategy_multiplier = validate_finite(strategy_multipliers.get(strategy, 1.0), 'strategy_multiplier')
@@ -463,6 +465,22 @@ class MultiHorizonDecisionEngine:
                 key_probs[key] = predictions[key]
         
         return key_probs
+    
+    def _calculate_confidence_score(self, predictions: Dict[str, float]) -> float:
+        """Calculate simple confidence score based on predictions."""
+        try:
+            # Simple confidence based on overall opportunity
+            overall_opportunity = predictions.get('overall_opportunity', 0.5)
+            leverage_adjusted = predictions.get('leverage_adjusted_score', 0.5)
+            
+            # Average the main prediction scores
+            confidence = (overall_opportunity + leverage_adjusted) / 2
+            
+            return np.clip(confidence, 0.1, 0.95)  # Keep within reasonable bounds
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Failed to calculate confidence score: {e}")
+            return 0.5  # Default moderate confidence
     
     def _track_new_position(self, position_id: str, decision: TradingDecision, 
                           predictions: Dict[str, float], entry_price: float):

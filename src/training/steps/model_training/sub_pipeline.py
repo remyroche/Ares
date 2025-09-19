@@ -773,11 +773,8 @@ class ModelTrainingSubPipeline:
             
             # Step 2: Check execution mode
             if config.mode == ExecutionMode.BLANK:
-                tprint(f"   🔄 BLANK MODE: Skipping actual analyst models training")
-                self.logger.info("🔄 Blank mode: Skipping actual analyst models training")
-                artifacts['models'] = [f"analyst_model_{timestamp}.pkl"]
-                tprint(f"   ✅ Blank mode completed - generated mock model artifact")
-                return artifacts
+                tprint_error("❌ BLANK mode not supported - actual training required")
+                raise ValueError("BLANK mode is not supported. Actual model training is required for production use.")
             
             # Step 3: Import training module
             tprint(f"   🔍 Importing analyst models training module...")
@@ -860,11 +857,8 @@ class ModelTrainingSubPipeline:
         try:
             # Step 1: Check execution mode
             if config.mode == ExecutionMode.BLANK:
-                tprint(f"   🔄 BLANK MODE: Skipping actual analyst ensemble training")
-                self.logger.info("🔄 Blank mode: Skipping actual analyst ensemble training")
-                artifacts['models'] = [f"analyst_ensemble_{timestamp}.pkl"]
-                tprint(f"   ✅ Blank mode completed - generated mock ensemble artifact")
-                return artifacts
+                tprint_error("❌ BLANK mode not supported - actual ensemble training required")
+                raise ValueError("BLANK mode is not supported. Actual ensemble training is required for production use.")
             
             # Step 2: Import training module
             tprint(f"   🔍 Importing analyst ensemble training module...")
@@ -938,11 +932,8 @@ class ModelTrainingSubPipeline:
         try:
             # Step 1: Check execution mode
             if config.mode == ExecutionMode.BLANK:
-                tprint(f"   🔄 BLANK MODE: Skipping actual tactician lookback optimization")
-                self.logger.info("🔄 Blank mode: Skipping actual tactician lookback optimization")
-                artifacts['optimized_lookbacks'] = {"rsi": 14, "macd": 26, "atr": 14}
-                tprint(f"   ✅ Blank mode completed - generated mock optimization results")
-                return artifacts
+                tprint_error("❌ BLANK mode not supported - actual optimization required")
+                raise ValueError("BLANK mode is not supported. Actual lookback optimization is required for production use.")
             
             # Step 2: Import optimization module
             tprint(f"   🔍 Importing tactician lookback optimization module...")
@@ -1111,11 +1102,8 @@ class ModelTrainingSubPipeline:
         try:
             # Step 1: Check execution mode
             if config.mode == ExecutionMode.BLANK:
-                tprint(f"   🔄 BLANK MODE: Skipping actual tactician model training")
-                self.logger.info("🔄 Blank mode: Skipping actual tactician model training")
-                artifacts['models'] = [f"tactician_model_{timestamp}.pkl"]
-                tprint(f"   ✅ Blank mode completed - generated mock tactician model artifact")
-                return artifacts
+                tprint_error("❌ BLANK mode not supported - actual tactician training required")
+                raise ValueError("BLANK mode is not supported. Actual tactician model training is required for production use.")
             
             # Step 2: Import training module
             tprint(f"   🔍 Importing tactician models training module...")
@@ -1190,11 +1178,8 @@ class ModelTrainingSubPipeline:
         try:
             # Step 1: Check execution mode
             if config.mode == ExecutionMode.BLANK:
-                tprint(f"   🔄 BLANK MODE: Skipping actual tactician ensemble training")
-                self.logger.info("🔄 Blank mode: Skipping actual tactician ensemble training")
-                artifacts['models'] = [f"tactician_ensemble_{timestamp}.pkl"]
-                tprint(f"   ✅ Blank mode completed - generated mock tactician ensemble artifact")
-                return artifacts
+                tprint_error("❌ BLANK mode not supported - actual ensemble training required")
+                raise ValueError("BLANK mode is not supported. Actual tactician ensemble training is required for production use.")
             
             # Step 2: Import training module
             tprint(f"   🔍 Importing tactician ensemble training module...")

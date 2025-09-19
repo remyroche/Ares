@@ -288,8 +288,8 @@ class ModelValidationStep:
             # Load trained models
             models = await self._load_trained_models(data_dir, symbol, exchange, timeframe)
             if not models:
-                self.logger.warning("⚠️ No trained models found, creating mock validation results")
-                return self._create_mock_validation_results(results)
+                self.logger.error("❌ No trained models found for validation")
+                raise FileNotFoundError(f"No trained models found in {data_dir}. Please ensure model training step completed successfully.")
 
             # Load validation data
             validation_data = await self._load_validation_data(data_dir, symbol, exchange, timeframe)
@@ -334,7 +334,7 @@ class ModelValidationStep:
 
         except Exception as e:
             self.logger.error(f"❌ Model validation failed: {e}")
-            return self._create_mock_validation_results(results)
+            raise RuntimeError(f"Model validation failed: {e}") from e
 
         return results
 
@@ -447,9 +447,27 @@ class ModelValidationStep:
                 y = validation_data[target_col]
 
                 for model_name, model_info in models.items():
-                    # In a real implementation, make predictions with the actual model
-                    # For now, create mock predictions
-                    predictions = np.random.choice([0, 1], size=len(y))
+                    # Load and use the actual trained model for predictions
+                    try:
+                        model_path = model_info.get('path')
+                        if model_path and Path(model_path).exists():
+                            # Load the actual model (implementation depends on model type)
+                            import joblib
+                            model = joblib.load(model_path)
+                            
+                            # Make predictions with the actual model
+                            if hasattr(model, 'predict'):
+                                predictions = model.predict(X)
+                                # Convert to binary if needed
+                                if len(np.unique(predictions)) > 2:
+                                    predictions = (predictions > np.median(predictions)).astype(int)
+                            else:
+                                raise ValueError(f"Model {model_name} does not have predict method")
+                        else:
+                            raise FileNotFoundError(f"Model file not found: {model_path}")
+                    except Exception as model_error:
+                        self.logger.error(f"❌ Failed to load/use model {model_name}: {model_error}")
+                        raise RuntimeError(f"Model validation failed for {model_name}: {model_error}") from model_error
 
                     validation_results[model_name] = {
                         'predictions': predictions.tolist(),
@@ -513,17 +531,33 @@ class ModelValidationStep:
                 X = validation_data[feature_cols].values
                 y = validation_data[target_col].values
 
-                for model_name in models.keys():
-                    # Mock cross-validation scores (in real implementation, use actual model)
-                    scores = np.random.normal(0.7, 0.1, 5)  # 5-fold CV simulation
-                    cv_results[model_name] = {
-                        'cv_scores': scores.tolist(),
-                        'mean_score': float(np.mean(scores)),
-                        'std_score': float(np.std(scores)),
-                        'cv_folds': 5
-                    }
+            for model_name, model_info in models.items():
+                # Use actual cross-validation with loaded models
+                try:
+                    model_path = model_info.get('path')
+                    if model_path and Path(model_path).exists():
+                        import joblib
+                        from sklearn.model_selection import cross_val_score
+                        model = joblib.load(model_path)
+                        
+                        if hasattr(model, 'predict'):
+                            scores = cross_val_score(model, X, y, cv=5, scoring='accuracy')
+                        else:
+                            raise ValueError(f"Model {model_name} does not support cross-validation")
+                    else:
+                        raise FileNotFoundError(f"Model file not found: {model_path}")
+                except Exception as cv_error:
+                    self.logger.error(f"❌ Cross-validation failed for {model_name}: {cv_error}")
+                    raise RuntimeError(f"Cross-validation failed for {model_name}: {cv_error}") from cv_error
+                
+                cv_results[model_name] = {
+                    'cv_scores': scores.tolist(),
+                    'mean_score': float(np.mean(scores)),
+                    'std_score': float(np.std(scores)),
+                    'cv_folds': 5
+                }
 
-                    self.logger.info(f"✅ CV for {model_name}: Mean = {cv_results[model_name]['mean_score']:.3f}")
+                self.logger.info(f"✅ CV for {model_name}: Mean = {cv_results[model_name]['mean_score']:.3f}")
 
         except Exception as e:
             self.logger.error(f"❌ Cross-validation failed: {e}")
@@ -541,13 +575,44 @@ class ModelValidationStep:
         try:
             feature_cols = [col for col in validation_data.columns if col.startswith('feature_')]
 
-            for model_name in models.keys():
-                # Mock feature importance (in real implementation, extract from actual model)
-                n_features = len(feature_cols)
-                importance_scores = np.random.exponential(1, n_features)
-                importance_scores = importance_scores / np.sum(importance_scores)  # Normalize
-
-                feature_importance = dict(zip(feature_cols, importance_scores))
+            for model_name, model_info in models.items():
+                # Extract actual feature importance from loaded models
+                try:
+                    model_path = model_info.get('path')
+                    if model_path and Path(model_path).exists():
+                        import joblib
+                        model = joblib.load(model_path)
+                        
+                        # Extract feature importance based on model type
+                        if hasattr(model, 'feature_importances_'):
+                            importance_scores = model.feature_importances_
+                        elif hasattr(model, 'coef_'):
+                            importance_scores = np.abs(model.coef_).flatten()
+                        elif hasattr(model, 'get_feature_importance'):
+                            importance_scores = model.get_feature_importance()
+                        else:
+                            self.logger.warning(f"⚠️ Model {model_name} does not support feature importance extraction")
+                            # Use uniform importance as fallback
+                            n_features = len(feature_cols)
+                            importance_scores = np.ones(n_features) / n_features
+                        
+                        # Normalize importance scores
+                        if len(importance_scores) == len(feature_cols):
+                            importance_scores = importance_scores / np.sum(importance_scores)
+                            feature_importance = dict(zip(feature_cols, importance_scores))
+                        else:
+                            self.logger.warning(f"⚠️ Feature importance shape mismatch for {model_name}")
+                            n_features = len(feature_cols)
+                            importance_scores = np.ones(n_features) / n_features
+                            feature_importance = dict(zip(feature_cols, importance_scores))
+                    else:
+                        raise FileNotFoundError(f"Model file not found: {model_path}")
+                except Exception as importance_error:
+                    self.logger.error(f"❌ Feature importance extraction failed for {model_name}: {importance_error}")
+                    # Use uniform importance as fallback
+                    n_features = len(feature_cols)
+                    importance_scores = np.ones(n_features) / n_features
+                    feature_importance = dict(zip(feature_cols, importance_scores))
 
                 importance_analysis[model_name] = {
                     'feature_importance': feature_importance,
@@ -629,45 +694,3 @@ class ModelValidationStep:
 
         return recommendations
 
-    def _create_mock_validation_results(self, results: Dict[str, Any]) -> Dict[str, Any]:
-        """Create mock validation results when validation fails."""
-        self.logger.info("🔄 Creating mock model validation results")
-
-        results.update({
-            'validation_results': {
-                'mock_model': {
-                    'accuracy': 0.75,
-                    'precision': 0.73,
-                    'recall': 0.72,
-                    'f1_score': 0.74
-                }
-            },
-            'performance_metrics': {
-                'overall': {
-                    'avg_accuracy': 0.75,
-                    'avg_f1_score': 0.74,
-                    'best_model': 'mock_model',
-                    'worst_model': 'mock_model'
-                }
-            },
-            'cross_validation_scores': {
-                'mock_model': {
-                    'cv_scores': [0.72, 0.76, 0.74, 0.73, 0.75],
-                    'mean_score': 0.74,
-                    'std_score': 0.015,
-                    'cv_folds': 5
-                }
-            },
-            'model_comparison': {
-                'best_performing_model': 'mock_model',
-                'performance_spread': 0.0,
-                'model_rankings': [('mock_model', 0.745)]
-            },
-            'recommendations': [
-                "✅ Mock validation completed - implement actual models for real validation",
-                "📊 Set up proper data pipelines for comprehensive model evaluation",
-                "🔄 Implement continuous validation monitoring"
-            ]
-        })
-
-        return results

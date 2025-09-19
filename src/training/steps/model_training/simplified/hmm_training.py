@@ -116,8 +116,8 @@ class HMMTrainingPipeline:
             # Load 1h timeframe data
             regime_data = await self._load_1h_regime_data(data_dir, symbol, exchange)
             if not regime_data:
-                tprint_warning("⚠️ No 1h regime data available, using enhanced mock HMM training")
-                return self._create_enhanced_mock_results(results, pipeline_state)
+                tprint_error("❌ No 1h regime data available - HMM training requires actual market data")
+                raise FileNotFoundError(f"Required 1h regime data not found in {data_dir}. Please ensure data collection step completed successfully.")
 
             # Extract 100 features for HMM training
             features = await self._extract_100_hmm_features(regime_data)
@@ -163,8 +163,8 @@ class HMMTrainingPipeline:
 
         except Exception as e:
             tprint_error(f"❌ Enhanced HMM training failed: {e}")
-            # Return enhanced mock results on failure
-            return self._create_enhanced_mock_results(results, pipeline_state)
+            # Re-raise the exception instead of returning mock results
+            raise RuntimeError(f"HMM training failed: {e}. Please check data availability and model dependencies.") from e
 
         return results
 
@@ -198,15 +198,38 @@ class HMMTrainingPipeline:
             return None
 
     async def _extract_100_hmm_features(self, regime_data: Dict[str, Any]) -> pd.DataFrame:
-        """Extract 100 features suitable for enhanced HMM training - same features used in live trading."""
+        """Extract 100+ features suitable for enhanced HMM training using consolidated feature generators."""
         try:
             # Convert regime data to DataFrame
             df = pd.DataFrame.from_dict(regime_data)
 
-            # Initialize features DataFrame
-            features = pd.DataFrame()
+            # Initialize features DataFrame using consolidated feature generators
+            from src.feature_generation.categories import (
+                create_acceleration_generators,
+                create_interaction_generators,
+                create_cross_timeframe_generators,
+                create_entropy_generators
+            )
+            
+            features = pd.DataFrame(index=df.index)
 
-            # Price-based features (20 features)
+            # Generate features using consolidated generators
+            all_generators = []
+            all_generators.extend(create_acceleration_generators())
+            all_generators.extend(create_interaction_generators())
+            all_generators.extend(create_cross_timeframe_generators())
+            all_generators.extend(create_entropy_generators())
+            
+            # Generate features from consolidated generators
+            for generator in all_generators:
+                try:
+                    feature_series = generator._generate_feature(df)
+                    features[generator.config.name] = feature_series
+                except Exception as e:
+                    tprint_warning(f"⚠️ Failed to generate {generator.config.name}: {e}")
+                    continue
+
+            # Price-based features (20 features) - keep original implementation for compatibility
             if 'close' in df.columns:
                 features['returns'] = df['close'].pct_change()
                 features['log_returns'] = np.log(df['close'] / df['close'].shift(1))
@@ -323,22 +346,30 @@ class HMMTrainingPipeline:
             features['ctf_15m_hl'] = (df['high'] - df['low']).rolling(window=15).mean()
             features['ctf_30m_hl'] = (df['high'] - df['low']).rolling(window=30).mean()
 
-            # Fill missing values and ensure we have exactly 100 features
+            # Fill missing values and clean up features
             features = features.fillna(method='ffill').fillna(0)
             
-            # Select exactly 100 features
-            if len(features.columns) > self.n_features:
-                # Select the most important features
-                feature_importance = features.corrwith(features['returns']).abs().sort_values(ascending=False)
-                selected_features = feature_importance.head(self.n_features).index.tolist()
-                features = features[selected_features]
-            elif len(features.columns) < self.n_features:
-                # Pad with additional features if needed
-                missing_features = self.n_features - len(features.columns)
-                for i in range(missing_features):
-                    features[f'feature_{i}'] = np.random.randn(len(features))
+            # Remove any infinite values
+            features = features.replace([np.inf, -np.inf], 0)
+            
+            # Feature selection based on target number
+            target_features = self.n_features if hasattr(self, 'n_features') else 100
+            
+            if len(features.columns) > target_features:
+                # Select the most important features using correlation with returns
+                if 'returns' in features.columns:
+                    feature_importance = features.corrwith(features['returns']).abs().sort_values(ascending=False)
+                    selected_features = feature_importance.head(target_features).index.tolist()
+                    features = features[selected_features]
+                else:
+                    # If no returns column, select first N features
+                    features = features.iloc[:, :target_features]
+            elif len(features.columns) < target_features:
+                # We have consolidated features, so this should provide more than enough
+                tprint_info(f"ℹ️ Generated {len(features.columns)} consolidated features (target: {target_features})")
 
-            tprint_success(f"✅ Extracted {len(features.columns)} features for enhanced HMM training")
+            tprint_success(f"✅ Extracted {len(features.columns)} consolidated features for enhanced HMM training")
+            tprint_info(f"📊 Feature categories: Acceleration, Interaction, Cross-timeframe, Entropy + Legacy features")
             return features
 
         except Exception as e:
@@ -356,7 +387,8 @@ class HMMTrainingPipeline:
             rs = gain / loss
             rsi = 100 - (100 / (1 + rs))
             return rsi
-        except:
+        except (ValueError, ZeroDivisionError, IndexError) as e:
+            self.logger.warning(f"RSI calculation failed: {e}")
             return pd.Series([50] * len(prices), index=prices.index)
 
     def _calculate_macd(self, prices: pd.Series, fast: int = 12, slow: int = 26) -> pd.Series:
@@ -366,7 +398,8 @@ class HMMTrainingPipeline:
             ema_slow = prices.ewm(span=slow).mean()
             macd = ema_fast - ema_slow
             return macd
-        except:
+        except (ValueError, IndexError, TypeError) as e:
+            self.logger.warning(f"MACD calculation failed: {e}")
             return pd.Series([0] * len(prices), index=prices.index)
 
     def _calculate_macd_signal(self, prices: pd.Series, signal: int = 9) -> pd.Series:
@@ -375,7 +408,8 @@ class HMMTrainingPipeline:
             macd = self._calculate_macd(prices)
             signal_line = macd.ewm(span=signal).mean()
             return signal_line
-        except:
+        except (ValueError, IndexError, TypeError) as e:
+            self.logger.warning(f"MACD signal calculation failed: {e}")
             return pd.Series([0] * len(prices), index=prices.index)
 
     def _calculate_macd_histogram(self, prices: pd.Series) -> pd.Series:
@@ -385,7 +419,8 @@ class HMMTrainingPipeline:
             signal = self._calculate_macd_signal(prices)
             histogram = macd - signal
             return histogram
-        except:
+        except (ValueError, IndexError, TypeError) as e:
+            self.logger.warning(f"MACD histogram calculation failed: {e}")
             return pd.Series([0] * len(prices), index=prices.index)
 
     def _calculate_bollinger_bands(self, prices: pd.Series, period: int = 20, std_dev: float = 2) -> Tuple[pd.Series, pd.Series]:
@@ -396,7 +431,8 @@ class HMMTrainingPipeline:
             upper_band = sma + (std * std_dev)
             lower_band = sma - (std * std_dev)
             return upper_band, lower_band
-        except:
+        except (ValueError, IndexError, TypeError) as e:
+            self.logger.warning(f"Bollinger Bands calculation failed: {e}")
             return pd.Series([0] * len(prices), index=prices.index), pd.Series([0] * len(prices), index=prices.index)
 
     async def _train_enhanced_hmm_models(
@@ -795,68 +831,6 @@ class HMMTrainingPipeline:
         except Exception as e:
             return 0.5  # Default stability
 
-    def _create_enhanced_mock_results(
-        self,
-        results: Dict[str, Any],
-        pipeline_state: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """Create enhanced mock results for 15-25 regimes - FOR DEVELOPMENT ONLY."""
-        tprint_warning("⚠️ Creating ENHANCED MOCK HMM training results - this should not happen in production!")
-        tprint_warning("💡 This indicates that real enhanced HMM training failed and needs to be fixed")
-
-        # Enhanced mock regime data for 15-25 regimes
-        mock_regime_states = list(range(self.n_regimes)) * 10  # Repeat each regime 10 times
-        mock_probabilities = [[0.8 if i == state else 0.2/(self.n_regimes-1) for i in range(self.n_regimes)] for state in mock_regime_states]
-
-        # Create enhanced regime characteristics
-        enhanced_characteristics = {}
-        for regime_id in range(self.n_regimes):
-            enhanced_characteristics[f'regime_{regime_id}'] = {
-                'regime_id': regime_id,
-                'frequency': 1.0 / self.n_regimes,
-                'avg_probability': 0.8,
-                'sample_count': 10,
-                'description': self._get_enhanced_regime_description(regime_id),
-                'model_performance': {
-                    'catboost': 0.85,
-                    'elastic_net': 0.80
-                },
-                'meta_learner_performance': 0.90,
-                'regime_type': 'common',
-                'confidence_score': 0.8 / self.n_regimes,
-                'stability_score': 0.7
-            }
-
-        results['updated_pipeline_state'].update({
-            'hmm_training_completed': True,
-            'hmm_timeframe': self.timeframe,
-            'hmm_n_regimes': self.n_regimes,
-            'hmm_n_features': self.n_features,
-            'regime_states': mock_regime_states,
-            'regime_probabilities': mock_probabilities,
-            'regime_confidence': [0.8] * len(mock_regime_states),
-            'hmm_state_sequence': mock_regime_states,
-            'hmm_state_probs': mock_probabilities,
-            'regime_characteristics': enhanced_characteristics,
-            'transition_matrix': [[1.0/self.n_regimes] * self.n_regimes] * self.n_regimes,
-            'hmm_model_path': f'mock_hmm_1h_model_{self.n_regimes}regimes.pkl',
-            'hmm_base_models': self.base_models,
-            'hmm_meta_learner': self.meta_learner,
-            'hmm_run_interval': self.run_interval_minutes
-        })
-
-        results['models'] = [f'mock_hmm_1h_model_{self.n_regimes}regimes.pkl']
-        results['metrics'] = {
-            'mock_training': True,
-            'n_regimes': self.n_regimes,
-            'n_features': self.n_features,
-            'timeframe': self.timeframe,
-            'base_models': list(self.base_models.keys()),
-            'meta_learner': self.meta_learner
-        }
-        results['regime_models'] = enhanced_characteristics
-
-        return results
 
     async def _load_regime_data(
         self,
@@ -1054,37 +1028,3 @@ class HMMTrainingPipeline:
         }
         return descriptions.get(regime_id, f"Unknown Regime {regime_id}")
 
-    def _create_mock_results(
-        self,
-        results: Dict[str, Any],
-        pipeline_state: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """Create mock results when training fails - FOR DEVELOPMENT ONLY."""
-        self.logger.warning("⚠️ Creating MOCK HMM training results - this should not happen in production!")
-        self.logger.warning("💡 This indicates that real HMM training failed and needs to be fixed")
-
-        # Mock regime data
-        mock_regime_states = [0, 1, 2] * 10  # Simple repeating pattern
-        mock_probabilities = [0.8, 0.7, 0.6] * 10
-
-        results['updated_pipeline_state'].update({
-            'hmm_training_completed': True,
-            'regime_states': mock_regime_states,
-            'regime_probabilities': mock_probabilities,
-            'regime_confidence': [0.75] * len(mock_regime_states),
-            'hmm_state_sequence': mock_regime_states,
-            'hmm_state_probs': [[0.8, 0.1, 0.1], [0.1, 0.8, 0.1], [0.1, 0.1, 0.8]] * 10,
-            'regime_characteristics': {
-                'regime_0': {'frequency': 0.33, 'avg_probability': 0.8, 'description': 'Bull Regime'},
-                'regime_1': {'frequency': 0.33, 'avg_probability': 0.7, 'description': 'Bear Regime'},
-                'regime_2': {'frequency': 0.34, 'avg_probability': 0.6, 'description': 'Sideways Regime'}
-            },
-            'transition_matrix': [[0.4, 0.3, 0.3], [0.3, 0.4, 0.3], [0.3, 0.3, 0.4]],
-            'hmm_model_path': 'mock_hmm_model.pkl'
-        })
-
-        results['models'] = ['mock_hmm_model.pkl']
-        results['metrics'] = {'mock_training': True, 'n_regimes': 3}
-        results['regime_models'] = results['updated_pipeline_state']['regime_characteristics']
-
-        return results

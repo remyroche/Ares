@@ -46,6 +46,25 @@ from src.utils.common_operations import (
     get_m1_memory_optimizer, get_m1_cpu_optimizer, validate_dataframe
 )
 
+# Import existing indicator implementations from feature_generation
+from src.feature_generation.utils.optimized_cross_timeframe_analysis_integration import (
+    OptimizedCrossTimeframeAnalysisIntegration
+)
+from src.feature_generation.categories.momentum import (
+    MomentumFeatureGenerator, StochasticGenerator, WilliamsRGenerator, 
+    ROCGenerator, MomentumGenerator
+)
+from src.feature_generation.categories.trend import (
+    TrendFeatureGenerator, KeltnerChannelsGenerator
+)
+from src.feature_generation.categories.volume import (
+    VolumeFeatureGenerator, VWAPGenerator, OBVGenerator, VolumeROCGenerator
+)
+from src.feature_generation.categories.volatility import (
+    VolatilityFeatureGenerator, BollingerBandsGenerator, VolatilityBandsGenerator
+)
+from src.feature_generation.categories.oscillator import CCIGenerator
+
 from src.utils.math_validation import (
     safe_divide, safe_log, safe_sqrt, safe_power, validate_finite,
     validate_positive, validate_range, safe_kelly_calculation,
@@ -169,6 +188,26 @@ class TacticianLookbackOptimizer:
             'pickle': PickleSerializer(),
             'parquet': ParquetSerializer()
         }
+        
+        # Initialize feature generators for indicator calculations
+        self.cross_timeframe_generator = OptimizedCrossTimeframeAnalysisIntegration()
+        self.momentum_generator = MomentumFeatureGenerator()
+        self.trend_generator = TrendFeatureGenerator() 
+        self.volume_generator = VolumeFeatureGenerator()
+        self.volatility_generator = VolatilityFeatureGenerator()
+        
+        # Initialize specific indicator generators
+        self.stochastic_generator = StochasticGenerator()
+        self.williams_r_generator = WilliamsRGenerator()
+        self.roc_generator = ROCGenerator()
+        self.momentum_specific_generator = MomentumGenerator()
+        self.vwap_generator = VWAPGenerator()
+        self.obv_generator = OBVGenerator()
+        self.volume_roc_generator = VolumeROCGenerator()
+        self.bollinger_generator = BollingerBandsGenerator()
+        self.volatility_bands_generator = VolatilityBandsGenerator()
+        self.cci_generator = CCIGenerator()
+        self.keltner_generator = KeltnerChannelsGenerator()
         
         # Optimization state
         self.optimization_results = {}
@@ -322,63 +361,93 @@ class TacticianLookbackOptimizer:
             raise
     
     def _get_indicator_calculator(self, indicator: str):
-        """Get calculator function for a specific indicator."""
-        # This would return the actual calculation function for each indicator
-        # For now, return a placeholder
-        def placeholder_calculator(data: pd.DataFrame, lookback: int) -> pd.Series:
-            """Placeholder calculator for indicator."""
-            if indicator == "rsi":
-                return self._calculate_rsi(data, lookback)
-            elif indicator == "macd":
-                return self._calculate_macd(data, lookback)
-            elif indicator == "atr":
-                return self._calculate_atr(data, lookback)
-            else:
-                # Generic SMA as fallback
-                return data['close'].rolling(window=lookback).mean()
+        """Get calculator function for a specific indicator using existing feature_generation implementations."""
+        # Map ALL indicators to existing feature_generation implementations
+        feature_generator_map = {
+            # Momentum indicators
+            "rsi": lambda data, lookback: pd.Series(
+                self.momentum_generator._calculate_rsi(data['close'].values, period=lookback), 
+                index=data.index
+            ),
+            "macd": lambda data, lookback: pd.Series(
+                self.momentum_generator._calculate_macd(data['close'].values, fast=max(1, lookback//2), slow=lookback)['macd'],
+                index=data.index
+            ),
+            "stoch": lambda data, lookback: self.stochastic_generator._generate_feature(data, period=lookback),
+            "williams_r": lambda data, lookback: self.williams_r_generator._generate_feature(data, period=lookback),
+            "roc": lambda data, lookback: self.roc_generator._generate_feature(data, period=lookback),
+            "momentum": lambda data, lookback: self.momentum_specific_generator._generate_feature(data, period=lookback),
+            
+            # Trend indicators
+            "ema": lambda data, lookback: pd.Series(
+                self.momentum_generator._calculate_ema(data['close'].values, period=lookback),
+                index=data.index
+            ),
+            "sma": lambda data, lookback: pd.Series(
+                self.trend_generator._calculate_sma(data['close'].values, period=lookback),
+                index=data.index
+            ),
+            "keltner_channels": lambda data, lookback: self.keltner_generator._generate_feature(data, period=lookback),
+            
+            # Volume indicators
+            "volume_sma": lambda data, lookback: pd.Series(
+                self.volume_generator._calculate_volume_ma(data['volume'].values, period=lookback),
+                index=data.index
+            ),
+            "vwap": lambda data, lookback: self.vwap_generator._generate_feature(data, period=lookback),
+            "obv": lambda data, lookback: self.obv_generator._generate_feature(data),
+            "volume_roc": lambda data, lookback: self.volume_roc_generator._generate_feature(data, period=lookback),
+            
+            # Volatility indicators
+            "bollinger_bands": lambda data, lookback: self.bollinger_generator._generate_feature(data, period=lookback),
+            "volatility_bands": lambda data, lookback: self.volatility_bands_generator._generate_feature(data, period=lookback),
+            "atr": lambda data, lookback: self.cross_timeframe_generator._calculate_atr(data, period=lookback),
+            
+            # Oscillator indicators
+            "cci": lambda data, lookback: self.cci_generator._generate_feature(data, period=lookback),
+        }
         
-        return placeholder_calculator
+        # All indicators now use feature_generation implementations
+        if indicator in feature_generator_map:
+            return feature_generator_map[indicator]
+        else:
+            tprint_warning(f"⚠️ Unknown indicator: {indicator}, using SMA as fallback")
+            return feature_generator_map["sma"]
     
-    def _calculate_rsi(self, data: pd.DataFrame, lookback: int) -> pd.Series:
-        """Calculate RSI with given lookback period."""
-        try:
-            delta = data['close'].diff()
-            gain = (delta.where(delta > 0, 0)).rolling(window=lookback).mean()
-            loss = (-delta.where(delta < 0, 0)).rolling(window=lookback).mean()
-            rs = safe_divide(gain, loss, default_value=1.0)
-            rsi = 100 - (100 / (1 + rs))
-            return rsi
-        except Exception as e:
-            self.logger.warning(f"RSI calculation failed: {e}")
-            return pd.Series(index=data.index, dtype=float)
-    
-    def _calculate_macd(self, data: pd.DataFrame, lookback: int) -> pd.Series:
-        """Calculate MACD with given lookback period."""
-        try:
-            fast_period = max(1, lookback // 2)
-            slow_period = lookback
-            
-            ema_fast = data['close'].ewm(span=fast_period).mean()
-            ema_slow = data['close'].ewm(span=slow_period).mean()
-            macd = ema_fast - ema_slow
-            return macd
-        except Exception as e:
-            self.logger.warning(f"MACD calculation failed: {e}")
-            return pd.Series(index=data.index, dtype=float)
-    
-    def _calculate_atr(self, data: pd.DataFrame, lookback: int) -> pd.Series:
-        """Calculate ATR with given lookback period."""
-        try:
-            high_low = data['high'] - data['low']
-            high_close = np.abs(data['high'] - data['close'].shift())
-            low_close = np.abs(data['low'] - data['close'].shift())
-            
-            true_range = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
-            atr = true_range.rolling(window=lookback).mean()
-            return atr
-        except Exception as e:
-            self.logger.warning(f"ATR calculation failed: {e}")
-            return pd.Series(index=data.index, dtype=float)
+    # ========================================================================
+    # ALL TECHNICAL INDICATORS NOW USE FEATURE_GENERATION IMPLEMENTATIONS
+    # 
+    # ✅ ALL 17 INDICATORS USING EXISTING FEATURE_GENERATION:
+    # 
+    # Momentum Indicators (6):
+    # ✅ RSI - MomentumFeatureGenerator._calculate_rsi()
+    # ✅ MACD - MomentumFeatureGenerator._calculate_macd() 
+    # ✅ EMA - MomentumFeatureGenerator._calculate_ema()
+    # ✅ Stochastic - StochasticGenerator._generate_feature()
+    # ✅ Williams %R - WilliamsRGenerator._generate_feature()
+    # ✅ ROC - ROCGenerator._generate_feature()
+    # ✅ Momentum - MomentumGenerator._generate_feature()
+    #
+    # Trend Indicators (3):
+    # ✅ SMA - TrendFeatureGenerator._calculate_sma()
+    # ✅ Keltner Channels - KeltnerChannelsGenerator._generate_feature()
+    #
+    # Volume Indicators (4):
+    # ✅ Volume SMA - VolumeFeatureGenerator._calculate_volume_ma()
+    # ✅ VWAP - VWAPGenerator._generate_feature()
+    # ✅ OBV - OBVGenerator._generate_feature()
+    # ✅ Volume ROC - VolumeROCGenerator._generate_feature()
+    #
+    # Volatility Indicators (3):
+    # ✅ ATR - OptimizedCrossTimeframeAnalysisIntegration._calculate_atr()
+    # ✅ Bollinger Bands - BollingerBandsGenerator._generate_feature()
+    # ✅ Volatility Bands - VolatilityBandsGenerator._generate_feature()
+    #
+    # Oscillator Indicators (1):
+    # ✅ CCI - CCIGenerator._generate_feature()
+    #
+    # 🎉 NO LOCAL IMPLEMENTATIONS REMAINING - ALL USE FEATURE_GENERATION!
+    # ========================================================================
     
     def _create_output_directories(self):
         """Create output directories for results."""
@@ -395,6 +464,8 @@ class TacticianLookbackOptimizer:
             
         except Exception as e:
             tprint_warning(f"⚠️ Failed to create output directories: {e}")
+    
+    # All local indicator implementations removed - now using feature_generation implementations
     
     async def optimize_lookback_periods(
         self,

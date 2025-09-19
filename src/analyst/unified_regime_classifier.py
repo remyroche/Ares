@@ -13,12 +13,12 @@ import numpy as np
 import pandas as pd
 from src.utils.logger import system_logger
 
-# Import unified technical indicators
+# Import existing feature engineer for technical indicators
 try:
-    from src.utils.technical_indicators import TechnicalIndicators
-    TECHNICAL_INDICATORS_AVAILABLE = True
+    from src.utils.data.feature_engineer import FeatureEngineer
+    FEATURE_ENGINEER_AVAILABLE = True
 except ImportError:
-    TECHNICAL_INDICATORS_AVAILABLE = False
+    FEATURE_ENGINEER_AVAILABLE = False
 
 try:
     from src.core.decorators import handles_errors
@@ -87,6 +87,9 @@ class UnifiedRegimeClassifier:
 
     def __init__(self, config: dict[str, Any], exchange: str='UNKNOWN', symbol: str='UNKNOWN') -> None:
         self.logger = logging.getLogger(self.__class__.__name__)
+        
+        # Initialize feature engineer for technical indicators
+        self.feature_engineer = FeatureEngineer() if FEATURE_ENGINEER_AVAILABLE else None
         self._enable_numpy_rng_unpickle_compat(system_logger)
         self.config = config.get('analyst', {}).get('unified_regime_classifier', {})
         self.global_config = config
@@ -460,9 +463,9 @@ class UnifiedRegimeClassifier:
 
     @handles_errors(exceptions=(Exception,), default_return = None, context='UnifiedRegimeClassifier._calculate_rsi')
     def _calculate_rsi(self, df: pd.DataFrame, period: int = 14) -> pd.DataFrame:
-        """Calculate RSI indicator using unified technical indicators."""
-        if TECHNICAL_INDICATORS_AVAILABLE:
-            df['rsi'] = TechnicalIndicators.calculate_rsi(df['close'], period)
+        """Calculate RSI indicator using existing FeatureEngineer."""
+        if self.feature_engineer is not None:
+            df['rsi'] = self.feature_engineer._calculate_rsi(df['close'], period)
         else:
             # Fallback implementation
             close_diff = df['close'].diff()
@@ -474,9 +477,9 @@ class UnifiedRegimeClassifier:
 
     @handles_errors(exceptions=(Exception,), default_return = None, context='UnifiedRegimeClassifier._calculate_macd')
     def _calculate_macd(self, df: pd.DataFrame, fast: int = 12, slow: int = 26, signal: int = 9) -> pd.DataFrame:
-        """Calculate MACD indicator using unified technical indicators."""
-        if TECHNICAL_INDICATORS_AVAILABLE:
-            macd_line, signal_line, histogram = TechnicalIndicators.calculate_macd(df['close'], fast, slow, signal)
+        """Calculate MACD indicator using existing FeatureEngineer."""
+        if self.feature_engineer is not None:
+            macd_line, signal_line, histogram = self.feature_engineer._calculate_macd(df['close'], fast, slow, signal)
             df['macd'] = macd_line
             df['macd_signal'] = signal_line
             df['macd_histogram'] = histogram

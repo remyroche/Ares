@@ -143,12 +143,12 @@ class RegimeType(Enum):
     TRENDING = "trending"
     MEAN_REVERTING = "mean_reverting"
 
-# Import unified technical indicators
+# Import existing feature engineer for technical indicators
 try:
-    from src.utils.technical_indicators import TechnicalIndicators
-    TECHNICAL_INDICATORS_AVAILABLE = True
+    from src.utils.data.feature_engineer import FeatureEngineer
+    FEATURE_ENGINEER_AVAILABLE = True
 except ImportError:
-    TECHNICAL_INDICATORS_AVAILABLE = False
+    FEATURE_ENGINEER_AVAILABLE = False
 
 # Import unified configuration
 try:
@@ -244,6 +244,9 @@ class EnhancedHMMClustering:
         self.hmm_detector = EnhancedHMMRegimeDetector() if ML_COMMON_AVAILABLE else None
         self.cv_validator = TemporalCrossValidator() if ML_COMMON_AVAILABLE else None
         self.feature_selector = FeatureSelector() if ML_COMMON_AVAILABLE else None
+        
+        # Initialize feature engineer for technical indicators
+        self.feature_engineer = FeatureEngineer() if FEATURE_ENGINEER_AVAILABLE else None
         
         # Initialize feature generators
         if FEATURE_GENERATION_AVAILABLE:
@@ -862,11 +865,11 @@ class EnhancedHMMClustering:
         features = features.dropna()
         return features
     
-    # Technical indicator calculation methods - using unified implementations
+    # Technical indicator calculation methods - using existing FeatureEngineer
     def _calculate_rsi(self, prices: pd.Series, window: int = 14) -> pd.Series:
-        """Calculate RSI using unified technical indicators."""
-        if TECHNICAL_INDICATORS_AVAILABLE:
-            return TechnicalIndicators.calculate_rsi(prices, window)
+        """Calculate RSI using existing FeatureEngineer."""
+        if self.feature_engineer is not None:
+            return self.feature_engineer._calculate_rsi(prices, window)
         else:
             # Fallback implementation
             delta = prices.diff()
@@ -877,9 +880,9 @@ class EnhancedHMMClustering:
             return pd.Series(rsi, index=prices.index)
     
     def _calculate_macd(self, prices: pd.Series, fast: int = 12, slow: int = 26, signal: int = 9) -> Tuple[pd.Series, pd.Series, pd.Series]:
-        """Calculate MACD using unified technical indicators."""
-        if TECHNICAL_INDICATORS_AVAILABLE:
-            return TechnicalIndicators.calculate_macd(prices, fast, slow, signal)
+        """Calculate MACD using existing FeatureEngineer."""
+        if self.feature_engineer is not None:
+            return self.feature_engineer._calculate_macd(prices, fast, slow, signal)
         else:
             # Fallback implementation
             ema_fast = prices.ewm(span=fast).mean()
@@ -890,9 +893,9 @@ class EnhancedHMMClustering:
             return macd_line, macd_signal, macd_hist
     
     def _calculate_bollinger_bands(self, prices: pd.Series, window: int = 20, num_std: float = 2) -> Tuple[pd.Series, pd.Series, pd.Series]:
-        """Calculate Bollinger Bands using unified technical indicators."""
-        if TECHNICAL_INDICATORS_AVAILABLE:
-            return TechnicalIndicators.calculate_bollinger_bands(prices, window, num_std)
+        """Calculate Bollinger Bands using existing FeatureEngineer."""
+        if self.feature_engineer is not None:
+            return self.feature_engineer._calculate_bollinger_bands(prices, window, num_std)
         else:
             # Fallback implementation
             rolling_mean = prices.rolling(window=window).mean()
@@ -902,9 +905,9 @@ class EnhancedHMMClustering:
             return upper_band, rolling_mean, lower_band
     
     def _calculate_atr(self, data: pd.DataFrame, window: int = 14) -> pd.Series:
-        """Calculate ATR using unified technical indicators."""
-        if TECHNICAL_INDICATORS_AVAILABLE:
-            return TechnicalIndicators.calculate_atr(data, window)
+        """Calculate ATR using existing FeatureEngineer."""
+        if self.feature_engineer is not None:
+            return self.feature_engineer._calculate_atr(data, window)
         else:
             # Fallback implementation
             high = data['high']
@@ -920,9 +923,9 @@ class EnhancedHMMClustering:
             return atr
     
     def _calculate_stochastic(self, data: pd.DataFrame, window: int = 14) -> Tuple[pd.Series, pd.Series]:
-        """Calculate Stochastic using unified technical indicators."""
-        if TECHNICAL_INDICATORS_AVAILABLE:
-            return TechnicalIndicators.calculate_stochastic(data, window)
+        """Calculate Stochastic using existing FeatureEngineer."""
+        if self.feature_engineer is not None:
+            return self.feature_engineer._calculate_stochastic(data, window)
         else:
             # Fallback implementation
             high = data['high']

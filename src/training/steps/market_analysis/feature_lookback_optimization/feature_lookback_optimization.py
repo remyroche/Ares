@@ -233,13 +233,19 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
         self.start_time: Optional[float] = None
         self.metrics: Optional[OptimizationMetrics] = None
         
-        # Performance monitoring
+        # Performance monitoring with memory tracking
         self.performance_monitor = {
             'memory_usage': [],
             'cpu_usage': [],
             'execution_times': {},
-            'error_counts': 0
+            'error_counts': 0,
+            'peak_memory_mb': 0.0,
+            'memory_warnings': 0
         }
+        
+        # Memory monitoring thresholds
+        self.memory_warning_threshold_mb = 1000.0  # 1GB
+        self.memory_critical_threshold_mb = 2000.0  # 2GB
         
         # Initialize optional attributes to avoid AttributeError at runtime
         self.m1_gpu_manager = None
@@ -491,6 +497,47 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
         except Exception as e:
             tprint(f"❌ Enhanced data handling failed: {e}")
             return None
+    
+    def _check_memory_usage(self) -> Dict[str, float]:
+        \"\"\"Check current memory usage and issue warnings if necessary.\"\"\"
+        try:
+            import psutil
+            process = psutil.Process()
+            memory_info = process.memory_info()
+            memory_mb = memory_info.rss / 1024 / 1024  # Convert to MB
+            
+            # Update peak memory
+            if memory_mb > self.performance_monitor['peak_memory_mb']:
+                self.performance_monitor['peak_memory_mb'] = memory_mb
+            
+            # Add to memory usage history
+            self.performance_monitor['memory_usage'].append(memory_mb)
+            
+            # Keep only recent memory measurements
+            if len(self.performance_monitor['memory_usage']) > 1000:
+                self.performance_monitor['memory_usage'] = self.performance_monitor['memory_usage'][-500:]
+            
+            # Issue warnings if necessary
+            if memory_mb > self.memory_critical_threshold_mb:
+                self.performance_monitor['memory_warnings'] += 1
+                tprint(f\"🚨 CRITICAL: Memory usage {memory_mb:.1f}MB exceeds critical threshold {self.memory_critical_threshold_mb}MB\")
+                raise MemoryError(f\"Memory usage {memory_mb:.1f}MB exceeds critical threshold\")
+            elif memory_mb > self.memory_warning_threshold_mb:
+                self.performance_monitor['memory_warnings'] += 1
+                tprint(f\"⚠️ WARNING: Memory usage {memory_mb:.1f}MB exceeds warning threshold {self.memory_warning_threshold_mb}MB\")
+            
+            return {
+                'current_memory_mb': memory_mb,
+                'peak_memory_mb': self.performance_monitor['peak_memory_mb'],
+                'memory_warnings': self.performance_monitor['memory_warnings']
+            }
+            
+        except ImportError:
+            # psutil not available, use basic memory tracking
+            return {'current_memory_mb': 0.0, 'peak_memory_mb': 0.0, 'memory_warnings': 0}
+        except Exception as e:
+            tprint(f\"Memory monitoring failed: {e}\")
+            return {'current_memory_mb': 0.0, 'peak_memory_mb': 0.0, 'memory_warnings': 0}
     
     def _quick_validate_data(self, data: pd.DataFrame) -> bool:
         """Quick validation without copying data - returns True if data is good as-is."""

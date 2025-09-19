@@ -77,6 +77,35 @@ except ImportError as e:
     COMMON_OPERATIONS_AVAILABLE = False
     logging.warning(f"Common operations not available: {e}")
 
+# Import math validation utilities for safe operations
+try:
+    from src.utils.math_validation import (
+        safe_correlation, safe_mean as math_safe_mean, safe_std as math_safe_std,
+        validate_finite as math_validate_finite, validate_positive, validate_range,
+        safe_percentile, math_safe
+    )
+    from src.utils.core.common import safe_list_get
+    MATH_VALIDATION_AVAILABLE = True
+except ImportError as e:
+    MATH_VALIDATION_AVAILABLE = False
+    logging.warning(f"Math validation utilities not available: {e}")
+    
+    # Fallback implementations
+    def safe_list_get(lst, index, default=None):
+        try:
+            return lst[index] if lst and 0 <= index < len(lst) else default
+        except (IndexError, TypeError):
+            return default
+    
+    def safe_correlation(x, y, default=0.0):
+        try:
+            if len(x) != len(y) or len(x) < 2:
+                return default
+            corr = np.corrcoef(x, y)[0, 1]
+            return corr if np.isfinite(corr) else default
+        except:
+            return default
+
 # Import matrix operations for advanced computations
 try:
     from src.utils.matrix_operations import (
@@ -138,6 +167,104 @@ class LookbackOptimizationConfig:
     first_lookback_weight: float = 0.4  # Weight for first lookback period (MI)
     second_lookback_weight: float = 0.4  # Weight for second lookback period (mRMR)
     correlation_weight: float = 0.2  # Weight for low correlation between periods
+    
+    def __post_init__(self):
+        """Validate configuration parameters."""
+        self._validate_config()
+    
+    def _validate_config(self):
+        """Validate configuration parameters with comprehensive checks."""
+        errors = []
+        
+        # Validate lookback constraints
+        if self.min_lookback <= 0:
+            errors.append("min_lookback must be positive")
+        if self.max_lookback <= self.min_lookback:
+            errors.append("max_lookback must be greater than min_lookback")
+        if self.lookback_step <= 0:
+            errors.append("lookback_step must be positive")
+        if self.max_lookback - self.min_lookback < self.lookback_step:
+            errors.append("lookback range too small for given step size")
+            
+        # Validate grid sizes
+        if self.coarse_grid_size <= 0:
+            errors.append("coarse_grid_size must be positive")
+        if self.fine_grid_size <= 0:
+            errors.append("fine_grid_size must be positive")
+        if self.coarse_grid_size > 20:
+            errors.append("coarse_grid_size too large (max 20)")
+        if self.fine_grid_size > 20:
+            errors.append("fine_grid_size too large (max 20)")
+            
+        # Validate candidate selection
+        if self.top_k_coarse_candidates <= 0:
+            errors.append("top_k_coarse_candidates must be positive")
+        if self.top_k_fine_candidates <= 0:
+            errors.append("top_k_fine_candidates must be positive")
+        if self.top_k_coarse_candidates > self.coarse_grid_size ** 2:
+            errors.append("top_k_coarse_candidates exceeds total coarse combinations")
+        if self.top_k_fine_candidates > self.fine_grid_size ** 2:
+            errors.append("top_k_fine_candidates exceeds total fine combinations")
+            
+        # Validate TPE configuration
+        if self.tpe_trials <= 0:
+            errors.append("tpe_trials must be positive")
+        if self.n_startup_trials < 0:
+            errors.append("n_startup_trials must be non-negative")
+        if self.n_warmup_steps < 0:
+            errors.append("n_warmup_steps must be non-negative")
+        if self.interval_steps <= 0:
+            errors.append("interval_steps must be positive")
+            
+        # Validate refinement factors
+        if not 0 < self.coarse_refinement_factor <= 1:
+            errors.append("coarse_refinement_factor must be between 0 and 1")
+        if not 0 < self.fine_refinement_factor <= 1:
+            errors.append("fine_refinement_factor must be between 0 and 1")
+            
+        # Validate thresholds
+        if not 0 <= self.max_correlation_threshold <= 1:
+            errors.append("max_correlation_threshold must be between 0 and 1")
+        if self.min_mutual_info_threshold < 0:
+            errors.append("min_mutual_info_threshold must be non-negative")
+            
+        # Validate weights
+        if self.first_lookback_weight < 0:
+            errors.append("first_lookback_weight must be non-negative")
+        if self.second_lookback_weight < 0:
+            errors.append("second_lookback_weight must be non-negative")
+        if self.correlation_weight < 0:
+            errors.append("correlation_weight must be non-negative")
+            
+        # Check weight sum (should be reasonable)
+        total_weight = self.first_lookback_weight + self.second_lookback_weight + self.correlation_weight
+        if total_weight <= 0:
+            errors.append("sum of weights must be positive")
+        if total_weight > 2.0:
+            errors.append("sum of weights seems too large (> 2.0)")
+            
+        # Validate method names
+        valid_methods = ["mutual_info", "mrmr", "elastic_net", "pid", "feature_importance"]
+        if self.first_lookback_method not in valid_methods:
+            errors.append(f"invalid first_lookback_method: {self.first_lookback_method}")
+        if self.second_lookback_method not in valid_methods:
+            errors.append(f"invalid second_lookback_method: {self.second_lookback_method}")
+            
+        valid_correlation_methods = ["pearson", "spearman", "kendall"]
+        if self.correlation_method not in valid_correlation_methods:
+            errors.append(f"invalid correlation_method: {self.correlation_method}")
+            
+        # Validate sampler/pruner types
+        valid_samplers = ["tpe"]
+        if self.sampler_type not in valid_samplers:
+            errors.append(f"invalid sampler_type: {self.sampler_type}")
+            
+        valid_pruners = ["median", "successive_halving", "none"]
+        if self.pruner_type not in valid_pruners:
+            errors.append(f"invalid pruner_type: {self.pruner_type}")
+            
+        if errors:
+            raise ValueError(f"Configuration validation failed: {'; '.join(errors)}")
     
     # Advanced Feature Selection Parameters
     mrmr_config: Dict[str, Any] = field(default_factory=lambda: {
@@ -501,7 +628,7 @@ class MRMRLookbackOptimizer:
                                     target_column: str,
                                     lookback_period: int,
                                     parameter_type: str) -> float:
-        """Calculate mutual information for a specific lookback period."""
+        """Calculate mutual information for a specific lookback period with safe operations."""
         try:
             # Generate feature with lookback period
             feature_values = self._generate_feature_with_lookback(
@@ -511,39 +638,90 @@ class MRMRLookbackOptimizer:
             # Get target values
             target_values = data[target_column].values
             
-            # Ensure same length
+            # Safely align arrays
+            if len(feature_values) == 0 or len(target_values) == 0:
+                return 0.0
+                
             min_length = min(len(feature_values), len(target_values))
             feature_values = feature_values[:min_length]
             target_values = target_values[:min_length]
             
-            # Remove NaN values
-            mask = ~(np.isnan(feature_values) | np.isnan(target_values))
-            feature_values = feature_values[mask]
-            target_values = target_values[mask]
+            # Remove NaN values using safe operations
+            if MATH_VALIDATION_AVAILABLE:
+                # Use safe validation
+                try:
+                    feature_clean = feature_values[np.isfinite(feature_values)]
+                    target_clean = target_values[np.isfinite(target_values)]
+                    
+                    # Align cleaned arrays
+                    valid_mask = np.isfinite(feature_values) & np.isfinite(target_values)
+                    feature_clean = feature_values[valid_mask]
+                    target_clean = target_values[valid_mask]
+                except Exception:
+                    return 0.0
+            else:
+                # Fallback NaN removal
+                mask = ~(np.isnan(feature_values) | np.isnan(target_values))
+                feature_clean = feature_values[mask]
+                target_clean = target_values[mask]
             
-            if len(feature_values) < 10:  # Need minimum data points
+            # Check minimum data requirement (increased from 10 to 30 for reliability)
+            min_samples = max(30, lookback_period * 2)
+            if len(feature_clean) < min_samples:
+                self.logger.debug(f"Insufficient data for MI calculation: {len(feature_clean)} < {min_samples}")
                 return 0.0
             
-            # Calculate mutual information
+            # Calculate mutual information with safe operations
             if SKLEARN_AVAILABLE:
-                # Use sklearn for continuous target
-                if data[target_column].dtype in ['float64', 'int64']:
-                    mi_score = mutual_info_regression(
-                        feature_values.reshape(-1, 1), 
-                        target_values,
-                        random_state=self.config.random_state
-                    )[0]
-                else:
-                    # For categorical target
-                    mi_score = mutual_info_classif(
-                        feature_values.reshape(-1, 1), 
-                        target_values,
-                        random_state=self.config.random_state
-                    )[0]
+                try:
+                    # Use sklearn for continuous target
+                    if data[target_column].dtype in ['float64', 'int64']:
+                        mi_scores = mutual_info_regression(
+                            feature_clean.reshape(-1, 1), 
+                            target_clean,
+                            random_state=self.config.random_state
+                        )
+                        # Safe array access
+                        mi_score = safe_list_get(mi_scores, 0, 0.0)
+                    else:
+                        # For categorical target
+                        mi_scores = mutual_info_classif(
+                            feature_clean.reshape(-1, 1), 
+                            target_clean,
+                            random_state=self.config.random_state
+                        )
+                        # Safe array access
+                        mi_score = safe_list_get(mi_scores, 0, 0.0)
+                except Exception as e:
+                    self.logger.debug(f"Sklearn MI calculation failed: {e}")
+                    mi_score = 0.0
             else:
-                # Fallback to basic correlation
-                correlation = np.corrcoef(feature_values, target_values)[0, 1]
-                mi_score = abs(correlation) if not np.isnan(correlation) else 0.0
+                mi_score = 0.0
+            
+            # Fallback to safe correlation if MI failed
+            if mi_score == 0.0:
+                if MATH_VALIDATION_AVAILABLE:
+                    correlation = safe_correlation(feature_clean, target_clean, default=0.0)
+                else:
+                    try:
+                        corr_matrix = np.corrcoef(feature_clean, target_clean)
+                        if corr_matrix.shape == (2, 2):
+                            correlation = corr_matrix[0, 1]
+                            correlation = correlation if np.isfinite(correlation) else 0.0
+                        else:
+                            correlation = 0.0
+                    except Exception:
+                        correlation = 0.0
+                
+                mi_score = abs(correlation)
+            
+            # Validate result
+            if MATH_VALIDATION_AVAILABLE:
+                try:
+                    mi_score = math_validate_finite(mi_score, "mutual_information")
+                    mi_score = max(0.0, mi_score)  # Ensure non-negative
+                except Exception:
+                    mi_score = 0.0
             
             return float(mi_score)
             
@@ -906,7 +1084,7 @@ class MRMRLookbackOptimizer:
                                              first_lookback: int,
                                              second_lookback: int,
                                              parameter_type: str) -> float:
-        """Calculate correlation between two lookback periods."""
+        """Calculate correlation between two lookback periods with safe operations."""
         try:
             # Generate features for both lookback periods
             first_feature = self._generate_feature_with_lookback(
@@ -916,31 +1094,86 @@ class MRMRLookbackOptimizer:
                 data, feature_name, second_lookback, parameter_type
             )
             
-            # Ensure same length
+            # Validate feature arrays
+            if len(first_feature) == 0 or len(second_feature) == 0:
+                return 1.0  # High penalty for empty arrays
+            
+            # Safely align arrays
             min_length = min(len(first_feature), len(second_feature))
             first_feature = first_feature[:min_length]
             second_feature = second_feature[:min_length]
             
-            # Remove NaN values
-            mask = ~(np.isnan(first_feature) | np.isnan(second_feature))
-            first_feature = first_feature[mask]
-            second_feature = second_feature[mask]
-            
-            if len(first_feature) < 10:
-                return 1.0  # High correlation penalty for insufficient data
-            
-            # Calculate correlation
-            if SCIPY_AVAILABLE:
-                if self.config.correlation_method == "pearson":
-                    correlation, _ = pearsonr(first_feature, second_feature)
-                elif self.config.correlation_method == "spearman":
-                    correlation, _ = spearmanr(first_feature, second_feature)
-                else:
-                    correlation = np.corrcoef(first_feature, second_feature)[0, 1]
+            # Remove NaN/infinite values with safe operations
+            if MATH_VALIDATION_AVAILABLE:
+                valid_mask = np.isfinite(first_feature) & np.isfinite(second_feature)
+                if not np.any(valid_mask):
+                    return 1.0  # High penalty for no valid data
+                    
+                first_clean = first_feature[valid_mask]
+                second_clean = second_feature[valid_mask]
             else:
-                correlation = np.corrcoef(first_feature, second_feature)[0, 1]
+                # Fallback NaN removal
+                mask = ~(np.isnan(first_feature) | np.isnan(second_feature))
+                if not np.any(mask):
+                    return 1.0
+                first_clean = first_feature[mask]
+                second_clean = second_feature[mask]
             
-            return abs(float(correlation)) if not np.isnan(correlation) else 1.0
+            # Check minimum data requirement
+            min_samples = max(30, max(first_lookback, second_lookback) * 2)
+            if len(first_clean) < min_samples:
+                self.logger.debug(f"Insufficient data for correlation: {len(first_clean)} < {min_samples}")
+                return 1.0  # High penalty for insufficient data
+            
+            # Calculate correlation with safe operations
+            correlation = 0.0
+            
+            if MATH_VALIDATION_AVAILABLE:
+                # Use safe correlation from math_validation
+                correlation = safe_correlation(first_clean, second_clean, default=1.0)
+            elif SCIPY_AVAILABLE:
+                try:
+                    if self.config.correlation_method == "pearson":
+                        correlation, p_value = pearsonr(first_clean, second_clean)
+                        # Check if correlation is significant (optional)
+                        if not np.isfinite(correlation):
+                            correlation = 1.0
+                    elif self.config.correlation_method == "spearman":
+                        correlation, p_value = spearmanr(first_clean, second_clean)
+                        if not np.isfinite(correlation):
+                            correlation = 1.0
+                    else:
+                        corr_matrix = np.corrcoef(first_clean, second_clean)
+                        if corr_matrix.shape == (2, 2):
+                            correlation = corr_matrix[0, 1]
+                        else:
+                            correlation = 1.0
+                except Exception as e:
+                    self.logger.debug(f"SciPy correlation calculation failed: {e}")
+                    correlation = 1.0
+            else:
+                # Fallback to numpy correlation
+                try:
+                    corr_matrix = np.corrcoef(first_clean, second_clean)
+                    if corr_matrix.shape == (2, 2):
+                        correlation = corr_matrix[0, 1]
+                        correlation = correlation if np.isfinite(correlation) else 1.0
+                    else:
+                        correlation = 1.0
+                except Exception as e:
+                    self.logger.debug(f"Numpy correlation calculation failed: {e}")
+                    correlation = 1.0
+            
+            # Validate and return absolute correlation
+            if MATH_VALIDATION_AVAILABLE:
+                try:
+                    correlation = math_validate_finite(correlation, "correlation")
+                except Exception:
+                    correlation = 1.0
+            
+            # Return absolute correlation (we want low correlation penalty)
+            result = abs(float(correlation))
+            return min(result, 1.0)  # Cap at 1.0
             
         except Exception as e:
             self.logger.warning(f"Failed to calculate correlation between periods: {e}")
@@ -1021,12 +1254,22 @@ class MRMRLookbackOptimizer:
         """Extract results from Optuna optimization."""
         optimization_time = time.time() - start_time
         
-        # Get best trial
-        best_trial = self.study.best_trial
+        # Safely get best trial
+        if not self.study or not self.study.trials:
+            raise ValueError("No optimization trials completed")
+            
+        try:
+            best_trial = self.study.best_trial
+        except Exception as e:
+            self.logger.error(f"Failed to get best trial: {e}")
+            raise ValueError("No valid best trial found")
         
-        # Extract parameters
-        first_lookback = best_trial.params['first_lookback']
-        second_lookback = best_trial.params['second_lookback']
+        # Safely extract parameters
+        first_lookback = best_trial.params.get('first_lookback')
+        second_lookback = best_trial.params.get('second_lookback')
+        
+        if first_lookback is None or second_lookback is None:
+            raise ValueError("Missing required parameters in best trial")
         
         # Calculate final scores
         first_mi_score = self._calculate_mutual_information(
@@ -1041,28 +1284,35 @@ class MRMRLookbackOptimizer:
             data, feature_name, first_lookback, second_lookback, "technical_indicator"
         )
         
-        # Calculate combined score
-        combined_mi_score = (first_mi_score + second_mrmr_score) / 2
+        # Calculate combined score with safe division
+        if MATH_VALIDATION_AVAILABLE:
+            combined_mi_score = safe_divide(first_mi_score + second_mrmr_score, 2.0, 0.0)
+        else:
+            combined_mi_score = (first_mi_score + second_mrmr_score) / 2 if (first_mi_score + second_mrmr_score) > 0 else 0.0
         
-        # Get parameter importance
+        # Get parameter importance with safe operations
+        parameter_importance = {}
         if OPTUNA_AVAILABLE:
             try:
                 parameter_importance = optuna.importance.get_param_importances(self.study)
-            except:
+            except Exception as e:
+                self.logger.debug(f"Failed to get parameter importance: {e}")
                 parameter_importance = {}
-        else:
-            parameter_importance = {}
         
-        # Collect all trials
+        # Safely collect all trials
         all_trials = []
-        for trial in self.study.trials:
-            trial_info = {
-                'params': trial.params,
-                'values': trial.values,
-                'state': trial.state.name,
-                'user_attrs': trial.user_attrs
-            }
-            all_trials.append(trial_info)
+        try:
+            for trial in self.study.trials:
+                trial_info = {
+                    'params': trial.params,
+                    'values': trial.values if trial.values else [],
+                    'state': trial.state.name if hasattr(trial.state, 'name') else str(trial.state),
+                    'user_attrs': trial.user_attrs if trial.user_attrs else {}
+                }
+                all_trials.append(trial_info)
+        except Exception as e:
+            self.logger.warning(f"Failed to collect trial information: {e}")
+            all_trials = []
         
         # Calculate convergence rate
         convergence_rate = self._calculate_convergence_rate()
@@ -1080,7 +1330,7 @@ class MRMRLookbackOptimizer:
             n_trials=len(self.study.trials),
             n_successful_trials=len([t for t in self.study.trials if t.state == optuna.trial.TrialState.COMPLETE]),
             n_pruned_trials=len([t for t in self.study.trials if t.state == optuna.trial.TrialState.PRUNED]),
-            best_score=best_trial.values[0] if best_trial.values else 0.0,
+            best_score=safe_list_get(best_trial.values, 0, 0.0),
             convergence_rate=convergence_rate,
             parameter_importance=parameter_importance,
             relevance_method_used=self.config.first_lookback_method,
@@ -1152,12 +1402,18 @@ class MRMRLookbackOptimizer:
         top_candidates = results[:self.config.top_k_coarse_candidates]
         
         self.logger.info(f"📊 Coarse grid search completed: {len(results)} combinations evaluated")
-        self.logger.info(f"📊 Top coarse candidate: {top_candidates[0]['first_lookback']}, {top_candidates[0]['second_lookback']} (score: {top_candidates[0]['combined_score']:.4f})")
+        
+        # Safe access to top candidate for logging
+        best_candidate = safe_list_get(top_candidates, 0, None)
+        if best_candidate:
+            self.logger.info(f"📊 Top coarse candidate: {best_candidate['first_lookback']}, {best_candidate['second_lookback']} (score: {best_candidate['combined_score']:.4f})")
+        else:
+            self.logger.warning("📊 No valid coarse candidates found")
         
         return {
             'all_results': results,
             'top_candidates': top_candidates,
-            'best_candidate': top_candidates[0] if top_candidates else None
+            'best_candidate': best_candidate
         }
     
     def _fine_grid_search_5x5(self, data: pd.DataFrame, feature_name: str, target_column: str, coarse_results: Dict[str, Any]) -> Dict[str, Any]:
@@ -1226,12 +1482,18 @@ class MRMRLookbackOptimizer:
         top_candidates = results[:self.config.top_k_fine_candidates]
         
         self.logger.info(f"📊 Fine grid search completed: {len(results)} combinations evaluated")
-        self.logger.info(f"📊 Top fine candidate: {top_candidates[0]['first_lookback']}, {top_candidates[0]['second_lookback']} (score: {top_candidates[0]['combined_score']:.4f})")
+        
+        # Safe access to top candidate for logging
+        best_candidate = safe_list_get(top_candidates, 0, None)
+        if best_candidate:
+            self.logger.info(f"📊 Top fine candidate: {best_candidate['first_lookback']}, {best_candidate['second_lookback']} (score: {best_candidate['combined_score']:.4f})")
+        else:
+            self.logger.warning("📊 No valid fine candidates found")
         
         return {
             'all_results': results,
             'top_candidates': top_candidates,
-            'best_candidate': top_candidates[0] if top_candidates else None,
+            'best_candidate': best_candidate,
             'refined_ranges': {
                 'first_range': first_range,
                 'second_range': second_range
@@ -1361,17 +1623,30 @@ class MRMRLookbackOptimizer:
         return (new_min, new_max)
     
     def _calculate_convergence_rate(self) -> float:
-        """Calculate convergence rate of optimization."""
+        """Calculate convergence rate of optimization with safe division."""
         if not self.convergence_history or len(self.convergence_history) < 2:
             return 0.0
         
         # Calculate improvement rate over time
         improvements = 0
         for i in range(1, len(self.convergence_history)):
-            if self.convergence_history[i]['best_score'] > self.convergence_history[i-1]['best_score']:
-                improvements += 1
+            try:
+                current_score = self.convergence_history[i].get('best_score', 0)
+                previous_score = self.convergence_history[i-1].get('best_score', 0)
+                if current_score > previous_score:
+                    improvements += 1
+            except (KeyError, IndexError, TypeError):
+                continue
         
-        return improvements / (len(self.convergence_history) - 1)
+        # Safe division
+        total_comparisons = len(self.convergence_history) - 1
+        if total_comparisons <= 0:
+            return 0.0
+        
+        if MATH_VALIDATION_AVAILABLE:
+            return safe_divide(improvements, total_comparisons, 0.0)
+        else:
+            return improvements / total_comparisons if total_comparisons > 0 else 0.0
     
     def _update_performance_metrics(self, result: LookbackOptimizationResult):
         """Update performance metrics."""

@@ -5,8 +5,7 @@ This module provides a streamlined, robust implementation of triple barrier labe
 with comprehensive error handling, validation, and reporting.
 
 NOTE: For dynamic parameters and advanced multi-horizon labeling, use the 
-multi_horizon_profit_labeler instead. This module provides basic triple barrier
-functionality with static parameters.
+multi_horizon_profit_labeler instead.
 
 Key Features:
 - Unified configuration and execution

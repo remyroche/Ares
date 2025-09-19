@@ -638,7 +638,7 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             regime_ids = list(regime_characteristics.keys())
             n_regimes = len(regime_ids)
             
-            self.logger.info(f"🎯 Starting hierarchical matrix clustering: {n_regimes} regimes → target: 15-40 clusters")
+            self.logger.info(f"🎯 Starting hierarchical matrix clustering: {n_regimes} regimes → target: 20-40 clusters")
             
             # Initialize regime-to-cluster mapping (each regime starts as its own cluster)
             regime_to_cluster = {regime_id: i for i, regime_id in enumerate(regime_ids)}
@@ -653,8 +653,8 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             max_sample_pct = 6.0  # Freeze clusters at or above 6% of samples
             
             for threshold in similarity_thresholds:
-                if cluster_count <= 15:  # Stop when we reach lower bound of optimal range (15-40)
-                    self.logger.info(f"🎯 STOPPING: Reached optimal cluster count ({cluster_count} <= 15)")
+                if cluster_count <= 20:  # Stop when we reach lower bound of optimal range (20-40)
+                    self.logger.info(f"🎯 STOPPING: Reached optimal cluster count ({cluster_count} <= 20)")
                     break
                     
                 self.logger.info(f"🔄 Batch merging at {threshold*100:.1f}% similarity threshold ({threshold:.3f})...")
@@ -757,7 +757,7 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                     
                     self.logger.info(f"   ✅ Updated similarity matrix for {cluster_count} clusters")
                 
-                if cluster_count <= 15:  # Stop if we reach lower bound of optimal range
+                if cluster_count <= 20:  # Stop if we reach lower bound of optimal range
                     break
             
             # Renumber clusters sequentially

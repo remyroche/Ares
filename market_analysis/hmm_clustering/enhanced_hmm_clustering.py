@@ -26,6 +26,9 @@ from enum import Enum
 import time
 import json
 
+# Setup logging first
+logger = logging.getLogger(__name__)
+
 # Import common utilities - fixed paths and added error handling
 try:
     from src.utils.common_operations import (
@@ -130,8 +133,7 @@ except ImportError as e:
     HMMLEARN_AVAILABLE = False
     hmm = None
 
-# Setup logging
-logger = logging.getLogger(__name__)
+# Logger already initialized above
 
 class RegimeType(Enum):
     """Enumeration of market regime types."""
@@ -468,8 +470,7 @@ class EnhancedHMMClustering:
             self.scaler = StandardScaler()
             features_scaled = self.scaler.fit_transform(feature_array)
             
-            # Removed wasteful GPU transfers - only use GPU for actual computations
-            # HMM training is CPU-only, so no GPU preprocessing needed
+            # Note: HMM training is CPU-only (hmmlearn limitation), so no GPU operations needed
             
             # CPU optimization for actual HMM training
             if self.cpu_optimizer:
@@ -595,13 +596,21 @@ class EnhancedHMMClustering:
         try:
             metrics = {}
             
-            # Fixed regime stability calculation
+            # Fixed regime stability calculation with safe division
             regime_changes = np.sum(np.diff(regime_labels) != 0)
-            metrics['regime_stability'] = 1 - (regime_changes / (len(regime_labels) - 1))  # Fixed denominator
+            total_transitions = len(regime_labels) - 1
+            if MATH_VALIDATION_AVAILABLE:
+                metrics['regime_stability'] = 1 - safe_divide(regime_changes, total_transitions, 0.0)
+            else:
+                metrics['regime_stability'] = 1 - (regime_changes / total_transitions) if total_transitions > 0 else 0.0
             
-            # Regime balance
+            # Regime balance using safe division
             unique_regimes, counts = np.unique(regime_labels, return_counts=True)
-            regime_balance = 1 - np.std(counts) / np.mean(counts)
+            if MATH_VALIDATION_AVAILABLE:
+                regime_balance = 1 - safe_divide(np.std(counts), np.mean(counts), 0.0)
+            else:
+                mean_count = np.mean(counts)
+                regime_balance = 1 - (np.std(counts) / mean_count) if mean_count != 0 else 0.0
             metrics['regime_balance'] = regime_balance
             
             # Probability confidence
@@ -768,7 +777,7 @@ class EnhancedHMMClustering:
         for window in self.config.lookback_windows:
             # RSI with fixed calculation
             if "rsi" in self.config.technical_indicators:
-                features[f"rsi_{window}"] = self._calculate_rsi_fixed(features['close'], window)
+                features[f"rsi_{window}"] = self._calculate_rsi(features['close'], window)
             
             # MACD with standard parameters
             if "macd" in self.config.technical_indicators:
@@ -801,7 +810,7 @@ class EnhancedHMMClustering:
             
             # Stochastic
             if "stochastic" in self.config.technical_indicators:
-                stoch_k, stoch_d = self._calculate_stochastic_fixed(features, window)
+                stoch_k, stoch_d = self._calculate_stochastic(features, window)
                 features[f"stoch_k_{window}"] = stoch_k
                 features[f"stoch_d_{window}"] = stoch_d
         
@@ -867,85 +876,237 @@ class EnhancedHMMClustering:
     
     # Technical indicator calculation methods - using existing FeatureEngineer
     def _calculate_rsi(self, prices: pd.Series, window: int = 14) -> pd.Series:
-        """Calculate RSI using existing FeatureEngineer."""
+        """Calculate RSI using existing FeatureEngineer with safe math operations."""
         if self.feature_engineer is not None:
             return self.feature_engineer._calculate_rsi(prices, window)
         else:
-            # Fallback implementation
-            delta = prices.diff()
-            gain = delta.where(delta > 0, 0).rolling(window=window).mean()
-            loss = (-delta.where(delta < 0, 0)).rolling(window=window).mean()
-            rs = np.where(loss != 0, gain / loss, 0.0)
-            rsi = np.where((rs >= 0) & np.isfinite(rs), 100 - (100 / (1 + rs)), 50.0)
-            return pd.Series(rsi, index=prices.index)
+            # Safe fallback implementation using math validation
+            try:
+                if prices is None or prices.empty:
+                    return pd.Series(dtype=float, index=prices.index if hasattr(prices, 'index') else [])
+                if window < 1:
+                    window = 14  # Default to safe value
+                if len(prices) < window:
+                    return pd.Series([50.0] * len(prices), index=prices.index)
+                
+                delta = prices.diff()
+                gain = delta.where(delta > 0, 0).rolling(window=window).mean()
+                loss = (-delta.where(delta < 0, 0)).rolling(window=window).mean()
+                
+                # Use safe division from math validation
+                if MATH_VALIDATION_AVAILABLE:
+                    rs = safe_divide(gain, loss, 1.0)  # Default RS to 1.0 if loss is 0
+                    rsi = 100 - safe_divide(100, 1 + rs, 50.0)  # Default to neutral RSI
+                else:
+                    # Fallback safe implementation
+                    rs = np.where(loss != 0, gain / loss, 1.0)
+                    rsi = np.where((rs >= 0) & np.isfinite(rs), 100 - (100 / (1 + rs)), 50.0)
+                
+                # Ensure RSI is within bounds [0, 100]
+                rsi = np.clip(rsi, 0, 100)
+                return pd.Series(rsi, index=prices.index).fillna(50.0)
+                
+            except Exception as e:
+                self.logger.warning(f"RSI calculation failed: {e}, returning neutral values")
+                return pd.Series([50.0] * len(prices), index=prices.index)
     
     def _calculate_macd(self, prices: pd.Series, fast: int = 12, slow: int = 26, signal: int = 9) -> Tuple[pd.Series, pd.Series, pd.Series]:
-        """Calculate MACD using existing FeatureEngineer."""
+        """Calculate MACD using existing FeatureEngineer with safe parameters."""
         if self.feature_engineer is not None:
             return self.feature_engineer._calculate_macd(prices, fast, slow, signal)
         else:
-            # Fallback implementation
-            ema_fast = prices.ewm(span=fast).mean()
-            ema_slow = prices.ewm(span=slow).mean()
-            macd_line = ema_fast - ema_slow
-            macd_signal = macd_line.ewm(span=signal).mean()
-            macd_hist = macd_line - macd_signal
-            return macd_line, macd_signal, macd_hist
+            # Safe fallback implementation with parameter validation
+            try:
+                if prices is None or prices.empty:
+                    empty_series = pd.Series(dtype=float, index=prices.index if hasattr(prices, 'index') else [])
+                    return empty_series, empty_series, empty_series
+                
+                # Validate parameters
+                if fast < 1:
+                    fast = 12
+                if slow < 1:
+                    slow = 26
+                if signal < 1:
+                    signal = 9
+                if fast >= slow:
+                    fast = max(1, slow - 1)
+                
+                if len(prices) < max(fast, slow, signal):
+                    # Not enough data, return zeros
+                    zero_series = pd.Series([0.0] * len(prices), index=prices.index)
+                    return zero_series, zero_series, zero_series
+                
+                ema_fast = prices.ewm(span=fast, adjust=False).mean()
+                ema_slow = prices.ewm(span=slow, adjust=False).mean()
+                macd_line = ema_fast - ema_slow
+                macd_signal = macd_line.ewm(span=signal, adjust=False).mean()
+                macd_hist = macd_line - macd_signal
+                
+                # Fill NaN values
+                macd_line = macd_line.fillna(0.0)
+                macd_signal = macd_signal.fillna(0.0)
+                macd_hist = macd_hist.fillna(0.0)
+                
+                return macd_line, macd_signal, macd_hist
+                
+            except Exception as e:
+                self.logger.warning(f"MACD calculation failed: {e}, returning zero values")
+                zero_series = pd.Series([0.0] * len(prices), index=prices.index)
+                return zero_series, zero_series, zero_series
     
     def _calculate_bollinger_bands(self, prices: pd.Series, window: int = 20, num_std: float = 2) -> Tuple[pd.Series, pd.Series, pd.Series]:
-        """Calculate Bollinger Bands using existing FeatureEngineer."""
+        """Calculate Bollinger Bands using existing FeatureEngineer with safe parameters."""
         if self.feature_engineer is not None:
             return self.feature_engineer._calculate_bollinger_bands(prices, window, num_std)
         else:
-            # Fallback implementation
-            rolling_mean = prices.rolling(window=window).mean()
-            rolling_std = prices.rolling(window=window).std()
-            upper_band = rolling_mean + (rolling_std * num_std)
-            lower_band = rolling_mean - (rolling_std * num_std)
-            return upper_band, rolling_mean, lower_band
+            # Safe fallback implementation with parameter validation
+            try:
+                if prices is None or prices.empty:
+                    empty_series = pd.Series(dtype=float, index=prices.index if hasattr(prices, 'index') else [])
+                    return empty_series, empty_series, empty_series
+                
+                # Validate parameters
+                if window < 1:
+                    window = 20
+                if num_std <= 0:
+                    num_std = 2.0
+                
+                if len(prices) < window:
+                    # Not enough data, return price as middle band, no spread
+                    middle_band = pd.Series([prices.mean()] * len(prices), index=prices.index)
+                    return middle_band, middle_band, middle_band
+                
+                rolling_mean = prices.rolling(window=window, min_periods=1).mean()
+                rolling_std = prices.rolling(window=window, min_periods=1).std()
+                
+                # Handle case where std is 0 (constant prices)
+                rolling_std = rolling_std.fillna(0)
+                rolling_std = np.where(rolling_std == 0, prices.std() * 0.01, rolling_std)  # Small spread if constant
+                
+                upper_band = rolling_mean + (rolling_std * num_std)
+                lower_band = rolling_mean - (rolling_std * num_std)
+                
+                # Fill NaN values
+                rolling_mean = rolling_mean.fillna(prices.mean())
+                upper_band = upper_band.fillna(prices.mean())
+                lower_band = lower_band.fillna(prices.mean())
+                
+                return upper_band, rolling_mean, lower_band
+                
+            except Exception as e:
+                self.logger.warning(f"Bollinger Bands calculation failed: {e}, returning price as bands")
+                price_series = pd.Series([prices.mean()] * len(prices), index=prices.index)
+                return price_series, price_series, price_series
     
     def _calculate_atr(self, data: pd.DataFrame, window: int = 14) -> pd.Series:
-        """Calculate ATR using existing FeatureEngineer."""
+        """Calculate ATR using existing FeatureEngineer with safe operations."""
         if self.feature_engineer is not None:
             return self.feature_engineer._calculate_atr(data, window)
         else:
-            # Fallback implementation
-            high = data['high']
-            low = data['low']
-            close = data['close']
-            
-            tr1 = high - low
-            tr2 = abs(high - close.shift(1))
-            tr3 = abs(low - close.shift(1))
-            
-            true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-            atr = true_range.rolling(window=window).mean()
-            return atr
+            # Safe fallback implementation
+            try:
+                if data is None or data.empty:
+                    return pd.Series(dtype=float)
+                
+                required_cols = ['high', 'low', 'close']
+                missing_cols = [col for col in required_cols if col not in data.columns]
+                if missing_cols:
+                    self.logger.warning(f"Missing columns for ATR: {missing_cols}, returning zero values")
+                    return pd.Series([0.0] * len(data), index=data.index)
+                
+                if window < 1:
+                    window = 14
+                
+                if len(data) < 2:
+                    # Need at least 2 periods for ATR
+                    return pd.Series([0.0] * len(data), index=data.index)
+                
+                high = data['high']
+                low = data['low']
+                close = data['close']
+                
+                tr1 = high - low
+                tr2 = abs(high - close.shift(1))
+                tr3 = abs(low - close.shift(1))
+                
+                # Handle NaN values in true range calculation
+                tr1 = tr1.fillna(0)
+                tr2 = tr2.fillna(tr1)  # If no previous close, use high-low
+                tr3 = tr3.fillna(tr1)  # If no previous close, use high-low
+                
+                true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+                atr = true_range.rolling(window=window, min_periods=1).mean()
+                
+                # Fill any remaining NaN values
+                atr = atr.fillna(0.0)
+                
+                return atr
+                
+            except Exception as e:
+                self.logger.warning(f"ATR calculation failed: {e}, returning zero values")
+                return pd.Series([0.0] * len(data), index=data.index)
     
     def _calculate_stochastic(self, data: pd.DataFrame, window: int = 14) -> Tuple[pd.Series, pd.Series]:
-        """Calculate Stochastic using existing FeatureEngineer."""
+        """Calculate Stochastic using existing FeatureEngineer with safe math operations."""
         if self.feature_engineer is not None:
             return self.feature_engineer._calculate_stochastic(data, window)
         else:
-            # Fallback implementation
-            high = data['high']
-            low = data['low']
-            close = data['close']
-            
-            lowest_low = low.rolling(window=window).min()
-            highest_high = high.rolling(window=window).max()
-            range_diff = highest_high - lowest_low
-            
-            k_percent = np.where(
-                (range_diff > 1e-10),
-                100 * ((close - lowest_low) / range_diff),
-                50.0
-            )
-            
-            k_percent = pd.Series(k_percent, index=close.index)
-            d_percent = k_percent.rolling(window=3).mean()
-            
-            return k_percent, d_percent
+            # Safe fallback implementation using math validation
+            try:
+                if data is None or data.empty:
+                    empty_series = pd.Series(dtype=float)
+                    return empty_series, empty_series
+                
+                required_cols = ['high', 'low', 'close']
+                missing_cols = [col for col in required_cols if col not in data.columns]
+                if missing_cols:
+                    self.logger.warning(f"Missing columns for Stochastic: {missing_cols}, returning neutral values")
+                    neutral_series = pd.Series([50.0] * len(data), index=data.index)
+                    return neutral_series, neutral_series
+                
+                if window < 1:
+                    window = 14  # Default to safe value
+                if len(data) < window:
+                    neutral_series = pd.Series([50.0] * len(data), index=data.index)
+                    return neutral_series, neutral_series
+                
+                high = data['high']
+                low = data['low']
+                close = data['close']
+                
+                lowest_low = low.rolling(window=window).min()
+                highest_high = high.rolling(window=window).max()
+                range_diff = highest_high - lowest_low
+                
+                # Use safe division from math validation
+                if MATH_VALIDATION_AVAILABLE:
+                    k_percent = 100 * safe_divide(close - lowest_low, range_diff, 0.5)  # Default to 50%
+                else:
+                    # Fallback safe implementation
+                    k_percent = np.where(
+                        (range_diff > 1e-10),
+                        100 * ((close - lowest_low) / range_diff),
+                        50.0
+                    )
+                
+                k_percent = pd.Series(k_percent, index=close.index)
+                
+                # Ensure K% is within bounds [0, 100]
+                k_percent = np.clip(k_percent, 0, 100)
+                
+                # Calculate D% as 3-period moving average of K%
+                d_percent = k_percent.rolling(window=3).mean()
+                
+                # Fill NaN values with neutral values
+                k_percent = k_percent.fillna(50.0)
+                d_percent = d_percent.fillna(50.0)
+                
+                return k_percent, d_percent
+                
+            except Exception as e:
+                self.logger.warning(f"Stochastic calculation failed: {e}, returning neutral values")
+                neutral_series = pd.Series([50.0] * len(data), index=data.index)
+                return neutral_series, neutral_series
 
 
 def run_hmm_clustering_analysis(

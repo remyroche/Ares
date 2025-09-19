@@ -457,7 +457,7 @@ def test_mathematical_correctness():
         clustering = EnhancedHMMClustering(config)
         
         # Test RSI calculation
-        rsi = clustering._calculate_rsi_fixed(test_data['close'], 14)
+        rsi = clustering._calculate_rsi(test_data['close'], 14)
         
         # RSI should be between 0 and 100
         valid_rsi = rsi.dropna()
@@ -469,7 +469,7 @@ def test_mathematical_correctness():
         logger.info("✓ RSI calculation mathematically correct")
         
         # Test Stochastic calculation
-        stoch_k, stoch_d = clustering._calculate_stochastic_fixed(test_data, 14)
+        stoch_k, stoch_d = clustering._calculate_stochastic(test_data, 14)
         
         valid_stoch_k = stoch_k.dropna()
         valid_stoch_d = stoch_d.dropna()

@@ -297,6 +297,8 @@ class TechnicalIndicators:
             # Use safe division to avoid division by zero
             rs = safe_divide(gain, loss, 1.0)  # Default to 1.0 if loss is 0
             rsi = 100 - safe_divide(100, 1 + rs, 50.0)  # Default to 50 if division fails
+            # Ensure RSI is within bounds [0, 100]
+            rsi = np.clip(rsi, 0, 100)
             return rsi.fillna(50)  # Fill NaN with neutral RSI value
         except Exception as e:
             logger = system_logger.getChild('HMMUtils')
@@ -345,9 +347,9 @@ class TechnicalIndicators:
             bb_upper = sma + std * num_std
             bb_lower = sma - std * num_std
             
-            # Avoid division by zero
-            bb_width = (bb_upper - bb_lower) / (sma + 1e-10)
-            bb_position = (prices - bb_lower) / (bb_upper - bb_lower + 1e-10)
+            # Use safe division to avoid division by zero
+            bb_width = safe_divide(bb_upper - bb_lower, sma + 1e-10, 0.0)
+            bb_position = safe_divide(prices - bb_lower, bb_upper - bb_lower + 1e-10, 0.5)
             
             bb_features = pd.DataFrame({
                 'bb_upper': bb_upper, 

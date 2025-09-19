@@ -219,7 +219,7 @@ class Step03Config:
             'ensemble': self.ensemble.__dict__,
             'economic_validation': self.economic_validation.__dict__,
             'ml_transition': self.ml_transition.__dict__,
-            'feature_engineering': self.feature_generation.utils.__dict__,
+            'feature_engineering': self.feature_engineering.__dict__,
             'memory': self.memory.__dict__,
             'logging': self.logging.__dict__,
             'symbol': self.symbol,

@@ -174,6 +174,6 @@ def validate_regime_optimization_config(config: RegimeSpecificOptimizationConfig
             return False
         tprint('✅ Regime-specific optimization configuration is valid')
         return True
-    except Exception as e:
+    except (AttributeError, ValueError, TypeError) as e:
         tprint(f'❌ Configuration validation error: {e}')
         return False

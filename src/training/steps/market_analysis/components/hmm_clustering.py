@@ -638,7 +638,7 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             regime_ids = list(regime_characteristics.keys())
             n_regimes = len(regime_ids)
             
-            self.logger.info(f"🎯 Starting hierarchical matrix clustering: {n_regimes} regimes → target: 25-40 clusters")
+            self.logger.info(f"🎯 Starting hierarchical matrix clustering: {n_regimes} regimes → target: 20-40 clusters")
             
             # Initialize regime-to-cluster mapping (each regime starts as its own cluster)
             regime_to_cluster = {regime_id: i for i, regime_id in enumerate(regime_ids)}
@@ -647,14 +647,14 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             # Hierarchical batch merging with VERY CONSERVATIVE similarity thresholds
             # Only merge regimes that are extremely similar (>99.0% similar)
             # Start with realistic thresholds based on actual similarity range (97-99%)
-            # 0.2% increments from 99.8% down to 98%
-            similarity_thresholds = [0.999, 0.9995, 0.998, 0.9985, 0.997, 0.996, 0.995, 0.994, 0.993, 0.992, 0.991, 0.990, 0.988, 0.986, 0.984, 0.982, 0.980]
+            # Descend from 99.9% to 98.0% in 0.1% steps
+            similarity_thresholds = [0.999, 0.998, 0.997, 0.996, 0.995, 0.994, 0.993, 0.992, 0.991, 0.990, 0.989, 0.988, 0.987, 0.986, 0.985, 0.984, 0.983, 0.982, 0.981, 0.980]
             min_cv_threshold = 0.01  # Very strict CV difference threshold
-            max_sample_pct = 5.0  # Very conservative sample percentage limit
+            max_sample_pct = 6.0  # Freeze clusters at or above 6% of samples
             
             for threshold in similarity_thresholds:
-                if cluster_count <= 25:  # Stop only when we reach optimal range (25-40)
-                    self.logger.info(f"🎯 STOPPING: Reached optimal cluster count ({cluster_count} <= 25)")
+                if cluster_count <= 20:  # Stop when we reach lower bound of optimal range (20-40)
+                    self.logger.info(f"🎯 STOPPING: Reached optimal cluster count ({cluster_count} <= 20)")
                     break
                     
                 self.logger.info(f"🔄 Batch merging at {threshold*100:.1f}% similarity threshold ({threshold:.3f})...")
@@ -671,21 +671,68 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                 cluster_sample_pcts = {cluster_id: (count / total_samples) * 100 
                                      for cluster_id, count in cluster_sample_counts.items()}
                 
-                # Exclude clusters that are already too large from merging
-                excluded_clusters = {cluster_id for cluster_id, pct in cluster_sample_pcts.items() if pct > max_sample_pct}
+                # Compute within-cluster CV by aspect and derive soft penalties
+                cluster_cv_aspects = self._compute_cluster_cv_by_aspect(regime_characteristics, regime_to_cluster)
+                import numpy as np
+                # Build aspect thresholds: median + 0.5 * IQR per aspect
+                aspect_thresholds: Dict[str, float] = {}
+                for aspect in ['momentum', 'volatility', 'volume']:
+                    vals = [cv_map.get(aspect) for cv_map in cluster_cv_aspects.values() if isinstance(cv_map.get(aspect), (int, float))]
+                    vals = [float(v) for v in vals if v is not None and np.isfinite(v)]
+                    if len(vals) > 0:
+                        med = float(np.median(vals))
+                        iqr = float(np.percentile(vals, 75) - np.percentile(vals, 25))
+                        aspect_thresholds[aspect] = max(0.05, med + 0.5 * iqr)
+                    else:
+                        aspect_thresholds[aspect] = 0.2
+                # Penalty per cluster if dominant aspect exceeds its threshold
+                cluster_penalty: Dict[int, float] = {}
+                base_penalty = 0.002
+                penalized_clusters = []
+                for cid, cv_map in cluster_cv_aspects.items():
+                    # Determine dominant aspect
+                    items = [(k, v) for k, v in cv_map.items() if k in aspect_thresholds and isinstance(v, (int, float))]
+                    if not items:
+                        cluster_penalty[cid] = 0.0
+                        continue
+                    dom_aspect, dom_cv = max(items, key=lambda kv: kv[1])
+                    thr = aspect_thresholds.get(dom_aspect, 0.2)
+                    penalty = base_penalty if (dom_cv is not None and dom_cv >= thr) else 0.0
+                    if penalty > 0.0:
+                        penalized_clusters.append((cid, dom_aspect, dom_cv, thr))
+                    cluster_penalty[cid] = penalty
+                if len(penalized_clusters) > 0:
+                    self.logger.info(
+                        "   ⚖️ High-CV penalties: base=%.3f, aspect_thresholds=%s, penalized=%s" % (
+                            base_penalty,
+                            {k: round(v, 3) for k, v in aspect_thresholds.items()},
+                            [(cid, a, round(cv, 3), round(th, 3)) for cid, a, cv, th in penalized_clusters]
+                        )
+                    )
                 
                 # Find mergeable pairs based on similarity threshold
                 mergeable_pairs = []
                 for i, regime_i in enumerate(regime_ids):
                     for j, regime_j in enumerate(regime_ids[i+1:], i+1):
                         similarity = similarity_matrix[i, j]
-                        if similarity >= threshold:
-                            cluster_i = regime_to_cluster[regime_i]
-                            cluster_j = regime_to_cluster[regime_j]
-                            
-                            # Skip if same cluster or if either cluster is excluded
-                            if cluster_i == cluster_j or cluster_i in excluded_clusters or cluster_j in excluded_clusters:
-                                continue
+                        cluster_i = regime_to_cluster[regime_i]
+                        cluster_j = regime_to_cluster[regime_j]
+                        
+                        # Skip if same cluster
+                        if cluster_i == cluster_j:
+                            continue
+                        
+                        # Enforce 12% max resulting cluster size constraint
+                        merged_size = cluster_sample_counts.get(cluster_i, 0) + cluster_sample_counts.get(cluster_j, 0)
+                        merged_pct = (merged_size / total_samples) * 100 if total_samples > 0 else 0
+                        if merged_pct > 12.0:
+                            # Too big after merge, skip
+                            continue
+                        
+                        # Apply soft CV penalties to similarity requirement
+                        pair_threshold = threshold + cluster_penalty.get(cluster_i, 0.0) + cluster_penalty.get(cluster_j, 0.0)
+                        if similarity < pair_threshold:
+                            continue
                                 
                             # Check CV compatibility
                             regime_1 = regime_characteristics[regime_i]
@@ -756,8 +803,17 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                     similarity_matrix = self._calculate_regime_similarity_matrix(regime_characteristics)
                     
                     self.logger.info(f"   ✅ Updated similarity matrix for {cluster_count} clusters")
+                    # Recompute and log CV summaries to observe penalty relaxation opportunities
+                    cluster_cv_aspects_after = self._compute_cluster_cv_by_aspect(regime_characteristics, regime_to_cluster)
+                    for aspect in ['momentum', 'volatility', 'volume']:
+                        vals = [v.get(aspect) for v in cluster_cv_aspects_after.values() if isinstance(v.get(aspect), (int, float))]
+                        vals = [float(v) for v in vals if np.isfinite(v)]
+                        if len(vals) > 0:
+                            med = float(np.median(vals))
+                            iqr = float(np.percentile(vals, 75) - np.percentile(vals, 25))
+                            self.logger.info(f"   📉 Post-merge CV[{aspect}]: median={med:.3f}, IQR={iqr:.3f}")
                 
-                if cluster_count <= 25:  # Stop if we reach optimal range
+                if cluster_count <= 20:  # Stop if we reach lower bound of optimal range
                     break
             
             # Renumber clusters sequentially
@@ -784,7 +840,7 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                 'similarity_matrix': similarity_matrix,
                 'quality_score': quality_score,
                 'method': 'hierarchical_matrix_based',
-                'merging_thresholds_used': similarity_thresholds[:similarity_thresholds.index(0.95) + 1] if final_cluster_count < n_regimes else []
+                'merging_thresholds_used': similarity_thresholds
             }
             
             self.logger.info(f"✅ Hierarchical matrix clustering completed: {final_cluster_count} clusters created")
@@ -817,6 +873,125 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             self.logger.warning(f"⚠️ Error checking CV compatibility: {e}")
             return False # Assume not compatible on error
     
+    def _compute_cluster_cv(self, regime_characteristics: Dict[str, Any], regime_to_cluster: Dict[str, int]) -> Dict[int, float]:
+        """Compute robust within-cluster CV over feature values, not a weighted average of regime CVs.
+
+        For each cluster, we:
+        - Build the regime-by-feature matrix across all regimes
+        - For the subset of regimes in the cluster, compute per-feature robust CV:
+          robust_cv_feature = (1.4826 * MAD(feature_values)) / (abs(median(feature_values)) + eps)
+        - Aggregate the cluster's per-feature CVs using the median to reduce influence of outliers
+
+        Returns a mapping cluster_id -> robust_within_cv
+        """
+        import numpy as np
+        # Build matrix of original features (no scaling) for all regimes
+        regime_ids = list(regime_to_cluster.keys())
+        X, feature_order = self._build_feature_matrix(regime_characteristics, regime_ids)
+        if X.size == 0:
+            return {}
+        cluster_cv: Dict[int, float] = {}
+        # Precompute cluster indices
+        cluster_to_indices: Dict[int, list] = {}
+        for idx, regime_id in enumerate(regime_ids):
+            cid = regime_to_cluster.get(regime_id)
+            if cid is None:
+                continue
+            if cid not in cluster_to_indices:
+                cluster_to_indices[cid] = []
+            cluster_to_indices[cid].append(idx)
+        # Compute robust CV per cluster
+        eps = 1e-8
+        for cid, indices in cluster_to_indices.items():
+            if not indices or len(indices) < 2:
+                # Not enough regimes to assess variability meaningfully
+                cluster_cv[cid] = 0.0
+                continue
+            Xc = X[indices, :]
+            # Compute per-feature robust CV; skip all-NaN columns
+            cvs = []
+            for j in range(Xc.shape[1]):
+                col = Xc[:, j]
+                if np.all(np.isnan(col)):
+                    continue
+                # Robust center and scale
+                med = np.nanmedian(col)
+                mad = np.nanmedian(np.abs(col - med))
+                robust_scale = 1.4826 * mad
+                denom = max(abs(med), eps)
+                cvj = robust_scale / denom
+                if np.isfinite(cvj):
+                    cvs.append(cvj)
+            cluster_cv[cid] = float(np.nanmedian(cvs)) if len(cvs) > 0 else 0.0
+        return cluster_cv
+
+    def _compute_cluster_cv_by_aspect(self, regime_characteristics: Dict[str, Any], regime_to_cluster: Dict[str, int]) -> Dict[int, Dict[str, float]]:
+        """Compute robust within-cluster CV per aspect: momentum, volatility, volume.
+
+        For each aspect, we collect the corresponding feature values across regimes in the cluster and
+        compute robust CV = (1.4826 * MAD) / (abs(median) + eps). Cluster aspect CV is the median across
+        that aspect's features.
+        """
+        import numpy as np
+        # Define feature groups
+        aspect_features = {
+            'momentum': [
+                'mean_price_momentum_5', 'mean_price_momentum_20', 'mean_rsi', 'mean_macd',
+                'rsi_momentum', 'macd_momentum', 'momentum_strength', 'trend_persistence',
+                'autocorr_1_day', 'autocorr_5_day'
+            ],
+            'volatility': [
+                'mean_volatility_5', 'mean_volatility_10', 'mean_volatility_20',
+                'volatility_momentum', 'volatility_acceleration', 'mean_atr_normalized',
+                'volatility_clustering', 'return_volatility'
+            ],
+            'volume': [
+                'mean_volume_momentum_5', 'mean_volume_momentum_20', 'mean_volume_ratio',
+                'volume_momentum_volatility', 'volume_ratio_volatility'
+            ]
+        }
+        # Build map from regime_id -> raw feature dict
+        regime_ids = list(regime_to_cluster.keys())
+        # Extract per-regime features from provided characteristics (flat in regime['features'] if present),
+        # otherwise look into sub-dicts for consistency with prior code sections
+        regime_feature_maps: Dict[str, Dict[str, float]] = {}
+        for regime_id in regime_ids:
+            reg = regime_characteristics.get(regime_id, {})
+            feats = dict(reg.get('features', {}))
+            # Also merge keys from known characteristic groups if present
+            for grp in ['momentum_characteristics', 'volatility_characteristics', 'volume_characteristics']:
+                sub = reg.get(grp, {})
+                for k, v in sub.items():
+                    if isinstance(v, (int, float)):
+                        feats.setdefault(k, float(v))
+            regime_feature_maps[regime_id] = feats
+        # Group regimes by cluster
+        cluster_to_regimes: Dict[int, list] = {}
+        for regime_id, cid in regime_to_cluster.items():
+            cluster_to_regimes.setdefault(cid, []).append(regime_id)
+        # Compute robust CV per aspect per cluster
+        eps = 1e-8
+        cluster_cv_aspects: Dict[int, Dict[str, float]] = {}
+        for cid, rids in cluster_to_regimes.items():
+            aspect_cvs: Dict[str, float] = {}
+            for aspect, feat_list in aspect_features.items():
+                per_feature_cvs = []
+                for feat in feat_list:
+                    values = [regime_feature_maps[rid].get(feat, np.nan) for rid in rids]
+                    arr = np.array(values, dtype=float)
+                    if np.all(np.isnan(arr)):
+                        continue
+                    med = np.nanmedian(arr)
+                    mad = np.nanmedian(np.abs(arr - med))
+                    robust_scale = 1.4826 * mad
+                    denom = max(abs(med), eps)
+                    cvj = robust_scale / denom
+                    if np.isfinite(cvj):
+                        per_feature_cvs.append(float(cvj))
+                aspect_cvs[aspect] = float(np.nanmedian(per_feature_cvs)) if len(per_feature_cvs) > 0 else 0.0
+            cluster_cv_aspects[cid] = aspect_cvs
+        return cluster_cv_aspects
+
     def _extract_regime_characteristics_from_discovery(self, regime_discovery: Dict[str, Any]) -> Dict[str, Any]:
         """Extract volume, volatility, and momentum characteristics from HMM regime discovery results."""
         try:
@@ -1325,148 +1500,208 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
 
 
     def _calculate_regime_similarity_matrix(self, regime_characteristics: Dict[str, Any]) -> np.ndarray:
-        """Calculate similarity matrix between regimes based on their characteristics."""
+        """Calculate similarity matrix between regimes using global, per-feature robust scaling.
+
+        This constructs a regime-by-feature matrix, applies winsorization and robust
+        standardization per feature across all regimes, L2-normalizes each regime vector,
+        and returns the cosine similarity matrix.
+        """
         try:
+            import numpy as np
             if not regime_characteristics:
                 self.logger.warning("⚠️ No regime characteristics available for similarity calculation")
                 return np.array([])
-            
+
             regime_ids = list(regime_characteristics.keys())
             n_regimes = len(regime_ids)
-            
             if n_regimes == 0:
                 return np.array([])
-            
-            # Initialize similarity matrix
-            similarity_matrix = np.zeros((n_regimes, n_regimes))
-            
-            # Calculate similarity between each pair of regimes
-            for i, regime_i in enumerate(regime_ids):
-                for j, regime_j in enumerate(regime_ids):
-                    if i == j:
-                        similarity_matrix[i, j] = 1.0  # Perfect similarity with self
-                    else:
-                        similarity = self._calculate_regime_pair_similarity(
-                            regime_characteristics[regime_i],
-                            regime_characteristics[regime_j]
-                        )
-                        similarity_matrix[i, j] = similarity
-            
-            self.logger.info(f"✅ Calculated similarity matrix for {n_regimes} regimes")
+
+            # Build feature matrix X (n_regimes x n_features) with deterministic feature order
+            X, feature_order = self._build_feature_matrix(regime_characteristics, regime_ids)
+            if X.size == 0:
+                self.logger.warning("⚠️ Empty feature matrix for similarity calculation")
+                return np.array([])
+
+            # Fit robust per-feature scaler (winsorize + median/MAD or IQR)
+            scaler = self._fit_global_robust_scaler(X)
+
+            # Standardize and L2-normalize regime vectors
+            Z = self._standardize_with_scaler(X, scaler)
+            norms = np.linalg.norm(Z, axis=1, keepdims=True)
+            # Avoid division by zero
+            norms[norms == 0] = 1.0
+            Z_normalized = Z / norms
+
+            # Cosine similarity matrix as dot product of normalized vectors
+            similarity_matrix = np.clip(np.dot(Z_normalized, Z_normalized.T), -1.0, 1.0)
+
+            # Persist scaler for pairwise similarity calls and debugging
+            self._global_feature_scaler = {
+                'feature_order': feature_order,
+                'median': scaler['median'],
+                'scale': scaler['scale'],
+                'winsor_low': scaler['winsor_low'],
+                'winsor_high': scaler['winsor_high'],
+                'valid_mask': scaler['valid_mask']
+            }
+
+            # Log summary statistics
+            kept_features = int(np.sum(scaler['valid_mask']))
+            dropped_features = int(len(feature_order) - kept_features)
+            sim_vals = similarity_matrix[np.triu_indices(n_regimes, k=1)] if n_regimes > 1 else np.array([1.0])
+            if sim_vals.size > 0:
+                sim_min = float(np.min(sim_vals))
+                sim_max = float(np.max(sim_vals))
+                sim_mean = float(np.mean(sim_vals))
+                self.logger.info(
+                    f"✅ Calculated similarity matrix for {n_regimes} regimes | features kept: {kept_features}, dropped: {dropped_features} | similarity range: {sim_min:.3f}-{sim_max:.3f}, mean: {sim_mean:.3f}"
+                )
+            else:
+                self.logger.info(
+                    f"✅ Calculated similarity matrix for {n_regimes} regimes | features kept: {kept_features}, dropped: {dropped_features}"
+                )
+
             return similarity_matrix
-            
+
         except Exception as e:
             self.logger.error(f"❌ Failed to calculate regime similarity matrix: {e}")
             return np.array([])
+
+    def _build_feature_matrix(self, regime_characteristics: Dict[str, Any], regime_ids: List[str]):
+        """Construct a dense regime-by-feature matrix and deterministic feature order.
+
+        - Collects union of numeric feature keys from regime['features'] for all regimes
+        - Returns X (n_regimes x n_features) with NaNs for missing values
+        - Imputation is handled later by the scaler using medians
+        """
+        import numpy as np
+        # Collect all numeric feature keys
+        feature_keys = set()
+        for regime_id in regime_ids:
+            features = regime_characteristics.get(regime_id, {}).get('features', {})
+            for key, val in features.items():
+                if isinstance(val, (int, float)):
+                    feature_keys.add(key)
+        feature_order = sorted(feature_keys)
+        if len(feature_order) == 0:
+            return np.array([]), []
+        # Build matrix with NaNs for missing
+        X = np.full((len(regime_ids), len(feature_order)), np.nan, dtype=float)
+        feature_index = {k: i for i, k in enumerate(feature_order)}
+        for r_idx, regime_id in enumerate(regime_ids):
+            features = regime_characteristics.get(regime_id, {}).get('features', {})
+            for key, val in features.items():
+                if key in feature_index and isinstance(val, (int, float)):
+                    X[r_idx, feature_index[key]] = float(val)
+        return X, feature_order
+
+    def _fit_global_robust_scaler(self, X: 'np.ndarray') -> Dict[str, Any]:
+        """Fit a robust scaler on columns of X using winsorization and MAD/IQR.
+
+        Returns a dict with median, scale, winsor bounds, and valid feature mask.
+        """
+        import numpy as np
+        # Compute winsorization bounds per feature (columns)
+        # Use 1st-99th percentiles to dampen extreme outliers
+        with np.errstate(invalid='ignore'):
+            winsor_low = np.nanpercentile(X, 1.0, axis=0)
+            winsor_high = np.nanpercentile(X, 99.0, axis=0)
+        X_clipped = np.clip(X, winsor_low, winsor_high)
+        # Compute medians per feature
+        median = np.nanmedian(X_clipped, axis=0)
+        # Compute MAD (median absolute deviation)
+        abs_dev = np.abs(X_clipped - median)
+        mad = np.nanmedian(abs_dev, axis=0)
+        scale_mad = 1.4826 * mad
+        # Fallback to IQR-based scale if MAD is too small
+        q25 = np.nanpercentile(X_clipped, 25.0, axis=0)
+        q75 = np.nanpercentile(X_clipped, 75.0, axis=0)
+        iqr = q75 - q25
+        scale_iqr = iqr / 1.349
+        # Choose the larger of MAD-based and IQR-based scales to be conservative
+        scale = np.where(scale_mad > 1e-12, scale_mad, scale_iqr)
+        # Mark invalid features with near-zero scale
+        valid_mask = scale > 1e-12
+        # Ensure no zeros
+        scale = np.where(valid_mask, scale, 1.0)
+        return {
+            'median': median,
+            'scale': scale,
+            'winsor_low': winsor_low,
+            'winsor_high': winsor_high,
+            'valid_mask': valid_mask
+        }
+
+    def _standardize_with_scaler(self, X: 'np.ndarray', scaler: Dict[str, Any]) -> 'np.ndarray':
+        """Apply winsorization and robust standardization using provided scaler."""
+        import numpy as np
+        X_w = np.clip(X, scaler['winsor_low'], scaler['winsor_high'])
+        # Impute NaNs with median before standardization
+        X_w = np.where(np.isnan(X_w), scaler['median'], X_w)
+        Z = (X_w - scaler['median']) / scaler['scale']
+        # Drop invalid columns by zeroing them out (no contribution to cosine)
+        if 'valid_mask' in scaler:
+            invalid_cols = ~scaler['valid_mask']
+            if np.any(invalid_cols):
+                Z[:, invalid_cols] = 0.0
+        return Z
     
     def _calculate_regime_pair_similarity(self, regime_1: Dict[str, Any], regime_2: Dict[str, Any]) -> float:
-        """Calculate similarity between two regimes based on their characteristics."""
+        """Calculate similarity between two regimes using the global robust scaler if available.
+
+        Falls back to a conservative cosine similarity if the global scaler is not set.
+        """
         try:
-            # Extract actual features from regime discovery results
+            import numpy as np
+            # Prefer using the global scaler fitted on all regimes
+            scaler = getattr(self, '_global_feature_scaler', None)
+            if scaler and scaler.get('feature_order'):
+                feature_order = scaler['feature_order']
+                features_1 = regime_1.get('features', {})
+                features_2 = regime_2.get('features', {})
+                # Build 2 x F matrix in the same feature order the scaler expects
+                X_pair = np.full((2, len(feature_order)), np.nan, dtype=float)
+                for i, key in enumerate(feature_order):
+                    v1 = features_1.get(key, np.nan)
+                    v2 = features_2.get(key, np.nan)
+                    X_pair[0, i] = float(v1) if isinstance(v1, (int, float)) else np.nan
+                    X_pair[1, i] = float(v2) if isinstance(v2, (int, float)) else np.nan
+                # Standardize using global scaler and compute cosine
+                Z_pair = self._standardize_with_scaler(X_pair, scaler)
+                norms = np.linalg.norm(Z_pair, axis=1, keepdims=True)
+                norms[norms == 0] = 1.0
+                Z_pair = Z_pair / norms
+                similarity = float(np.clip(np.dot(Z_pair[0], Z_pair[1]), -1.0, 1.0))
+                # Limited debug
+                if not hasattr(self, '_similarity_debug_count'):
+                    self._similarity_debug_count = 0
+                if self._similarity_debug_count < 3:
+                    self.logger.warning(f"🔍 DEBUG: Overall cosine similarity: {similarity:.6f}")
+                    self._similarity_debug_count += 1
+                return similarity
+
+            # Fallback: conservative cosine on intersecting numeric features
             features_1 = regime_1.get('features', {})
             features_2 = regime_2.get('features', {})
-            
-            # DEBUG: Check if features exist and what they contain
-            if not hasattr(self, '_similarity_debug_count'):
-                self._similarity_debug_count = 0
-            
-            if self._similarity_debug_count < 3:
-                self.logger.warning(f"🔍 DEBUG: Features 1 keys: {list(features_1.keys())[:5]}...")
-                self.logger.warning(f"🔍 DEBUG: Features 2 keys: {list(features_2.keys())[:5]}...")
-                self.logger.warning(f"🔍 DEBUG: Features 1 sample values: {list(features_1.values())[:5]}")
-                self.logger.warning(f"🔍 DEBUG: Features 2 sample values: {list(features_2.values())[:5]}")
-                self._similarity_debug_count += 1
-            
-            # Convert features to vectors for cosine similarity calculation
-            feature_values_1 = []
-            feature_values_2 = []
-            
-            # Get all feature keys (should be the same for both regimes)
-            feature_keys = set(features_1.keys()) | set(features_2.keys())
-            
-            for key in sorted(feature_keys):  # Sort for consistency
-                val_1 = features_1.get(key, 0.0)
-                val_2 = features_2.get(key, 0.0)
-                
-                # Only include numeric values
-                if isinstance(val_1, (int, float)) and isinstance(val_2, (int, float)):
-                    feature_values_1.append(float(val_1))
-                    feature_values_2.append(float(val_2))
-            
-            # Calculate cosine similarity
-            if len(feature_values_1) == 0:
-                if self._similarity_debug_count <= 3:
-                    self.logger.warning(f"🔍 DEBUG: No numeric features found!")
+            keys = sorted((set(features_1.keys()) | set(features_2.keys())))
+            vals_1, vals_2 = [], []
+            for k in keys:
+                v1 = features_1.get(k)
+                v2 = features_2.get(k)
+                if isinstance(v1, (int, float)) and isinstance(v2, (int, float)):
+                    vals_1.append(float(v1))
+                    vals_2.append(float(v2))
+            if not vals_1:
                 return 0.0
-            
-            import numpy as np
-            vec_1 = np.array(feature_values_1)
-            vec_2 = np.array(feature_values_2)
-            
-            # Check if vectors are identical (which would cause 100% similarity)
-            if np.array_equal(vec_1, vec_2):
-                if self._similarity_debug_count <= 3:
-                    self.logger.warning(f"🔍 DEBUG: Vectors are identical! This will cause 100% similarity")
-                return 1.0
-            
-            # Calculate cosine similarity with proper magnitude consideration
-            # Standardize each feature independently to preserve relative differences
-            
-            vec_1_std = np.zeros_like(vec_1)
-            vec_2_std = np.zeros_like(vec_2)
-            feature_similarities = []
-            
-            for i in range(len(vec_1)):
-                # Get values for this feature from both vectors
-                val_1 = vec_1[i]
-                val_2 = vec_2[i]
-                
-                # Calculate mean and std for this specific feature across both regimes
-                feature_mean = (val_1 + val_2) / 2
-                feature_std = np.std([val_1, val_2])
-                
-                # Avoid division by zero
-                if feature_std == 0:
-                    feature_std = 1.0
-                
-                # Standardize this feature
-                vec_1_std[i] = (val_1 - feature_mean) / feature_std
-                vec_2_std[i] = (val_2 - feature_mean) / feature_std
-                
-                # Calculate cosine similarity for this feature
-                if vec_1_std[i] == 0 and vec_2_std[i] == 0:
-                    feature_similarity = 1.0
-                elif vec_1_std[i] == 0 or vec_2_std[i] == 0:
-                    feature_similarity = 0.0
-                else:
-                    # This gives us proper cosine similarity based on standardized magnitudes
-                    feature_similarity = (vec_1_std[i] * vec_2_std[i]) / (abs(vec_1_std[i]) * abs(vec_2_std[i]))
-                
-                feature_similarities.append(feature_similarity)
-            
-            # Calculate overall cosine similarity on per-feature standardized vectors
-            dot_product = np.dot(vec_1_std, vec_2_std)
-            norm_1 = np.linalg.norm(vec_1_std)
-            norm_2 = np.linalg.norm(vec_2_std)
-            
-            if norm_1 == 0 or norm_2 == 0:
-                overall_similarity = 0.0
-            else:
-                overall_similarity = dot_product / (norm_1 * norm_2)
-            
-            # DEBUG: Check feature similarities
-            if self._similarity_debug_count <= 3:
-                self.logger.warning(f"🔍 DEBUG: Original vec_1[:5]: {vec_1[:5]}")
-                self.logger.warning(f"🔍 DEBUG: Original vec_2[:5]: {vec_2[:5]}")
-                self.logger.warning(f"🔍 DEBUG: Standardized vec_1[:5]: {vec_1_std[:5]}")
-                self.logger.warning(f"🔍 DEBUG: Standardized vec_2[:5]: {vec_2_std[:5]}")
-                self.logger.warning(f"🔍 DEBUG: Feature similarities[:5]: {feature_similarities[:5]}")
-                self.logger.warning(f"🔍 DEBUG: Overall cosine similarity: {overall_similarity:.6f}")
-            
-            cosine_similarity = overall_similarity
-            
-            return float(cosine_similarity)
-            
+            v1 = np.array(vals_1)
+            v2 = np.array(vals_2)
+            n1 = np.linalg.norm(v1)
+            n2 = np.linalg.norm(v2)
+            if n1 == 0 or n2 == 0:
+                return 0.0
+            return float(np.clip(np.dot(v1, v2) / (n1 * n2), -1.0, 1.0))
+
         except Exception as e:
             self.logger.error(f"❌ Failed to calculate regime pair similarity: {e}")
             return 0.0

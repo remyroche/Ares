@@ -659,7 +659,6 @@ def load_klines_data(filename: str) -> Any:
         tprint(critical('CRITICAL ERROR: Error loading klines data from {filename}: {e}'))
         return pd.DataFrame()
 
-# Dead functions removed - these were marked as unused and not implemented
 
 def _get_column_names(klines_df: pd.DataFrame) -> tuple[str, str, str, str]:
     """Get standardized column names for OHLCV data."""
@@ -816,8 +815,6 @@ def _consolidate_hvn_results(all_levels: list[tuple[float, float]], volume_profi
         hvn_results.append({'price': level, 'strength': strength, 'volume_concentration': volume_profile.loc[level] / volume_profile.sum(), 'method': 'hvn'})
     hvn_results.sort(key = lambda x: x['strength'], reverse = True)
     return hvn_results
-
-# Additional dead functions removed - these were marked as unused and not implemented
 
 def create_ethusdt_1h_csv() -> Any:
     """Convert downloaded klines data to the expected ETHUSDT_1h.csv format."""

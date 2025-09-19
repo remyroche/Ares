@@ -301,7 +301,7 @@ def validate_m1_config(config: dict[str, Any]) -> bool:
 
         return True
 
-    except Exception as e:
+    except (KeyError, ValueError, TypeError) as e:
         tprint(f"M1 configuration validation failed: {e}")
         return False
 

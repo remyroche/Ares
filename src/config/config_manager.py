@@ -113,7 +113,7 @@ class ConfigManager:
         for category, search_space in self._search_spaces.items():
             if not search_space:
                 errors.append(f'Search space for {category} is missing')
-        return (len(errors) == 0, errors)
+        return (not errors, errors)
 _config_manager = None
 
 def get_config_manager() -> ConfigManager:

@@ -55,8 +55,6 @@ def compute_mutual_information(
     default_return=0.0,
     context="compute_mutual_information_pair",
 )
-# Dead function removed - compute_mutual_information_pair was marked as unused
-
 
 @handles_errors(
     exceptions=(Exception,), default_return={}, context="compute_shap_importance"

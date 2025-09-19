@@ -79,6 +79,38 @@ feature_lookback_optimization:
   # Profit target optimization (optional)
   optimize_profit_targets: false  # Keep fixed for now
   
+  # Directional optimization (NEW)
+  enable_directional_optimization: true  # Differentiate between long and short signals
+  directional_optimization:
+    min_samples_per_direction: 50        # Minimum samples needed for each direction
+    enable_directional_comparison: true   # Generate comparison metrics
+    prefer_better_direction: true         # Use better performing direction for each feature
+    fallback_to_unified: true            # Fall back to unified optimization if directional fails
+    
+    # Intelligent feature selection (prevents naive feature doubling)
+    intelligent_feature_selection:
+      enabled: true                      # Enable intelligent feature selection
+      max_features: 50                   # Maximum total features to select
+      significance_threshold: 0.1        # Min performance difference for directional split
+      lookback_diff_threshold: 5         # Min lookback difference for directional split
+      create_meta_features: true         # Create directional meta-features
+      priority_order: ["directional", "unified", "meta"]  # Feature selection priority
+    
+    # Multi-target optimization (NEW)
+    multi_target_optimization:
+      enabled: true                      # Enable optimization against multiple multi-horizon targets
+      max_targets: 6                     # Maximum targets to optimize against simultaneously
+      target_priority:                   # Priority order for target selection
+        - "leverage_adjusted_score"      # Primary composite target
+        - "overall_opportunity"          # Secondary composite target
+        - "immediate_opportunity"        # Short-term focused target
+        - "long_overall_opportunity"     # Long directional target
+        - "short_overall_opportunity"    # Short directional target
+        - "micro_immediate_long_prob"    # High-frequency long probability
+        - "micro_immediate_short_prob"   # High-frequency short probability
+      consensus_method: "weighted"       # How to combine multi-target results
+      quality_threshold: 0.4             # Minimum quality score for consensus acceptance
+  
   # Integration settings
   use_multi_horizon_metrics: true
   primary_optimization_metric: "leverage_adjusted_score"

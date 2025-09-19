@@ -59,6 +59,13 @@ from src.utils.tprint import tprint
 # Import our standardized utilities
 from .validation_utils import get_validator, ValidationErrorType, ValidationResult, validate_training_input, validate_pipeline_state, create_standardized_error
 from .config_utils import get_config_manager, get_path_manager
+from .error_handling_utils import (
+    get_error_handler, StandardizedErrorHandler, ErrorCategory, ErrorSeverity,
+    create_validation_error, create_data_error, create_config_error, 
+    create_processing_error, create_alignment_error
+)
+from .resource_management import get_resource_manager, M1ResourceManager
+from .validation_config import get_unified_validator, ValidationConfiguration
 
 logger = system_logger.getChild('RegimeDataSplittingEnhanced')
 
@@ -194,18 +201,30 @@ class HMMRegimeTagger:
     def tag_regimes_with_models(self, market_data: pd.DataFrame, 
                               use_ensemble: bool = True) -> Dict[str, Any]:
         """Tag regimes using trained HMM models."""
-        # Input validation
+        # Input validation using standardized error messages
         if market_data is None:
-            raise ValueError("VALIDATION_ERROR: market_data is None. Action required: Provide valid market data DataFrame.")
+            raise ValueError(create_validation_error(
+                "market_data is None", 
+                "Provide valid market data DataFrame"
+            ))
         
         if not isinstance(market_data, pd.DataFrame):
-            raise ValueError(f"VALIDATION_ERROR: market_data must be a DataFrame, got {type(market_data)}. Action required: Convert data to pandas DataFrame.")
+            raise ValueError(create_validation_error(
+                f"market_data must be a DataFrame, got {type(market_data)}", 
+                "Convert data to pandas DataFrame"
+            ))
         
         if market_data.empty:
-            raise ValueError("VALIDATION_ERROR: market_data is empty. Action required: Provide non-empty market data.")
+            raise ValueError(create_validation_error(
+                "market_data is empty", 
+                "Provide non-empty market data"
+            ))
         
         if not isinstance(use_ensemble, bool):
-            raise ValueError(f"VALIDATION_ERROR: use_ensemble must be a boolean, got {type(use_ensemble)}. Action required: Set use_ensemble to True or False.")
+            raise ValueError(create_validation_error(
+                f"use_ensemble must be a boolean, got {type(use_ensemble)}", 
+                "Set use_ensemble to True or False"
+            ))
         
         try:
             # Create features with memory optimization
@@ -226,9 +245,12 @@ class HMMRegimeTagger:
             scaler = StandardScaler()
             features_scaled = scaler.fit_transform(features_selected)
             
-            # Clean up selected features to free memory
+            # Clean up selected features using resource manager
+            self.resource_manager.register_managed_object(features_selected, "selected_features")
             del features_selected
-            gc.collect()
+            
+            # Optimize memory using resource manager
+            self.resource_manager.optimize_memory(force_gc=True)
             
             # Get predictions from models
             regime_predictions = {}
@@ -295,6 +317,18 @@ class RegimeDataSplittingEnhanced:
         self.logger = logger.getChild('RegimeDataSplittingEnhanced')
         self.hmm_tagger = None
         
+        # Initialize standardized error handler
+        self.error_handler = get_error_handler('RegimeDataSplittingEnhanced', self.logger)
+        
+        # Initialize resource manager
+        self.resource_manager = get_resource_manager('RegimeDataSplittingEnhanced', self.logger)
+        
+        # Initialize unified validator with consistent thresholds
+        validation_config = ValidationConfiguration()
+        if 'validation_config' in config:
+            validation_config = ValidationConfiguration.from_dict(config['validation_config'])
+        self.unified_validator = get_unified_validator(validation_config)
+        
         # Initialize configuration and path managers
         self.config_manager = get_config_manager(config)
         self.path_manager = get_path_manager(config)
@@ -349,7 +383,7 @@ class RegimeDataSplittingEnhanced:
             
             # Step 2: Load and validate market data
             tprint('📊 Step 2: Loading and validating market data...')
-            market_data = await self._load_and_validate_market_data(symbol, exchange, timeframe, data_dir)
+            market_data = self._load_and_validate_market_data(symbol, exchange, timeframe, data_dir)
             if market_data is None or market_data.empty:
                 tprint('❌ No market data available for regime tagging')
                 raise ValueError("No market data available for regime tagging")
@@ -439,21 +473,121 @@ class RegimeDataSplittingEnhanced:
                 if not regime_states:
                     raise ValueError("No regime data available for tagging")
                 
-                # Align data lengths with validation
-                min_len = min(len(market_data), len(regime_states))
-                if min_len < len(market_data) * 0.8:  # Warn if we lose more than 20% of data
-                    execution_metrics['warnings'].append(f"Data alignment reduced dataset by {len(market_data) - min_len} rows")
-                    tprint(f"⚠️ Data alignment reduced dataset by {len(market_data) - min_len} rows")
+                # Align data lengths with comprehensive validation and temporal consistency checks
+                original_market_len = len(market_data)
+                original_regime_len = len(regime_states)
+                original_prob_len = len(regime_probabilities) if regime_probabilities else 0
+                min_len = min(original_market_len, original_regime_len)
                 
-                # Create aligned copies to avoid modifying original data with memory optimization
-                market_data_aligned = market_data.iloc[:min_len].copy()
-                regime_states_aligned = regime_states[:min_len]
-                regime_probabilities_aligned = regime_probabilities[:min_len] if len(regime_probabilities) > 0 else []
+                # Calculate and validate data alignment impact
+                data_loss_percentage = ((max(original_market_len, original_regime_len) - min_len) / 
+                                      max(original_market_len, original_regime_len)) * 100
                 
-                # Clean up original references to free memory
+                if data_loss_percentage > 5.0:  # More than 5% data loss
+                    warning_msg = f"Data alignment will lose {data_loss_percentage:.1f}% of data ({max(original_market_len, original_regime_len) - min_len} rows)"
+                    execution_metrics['warnings'].append(warning_msg)
+                    tprint(f"⚠️ {warning_msg}")
+                    self.logger.warning(f"⚠️ {warning_msg}")
+                elif data_loss_percentage > 20.0:  # More than 20% data loss - this should be an error
+                    error_msg = f"Excessive data loss during alignment: {data_loss_percentage:.1f}% ({max(original_market_len, original_regime_len) - min_len} rows)"
+                    execution_metrics['errors'].append(error_msg)
+                    tprint(f"❌ {error_msg}")
+                    raise ValueError(error_msg)
+                
+                if min_len == 0:
+                    error_msg = "No overlapping data between market data and regime states"
+                    execution_metrics['errors'].append(error_msg)
+                    raise ValueError(error_msg)
+                
+                tprint(f"📊 Aligning data lengths: market_data={original_market_len}, regime_states={original_regime_len} -> {min_len}")
+                
+                # Validate temporal consistency if timestamp information exists
+                temporal_validation_passed = True
+                try:
+                    if hasattr(market_data, 'index') and hasattr(market_data.index, 'name') and market_data.index.name == 'timestamp':
+                        # DataFrame has timestamp index
+                        market_timestamps = market_data.index[:min_len]
+                        if len(market_timestamps) > 1 and not market_timestamps.is_monotonic_increasing:
+                            warning_msg = "Market data timestamps are not monotonic increasing - temporal consistency may be compromised"
+                            execution_metrics['warnings'].append(warning_msg)
+                            tprint(f"⚠️ {warning_msg}")
+                            temporal_validation_passed = False
+                    elif 'timestamp' in market_data.columns:
+                        # DataFrame has timestamp column
+                        market_timestamps = market_data['timestamp'].iloc[:min_len]
+                        if len(market_timestamps) > 1 and not market_timestamps.is_monotonic_increasing:
+                            warning_msg = "Market data timestamps are not monotonic increasing - temporal consistency may be compromised"
+                            execution_metrics['warnings'].append(warning_msg)
+                            tprint(f"⚠️ {warning_msg}")
+                            temporal_validation_passed = False
+                except Exception as e:
+                    warning_msg = f"Could not validate temporal consistency: {e}"
+                    execution_metrics['warnings'].append(warning_msg)
+                    tprint(f"⚠️ {warning_msg}")
+                
+                # Create aligned copies with proper error handling
+                try:
+                    market_data_aligned = market_data.iloc[:min_len].copy()
+                    if market_data_aligned is None or len(market_data_aligned) != min_len:
+                        raise ValueError(f"Market data alignment failed: expected {min_len} rows")
+                except Exception as e:
+                    error_msg = f"Failed to align market data: {str(e)}"
+                    execution_metrics['errors'].append(error_msg)
+                    raise ValueError(error_msg)
+                
+                try:
+                    regime_states_aligned = regime_states[:min_len]
+                    if len(regime_states_aligned) != min_len:
+                        raise ValueError(f"Regime states alignment failed: expected {min_len}, got {len(regime_states_aligned)}")
+                except Exception as e:
+                    error_msg = f"Failed to align regime states: {str(e)}"
+                    execution_metrics['errors'].append(error_msg)
+                    raise ValueError(error_msg)
+                
+                # Handle regime probabilities alignment with validation
+                if original_prob_len > 0:
+                    try:
+                        regime_probabilities_aligned = regime_probabilities[:min_len]
+                        if len(regime_probabilities_aligned) != min_len:
+                            warning_msg = f"Regime probabilities alignment mismatch: expected {min_len}, got {len(regime_probabilities_aligned)}"
+                            execution_metrics['warnings'].append(warning_msg)
+                            tprint(f"⚠️ {warning_msg}")
+                            regime_probabilities_aligned = []
+                    except Exception as e:
+                        warning_msg = f"Failed to align regime probabilities: {e}"
+                        execution_metrics['warnings'].append(warning_msg)
+                        tprint(f"⚠️ {warning_msg}")
+                        regime_probabilities_aligned = []
+                else:
+                    regime_probabilities_aligned = []
+                
+                # Final validation of all aligned data
+                if len(market_data_aligned) != len(regime_states_aligned):
+                    error_msg = f"Final alignment validation failed: market_data={len(market_data_aligned)}, regime_states={len(regime_states_aligned)}"
+                    execution_metrics['errors'].append(error_msg)
+                    raise ValueError(error_msg)
+                
+                # Log successful alignment with comprehensive metrics
+                alignment_metrics = {
+                    'original_market_data_length': original_market_len,
+                    'original_regime_states_length': original_regime_len,
+                    'original_probabilities_length': original_prob_len,
+                    'aligned_length': min_len,
+                    'data_loss_percentage': data_loss_percentage,
+                    'temporal_validation_passed': temporal_validation_passed
+                }
+                execution_metrics['alignment_metrics'] = alignment_metrics
+                self.logger.info(f"✅ Data alignment completed successfully: {alignment_metrics}")
+                tprint(f"✅ Data alignment completed: {min_len} rows, {data_loss_percentage:.1f}% data loss")
+                
+                # Clean up original references using resource manager (after successful validation)
+                self.resource_manager.register_managed_object(regime_states, "original_regime_states")
+                self.resource_manager.register_managed_object(regime_probabilities, "original_regime_probabilities")
                 del regime_states, regime_probabilities
-                import gc
-                gc.collect()
+                
+                # Use resource manager for memory optimization
+                memory_result = self.resource_manager.optimize_memory(force_gc=True)
+                self.logger.debug(f"Memory optimization result: {memory_result}")
                 
                 # Use aligned regime data
                 market_data_aligned['hmm_regime_states'] = regime_states_aligned
@@ -567,7 +701,7 @@ class RegimeDataSplittingEnhanced:
         
         return validation_result
     
-    async def _load_and_validate_market_data(self, symbol: str, exchange: str, timeframe: str, data_dir: str) -> Optional[pd.DataFrame]:
+    def _load_and_validate_market_data(self, symbol: str, exchange: str, timeframe: str, data_dir: str) -> Optional[pd.DataFrame]:
         """Load and validate market data with enhanced error handling."""
         try:
             # Use path manager for consistent path handling
@@ -682,14 +816,24 @@ class RegimeDataSplittingEnhanced:
                 tprint(f"❌ Prediction length mismatch: {len(predictions)} vs {len(market_data)}")
                 return False
             
-            # Check if we have reasonable number of regimes
+            # Validate regime count using unified thresholds
             n_regimes = tagging_result['n_regimes']
-            if n_regimes < 2:
-                self.logger.warning(f"⚠️ Very few regimes detected: {n_regimes}")
-                tprint(f"⚠️ Very few regimes detected: {n_regimes}")
-            elif n_regimes > 20:
-                self.logger.warning(f"⚠️ Many regimes detected: {n_regimes}")
-                tprint(f"⚠️ Many regimes detected: {n_regimes}")
+            regime_metrics = {
+                'regime_count': n_regimes,
+                'regime_distribution': tagging_result.get('regime_distribution', {})
+            }
+            
+            validation_result = self.unified_validator.validate_regime_quality(regime_metrics)
+            if not validation_result['passed']:
+                for error in validation_result['errors']:
+                    self.logger.error(f"❌ {error}")
+                    tprint(f"❌ {error}")
+                for warning in validation_result['warnings']:
+                    self.logger.warning(f"⚠️ {warning}")
+                    tprint(f"⚠️ {warning}")
+            else:
+                self.logger.info(f"✅ Regime validation passed: {n_regimes} regimes")
+                tprint(f"✅ Regime validation passed: {n_regimes} regimes")
             
             # Additional data consistency checks
             # Check for reasonable regime values

@@ -4,13 +4,16 @@ Unified Triple Barrier Labeling Implementation
 This module provides a streamlined, robust implementation of triple barrier labeling
 with comprehensive error handling, validation, and reporting.
 
+NOTE: For dynamic parameters and advanced multi-horizon labeling, use the 
+multi_horizon_profit_labeler instead.
+
 Key Features:
 - Unified configuration and execution
 - Explicit error handling (no silent failures)
 - Comprehensive validation framework
 - Enhanced reporting and metrics
 - Performance optimization with proper fallbacks
-- Regime-aware labeling support
+- Basic regime-aware labeling support
 
 Transaction cost semantics:
 - We assume 0.08% per trade (round-trip) via transaction_cost=0.0008
@@ -23,7 +26,7 @@ Transaction cost semantics:
 import time
 import logging
 from dataclasses import dataclass, field, asdict
-from typing import Dict, List, Optional, Union, Any, Tuple, Callable
+from typing import Dict, List, Optional, Any, Tuple
 from datetime import datetime
 
 import pandas as pd
@@ -99,7 +102,7 @@ class ValidationResult:
 class TripleBarrierConfig:
     """Unified configuration for triple barrier labeling."""
     
-    # Core parameters
+    # Core parameters (static - use multi_horizon_profit_labeler for dynamic behavior)
     profit_take_multiplier: float = DEFAULT_PROFIT_TAKE_MULTIPLIER
     stop_loss_multiplier: float = DEFAULT_STOP_LOSS_MULTIPLIER
     time_barrier_minutes: int = 30
@@ -110,6 +113,9 @@ class TripleBarrierConfig:
     binary_classification: bool = True
     regime_aware: bool = True
     regime_column: str = 'hmm_regime'
+    
+    # Migration note: For advanced features, consider using multi_horizon_profit_labeler
+    _migration_note: str = field(default="Use multi_horizon_profit_labeler for dynamic parameters and multi-horizon analysis", init=False)
     
     # Error handling behavior
     fail_on_validation_error: bool = True

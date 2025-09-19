@@ -9,6 +9,21 @@ from .monte_carlo_simulation import MonteCarloSimulationStep, MonteCarloSimulati
 from .ab_testing import ABTestingStep, ABTestingConfig, ABTestingResults
 from .reporting import ReportingStep, ReportingConfig, ReportingResults
 
+# Unified infrastructure
+from .unified_data_loader import (
+    UnifiedDataLoader, DataLoadingConfig, LoadedData, DataSourceType, DataLoadingMode,
+    get_unified_data_loader, load_backtesting_data, cleanup_data_loader
+)
+from .memory_optimizer import (
+    BacktestingMemoryOptimizer, MemoryStats, get_backtesting_memory_optimizer,
+    optimize_backtesting_data, cleanup_backtesting_memory, memory_managed_backtesting
+)
+from .improved_trading_strategies import (
+    ImprovedTradingStrategy, StrategyFactory, StrategyConfig, TradingSignal,
+    StrategyType, MarketRegime, SignalStrength, TechnicalIndicators,
+    create_baseline_strategy, create_optimized_strategy
+)
+
 __all__ = [
     # Original consolidated backtesting
     'ConsolidatedBacktestingStep',
@@ -35,5 +50,33 @@ __all__ = [
     'ABTestingResults',
     'ReportingStep',
     'ReportingConfig',
-    'ReportingResults'
+    'ReportingResults',
+    
+    # Unified infrastructure
+    'UnifiedDataLoader',
+    'DataLoadingConfig',
+    'LoadedData',
+    'DataSourceType',
+    'DataLoadingMode',
+    'get_unified_data_loader',
+    'load_backtesting_data',
+    'cleanup_data_loader',
+    'BacktestingMemoryOptimizer',
+    'MemoryStats',
+    'get_backtesting_memory_optimizer',
+    'optimize_backtesting_data',
+    'cleanup_backtesting_memory',
+    'memory_managed_backtesting',
+    
+    # Improved trading strategies
+    'ImprovedTradingStrategy',
+    'StrategyFactory',
+    'StrategyConfig',
+    'TradingSignal',
+    'StrategyType',
+    'MarketRegime',
+    'SignalStrength',
+    'TechnicalIndicators',
+    'create_baseline_strategy',
+    'create_optimized_strategy'
 ]

@@ -478,72 +478,79 @@ class ABCTestingFramework:
         self.logger.info("🚀 Starting A/B/C testing...")
         start_time = time.time()
         
-        try:
-            # Initialize models and paper trading engines
-            await self._initialize_models()
-            
-            # Load market data
-            market_data = await self._load_market_data()
-            
-            # Execute paper trading
-            if self.config.test_mode == TestMode.PAPER_TRADING:
-                await self._execute_paper_trading(market_data)
-            elif self.config.test_mode == TestMode.BACKTESTING:
-                await self._execute_backtesting(market_data)
-            else:
-                raise ValueError(f"Unsupported test mode: {self.config.test_mode}")
-            
-            # Collect results
-            model_results = await self._collect_model_results()
-            
-            # Perform statistical analysis
-            statistical_analysis = await self._perform_statistical_analysis(model_results)
-            
-            # Generate recommendations
-            recommendations = await self._generate_recommendations(model_results, statistical_analysis)
-            
-            # Create comprehensive results
-            results = ABCTestingResults(
-                test_name=self.config.test_name,
-                test_description=self.config.test_description,
-                symbol=self.config.symbol,
-                exchange=self.config.exchange,
-                timeframe=self.config.timeframe,
-                start_time=datetime.now(),
-                end_time=datetime.now(),
-                total_duration=time.time() - start_time,
-                model_results=model_results,
-                statistical_tests=statistical_analysis.get('statistical_tests', {}),
-                performance_ranking=statistical_analysis.get('performance_ranking', []),
-                correlation_matrix=statistical_analysis.get('correlation_matrix', pd.DataFrame()),
-                risk_metrics=statistical_analysis.get('risk_metrics', {}),
-                diversification_metrics=statistical_analysis.get('diversification_metrics', {}),
-                recommendations=recommendations,
-                best_performing_model=statistical_analysis.get('best_performing_model'),
-                most_robust_model=statistical_analysis.get('most_robust_model'),
-                config=self.config,
-                execution_time=time.time() - start_time,
-                memory_usage_mb=psutil.Process().memory_info().rss / 1024 / 1024,
-                system_metrics=self._get_system_metrics()
-            )
-            
-            # Save results
-            if self.config.save_detailed_results:
-                await self._save_results(results)
-            
-            self.logger.info("✅ A/B/C testing completed successfully")
-            self.logger.info(f"⏱️ Execution time: {results.execution_time:.2f}s")
-            self.logger.info(f"📊 Models tested: {len(model_results)}")
-            
-            return results
-            
-        except Exception as e:
-            self.logger.error(f"❌ Error in A/B/C testing: {e}")
-            self.logger.exception("Full traceback:")
-            raise
-        finally:
-            # Cleanup
-            await self._cleanup()
+        # Initialize memory optimizer
+        from ..memory_optimizer import memory_managed_backtesting
+        
+        with memory_managed_backtesting("abc_testing") as memory_optimizer:
+            try:
+                # Initialize models and paper trading engines
+                await self._initialize_models()
+                
+                # Load market data
+                market_data = await self._load_market_data()
+                
+                # Optimize market data for memory efficiency
+                market_data = memory_optimizer.optimize_dataframe(market_data)
+                
+                # Execute paper trading
+                if self.config.test_mode == TestMode.PAPER_TRADING:
+                    await self._execute_paper_trading(market_data)
+                elif self.config.test_mode == TestMode.BACKTESTING:
+                    await self._execute_backtesting(market_data)
+                else:
+                    raise ValueError(f"Unsupported test mode: {self.config.test_mode}")
+                
+                # Collect results
+                model_results = await self._collect_model_results()
+                
+                # Perform statistical analysis
+                statistical_analysis = await self._perform_statistical_analysis(model_results)
+                
+                # Generate recommendations
+                recommendations = await self._generate_recommendations(model_results, statistical_analysis)
+                
+                # Create comprehensive results
+                results = ABCTestingResults(
+                    test_name=self.config.test_name,
+                    test_description=self.config.test_description,
+                    symbol=self.config.symbol,
+                    exchange=self.config.exchange,
+                    timeframe=self.config.timeframe,
+                    start_time=datetime.now(),
+                    end_time=datetime.now(),
+                    total_duration=time.time() - start_time,
+                    model_results=model_results,
+                    statistical_tests=statistical_analysis.get('statistical_tests', {}),
+                    performance_ranking=statistical_analysis.get('performance_ranking', []),
+                    correlation_matrix=statistical_analysis.get('correlation_matrix', pd.DataFrame()),
+                    risk_metrics=statistical_analysis.get('risk_metrics', {}),
+                    diversification_metrics=statistical_analysis.get('diversification_metrics', {}),
+                    recommendations=recommendations,
+                    best_performing_model=statistical_analysis.get('best_performing_model'),
+                    most_robust_model=statistical_analysis.get('most_robust_model'),
+                    config=self.config,
+                    execution_time=time.time() - start_time,
+                    memory_usage_mb=memory_optimizer.get_current_memory_stats().process_memory_mb,
+                    system_metrics=self._get_system_metrics()
+                )
+                
+                # Save results
+                if self.config.save_detailed_results:
+                    await self._save_results(results)
+                
+                self.logger.info("✅ A/B/C testing completed successfully")
+                self.logger.info(f"⏱️ Execution time: {results.execution_time:.2f}s")
+                self.logger.info(f"📊 Models tested: {len(model_results)}")
+                
+                return results
+                
+            except Exception as e:
+                self.logger.error(f"❌ Error in A/B/C testing: {e}")
+                self.logger.exception("Full traceback:")
+                raise
+            finally:
+                # Cleanup
+                await self._cleanup()
     
     async def _initialize_models(self) -> None:
         """Initialize all models and paper trading engines."""
@@ -575,25 +582,39 @@ class ABCTestingFramework:
                 self.model_status[model_config.model_id] = ModelStatus.ERROR
     
     async def _load_market_data(self) -> pd.DataFrame:
-        """Load market data for the test period."""
+        """Load market data for the test period using unified data loader."""
+        from ..unified_data_loader import DataLoadingConfig, get_unified_data_loader
+        
         self.logger.info("📂 Loading market data...")
         
-        # Try to load consolidated data first
-        consolidated_file = self.data_dir / f"aggtrades_{self.config.exchange}_{self.config.symbol}_consolidated.parquet"
-        
-        if safe_file_exists(consolidated_file):
-            self.logger.info(f"📁 Loading consolidated data: {consolidated_file}")
-            data = self.parquet_utils.read_parquet_standardized(consolidated_file)
-        else:
-            # Fallback to individual files or generate sample data
-            self.logger.warning("⚠️ Consolidated file not found, generating sample data...")
-            data = self._generate_sample_data()
-        
-        # Filter data for test period
-        data = data.loc[self.config.start_date:self.config.end_date]
-        
-        self.logger.info(f"📊 Loaded {len(data):,} data points")
-        return data
+        try:
+            # Create loading configuration
+            loading_config = DataLoadingConfig(
+                symbol=self.config.symbol,
+                exchange=self.config.exchange,
+                timeframe=self.config.timeframe,
+                data_dir=str(self.data_dir),
+                start_date=self.config.start_date,
+                end_date=self.config.end_date,
+                enable_memory_optimization=True,
+                memory_limit_mb=1500.0  # Higher limit for ABC testing
+            )
+            
+            # Load data using unified loader
+            loader = get_unified_data_loader()
+            loaded_data = loader.load_data(loading_config)
+            
+            self.logger.info(f"✅ Loaded data via unified loader:")
+            self.logger.info(f"   📊 Records: {len(loaded_data.data):,}")
+            self.logger.info(f"   🧠 Memory: {loaded_data.memory_usage_mb:.1f}MB")
+            self.logger.info(f"   🎯 Quality: {loaded_data.data_quality_score:.2f}")
+            
+            return loaded_data.data
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Could not load data via unified loader: {e}")
+            self.logger.warning("⚠️ Falling back to sample data generation...")
+            return self._generate_sample_data()
     
     def _generate_sample_data(self) -> pd.DataFrame:
         """Generate sample market data for testing."""
@@ -692,20 +713,72 @@ class ABCTestingFramework:
         return signals
     
     async def _generate_sample_signal(self, model_id: str, bar: pd.Series) -> Dict[str, Any]:
-        """Generate sample trading signal (placeholder for actual model prediction)."""
-        # This is a placeholder implementation
-        # In practice, you would use the actual model to generate signals
+        """Generate trading signal using improved strategy (replaces random generation)."""
+        try:
+            from ..improved_trading_strategies import StrategyFactory, StrategyType
+            
+            # Create different strategies for different models to simulate diversity
+            strategy_types = {
+                'model_a': StrategyType.TREND_FOLLOWING,
+                'model_b': StrategyType.MEAN_REVERSION,
+                'model_c': StrategyType.MOMENTUM,
+                'model_d': StrategyType.VOLATILITY_BREAKOUT,
+                'model_e': StrategyType.ADAPTIVE
+            }
+            
+            # Determine strategy type based on model_id
+            strategy_type = StrategyType.ADAPTIVE  # Default
+            for key, stype in strategy_types.items():
+                if key in model_id.lower():
+                    strategy_type = stype
+                    break
+            
+            # Create strategy
+            strategy = StrategyFactory.create_strategy(strategy_type)
+            
+            # Create minimal DataFrame for signal generation
+            # Note: In practice, you would have access to historical data
+            # For now, we'll create a simple DataFrame with the current bar
+            if hasattr(self, '_historical_data') and not self._historical_data.empty:
+                signal = strategy.generate_signal(self._historical_data, bar.name)
+            else:
+                # Fallback to simple technical analysis
+                signal = self._generate_technical_signal(bar)
+            
+            return {
+                'action': signal.action,
+                'size': signal.position_size,
+                'confidence': signal.confidence,
+                'stop_loss': signal.stop_loss,
+                'take_profit': signal.take_profit,
+                'reasoning': signal.reasoning
+            }
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Error generating improved signal for {model_id}: {e}")
+            # Fallback to simple technical signal
+            return self._generate_technical_signal(bar)
+    
+    def _generate_technical_signal(self, bar: pd.Series) -> Dict[str, Any]:
+        """Generate simple technical signal as fallback."""
+        # Simple momentum-based signal
+        if hasattr(bar, 'close') and hasattr(bar, 'open'):
+            price_change = (bar['close'] - bar['open']) / bar['open']
+            
+            if price_change > 0.005:  # 0.5% gain
+                return {
+                    'action': 'buy',
+                    'size': 0.1,
+                    'confidence': min(0.8, 0.5 + abs(price_change) * 10)
+                }
+            elif price_change < -0.005:  # 0.5% loss
+                return {
+                    'action': 'sell',
+                    'size': 0.1,
+                    'confidence': min(0.8, 0.5 + abs(price_change) * 10)
+                }
         
-        # Simple random signal generation for demonstration
-        np.random.seed(hash(model_id) % 2**32)
-        signal_type = np.random.choice(['buy', 'sell', 'hold'], p=[0.3, 0.3, 0.4])
-        
-        if signal_type == 'buy':
-            return {'action': 'buy', 'size': 0.1, 'confidence': np.random.uniform(0.6, 0.9)}
-        elif signal_type == 'sell':
-            return {'action': 'sell', 'size': 0.1, 'confidence': np.random.uniform(0.6, 0.9)}
-        else:
-            return {'action': 'hold', 'size': 0.0, 'confidence': 0.5}
+        return {'action': 'hold', 'size': 0.0, 'confidence': 0.5}
     
     async def _check_risk_limits(self) -> None:
         """Check global risk limits across all models."""

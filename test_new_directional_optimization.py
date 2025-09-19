@@ -103,14 +103,14 @@ def test_directional_optimization():
         cross_directional_analysis=True,
         min_samples_per_direction=100,
         
-        # New consolidation settings with improved threshold
+        # New consolidation settings for precision-critical intraday trading
         enable_period_consolidation=True,
-        consolidation_variance_threshold=0.15,  # 15% variance threshold (improved default)
+        consolidation_variance_threshold=0.12,  # 12% variance threshold (precision-critical for intraday/scalping)
         consolidation_method="average",
         
         # Adaptive threshold settings
         enable_adaptive_thresholds=True,
-        trading_timeframe="swing",
+        trading_timeframe="intraday",
         market_volatility="medium",
         
         # Integration with existing pipeline

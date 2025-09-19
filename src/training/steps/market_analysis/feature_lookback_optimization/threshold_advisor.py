@@ -43,7 +43,7 @@ class ThresholdAdvisor:
     
     # Base thresholds by trading timeframe
     TIMEFRAME_BASE_THRESHOLDS = {
-        TradingTimeframe.INTRADAY: 0.08,   # 8% - precision critical
+        TradingTimeframe.INTRADAY: 0.12,   # 12% - precision critical for intraday/scalping
         TradingTimeframe.SWING: 0.15,      # 15% - balanced
         TradingTimeframe.POSITION: 0.25    # 25% - trends similar
     }

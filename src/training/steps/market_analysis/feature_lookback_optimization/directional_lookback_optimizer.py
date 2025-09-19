@@ -49,12 +49,12 @@ class DirectionalLookbackConfig:
     
     # Period consolidation settings
     enable_period_consolidation: bool = True
-    consolidation_variance_threshold: float = 0.15  # If variance < 15%, consolidate periods (improved default)
+    consolidation_variance_threshold: float = 0.12  # If variance < 12%, consolidate periods (precision-critical for intraday/scalping)
     consolidation_method: str = "average"  # "average", "best_performance", "weighted_average"
     
     # Adaptive threshold settings
     enable_adaptive_thresholds: bool = False
-    trading_timeframe: str = "swing"  # "intraday", "swing", "position"
+    trading_timeframe: str = "intraday"  # "intraday", "swing", "position"
     market_volatility: str = "medium"  # "low", "medium", "high"
     feature_type_thresholds: Optional[Dict[str, float]] = None  # Custom thresholds by feature type
     

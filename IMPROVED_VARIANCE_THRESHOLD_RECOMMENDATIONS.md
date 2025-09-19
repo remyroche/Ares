@@ -43,10 +43,11 @@ Position Trading: 25% threshold
 
 ## **New Recommendations**
 
-### 🎯 **Improved Default: 15%** (was 20%)
-- Better balance for most trading strategies
-- Suitable for swing trading and mixed approaches
-- Reduces unnecessary feature proliferation
+### 🎯 **Precision-Critical Default: 12%** (for Intraday/Scalping)
+- Optimal for precision-critical intraday trading and scalping
+- Only consolidates very close periods (SMA 20↔21, RSI 14↔15)
+- Preserves important differences (RSI 6↔7, RSI 14↔16)
+- Maximizes signal precision for short-term strategies
 
 ### 📊 **Adaptive Thresholds by Feature Type**
 ```python
@@ -60,12 +61,12 @@ Feature-Specific Thresholds:
 ### 🧠 **Smart Adaptive Logic**
 ```python
 DirectionalLookbackConfig(
-    # Improved defaults
-    consolidation_variance_threshold=0.15,  # 15% instead of 20%
+    # Precision-critical for intraday/scalping
+    consolidation_variance_threshold=0.12,  # 12% for precision-critical trading
     
     # Adaptive threshold system
     enable_adaptive_thresholds=True,
-    trading_timeframe="swing",      # "intraday", "swing", "position"
+    trading_timeframe="intraday",   # "intraday", "swing", "position"
     market_volatility="medium",     # "low", "medium", "high"
     
     # Custom feature-type thresholds

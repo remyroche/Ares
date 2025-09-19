@@ -103,10 +103,15 @@ def test_directional_optimization():
         cross_directional_analysis=True,
         min_samples_per_direction=100,
         
-        # New consolidation settings
+        # New consolidation settings with improved threshold
         enable_period_consolidation=True,
-        consolidation_variance_threshold=0.20,  # 20% variance threshold
+        consolidation_variance_threshold=0.15,  # 15% variance threshold (improved default)
         consolidation_method="average",
+        
+        # Adaptive threshold settings
+        enable_adaptive_thresholds=True,
+        trading_timeframe="swing",
+        market_volatility="medium",
         
         # Integration with existing pipeline
         use_existing_feature_pipeline=True,
@@ -183,8 +188,47 @@ def test_directional_optimization():
         print(f"❌ Test 2 failed: {e}")
         return False
     
-    # Test 3: Test different consolidation methods
-    print("\n🧪 Test 3: Test consolidation methods")
+    # Test 3: Test threshold recommendations
+    print("\n🧪 Test 3: Test threshold recommendations")
+    try:
+        from training.steps.market_analysis.feature_lookback_optimization.threshold_advisor import (
+            ThresholdAdvisor, TradingTimeframe, MarketVolatility, FeatureType, 
+            get_threshold_recommendation, print_threshold_analysis
+        )
+        
+        print("\n🎯 Testing threshold advisor...")
+        
+        # Test different scenarios
+        scenarios = [
+            ("intraday", "high_volatility", "High-frequency crypto trading"),
+            ("swing_trading", "medium_volatility", "Forex swing trading"),
+            ("position_trading", "low_volatility", "Long-term stock trading")
+        ]
+        
+        for trading_style, market_type, description in scenarios:
+            threshold = get_threshold_recommendation(
+                trading_style=trading_style,
+                market_type=market_type,
+                feature_names=feature_columns[:5]
+            )
+            print(f"   {description}: {threshold:.1%}")
+        
+        # Detailed analysis for swing trading
+        print(f"\n📊 Detailed Analysis for Swing Trading:")
+        print_threshold_analysis(
+            trading_style="swing_trading",
+            market_type="medium_volatility",
+            feature_names=feature_columns[:8]
+        )
+        
+    except ImportError as e:
+        print(f"⚠️ Threshold advisor not available: {e}")
+    except Exception as e:
+        print(f"❌ Test 3 failed: {e}")
+        return False
+    
+    # Test 4: Test different consolidation methods
+    print("\n🧪 Test 4: Test consolidation methods")
     try:
         consolidation_methods = ["average", "best_performance", "weighted_average"]
         
@@ -335,20 +379,25 @@ if __name__ == "__main__":
         print("\n🎉 Test completed successfully!")
         print("\n💡 Key Benefits of New Approach:")
         print("   ✅ Reduces feature count from 2N×2 to N×2 (50% reduction)")
-        print("   ✅ Smart consolidation: <20% variance → single averaged feature")
+        print("   ✅ Smart consolidation with improved thresholds (15% default, was 20%)")
+        print("   ✅ Adaptive thresholds based on feature type and market conditions")
         print("   ✅ Maintains directional differentiation (long/short)")
         print("   ✅ Integrates with existing 100→80→60 feature selection pipeline")
         print("   ✅ Preserves optimization quality and performance")
         print("   ✅ Provides intelligent feature selection")
         print("   ✅ Enables cross-directional analysis")
         print("   ✅ Configurable consolidation methods (average, best_performance, weighted)")
+        print("   ✅ Intelligent threshold recommendations for different trading strategies")
         
         print("\n🔧 Integration Notes:")
         print("   - Set 'use_new_directional_approach=True' in config")
         print("   - Enable 'enable_period_consolidation=True' for smart consolidation")
         print("   - Set 'use_existing_feature_pipeline=True' to use 100→80→60 pipeline")
-        print("   - Adjust 'consolidation_variance_threshold' (default: 0.20 = 20%)")
+        print("   - Adjust 'consolidation_variance_threshold' (improved default: 0.15 = 15%)")
+        print("   - Enable 'enable_adaptive_thresholds=True' for intelligent threshold adjustment")
+        print("   - Set 'trading_timeframe' and 'market_volatility' for adaptive thresholds")
         print("   - Choose consolidation method: 'average', 'best_performance', or 'weighted_average'")
+        print("   - Use threshold advisor for optimal threshold recommendations")
         print("   - Use 'max_features_to_optimize' to limit computation time")
         print("   - Enable 'cross_directional_analysis' for better insights")
         

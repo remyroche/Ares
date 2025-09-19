@@ -49,8 +49,14 @@ class DirectionalLookbackConfig:
     
     # Period consolidation settings
     enable_period_consolidation: bool = True
-    consolidation_variance_threshold: float = 0.20  # If variance < 20%, consolidate periods
+    consolidation_variance_threshold: float = 0.15  # If variance < 15%, consolidate periods (improved default)
     consolidation_method: str = "average"  # "average", "best_performance", "weighted_average"
+    
+    # Adaptive threshold settings
+    enable_adaptive_thresholds: bool = False
+    trading_timeframe: str = "swing"  # "intraday", "swing", "position"
+    market_volatility: str = "medium"  # "low", "medium", "high"
+    feature_type_thresholds: Optional[Dict[str, float]] = None  # Custom thresholds by feature type
     
     # Integration with existing pipeline
     use_existing_feature_pipeline: bool = True  # Use existing 100→80→60 pipeline
@@ -501,8 +507,133 @@ class DirectionalLookbackOptimizer:
         
         return complementary
     
+    def _get_adaptive_threshold(self, 
+                              feature_name: str, 
+                              avg_period: float,
+                              long_result: DirectionalFeatureResult,
+                              short_result: DirectionalFeatureResult) -> float:
+        """Get adaptive threshold based on feature characteristics and market conditions."""
+        
+        if not self.config.enable_adaptive_thresholds:
+            return self.config.consolidation_variance_threshold
+        
+        # Start with base threshold
+        threshold = self.config.consolidation_variance_threshold
+        
+        # 1. Feature-type based adjustment
+        if self.config.feature_type_thresholds:
+            # Check if feature name matches any pattern
+            for pattern, custom_threshold in self.config.feature_type_thresholds.items():
+                if pattern.lower() in feature_name.lower():
+                    threshold = custom_threshold
+                    break
+        else:
+            # Default feature type detection
+            threshold = self._get_feature_type_threshold(feature_name)
+        
+        # 2. Period-length based adjustment
+        threshold = self._adjust_threshold_by_period_length(threshold, avg_period)
+        
+        # 3. Market condition adjustment
+        threshold = self._adjust_threshold_by_market_conditions(threshold)
+        
+        # 4. Performance difference adjustment
+        threshold = self._adjust_threshold_by_performance_diff(threshold, long_result, short_result)
+        
+        # Ensure threshold stays within reasonable bounds
+        threshold = max(0.05, min(0.50, threshold))
+        
+        return threshold
+    
+    def _get_feature_type_threshold(self, feature_name: str) -> float:
+        """Get threshold based on detected feature type."""
+        feature_name_lower = feature_name.lower()
+        
+        # Trend features (SMA, EMA) - trends work similarly both ways
+        if any(term in feature_name_lower for term in ['sma', 'ema', 'ma', 'trend', 'cross']):
+            return 0.25
+        
+        # Momentum features (RSI, MACD, ROC) - momentum can differ significantly
+        elif any(term in feature_name_lower for term in ['rsi', 'macd', 'roc', 'momentum', 'stoch']):
+            return 0.15
+        
+        # Volatility features (ATR, BB, VIX) - volatility is often asymmetric
+        elif any(term in feature_name_lower for term in ['atr', 'volatility', 'bb', 'bollinger', 'vix']):
+            return 0.10
+        
+        # Volume features - often similar for both directions
+        elif any(term in feature_name_lower for term in ['volume', 'obv', 'vwap']):
+            return 0.30
+        
+        # Default for unknown feature types
+        else:
+            return self.config.consolidation_variance_threshold
+    
+    def _adjust_threshold_by_period_length(self, base_threshold: float, avg_period: float) -> float:
+        """Adjust threshold based on the average period length."""
+        
+        if avg_period <= 10:
+            # Short periods - small changes matter more
+            return base_threshold * 0.6  # Make stricter
+        elif avg_period <= 50:
+            # Medium periods - balanced
+            return base_threshold
+        else:
+            # Long periods - small differences less important
+            return base_threshold * 1.4  # Make more lenient
+    
+    def _adjust_threshold_by_market_conditions(self, base_threshold: float) -> float:
+        """Adjust threshold based on market volatility and trading timeframe."""
+        
+        # Adjust for market volatility
+        volatility_multiplier = {
+            'low': 1.4,      # Low volatility - more consolidation
+            'medium': 1.0,   # Medium volatility - no change
+            'high': 0.7      # High volatility - less consolidation
+        }.get(self.config.market_volatility, 1.0)
+        
+        # Adjust for trading timeframe
+        timeframe_multiplier = {
+            'intraday': 0.6,  # Intraday - precision matters
+            'swing': 1.0,     # Swing - balanced
+            'position': 1.3   # Position - long-term trends similar
+        }.get(self.config.trading_timeframe, 1.0)
+        
+        return base_threshold * volatility_multiplier * timeframe_multiplier
+    
+    def _adjust_threshold_by_performance_diff(self, 
+                                            base_threshold: float,
+                                            long_result: DirectionalFeatureResult,
+                                            short_result: DirectionalFeatureResult) -> float:
+        """Adjust threshold based on performance difference between long/short."""
+        
+        # Calculate performance difference
+        long_score = long_result.mutual_info_score
+        short_score = short_result.mutual_info_score
+        
+        if long_score == 0 and short_score == 0:
+            return base_threshold
+        
+        max_score = max(long_score, short_score)
+        min_score = min(long_score, short_score)
+        
+        if max_score == 0:
+            return base_threshold
+        
+        performance_ratio = min_score / max_score
+        
+        if performance_ratio < 0.5:
+            # Large performance difference - keep separate
+            return base_threshold * 0.5
+        elif performance_ratio < 0.8:
+            # Medium performance difference - be more conservative
+            return base_threshold * 0.8
+        else:
+            # Similar performance - allow more consolidation
+            return base_threshold * 1.2
+    
     def _consolidate_similar_periods(self, result: DirectionalOptimizationResult) -> DirectionalOptimizationResult:
-        """Consolidate long/short features with similar periods (< 20% variance)."""
+        """Consolidate long/short features with similar periods using adaptive thresholds."""
         
         # Find common features between long and short
         common_features = set(result.long_features.keys()) & set(result.short_features.keys())
@@ -524,9 +655,13 @@ class DirectionalLookbackOptimizer:
                 
             variance = abs(long_period - short_period) / avg_period
             
+            # Get adaptive threshold for this feature
+            threshold = self._get_adaptive_threshold(feature_name, avg_period, long_result, short_result)
+            
             # Check if variance is below threshold
-            if variance < self.config.consolidation_variance_threshold:
-                tprint(f"🔀 Consolidating {feature_name}: long={long_period}, short={short_period}, variance={variance:.3f}")
+            if variance < threshold:
+                threshold_info = f" (threshold: {threshold:.1%})" if self.config.enable_adaptive_thresholds else ""
+                tprint(f"🔀 Consolidating {feature_name}: long={long_period}, short={short_period}, variance={variance:.3f}{threshold_info}")
                 
                 # Create consolidated feature
                 consolidated_result = self._create_consolidated_feature(

@@ -90,53 +90,87 @@ Both workflows → Compare Results → Identify Best Strategy
 
 ## 🚀 Quick Start
 
-### Basic Usage
+### New Data-Driven Approach (Recommended)
 
 ```python
 import pandas as pd
 import numpy as np
 from src.research.clusters import (
-    MarketDimensionAnalyzer,
-    RegimeClusterer, 
-    RegimeFeatureImportance,
-    RegimeValidationMetrics,
-    HMMIntegrationLayer,
-    RegimeVisualization
+    DataDrivenClusteringFramework,
+    data_driven_regime_discovery,
+    quick_regime_discovery
 )
 
-# Load your market data
+# Load your market data (OHLCV format)
 market_data = pd.read_csv('your_market_data.csv')
+features = pd.read_csv('your_features.csv')  # Your engineered features
 
-# 1. Analyze market dimensions
-dimension_analyzer = MarketDimensionAnalyzer()
-dimension_results = dimension_analyzer.analyze_all_dimensions(market_data)
+# Quick discovery with optimal parameters
+result = quick_regime_discovery(features, market_data)
 
-# 2. Run clustering analysis
+print(f"Discovered {result.n_clusters} regimes")
+print(f"Strategy: {result.recommendations['model_training_strategy']}")
+print(f"Confidence: {result.recommendations['confidence_level']}")
+
+# Or complete analysis with threshold discovery
+result = data_driven_regime_discovery(features, market_data)
+
+print(f"Optimal CV threshold: {result.optimal_cv_threshold:.3f}")
+print(f"Optimal similarity threshold: {result.optimal_similarity_threshold:.3f}")
+
+# Key research insights
+if result.empirical_discovery_result:
+    if result.empirical_discovery_result.cv_breaking_point:
+        print(f"⚠️ CV breaks down at: {result.empirical_discovery_result.cv_breaking_point:.3f}")
+    if result.empirical_discovery_result.similarity_breaking_point:
+        print(f"⚠️ Similarity breaks down at: {result.empirical_discovery_result.similarity_breaking_point:.3f}")
+```
+
+### Advanced Data-Driven Usage
+
+```python
+from src.research.clusters import (
+    DataDrivenClusteringConfig,
+    EmpiricalDiscoveryConfig,
+    SimilarityClusteringConfig,
+    SimilarityMethod
+)
+
+# Custom configuration for empirical discovery
+config = DataDrivenClusteringConfig(
+    enable_threshold_discovery=True,
+    discovery_config=EmpiricalDiscoveryConfig(
+        cv_range=(0.1, 0.8, 20),  # Test CV from 0.1 to 0.8
+        similarity_range=(0.3, 0.95, 15),  # Test similarity from 0.3 to 0.95
+        min_economic_relevance=0.15,
+        breaking_point_threshold=0.8  # 20% degradation threshold
+    ),
+    similarity_config=SimilarityClusteringConfig(
+        similarity_method=SimilarityMethod.CORRELATION,
+        enable_economic_validation=True
+    )
+)
+
+framework = DataDrivenClusteringFramework(config)
+result = framework.discover_optimal_regimes(features, market_data)
+
+# Analyze breaking points
+if result.empirical_discovery_result:
+    print("📊 Empirical Findings:")
+    print(f"   - CV breaking point: {result.empirical_discovery_result.cv_breaking_point}")
+    print(f"   - Similarity breaking point: {result.empirical_discovery_result.similarity_breaking_point}")
+    print(f"   - Answers: 'At what point do relaxed thresholds destroy economic relevance?'")
+```
+
+### Legacy Approach (Deprecated)
+
+```python
+# Old approach - no longer recommended
+# Uses arbitrary cluster numbers and lacks CV validation
+from src.research.clusters import RegimeClusterer, ClusteringMethod
+
 clusterer = RegimeClusterer()
-clustering_results = clusterer.run_all_methods(market_data.values)
-best_method, best_result = clusterer.get_best_method()
-
-# 3. Analyze feature importance
-feature_analyzer = RegimeFeatureImportance()
-importance_results = feature_analyzer.analyze_all_methods(
-    market_data, best_result.labels
-)
-
-# 4. Validate regime quality
-validator = RegimeValidationMetrics()
-validation_results = validator.validate_all_metrics(
-    market_data, best_result.labels
-)
-
-# 5. Generate trading rules for regimes
-from src.research.clusters import generate_complete_trading_calibration_report
-trading_rules = generate_complete_trading_calibration_report(validation_results)
-
-# 6. Generate visualizations
-visualizer = RegimeVisualization()
-visualizer.generate_comprehensive_report(
-    market_data, best_result.labels, analysis_results
-)
+result = clusterer.run_single_method(features.values, ClusteringMethod.SIMILARITY_MATRIX)
 ```
 
 ### Integration with Existing HMM Systems

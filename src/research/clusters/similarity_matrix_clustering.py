@@ -428,12 +428,12 @@ class SimilarityMatrixClusterer:
         )
     
     def _calculate_cluster_cv(self, cluster_features: pd.DataFrame) -> float:
-        """Calculate coefficient of variation for cluster features."""
+        """Calculate within-cluster coefficient of variation."""
         
         if len(cluster_features) < 2:
             return float('inf')  # Invalid cluster
         
-        # Calculate CV for each feature
+        # Calculate CV for each feature within the cluster
         feature_cvs = []
         for col in cluster_features.columns:
             feature_values = cluster_features[col]
@@ -441,8 +441,96 @@ class SimilarityMatrixClusterer:
                 cv = abs(feature_values.std() / feature_values.mean())
                 feature_cvs.append(cv)
         
-        # Return mean CV across features
+        # Return mean within-cluster CV across features
         return np.mean(feature_cvs) if feature_cvs else float('inf')
+    
+    def _calculate_between_cluster_cv(self, 
+                                    features: pd.DataFrame,
+                                    labels: np.ndarray) -> Dict[str, float]:
+        """Calculate between-cluster coefficient of variation for each feature."""
+        
+        between_cluster_cvs = {}
+        
+        for col in features.columns:
+            # Calculate cluster centroids for this feature
+            cluster_centroids = []
+            for cluster_id in np.unique(labels):
+                cluster_mask = labels == cluster_id
+                cluster_data = features[col][cluster_mask]
+                if len(cluster_data) > 0:
+                    cluster_centroids.append(cluster_data.mean())
+            
+            # Calculate CV of cluster centroids
+            if len(cluster_centroids) > 1:
+                centroids_array = np.array(cluster_centroids)
+                if centroids_array.std() > 0 and centroids_array.mean() != 0:
+                    between_cv = abs(centroids_array.std() / centroids_array.mean())
+                    between_cluster_cvs[col] = between_cv
+                else:
+                    between_cluster_cvs[col] = 0.0
+            else:
+                between_cluster_cvs[col] = 0.0
+        
+        return between_cluster_cvs
+    
+    def _calculate_comprehensive_cv_metrics(self,
+                                          features: pd.DataFrame,
+                                          labels: np.ndarray) -> Dict[str, Any]:
+        """Calculate comprehensive CV metrics: within-cluster, between-cluster, and ratios."""
+        
+        cv_metrics = {
+            'within_cluster_cvs': {},
+            'between_cluster_cvs': {},
+            'cv_ratios': {},
+            'overall_within_cv': 0.0,
+            'overall_between_cv': 0.0,
+            'cv_separation_score': 0.0
+        }
+        
+        # Calculate within-cluster CVs for each cluster
+        for cluster_id in np.unique(labels):
+            cluster_mask = labels == cluster_id
+            cluster_features = features[cluster_mask]
+            within_cv = self._calculate_cluster_cv(cluster_features)
+            cv_metrics['within_cluster_cvs'][cluster_id] = within_cv
+        
+        # Calculate between-cluster CVs for each feature
+        cv_metrics['between_cluster_cvs'] = self._calculate_between_cluster_cv(features, labels)
+        
+        # Calculate CV ratios (between/within) - higher is better for clustering
+        for col in features.columns:
+            between_cv = cv_metrics['between_cluster_cvs'].get(col, 0.0)
+            
+            # Calculate average within-cluster CV for this feature across clusters
+            feature_within_cvs = []
+            for cluster_id in np.unique(labels):
+                cluster_mask = labels == cluster_id
+                cluster_data = features[col][cluster_mask]
+                if len(cluster_data) > 1 and cluster_data.std() > 0 and cluster_data.mean() != 0:
+                    within_cv = abs(cluster_data.std() / cluster_data.mean())
+                    feature_within_cvs.append(within_cv)
+            
+            avg_within_cv = np.mean(feature_within_cvs) if feature_within_cvs else float('inf')
+            
+            # CV ratio: between/within (higher = better separation)
+            if avg_within_cv > 0 and avg_within_cv != float('inf'):
+                cv_ratio = between_cv / avg_within_cv
+                cv_metrics['cv_ratios'][col] = cv_ratio
+            else:
+                cv_metrics['cv_ratios'][col] = 0.0
+        
+        # Overall metrics
+        valid_within_cvs = [cv for cv in cv_metrics['within_cluster_cvs'].values() if cv != float('inf')]
+        cv_metrics['overall_within_cv'] = np.mean(valid_within_cvs) if valid_within_cvs else float('inf')
+        
+        valid_between_cvs = [cv for cv in cv_metrics['between_cluster_cvs'].values() if cv > 0]
+        cv_metrics['overall_between_cv'] = np.mean(valid_between_cvs) if valid_between_cvs else 0.0
+        
+        # CV separation score: how well clusters separate in CV space
+        valid_ratios = [ratio for ratio in cv_metrics['cv_ratios'].values() if ratio > 0]
+        cv_metrics['cv_separation_score'] = np.mean(valid_ratios) if valid_ratios else 0.0
+        
+        return cv_metrics
     
     def _calculate_cluster_similarity(self, cluster_features: pd.DataFrame) -> float:
         """Calculate internal similarity within cluster."""
@@ -581,10 +669,11 @@ class SimilarityMatrixClusterer:
     
     def _calculate_final_metrics(self, 
                                features: pd.DataFrame,
-                               labels: np.ndarray) -> Dict[str, Dict[int, float]]:
-        """Calculate final metrics for all clusters."""
+                               labels: np.ndarray) -> Dict[str, Any]:
+        """Calculate comprehensive final metrics including within/between-cluster CV."""
         
-        metrics = {
+        # Basic cluster metrics
+        basic_metrics = {
             'cv_scores': {},
             'similarity_scores': {},
             'sample_counts': {}
@@ -594,11 +683,26 @@ class SimilarityMatrixClusterer:
             cluster_mask = labels == cluster_id
             cluster_features = features[cluster_mask]
             
-            metrics['cv_scores'][cluster_id] = self._calculate_cluster_cv(cluster_features)
-            metrics['similarity_scores'][cluster_id] = self._calculate_cluster_similarity(cluster_features)
-            metrics['sample_counts'][cluster_id] = len(cluster_features)
+            basic_metrics['cv_scores'][cluster_id] = self._calculate_cluster_cv(cluster_features)
+            basic_metrics['similarity_scores'][cluster_id] = self._calculate_cluster_similarity(cluster_features)
+            basic_metrics['sample_counts'][cluster_id] = len(cluster_features)
         
-        return metrics
+        # Comprehensive CV analysis
+        comprehensive_cv = self._calculate_comprehensive_cv_metrics(features, labels)
+        
+        # Combine all metrics
+        final_metrics = {
+            **basic_metrics,
+            'comprehensive_cv_analysis': comprehensive_cv,
+            'within_cluster_cvs': comprehensive_cv['within_cluster_cvs'],
+            'between_cluster_cvs': comprehensive_cv['between_cluster_cvs'],
+            'cv_ratios': comprehensive_cv['cv_ratios'],
+            'overall_within_cv': comprehensive_cv['overall_within_cv'],
+            'overall_between_cv': comprehensive_cv['overall_between_cv'],
+            'cv_separation_score': comprehensive_cv['cv_separation_score']
+        }
+        
+        return final_metrics
 
 
 def similarity_matrix_clustering(features: pd.DataFrame,

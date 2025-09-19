@@ -331,7 +331,17 @@ class MainTrainingPipeline:
             if not MARKET_ANALYSIS_AVAILABLE:
                 self.logger.warning("⚠️ Market analysis sub-pipeline not available")
                 return None
-            return await self.market_analysis_pipeline.execute_sub_pipeline(starting_sub_pipeline, stage_config)
+            return await self.market_analysis_pipeline.execute_sub_pipeline_with_next(starting_sub_pipeline, stage_config)
+        elif stage == PipelineStage.MODEL_TRAINING:
+            if not MODEL_TRAINING_AVAILABLE:
+                self.logger.warning("⚠️ Model training sub-pipeline not available")
+                return None
+            return await self.model_training_pipeline.execute_sub_pipeline_with_next(starting_sub_pipeline, stage_config)
+        elif stage == PipelineStage.BACKTESTING:
+            if not BACKTESTING_AVAILABLE:
+                self.logger.warning("⚠️ Backtesting sub-pipeline not available")
+                return None
+            return await self.backtesting_pipeline.execute_sub_pipeline_with_next(starting_sub_pipeline, stage_config)
         else:
             self.logger.warning(f"⚠️ Auto-chaining not implemented for stage: {stage.value}")
             return None
@@ -489,17 +499,20 @@ class MainTrainingPipeline:
                     if not MARKET_ANALYSIS_AVAILABLE:
                         self.logger.warning("⚠️ Market analysis sub-pipeline not available")
                         continue
-                    result = await self.market_analysis_pipeline.execute_sub_pipeline(sub_pipeline_name, stage_config)
+                    # Use execute_sub_pipeline_with_next for automatic sequential execution
+                    result = await self.market_analysis_pipeline.execute_sub_pipeline_with_next(sub_pipeline_name, stage_config)
                 elif stage == PipelineStage.MODEL_TRAINING:
                     if not MODEL_TRAINING_AVAILABLE:
                         self.logger.warning("⚠️ Model training sub-pipeline not available")
                         continue
-                    result = await self.model_training_pipeline.execute_sub_pipeline(sub_pipeline_name, stage_config)
+                    # Use execute_sub_pipeline_with_next for automatic sequential execution
+                    result = await self.model_training_pipeline.execute_sub_pipeline_with_next(sub_pipeline_name, stage_config)
                 elif stage == PipelineStage.BACKTESTING:
                     if not BACKTESTING_AVAILABLE:
                         self.logger.warning("⚠️ Backtesting sub-pipeline not available")
                         continue
-                    result = await self.backtesting_pipeline.execute_sub_pipeline(sub_pipeline_name, stage_config)
+                    # Use execute_sub_pipeline_with_next for automatic sequential execution
+                    result = await self.backtesting_pipeline.execute_sub_pipeline_with_next(sub_pipeline_name, stage_config)
                 else:
                     raise ValueError(f"Unknown pipeline stage: {stage}")
                 

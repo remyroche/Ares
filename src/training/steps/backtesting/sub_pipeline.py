@@ -715,6 +715,137 @@ class BacktestingSubPipeline:
                 return result.status
         return None
     
+    async def execute_sub_pipeline_with_next(
+        self, 
+        sub_pipeline_name: str, 
+        config: SubPipelineConfig
+    ) -> SubPipelineResult:
+        """
+        Execute a specific sub-pipeline and conditionally trigger subsequent sub-pipelines.
+        
+        This method provides the interface expected by the main training pipeline for
+        automatic sequential execution of sub-pipelines in backtesting stage.
+        
+        Args:
+            sub_pipeline_name: Name of the sub-pipeline to execute
+            config: Configuration for the sub-pipeline
+            
+        Returns:
+            SubPipelineResult with execution details
+        """
+        self.logger.info(f'🚀 Starting {sub_pipeline_name} sub-pipeline with sequential execution')
+        
+        # Check if we should execute only a single stage
+        if hasattr(config, 'single_stage_only') and config.single_stage_only:
+            self.logger.info('🎯 Single stage execution mode - executing only the requested sub-pipeline')
+            return await self.execute_sub_pipeline(sub_pipeline_name, config)
+        
+        # Define logical execution groups for backtesting
+        baseline_steps = [
+            'basic_backtesting_pre'
+        ]
+        
+        optimization_steps = [
+            'final_parameters_optimization'
+        ]
+        
+        validation_steps = [
+            'basic_backtesting_post',
+            'walk_forward_validation',
+            'monte_carlo_simulation',
+            'ab_testing'
+        ]
+        
+        reporting_steps = [
+            'reporting'
+        ]
+        
+        # Complete execution sequence
+        execution_sequence = baseline_steps + optimization_steps + validation_steps + reporting_steps
+        
+        # Find the starting index
+        try:
+            start_index = execution_sequence.index(sub_pipeline_name)
+        except ValueError:
+            self.logger.error(f"❌ Unknown sub-pipeline: {sub_pipeline_name}")
+            raise ValueError(f"Unknown sub-pipeline: {sub_pipeline_name}")
+        
+        # Determine which group we're starting from
+        current_group = None
+        if sub_pipeline_name in baseline_steps:
+            current_group = "Baseline Steps"
+            self.logger.info('🎯 Starting from Baseline steps group - will complete all backtesting steps')
+        elif sub_pipeline_name in optimization_steps:
+            current_group = "Optimization Steps"
+            self.logger.info('🎯 Starting from Optimization steps group')
+        elif sub_pipeline_name in validation_steps:
+            current_group = "Validation Steps"
+            self.logger.info('🎯 Starting from Validation steps group')
+        elif sub_pipeline_name in reporting_steps:
+            current_group = "Reporting Steps"
+            self.logger.info('🎯 Starting from Reporting steps group')
+        
+        self.logger.info(f'📋 Execution sequence: {execution_sequence}')
+        self.logger.info(f'🚀 Starting from index {start_index}: {sub_pipeline_name}')
+        
+        # Execute sub-pipelines starting from the specified one
+        results = []
+        for i in range(start_index, len(execution_sequence)):
+            pipeline_name = execution_sequence[i]
+            
+            # Log group transitions
+            if pipeline_name in baseline_steps and current_group != "Baseline Steps":
+                self.logger.info('🔄 Transitioning to Baseline steps group')
+                current_group = "Baseline Steps"
+            elif pipeline_name in optimization_steps and current_group != "Optimization Steps":
+                self.logger.info('🔄 Transitioning to Optimization steps group')
+                current_group = "Optimization Steps"
+            elif pipeline_name in validation_steps and current_group != "Validation Steps":
+                self.logger.info('🔄 Transitioning to Validation steps group')
+                current_group = "Validation Steps"
+            elif pipeline_name in reporting_steps and current_group != "Reporting Steps":
+                self.logger.info('🔄 Transitioning to Reporting steps group')
+                current_group = "Reporting Steps"
+            
+            try:
+                progress_info = f"({i+1-start_index}/{len(execution_sequence)-start_index})"
+                self.logger.info(f'🔄 Executing {pipeline_name} {progress_info} [Group: {current_group}]')
+                result = await self.execute_sub_pipeline(pipeline_name, config)
+                results.append(result)
+                
+                # If this sub-pipeline failed, stop the sequence
+                if not result.success:
+                    self.logger.error(f"❌ {pipeline_name} failed, stopping execution sequence")
+                    break
+                    
+            except Exception as e:
+                self.logger.error(f"❌ Error executing {pipeline_name}: {e}")
+                # Create a failed result
+                failed_result = SubPipelineResult(
+                    sub_pipeline_name=pipeline_name,
+                    status=SubPipelineStatus.FAILED,
+                    start_time=datetime.now(),
+                    end_time=datetime.now(),
+                    duration_seconds=0.0,
+                    error_message=str(e)
+                )
+                results.append(failed_result)
+                break
+        
+        # Return the first result (the one that was requested)
+        if results:
+            return results[0]
+        else:
+            # Return a failed result if no execution occurred
+            return SubPipelineResult(
+                sub_pipeline_name=sub_pipeline_name,
+                status=SubPipelineStatus.FAILED,
+                start_time=datetime.now(),
+                end_time=datetime.now(),
+                duration_seconds=0.0,
+                error_message="No execution occurred"
+            )
+    
     def get_execution_summary(self) -> Dict[str, Any]:
         """Get summary of all sub-pipeline executions."""
         total_executions = len(self.results)

@@ -387,7 +387,9 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                 cluster_detailed_metrics = self._generate_cluster_detailed_metrics(
                     hmm_models, cluster_assignments, market_data, clustering_config
                 )
-                tprint(f"✅ Detailed cluster metrics generated: {len(cluster_detailed_metrics)} metrics")
+                # Count actual clusters in the detailed metrics
+                actual_cluster_count = len([k for k in cluster_detailed_metrics.keys() if k.startswith('cluster_')])
+                tprint(f"✅ Detailed cluster metrics generated: {actual_cluster_count} clusters ({len(cluster_detailed_metrics)} total metrics)")
             except Exception as e:
                 error_msg = f"Failed to generate detailed cluster metrics: {e}"
                 tprint(f"❌ {error_msg}")
@@ -463,7 +465,20 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                                 'spectral_clustering': advanced_analysis.get('spectral_analysis', {}).get('spectral_quality') == 'good',
                                 'multi_method_consensus': True,
                                 'economic_validation': True
-                            }
+                            },
+                            # Enhanced metrics for outcome file
+                            'cluster_count': len(hmm_models),
+                            'top_5_cluster_distribution': self._get_top_n_cluster_distribution(
+                                clustering_result.get('cluster_analytics', {}).get('cluster_sizes', {}), 5
+                            ),
+                            'top_20_cluster_distribution': self._get_top_n_cluster_distribution(
+                                clustering_result.get('cluster_analytics', {}).get('cluster_sizes', {}), 20
+                            ),
+                            'within_cluster_cv': clustering_result.get('cluster_analytics', {}).get('avg_within_cluster_cv', 0.0),
+                            'similarity_percentage': self._calculate_average_similarity_percentage(clustering_result.get('similarity_matrix')),
+                            'distribution_percentage_per_cluster': self._calculate_detailed_cluster_distribution(
+                                clustering_result.get('cluster_analytics', {}).get('cluster_sizes', {})
+                            )
                         },
                         
                         'metadata': {
@@ -484,8 +499,8 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                     }
                 }
                 
-                # Add comprehensive summary for easy access
-                artifacts['clustering_summary'] = {
+                # Add comprehensive summary directly to the main artifact (no separate clustering_summary artifact)
+                artifacts['hmm_clustering_result']['clustering_summary'] = {
                     'method': 'Advanced Multi-Method Consensus HMM Clustering',
                     'cluster_count': len(hmm_models),
                     'regime_reduction': f"{len(hmm_regime_discovery.get('regime_models', []))} → {len(hmm_models)}",
@@ -786,15 +801,15 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                         cluster_i_pct = (cluster_i_size / total_samples) * 100 if total_samples > 0 else 0
                         cluster_j_pct = (cluster_j_size / total_samples) * 100 if total_samples > 0 else 0
                         
-                        # STRICT PREVENTION: No cluster should ever exceed 10% (safety margin below 12%)
-                        if cluster_i_pct >= 10.0 or cluster_j_pct >= 10.0:
+                        # STRICT PREVENTION: No cluster should ever exceed 12%
+                        if cluster_i_pct >= 12.0 or cluster_j_pct >= 12.0:
                             rejection_stats['size_constraint'] += 1
                             continue
                         
-                        # Check if merged cluster would exceed 10% (strict prevention)
+                        # Check if merged cluster would exceed 12% (strict prevention)
                         merged_size = cluster_i_size + cluster_j_size
                         merged_pct = (merged_size / total_samples) * 100 if total_samples > 0 else 0
-                        if merged_pct >= 10.0:  # Strict 10% limit for prevention
+                        if merged_pct >= 12.0:  # Strict 12% limit for prevention
                             rejection_stats['size_constraint'] += 1
                             continue
                         
@@ -3602,6 +3617,7 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             unique_clusters = sorted(set(cluster_assignments))
             
             self.logger.info(f"📊 Generating detailed metrics for {len(unique_clusters)} clusters")
+            tprint(f"📊 Generating detailed metrics for {len(unique_clusters)} clusters")
             
             for cluster_id in unique_clusters:
                 cluster_metrics = self._analyze_single_cluster(
@@ -5745,37 +5761,63 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                     for regime_id in regime_ids:
                         regime = regime_characteristics.get(regime_id, {})
                         # Use multiple momentum/volatility/volume features for better CV calculation
-                        momentum_values.append(regime.get('momentum_mean', 0.0))
-                        volatility_values.append(regime.get('volatility_mean', 0.0))
-                        volume_values.append(regime.get('volume_mean', 0.0))
+                        # Try different possible keys for momentum
+                        momentum_val = (regime.get('momentum_mean', 0.0) or 
+                                      regime.get('momentum_avg', 0.0) or 
+                                      regime.get('momentum', 0.0) or
+                                      regime.get('mean_momentum', 0.0) or 0.0)
+                        
+                        # Try different possible keys for volatility
+                        volatility_val = (regime.get('volatility_mean', 0.0) or 
+                                        regime.get('volatility_avg', 0.0) or 
+                                        regime.get('volatility', 0.0) or
+                                        regime.get('mean_volatility', 0.0) or 0.0)
+                        
+                        # Try different possible keys for volume
+                        volume_val = (regime.get('volume_mean', 0.0) or 
+                                    regime.get('volume_avg', 0.0) or 
+                                    regime.get('volume', 0.0) or
+                                    regime.get('mean_volume', 0.0) or 0.0)
+                        
+                        momentum_values.append(momentum_val)
+                        volatility_values.append(volatility_val)
+                        volume_values.append(volume_val)
                     
-                    # Debug logging for CV calculation
-                    self.logger.debug(f"   🔍 Cluster {cluster_id} CV Debug:")
-                    self.logger.debug(f"      Momentum values: {momentum_values[:5]}... (showing first 5)")
-                    self.logger.debug(f"      Volatility values: {volatility_values[:5]}... (showing first 5)")
-                    self.logger.debug(f"      Volume values: {volume_values[:5]}... (showing first 5)")
+                    # Enhanced debug logging for CV calculation
+                    self.logger.info(f"   🔍 Cluster {cluster_id} CV Debug:")
+                    self.logger.info(f"      Momentum values: {momentum_values[:5]}... (showing first 5)")
+                    self.logger.info(f"      Volatility values: {volatility_values[:5]}... (showing first 5)")
+                    self.logger.info(f"      Volume values: {volume_values[:5]}... (showing first 5)")
                     
                     # Calculate CV (coefficient of variation) for each aspect
                     def calculate_cv(values, aspect_name):
                         if len(values) == 0:
+                            self.logger.warning(f"      {aspect_name}: No values provided")
                             return 0.0
                         
                         # Remove any NaN or infinite values
                         clean_values = [v for v in values if isinstance(v, (int, float)) and np.isfinite(v)]
                         if len(clean_values) == 0:
+                            self.logger.warning(f"      {aspect_name}: No finite values after cleaning")
                             return 0.0
                         
                         mean_val = np.mean(clean_values)
                         std_val = np.std(clean_values)
                         
-                        # Debug logging
-                        self.logger.debug(f"      {aspect_name}: mean={mean_val:.6f}, std={std_val:.6f}, count={len(clean_values)}")
+                        # Enhanced debug logging
+                        self.logger.info(f"      {aspect_name}: mean={mean_val:.6f}, std={std_val:.6f}, count={len(clean_values)}")
                         
+                        # Handle zero mean case more gracefully
                         if abs(mean_val) < 1e-10:  # Very close to zero
-                            return 0.0
+                            if std_val > 1e-10:  # If there's variation but mean is zero
+                                self.logger.info(f"      {aspect_name}: Zero mean but non-zero std, using std as CV")
+                                return std_val  # Use std directly when mean is zero
+                            else:
+                                self.logger.info(f"      {aspect_name}: Both mean and std are near zero")
+                                return 0.0
                         
                         cv = std_val / abs(mean_val)
-                        self.logger.debug(f"      {aspect_name} CV: {cv:.6f}")
+                        self.logger.info(f"      {aspect_name} CV: {cv:.6f}")
                         return cv
                     
                     momentum_cv = calculate_cv(momentum_values, "momentum")
@@ -5855,4 +5897,71 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                 'cluster_sizes': {},
                 'total_samples': 0
             }
+    
+    def _get_top_n_cluster_distribution(self, cluster_sizes: Dict[int, int], n: int) -> Dict[str, float]:
+        """Get the distribution percentage for the top N clusters."""
+        if not cluster_sizes:
+            return {}
+        
+        total_samples = sum(cluster_sizes.values())
+        if total_samples == 0:
+            return {}
+        
+        # Sort clusters by size (descending)
+        sorted_clusters = sorted(cluster_sizes.items(), key=lambda x: x[1], reverse=True)
+        
+        # Get top N clusters
+        top_n_clusters = sorted_clusters[:n] if len(sorted_clusters) >= n else sorted_clusters
+        
+        # Calculate distribution percentages
+        top_n_distribution = {}
+        for cluster_id, sample_count in top_n_clusters:
+            top_n_distribution[f'cluster_{cluster_id}'] = (sample_count / total_samples) * 100
+        
+        return top_n_distribution
+    
+    def _calculate_average_similarity_percentage(self, similarity_matrix: Optional[Any]) -> float:
+        """Calculate the average similarity percentage from the similarity matrix."""
+        if similarity_matrix is None:
+            return 0.0
+        
+        try:
+            import numpy as np
+            
+            # Convert to numpy array if it's not already
+            if hasattr(similarity_matrix, 'values'):
+                matrix = similarity_matrix.values
+            elif hasattr(similarity_matrix, 'to_numpy'):
+                matrix = similarity_matrix.to_numpy()
+            else:
+                matrix = np.array(similarity_matrix)
+            
+            # Get upper triangle (excluding diagonal) to avoid double counting
+            upper_triangle = np.triu(matrix, k=1)
+            
+            # Calculate mean similarity
+            mean_similarity = np.mean(upper_triangle[upper_triangle != 0])
+            
+            # Convert to percentage
+            return mean_similarity * 100 if np.isfinite(mean_similarity) else 0.0
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Failed to calculate average similarity percentage: {e}")
+            return 0.0
+    
+    def _calculate_detailed_cluster_distribution(self, cluster_sizes: Dict[int, int]) -> Dict[str, float]:
+        """Calculate detailed distribution percentage for each cluster."""
+        if not cluster_sizes:
+            return {}
+        
+        total_samples = sum(cluster_sizes.values())
+        if total_samples == 0:
+            return {}
+        
+        # Calculate percentage for each cluster
+        distribution = {}
+        for cluster_id, sample_count in cluster_sizes.items():
+            distribution[f'cluster_{cluster_id}'] = (sample_count / total_samples) * 100
+        
+        return distribution
     

@@ -670,6 +670,9 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                     self.logger.info(f"🛑 STOPPING: Similarity threshold {threshold:.4f} is too low - regimes are too dissimilar")
                     break
                 
+                # Identify clusters that should be excluded from merging due to high CV
+                excluded_clusters = self._get_excluded_clusters_due_to_cv(regime_characteristics, regime_to_cluster)
+                
                 # Calculate cluster sample percentages
                 total_samples = len(regime_assignments)
                 cluster_sample_counts = {}
@@ -727,6 +730,10 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                         
                         # Skip if same cluster
                         if cluster_i == cluster_j:
+                            continue
+                        
+                        # Skip if either cluster is excluded due to high CV
+                        if cluster_i in excluded_clusters or cluster_j in excluded_clusters:
                             continue
                         
                         # Enforce 12% max resulting cluster size constraint
@@ -1789,14 +1796,13 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             # Stop merging if cluster quality is degrading
             stop_criteria = []
             
-            # Criterion 1: High median CV indicates poor cluster homogeneity
+            # Criterion 1: Aspect-level CV quality check
             for aspect, stats in aspect_stats.items():
-                # More conservative thresholds for better cluster quality
                 if stats['median'] > 0.15:  # 15% CV is high for financial regimes
                     stop_criteria.append(f"High {aspect} CV (median: {stats['median']:.3f})")
                 
-                # Criterion 2: Many clusters with very high CV (>20%)
-                high_cv_count = sum(1 for cv in aspect_cvs[aspect] if cv > 0.20)
+                # Criterion 2: Many clusters with high CV (>10%)
+                high_cv_count = sum(1 for cv in aspect_cvs[aspect] if cv > 0.10)
                 if high_cv_count > len(aspect_cvs[aspect]) * 0.4:  # More than 40% of clusters
                     stop_criteria.append(f"Too many high-CV {aspect} clusters ({high_cv_count}/{len(aspect_cvs[aspect])})")
             
@@ -1812,24 +1818,12 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                 if overall_median_cv > 0.12:  # 12% median CV across all aspects
                     stop_criteria.append(f"High overall cluster heterogeneity (median CV: {overall_median_cv:.3f})")
                 
-                if overall_q90_cv > 0.25:  # 90th percentile > 25% CV
+                if overall_q90_cv > 0.20:  # 90th percentile > 20% CV
                     stop_criteria.append(f"Many very heterogeneous clusters (Q90 CV: {overall_q90_cv:.3f})")
             
-            # Criterion 4: Individual cluster CV degradation
-            # Stop if any individual cluster becomes too heterogeneous
-            high_cv_clusters = []
-            for cluster_id, cv_map in cluster_cv_aspects.items():
-                cluster_max_cv = max([cv for cv in cv_map.values() if cv is not None and np.isfinite(cv)], default=0)
-                if cluster_max_cv > 0.18:  # 18% CV is too high for any individual cluster
-                    high_cv_clusters.append((cluster_id, cluster_max_cv))
-            
-            if len(high_cv_clusters) > 0:
-                worst_cluster = max(high_cv_clusters, key=lambda x: x[1])
-                stop_criteria.append(f"Individual cluster {worst_cluster[0]} has high CV ({worst_cluster[1]:.3f})")
-            
-            # Criterion 5: Check if we have enough clusters for meaningful analysis
+            # Criterion 4: Check if we have enough clusters for meaningful analysis
             unique_clusters = len(set(regime_to_cluster.values()))
-            if unique_clusters < 15:  # Too few clusters for meaningful market analysis
+            if unique_clusters < 20:  # Too few clusters for meaningful market analysis
                 stop_criteria.append(f"Too few clusters for meaningful analysis ({unique_clusters})")
             
             # Log the analysis
@@ -1918,6 +1912,62 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
         except Exception as e:
             self.logger.error(f"❌ Error checking similarity threshold: {e}")
             return False  # Don't stop on error
+    
+    def _get_excluded_clusters_due_to_cv(self, regime_characteristics: Dict[str, Any], regime_to_cluster: Dict[str, int]) -> set:
+        """Identify clusters that should be excluded from future merging due to high internal CV.
+        
+        Args:
+            regime_characteristics: Dictionary of regime characteristics
+            regime_to_cluster: Current regime to cluster mapping
+            
+        Returns:
+            Set of cluster IDs that should be excluded from merging
+        """
+        try:
+            import numpy as np
+            
+            # Calculate current cluster CV metrics
+            cluster_cv_aspects = self._compute_cluster_cv_by_aspect(regime_characteristics, regime_to_cluster)
+            
+            if not cluster_cv_aspects:
+                return set()
+            
+            excluded_clusters = set()
+            
+            # Calculate cluster sample sizes
+            cluster_sample_counts = {}
+            for regime_id, cluster_id in regime_to_cluster.items():
+                if cluster_id not in cluster_sample_counts:
+                    cluster_sample_counts[cluster_id] = 0
+                cluster_sample_counts[cluster_id] += regime_characteristics[regime_id].get('sample_count', 1)
+            
+            for cluster_id, cv_map in cluster_cv_aspects.items():
+                # Get maximum CV across all aspects for this cluster
+                cluster_cvs = [cv for cv in cv_map.values() if cv is not None and np.isfinite(cv)]
+                if not cluster_cvs:
+                    continue
+                
+                max_cv = max(cluster_cvs)
+                sample_count = cluster_sample_counts.get(cluster_id, 0)
+                
+                # Apply adaptive CV threshold based on sample size
+                if sample_count > 10:
+                    cv_threshold = 0.05  # 5% for larger clusters
+                else:
+                    cv_threshold = 0.10  # 10% for smaller clusters
+                
+                if max_cv > cv_threshold:
+                    excluded_clusters.add(cluster_id)
+                    self.logger.info(f"   🚫 Excluding cluster {cluster_id} from merging: CV={max_cv:.3f} > {cv_threshold:.3f} (samples: {sample_count})")
+            
+            if excluded_clusters:
+                self.logger.info(f"📊 Excluded {len(excluded_clusters)} clusters from merging due to high internal CV")
+            
+            return excluded_clusters
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error identifying excluded clusters: {e}")
+            return set()
     
     def _calculate_regime_pair_similarity(self, regime_1: Dict[str, Any], regime_2: Dict[str, Any]) -> float:
         """Calculate similarity between two regimes using robust per-feature normalization.

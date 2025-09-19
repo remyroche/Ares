@@ -21,6 +21,7 @@ import pandas as pd
 from typing import Dict, Any, Tuple, Optional, List, Callable
 import logging
 import time
+import traceback
 from dataclasses import dataclass
 
 # Core ML imports
@@ -46,7 +47,7 @@ from src.utils.math_validation import (
 # Base training imports
 from .tactician_models_training_refactored import TacticianModelsTrainingStepRefactored
 from .tactician_directional_optimization import (
-    EntryTimingLossFunction, EntryTimingTacticianOptimizer
+    EntryTimingLossFunction, DirectionalOptimizationResult, EntryTimingTacticianOptimizer
 )
 from src.utils.ml_common.config import TacticianTrainingConfig
 
@@ -84,21 +85,31 @@ class DirectionalTacticianTrainingStep(TacticianModelsTrainingStepRefactored):
         
         # Initialize entry timing components
         if enable_directional_optimization:
-            self.entry_timing_optimizer = EntryTimingTacticianOptimizer(config)
+            # Note: EntryTimingTacticianOptimizer needs to be implemented in tactician_directional_optimization.py
+            # For now, using the loss functions and creating a basic optimizer structure
             self.loss_functions = EntryTimingLossFunction()
             
-            # Entry timing optimization objectives
-            self.entry_timing_objectives = {
+            # Entry timing optimization objectives (renamed from directional_objectives for consistency)
+            self.directional_objectives = {
                 'early_entry_penalty': 'min',
                 'late_entry_penalty': 'min',
                 'optimal_entry_reward': 'max',
                 'entry_timing_efficiency': 'max'
             }
             
+            # Also keep the original name for backward compatibility
+            self.entry_timing_objectives = self.directional_objectives
+            
+            # Initialize directional optimizer (now using proper implementation)
+            self.directional_optimizer = EntryTimingTacticianOptimizer(config)
+            self.entry_timing_optimizer = self.directional_optimizer  # Alias for compatibility
+            
             self.logger.info("🚀 Entry timing optimization enabled")
         else:
+            self.directional_optimizer = None
             self.entry_timing_optimizer = None
             self.loss_functions = None
+            self.directional_objectives = None
             self.entry_timing_objectives = None
             
             self.logger.info("ℹ️ Entry timing optimization disabled")

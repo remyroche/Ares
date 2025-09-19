@@ -465,9 +465,9 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
                 X, y, regime_labels, analyst_green_light_periods
             )
             filtering_metrics = {
-                'original_samples': len(X),
-                'filtered_samples': len(X_filtered),
-                'green_light_ratio': len(X_filtered) / len(X) if len(X) > 0 else 0
+                'original_samples': len(X) if X is not None else 0,
+                'filtered_samples': len(X_filtered) if X_filtered is not None else 0,
+                'green_light_ratio': (len(X_filtered) / len(X)) if (X is not None and len(X) > 0 and X_filtered is not None) else 0
             }
             self._complete_step(True, metrics=filtering_metrics)
             
@@ -611,6 +611,13 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
                 self.logger.warning("⚠️ No analyst green light periods provided, using all data")
                 return X, y, regime_labels
             
+            # Validate input arrays
+            if not isinstance(analyst_green_light_periods, np.ndarray):
+                raise ValueError("analyst_green_light_periods must be a numpy array")
+            
+            if len(analyst_green_light_periods) != len(X):
+                raise ValueError(f"analyst_green_light_periods length ({len(analyst_green_light_periods)}) must match X samples ({len(X)})")
+            
             # Filter data based on green light periods
             green_light_mask = analyst_green_light_periods
             
@@ -627,10 +634,21 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
             
             return X_filtered, y_filtered, regime_labels_filtered
             
-        except Exception as e:
-            self.logger.error(f"❌ Green light filtering failed: {e}")
-            self.logger.warning("⚠️ Returning original data due to filtering failure")
+        except ValueError as e:
+            # Only fallback for validation errors - these are expected and recoverable
+            self.logger.warning(f"⚠️ Validation error in green light filtering: {e}")
+            self.logger.warning("⚠️ Returning original data due to validation failure")
             return X, y, regime_labels
+        except (IndexError, TypeError) as e:
+            # Handle indexing and type errors - these are also recoverable
+            self.logger.warning(f"⚠️ Data access error in green light filtering: {e}")
+            self.logger.warning("⚠️ Returning original data due to data access failure")
+            return X, y, regime_labels
+        except Exception as e:
+            # Re-raise critical errors that shouldn't be silently ignored
+            self.logger.error(f"❌ Critical error in green light filtering: {e}")
+            self.logger.error(f"❌ Traceback: {traceback.format_exc()}")
+            raise RuntimeError(f"Critical error in green light filtering: {e}") from e
     
     def _prepare_base_models(self, base_tactician_models: Optional[Dict[str, Any]]) -> Dict[str, Any]:
         """Prepare and validate base tactician models."""
@@ -663,39 +681,76 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
             self.logger.info("🏭 Creating tactician models for 1m timeframe...")
             
             # Create base models for Tactician (1m timeframe)
-            models = {
-                'xgboost_model': RandomForestRegressor(  # XGBoost placeholder
+            # Note: Some models are placeholders until proper implementations are available
+            models = {}
+            
+            # Try to use actual XGBoost if available, otherwise use RandomForest placeholder
+            try:
+                import xgboost as xgb
+                models['xgboost_model'] = xgb.XGBRegressor(
+                    n_estimators=150,
+                    random_state=42,
+                    max_depth=15,
+                    n_jobs=-1,
+                    objective='reg:squarederror'
+                )
+                self.logger.info("✅ Using actual XGBoost implementation")
+            except ImportError:
+                self.logger.warning("⚠️ XGBoost not available, using RandomForest placeholder")
+                models['xgboost_model'] = RandomForestRegressor(  # XGBoost placeholder
                     n_estimators=150, 
                     random_state=42, 
                     max_depth=15,
                     n_jobs=-1
-                ),
-                'randomforest_model': RandomForestRegressor(
-                    n_estimators=150, 
-                    random_state=43, 
-                    max_depth=12,
-                    n_jobs=-1
-                ),
-                'catboost_model': RandomForestRegressor(  # CatBoost placeholder
+                )
+            
+            # RandomForest model (actual implementation)
+            models['randomforest_model'] = RandomForestRegressor(
+                n_estimators=150, 
+                random_state=43, 
+                max_depth=12,
+                n_jobs=-1
+            )
+            
+            # Try to use actual CatBoost if available, otherwise use RandomForest placeholder
+            try:
+                import catboost as cb
+                models['catboost_model'] = cb.CatBoostRegressor(
+                    iterations=150,
+                    random_seed=44,
+                    depth=10,
+                    verbose=False,
+                    allow_writing_files=False
+                )
+                self.logger.info("✅ Using actual CatBoost implementation")
+            except ImportError:
+                self.logger.warning("⚠️ CatBoost not available, using RandomForest placeholder")
+                models['catboost_model'] = RandomForestRegressor(  # CatBoost placeholder
                     n_estimators=150, 
                     random_state=44, 
                     max_depth=10,
                     n_jobs=-1
-                ),
-                'elastic_net_model': ElasticNet(
-                    alpha=0.1,
-                    l1_ratio=0.5,
-                    random_state=45,
-                    max_iter=2000
-                ),
-                'linear_model': LinearRegression(),
-                'svr_model': SVR(kernel='rbf', C=1.0, gamma='scale')
-            }
+                )
+            
+            # Linear models (actual implementations)
+            models['elastic_net_model'] = ElasticNet(
+                alpha=0.1,
+                l1_ratio=0.5,
+                random_state=45,
+                max_iter=2000
+            )
+            
+            models['linear_model'] = LinearRegression()
+            
+            models['svr_model'] = SVR(kernel='rbf', C=1.0, gamma='scale')
             
             # Validate models
             for model_name, model in models.items():
                 if not hasattr(model, 'fit') or not hasattr(model, 'predict'):
                     raise ValueError(f"Model '{model_name}' doesn't have required methods")
+            
+            # Log model implementation status
+            self._log_model_implementation_status(models)
             
             self.logger.info(f"✅ Created {len(models)} tactician models: {list(models.keys())}")
             return models
@@ -703,6 +758,31 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
         except Exception as e:
             self.logger.error(f"❌ Failed to create tactician models from configuration: {e}")
             raise RuntimeError(f"Tactician model creation failed: {e}") from e
+    
+    def _log_model_implementation_status(self, models: Dict[str, Any]) -> None:
+        """Log the implementation status of each model."""
+        try:
+            self.logger.info("📊 Model Implementation Status:")
+            
+            for model_name, model in models.items():
+                model_type = type(model).__name__
+                module = type(model).__module__
+                
+                if 'xgboost' in model_name.lower():
+                    if 'xgboost' in module:
+                        self.logger.info(f"  ✅ {model_name}: Actual XGBoost implementation ({model_type})")
+                    else:
+                        self.logger.warning(f"  ⚠️ {model_name}: RandomForest placeholder for XGBoost ({model_type})")
+                elif 'catboost' in model_name.lower():
+                    if 'catboost' in module:
+                        self.logger.info(f"  ✅ {model_name}: Actual CatBoost implementation ({model_type})")
+                    else:
+                        self.logger.warning(f"  ⚠️ {model_name}: RandomForest placeholder for CatBoost ({model_type})")
+                else:
+                    self.logger.info(f"  ✅ {model_name}: Actual implementation ({model_type})")
+                    
+        except Exception as e:
+            self.logger.warning(f"⚠️ Failed to log model implementation status: {e}")
     
     def _create_error_result(self, error_type: str, error_message: str) -> Dict[str, Any]:
         """Create standardized error result."""
@@ -794,10 +874,40 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
                         self.logger.warning(f"⚠️ Could not add predictions from {ensemble_name}: {e}")
                         integration_stats['integration_errors'].append(f"Analyst ensemble {ensemble_name} failed: {e}")
             
-            # Combine all features
+            # Combine all features with shape validation
             if len(enhanced_features) > 1:
-                X_enhanced = np.column_stack(enhanced_features)
-                self.logger.info(f"📊 Meta-learner features: {X.shape[1]} base + {feature_count - X.shape[1]} model inputs = {feature_count} total")
+                # Validate all arrays have same number of rows before concatenation
+                base_shape = enhanced_features[0].shape[0]
+                valid_features = [enhanced_features[0]]  # Start with base features
+                
+                for i, arr in enumerate(enhanced_features[1:], 1):
+                    if arr.shape[0] != base_shape:
+                        self.logger.warning(f"⚠️ Shape mismatch in feature array {i}: {arr.shape[0]} rows vs expected {base_shape} rows, skipping")
+                        integration_stats['integration_errors'].append(f"Feature array {i} shape mismatch: {arr.shape[0]} vs {base_shape}")
+                        continue
+                    
+                    # Ensure 2D array
+                    if arr.ndim == 1:
+                        arr = arr.reshape(-1, 1)
+                    elif arr.ndim > 2:
+                        self.logger.warning(f"⚠️ Feature array {i} has {arr.ndim} dimensions, flattening to 2D")
+                        arr = arr.reshape(arr.shape[0], -1)
+                    
+                    valid_features.append(arr)
+                
+                if len(valid_features) > 1:
+                    try:
+                        X_enhanced = np.column_stack(valid_features)
+                        actual_feature_count = X_enhanced.shape[1]
+                        self.logger.info(f"📊 Meta-learner features: {X.shape[1]} base + {actual_feature_count - X.shape[1]} model inputs = {actual_feature_count} total")
+                    except ValueError as e:
+                        self.logger.error(f"❌ Failed to concatenate features: {e}")
+                        self.logger.warning("⚠️ Using base features only due to concatenation failure")
+                        X_enhanced = X
+                        integration_stats['integration_errors'].append(f"Feature concatenation failed: {e}")
+                else:
+                    X_enhanced = X
+                    self.logger.info(f"📊 Using base features only due to shape validation failures: {X.shape[1]} features")
             else:
                 X_enhanced = X
                 self.logger.info(f"📊 Using base features only: {X.shape[1]} features")
@@ -1124,9 +1234,17 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
         """Destructor to ensure cleanup on object deletion."""
         try:
             self.cleanup_resources()
-        except Exception:
-            # Silently handle cleanup errors in destructor
-            pass
+        except Exception as e:
+            # Log cleanup errors but don't raise in destructor to avoid issues during garbage collection
+            try:
+                if hasattr(self, 'logger') and self.logger:
+                    self.logger.error(f"❌ Cleanup error in destructor: {e}")
+                else:
+                    # Fallback logging if logger is not available
+                    print(f"❌ Cleanup error in TacticianEnsembleTrainingStep destructor: {e}")
+            except Exception:
+                # Last resort - avoid any exceptions in destructor
+                pass
     
     def _log_comprehensive_summary(self, report: Dict[str, Any]) -> None:
         """Log comprehensive training summary with enhanced tprint integration."""

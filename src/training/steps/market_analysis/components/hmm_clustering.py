@@ -401,6 +401,7 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                 advanced_analysis = cluster_metrics.get('advanced_clustering_analysis', {})
                 statistical_analysis = cluster_metrics.get('statistical_analysis', {})
                 
+                # Build single consolidated artifact
                 artifacts = {
                     'hmm_clustering_result': {
                         # Core clustering results
@@ -440,16 +441,18 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                             'economic_alignment': statistical_analysis.get('economic_validation', {}).get('overall_economic_alignment', {})
                         },
                         
-                        # Clustering summary with advanced metrics
-                        'clustering_summary': {
+                        # Clustering summary with advanced metrics (embedded here to avoid extra artifact)
+                        'clustering_summary': (lambda: (lambda ca, qm: {
                             'total_clusters': len(hmm_models),
-                            'total_assignments': sum(clustering_result.get('cluster_analytics', {}).get('cluster_sizes', {}).values()),
-                            'cluster_distribution': self._calculate_cluster_distribution_from_sizes(
-                                clustering_result.get('cluster_analytics', {}).get('cluster_sizes', {})
-                            ),
+                            'total_assignments': sum(ca.get('cluster_sizes', {}).values()) if isinstance(ca.get('cluster_sizes', {}), dict) else 0,
+                            'cluster_distribution': self._calculate_cluster_distribution_from_sizes(ca.get('cluster_sizes', {})),
+                            'top_5_coverage': ca.get('concentration_analysis', {}).get('top_5_coverage', 0.0),
+                            'top_20_coverage': ca.get('top_20_coverage', 0.0),
+                            'avg_within_cluster_cv': ca.get('avg_within_cluster_cv', 0.0),
+                            'inter_cluster_similarity_pct': max(0.0, min(100.0, (1.0 - qm.get('avg_inter_cluster_dissimilarity', 0.0)) * 100.0)),
                             'clustering_time': clustering_result.get('clustering_time', 0.0),
-                            'quality_score': quality_metrics.get('overall_quality_score', 0.0),
-                            'validation_passed': quality_metrics.get('validation_passed', False),
+                            'quality_score': qm.get('overall_quality_score', 0.0),
+                            'validation_passed': qm.get('validation_passed', False),
                             'clustering_mode': clustering_config.get('max_clusters', 3),
                             'data_driven_selection': True,
                             'regime_reduction': {
@@ -464,7 +467,7 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                                 'multi_method_consensus': True,
                                 'economic_validation': True
                             }
-                        },
+                        })(clustering_result.get('cluster_analytics', {}), quality_metrics))(),
                         
                         'metadata': {
                             'symbol': self.config.symbol,
@@ -484,32 +487,10 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                     }
                 }
                 
-                # Add comprehensive summary for easy access
-                artifacts['clustering_summary'] = {
-                    'method': 'Advanced Multi-Method Consensus HMM Clustering',
-                    'cluster_count': len(hmm_models),
-                    'regime_reduction': f"{len(hmm_regime_discovery.get('regime_models', []))} → {len(hmm_models)}",
-                    'data_driven_selection': True,
-                    'advanced_methods_used': {
-                        'information_criteria': True,
-                        'gmm_confidence_optimization': advanced_analysis.get('gmm_analysis', {}).get('gmm_quality') == 'good',
-                        'spectral_clustering': advanced_analysis.get('spectral_analysis', {}).get('spectral_quality') == 'good',
-                        'economic_validation': True,
-                        'multi_dimensional_validation': True
-                    },
-                    'quality_assessment': {
-                        'overall_score': statistical_analysis.get('overall_cluster_quality', {}).get('overall_score', 0.0),
-                        'quality_level': statistical_analysis.get('overall_cluster_quality', {}).get('quality_level', 'unknown'),
-                        'economic_validation_passed': statistical_analysis.get('economic_validation', {}).get('overall_economic_alignment', {}).get('economic_validation_passed', False)
-                    },
-                    'market_insights': {
-                        'primary_driver': statistical_analysis.get('factor_impact_analysis', {}).get('primary_market_driver', {}).get('dominant_aspect', 'unknown'),
-                        'aspects_tested': ['momentum', 'volatility', 'volume'],
-                        'financial_validation': ['volatility_regimes', 'momentum_patterns', 'volume_patterns', 'market_stress']
-                    }
-                }
+                # Note: We intentionally avoid creating a second top-level artifact ("clustering_summary")
+                # to ensure only one artifact group is produced as requested.
                 
-                tprint(f"✅ Artifacts created successfully: {len(artifacts)} artifact groups")
+            tprint(f"✅ Artifacts created successfully: {len(artifacts)} artifact groups")
                 tprint(f"📊 Total clusters: {len(hmm_models)}")
                 tprint(f"📊 Total assignments: {len(cluster_assignments)}")
                 tprint(f"📊 Quality score: {quality_metrics.get('overall_quality_score', 0.0):.3f}")
@@ -779,22 +760,22 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                             rejection_stats['excluded_cv'] += 1
                             continue
                         
-                        # Enforce STRICT 12% max cluster size constraint
-                        # Check if either cluster is already at or above 12%
+                # Enforce STRICT 12% max cluster size constraint
+                # Check if either cluster is already at or above 12%
                         cluster_i_size = cluster_sample_counts.get(cluster_i, 0)
                         cluster_j_size = cluster_sample_counts.get(cluster_j, 0)
                         cluster_i_pct = (cluster_i_size / total_samples) * 100 if total_samples > 0 else 0
                         cluster_j_pct = (cluster_j_size / total_samples) * 100 if total_samples > 0 else 0
                         
-                        # STRICT PREVENTION: No cluster should ever exceed 10% (safety margin below 12%)
-                        if cluster_i_pct >= 10.0 or cluster_j_pct >= 10.0:
+                # STRICT PREVENTION: Do not merge any cluster that is already at or above 12%
+                if cluster_i_pct >= 12.0 or cluster_j_pct >= 12.0:
                             rejection_stats['size_constraint'] += 1
                             continue
                         
-                        # Check if merged cluster would exceed 10% (strict prevention)
+                # Check if merged cluster would exceed 12% (strict prevention)
                         merged_size = cluster_i_size + cluster_j_size
                         merged_pct = (merged_size / total_samples) * 100 if total_samples > 0 else 0
-                        if merged_pct >= 10.0:  # Strict 10% limit for prevention
+                if merged_pct >= 12.0:  # Strict 12% limit for prevention
                             rejection_stats['size_constraint'] += 1
                             continue
                         
@@ -821,7 +802,7 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                 self.logger.info(f"      ✅ Accepted for merging: {rejection_stats['accepted']}")
                 self.logger.info(f"      ❌ Same cluster: {rejection_stats['same_cluster']}")
                 self.logger.info(f"      ❌ Excluded due to CV: {rejection_stats['excluded_cv']}")
-                self.logger.info(f"      ❌ Size constraint (>10%): {rejection_stats['size_constraint']}")
+                self.logger.info(f"      ❌ Size constraint (>12%): {rejection_stats['size_constraint']}")
                 self.logger.info(f"      ❌ Similarity too low: {rejection_stats['similarity_too_low']}")
                 self.logger.info(f"      ❌ CV incompatible: {rejection_stats['cv_incompatible']}")
                 
@@ -5484,21 +5465,59 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
         """Create cluster assignments from regime-to-cluster mapping."""
         try:
             cluster_assignments = []
-            
-            # Create mapping from regime ID to cluster ID
-            regime_id_to_cluster = {}
-            for i, regime_id in enumerate(regime_ids):
-                regime_key = str(regime_id) if regime_id in regime_to_cluster else f'regime_{regime_id}'
-                if regime_key in regime_to_cluster:
-                    regime_id_to_cluster[regime_id] = regime_to_cluster[regime_key]
-                else:
-                    # Fallback: assign to cluster 0
-                    regime_id_to_cluster[regime_id] = 0
-            
-            # Map regime assignments to cluster assignments
-            for regime_assignment in regime_assignments:
-                cluster_id = regime_id_to_cluster.get(regime_assignment, 0)
-                cluster_assignments.append(cluster_id)
+
+            # Build robust mapping from numeric regime index -> cluster id
+            # Many pipelines store regime identifiers as strings like "regime_123" while
+            # assignments are numeric indices (e.g., 123). We normalize both.
+            numeric_to_cluster: Dict[int, int] = {}
+            for idx, regime_id in enumerate(regime_ids):
+                cluster_id = None
+                # Prefer direct string key
+                if regime_id in regime_to_cluster:
+                    cluster_id = regime_to_cluster[regime_id]
+                # Try prefixed form
+                elif isinstance(regime_id, (int, float)) and f'regime_{int(regime_id)}' in regime_to_cluster:
+                    cluster_id = regime_to_cluster[f'regime_{int(regime_id)}']
+                elif isinstance(regime_id, str):
+                    # Attempt to parse trailing integer from strings like 'regime_123'
+                    try:
+                        if '_' in regime_id:
+                            parts = regime_id.split('_')
+                            num = int(parts[-1])
+                            if regime_id in regime_to_cluster:
+                                cluster_id = regime_to_cluster[regime_id]
+                            elif f'regime_{num}' in regime_to_cluster:
+                                cluster_id = regime_to_cluster[f'regime_{num}']
+                            else:
+                                cluster_id = regime_to_cluster.get(str(num))
+                            if cluster_id is not None:
+                                numeric_to_cluster[num] = cluster_id
+                                continue
+                    except Exception:
+                        pass
+                # Fallback to index-based mapping if no explicit match
+                if cluster_id is None:
+                    # If an explicit mapping for this index exists, use it
+                    cluster_id = regime_to_cluster.get(f'regime_{idx}', regime_to_cluster.get(idx, 0))
+                # Record numeric index mapping
+                try:
+                    # Best effort to assign numeric key
+                    if isinstance(regime_id, int):
+                        numeric_to_cluster[int(regime_id)] = cluster_id
+                    else:
+                        # Also map by sequential index
+                        numeric_to_cluster[idx] = cluster_id
+                except Exception:
+                    numeric_to_cluster[idx] = cluster_id
+
+            # Map regime assignments (numeric) to cluster assignments
+            for ra in regime_assignments:
+                try:
+                    key = int(ra)
+                except Exception:
+                    # If somehow non-numeric, force 0
+                    key = 0
+                cluster_assignments.append(int(numeric_to_cluster.get(key, 0)))
             
             self.logger.info(f"✅ Created cluster assignments: {len(cluster_assignments)} samples mapped to clusters")
             return cluster_assignments
@@ -5727,69 +5746,29 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                     cluster_regimes[cluster_id] = []
                 cluster_regimes[cluster_id].append(regime_id)
             
-            # Calculate within-cluster CV for each cluster
+            # Calculate within-cluster CV for each cluster using robust per-feature CVs
             cluster_cvs = {}
             all_within_cluster_cvs = []
-            
+
+            # Reuse robust aspect-wise CV computation to avoid 0.0000 artifacts
+            robust_cv_by_aspect = self._compute_cluster_cv_by_aspect(regime_characteristics, regime_to_cluster)
+
             for cluster_id, regime_ids in cluster_regimes.items():
-                if len(regime_ids) < 2:
-                    # Single regime cluster has CV = 0
-                    cluster_cvs[cluster_id] = {'momentum': 0.0, 'volatility': 0.0, 'volume': 0.0, 'avg': 0.0}
-                    all_within_cluster_cvs.append(0.0)
-                else:
-                    # Calculate CV across regimes within this cluster
-                    momentum_values = []
-                    volatility_values = []
-                    volume_values = []
-                    
-                    for regime_id in regime_ids:
-                        regime = regime_characteristics.get(regime_id, {})
-                        # Use multiple momentum/volatility/volume features for better CV calculation
-                        momentum_values.append(regime.get('momentum_mean', 0.0))
-                        volatility_values.append(regime.get('volatility_mean', 0.0))
-                        volume_values.append(regime.get('volume_mean', 0.0))
-                    
-                    # Debug logging for CV calculation
-                    self.logger.debug(f"   🔍 Cluster {cluster_id} CV Debug:")
-                    self.logger.debug(f"      Momentum values: {momentum_values[:5]}... (showing first 5)")
-                    self.logger.debug(f"      Volatility values: {volatility_values[:5]}... (showing first 5)")
-                    self.logger.debug(f"      Volume values: {volume_values[:5]}... (showing first 5)")
-                    
-                    # Calculate CV (coefficient of variation) for each aspect
-                    def calculate_cv(values, aspect_name):
-                        if len(values) == 0:
-                            return 0.0
-                        
-                        # Remove any NaN or infinite values
-                        clean_values = [v for v in values if isinstance(v, (int, float)) and np.isfinite(v)]
-                        if len(clean_values) == 0:
-                            return 0.0
-                        
-                        mean_val = np.mean(clean_values)
-                        std_val = np.std(clean_values)
-                        
-                        # Debug logging
-                        self.logger.debug(f"      {aspect_name}: mean={mean_val:.6f}, std={std_val:.6f}, count={len(clean_values)}")
-                        
-                        if abs(mean_val) < 1e-10:  # Very close to zero
-                            return 0.0
-                        
-                        cv = std_val / abs(mean_val)
-                        self.logger.debug(f"      {aspect_name} CV: {cv:.6f}")
-                        return cv
-                    
-                    momentum_cv = calculate_cv(momentum_values, "momentum")
-                    volatility_cv = calculate_cv(volatility_values, "volatility")
-                    volume_cv = calculate_cv(volume_values, "volume")
-                    avg_cv = (momentum_cv + volatility_cv + volume_cv) / 3
-                    
-                    cluster_cvs[cluster_id] = {
-                        'momentum': momentum_cv,
-                        'volatility': volatility_cv,
-                        'volume': volume_cv,
-                        'avg': avg_cv
-                    }
-                    all_within_cluster_cvs.append(avg_cv)
+                aspect_map = robust_cv_by_aspect.get(cluster_id, {})
+                momentum_cv = float(aspect_map.get('momentum', 0.0))
+                volatility_cv = float(aspect_map.get('volatility', 0.0))
+                volume_cv = float(aspect_map.get('volume', 0.0))
+                # Average across aspects where values are finite
+                aspect_vals = [v for v in [momentum_cv, volatility_cv, volume_cv] if isinstance(v, (int, float)) and np.isfinite(v)]
+                avg_cv = float(np.mean(aspect_vals)) if len(aspect_vals) > 0 else 0.0
+
+                cluster_cvs[cluster_id] = {
+                    'momentum': momentum_cv,
+                    'volatility': volatility_cv,
+                    'volume': volume_cv,
+                    'avg': avg_cv
+                }
+                all_within_cluster_cvs.append(avg_cv)
             
             # Calculate overall average within-cluster CV
             avg_within_cluster_cv = np.mean(all_within_cluster_cvs) if all_within_cluster_cvs else 0.0

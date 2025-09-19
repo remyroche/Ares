@@ -673,6 +673,22 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                 
                 # Exclude clusters that are already too large from merging (freeze at >= 6%)
                 excluded_clusters = {cluster_id for cluster_id, pct in cluster_sample_pcts.items() if pct >= max_sample_pct}
+
+                # Compute within-cluster CV and exclude clusters above threshold
+                cluster_cv = self._compute_cluster_cv(regime_characteristics, regime_to_cluster)
+                # Dynamic threshold suggestion: median + 0.5 * IQR to avoid over-freezing
+                import numpy as np
+                cv_values = np.array(list(cluster_cv.values())) if len(cluster_cv) > 0 else np.array([])
+                if cv_values.size > 0:
+                    cv_median = float(np.median(cv_values))
+                    cv_iqr = float(np.percentile(cv_values, 75) - np.percentile(cv_values, 25))
+                    cv_threshold = max(0.05, cv_median + 0.5 * cv_iqr)
+                else:
+                    cv_threshold = 0.2  # reasonable default if CVs missing
+                high_cv_clusters = {cid for cid, cv in cluster_cv.items() if cv is not None and cv >= cv_threshold}
+                if len(high_cv_clusters) > 0:
+                    self.logger.info(f"   ⚖️ High-CV freeze: threshold={cv_threshold:.3f}, frozen={sorted(list(high_cv_clusters))}")
+                excluded_clusters.update(high_cv_clusters)
                 
                 # Find mergeable pairs based on similarity threshold
                 mergeable_pairs = []
@@ -817,6 +833,33 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             self.logger.warning(f"⚠️ Error checking CV compatibility: {e}")
             return False # Assume not compatible on error
     
+    def _compute_cluster_cv(self, regime_characteristics: Dict[str, Any], regime_to_cluster: Dict[str, int]) -> Dict[int, float]:
+        """Compute weighted mean CV per cluster using regime-level 'mean_cv' weighted by sample_count."""
+        import numpy as np
+        cluster_sums = {}
+        cluster_counts = {}
+        for regime_id, cluster_id in regime_to_cluster.items():
+            regime = regime_characteristics.get(regime_id, {})
+            mean_cv = regime.get('mean_cv', None)
+            if mean_cv is None:
+                # Try to derive mean_cv from specific CV features if available
+                try:
+                    vals = [regime.get(k, None) for k in ['momentum_cv', 'volatility_cv', 'volume_cv']]
+                    vals = [float(v) for v in vals if isinstance(v, (int, float))]
+                    mean_cv = float(np.mean(vals)) if len(vals) > 0 else None
+                except Exception:
+                    mean_cv = None
+            if mean_cv is None:
+                continue
+            weight = regime.get('sample_count', 1)
+            cluster_sums[cluster_id] = cluster_sums.get(cluster_id, 0.0) + float(mean_cv) * float(weight)
+            cluster_counts[cluster_id] = cluster_counts.get(cluster_id, 0.0) + float(weight)
+        cluster_cv = {}
+        for cid, s in cluster_sums.items():
+            count = cluster_counts.get(cid, 0.0)
+            cluster_cv[cid] = s / count if count > 0 else 0.0
+        return cluster_cv
+
     def _extract_regime_characteristics_from_discovery(self, regime_discovery: Dict[str, Any]) -> Dict[str, Any]:
         """Extract volume, volatility, and momentum characteristics from HMM regime discovery results."""
         try:

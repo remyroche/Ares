@@ -30,14 +30,45 @@ Key Enhancements:
 from src.core.decorators import traced, validates, cached, log_execution_time
 # Enhanced error handler - using fallback implementation
 class EnhancedErrorHandler:
-    """Enhanced error handler fallback."""
-    @staticmethod
-    def handle_error(error, context=None):
-        print(f"Error handled: {error}")
+    """Enhanced error handler with proper logging."""
+    
+    def __init__(self, logger=None):
+        self.logger = logger or logging.getLogger(__name__)
+        self.error_count = 0
+        self.errors = []
+    
+    def handle_error(self, error, context=None):
+        """Handle errors with proper logging and tracking."""
+        self.error_count += 1
+        error_info = {
+            'error': str(error),
+            'context': context,
+            'timestamp': time.time()
+        }
+        self.errors.append(error_info)
+        
+        if context:
+            self.logger.error(f"Error in {context}: {error}")
+        else:
+            self.logger.error(f"Error: {error}")
+    
+    def get_error_summary(self):
+        """Get error summary."""
+        return {
+            'total_errors': self.error_count,
+            'recent_errors': self.errors[-5:] if self.errors else []
+        }
 
 def handle_errors_with_tracking(func):
-    """Error tracking decorator fallback."""
-    return func
+    """Error tracking decorator with proper exception handling."""
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except Exception as e:
+            logging.error(f"Error in {func.__name__}: {e}")
+            raise
+    return wrapper
 
 # Import comprehensive optimization utilities for enhanced performance
 try:
@@ -54,11 +85,14 @@ try:
     # Data Management Optimizations - using fallback
     class OptimizedDataManager:
         """Optimized data manager fallback."""
-        def __init__(self):
-            pass
+    def __init__(self):
+        self.logger = logging.getLogger(__name__)
 
-        def optimize_dataframe(self, df):
-            return df
+    def optimize_dataframe(self, df):
+        """Fallback dataframe optimization."""
+        if df is None:
+            return pd.DataFrame()
+        return df
 
     OPTIMIZATIONS_AVAILABLE = True
     system_logger.info("🚀 All optimization utilities successfully loaded")
@@ -782,13 +816,23 @@ class LabelingStep:
         self.pickup_utils = get_artifact_pickup_utils()
         self.version_manager = get_version_manager()
 
+        # Initialize unified hardware management
+        self._initialize_hardware_management()
+        
         # Initialize comprehensive optimization components
         if OPTIMIZATIONS_AVAILABLE:
             try:
-                # M1 Hardware-Specific Optimizations
-                self.gpu_manager = get_m1_gpu_manager()
-                self.memory_optimizer = get_m1_memory_optimizer()
-                self.cpu_optimizer = get_m1_cpu_optimizer()
+                # Use unified hardware manager for proper resource management
+                from src.utils.hardware.unified_hardware_manager import (
+                    get_unified_hardware_manager, WorkloadType, OptimizationLevel
+                )
+                
+                self.hardware_manager = get_unified_hardware_manager()
+                
+                # M1 Hardware-Specific Optimizations through unified manager
+                self.gpu_manager = self.hardware_manager.gpu_manager
+                self.memory_optimizer = self.hardware_manager.memory_optimizer
+                self.cpu_optimizer = self.hardware_manager.cpu_optimizer
 
                 # Processing Core Optimizations
                 self.vectorized_core = get_vectorized_processing_core()
@@ -803,7 +847,8 @@ class LabelingStep:
                     enable_parallel_io=True
                 )
 
-                self.logger.info('🚀 Step 5 initialized with comprehensive optimization suite:')
+                self.logger.info('🚀 Step 5 initialized with unified hardware management:')
+                self.logger.info('  ✅ Unified Hardware Manager')
                 self.logger.info('  ✅ M1 GPU Manager (MPS acceleration)')
                 self.logger.info('  ✅ M1 Memory Optimizer')
                 self.logger.info('  ✅ M1 CPU Optimizer (parallel processing)')
@@ -813,14 +858,52 @@ class LabelingStep:
                 self.logger.info('  ✅ Optimized Data Manager')
 
             except Exception as e:
-                self.logger.warning(f'Failed to initialize some optimizations: {e}')
+                self.logger.warning(f'Failed to initialize unified hardware management: {e}')
                 # Initialize with fallbacks
                 self._initialize_fallback_optimizations()
         else:
             self._initialize_fallback_optimizations()
 
+    def _initialize_hardware_management(self):
+        """Initialize hardware management system."""
+        try:
+            from src.utils.hardware.unified_hardware_manager import (
+                get_unified_hardware_manager, WorkloadType, OptimizationLevel, HardwareConfig
+            )
+            
+            # Create conservative hardware configuration for labeling tasks
+            hardware_config = HardwareConfig(
+                cpu_optimization_level=OptimizationLevel.BALANCED,
+                memory_optimization_level=OptimizationLevel.BALANCED,
+                gpu_optimization_level=OptimizationLevel.MINIMAL,
+                memory_limit_gb=4.0,  # Conservative memory limit
+                enable_adaptive_optimization=True,
+                enable_thermal_monitoring=True,
+                monitoring_interval=10.0,  # More frequent monitoring during labeling
+                alert_thresholds={
+                    'cpu_usage': 85.0,
+                    'memory_usage': 90.0,
+                    'gpu_usage': 80.0,
+                    'temperature': 80.0
+                }
+            )
+            
+            self.hardware_manager = get_unified_hardware_manager(hardware_config)
+            self.hardware_workload_type = WorkloadType.DATA_PROCESSING
+            self.logger.info('✅ Hardware management system initialized for labeling tasks')
+            
+        except ImportError as e:
+            self.logger.warning(f'⚠️ Unified hardware manager not available: {e}')
+            self.hardware_manager = None
+            self.hardware_workload_type = None
+        except Exception as e:
+            self.logger.error(f'❌ Failed to initialize hardware management: {e}')
+            self.hardware_manager = None
+            self.hardware_workload_type = None
+
     def _initialize_fallback_optimizations(self):
         """Initialize fallback optimizations when full suite is not available."""
+        self.hardware_manager = None
         self.gpu_manager = None
         self.memory_optimizer = None
         self.cpu_optimizer = None
@@ -838,24 +921,54 @@ class LabelingStep:
         context = {
             'memory_checkpoint': None,
             'optimization_profile': None,
-            'data_manager_session': None
+            'data_manager_session': None,
+            'hardware_context': None
         }
 
+        # Use unified hardware manager for proper resource management
+        if self.hardware_manager and self.hardware_workload_type:
+            try:
+                # Optimize hardware for data processing workload
+                from src.utils.hardware.unified_hardware_manager import OptimizationLevel
+                success = self.hardware_manager.optimize_for_workload(
+                    self.hardware_workload_type, 
+                    OptimizationLevel.BALANCED
+                )
+                if success:
+                    context['hardware_context'] = self.hardware_manager.optimization_context(
+                        self.hardware_workload_type
+                    )
+                    self.logger.info('🔧 Hardware optimization context established for labeling')
+                else:
+                    self.logger.warning('⚠️ Failed to establish hardware optimization context')
+            except Exception as e:
+                self.logger.warning(f'⚠️ Error setting up hardware context: {e}')
+
+        # Setup memory checkpoint through hardware manager or fallback
         if self.memory_optimizer:
-            context['memory_checkpoint'] = self.memory_optimizer.memory_checkpoint('step05_labeling')
+            try:
+                context['memory_checkpoint'] = self.memory_optimizer.memory_checkpoint('step05_labeling')
+            except Exception as e:
+                self.logger.warning(f'⚠️ Failed to setup memory checkpoint: {e}')
 
         if self.step_optimizer:
-            from src.utils.enhanced_step_optimizations import WorkloadType, OptimizationProfile
-            # Create optimization profile based on current workload
-            context['optimization_profile'] = OptimizationProfile(
-                workload_type=WorkloadType.MEMORY_INTENSIVE,
-                data_size_mb=500,  # Estimate based on typical data size
-                expected_duration=300,  # 5 minutes expected
-                priority="high"
-            )
+            try:
+                from src.utils.enhanced_step_optimizations import WorkloadType, OptimizationProfile
+                # Create optimization profile based on current workload
+                context['optimization_profile'] = OptimizationProfile(
+                    workload_type=WorkloadType.MEMORY_INTENSIVE,
+                    data_size_mb=500,  # Estimate based on typical data size
+                    expected_duration=300,  # 5 minutes expected
+                    priority="high"
+                )
+            except Exception as e:
+                self.logger.warning(f'⚠️ Failed to setup optimization profile: {e}')
 
         if self.data_manager:
-            context['data_manager_session'] = self.data_manager.create_session()
+            try:
+                context['data_manager_session'] = self.data_manager.create_session()
+            except Exception as e:
+                self.logger.warning(f'⚠️ Failed to setup data manager session: {e}')
 
         return context
 
@@ -897,24 +1010,70 @@ class LabelingStep:
         start_time = time.time()
 
         try:
-            # Apply memory checkpoint if available
-            memory_context = optimization_context.get('memory_checkpoint')
-            if memory_context:
-                async with memory_context:
+            # Use hardware optimization context if available
+            hardware_context = optimization_context.get('hardware_context')
+            if hardware_context:
+                with hardware_context:
                     return await self._perform_optimized_labeling(
                         data, symbol, exchange, timeframe, optimization_context
                     )
             else:
-                return await self._perform_optimized_labeling(
-                    data, symbol, exchange, timeframe, optimization_context
-                )
+                # Fallback to memory checkpoint if available
+                memory_context = optimization_context.get('memory_checkpoint')
+                if memory_context:
+                    try:
+                        # Use context manager properly
+                        with memory_context:
+                            return await self._perform_optimized_labeling(
+                                data, symbol, exchange, timeframe, optimization_context
+                            )
+                    except Exception as e:
+                        self.logger.warning(f'⚠️ Memory context failed, continuing without: {e}')
+                        return await self._perform_optimized_labeling(
+                            data, symbol, exchange, timeframe, optimization_context
+                        )
+                else:
+                    return await self._perform_optimized_labeling(
+                        data, symbol, exchange, timeframe, optimization_context
+                    )
 
         except Exception as e:
             self.logger.exception(f'❌ Error in optimized comprehensive labeling: {e}')
-            # Cleanup on error
-            if self.memory_optimizer:
-                self.memory_optimizer.optimize_memory()
+            # Cleanup on error using proper resource management
+            await self._cleanup_resources(optimization_context)
             return None
+
+    async def _cleanup_resources(self, optimization_context: Dict[str, Any]):
+        """Cleanup resources properly after execution or error."""
+        try:
+            # Cleanup hardware resources through unified manager
+            if self.hardware_manager:
+                try:
+                    # Get current system status and trigger cleanup if needed
+                    status = self.hardware_manager.get_system_status()
+                    if status.get('performance_report', {}).get('current_metrics', {}).get('memory_usage', 0) > 85:
+                        self.logger.info('🧹 Triggering memory cleanup due to high usage')
+                        self.hardware_manager._trigger_aggressive_memory_cleanup()
+                except Exception as e:
+                    self.logger.warning(f'⚠️ Hardware cleanup failed: {e}')
+            
+            # Cleanup memory optimizer if available
+            if self.memory_optimizer:
+                try:
+                    self.memory_optimizer.optimize_memory()
+                except Exception as e:
+                    self.logger.warning(f'⚠️ Memory optimizer cleanup failed: {e}')
+            
+            # Cleanup data manager session
+            data_session = optimization_context.get('data_manager_session')
+            if data_session and hasattr(data_session, 'cleanup'):
+                try:
+                    await data_session.cleanup()
+                except Exception as e:
+                    self.logger.warning(f'⚠️ Data manager session cleanup failed: {e}')
+                    
+        except Exception as e:
+            self.logger.error(f'❌ Resource cleanup failed: {e}')
 
     async def _perform_optimized_labeling(
         self,
@@ -1462,10 +1621,17 @@ class LabelingStep:
                 await self._log_step5_artifacts_and_report(symbol, exchange, timeframe, data_dir, data, output_path, metadata_path)
                 await self._generate_and_log_function_call_report()
 
-                # Final memory optimization
-                if self.memory_optimizer:
-                    final_memory_stats = self.memory_optimizer.optimize_memory()
-                    self.logger.info(f'🧹 Final memory optimization: {final_memory_stats.get("memory_freed_mb", 0):.1f}MB freed')
+                # Final resource cleanup
+                await self._cleanup_resources(optimization_context)
+                
+                # Log final system status if hardware manager available
+                if self.hardware_manager:
+                    try:
+                        final_status = self.hardware_manager.get_system_status()
+                        performance = final_status.get('performance_report', {}).get('current_metrics', {})
+                        self.logger.info(f'🔧 Final system status: CPU {performance.get("cpu_usage", 0):.1f}%, Memory {performance.get("memory_usage", 0):.1f}%')
+                    except Exception as e:
+                        self.logger.warning(f'⚠️ Failed to get final system status: {e}')
 
                 return True
             else:
@@ -1473,6 +1639,27 @@ class LabelingStep:
                 return False
         except Exception as e:
             self.logger.exception(f'❌ Error in labeling: {e}')
+            
+            # Enhanced error handling with context
+            error_context = {
+                'symbol': symbol,
+                'exchange': exchange,
+                'timeframe': timeframe,
+                'data_dir': data_dir,
+                'step': 'execute_labeling',
+                'optimization_context': optimization_context if 'optimization_context' in locals() else None
+            }
+            
+            if hasattr(self, 'error_handler'):
+                self.error_handler.handle_error(e, error_context)
+            
+            # Cleanup resources on error
+            if 'optimization_context' in locals():
+                try:
+                    await self._cleanup_resources(optimization_context)
+                except Exception as cleanup_error:
+                    self.logger.error(f'❌ Cleanup failed after error: {cleanup_error}')
+            
             await self._generate_and_log_function_call_report()
             return False
 
@@ -1576,12 +1763,17 @@ class LabelingStep:
             return False
 
     def _create_regime_labeler(self):
-        """Create and configure the regime labeler."""
+        """Create and configure the regime labeler.
+        
+        NOTE: This uses basic triple barrier labeling with static parameters.
+        For dynamic parameters and multi-horizon analysis, consider migrating
+        to multi_horizon_profit_labeler.
+        """
         try:
             from .triple_barrier_labeling import UnifiedTripleBarrierLabeler, TripleBarrierConfig
             config = TripleBarrierConfig(
-                profit_take_multiplier=0.002,
-                stop_loss_multiplier=0.001,
+                profit_take_multiplier=0.002,  # Static 0.2%
+                stop_loss_multiplier=0.001,    # Static 0.1%
                 time_barrier_minutes=self.time_barrier_minutes,
                 max_lookahead=self.max_lookahead,
                 regime_aware=True

@@ -59,13 +59,18 @@ from src.utils.tprint import tprint
 # Import our standardized utilities
 from .validation_utils import get_validator, ValidationErrorType, ValidationResult, validate_training_input, validate_pipeline_state, create_standardized_error
 from .config_utils import get_config_manager, get_path_manager
-from .error_handling_utils import (
-    get_error_handler, StandardizedErrorHandler, ErrorCategory, ErrorSeverity,
-    create_validation_error, create_data_error, create_config_error, 
-    create_processing_error, create_alignment_error
+
+# Use existing error handling utilities
+from src.utils.enhanced_error_handler import (
+    EnhancedErrorHandler, ErrorSeverity, ErrorCategory, ErrorContext
 )
-from .resource_management import get_resource_manager, M1ResourceManager
-from .validation_config import get_unified_validator, ValidationConfiguration
+
+# Use existing hardware utilities  
+from src.utils.hardware.unified_hardware_manager import UnifiedHardwareManager
+
+# Use existing data validation utilities
+from src.utils.data.validation.validators import CrossStepValidator
+from src.utils.data.quality.data_quality import DataQualityFramework
 
 logger = system_logger.getChild('RegimeDataSplittingEnhanced')
 
@@ -245,12 +250,14 @@ class HMMRegimeTagger:
             scaler = StandardScaler()
             features_scaled = scaler.fit_transform(features_selected)
             
-            # Clean up selected features using resource manager
-            self.resource_manager.register_managed_object(features_selected, "selected_features")
+            # Clean up selected features using hardware manager
             del features_selected
             
-            # Optimize memory using resource manager
-            self.resource_manager.optimize_memory(force_gc=True)
+            # Optimize memory using hardware manager
+            try:
+                self.hardware_manager.optimize_memory()
+            except Exception as e:
+                self.logger.warning(f"⚠️ Memory optimization failed: {e}")
             
             # Get predictions from models
             regime_predictions = {}
@@ -317,17 +324,19 @@ class RegimeDataSplittingEnhanced:
         self.logger = logger.getChild('RegimeDataSplittingEnhanced')
         self.hmm_tagger = None
         
-        # Initialize standardized error handler
-        self.error_handler = get_error_handler('RegimeDataSplittingEnhanced', self.logger)
+        # Initialize error handler using existing utilities
+        error_context = ErrorContext(
+            operation="regime_data_splitting_enhanced",
+            component="RegimeDataSplittingEnhanced"
+        )
+        self.error_handler = EnhancedErrorHandler(context=error_context, logger=self.logger)
         
-        # Initialize resource manager
-        self.resource_manager = get_resource_manager('RegimeDataSplittingEnhanced', self.logger)
+        # Initialize hardware manager using existing utilities
+        self.hardware_manager = UnifiedHardwareManager(logger=self.logger)
         
-        # Initialize unified validator with consistent thresholds
-        validation_config = ValidationConfiguration()
-        if 'validation_config' in config:
-            validation_config = ValidationConfiguration.from_dict(config['validation_config'])
-        self.unified_validator = get_unified_validator(validation_config)
+        # Initialize data validation using existing utilities
+        self.cross_step_validator = CrossStepValidator()
+        self.data_quality_framework = DataQualityFramework()
         
         # Initialize configuration and path managers
         self.config_manager = get_config_manager(config)
@@ -580,14 +589,15 @@ class RegimeDataSplittingEnhanced:
                 self.logger.info(f"✅ Data alignment completed successfully: {alignment_metrics}")
                 tprint(f"✅ Data alignment completed: {min_len} rows, {data_loss_percentage:.1f}% data loss")
                 
-                # Clean up original references using resource manager (after successful validation)
-                self.resource_manager.register_managed_object(regime_states, "original_regime_states")
-                self.resource_manager.register_managed_object(regime_probabilities, "original_regime_probabilities")
+                # Clean up original references using hardware manager (after successful validation)
                 del regime_states, regime_probabilities
                 
-                # Use resource manager for memory optimization
-                memory_result = self.resource_manager.optimize_memory(force_gc=True)
-                self.logger.debug(f"Memory optimization result: {memory_result}")
+                # Use hardware manager for memory optimization
+                try:
+                    memory_result = self.hardware_manager.optimize_memory()
+                    self.logger.debug(f"Memory optimization result: {memory_result}")
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Memory optimization failed: {e}")
                 
                 # Use aligned regime data
                 market_data_aligned['hmm_regime_states'] = regime_states_aligned
@@ -816,21 +826,14 @@ class RegimeDataSplittingEnhanced:
                 tprint(f"❌ Prediction length mismatch: {len(predictions)} vs {len(market_data)}")
                 return False
             
-            # Validate regime count using unified thresholds
+            # Validate regime count using existing validation patterns
             n_regimes = tagging_result['n_regimes']
-            regime_metrics = {
-                'regime_count': n_regimes,
-                'regime_distribution': tagging_result.get('regime_distribution', {})
-            }
-            
-            validation_result = self.unified_validator.validate_regime_quality(regime_metrics)
-            if not validation_result['passed']:
-                for error in validation_result['errors']:
-                    self.logger.error(f"❌ {error}")
-                    tprint(f"❌ {error}")
-                for warning in validation_result['warnings']:
-                    self.logger.warning(f"⚠️ {warning}")
-                    tprint(f"⚠️ {warning}")
+            if n_regimes < 2:
+                self.logger.warning(f"⚠️ Very few regimes detected: {n_regimes}")
+                tprint(f"⚠️ Very few regimes detected: {n_regimes}")
+            elif n_regimes > 20:
+                self.logger.warning(f"⚠️ Many regimes detected: {n_regimes}")
+                tprint(f"⚠️ Many regimes detected: {n_regimes}")
             else:
                 self.logger.info(f"✅ Regime validation passed: {n_regimes} regimes")
                 tprint(f"✅ Regime validation passed: {n_regimes} regimes")

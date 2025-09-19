@@ -29,15 +29,13 @@ from src.training.steps.market_analysis.regime_data_splitting.enhanced import (
 from src.training.steps.market_analysis.regime_data_splitting.validator import (
     Step4RegimeDataSplittingValidator
 )
-from src.training.steps.market_analysis.regime_data_splitting.error_handling_utils import (
+# Use existing utilities instead of custom ones
+from src.utils.enhanced_error_handler import (
     ErrorCategory, ErrorSeverity
 )
-from src.training.steps.market_analysis.regime_data_splitting.validation_config import (
-    ValidationConfiguration, get_unified_validator
-)
-from src.training.steps.market_analysis.regime_data_splitting.resource_management import (
-    get_resource_manager, reset_resource_manager
-)
+from src.utils.data.validation.validators import CrossStepValidator
+from src.utils.data.quality.data_quality import DataQualityFramework
+from src.utils.hardware.unified_hardware_manager import UnifiedHardwareManager
 from src.training.steps.market_analysis.components.base_component import ComponentConfig
 
 
@@ -159,11 +157,10 @@ class TestRegimeDataSplittingComponent:
             exchange="test_exchange",
             timeframe="1h"
         )
-        reset_resource_manager()
     
     def teardown_method(self):
         """Clean up after tests."""
-        reset_resource_manager()
+        pass
     
     def test_initialization_with_missing_dependencies(self):
         """Test component initialization with missing dependencies."""
@@ -322,11 +319,10 @@ class TestRegimeDataSplittingEnhanced:
             'timeframe': '1h',
             'data_dir': 'test_data'
         }
-        reset_resource_manager()
     
     def teardown_method(self):
         """Clean up after tests."""
-        reset_resource_manager()
+        pass
     
     @pytest.mark.asyncio
     async def test_execute_with_invalid_training_input(self):
@@ -469,51 +465,40 @@ class TestValidationErrorPaths:
             temp_path.unlink()
 
 
-class TestUnifiedValidationErrors:
-    """Test suite for unified validation error scenarios."""
+class TestDataQualityValidation:
+    """Test suite for data quality validation using existing utilities."""
     
     def setup_method(self):
         """Set up test fixtures."""
-        self.validation_config = ValidationConfiguration()
-        self.unified_validator = get_unified_validator(self.validation_config)
+        self.data_quality_framework = DataQualityFramework()
+        self.cross_step_validator = CrossStepValidator()
     
     def test_data_quality_validation_failures(self):
-        """Test data quality validation failures."""
-        # Test with metrics that should fail validation
-        bad_metrics = {
-            'data_quality_score': 0.5,  # Below threshold
-            'missing_data_percentage': 15.0,  # Above threshold
-            'data_alignment_loss': 25.0  # Critical level
-        }
+        """Test data quality validation failures using existing framework."""
+        # Create DataFrame with quality issues
+        bad_data = pd.DataFrame({
+            'close': [100, np.nan, np.inf, -50, 105],  # Has NaN, inf, negative
+            'volume': [1000, 0, 2000, 1500, np.nan]   # Has zero and NaN
+        })
         
-        result = self.unified_validator.validate_data_quality(bad_metrics)
-        assert not result['passed']
-        assert len(result['errors']) > 0 or len(result['warnings']) > 0
+        # Use existing data quality framework
+        quality_result = self.data_quality_framework.validate_data_quality(bad_data, 'test')
+        assert quality_result.quality_score < 80  # Should have low quality score
     
-    def test_regime_quality_validation_failures(self):
-        """Test regime quality validation failures."""
-        # Test with metrics that should fail validation
-        bad_metrics = {
-            'regime_count': 1,  # Too few regimes
-            'regime_continuity_score': 0.3,  # Below threshold
-            'regime_confidence_score': 0.5  # Below threshold
-        }
+    def test_cross_step_validation(self):
+        """Test cross-step validation using existing validator."""
+        # Create test data
+        input_data = TestDataCreator.create_valid_market_data(100)
+        output_data = input_data.copy()
+        output_data['new_column'] = np.random.randn(100)
         
-        result = self.unified_validator.validate_regime_quality(bad_metrics)
-        assert not result['passed']
-        assert len(result['errors']) > 0
-    
-    def test_performance_validation_failures(self):
-        """Test performance validation failures."""
-        # Test with metrics that should fail validation
-        bad_metrics = {
-            'execution_time': 400.0,  # Above threshold
-            'memory_usage': 2500.0  # Above threshold
-        }
+        # Use existing cross-step validator
+        result = self.cross_step_validator.validate_step_transition(
+            'test_step_1', 'test_step_2', input_data, output_data
+        )
         
-        result = self.unified_validator.validate_performance(bad_metrics)
-        assert not result['passed']
-        assert len(result['warnings']) > 0
+        assert 'passed' in result
+        assert 'consistency_score' in result
 
 
 class TestErrorHandlingIntegration:
@@ -521,11 +506,11 @@ class TestErrorHandlingIntegration:
     
     def setup_method(self):
         """Set up test fixtures."""
-        reset_resource_manager()
+        pass
     
     def teardown_method(self):
         """Clean up after tests."""
-        reset_resource_manager()
+        pass
     
     @pytest.mark.asyncio
     async def test_end_to_end_error_propagation(self):

@@ -41,13 +41,21 @@ from src.utils.tprint import tprint
 # Import our standardized utilities
 from .validation_utils import get_validator, ValidationErrorType, ValidationResult, create_standardized_error
 from .config_utils import get_config_manager, get_path_manager
-from .error_handling_utils import (
-    get_error_handler, StandardizedErrorHandler, ErrorCategory, ErrorSeverity,
-    create_validation_error, create_data_error, create_config_error, 
-    create_processing_error, create_alignment_error
+
+# Use existing error handling utilities
+from src.utils.enhanced_error_handler import (
+    EnhancedErrorHandler, ErrorSeverity, ErrorCategory, ErrorContext
 )
-from .resource_management import get_resource_manager, M1ResourceManager
-from .validation_config import get_unified_validator, ValidationConfiguration
+
+# Use existing hardware utilities  
+from src.utils.hardware.unified_hardware_manager import UnifiedHardwareManager
+from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer
+from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer
+from src.utils.hardware.m1_gpu_utils import get_m1_gpu_manager
+
+# Use existing data validation utilities
+from src.utils.data.validation.validators import CrossStepValidator
+from src.utils.data.quality.data_quality import DataQualityFramework
 
 # Import common utilities
 from src.utils.common_operations import (
@@ -164,18 +172,19 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
         super().__init__(config)
         self.logger = system_logger.getChild('RegimeDataSplitting')
         
-        # Initialize standardized error handler
-        self.error_handler = get_error_handler('RegimeDataSplittingComponent', self.logger)
+        # Initialize error handler using existing utilities
+        error_context = ErrorContext(
+            operation="regime_data_splitting",
+            component="RegimeDataSplittingComponent"
+        )
+        self.error_handler = EnhancedErrorHandler(context=error_context, logger=self.logger)
         
-        # Initialize resource manager
-        self.resource_manager = get_resource_manager('RegimeDataSplittingComponent', self.logger)
-        self.m1_resource_manager = M1ResourceManager(self.logger)
+        # Initialize hardware manager using existing utilities
+        self.hardware_manager = UnifiedHardwareManager(logger=self.logger)
         
-        # Initialize unified validator with consistent thresholds
-        validation_config = ValidationConfiguration()
-        if hasattr(config, 'validation_config') and config.validation_config:
-            validation_config = ValidationConfiguration.from_dict(config.validation_config)
-        self.unified_validator = get_unified_validator(validation_config)
+        # Initialize data validation using existing utilities
+        self.cross_step_validator = CrossStepValidator()
+        self.data_quality_framework = DataQualityFramework()
         
         # Validate dependencies and fail fast if missing
         self._validate_dependencies()
@@ -184,20 +193,17 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
         self.metrics = RegimeSplittingMetrics()
         self.start_time: Optional[datetime] = None
         
-        # Initialize hardware optimizations with resource management
+        # Initialize hardware optimizations using existing utilities
         self._initialize_hardware_optimizations()
         
         # Initialize common utilities
         self.math_validator = MathValidation()
         self.serializer = UniversalSerializer()
-        self.gpu_manager = get_gpu_manager()
-        self.memory_optimizer = get_memory_optimizer()
-        self.cpu_optimizer = get_cpu_optimizer()
         
-        # Register hardware managers for cleanup
-        self.resource_manager.register_hardware_manager('gpu_manager', self.gpu_manager)
-        self.resource_manager.register_hardware_manager('memory_optimizer', self.memory_optimizer)
-        self.resource_manager.register_hardware_manager('cpu_optimizer', self.cpu_optimizer)
+        # Use hardware manager for all hardware operations
+        self.gpu_manager = self.hardware_manager.gpu_manager
+        self.memory_optimizer = self.hardware_manager.memory_optimizer  
+        self.cpu_optimizer = self.hardware_manager.cpu_optimizer
         
         # Initialize standardized validation and configuration
         self.validator = get_validator(self.logger)
@@ -226,41 +232,23 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
             raise
     
     def _initialize_hardware_optimizations(self) -> None:
-        """Initialize hardware optimizations with proper resource management."""
+        """Initialize hardware optimizations using existing hardware manager."""
         try:
-            # Initialize M1 resources using resource manager
-            m1_init_result = self.m1_resource_manager.initialize_m1_resources()
+            # Initialize hardware manager
+            init_result = self.hardware_manager.initialize()
             
-            if any(m1_init_result.values()):
-                self.logger.info("🧠 M1 hardware detected, initializing optimizations")
-                self.logger.info(f"🧠 M1 initialization result: {m1_init_result}")
+            if init_result.get('success', False):
+                self.logger.info("🧠 Hardware optimizations initialized successfully")
+                self.logger.info(f"🧠 Hardware capabilities: {init_result.get('capabilities', {})}")
                 
-                # Register M1 cleanup function
-                self.resource_manager.register_cleanup_function(
-                    lambda: self.m1_resource_manager.cleanup_m1_resources(),
-                    "M1 resource cleanup"
-                )
-                
-                # Check if M1 hardware is available
-                if is_m1_available():
-                    # Optimize numpy for M1 if CPU optimizer is available
-                    if hasattr(self, 'cpu_optimizer') and self.cpu_optimizer:
-                        try:
-                            self.cpu_optimizer.optimize_numpy_operations()
-                        except Exception as e:
-                            self.logger.warning(f"⚠️ NumPy optimization failed: {e}")
-                    
-                    # Log hardware info
-                    try:
-                        gpu_info = self.gpu_manager.get_gpu_info() if self.gpu_manager else {}
-                        cpu_info = self.cpu_optimizer.get_cpu_info() if self.cpu_optimizer else {}
-                        
-                        self.logger.info(f"🧠 Hardware Info - GPU: {gpu_info.get('gpu_name', 'N/A')}, "
-                                       f"CPU Cores: {cpu_info.get('total_cores', 'N/A')}")
-                    except Exception as e:
-                        self.logger.warning(f"⚠️ Could not retrieve hardware info: {e}")
+                # Log hardware info
+                try:
+                    hardware_info = self.hardware_manager.get_system_info()
+                    self.logger.info(f"🧠 Hardware Info: {hardware_info}")
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Could not retrieve hardware info: {e}")
             else:
-                self.logger.info("💻 Non-M1 hardware detected, using standard optimizations")
+                self.logger.info("💻 Using standard optimizations")
                 
         except Exception as e:
             self.logger.warning(f"⚠️ Hardware optimization initialization failed: {e}")
@@ -293,42 +281,45 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
         report = RegimeSplittingReport(status=RegimeSplittingStatus.IN_PROGRESS)
         tprint(f'📊 Initialized report with status: {report.status.value}')
         
-        # Fast fail validation for critical inputs with standardized error messages
+        # Fast fail validation for critical inputs using existing error handler
         if data is None:
-            error = self.error_handler.handle_validation_error(
-                "Input data is None",
-                "Provide valid market data for regime splitting",
-                context={'data_type': type(data)},
-                severity=ErrorSeverity.CRITICAL
+            error_msg = "Input data is None. Action required: Provide valid market data for regime splitting."
+            self.error_handler.handle_error(
+                ValueError(error_msg),
+                severity=ErrorSeverity.CRITICAL,
+                category=ErrorCategory.VALIDATION,
+                recovery_action="Provide valid market data for regime splitting"
             )
-            tprint(f"❌ {error.to_string()}")
+            tprint(f"❌ {error_msg}")
             report.status = RegimeSplittingStatus.FAILED
-            report.errors.append(error.to_string())
-            return self._create_failure_result(report, error.to_string())
+            report.errors.append(error_msg)
+            return self._create_failure_result(report, error_msg)
         
         if not isinstance(pipeline_state, dict):
-            error = self.error_handler.handle_validation_error(
-                "Pipeline state must be a dictionary",
-                "Ensure pipeline_state is properly initialized as a dict",
-                context={'pipeline_state_type': type(pipeline_state)},
-                severity=ErrorSeverity.CRITICAL
+            error_msg = "Pipeline state must be a dictionary. Action required: Ensure pipeline_state is properly initialized as a dict."
+            self.error_handler.handle_error(
+                ValueError(error_msg),
+                severity=ErrorSeverity.CRITICAL,
+                category=ErrorCategory.VALIDATION,
+                recovery_action="Ensure pipeline_state is properly initialized as a dict"
             )
-            tprint(f"❌ {error.to_string()}")
+            tprint(f"❌ {error_msg}")
             report.status = RegimeSplittingStatus.FAILED
-            report.errors.append(error.to_string())
-            return self._create_failure_result(report, error.to_string())
+            report.errors.append(error_msg)
+            return self._create_failure_result(report, error_msg)
         
         if not self.config.symbol or not self.config.exchange:
-            error = self.error_handler.handle_config_error(
-                "Symbol and exchange must be configured",
-                "Set config.symbol and config.exchange before execution",
-                context={'symbol': self.config.symbol, 'exchange': self.config.exchange},
-                severity=ErrorSeverity.CRITICAL
+            error_msg = "Symbol and exchange must be configured. Action required: Set config.symbol and config.exchange before execution."
+            self.error_handler.handle_error(
+                ValueError(error_msg),
+                severity=ErrorSeverity.CRITICAL,
+                category=ErrorCategory.CONFIGURATION,
+                recovery_action="Set config.symbol and config.exchange before execution"
             )
-            tprint(f"❌ {error.to_string()}")
+            tprint(f"❌ {error_msg}")
             report.status = RegimeSplittingStatus.FAILED
-            report.errors.append(error.to_string())
-            return self._create_failure_result(report, error.to_string())
+            report.errors.append(error_msg)
+            return self._create_failure_result(report, error_msg)
         
         try:
             # Step 1: Validate inputs
@@ -598,8 +589,8 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
         """Perform the actual regime data splitting process using common utilities and hardware optimizations."""
         self.logger.info("✂️ Performing regime data splitting...")
         
-        # Use resource manager for proper memory management
-        with self.resource_manager.memory_context("regime_splitting"):
+        # Use hardware manager for proper memory management
+        with self.hardware_manager.memory_context("regime_splitting"):
             try:
                 # Extract regime states and probabilities using safe operations
                 regime_states = self._extract_regime_states(regime_discovery)
@@ -621,33 +612,30 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
             data_loss_percentage = ((max(original_market_len, original_regime_len) - min_len) / 
                                   max(original_market_len, original_regime_len)) * 100
             
-            # Use unified validation for data alignment loss
-            alignment_metrics = {'data_alignment_loss': data_loss_percentage}
-            alignment_validation = self.unified_validator.validate_data_quality(alignment_metrics)
-            
-            if not alignment_validation['passed']:
-                for error in alignment_validation['errors']:
-                    self.logger.error(f"❌ {error}")
-                    tprint(f"❌ {error}")
-                    report.errors.append(error)
-                for warning in alignment_validation['warnings']:
-                    self.logger.warning(f"⚠️ {warning}")
-                    tprint(f"⚠️ {warning}")
-                    report.warnings.append(warning)
+            # Use existing data quality framework for validation
+            if data_loss_percentage > 5.0:  # More than 5% data loss
+                warning_msg = f"Data alignment will lose {data_loss_percentage:.1f}% of data ({max(original_market_len, original_regime_len) - min_len} rows)"
+                self.logger.warning(f"⚠️ {warning_msg}")
+                tprint(f"⚠️ {warning_msg}")
+                report.warnings.append(warning_msg)
+                
+                if data_loss_percentage > 20.0:  # Critical data loss
+                    error_msg = f"Critical data loss during alignment: {data_loss_percentage:.1f}%"
+                    self.logger.error(f"❌ {error_msg}")
+                    tprint(f"❌ {error_msg}")
+                    report.errors.append(error_msg)
             
             if min_len == 0:
-                error = self.error_handler.handle_alignment_error(
-                    "No overlapping data between market data and regime states",
-                    "Ensure market data and regime states have compatible time ranges",
-                    context={
-                        'market_data_length': original_market_len,
-                        'regime_states_length': original_regime_len
-                    },
-                    severity=ErrorSeverity.CRITICAL
+                error_msg = "No overlapping data between market data and regime states. Action required: Ensure market data and regime states have compatible time ranges."
+                self.error_handler.handle_error(
+                    ValueError(error_msg),
+                    severity=ErrorSeverity.CRITICAL,
+                    category=ErrorCategory.DATA_QUALITY,
+                    recovery_action="Ensure market data and regime states have compatible time ranges"
                 )
                 return {
                     'success': False,
-                    'errors': [error.to_string()],
+                    'errors': [error_msg],
                     'data': None
                 }
             
@@ -755,13 +743,16 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
             }
             self.logger.info(f"✅ Data alignment completed successfully: {alignment_info}")
             
-            # Clean up original data references using resource manager
-            self.resource_manager.register_managed_object(market_data, "original_market_data")
+            # Clean up original data references using hardware manager
             del market_data
             
-            # Optimize memory using resource manager
-            memory_result = self.resource_manager.optimize_memory(force_gc=True)
-            self.logger.debug(f"Memory optimization result: {memory_result}")
+            # Optimize memory using hardware manager
+            try:
+                memory_result = self.hardware_manager.optimize_memory()
+                self.logger.debug(f"Memory optimization result: {memory_result}")
+            except Exception as e:
+                self.logger.warning(f"⚠️ Memory optimization failed: {e}")
+                # Continue without memory optimization
                 
                 # Add regime information to market data using safe operations
                 market_data_aligned['regime_state'] = regime_states_aligned
@@ -1007,17 +998,12 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                 validation_result['errors'].append("No regime states found")
                 return validation_result
             
-            # Check regime diversity using unified validation
+            # Check regime diversity using existing validation patterns
             unique_regimes = len(np.unique(regime_states))
-            regime_metrics = {'regime_count': unique_regimes}
-            regime_validation = self.unified_validator.validate_regime_quality(regime_metrics)
-            
-            if not regime_validation['passed']:
-                for error in regime_validation['errors']:
-                    validation_result['errors'].append(error)
-                    validation_result['valid'] = False
-                for warning in regime_validation['warnings']:
-                    validation_result['warnings'].append(warning)
+            if unique_regimes < 2:
+                validation_result['warnings'].append(f"Only {unique_regimes} regime(s) found - may indicate poor regime discovery")
+            elif unique_regimes > 20:
+                validation_result['warnings'].append(f"Many regimes found ({unique_regimes}) - may indicate over-segmentation"
             
             # Check data alignment
             if len(market_data) != len(regime_states):
@@ -1361,9 +1347,9 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
         )
     
     def cleanup(self) -> Dict[str, Any]:
-        """Clean up resources using resource manager."""
+        """Clean up resources using hardware manager."""
         try:
-            cleanup_result = self.resource_manager.cleanup()
+            cleanup_result = self.hardware_manager.cleanup()
             self.logger.info(f"🧹 Cleanup completed successfully: {cleanup_result}")
             return cleanup_result
             
@@ -1374,14 +1360,8 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
     def get_resource_metrics(self) -> Dict[str, Any]:
         """Get current resource usage metrics."""
         try:
-            metrics = self.resource_manager.get_resource_metrics()
-            return {
-                'memory_usage_mb': metrics.memory_usage_mb,
-                'gpu_memory_mb': metrics.gpu_memory_mb,
-                'active_objects': metrics.active_objects,
-                'cleanup_operations': metrics.cleanup_operations,
-                'timestamp': metrics.timestamp
-            }
+            metrics = self.hardware_manager.get_system_metrics()
+            return metrics
         except Exception as e:
             self.logger.warning(f"⚠️ Error getting resource metrics: {e}")
             return {'error': str(e)}
@@ -1395,10 +1375,10 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
         self.cleanup()
     
     def __del__(self):
-        """Destructor with safe cleanup using resource manager."""
+        """Destructor with safe cleanup using hardware manager."""
         try:
-            if hasattr(self, 'resource_manager'):
-                self.resource_manager.cleanup()
+            if hasattr(self, 'hardware_manager'):
+                self.hardware_manager.cleanup()
         except Exception:
             # Ignore errors during cleanup to avoid issues during interpreter shutdown
             pass

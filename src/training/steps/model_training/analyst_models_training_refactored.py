@@ -22,173 +22,96 @@ import json
 import time
 import traceback
 
-# Safe psutil import
+# Safe psutil import with simple fallback
 try:
     import psutil
     PSUTIL_AVAILABLE = True
 except ImportError:
     print("Warning: psutil not available, using fallback system monitoring")
     PSUTIL_AVAILABLE = False
-    # Create a minimal psutil-like interface
-    class MockPsutil:
-        class Process:
-            def memory_info(self):
-                return type('MockMemoryInfo', (), {'rss': 1024 * 1024 * 100})()  # 100MB
-        
+    # Simple fallback class
+    class SimplePsutilFallback:
         def cpu_percent(self, interval=None):
-            return 50.0  # 50% CPU usage
-        
+            return 50.0
         def virtual_memory(self):
-            return type('MockVirtualMemory', (), {
-                'total': 8 * 1024 * 1024 * 1024,  # 8GB
-                'available': 4 * 1024 * 1024 * 1024,  # 4GB
-                'percent': 50.0
-            })()
-        
-        def swap_memory(self):
-            return type('MockSwapMemory', (), {
-                'total': 2 * 1024 * 1024 * 1024,  # 2GB
-                'percent': 10.0
-            })()
-        
-        def disk_usage(self, path):
-            return type('MockDiskUsage', (), {
-                'total': 100 * 1024 * 1024 * 1024,  # 100GB
-                'used': 50 * 1024 * 1024 * 1024,   # 50GB
-                'free': 50 * 1024 * 1024 * 1024    # 50GB
-            })()
-        
-        def getloadavg(self):
-            return (1.0, 1.0, 1.0)
-        
-        def cpu_count(self):
-            return 4
-        
+            return type('MemInfo', (), {'total': 8*1024**3, 'available': 4*1024**3, 'percent': 50.0})()
         def Process(self):
-            return self.Process()
+            return type('ProcessInfo', (), {'memory_info': lambda: type('MemInfo', (), {'rss': 100*1024**2})()})()
     
-    psutil = MockPsutil()
+    psutil = SimplePsutilFallback()
 from contextlib import contextmanager
 import sys
 import os
 
-# Safe numpy import
+# Safe numpy import with simple fallback
 try:
     import numpy as np
     NUMPY_AVAILABLE = True
 except ImportError:
     print("Warning: numpy not available, using fallback array operations")
     NUMPY_AVAILABLE = False
-    # Create a minimal numpy-like interface
-    class MockNumpy:
-        def __init__(self):
-            self.inf = float('inf')
-            self.nan = float('nan')
+    # Simple fallback for essential numpy functions
+    class SimpleNumpyFallback:
+        inf = float('inf')
+        nan = float('nan')
         
         def array(self, data, dtype=None):
-            return data
-        
-        def ndarray(self, shape, dtype=None):
-            return [0] * (shape[0] if isinstance(shape, (list, tuple)) else shape)
-        
-        def isnan(self, arr):
-            return [False] * len(arr) if hasattr(arr, '__len__') else False
-        
-        def isinf(self, arr):
-            return [False] * len(arr) if hasattr(arr, '__len__') else False
-        
-        def isfinite(self, val):
-            return True
+            return list(data) if hasattr(data, '__iter__') else [data]
         
         def mean(self, arr):
-            return sum(arr) / len(arr) if hasattr(arr, '__len__') and len(arr) > 0 else 0.0
+            return sum(arr) / len(arr) if arr else 0.0
         
         def std(self, arr):
-            if not hasattr(arr, '__len__') or len(arr) <= 1:
+            if not arr or len(arr) <= 1:
                 return 0.0
             mean_val = self.mean(arr)
-            variance = sum((x - mean_val) ** 2 for x in arr) / (len(arr) - 1)
-            return variance ** 0.5
+            return (sum((x - mean_val) ** 2 for x in arr) / (len(arr) - 1)) ** 0.5
         
-        def min(self, arr):
-            return min(arr) if hasattr(arr, '__len__') and len(arr) > 0 else 0
+        def isfinite(self, val):
+            return not (val == float('inf') or val == float('-inf') or val != val)
         
-        def max(self, arr):
-            return max(arr) if hasattr(arr, '__len__') and len(arr) > 0 else 0
+        def isnan(self, val):
+            return val != val
         
-        def unique(self, arr):
-            return list(set(arr)) if hasattr(arr, '__len__') else [arr]
-        
-        def bincount(self, arr):
-            counts = {}
-            for val in arr:
-                counts[val] = counts.get(val, 0) + 1
-            max_val = max(counts.keys()) if counts else 0
-            return [counts.get(i, 0) for i in range(max_val + 1)]
-        
-        def random(self):
-            import random
-            return type('MockRandom', (), {
-                'randn': lambda *args: [random.gauss(0, 1) for _ in range(args[0] if args else 1)],
-                'randint': lambda low, high, size: [random.randint(low, high-1) for _ in range(size)]
-            })()
+        def isinf(self, val):
+            return val == float('inf') or val == float('-inf')
     
-    np = MockNumpy()
+    np = SimpleNumpyFallback()
 
-# Safe pandas import
+# Safe pandas import with simple fallback
 try:
     import pandas as pd
     PANDAS_AVAILABLE = True
 except ImportError:
     print("Warning: pandas not available, using fallback DataFrame operations")
     PANDAS_AVAILABLE = False
-    # Create a minimal pandas-like interface
-    class MockDataFrame:
-        def __init__(self, data=None, columns=None):
-            self.data = data if data is not None else []
-            self.columns = columns if columns is not None else []
-            self.shape = (len(self.data), len(self.columns)) if self.data else (0, 0)
+    # Simple pandas fallback
+    class SimplePandasFallback:
+        class DataFrame:
+            def __init__(self, data=None, columns=None):
+                self.data = data or []
+                self.columns = columns or []
+                self.shape = (len(self.data) if self.data else 0, len(self.columns))
+            
+            def isnull(self):
+                return SimplePandasFallback.DataFrame()
+            
+            def sum(self):
+                return [0] * len(self.columns)
+            
+            def to_parquet(self, path):
+                pass
         
-        def isnull(self):
-            return MockDataFrame([[False] * len(self.columns) for _ in self.data])
+        def read_parquet(self, path):
+            return self.DataFrame()
         
-        def sum(self):
-            return [0] * len(self.columns)
+        def to_datetime(self, x):
+            return x
         
-        def duplicated(self):
-            return [False] * len(self.data)
-        
-        def select_dtypes(self, include=None):
-            return MockDataFrame()
-        
-        def memory_usage(self, deep=True):
-            return [0] * len(self.columns)
-        
-        def to_parquet(self, path):
-            pass
-        
-        def to_dict(self):
-            return {}
+        def isna(self, x):
+            return x != x  # NaN check
     
-    class MockSeries:
-        def __init__(self, data=None):
-            self.data = data if data is not None else []
-        
-        def sum(self):
-            return 0
-        
-        def mean(self):
-            return 0.0
-        
-        def std(self):
-            return 0.0
-    
-    pd = type('MockPandas', (), {
-        'DataFrame': MockDataFrame,
-        'Series': MockSeries,
-        'read_parquet': lambda path: MockDataFrame(),
-        'to_datetime': lambda x: x
-    })()
+    pd = SimplePandasFallback()
 
 # Core imports
 from src.utils.logger import system_logger

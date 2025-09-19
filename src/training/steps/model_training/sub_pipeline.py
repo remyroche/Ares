@@ -28,6 +28,23 @@ from dataclasses import dataclass, field
 from src.utils.logger import system_logger
 from src.utils.tprint import tprint
 
+# Import additional tprint functions with fallback
+try:
+    from src.utils.tprint import tprint_warning, tprint_error, tprint_info, tprint_success
+except ImportError:
+    # Fallback implementations if extended tprint functions are not available
+    def tprint_warning(msg):
+        tprint(f"⚠️ {msg}")
+    
+    def tprint_error(msg):
+        tprint(f"❌ {msg}")
+    
+    def tprint_info(msg):
+        tprint(f"ℹ️ {msg}")
+    
+    def tprint_success(msg):
+        tprint(f"✅ {msg}")
+
 logger = system_logger.getChild('ModelTrainingSubPipeline')
 
 class ExecutionMode(Enum):

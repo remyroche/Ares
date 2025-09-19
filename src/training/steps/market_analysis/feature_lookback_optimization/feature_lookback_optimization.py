@@ -1198,6 +1198,7 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
                 max_workers=4,
                 memory_efficient=True,
                 enable_directional_optimization=True,  # Enable directional optimization by default
+                enable_multi_target_optimization=True,  # Enable multi-target optimization by default
                 optimization_metric='sharpe_ratio',
                 # Performance-focused parameters with balanced regularization
                 l1_regularization=0.001,  # Balanced regularization
@@ -1678,21 +1679,45 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
                         feature_columns = [col for col in prepared_data.columns 
                                          if col not in ['returns', 'close_return', 'close_log_return', 'target', 'label', 'signal_direction']]
                         
-                        # Find target column
-                        target_column = 'returns'
-                        for potential_target in ['returns', 'close_return', 'close_log_return', 'target', 'label']:
-                            if potential_target in prepared_data.columns:
-                                target_column = potential_target
-                                break
+                        # Find optimal target column (prioritize multi-horizon targets)
+                        target_column = self._select_optimal_target_column(prepared_data)
                         
-                        # Use directional MRMR optimization
-                        directional_result = self.optimize_lookback_periods_mrmr_directional(
-                            data=prepared_data,
-                            feature_columns=feature_columns[:10],  # Limit to first 10 features for performance
-                            target_column=target_column,
-                            optimization_config=None,
-                            enable_directional=True
-                        )
+                        # Check if we should use multi-target optimization
+                        enable_multi_target = getattr(config, 'enable_multi_target_optimization', True)
+                        
+                        if enable_multi_target:
+                            tprint('🎯 Using multi-target directional optimization...')
+                            
+                            # First, run multi-target optimization to get consensus lookback periods
+                            multi_target_result = self.optimize_lookback_periods_multi_target(
+                                data=prepared_data,
+                                feature_columns=feature_columns[:8],  # Limit for multi-target efficiency
+                                multi_targets=None,  # Auto-detect
+                                optimization_config=None
+                            )
+                            
+                            # Then run directional optimization with the best target
+                            directional_result = self.optimize_lookback_periods_mrmr_directional(
+                                data=prepared_data,
+                                feature_columns=feature_columns[:10],
+                                target_column=target_column,
+                                optimization_config=None,
+                                enable_directional=True
+                            )
+                            
+                            # Combine results
+                            directional_result['multi_target_analysis'] = multi_target_result
+                            directional_result['optimization_method'] = 'multi_target_directional'
+                            
+                        else:
+                            # Use standard directional MRMR optimization
+                            directional_result = self.optimize_lookback_periods_mrmr_directional(
+                                data=prepared_data,
+                                feature_columns=feature_columns[:10],  # Limit to first 10 features for performance
+                                target_column=target_column,
+                                optimization_config=None,
+                                enable_directional=True
+                            )
                         
                         # Apply intelligent directional feature selection
                         feature_selection_result = self.intelligent_directional_feature_selection(
@@ -2400,16 +2425,26 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
     
     def _split_data_by_direction(self, data: pd.DataFrame, target_column: str = 'returns') -> Tuple[pd.DataFrame, pd.DataFrame]:
         """
-        Split data into long and short signals based on target direction.
+        Split data into long and short signals based on multi-horizon targets or returns.
         
         Args:
             data: Input dataframe
-            target_column: Column containing returns/target values
+            target_column: Column containing target values (multi-horizon or returns)
             
         Returns:
             Tuple of (long_data, short_data)
         """
         try:
+            # Check if we have multi-horizon directional targets
+            multi_horizon_targets = self._detect_multi_horizon_targets(data)
+            
+            if multi_horizon_targets['has_directional_targets']:
+                tprint(f"🎯 Using multi-horizon directional targets for data splitting")
+                return self._split_by_multi_horizon_targets(data, multi_horizon_targets)
+            
+            # Fallback to traditional return-based splitting
+            tprint(f"📊 Using traditional return-based splitting")
+            
             # Ensure target column exists
             if target_column not in data.columns:
                 # Try common return column names
@@ -2442,6 +2477,552 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
             # Return empty dataframes on error
             empty_df = pd.DataFrame()
             return empty_df, empty_df
+    
+    def _detect_multi_horizon_targets(self, data: pd.DataFrame) -> Dict[str, Any]:
+        """
+        Detect if data contains multi-horizon profit targets.
+        
+        Args:
+            data: Input dataframe
+            
+        Returns:
+            Dictionary with detection results and available targets
+        """
+        detection_result = {
+            'has_directional_targets': False,
+            'has_composite_targets': False,
+            'long_targets': [],
+            'short_targets': [],
+            'composite_targets': [],
+            'primary_target': None
+        }
+        
+        try:
+            # Check for directional multi-horizon targets
+            directional_patterns = [
+                '_long_prob', '_short_prob', 
+                'long_immediate_', 'short_immediate_',
+                'long_overall_', 'short_overall_'
+            ]
+            
+            for pattern in directional_patterns:
+                matching_cols = [col for col in data.columns if pattern in col]
+                if pattern.startswith('long_') or '_long_' in pattern:
+                    detection_result['long_targets'].extend(matching_cols)
+                else:
+                    detection_result['short_targets'].extend(matching_cols)
+            
+            # Check for composite targets
+            composite_patterns = [
+                'overall_opportunity', 'leverage_adjusted_score', 
+                'immediate_opportunity', 'reversal_capture_score'
+            ]
+            
+            for pattern in composite_patterns:
+                if pattern in data.columns:
+                    detection_result['composite_targets'].append(pattern)
+            
+            # Determine if we have directional targets
+            detection_result['has_directional_targets'] = (
+                len(detection_result['long_targets']) > 0 and 
+                len(detection_result['short_targets']) > 0
+            )
+            
+            detection_result['has_composite_targets'] = len(detection_result['composite_targets']) > 0
+            
+            # Select primary target based on configuration
+            if 'leverage_adjusted_score' in detection_result['composite_targets']:
+                detection_result['primary_target'] = 'leverage_adjusted_score'
+            elif 'overall_opportunity' in detection_result['composite_targets']:
+                detection_result['primary_target'] = 'overall_opportunity'
+            elif detection_result['long_targets']:
+                # Use first long target as fallback
+                detection_result['primary_target'] = detection_result['long_targets'][0]
+            
+            tprint(f"🔍 Multi-horizon target detection:")
+            tprint(f"   Directional targets: {detection_result['has_directional_targets']}")
+            tprint(f"   Long targets: {len(detection_result['long_targets'])}")
+            tprint(f"   Short targets: {len(detection_result['short_targets'])}")
+            tprint(f"   Composite targets: {len(detection_result['composite_targets'])}")
+            tprint(f"   Primary target: {detection_result['primary_target']}")
+            
+            return detection_result
+            
+        except Exception as e:
+            tprint(f"❌ Error detecting multi-horizon targets: {e}")
+            return detection_result
+    
+    def _split_by_multi_horizon_targets(self, data: pd.DataFrame, targets_info: Dict[str, Any]) -> Tuple[pd.DataFrame, pd.DataFrame]:
+        """
+        Split data using multi-horizon directional targets.
+        
+        Args:
+            data: Input dataframe with multi-horizon targets
+            targets_info: Information about available targets
+            
+        Returns:
+            Tuple of (long_data, short_data)
+        """
+        try:
+            # Strategy 1: Use directional opportunity scores if available
+            if 'long_overall_opportunity' in data.columns and 'short_overall_opportunity' in data.columns:
+                tprint("🎯 Using directional opportunity scores for splitting")
+                
+                # Create masks based on which direction has higher opportunity
+                long_mask = data['long_overall_opportunity'] > data['short_overall_opportunity']
+                short_mask = data['short_overall_opportunity'] > data['long_overall_opportunity']
+                
+                # Also consider minimum opportunity thresholds
+                min_opportunity = 0.3  # 30% minimum opportunity
+                long_mask = long_mask & (data['long_overall_opportunity'] > min_opportunity)
+                short_mask = short_mask & (data['short_overall_opportunity'] > min_opportunity)
+                
+            # Strategy 2: Use best directional probabilities
+            elif targets_info['long_targets'] and targets_info['short_targets']:
+                tprint("🎯 Using directional probabilities for splitting")
+                
+                # Find best long and short probability columns
+                long_prob_cols = [col for col in targets_info['long_targets'] if 'prob' in col]
+                short_prob_cols = [col for col in targets_info['short_targets'] if 'prob' in col]
+                
+                if long_prob_cols and short_prob_cols:
+                    # Use immediate probabilities if available, otherwise use first available
+                    long_col = next((col for col in long_prob_cols if 'immediate' in col), long_prob_cols[0])
+                    short_col = next((col for col in short_prob_cols if 'immediate' in col), short_prob_cols[0])
+                    
+                    # Create masks based on which direction has higher probability
+                    min_prob = 0.4  # 40% minimum probability
+                    long_mask = (data[long_col] > data[short_col]) & (data[long_col] > min_prob)
+                    short_mask = (data[short_col] > data[long_col]) & (data[short_col] > min_prob)
+                else:
+                    raise ValueError("No suitable probability columns found")
+                    
+            else:
+                raise ValueError("Insufficient directional targets for multi-horizon splitting")
+            
+            # Create directional datasets
+            long_data = data[long_mask].copy()
+            short_data = data[short_mask].copy()
+            
+            # Add directional labels
+            long_data['signal_direction'] = 'long'
+            short_data['signal_direction'] = 'short'
+            
+            # Add target information for optimization
+            long_data['optimization_target_type'] = 'multi_horizon_long'
+            short_data['optimization_target_type'] = 'multi_horizon_short'
+            
+            tprint(f"✅ Multi-horizon directional split completed:")
+            tprint(f"   Long samples: {len(long_data)} ({len(long_data)/len(data)*100:.1f}%)")
+            tprint(f"   Short samples: {len(short_data)} ({len(short_data)/len(data)*100:.1f}%)")
+            tprint(f"   Neutral/filtered: {len(data) - len(long_data) - len(short_data)}")
+            
+            return long_data, short_data
+            
+        except Exception as e:
+            tprint(f"❌ Error in multi-horizon directional splitting: {e}")
+            # Fallback to empty dataframes
+            return pd.DataFrame(), pd.DataFrame()
+    
+    def _select_optimal_target_column(self, data: pd.DataFrame) -> str:
+        """
+        Select the optimal target column for feature optimization, prioritizing multi-horizon targets.
+        
+        Args:
+            data: Input dataframe
+            
+        Returns:
+            Name of the optimal target column
+        """
+        try:
+            # Priority 1: Multi-horizon composite targets (best overall signal)
+            composite_priority = [
+                'leverage_adjusted_score',  # Primary target from config
+                'overall_opportunity',      # Secondary target
+                'immediate_opportunity',    # Short-term focused
+                'reversal_capture_score'    # Reversal opportunities
+            ]
+            
+            for target in composite_priority:
+                if target in data.columns:
+                    tprint(f"🎯 Selected multi-horizon target: {target}")
+                    return target
+            
+            # Priority 2: Directional opportunity targets (if available)
+            directional_opportunity = [
+                'long_overall_opportunity',
+                'short_overall_opportunity'
+            ]
+            
+            for target in directional_opportunity:
+                if target in data.columns:
+                    tprint(f"🎯 Selected directional opportunity target: {target}")
+                    return target
+            
+            # Priority 3: Best multi-horizon probability targets
+            multi_horizon_patterns = [
+                'micro_immediate_long_prob',
+                'small_immediate_long_prob', 
+                'micro_immediate_short_prob',
+                'small_immediate_short_prob'
+            ]
+            
+            for target in multi_horizon_patterns:
+                if target in data.columns:
+                    tprint(f"🎯 Selected multi-horizon probability target: {target}")
+                    return target
+            
+            # Priority 4: Any multi-horizon probability target
+            prob_targets = [col for col in data.columns if '_prob' in col and ('long' in col or 'short' in col)]
+            if prob_targets:
+                # Prefer immediate probabilities
+                immediate_targets = [col for col in prob_targets if 'immediate' in col]
+                if immediate_targets:
+                    target = immediate_targets[0]
+                    tprint(f"🎯 Selected immediate probability target: {target}")
+                    return target
+                else:
+                    target = prob_targets[0]
+                    tprint(f"🎯 Selected probability target: {target}")
+                    return target
+            
+            # Fallback: Traditional return columns
+            traditional_targets = ['returns', 'close_return', 'close_log_return', 'target', 'label']
+            for target in traditional_targets:
+                if target in data.columns:
+                    tprint(f"📊 Fallback to traditional target: {target}")
+                    return target
+            
+            # Last resort: Use first numeric column
+            numeric_cols = data.select_dtypes(include=[np.number]).columns.tolist()
+            if numeric_cols:
+                target = numeric_cols[0]
+                tprint(f"⚠️ Using first numeric column as target: {target}")
+                return target
+                
+            raise ValueError("No suitable target column found")
+            
+        except Exception as e:
+            tprint(f"❌ Error selecting target column: {e}")
+            return 'returns'  # Safe fallback
+    
+    def optimize_lookback_periods_multi_target(self, 
+                                               data: pd.DataFrame,
+                                               feature_columns: List[str],
+                                               multi_targets: Optional[List[str]] = None,
+                                               optimization_config: Optional[LookbackOptimizationConfig] = None) -> Dict[str, Any]:
+        """
+        Optimize lookback periods against multiple multi-horizon targets simultaneously.
+        
+        Args:
+            data: Input data with features and multi-horizon targets
+            feature_columns: List of feature columns to optimize
+            multi_targets: List of target columns to optimize against (auto-detected if None)
+            optimization_config: Optional configuration for optimization
+            
+        Returns:
+            Dictionary with multi-target optimization results
+        """
+        try:
+            if not MRMR_OPTIMIZER_AVAILABLE or self.mrmr_optimizer is None:
+                raise ImportError("MRMR optimizer is required for multi-target optimization.")
+            
+            tprint("🎯 Starting multi-target lookback period optimization...")
+            start_time = time.time()
+            
+            # Auto-detect multi-horizon targets if not provided
+            if multi_targets is None:
+                multi_targets = self._select_multi_horizon_targets(data)
+            
+            if not multi_targets:
+                tprint("⚠️ No multi-horizon targets found, falling back to single target optimization")
+                return self.optimize_lookback_periods_mrmr_directional(data, feature_columns)
+            
+            tprint(f"📊 Optimizing against {len(multi_targets)} targets: {multi_targets}")
+            
+            # Create optimization config if not provided
+            if optimization_config is None:
+                optimization_config = LookbackOptimizationConfig(
+                    n_trials=30,  # Reduced for multi-target efficiency
+                    min_lookback=5,
+                    max_lookback=50,
+                    max_correlation_threshold=0.7,
+                    min_mutual_info_threshold=0.05,  # Lower threshold for multi-target
+                    enable_pruning=True,
+                    enable_parallel=True
+                )
+            
+            multi_target_results = {}
+            
+            # Optimize each feature against all targets
+            for feature_name in feature_columns:
+                tprint(f"📊 Multi-target optimization for {feature_name}...")
+                
+                feature_results = {}
+                target_scores = {}
+                
+                # Optimize against each target
+                for target_column in multi_targets:
+                    try:
+                        # Single target optimization
+                        result = self.mrmr_optimizer.optimize_lookback_periods(
+                            data=data,
+                            feature_name=feature_name,
+                            target_column=target_column,
+                            parameter_type="technical_indicator"
+                        )
+                        
+                        feature_results[target_column] = {
+                            'lookback': result.first_lookback_period,
+                            'score': result.combined_mi_score,
+                            'correlation': result.correlation_between_periods,
+                            'target_type': self._classify_target_type(target_column)
+                        }
+                        
+                        target_scores[target_column] = result.combined_mi_score
+                        
+                    except Exception as e:
+                        tprint(f"❌ Failed to optimize {feature_name} against {target_column}: {e}")
+                        feature_results[target_column] = {'error': str(e)}
+                
+                # Calculate multi-target consensus
+                consensus_result = self._calculate_multi_target_consensus(feature_results, target_scores)
+                
+                multi_target_results[feature_name] = {
+                    'individual_targets': feature_results,
+                    'consensus': consensus_result,
+                    'optimization_quality': self._evaluate_multi_target_quality(feature_results)
+                }
+                
+                tprint(f"✅ {feature_name}: Consensus lookback={consensus_result['lookback']} "
+                      f"(score={consensus_result['weighted_score']:.4f})")
+            
+            # Generate multi-target summary
+            summary = self._generate_multi_target_summary(multi_target_results, multi_targets)
+            multi_target_results['_summary'] = summary
+            
+            total_time = time.time() - start_time
+            tprint(f"✅ Multi-target optimization completed in {total_time:.2f} seconds")
+            
+            return multi_target_results
+            
+        except Exception as e:
+            tprint(f"❌ Multi-target optimization failed: {e}")
+            return {'error': str(e)}
+    
+    def _select_multi_horizon_targets(self, data: pd.DataFrame) -> List[str]:
+        """Select optimal set of multi-horizon targets for optimization."""
+        targets = []
+        
+        # Priority targets from configuration
+        priority_targets = [
+            'leverage_adjusted_score',
+            'overall_opportunity', 
+            'immediate_opportunity'
+        ]
+        
+        for target in priority_targets:
+            if target in data.columns:
+                targets.append(target)
+        
+        # Add directional targets if available
+        directional_targets = [
+            'long_overall_opportunity',
+            'short_overall_opportunity'
+        ]
+        
+        for target in directional_targets:
+            if target in data.columns:
+                targets.append(target)
+        
+        # Add best probability targets (limit to avoid over-optimization)
+        prob_patterns = ['micro_immediate', 'small_immediate']
+        for pattern in prob_patterns:
+            long_target = f"{pattern}_long_prob"
+            short_target = f"{pattern}_short_prob"
+            
+            if long_target in data.columns:
+                targets.append(long_target)
+            if short_target in data.columns:
+                targets.append(short_target)
+        
+        # Limit total targets to prevent over-optimization
+        max_targets = 6
+        if len(targets) > max_targets:
+            tprint(f"⚠️ Limiting targets from {len(targets)} to {max_targets} to prevent over-optimization")
+            targets = targets[:max_targets]
+        
+        return targets
+    
+    def _classify_target_type(self, target_column: str) -> str:
+        """Classify the type of multi-horizon target."""
+        if 'leverage_adjusted' in target_column:
+            return 'composite_leverage'
+        elif 'overall_opportunity' in target_column:
+            return 'composite_opportunity'
+        elif 'immediate' in target_column:
+            return 'immediate_horizon'
+        elif 'short' in target_column and 'prob' in target_column:
+            return 'short_probability'
+        elif 'long' in target_column and 'prob' in target_column:
+            return 'long_probability'
+        else:
+            return 'other'
+    
+    def _calculate_multi_target_consensus(self, feature_results: Dict[str, Any], target_scores: Dict[str, float]) -> Dict[str, Any]:
+        """Calculate consensus lookback period across multiple targets."""
+        try:
+            valid_results = {k: v for k, v in feature_results.items() if 'error' not in v}
+            
+            if not valid_results:
+                return {'lookback': 20, 'weighted_score': 0.0, 'method': 'fallback'}
+            
+            # Weight targets by their performance and type
+            weights = {}
+            total_weight = 0
+            
+            for target, result in valid_results.items():
+                # Base weight from MI score
+                score_weight = result['score']
+                
+                # Type-based weight adjustment
+                target_type = result['target_type']
+                type_weights = {
+                    'composite_leverage': 1.5,    # Highest priority
+                    'composite_opportunity': 1.3,
+                    'immediate_horizon': 1.1,
+                    'long_probability': 1.0,
+                    'short_probability': 1.0,
+                    'other': 0.8
+                }
+                
+                type_weight = type_weights.get(target_type, 1.0)
+                final_weight = score_weight * type_weight
+                
+                weights[target] = final_weight
+                total_weight += final_weight
+            
+            # Calculate weighted consensus
+            weighted_lookback = 0
+            weighted_score = 0
+            
+            for target, result in valid_results.items():
+                weight = weights[target] / total_weight
+                weighted_lookback += result['lookback'] * weight
+                weighted_score += result['score'] * weight
+            
+            consensus_lookback = int(round(weighted_lookback))
+            
+            # Calculate consensus confidence
+            lookback_values = [r['lookback'] for r in valid_results.values()]
+            lookback_std = np.std(lookback_values) if len(lookback_values) > 1 else 0
+            consensus_confidence = max(0, 1 - (lookback_std / np.mean(lookback_values))) if lookback_values else 0
+            
+            return {
+                'lookback': consensus_lookback,
+                'weighted_score': weighted_score,
+                'consensus_confidence': consensus_confidence,
+                'method': 'weighted_consensus',
+                'target_weights': weights,
+                'lookback_std': lookback_std
+            }
+            
+        except Exception as e:
+            tprint(f"❌ Error calculating multi-target consensus: {e}")
+            return {'lookback': 20, 'weighted_score': 0.0, 'method': 'error_fallback'}
+    
+    def _evaluate_multi_target_quality(self, feature_results: Dict[str, Any]) -> Dict[str, float]:
+        """Evaluate the quality of multi-target optimization."""
+        try:
+            valid_results = {k: v for k, v in feature_results.items() if 'error' not in v}
+            
+            if not valid_results:
+                return {'overall_quality': 0.0}
+            
+            # Score distribution quality
+            scores = [r['score'] for r in valid_results.values()]
+            score_mean = np.mean(scores)
+            score_std = np.std(scores)
+            score_consistency = max(0, 1 - (score_std / score_mean)) if score_mean > 0 else 0
+            
+            # Lookback consistency
+            lookbacks = [r['lookback'] for r in valid_results.values()]
+            lookback_std = np.std(lookbacks)
+            lookback_consistency = max(0, 1 - (lookback_std / 20))  # Normalize by reasonable range
+            
+            # Target coverage
+            target_coverage = len(valid_results) / max(1, len(feature_results))
+            
+            # Overall quality
+            overall_quality = (score_mean * 0.4 + 
+                             score_consistency * 0.3 + 
+                             lookback_consistency * 0.2 + 
+                             target_coverage * 0.1)
+            
+            return {
+                'overall_quality': overall_quality,
+                'score_mean': score_mean,
+                'score_consistency': score_consistency,
+                'lookback_consistency': lookback_consistency,
+                'target_coverage': target_coverage
+            }
+            
+        except Exception as e:
+            tprint(f"❌ Error evaluating multi-target quality: {e}")
+            return {'overall_quality': 0.0}
+    
+    def _generate_multi_target_summary(self, multi_target_results: Dict[str, Any], targets: List[str]) -> Dict[str, Any]:
+        """Generate summary of multi-target optimization results."""
+        try:
+            summary = {
+                'total_features': len([k for k in multi_target_results.keys() if k != '_summary']),
+                'total_targets': len(targets),
+                'target_list': targets,
+                'optimization_quality': {},
+                'consensus_stats': {},
+                'recommendations': []
+            }
+            
+            # Analyze consensus quality across features
+            consensus_scores = []
+            consensus_confidences = []
+            
+            for feature_name, results in multi_target_results.items():
+                if feature_name == '_summary':
+                    continue
+                    
+                consensus = results.get('consensus', {})
+                if 'weighted_score' in consensus:
+                    consensus_scores.append(consensus['weighted_score'])
+                if 'consensus_confidence' in consensus:
+                    consensus_confidences.append(consensus['consensus_confidence'])
+            
+            if consensus_scores:
+                summary['consensus_stats'] = {
+                    'average_score': np.mean(consensus_scores),
+                    'score_std': np.std(consensus_scores),
+                    'average_confidence': np.mean(consensus_confidences) if consensus_confidences else 0,
+                    'high_quality_features': len([s for s in consensus_scores if s > 0.5])
+                }
+            
+            # Generate recommendations
+            avg_score = summary['consensus_stats'].get('average_score', 0)
+            avg_confidence = summary['consensus_stats'].get('average_confidence', 0)
+            
+            if avg_score > 0.6 and avg_confidence > 0.7:
+                summary['recommendations'].append("Excellent multi-target optimization - use consensus lookback periods")
+            elif avg_score > 0.4 and avg_confidence > 0.5:
+                summary['recommendations'].append("Good multi-target optimization - consensus periods recommended with monitoring")
+            elif avg_score > 0.2:
+                summary['recommendations'].append("Moderate optimization quality - consider feature selection refinement")
+            else:
+                summary['recommendations'].append("Low optimization quality - review target selection and feature engineering")
+            
+            return summary
+            
+        except Exception as e:
+            tprint(f"❌ Error generating multi-target summary: {e}")
+            return {'error': str(e)}
     
     def _generate_directional_comparison(self, optimization_results: Dict[str, Any]) -> Dict[str, Any]:
         """

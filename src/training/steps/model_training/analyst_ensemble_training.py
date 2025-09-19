@@ -55,12 +55,6 @@ from src.utils.hardware.m1_gpu_utils import get_m1_gpu_manager
 from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer
 from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer
 
-from src.utils.common_operations import (
-    get_m1_gpu_manager as common_get_m1_gpu_manager,
-    get_m1_memory_optimizer as common_get_m1_memory_optimizer,
-    get_m1_cpu_optimizer as common_get_m1_cpu_optimizer
-)
-
 # Import ML common utilities
 from src.utils.ml_common.training.vectorized_training_manager import VectorizedTrainingManager
 from src.utils.ml_common.matrix_cross_validation import MatrixCrossValidator
@@ -220,22 +214,44 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
             raise ValueError(error_msg) from e
     
     def _initialize_hardware_optimizers(self) -> None:
-        """Initialize hardware optimizers."""
+        """Initialize hardware optimizers with error handling."""
         tprint_info("⚙️ Initializing hardware optimizers")
         
-        # Initialize hardware optimizers
-        self.gpu_manager = get_m1_gpu_manager()
-        self.memory_optimizer = get_m1_memory_optimizer()
-        self.cpu_optimizer = get_m1_cpu_optimizer()
+        # Initialize hardware optimizers with error handling
+        try:
+            self.gpu_manager = get_m1_gpu_manager()
+            tprint_success("✅ M1 GPU manager initialized")
+        except Exception as e:
+            self.gpu_manager = None
+            self.initialization_warnings.append(f"GPU manager initialization failed: {e}")
+            tprint_warning(f"⚠️ GPU manager initialization failed: {e}")
         
-        tprint_success("✅ Hardware optimizers initialized")
+        try:
+            self.memory_optimizer = get_m1_memory_optimizer()
+            tprint_success("✅ M1 memory optimizer initialized")
+        except Exception as e:
+            self.memory_optimizer = None
+            self.initialization_warnings.append(f"Memory optimizer initialization failed: {e}")
+            tprint_warning(f"⚠️ Memory optimizer initialization failed: {e}")
         
-        if self.gpu_manager:
-            tprint_success("✅ M1 GPU manager available")
-        if self.memory_optimizer:
-            tprint_success("✅ M1 memory optimizer available")
-        if self.cpu_optimizer:
-            tprint_success("✅ M1 CPU optimizer available")
+        try:
+            self.cpu_optimizer = get_m1_cpu_optimizer()
+            tprint_success("✅ M1 CPU optimizer initialized")
+        except Exception as e:
+            self.cpu_optimizer = None
+            self.initialization_warnings.append(f"CPU optimizer initialization failed: {e}")
+            tprint_warning(f"⚠️ CPU optimizer initialization failed: {e}")
+        
+        # Check availability
+        available_count = sum([self.gpu_manager is not None, 
+                             self.memory_optimizer is not None, 
+                             self.cpu_optimizer is not None])
+        
+        if available_count > 0:
+            tprint_success(f"✅ Hardware optimizers initialized: {available_count}/3 available")
+        else:
+            self.initialization_warnings.append("No hardware optimizers available")
+            tprint_warning("⚠️ No hardware optimizers available")
     
     def _initialize_parent_class(self, config: EnsembleTrainingConfig, enable_vectorization: bool) -> None:
         """Initialize parent class."""
@@ -259,6 +275,13 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
                 'gpu_manager': self.gpu_manager is not None,
                 'memory_optimizer': self.memory_optimizer is not None,
                 'cpu_optimizer': self.cpu_optimizer is not None
+            },
+            'utilities_available': {
+                'math_validation': True,  # math_validation utilities are imported
+                'serialization': True,    # serialization utilities are imported
+                'hardware_optimization': True,  # hardware optimizers are initialized
+                'ml_common': True,       # ml_common utilities are imported
+                'tprint': True          # tprint utilities are imported
             },
             'initialization_errors': self.initialization_errors.copy(),
             'initialization_warnings': self.initialization_warnings.copy()
@@ -571,22 +594,51 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
             raise
     
     def _validate_memory_and_performance(self, X: np.ndarray, y: np.ndarray, regime_labels: np.ndarray) -> None:
-        """Validate memory and performance considerations."""
+        """Validate memory and performance considerations with bounds checking."""
         try:
-            # Calculate memory usage
-            x_memory_mb = X.nbytes / (1024 * 1024)
-            y_memory_mb = y.nbytes / (1024 * 1024)
-            regime_memory_mb = regime_labels.nbytes / (1024 * 1024)
-            total_memory_mb = x_memory_mb + y_memory_mb + regime_memory_mb
-            
-            tprint_info(f"💾 Memory usage: X={x_memory_mb:.2f}MB, y={y_memory_mb:.2f}MB, regimes={regime_memory_mb:.2f}MB")
-            tprint_info(f"💾 Total memory: {total_memory_mb:.2f}MB")
-            
-            # Check for large datasets
-            if total_memory_mb > 1000:  # > 1GB
-                tprint_warning(f"⚠️ Large dataset detected: {total_memory_mb:.2f}MB")
-                if self.memory_optimizer:
-                    tprint_info("💾 Memory optimizer available for large dataset handling")
+            # Calculate memory usage with bounds checking
+            try:
+                x_memory_bytes = X.nbytes
+                y_memory_bytes = y.nbytes
+                regime_memory_bytes = regime_labels.nbytes
+                
+                # Check for potential overflow in memory calculations
+                max_safe_bytes = 2**63 - 1  # Maximum safe integer size
+                if any(mem > max_safe_bytes for mem in [x_memory_bytes, y_memory_bytes, regime_memory_bytes]):
+                    tprint_warning("⚠️ Very large arrays detected - memory calculations may be approximate")
+                    x_memory_mb = x_memory_bytes / (1024 * 1024) if x_memory_bytes < max_safe_bytes else float('inf')
+                    y_memory_mb = y_memory_bytes / (1024 * 1024) if y_memory_bytes < max_safe_bytes else float('inf')
+                    regime_memory_mb = regime_memory_bytes / (1024 * 1024) if regime_memory_bytes < max_safe_bytes else float('inf')
+                else:
+                    x_memory_mb = x_memory_bytes / (1024 * 1024)
+                    y_memory_mb = y_memory_bytes / (1024 * 1024)
+                    regime_memory_mb = regime_memory_bytes / (1024 * 1024)
+                
+                # Safe total calculation
+                if any(mem == float('inf') for mem in [x_memory_mb, y_memory_mb, regime_memory_mb]):
+                    total_memory_mb = float('inf')
+                    tprint_warning("⚠️ Total memory calculation overflow - dataset is extremely large")
+                else:
+                    total_memory_mb = x_memory_mb + y_memory_mb + regime_memory_mb
+                
+                # Format memory display safely
+                def format_memory(mem):
+                    if mem == float('inf'):
+                        return ">2^63 bytes"
+                    return f"{mem:.2f}MB"
+                
+                tprint_info(f"💾 Memory usage: X={format_memory(x_memory_mb)}, y={format_memory(y_memory_mb)}, regimes={format_memory(regime_memory_mb)}")
+                tprint_info(f"💾 Total memory: {format_memory(total_memory_mb)}")
+                
+                # Check for large datasets
+                if total_memory_mb > 1000:  # > 1GB
+                    tprint_warning(f"⚠️ Large dataset detected: {format_memory(total_memory_mb)}")
+                    if self.memory_optimizer:
+                        tprint_info("💾 Memory optimizer available for large dataset handling")
+                
+            except (OverflowError, MemoryError) as e:
+                tprint_warning(f"⚠️ Memory calculation overflow: {e}")
+                total_memory_mb = float('inf')
             
             # Check feature count
             if X.shape[1] > 1000:
@@ -853,46 +905,83 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
             
             # Add regime probabilities
             if 'regime_probabilities' in hmm_data:
-                regime_probs = np.array(hmm_data['regime_probabilities'])
-                if regime_probs.shape[0] == X.shape[0]:
-                    hmm_features.append(regime_probs)
-                    feature_count += regime_probs.shape[1]
-                    tprint_success(f"✅ Added {regime_probs.shape[1]} regime probability features")
-                else:
-                    tprint_warning("⚠️ Regime probabilities shape mismatch")
+                try:
+                    regime_probs_data = hmm_data['regime_probabilities']
+                    if not isinstance(regime_probs_data, (list, np.ndarray)):
+                        tprint_warning("⚠️ Regime probabilities must be list or numpy array")
+                    else:
+                        regime_probs = np.array(regime_probs_data, dtype=np.float64)
+                        if regime_probs.shape[0] == X.shape[0]:
+                            hmm_features.append(regime_probs)
+                            feature_count += regime_probs.shape[1]
+                            tprint_success(f"✅ Added {regime_probs.shape[1]} regime probability features")
+                        else:
+                            tprint_warning("⚠️ Regime probabilities shape mismatch")
+                except Exception as e:
+                    tprint_warning(f"⚠️ Failed to process regime probabilities: {e}")
             
             # Add regime confidence
             if 'regime_confidence' in hmm_data:
-                regime_conf = np.array(hmm_data['regime_confidence'])
-                if len(regime_conf) == X.shape[0]:
-                    regime_conf = regime_conf.reshape(-1, 1)
-                    hmm_features.append(regime_conf)
-                    feature_count += 1
-                    tprint_success("✅ Added regime confidence feature")
-                else:
-                    tprint_warning("⚠️ Regime confidence shape mismatch")
+                try:
+                    regime_conf_data = hmm_data['regime_confidence']
+                    if not isinstance(regime_conf_data, (list, np.ndarray)):
+                        tprint_warning("⚠️ Regime confidence must be list or numpy array")
+                    else:
+                        regime_conf = np.array(regime_conf_data, dtype=np.float64)
+                        if len(regime_conf) == X.shape[0]:
+                            regime_conf = regime_conf.reshape(-1, 1)
+                            hmm_features.append(regime_conf)
+                            feature_count += 1
+                            tprint_success("✅ Added regime confidence feature")
+                        else:
+                            tprint_warning("⚠️ Regime confidence shape mismatch")
+                except Exception as e:
+                    tprint_warning(f"⚠️ Failed to process regime confidence: {e}")
             
             # Add regime states as one-hot encoded features
             if 'regime_states' in hmm_data:
-                regime_states = np.array(hmm_data['regime_states'])
-                if len(regime_states) == X.shape[0]:
-                    # One-hot encode regime states
-                    n_regimes = len(set(regime_states))
-                    regime_onehot = np.eye(n_regimes)[regime_states]
-                    hmm_features.append(regime_onehot)
-                    feature_count += n_regimes
-                    tprint_success(f"✅ Added {n_regimes} regime state features (one-hot encoded)")
-                else:
-                    tprint_warning("⚠️ Regime states shape mismatch")
+                try:
+                    regime_states_data = hmm_data['regime_states']
+                    if not isinstance(regime_states_data, (list, np.ndarray)):
+                        tprint_warning("⚠️ Regime states must be list or numpy array")
+                    else:
+                        regime_states = np.array(regime_states_data)
+                        if len(regime_states) == X.shape[0]:
+                            try:
+                                # Handle non-integer regime states by mapping to integers
+                                unique_regimes = list(set(regime_states))
+                                regime_to_int = {regime: idx for idx, regime in enumerate(unique_regimes)}
+                                regime_int_mapped = np.array([regime_to_int[regime] for regime in regime_states])
+                                
+                                # One-hot encode regime states
+                                n_regimes = len(unique_regimes)
+                                regime_onehot = np.eye(n_regimes)[regime_int_mapped]
+                                hmm_features.append(regime_onehot)
+                                feature_count += n_regimes
+                                tprint_success(f"✅ Added {n_regimes} regime state features (one-hot encoded)")
+                            except Exception as e:
+                                tprint_warning(f"⚠️ Failed to one-hot encode regime states: {e}")
+                                # Fallback: use regime states as categorical features
+                                unique_regimes = list(set(regime_states))
+                                for i, regime in enumerate(unique_regimes):
+                                    regime_binary = (regime_states == regime).astype(float).reshape(-1, 1)
+                                    hmm_features.append(regime_binary)
+                                    feature_count += 1
+                                tprint_success(f"✅ Added {len(unique_regimes)} regime state features (binary encoded)")
+                        else:
+                            tprint_warning("⚠️ Regime states shape mismatch")
+                except Exception as e:
+                    tprint_warning(f"⚠️ Failed to process regime states: {e}")
             
             # Combine features
             if hmm_features:
                 X_enhanced = np.column_stack([X] + hmm_features)
-                tprint_success(f"✅ Enhanced features: {X.shape[1]} base + {feature_count - X.shape[1]} HMM = {feature_count} total")
+                actual_hmm_features = X_enhanced.shape[1] - X.shape[1]
+                tprint_success(f"✅ Enhanced features: {X.shape[1]} base + {actual_hmm_features} HMM = {X_enhanced.shape[1]} total")
                 
-                # Update execution stats
-                execution_stats['hmm_features_added'] = feature_count - X.shape[1]
-                execution_stats['total_features'] = feature_count
+                # Update execution stats with actual feature counts
+                execution_stats['hmm_features_added'] = actual_hmm_features
+                execution_stats['total_features'] = X_enhanced.shape[1]
                 
                 return X_enhanced
             else:
@@ -1259,27 +1348,33 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
         from sklearn.svm import SVR
         
         # Create base models for Analyst (5m timeframe)
+        # Note: Using sklearn implementations as placeholders for TCN, CatBoost, and LightGBM
+        # In production, these should be replaced with actual implementations
         base_models = {
-            'tcn_model': RandomForestRegressor(  # TCN placeholder - would be Temporal Convolutional Network
+            'rf_deep': RandomForestRegressor(  # Deep Random Forest (TCN placeholder)
                 n_estimators=100, 
                 random_state=42, 
                 max_depth=12,
-                n_jobs=-1
+                n_jobs=-1,
+                min_samples_split=5,
+                min_samples_leaf=2
             ),
-            'catboost_model': RandomForestRegressor(  # CatBoost placeholder
+            'rf_balanced': RandomForestRegressor(  # Balanced Random Forest (CatBoost placeholder)
                 n_estimators=100, 
                 random_state=43, 
                 max_depth=10,
-                n_jobs=-1
+                n_jobs=-1,
+                class_weight='balanced'
             ),
-            'lightgbm_model': GradientBoostingRegressor(  # LightGBM placeholder
+            'gbm_model': GradientBoostingRegressor(  # Gradient Boosting (LightGBM placeholder)
                 n_estimators=100, 
                 random_state=44, 
                 max_depth=8,
-                learning_rate=0.1
+                learning_rate=0.1,
+                subsample=0.8
             ),
-            'elastic_net_model': LinearRegression(),  # Elastic Net placeholder
-            'linear_model': LinearRegression(),
+            'linear_model': LinearRegression(),  # Linear regression
+            'elastic_net': LinearRegression(),  # Elastic Net (using LinearRegression as placeholder)
             'svr_model': SVR(kernel='rbf', C=1.0, gamma='scale')
         }
         

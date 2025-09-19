@@ -50,9 +50,20 @@ from src.utils.common_operations import (
 from src.feature_generation.utils.optimized_cross_timeframe_analysis_integration import (
     OptimizedCrossTimeframeAnalysisIntegration
 )
-from src.feature_generation.categories.momentum import MomentumFeatureGenerator
-from src.feature_generation.categories.trend import TrendFeatureGenerator  
-from src.feature_generation.categories.volume import VolumeFeatureGenerator
+from src.feature_generation.categories.momentum import (
+    MomentumFeatureGenerator, StochasticGenerator, WilliamsRGenerator, 
+    ROCGenerator, MomentumGenerator
+)
+from src.feature_generation.categories.trend import (
+    TrendFeatureGenerator, KeltnerChannelsGenerator
+)
+from src.feature_generation.categories.volume import (
+    VolumeFeatureGenerator, VWAPGenerator, OBVGenerator, VolumeROCGenerator
+)
+from src.feature_generation.categories.volatility import (
+    VolatilityFeatureGenerator, BollingerBandsGenerator, VolatilityBandsGenerator
+)
+from src.feature_generation.categories.oscillator import CCIGenerator
 
 from src.utils.math_validation import (
     safe_divide, safe_log, safe_sqrt, safe_power, validate_finite,
@@ -183,6 +194,20 @@ class TacticianLookbackOptimizer:
         self.momentum_generator = MomentumFeatureGenerator()
         self.trend_generator = TrendFeatureGenerator() 
         self.volume_generator = VolumeFeatureGenerator()
+        self.volatility_generator = VolatilityFeatureGenerator()
+        
+        # Initialize specific indicator generators
+        self.stochastic_generator = StochasticGenerator()
+        self.williams_r_generator = WilliamsRGenerator()
+        self.roc_generator = ROCGenerator()
+        self.momentum_specific_generator = MomentumGenerator()
+        self.vwap_generator = VWAPGenerator()
+        self.obv_generator = OBVGenerator()
+        self.volume_roc_generator = VolumeROCGenerator()
+        self.bollinger_generator = BollingerBandsGenerator()
+        self.volatility_bands_generator = VolatilityBandsGenerator()
+        self.cci_generator = CCIGenerator()
+        self.keltner_generator = KeltnerChannelsGenerator()
         
         # Optimization state
         self.optimization_results = {}
@@ -337,8 +362,9 @@ class TacticianLookbackOptimizer:
     
     def _get_indicator_calculator(self, indicator: str):
         """Get calculator function for a specific indicator using existing feature_generation implementations."""
-        # Map indicators to existing feature generator methods
+        # Map ALL indicators to existing feature_generation implementations
         feature_generator_map = {
+            # Momentum indicators
             "rsi": lambda data, lookback: pd.Series(
                 self.momentum_generator._calculate_rsi(data['close'].values, period=lookback), 
                 index=data.index
@@ -347,6 +373,12 @@ class TacticianLookbackOptimizer:
                 self.momentum_generator._calculate_macd(data['close'].values, fast=max(1, lookback//2), slow=lookback)['macd'],
                 index=data.index
             ),
+            "stoch": lambda data, lookback: self.stochastic_generator._generate_feature(data, period=lookback),
+            "williams_r": lambda data, lookback: self.williams_r_generator._generate_feature(data, period=lookback),
+            "roc": lambda data, lookback: self.roc_generator._generate_feature(data, period=lookback),
+            "momentum": lambda data, lookback: self.momentum_specific_generator._generate_feature(data, period=lookback),
+            
+            # Trend indicators
             "ema": lambda data, lookback: pd.Series(
                 self.momentum_generator._calculate_ema(data['close'].values, period=lookback),
                 index=data.index
@@ -355,182 +387,67 @@ class TacticianLookbackOptimizer:
                 self.trend_generator._calculate_sma(data['close'].values, period=lookback),
                 index=data.index
             ),
+            "keltner_channels": lambda data, lookback: self.keltner_generator._generate_feature(data, period=lookback),
+            
+            # Volume indicators
             "volume_sma": lambda data, lookback: pd.Series(
                 self.volume_generator._calculate_volume_ma(data['volume'].values, period=lookback),
                 index=data.index
             ),
+            "vwap": lambda data, lookback: self.vwap_generator._generate_feature(data, period=lookback),
+            "obv": lambda data, lookback: self.obv_generator._generate_feature(data),
+            "volume_roc": lambda data, lookback: self.volume_roc_generator._generate_feature(data, period=lookback),
+            
+            # Volatility indicators
+            "bollinger_bands": lambda data, lookback: self.bollinger_generator._generate_feature(data, period=lookback),
+            "volatility_bands": lambda data, lookback: self.volatility_bands_generator._generate_feature(data, period=lookback),
             "atr": lambda data, lookback: self.cross_timeframe_generator._calculate_atr(data, period=lookback),
+            
+            # Oscillator indicators
+            "cci": lambda data, lookback: self.cci_generator._generate_feature(data, period=lookback),
         }
         
-        # For indicators not yet in feature_generator, use local implementations
-        # TODO: Move these 9 remaining indicators to feature_generation module for consistency
-        local_calculators = {
-            "bollinger_bands": self._calculate_bollinger_bands,
-            "stoch": self._calculate_stochastic,
-            "vwap": self._calculate_vwap,
-            "obv": self._calculate_obv,
-            "volume_roc": self._calculate_volume_roc,
-            "williams_r": self._calculate_williams_r,
-            "cci": self._calculate_cci,
-            "momentum": self._calculate_momentum,
-            "roc": self._calculate_roc,
-            "volatility_bands": self._calculate_volatility_bands,
-            "keltner_channels": self._calculate_keltner_channels
-        }
-        
-        # Prefer feature generator implementations
+        # All indicators now use feature_generation implementations
         if indicator in feature_generator_map:
             return feature_generator_map[indicator]
-        elif indicator in local_calculators:
-            return local_calculators[indicator]
         else:
             tprint_warning(f"⚠️ Unknown indicator: {indicator}, using SMA as fallback")
             return feature_generator_map["sma"]
     
     # ========================================================================
-    # TECHNICAL INDICATOR CALCULATIONS
+    # ALL TECHNICAL INDICATORS NOW USE FEATURE_GENERATION IMPLEMENTATIONS
     # 
-    # USING EXISTING FEATURE_GENERATION IMPLEMENTATIONS (6 indicators):
+    # ✅ ALL 17 INDICATORS USING EXISTING FEATURE_GENERATION:
+    # 
+    # Momentum Indicators (6):
     # ✅ RSI - MomentumFeatureGenerator._calculate_rsi()
     # ✅ MACD - MomentumFeatureGenerator._calculate_macd() 
     # ✅ EMA - MomentumFeatureGenerator._calculate_ema()
-    # ✅ SMA - TrendFeatureGenerator._calculate_sma()
-    # ✅ Volume SMA - VolumeFeatureGenerator._calculate_volume_ma()
-    # ✅ ATR - OptimizedCrossTimeframeAnalysisIntegration._calculate_atr()
+    # ✅ Stochastic - StochasticGenerator._generate_feature()
+    # ✅ Williams %R - WilliamsRGenerator._generate_feature()
+    # ✅ ROC - ROCGenerator._generate_feature()
+    # ✅ Momentum - MomentumGenerator._generate_feature()
     #
-    # LOCAL IMPLEMENTATIONS REMAINING (9 indicators):
-    # TODO: Move these to appropriate feature_generation categories:
-    # - bollinger_bands, stoch, williams_r, cci → oscillator.py or trend.py
-    # - vwap, obv, volume_roc → volume.py  
-    # - momentum, roc → momentum.py
-    # - volatility_bands, keltner_channels → volatility.py or trend.py
+    # Trend Indicators (3):
+    # ✅ SMA - TrendFeatureGenerator._calculate_sma()
+    # ✅ Keltner Channels - KeltnerChannelsGenerator._generate_feature()
+    #
+    # Volume Indicators (4):
+    # ✅ Volume SMA - VolumeFeatureGenerator._calculate_volume_ma()
+    # ✅ VWAP - VWAPGenerator._generate_feature()
+    # ✅ OBV - OBVGenerator._generate_feature()
+    # ✅ Volume ROC - VolumeROCGenerator._generate_feature()
+    #
+    # Volatility Indicators (3):
+    # ✅ ATR - OptimizedCrossTimeframeAnalysisIntegration._calculate_atr()
+    # ✅ Bollinger Bands - BollingerBandsGenerator._generate_feature()
+    # ✅ Volatility Bands - VolatilityBandsGenerator._generate_feature()
+    #
+    # Oscillator Indicators (1):
+    # ✅ CCI - CCIGenerator._generate_feature()
+    #
+    # 🎉 NO LOCAL IMPLEMENTATIONS REMAINING - ALL USE FEATURE_GENERATION!
     # ========================================================================
-    
-    def _calculate_bollinger_bands(self, data: pd.DataFrame, lookback: int) -> pd.Series:
-        """Calculate Bollinger Bands middle line (SMA) with given lookback period. TODO: Move to feature_generation module."""
-        try:
-            sma = data['close'].rolling(window=lookback).mean()
-            return sma
-        except Exception as e:
-            self.logger.warning(f"Bollinger Bands calculation failed: {e}")
-            return pd.Series(index=data.index, dtype=float)
-    
-    def _calculate_stochastic(self, data: pd.DataFrame, lookback: int) -> pd.Series:
-        """Calculate Stochastic %K with given lookback period."""
-        try:
-            lowest_low = data['low'].rolling(window=lookback).min()
-            highest_high = data['high'].rolling(window=lookback).max()
-            k_percent = 100 * ((data['close'] - lowest_low) / (highest_high - lowest_low))
-            return k_percent.fillna(50)
-        except Exception as e:
-            self.logger.warning(f"Stochastic calculation failed: {e}")
-            return pd.Series(index=data.index, dtype=float)
-    
-    def _calculate_volume_sma(self, data: pd.DataFrame, lookback: int) -> pd.Series:
-        """Calculate Volume SMA with given lookback period."""
-        try:
-            return data['volume'].rolling(window=lookback).mean()
-        except Exception as e:
-            self.logger.warning(f"Volume SMA calculation failed: {e}")
-            return pd.Series(index=data.index, dtype=float)
-    
-    def _calculate_vwap(self, data: pd.DataFrame, lookback: int) -> pd.Series:
-        """Calculate VWAP with given lookback period."""
-        try:
-            typical_price = (data['high'] + data['low'] + data['close']) / 3
-            volume_price = typical_price * data['volume']
-            cumulative_volume_price = volume_price.rolling(window=lookback).sum()
-            cumulative_volume = data['volume'].rolling(window=lookback).sum()
-            vwap = safe_divide(cumulative_volume_price, cumulative_volume, default_value=data['close'])
-            return vwap
-        except Exception as e:
-            self.logger.warning(f"VWAP calculation failed: {e}")
-            return pd.Series(index=data.index, dtype=float)
-    
-    def _calculate_obv(self, data: pd.DataFrame, lookback: int) -> pd.Series:
-        """Calculate On-Balance Volume with given lookback period."""
-        try:
-            price_change = data['close'].diff()
-            volume_direction = np.where(price_change > 0, data['volume'], 
-                                      np.where(price_change < 0, -data['volume'], 0))
-            obv = pd.Series(volume_direction).cumsum()
-            return obv.rolling(window=lookback).mean()
-        except Exception as e:
-            self.logger.warning(f"OBV calculation failed: {e}")
-            return pd.Series(index=data.index, dtype=float)
-    
-    def _calculate_volume_roc(self, data: pd.DataFrame, lookback: int) -> pd.Series:
-        """Calculate Volume Rate of Change with given lookback period."""
-        try:
-            volume_roc = data['volume'].pct_change(periods=lookback) * 100
-            return volume_roc.fillna(0)
-        except Exception as e:
-            self.logger.warning(f"Volume ROC calculation failed: {e}")
-            return pd.Series(index=data.index, dtype=float)
-    
-    def _calculate_williams_r(self, data: pd.DataFrame, lookback: int) -> pd.Series:
-        """Calculate Williams %R with given lookback period."""
-        try:
-            highest_high = data['high'].rolling(window=lookback).max()
-            lowest_low = data['low'].rolling(window=lookback).min()
-            williams_r = -100 * ((highest_high - data['close']) / (highest_high - lowest_low))
-            return williams_r.fillna(-50)
-        except Exception as e:
-            self.logger.warning(f"Williams %R calculation failed: {e}")
-            return pd.Series(index=data.index, dtype=float)
-    
-    def _calculate_cci(self, data: pd.DataFrame, lookback: int) -> pd.Series:
-        """Calculate Commodity Channel Index with given lookback period."""
-        try:
-            typical_price = (data['high'] + data['low'] + data['close']) / 3
-            sma = typical_price.rolling(window=lookback).mean()
-            mean_deviation = typical_price.rolling(window=lookback).apply(
-                lambda x: np.mean(np.abs(x - np.mean(x)))
-            )
-            cci = (typical_price - sma) / (0.015 * mean_deviation)
-            return cci.fillna(0)
-        except Exception as e:
-            self.logger.warning(f"CCI calculation failed: {e}")
-            return pd.Series(index=data.index, dtype=float)
-    
-    def _calculate_momentum(self, data: pd.DataFrame, lookback: int) -> pd.Series:
-        """Calculate Momentum with given lookback period."""
-        try:
-            momentum = data['close'] - data['close'].shift(lookback)
-            return momentum.fillna(0)
-        except Exception as e:
-            self.logger.warning(f"Momentum calculation failed: {e}")
-            return pd.Series(index=data.index, dtype=float)
-    
-    def _calculate_roc(self, data: pd.DataFrame, lookback: int) -> pd.Series:
-        """Calculate Rate of Change with given lookback period."""
-        try:
-            roc = data['close'].pct_change(periods=lookback) * 100
-            return roc.fillna(0)
-        except Exception as e:
-            self.logger.warning(f"ROC calculation failed: {e}")
-            return pd.Series(index=data.index, dtype=float)
-    
-    def _calculate_volatility_bands(self, data: pd.DataFrame, lookback: int) -> pd.Series:
-        """Calculate Volatility Bands middle line with given lookback period."""
-        try:
-            volatility = data['close'].rolling(window=lookback).std()
-            sma = data['close'].rolling(window=lookback).mean()
-            return sma + volatility  # Return upper band as representative
-        except Exception as e:
-            self.logger.warning(f"Volatility Bands calculation failed: {e}")
-            return pd.Series(index=data.index, dtype=float)
-    
-    def _calculate_keltner_channels(self, data: pd.DataFrame, lookback: int) -> pd.Series:
-        """Calculate Keltner Channels middle line with given lookback period."""
-        try:
-            ema = data['close'].ewm(span=lookback).mean()
-            return ema
-        except Exception as e:
-            self.logger.warning(f"Keltner Channels calculation failed: {e}")
-            return pd.Series(index=data.index, dtype=float)
-    
-    # SMA and EMA implementations removed - now using feature_generation implementations
     
     def _create_output_directories(self):
         """Create output directories for results."""
@@ -547,6 +464,8 @@ class TacticianLookbackOptimizer:
             
         except Exception as e:
             tprint_warning(f"⚠️ Failed to create output directories: {e}")
+    
+    # All local indicator implementations removed - now using feature_generation implementations
     
     async def optimize_lookback_periods(
         self,

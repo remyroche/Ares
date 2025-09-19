@@ -521,3 +521,139 @@ class VWMAGenerator(FeatureGenerator):
         vwma = (base_values * volume).rolling(window=self.period).sum() / volume.rolling(window=self.period).sum()
         
         return vwma
+
+
+class KeltnerChannelsGenerator(FeatureGenerator):
+    """Generator for Keltner Channels with different base calculations."""
+    
+    def __init__(self,
+                 period: int = 20,
+                 atr_period: int = 14,
+                 multiplier: float = 2.0,
+                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS,
+                 **base_kwargs):
+        """
+        Initialize Keltner Channels generator.
+        
+        Args:
+            period: EMA period for middle line
+            atr_period: ATR period for channel width
+            multiplier: ATR multiplier for channel width
+            base_calculation: Base calculation type
+            **base_kwargs: Additional parameters for base calculation
+        """
+        if isinstance(base_calculation, str):
+            base_calculation = BaseCalculationType(base_calculation)
+        
+        # Create base calculator
+        self.base_calculator = create_base_calculator(base_calculation, **base_kwargs)
+        
+        # Update required columns based on base calculation
+        required_columns = self.base_calculator.get_required_columns()
+        if base_calculation == BaseCalculationType.PRICE_LEVELS:
+            required_columns.extend(["high", "low"])  # ATR requires high/low
+        
+        config = FeatureConfig(
+            name=f"keltner_channels_{period}_{atr_period}_{base_calculation.value}",
+            category=FeatureCategory.TREND,
+            description=f"Keltner Channels with EMA period={period}, ATR period={atr_period}, multiplier={multiplier} based on {base_calculation.value}",
+            required_columns=required_columns,
+            default_lookback=max(period, atr_period),
+            min_lookback=max(period, atr_period),
+            max_lookback=max(period, atr_period),
+            parameters={
+                'period': period,
+                'atr_period': atr_period,
+                'multiplier': multiplier,
+                'base_calculation': base_calculation.value,
+                **base_kwargs
+            }
+        )
+        super().__init__(config)
+        self.period = period
+        self.atr_period = atr_period
+        self.multiplier = multiplier
+    
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate Keltner Channels middle line (EMA) based on the specified base calculation."""
+        if self.base_calculator.base_calculation == BaseCalculationType.PRICE_LEVELS:
+            # Traditional Keltner Channels calculation on price levels
+            close = data['close']
+            high = data['high']
+            low = data['low']
+            
+            # Calculate EMA of close prices (middle line)
+            ema = close.ewm(span=self.period).mean()
+            
+            # Calculate ATR
+            tr1 = high - low
+            tr2 = abs(high - close.shift(1))
+            tr3 = abs(low - close.shift(1))
+            true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+            atr = true_range.rolling(window=self.atr_period).mean()
+            
+            # Return middle line (EMA) as the main feature
+            # Upper and lower bands would be: ema ± (multiplier * atr)
+            return ema
+        else:
+            # For other base calculations, use EMA of base values
+            base_values = self.base_calculator.calculate(data)
+            ema = base_values.ewm(span=self.period).mean()
+            return ema
+
+
+def create_trend_generators(periods: Dict[str, List[int]] = None) -> List[FeatureGenerator]:
+    """Create a set of trend feature generators."""
+    if periods is None:
+        periods = {
+            'sma': [5, 10, 20, 50],
+            'ema': [12, 26],
+            'wma': [20],
+            'dema': [21],
+            'tema': [21],
+            'trima': [21],
+            'mama': [0.5, 0.05],
+            'vwma': [20],
+            'keltner_channels': [20]
+        }
+    
+    generators = []
+    
+    # SMA generators
+    for period in periods.get('sma', [20]):
+        generators.append(SMAGenerator(period))
+    
+    # EMA generators  
+    for period in periods.get('ema', [12, 26]):
+        generators.append(EMAGenerator(period))
+    
+    # WMA generators
+    for period in periods.get('wma', [20]):
+        generators.append(WMAGenerator(period))
+    
+    # DEMA generators
+    for period in periods.get('dema', [21]):
+        generators.append(DEMAGenerator(period))
+    
+    # TEMA generators
+    for period in periods.get('tema', [21]):
+        generators.append(TEMAGenerator(period))
+    
+    # TRIMA generators
+    for period in periods.get('trima', [21]):
+        generators.append(TRIMAGenerator(period))
+    
+    # VWMA generators
+    for period in periods.get('vwma', [20]):
+        generators.append(VWMAGenerator(period))
+    
+    # Keltner Channels generators
+    for period in periods.get('keltner_channels', [20]):
+        generators.append(KeltnerChannelsGenerator(period))
+    
+    return generators
+
+
+def create_default_trend_generators() -> List[FeatureGenerator]:
+    """Create default trend generators."""
+    return create_trend_generators()

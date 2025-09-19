@@ -33,15 +33,29 @@ try:
     from src.utils.common_operations import (
         validate_dataframe, validate_finite, validate_positive, validate_range, 
         safe_percentage_change, safe_json_dump, safe_json_load, safe_file_exists,
-        get_m1_gpu_manager, get_m1_memory_optimizer, get_m1_cpu_optimizer,
         gpu_context
     )
     EXTENDED_COMMON_OPS_AVAILABLE = True
 except ImportError:
     EXTENDED_COMMON_OPS_AVAILABLE = False
 
+# Import hardware optimization tools from hardware/ directory
+try:
+    from src.utils.hardware import (
+        get_advanced_memory_optimizer, get_enhanced_gpu_manager, get_advanced_cpu_optimizer,
+        get_unified_hardware_manager, optimize_dataframe_advanced,
+        AdvancedM1MemoryOptimizer, EnhancedM1GPUManager, AdvancedM1CPUOptimizer,
+        ADVANCED_MEMORY_AVAILABLE, ENHANCED_GPU_AVAILABLE, ADVANCED_CPU_AVAILABLE
+    )
+    HARDWARE_OPTIMIZATIONS_AVAILABLE = True
+except ImportError:
+    HARDWARE_OPTIMIZATIONS_AVAILABLE = False
+    ADVANCED_MEMORY_AVAILABLE = False
+    ENHANCED_GPU_AVAILABLE = False
+    ADVANCED_CPU_AVAILABLE = False
+
 from src.utils.math_validation import (
-    safe_divide as math_safe_divide, safe_log, safe_sqrt,
+    safe_divide as math_safe_divide, safe_divide, safe_log, safe_sqrt,
     validate_finite as math_validate_finite, validate_positive as math_validate_positive,
     validate_range as math_validate_range
 )
@@ -171,6 +185,28 @@ from sklearn.calibration import CalibratedClassifierCV
 from sklearn.metrics import log_loss
 
 
+# Custom exception classes for better error handling
+class HMMTrainingError(Exception):
+    """Base exception for HMM training errors."""
+    pass
+
+class HMMDataValidationError(HMMTrainingError):
+    """Exception raised for data validation errors."""
+    pass
+
+class HMMModelCreationError(HMMTrainingError):
+    """Exception raised for model creation errors."""
+    pass
+
+class HMMTrainingExecutionError(HMMTrainingError):
+    """Exception raised for training execution errors."""
+    pass
+
+class HMMResourceError(HMMTrainingError):
+    """Exception raised for resource management errors."""
+    pass
+
+
 class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
     """
     HMM Ensemble Training Component with per-regime ensemble training, HPO, saving, and metrics.
@@ -197,15 +233,20 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
             self.klines_manager = get_klines_manager() if KLINES_AVAILABLE else None
             self.evaluation_utils = EvaluationUtils() if ML_EVAL_AVAILABLE else None
             
-            # Initialize M1 hardware optimizers with availability checks
-            if EXTENDED_COMMON_OPS_AVAILABLE:
-                self.gpu_manager = get_m1_gpu_manager()
-                self.memory_optimizer = get_m1_memory_optimizer()
-                self.cpu_optimizer = get_m1_cpu_optimizer()
+            # Initialize advanced hardware optimizers from hardware/ directory
+            if HARDWARE_OPTIMIZATIONS_AVAILABLE:
+                # Use advanced hardware optimization tools
+                self.gpu_manager = get_enhanced_gpu_manager() if ENHANCED_GPU_AVAILABLE else None
+                self.memory_optimizer = get_advanced_memory_optimizer() if ADVANCED_MEMORY_AVAILABLE else None
+                self.cpu_optimizer = get_advanced_cpu_optimizer() if ADVANCED_CPU_AVAILABLE else None
+                self.unified_hardware_manager = get_unified_hardware_manager()
+                tprint("🚀 Advanced hardware optimizations loaded from hardware/ directory")
             else:
                 self.gpu_manager = None
                 self.memory_optimizer = None
                 self.cpu_optimizer = None
+                self.unified_hardware_manager = None
+                tprint("⚠️ Advanced hardware optimizations not available, using fallback")
             
             # Set default configuration for HMM ensemble models
             if config is None:
@@ -256,8 +297,13 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
                 'timeframe': config.timeframe,
                 'hardware_optimization': {
                     'gpu_available': self.gpu_manager is not None,
+                    'enhanced_gpu_available': ENHANCED_GPU_AVAILABLE,
                     'memory_optimizer_available': self.memory_optimizer is not None,
-                    'cpu_optimizer_available': self.cpu_optimizer is not None
+                    'advanced_memory_available': ADVANCED_MEMORY_AVAILABLE,
+                    'cpu_optimizer_available': self.cpu_optimizer is not None,
+                    'advanced_cpu_available': ADVANCED_CPU_AVAILABLE,
+                    'unified_hardware_manager_available': hasattr(self, 'unified_hardware_manager') and self.unified_hardware_manager is not None,
+                    'hardware_tools_source': 'hardware_directory' if HARDWARE_OPTIMIZATIONS_AVAILABLE else 'fallback'
                 }
             }
             
@@ -275,10 +321,233 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
             tprint(f"🔍 Traceback: {traceback.format_exc()}")
             raise RuntimeError(f"HMM Ensemble Training Component initialization failed: {e}") from e
 
-        # Placeholder for global regime classifier and metadata
+        # Thread-safe global regime classifier and metadata with locks
+        import threading
+        self._classifier_lock = threading.RLock()  # Re-entrant lock for thread safety
         self.global_regime_clf = None
         self.regime_classes_ = None
         self.global_calibration_ece = None
+        
+        # Memory management tracking
+        self._large_arrays = []  # Track large arrays for cleanup
+    
+    def cleanup_memory(self) -> None:
+        """
+        Explicitly cleanup large arrays and resources to prevent memory leaks.
+        Uses advanced memory optimization tools from hardware/ directory.
+        Should be called after training is complete.
+        """
+        try:
+            # Use advanced memory optimizer if available
+            if self.memory_optimizer and ADVANCED_MEMORY_AVAILABLE:
+                tprint("🧹 Using advanced memory optimizer for cleanup")
+                
+                # Track memory before cleanup
+                memory_before = self.memory_optimizer.get_memory_usage()
+                
+                # Clean up tracked large arrays using advanced optimizer
+                for array_name in self._large_arrays:
+                    if hasattr(self, array_name):
+                        array_obj = getattr(self, array_name)
+                        # Use advanced memory optimizer to clean up array
+                        self.memory_optimizer.cleanup_object(array_obj)
+                        delattr(self, array_name)
+                        tprint(f"🧹 Advanced cleanup of large array: {array_name}")
+                
+                # Clear the tracking list
+                self._large_arrays.clear()
+                
+                # Use advanced memory optimizer for global classifier cleanup
+                if hasattr(self, 'global_regime_clf') and self.global_regime_clf is not None:
+                    try:
+                        # Use memory optimizer to estimate and cleanup model
+                        if hasattr(self.global_regime_clf, 'n_features_in_') and self.global_regime_clf.n_features_in_ > 1000:
+                            self.memory_optimizer.cleanup_object(self.global_regime_clf)
+                            with self._classifier_lock:
+                                self.global_regime_clf = None
+                            tprint("🧹 Advanced cleanup of global regime classifier")
+                    except Exception as model_cleanup_error:
+                        tprint(f"⚠️ Advanced model cleanup warning: {model_cleanup_error}")
+                
+                # Trigger advanced garbage collection
+                collected = self.memory_optimizer.force_garbage_collection()
+                
+                # Track memory after cleanup
+                memory_after = self.memory_optimizer.get_memory_usage()
+                memory_freed = memory_before - memory_after
+                
+                tprint(f"🧹 Advanced memory cleanup completed:")
+                tprint(f"   • Objects collected: {collected}")
+                tprint(f"   • Memory freed: {memory_freed:.1f} MB")
+                
+            else:
+                # Fallback to basic cleanup
+                tprint("🧹 Using basic memory cleanup (advanced optimizer not available)")
+                
+                # Clean up tracked large arrays
+                for array_name in self._large_arrays:
+                    if hasattr(self, array_name):
+                        delattr(self, array_name)
+                        tprint(f"🧹 Cleaned up large array: {array_name}")
+                
+                # Clear the tracking list
+                self._large_arrays.clear()
+                
+                # Clear global classifier if no longer needed
+                if hasattr(self, 'global_regime_clf') and self.global_regime_clf is not None:
+                    # Only clear if it's a large model
+                    try:
+                        # Estimate model size (rough approximation)
+                        if hasattr(self.global_regime_clf, 'n_features_in_') and self.global_regime_clf.n_features_in_ > 1000:
+                            with self._classifier_lock:
+                                self.global_regime_clf = None
+                            tprint("🧹 Cleaned up global regime classifier")
+                    except:
+                        pass
+                
+                # Force garbage collection
+                import gc
+                collected = gc.collect()
+                if collected > 0:
+                    tprint(f"🧹 Memory cleanup completed: {collected} objects collected")
+            
+        except Exception as e:
+            tprint(f"⚠️ Memory cleanup warning: {e}")
+    
+    def __del__(self):
+        """Destructor to ensure cleanup on object deletion."""
+        try:
+            self.cleanup_memory()
+        except:
+            pass  # Ignore errors in destructor
+    
+    def _gpu_context_manager(self):
+        """Context manager for GPU resource management using enhanced GPU manager from hardware/."""
+        from contextlib import contextmanager
+        
+        @contextmanager
+        def gpu_resource_context():
+            gpu_acquired = False
+            memory_pool_created = False
+            try:
+                # Acquire GPU resources using enhanced GPU manager if available
+                if self.gpu_manager and ENHANCED_GPU_AVAILABLE:
+                    try:
+                        tprint("🎮 Using enhanced GPU manager from hardware/ directory")
+                        
+                        # Initialize enhanced GPU context with memory pooling
+                        if hasattr(self.gpu_manager, 'initialize_enhanced_context'):
+                            self.gpu_manager.initialize_enhanced_context()
+                        elif hasattr(self.gpu_manager, 'initialize_context'):
+                            self.gpu_manager.initialize_context()
+                        
+                        # Create memory pool for efficient GPU memory management
+                        if hasattr(self.gpu_manager, 'create_memory_pool'):
+                            pool_config = {
+                                'initial_size_mb': 100.0,
+                                'max_size_mb': 1000.0,
+                                'enable_auto_cleanup': True
+                            }
+                            self.gpu_manager.create_memory_pool('hmm_training', **pool_config)
+                            memory_pool_created = True
+                            tprint("🏊 GPU memory pool created for efficient memory management")
+                        
+                        gpu_acquired = True
+                        tprint("🎮 Enhanced GPU resources acquired successfully")
+                        
+                    except Exception as e:
+                        tprint(f"⚠️ Enhanced GPU acquisition failed: {e}")
+                        gpu_acquired = False
+                        
+                elif self.gpu_manager:
+                    # Fallback to basic GPU manager
+                    try:
+                        tprint("🎮 Using basic GPU manager (enhanced not available)")
+                        if hasattr(self.gpu_manager, 'initialize_context'):
+                            self.gpu_manager.initialize_context()
+                        gpu_acquired = True
+                        tprint("🎮 Basic GPU resources acquired successfully")
+                    except Exception as e:
+                        tprint(f"⚠️ Basic GPU acquisition failed: {e}")
+                        gpu_acquired = False
+                
+                yield gpu_acquired
+                
+            finally:
+                # Always cleanup GPU resources using enhanced methods
+                if gpu_acquired and self.gpu_manager:
+                    try:
+                        if ENHANCED_GPU_AVAILABLE:
+                            # Enhanced cleanup
+                            if memory_pool_created and hasattr(self.gpu_manager, 'cleanup_memory_pool'):
+                                self.gpu_manager.cleanup_memory_pool('hmm_training')
+                                tprint("🧹 GPU memory pool cleaned up")
+                            
+                            if hasattr(self.gpu_manager, 'cleanup_enhanced_context'):
+                                self.gpu_manager.cleanup_enhanced_context()
+                            elif hasattr(self.gpu_manager, 'cleanup_gpu_memory'):
+                                self.gpu_manager.cleanup_gpu_memory()
+                                
+                            if hasattr(self.gpu_manager, 'force_memory_cleanup'):
+                                freed_mb = self.gpu_manager.force_memory_cleanup()
+                                tprint(f"🧹 Enhanced GPU cleanup: {freed_mb:.1f} MB freed")
+                            
+                            tprint("🧹 Enhanced GPU resources cleaned up successfully")
+                        else:
+                            # Basic cleanup
+                            if hasattr(self.gpu_manager, 'cleanup_gpu_memory'):
+                                self.gpu_manager.cleanup_gpu_memory()
+                            if hasattr(self.gpu_manager, 'cleanup_context'):
+                                self.gpu_manager.cleanup_context()
+                            tprint("🧹 Basic GPU resources cleaned up successfully")
+                            
+                    except Exception as cleanup_error:
+                        tprint(f"⚠️ GPU cleanup warning: {cleanup_error}")
+        
+        return gpu_resource_context()
+    
+    def _safe_file_operations(self, filepath, mode='r'):
+        """Context manager for safe file operations with proper error handling."""
+        from contextlib import contextmanager
+        
+        @contextmanager
+        def safe_file_context():
+            file_handle = None
+            try:
+                file_handle = open(filepath, mode)
+                yield file_handle
+            except IOError as e:
+                tprint(f"⚠️ File operation failed for {filepath}: {e}")
+                raise HMMResourceError(f"File operation failed for {filepath}: {e}") from e
+            except Exception as e:
+                tprint(f"⚠️ Unexpected error during file operation for {filepath}: {e}")
+                raise HMMResourceError(f"Unexpected error during file operation: {e}") from e
+            finally:
+                if file_handle and not file_handle.closed:
+                    try:
+                        file_handle.close()
+                        tprint(f"🗂️ File closed safely: {filepath}")
+                    except Exception as close_error:
+                        tprint(f"⚠️ Warning: Error closing file {filepath}: {close_error}")
+        
+        return safe_file_context()
+    
+    def _set_global_classifier_thread_safe(self, classifier, regime_classes, calibration_ece=None):
+        """Thread-safe setter for global classifier and related metadata."""
+        with self._classifier_lock:
+            self.global_regime_clf = classifier
+            self.regime_classes_ = regime_classes
+            if calibration_ece is not None:
+                self.global_calibration_ece = calibration_ece
+    
+    def _get_global_classifier_thread_safe(self):
+        """Thread-safe getter for global classifier and related metadata."""
+        with self._classifier_lock:
+            return {
+                'classifier': self.global_regime_clf,
+                'classes': self.regime_classes_,
+                'ece': self.global_calibration_ece
+            }
     
     def _validate_config(self, config: EnsembleTrainingConfig) -> None:
         """
@@ -304,13 +573,13 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
             
             if not model_list or len(model_list) == 0:
                 tprint("❌ CRITICAL: No base models specified - FAILING FAST")
-                raise ValueError("At least one base model type must be specified in 'base_models' attribute")
+                raise HMMDataValidationError("At least one base model type must be specified in 'base_models' attribute")
             
             # Validate timeframe - FAST FAIL
             valid_timeframes = ["1m", "5m", "15m", "30m", "1h", "4h", "1d"]
             if not config.timeframe or config.timeframe not in valid_timeframes:
                 tprint(f"❌ CRITICAL: Invalid timeframe '{config.timeframe}' - FAILING FAST")
-                raise ValueError(f"Invalid timeframe '{config.timeframe}' - must be one of: {valid_timeframes}")
+                raise HMMDataValidationError(f"Invalid timeframe '{config.timeframe}' - must be one of: {valid_timeframes}")
             
             # Validate HPO parameters using math validation utilities - FAST FAIL
             if hasattr(config, 'enable_hpo') and config.enable_hpo:
@@ -321,7 +590,7 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
                         )
                     except ValueError as e:
                         tprint(f"❌ CRITICAL: HPO trials validation failed - FAILING FAST")
-                        raise ValueError(f"HPO trials must be positive: {e}") from e
+                        raise HMMDataValidationError(f"HPO trials must be positive: {e}") from e
                     
                     try:
                         config.hpo_timeout_seconds = self.math_validator.validate_positive(
@@ -329,13 +598,13 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
                         )
                     except ValueError as e:
                         tprint(f"❌ CRITICAL: HPO timeout validation failed - FAILING FAST")
-                        raise ValueError(f"HPO timeout must be positive: {e}") from e
+                        raise HMMDataValidationError(f"HPO timeout must be positive: {e}") from e
                 else:
                     # Fallback validation without math validator
                     if not hasattr(config, 'hpo_n_trials') or config.hpo_n_trials <= 0:
-                        raise ValueError("HPO trials must be positive")
+                        raise HMMDataValidationError("HPO trials must be positive")
                     if not hasattr(config, 'hpo_timeout_seconds') or config.hpo_timeout_seconds <= 0:
-                        raise ValueError("HPO timeout must be positive")
+                        raise HMMDataValidationError("HPO timeout must be positive")
             
             # Validate minimum samples using math validation utilities - FAST FAIL
             if self.math_validator:
@@ -345,11 +614,11 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
                     )
                 except ValueError as e:
                     tprint(f"❌ CRITICAL: Minimum samples validation failed - FAILING FAST")
-                    raise ValueError(f"Minimum samples per regime must be positive: {e}") from e
+                    raise HMMDataValidationError(f"Minimum samples per regime must be positive: {e}") from e
             else:
                 # Fallback validation
                 if not hasattr(config, 'min_samples_per_regime') or config.min_samples_per_regime <= 0:
-                    raise ValueError("Minimum samples per regime must be positive")
+                    raise HMMDataValidationError("Minimum samples per regime must be positive")
             
             # Validate save path using common utilities - WARNING ONLY
             if hasattr(config, 'save_models') and config.save_models and hasattr(config, 'model_save_path') and config.model_save_path:
@@ -392,34 +661,34 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
             if X.shape[0] != y.shape[0] or X.shape[0] != regime_labels.shape[0]:
                 tprint(f"❌ CRITICAL: Data shape mismatch - FAILING FAST")
                 tprint(f"   X={X.shape}, y={y.shape}, regimes={regime_labels.shape}")
-                raise ValueError(f"Data shape mismatch: X={X.shape}, y={y.shape}, regimes={regime_labels.shape}")
+                raise HMMDataValidationError(f"Data shape mismatch: X={X.shape}, y={y.shape}, regimes={regime_labels.shape}")
             
             # Check for empty data - FAST FAIL
             if X.shape[0] == 0:
                 tprint("❌ CRITICAL: Input data is empty - FAILING FAST")
-                raise ValueError("Input data is empty")
+                raise HMMDataValidationError("Input data is empty")
             
             # Check for NaN values using math validation utilities - FAST FAIL
             if np.isnan(X).any():
                 nan_count = np.isnan(X).sum()
                 tprint(f"❌ CRITICAL: Found {nan_count} NaN values in input features - FAILING FAST")
-                raise ValueError(f"Input data contains {nan_count} NaN values - training cannot proceed")
+                raise HMMDataValidationError(f"Input data contains {nan_count} NaN values - training cannot proceed")
             
             if np.isnan(y).any():
                 nan_count = np.isnan(y).sum()
                 tprint(f"❌ CRITICAL: Found {nan_count} NaN values in target values - FAILING FAST")
-                raise ValueError(f"Target data contains {nan_count} NaN values - training cannot proceed")
+                raise HMMDataValidationError(f"Target data contains {nan_count} NaN values - training cannot proceed")
             
             # Check for infinite values using math validation utilities - FAST FAIL
             if np.isinf(X).any():
                 inf_count = np.isinf(X).sum()
                 tprint(f"❌ CRITICAL: Found {inf_count} infinite values in input features - FAILING FAST")
-                raise ValueError(f"Input data contains {inf_count} infinite values - training cannot proceed")
+                raise HMMDataValidationError(f"Input data contains {inf_count} infinite values - training cannot proceed")
             
             if np.isinf(y).any():
                 inf_count = np.isinf(y).sum()
                 tprint(f"❌ CRITICAL: Found {inf_count} infinite values in target values - FAILING FAST")
-                raise ValueError(f"Target data contains {inf_count} infinite values - training cannot proceed")
+                raise HMMDataValidationError(f"Target data contains {inf_count} infinite values - training cannot proceed")
             
             # Validate finite values using optimized vectorized approach with fallbacks
             try:
@@ -435,11 +704,27 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
                 
                 # Additional validation using math validator if available
                 if self.math_validator and X.shape[0] > 0 and X.shape[1] > 0:
-                    # Test a few representative values with math validator
-                    sample_indices = [0, X.shape[0]//2, X.shape[0]-1] if X.shape[0] >= 3 else [0]
+                    # Test a few representative values with math validator - with proper bounds checking
+                    sample_indices = []
+                    if X.shape[0] >= 1:
+                        sample_indices.append(0)
+                    if X.shape[0] >= 2:
+                        sample_indices.append(X.shape[0]//2)
+                    if X.shape[0] >= 3:
+                        sample_indices.append(X.shape[0]-1)
+                    
+                    feature_indices = []
+                    if X.shape[1] >= 1:
+                        feature_indices.append(0)
+                    if X.shape[1] >= 2:
+                        feature_indices.append(X.shape[1]//2)
+                    if X.shape[1] >= 3:
+                        feature_indices.append(X.shape[1]-1)
+                    
                     for i in sample_indices:
-                        for j in [0, X.shape[1]//2, X.shape[1]-1] if X.shape[1] >= 3 else [0]:
-                            self.math_validator.validate_finite(X[i, j], f"X[{i},{j}]")
+                        for j in feature_indices:
+                            if 0 <= i < X.shape[0] and 0 <= j < X.shape[1]:
+                                self.math_validator.validate_finite(X[i, j], f"X[{i},{j}]")
                 elif not self.math_validator:
                     # Fallback validation when math validator is not available
                     tprint("ℹ️ Using fallback finite validation (math validator not available)")
@@ -634,6 +919,12 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
                 except Exception as e:
                     tprint(f"⚠️ Could not compute regime probabilities automatically: {e}")
                 
+                # Cleanup memory before returning results
+                try:
+                    self.cleanup_memory()
+                except Exception as cleanup_error:
+                    tprint(f"⚠️ Memory cleanup warning during successful completion: {cleanup_error}")
+                
                 return results
                 
             except Exception as e:
@@ -641,6 +932,12 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
                 error_msg = f"HMM ensemble training failed after {execution_time:.2f}s: {e}"
                 tprint(f"❌ {error_msg}")
                 tprint(f"🔍 Traceback: {traceback.format_exc()}")
+                
+                # Cleanup memory even on failure
+                try:
+                    self.cleanup_memory()
+                except Exception as cleanup_error:
+                    tprint(f"⚠️ Memory cleanup warning during error: {cleanup_error}")
                 
                 return {
                     'error': error_msg,
@@ -679,7 +976,25 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
             
             # Normalize features using matrix operations with fallback
             # Note: X.shape[1] > 0 check is redundant since earlier validation ensures non-empty data
-            if self.matrix_ops is not None:
+            # Use advanced memory optimizer for dataframe operations if available
+            if self.memory_optimizer and ADVANCED_MEMORY_AVAILABLE:
+                try:
+                    X_normalized = optimize_dataframe_advanced(X, operation='normalize', method='standard')
+                    tprint(f"✅ Features normalized using advanced memory optimizer: {X_normalized.shape}")
+                except Exception as e:
+                    tprint(f"⚠️ Advanced normalization failed: {e}, falling back to matrix operations")
+                    # Fallback to matrix operations
+                    if self.matrix_ops is not None:
+                        X_normalized = self.matrix_ops.normalize_matrix(X, method='zscore')
+                        tprint(f"✅ Features normalized using matrix operations: {X_normalized.shape}")
+                    else:
+                        # Final fallback to standard sklearn normalization
+                        tprint("⚠️ Matrix operations not available, using fallback normalization")
+                        from sklearn.preprocessing import StandardScaler
+                        scaler = StandardScaler()
+                        X_normalized = scaler.fit_transform(X)
+                        tprint(f"✅ Features normalized using fallback StandardScaler: {X_normalized.shape}")
+            elif self.matrix_ops is not None:
                 X_normalized = self.matrix_ops.normalize_matrix(X, method='zscore')
                 tprint(f"✅ Features normalized using matrix operations: {X_normalized.shape}")
             else:
@@ -690,34 +1005,25 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
                 X_normalized = scaler.fit_transform(X)
                 tprint(f"✅ Features normalized using fallback StandardScaler: {X_normalized.shape}")
             
-            # Use GPU context if available for large datasets with proper cleanup
+            # Use GPU context if available for large datasets with proper resource management
             if self.gpu_manager and X.shape[0] > 10000:
-                try:
-                    if EXTENDED_COMMON_OPS_AVAILABLE:
-                        with gpu_context("hmm_ensemble_training"):
+                with self._gpu_context_manager() as gpu_acquired:
+                    if gpu_acquired and EXTENDED_COMMON_OPS_AVAILABLE:
+                        try:
+                            with gpu_context("hmm_ensemble_training"):
+                                results = self._execute_training_core(
+                                    X_normalized, y, regime_labels, feature_names, hmm_states, base_hmm_models
+                                )
+                        except Exception as e:
+                            tprint(f"⚠️ GPU execution failed, falling back to CPU: {e}")
                             results = self._execute_training_core(
                                 X_normalized, y, regime_labels, feature_names, hmm_states, base_hmm_models
                             )
                     else:
-                        # Fallback without GPU context
+                        # GPU not available or no extended ops, use CPU
                         results = self._execute_training_core(
                             X_normalized, y, regime_labels, feature_names, hmm_states, base_hmm_models
                         )
-                except Exception as e:
-                    tprint(f"⚠️ GPU context failed, falling back to CPU: {e}")
-
-                    results = self._execute_training_core(
-                        X_normalized, y, regime_labels, feature_names, hmm_states, base_hmm_models
-                    )
-                finally:
-                    # Ensure GPU resources are cleaned up
-                    if self.gpu_manager:
-                        try:
-                            # Force GPU memory cleanup if available
-                            if hasattr(self.gpu_manager, 'cleanup_gpu_memory'):
-                                self.gpu_manager.cleanup_gpu_memory()
-                        except Exception as cleanup_error:
-                            tprint(f"⚠️ GPU cleanup warning: {cleanup_error}")
             else:
                 results = self._execute_training_core(
                     X_normalized, y, regime_labels, feature_names, hmm_states, base_hmm_models
@@ -803,7 +1109,12 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
                                         regime_y = y[regime_mask]
                                         try:
                                             y_proba = model_obj.predict_proba(regime_X)
-                                            if y_proba is not None and y_proba.ndim == 2 and y_proba.shape[1] >= 2:
+                                            # Enhanced bounds checking for probability arrays
+                                            if (y_proba is not None and 
+                                                y_proba.ndim == 2 and 
+                                                y_proba.shape[1] >= 2 and 
+                                                y_proba.shape[0] == len(regime_y) and
+                                                len(unique_classes) == 2):  # Ensure binary classification
                                                 roc_auc = _roc_auc_score(regime_y, y_proba[:, 1])
                                                 if isinstance(results['evaluation_results'].get(regime), dict):
                                                     results['evaluation_results'][regime]['roc_auc'] = float(roc_auc)
@@ -833,8 +1144,10 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
         Meta learners: XGBoostClassifier, CatBoostClassifier, ElasticNet.
         Includes regime-specific features and base model outputs.
         """
-        # Determine classes
-        self.regime_classes_ = np.unique(regime_labels)
+        # Determine classes (thread-safe)
+        regime_classes = np.unique(regime_labels)
+        with self._classifier_lock:
+            self.regime_classes_ = regime_classes
         tprint(f"📊 Training ensemble with {len(self.regime_classes_)} classes: {self.regime_classes_}")
 
         # Create enhanced features including regime-specific features
@@ -845,12 +1158,21 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
         X_enhanced = self._create_enhanced_features(X, regime_labels)
         self._enhanced_feature_count = X_enhanced.shape[1]
         self._X_enhanced = X_enhanced  # Store for later use
+        
+        # Track large arrays for memory management
+        if X_enhanced.nbytes > 50 * 1024 * 1024:  # Track arrays > 50MB
+            self._large_arrays.append('_X_enhanced')
         feature_duration = time_module.time() - feature_start_time
         
         tprint(f"📊 Enhanced features created in {feature_duration:.2f}s:")
         tprint(f"   • Original features: {X.shape[1]}")
         tprint(f"   • Enhanced features: {X_enhanced.shape[1]}")
-        tprint(f"   • Feature expansion: {X_enhanced.shape[1] / X.shape[1]:.2f}x")
+        # Use safe_divide to prevent division by zero
+        if self.math_validator:
+            feature_expansion = self.math_validator.safe_divide(X_enhanced.shape[1], X.shape[1], 1.0)
+        else:
+            feature_expansion = safe_divide(X_enhanced.shape[1], X.shape[1], 1.0)
+        tprint(f"   • Feature expansion: {feature_expansion:.2f}x")
         tprint(f"   • Data shape: {X_enhanced.shape}")
         tprint(f"   • Memory usage: ~{X_enhanced.nbytes / 1024**2:.1f} MB")
 
@@ -931,7 +1253,8 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
         valid_models = {k: v for k, v in self.meta_model_results.items() if 'error' not in v}
         if not valid_models:
             tprint("❌ No meta models trained successfully")
-            self.global_regime_clf = None
+            with self._classifier_lock:
+                self.global_regime_clf = None
             return
         
         # Sort by accuracy (descending), then by training time (ascending) for tiebreaker
@@ -964,15 +1287,17 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
         optimized_model = self._run_meta_model_hpo(best_meta_model, X_enhanced, regime_labels, base_estimators)
         hpo_phase_duration = time.time() - hpo_phase_start
         
-        if optimized_model:
-            self.global_regime_clf = optimized_model
-            tprint(f"✅ HPO phase completed successfully in {hpo_phase_duration:.2f}s")
-            tprint(f"🏆 Final optimized model: {best_meta_model}")
-        else:
-            # Fallback to non-optimized best model
-            self.global_regime_clf = self.meta_model_classifiers[best_meta_model]
-            tprint(f"⚠️ HPO failed after {hpo_phase_duration:.2f}s, using non-optimized {best_meta_model}")
-            tprint(f"📋 Fallback model performance: {valid_models[best_meta_model]['cv_accuracy_mean']:.4f} CV accuracy")
+        # Thread-safe assignment of the final classifier
+        with self._classifier_lock:
+            if optimized_model:
+                self.global_regime_clf = optimized_model
+                tprint(f"✅ HPO phase completed successfully in {hpo_phase_duration:.2f}s")
+                tprint(f"🏆 Final optimized model: {best_meta_model}")
+            else:
+                # Fallback to non-optimized best model
+                self.global_regime_clf = self.meta_model_classifiers[best_meta_model]
+                tprint(f"⚠️ HPO failed after {hpo_phase_duration:.2f}s, using non-optimized {best_meta_model}")
+                tprint(f"📋 Fallback model performance: {valid_models[best_meta_model]['cv_accuracy_mean']:.4f} CV accuracy")
 
     def _expected_calibration_error(self, y_true: np.ndarray, proba: np.ndarray, n_bins: int = 15) -> float:
         """Compute multiclass ECE on probability simplex."""
@@ -1000,21 +1325,26 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
         Predict calibrated regime probabilities and entropy using the global stacked classifier.
         Returns dict with 'proba', 'entropy', 'classes'.
         """
-        if self.global_regime_clf is None:
+        # Thread-safe access to classifier
+        classifier_info = self._get_global_classifier_thread_safe()
+        if classifier_info['classifier'] is None:
             raise RuntimeError("Global regime classifier not trained")
-        proba = self.global_regime_clf.predict_proba(X)
+        proba = classifier_info['classifier'].predict_proba(X)
         # Entropy
         eps = 1e-12
         p_safe = np.clip(proba, eps, 1.0)
         ent = -np.sum(p_safe * np.log(p_safe), axis=1)
-        # Normalize by log(K) for [0,1]
+        # Normalize by log(K) for [0,1] using safe division
         k = proba.shape[1]
-        ent_norm = ent / np.log(k) if k > 1 else ent
+        if self.math_validator:
+            ent_norm = self.math_validator.safe_divide(ent, np.log(k), ent) if k > 1 else ent
+        else:
+            ent_norm = safe_divide(ent, np.log(k), ent) if k > 1 else ent
         return {
             'proba': proba,
             'entropy': ent_norm,
-            'classes': self.regime_classes_.tolist() if self.regime_classes_ is not None else None,
-            'ece_train': float(self.global_calibration_ece) if self.global_calibration_ece is not None else None
+            'classes': classifier_info['classes'].tolist() if classifier_info['classes'] is not None else None,
+            'ece_train': float(classifier_info['ece']) if classifier_info['ece'] is not None else None
         }
     
     def _create_base_models_for_ensemble(self) -> Dict[str, Any]:
@@ -2089,8 +2419,18 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
                         
                         if hasattr(model, 'predict_proba'):
                             pred = model.predict_proba(X)
-                            if pred.ndim > 1 and pred.shape[1] > 1:
+                            # Enhanced bounds checking for prediction arrays
+                            if (pred is not None and 
+                                pred.ndim > 1 and 
+                                pred.shape[1] > 1 and 
+                                pred.shape[0] == X.shape[0]):  # Ensure prediction matches input size
                                 pred = pred[:, 1]  # Use positive class probability
+                            elif pred is not None and pred.ndim == 1:
+                                # Handle 1D predictions
+                                pass
+                            else:
+                                tprint(f"   ⚠️ Invalid prediction shape from {name}: {pred.shape if pred is not None else 'None'}")
+                                continue
                         else:
                             pred = model.predict(X)
                         base_preds.append(pred)

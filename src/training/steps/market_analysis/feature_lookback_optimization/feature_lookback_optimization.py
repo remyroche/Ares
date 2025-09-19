@@ -183,6 +183,17 @@ except ImportError as e:
     MRMR_OPTIMIZER_AVAILABLE = False
     tprint(f"⚠️ MRMR lookback optimizer not available: {e}")
 
+# Import Directional lookback optimizer
+try:
+    from .directional_lookback_optimizer import (
+        DirectionalLookbackOptimizer, DirectionalLookbackConfig, DirectionalOptimizationResult,
+        optimize_features_directional
+    )
+    DIRECTIONAL_OPTIMIZER_AVAILABLE = True
+except ImportError as e:
+    DIRECTIONAL_OPTIMIZER_AVAILABLE = False
+    tprint(f"⚠️ Directional lookback optimizer not available: {e}")
+
 # Import configuration constants
 from .constants import (
     OPTIMIZATION_CONSTANTS, PERFORMANCE_CONSTANTS, VALIDATION_CONSTANTS,
@@ -362,6 +373,24 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
                 tprint("✅ MRMR lookback optimizer initialized")
             except Exception as e:
                 tprint(f"⚠️ Failed to initialize MRMR optimizer: {e}")
+        
+        # Initialize Directional optimizer if available
+        self.directional_optimizer = None
+        if DIRECTIONAL_OPTIMIZER_AVAILABLE:
+            try:
+                directional_config = DirectionalLookbackConfig(
+                    min_lookback=5,
+                    max_lookback=50,
+                    target_total_features=80,  # Target 80 features total (40 long + 40 short)
+                    max_features_per_direction=50,
+                    enable_directional=True,
+                    parallel_optimization=True,
+                    cross_directional_analysis=True
+                )
+                self.directional_optimizer = DirectionalLookbackOptimizer(config=directional_config)
+                tprint("✅ Directional lookback optimizer initialized")
+            except Exception as e:
+                tprint(f"⚠️ Failed to initialize Directional optimizer: {e}")
         
         # Initialize ML common utilities if available
         if ML_COMMON_AVAILABLE:
@@ -1715,12 +1744,44 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
             else:
                 tprint('🚀 Executing feature optimization...')
                 
-                # Check if we can use directional optimization with MRMR
-                if MRMR_OPTIMIZER_AVAILABLE and self.mrmr_optimizer:
+                # Check if we can use the new directional optimization approach
+                enable_directional = getattr(config, 'enable_directional_optimization', True)
+                use_new_directional = getattr(config, 'use_new_directional_approach', True)
+                
+                if DIRECTIONAL_OPTIMIZER_AVAILABLE and self.directional_optimizer and enable_directional and use_new_directional:
+                    tprint('🎯 Using NEW directional optimization (1 period per feature per direction)...')
+                    
+                    # Extract feature columns from prepared data
+                    feature_columns = [col for col in prepared_data.columns 
+                                     if col not in ['returns', 'close_return', 'close_log_return', 'target', 'label', 'signal_direction']]
+                    
+                    # Find optimal target column
+                    target_column = self._select_optimal_target_column(prepared_data)
+                    
+                    # Limit features to prevent excessive computation
+                    max_features_to_optimize = getattr(config, 'max_features_to_optimize', 30)
+                    feature_columns = feature_columns[:max_features_to_optimize]
+                    
+                    # Run new directional optimization
+                    directional_result = self.directional_optimizer.optimize_features_directional(
+                        data=prepared_data,
+                        feature_columns=feature_columns,
+                        target_column=target_column
+                    )
+                    
+                    # Convert to standard format for compatibility
+                    optimization_result = self._convert_new_directional_to_standard_format(directional_result)
+                    optimization_result['optimization_method'] = 'new_directional_single_period'
+                    optimization_result['directional_analysis'] = directional_result.to_dict()
+                    
+                    tprint(f'✅ NEW directional optimization completed: {directional_result.final_feature_count} features '
+                           f'({len(directional_result.selected_long_features)} long + {len(directional_result.selected_short_features)} short)')
+                    
+                elif MRMR_OPTIMIZER_AVAILABLE and self.mrmr_optimizer:
                     enable_directional = getattr(config, 'enable_directional_optimization', True)
                     
                     if enable_directional:
-                        tprint('🎯 Using directional MRMR optimization...')
+                        tprint('🎯 Using LEGACY directional MRMR optimization (2 periods per feature)...')
                         
                         # Extract feature columns from prepared data
                         feature_columns = [col for col in prepared_data.columns 
@@ -1773,9 +1834,9 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
                         
                         # Convert directional result to standard format
                         optimization_result = self._convert_directional_to_standard_format(directional_result)
-                        optimization_result['optimization_method'] = 'directional_mrmr'
+                        optimization_result['optimization_method'] = 'legacy_directional_mrmr'
                         optimization_result['intelligent_feature_selection'] = feature_selection_result
-                        tprint('✅ Directional MRMR optimization with intelligent feature selection completed')
+                        tprint('✅ LEGACY Directional MRMR optimization with intelligent feature selection completed')
                     else:
                         # Fall back to standard optimization
                         optimization_result = await feature_optimizer.optimize_features(prepared_data, config)
@@ -3258,6 +3319,65 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
             tprint(f"❌ Error generating directional optimization summary: {e}")
             return {'error': str(e)}
     
+    def _convert_new_directional_to_standard_format(self, directional_result: DirectionalOptimizationResult) -> Dict[str, Any]:
+        """Convert new directional optimization result to standard format."""
+        try:
+            # Get all selected features
+            all_selected_features = directional_result.get_all_selected_features()
+            
+            # Create optimized_features dictionary in standard format
+            optimized_features = {}
+            
+            for feature_key, feature_result in all_selected_features.items():
+                optimized_features[feature_key] = {
+                    'lookback': feature_result.optimal_lookback_period,
+                    'score': feature_result.mutual_info_score,
+                    'direction': feature_result.direction,
+                    'method': 'new_directional_single_period',
+                    'optimization_time': feature_result.optimization_time,
+                    'sample_count': feature_result.sample_count,
+                    'convergence_achieved': feature_result.convergence_achieved,
+                    'cross_validation_score': feature_result.cross_validation_score,
+                    'stability_score': feature_result.stability_score
+                }
+            
+            # Create standard result format
+            standard_result = {
+                'optimized_features': optimized_features,
+                'best_lookback_period': self._get_best_lookback_from_directional(all_selected_features),
+                'best_score': directional_result.average_mutual_info_score,
+                'optimization_method': 'new_directional_single_period',
+                'total_features_optimized': directional_result.final_feature_count,
+                'optimization_time': directional_result.total_optimization_time,
+                'convergence_rate': directional_result.convergence_rate,
+                'directional_balance_ratio': directional_result.directional_balance_ratio,
+                'feature_selection_quality': directional_result.feature_selection_quality,
+                'directional_differences': directional_result.directional_differences,
+                'complementary_features': directional_result.complementary_features
+            }
+            
+            return standard_result
+            
+        except Exception as e:
+            tprint(f"❌ Error converting new directional result to standard format: {e}")
+            return {
+                'optimized_features': {},
+                'best_lookback_period': 20,
+                'best_score': 0.0,
+                'optimization_method': 'new_directional_error',
+                'error': str(e)
+            }
+    
+    def _get_best_lookback_from_directional(self, selected_features: Dict[str, Any]) -> int:
+        """Get the best lookback period from directional features."""
+        if not selected_features:
+            return 20  # Default fallback
+        
+        # Find feature with highest mutual information score
+        best_feature = max(selected_features.values(), 
+                          key=lambda x: getattr(x, 'mutual_info_score', 0))
+        return getattr(best_feature, 'optimal_lookback_period', 20)
+
     def _convert_directional_to_standard_format(self, directional_result: Dict[str, Any]) -> Dict[str, Any]:
         """
         Convert directional optimization results to standard format expected by the pipeline.

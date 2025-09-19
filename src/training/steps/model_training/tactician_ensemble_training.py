@@ -11,7 +11,7 @@ Enhanced Features:
 - XGBoost + RandomForest + CatBoost + Elastic Net base models with LightGBM meta-learner
 - All-regime training but only on Analyst green light periods
 - Runs every 30 seconds for live trading
-- Decides WHEN we trade based on expected 0.5% price change
+- Decides WHEN we trade based on expected 0.3% price change (micro movements)
 
 ENHANCED FEATURES:
 - Comprehensive error handling with detailed failure reporting
@@ -173,7 +173,7 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
     - XGBoost + RandomForest + CatBoost + Elastic Net base models with LightGBM meta-learner
     - All-regime training but only on Analyst green light periods
     - Runs every 30 seconds for live trading
-    - Decides WHEN we trade based on expected 0.5% price change
+    - Decides WHEN we trade based on expected 0.3% price change (micro movements)
     
     The Tactician Ensemble operates on 1m timeframe and combines individual tactician models
     with all previous model inputs (HMM, Analyst) to create the final meta-learner for timing decisions.
@@ -431,11 +431,11 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
         - HMM + Analyst outputs integration for comprehensive context
         - XGBoost + RandomForest + CatBoost + Elastic Net base models with LightGBM meta-learner
         - All-regime training but only on Analyst green light periods
-        - Decides WHEN we trade based on expected 0.5% price change
+        - Decides WHEN we trade based on expected 0.3% price change (micro movements)
         
         Args:
             X: Input features (1m timeframe with cross-timeframe features, 50+ features)
-            y: Target values (tactician outputs - timing decisions for 0.5% price change)
+            y: Target values (tactician outputs - timing decisions for 0.3% micro price movements)
             regime_labels: Regime labels for each sample
             feature_names: Names of input features
             hmm_states: HMM cluster/regime states

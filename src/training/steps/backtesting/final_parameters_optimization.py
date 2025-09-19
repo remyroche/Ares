@@ -641,11 +641,22 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 'tactician_confidence_weight': {'type': 'float', 'min': 0.3, 'max': 0.8},
                 'analyst_confidence_weight': {'type': 'float', 'min': 0.2, 'max': 0.7},
                 'confidence_combination_method': {'type': 'categorical', 'choices': ['multiplicative', 'logarithmic', 'harmonic', 'weighted_average']},
-                # Exit-specific confidence parameters
+                # 0.3% Micro Movement Entry Thresholds
+                'micro_immediate_long_threshold': {'type': 'float', 'min': 0.65, 'max': 0.85},
+                'micro_immediate_short_threshold': {'type': 'float', 'min': 0.68, 'max': 0.88},
+                'micro_short_long_threshold': {'type': 'float', 'min': 0.60, 'max': 0.80},
+                'micro_short_short_threshold': {'type': 'float', 'min': 0.63, 'max': 0.83},
+                # Exit-specific confidence parameters for 0.3% micro movements
                 'exit_confidence_threshold': {'type': 'float', 'min': 0.3, 'max': 0.7},
                 'tactician_exit_confidence_weight': {'type': 'float', 'min': 0.4, 'max': 0.8},
                 'analyst_exit_confidence_weight': {'type': 'float', 'min': 0.2, 'max': 0.6},
-                'exit_confidence_combination_method': {'type': 'categorical', 'choices': ['multiplicative', 'logarithmic', 'weighted_average']}
+                'exit_confidence_combination_method': {'type': 'categorical', 'choices': ['multiplicative', 'logarithmic', 'weighted_average']},
+                # 0.3% Micro Movement Exit Thresholds
+                'exit_micro_immediate_long_threshold': {'type': 'float', 'min': 0.25, 'max': 0.55},
+                'exit_micro_immediate_short_threshold': {'type': 'float', 'min': 0.20, 'max': 0.50},
+                'exit_micro_short_long_threshold': {'type': 'float', 'min': 0.30, 'max': 0.60},
+                'exit_micro_short_short_threshold': {'type': 'float', 'min': 0.25, 'max': 0.55},
+                'directional_confidence_min': {'type': 'float', 'min': 0.05, 'max': 0.20}
             },
             'intensity': {
                 # Signal intensity and strength parameters

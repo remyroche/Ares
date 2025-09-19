@@ -796,8 +796,8 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
                 'note': 'True 3D regime space with separate dimensional HMMs'
             }
             
-            # Calculate actual feature offset based on max rolling window (3h max as per requirements)
-            max_lookback = 3  # Maximum 3h lookback as specified
+            # Calculate actual feature offset based on max rolling window (balanced approach)
+            max_lookback = 12  # Maximum lookback window (for volatility statistical significance)
             feature_offset = max_lookback
             
             # Preserve original index and align properly
@@ -847,12 +847,12 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
         """
         Prepare features grouped by dimension for 3D regime discovery.
         
-        This method implements the 3D dimensional approach where:
-        - Momentum dimension: 1h, 2h, 3h price changes
-        - Volatility dimension: intrabar volatility, 3h rolling std
-        - Volume dimension: 1h/3h volume changes, volume ratio, weighted price
+        This method implements the 3D dimensional approach with balanced windows:
+        - Momentum dimension: 1h, 2h, 6h price changes (reactivity vs trend confirmation)
+        - Volatility dimension: intrabar volatility, 6h/12h rolling std (statistical significance)
+        - Volume dimension: 1h/3h volume momentum, 12h ratio baseline, weighted price
         
-        All rolling windows are limited to max 3h as per requirements.
+        Windows are optimized per feature type: short for reactivity, longer for statistical power.
         Features are designed to be compatible with HMM clustering expectations.
         
         Args:
@@ -866,33 +866,39 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             import pandas as pd
             import numpy as np
             
-            # Momentum features (max 3h lookback as required)
+            # Momentum features (balanced reactivity vs stability)
             momentum_features = pd.DataFrame(index=market_data.index)
-            momentum_features['momentum_1h'] = market_data['close'].pct_change(1)
-            momentum_features['momentum_2h'] = market_data['close'].pct_change(2)
-            momentum_features['momentum_3h'] = market_data['close'].pct_change(3)
+            # High reactivity for momentum detection
+            momentum_features['momentum_1h'] = market_data['close'].pct_change(1)  # Most reactive
+            momentum_features['momentum_2h'] = market_data['close'].pct_change(2)  # Balance
+            momentum_features['momentum_6h'] = market_data['close'].pct_change(6)  # Trend confirmation
             
-            # Volatility features (max 3h lookback as required)
+            # Volatility features (need longer windows for statistical significance)
             volatility_features = pd.DataFrame(index=market_data.index)
-            # Use intrabar volatility for 1h (high-low range)
-            volatility_features['volatility_1h'] = (market_data['high'] - market_data['low']) / market_data['close']
-            volatility_features['volatility_3h'] = market_data['close'].rolling(3).std()
+            # Intrabar volatility for immediate reactivity
+            volatility_features['volatility_intrabar'] = (market_data['high'] - market_data['low']) / market_data['close']
+            # Rolling volatility needs sufficient samples for statistical meaning
+            volatility_features['volatility_6h'] = market_data['close'].rolling(6).std()  # Minimum for volatility
+            volatility_features['volatility_12h'] = market_data['close'].rolling(12).std()  # Better statistical power
             
-            # Volume features (max 3h lookback as required)
+            # Volume features (mixed windows based on feature type)
             epsilon = 1e-8
             volume_features = pd.DataFrame(index=market_data.index)
+            # Volume momentum - high reactivity needed
             volume_features['volume_momentum_1h'] = market_data['volume'].pct_change(1)
             volume_features['volume_momentum_3h'] = market_data['volume'].pct_change(3)
-            volume_features['volume_ratio'] = market_data['volume'] / (market_data['volume'].rolling(3).mean() + epsilon)
+            # Volume ratio - needs baseline, longer window for stability
+            volume_features['volume_ratio'] = market_data['volume'] / (market_data['volume'].rolling(12).mean() + epsilon)
+            # Price-volume relationship - immediate
             volume_features['volume_weighted_price'] = market_data['close'] * market_data['volume']
             
             # Clean features and align indices
-            max_lookback = 3  # Maximum 3h lookback as required
+            max_lookback = 12  # Maximum lookback window used (for 12h volatility)
             cleaned_features = []
             
             for i, (features, feature_type) in enumerate(zip([momentum_features, volatility_features, volume_features], 
                                                           ['momentum', 'volatility', 'volume'])):
-                # Skip rows based on max lookback (3h + 1 for safety)
+                # Skip rows based on max lookback (12h for volatility calculation)
                 features = features.iloc[max_lookback:]
                 
                 # Apply consistent NaN handling based on feature type
@@ -1022,17 +1028,15 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             # Ensure exact normalization
             model.transmat_ = model.transmat_ / model.transmat_.sum(axis=1, keepdims=True)
             
-            # Initialize means using k-means clustering for better starting point
+            # Initialize means using data statistics (clustering happens in next step)
             try:
-                from sklearn.cluster import KMeans
                 if len(X) >= n_states:
-                    kmeans = KMeans(n_clusters=n_states, random_state=42, n_init=10)
-                    kmeans.fit(X)
-                    model.means_ = kmeans.cluster_centers_.astype(np.float64)
-                else:
-                    # Fallback: use random samples from data
+                    # Use random samples from data for initialization
                     indices = np.random.choice(len(X), size=min(n_states, len(X)), replace=False)
                     model.means_ = X[indices].astype(np.float64)
+                else:
+                    # Fallback: use data statistics
+                    model.means_ = np.random.randn(n_states, X.shape[1]).astype(np.float64) * X.std(axis=0) + X.mean(axis=0)
             except Exception:
                 # Final fallback: use data statistics
                 model.means_ = np.random.randn(n_states, X.shape[1]).astype(np.float64) * X.std(axis=0) + X.mean(axis=0)

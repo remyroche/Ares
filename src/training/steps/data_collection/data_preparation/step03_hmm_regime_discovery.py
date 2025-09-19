@@ -1207,11 +1207,15 @@ class Step03HMMRegimeDiscovery(BaseStep):
                 returns = np.diff(close_prices) / close_prices[:-1]
                 features.append(returns)
 
-                # Rolling statistics (limited to 3h max as required)
-                if len(close_prices) > 3:
-                    rolling_mean = pd.Series(close_prices).rolling(3).mean().values[2:]
-                    rolling_std = pd.Series(close_prices).rolling(3).std().values[2:]
-                    features.extend([rolling_mean, rolling_std])
+                # Rolling statistics (balanced for reactivity and stability)
+                if len(close_prices) > 6:
+                    # Short-term for reactivity
+                    rolling_mean_3h = pd.Series(close_prices).rolling(3).mean().values[2:]
+                    # Medium-term for stability  
+                    rolling_std_6h = pd.Series(close_prices).rolling(6).std().values[5:]
+                    # Align lengths
+                    min_len = min(len(rolling_mean_3h), len(rolling_std_6h))
+                    features.extend([rolling_mean_3h[-min_len:], rolling_std_6h[-min_len:]])
 
             return {'success': True, 'features': features}
 
@@ -1230,9 +1234,9 @@ class Step03HMMRegimeDiscovery(BaseStep):
                 volume_returns = np.diff(volume_data) / (volume_data[:-1] + 1e-8)
                 features.append(volume_returns)
 
-                # Volume moving averages (limited to 3h max as required)
-                if len(volume_data) > 3:
-                    volume_ma = pd.Series(volume_data).rolling(3).mean().values[2:]
+                # Volume moving averages (longer window for baseline stability)
+                if len(volume_data) > 10:
+                    volume_ma = pd.Series(volume_data).rolling(10).mean().values[9:]
                     features.append(volume_ma)
 
             return {'success': True, 'features': features}
@@ -1257,9 +1261,9 @@ class Step03HMMRegimeDiscovery(BaseStep):
                 true_range = np.maximum(np.maximum(tr1, tr2), tr3)
                 features.append(true_range)
 
-                # ATR (limited to 3h max as required)
-                if len(true_range) > 3:
-                    atr = pd.Series(true_range).rolling(3).mean().values
+                # ATR (balanced window for volatility measurement)
+                if len(true_range) > 6:
+                    atr = pd.Series(true_range).rolling(6).mean().values
                     features.append(atr)
 
             return {'success': True, 'features': features}
@@ -1275,15 +1279,15 @@ class Step03HMMRegimeDiscovery(BaseStep):
             if 'close' in data.columns:
                 close_prices = data['close'].values.astype(np.float32)
 
-                # RSI (simplified for 3h max window)
-                if len(close_prices) > 3:
-                    rsi = self._calculate_rsi(close_prices, period=3)
+                # RSI (balanced period for momentum detection)
+                if len(close_prices) > 8:
+                    rsi = self._calculate_rsi(close_prices, period=8)  # Compromise between 3h and traditional 14
                     if rsi is not None:
                         features.append(rsi)
 
-                # MACD (simplified for 3h max window) 
-                if len(close_prices) > 3:
-                    macd_line, signal_line, histogram = self._calculate_macd(close_prices, fast_period=2, slow_period=3, signal_period=2)
+                # MACD (balanced periods for trend detection)
+                if len(close_prices) > 12:
+                    macd_line, signal_line, histogram = self._calculate_macd(close_prices, fast_period=6, slow_period=12, signal_period=4)
                     if macd_line is not None:
                         features.extend([macd_line, signal_line, histogram])
 
@@ -1300,18 +1304,18 @@ class Step03HMMRegimeDiscovery(BaseStep):
             if 'close' in data.columns:
                 close_prices = data['close'].values.astype(np.float32)
 
-                # Moving averages (limited to 3h max as required)
-                if len(close_prices) > 3:
-                    sma_2 = pd.Series(close_prices).rolling(2).mean().values[1:]
-                    sma_3 = pd.Series(close_prices).rolling(3).mean().values[2:]
+                # Moving averages (balanced for trend detection)
+                if len(close_prices) > 10:
+                    sma_5 = pd.Series(close_prices).rolling(5).mean().values[4:]   # Short-term trend
+                    sma_10 = pd.Series(close_prices).rolling(10).mean().values[9:]  # Medium-term trend
                     # Align lengths
-                    min_len = min(len(sma_2), len(sma_3))
-                    sma_2 = sma_2[-min_len:]
-                    sma_3 = sma_3[-min_len:]
-                    features.extend([sma_2, sma_3])
+                    min_len = min(len(sma_5), len(sma_10))
+                    sma_5 = sma_5[-min_len:]
+                    sma_10 = sma_10[-min_len:]
+                    features.extend([sma_5, sma_10])
 
-                    # Trend strength
-                    trend_strength = (sma_2 - sma_3) / (sma_3 + 1e-8)
+                    # Trend strength (short vs medium term)
+                    trend_strength = (sma_5 - sma_10) / (sma_10 + 1e-8)
                     features.append(trend_strength)
 
             return {'success': True, 'features': features}
@@ -1319,8 +1323,8 @@ class Step03HMMRegimeDiscovery(BaseStep):
         except Exception as e:
             return {'success': False, 'error': str(e), 'features': []}
 
-    def _calculate_rsi(self, prices: np.ndarray, period: int = 3) -> Optional[np.ndarray]:
-        """Calculate RSI indicator with configurable period (default 3h for max window limit)."""
+    def _calculate_rsi(self, prices: np.ndarray, period: int = 8) -> Optional[np.ndarray]:
+        """Calculate RSI indicator with configurable period (balanced for reactivity and stability)."""
         try:
             if len(prices) <= period:
                 return None
@@ -1341,7 +1345,7 @@ class Step03HMMRegimeDiscovery(BaseStep):
             return None
 
     def _calculate_macd(self, prices: np.ndarray,
-                        fast_period: int = 2, slow_period: int = 3, signal_period: int = 2) -> Tuple[Optional[np.ndarray], ...]:
+                        fast_period: int = 6, slow_period: int = 12, signal_period: int = 4) -> Tuple[Optional[np.ndarray], ...]:
         """Calculate MACD indicator."""
         try:
             if len(prices) <= slow_period:

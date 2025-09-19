@@ -11,18 +11,20 @@ Legacy system: N features × 2 periods × 2 directions = 4N features
 
 This approach exceeds the optimal 60-100 feature limit for ML models and creates feature management challenges.
 
-## Solution: Single-Period Directional Optimization
+## Solution: Single-Period Directional Optimization with Smart Consolidation
 
 ### New Approach
 
-The new system generates **1 optimized lookback period per feature per direction**:
+The new system generates **1 optimized lookback period per feature per direction** with smart consolidation:
 
 ```
 Original features: N
+Legacy system: N features × 2 periods × 2 directions = 4N features
 New system: N features × 1 period × 2 directions = 2N features
+With consolidation: If long/short periods have <20% variance → 1 consolidated feature
 ```
 
-This **50% reduction** in feature count while maintaining directional differentiation.
+This provides **up to 75% reduction** in feature count while maintaining directional differentiation and integrating with the existing **100→80→60 feature selection pipeline**.
 
 ## Implementation
 
@@ -43,10 +45,11 @@ This **50% reduction** in feature count while maintaining directional differenti
 ### 2. Key Features
 
 #### Smart Feature Management
-- **Target-based selection**: Configure total feature count (e.g., 80 features = 40 long + 40 short)
+- **Period consolidation**: If long/short periods have <20% variance, create single averaged feature
+- **Pipeline integration**: Generate features for existing 100→80→60 feature selection pipeline
 - **Quality filtering**: Remove low-quality features based on MI scores, stability, convergence
 - **Cross-directional analysis**: Compare long vs short performance for each feature
-- **Balanced selection**: Maintain optimal long/short feature balance
+- **Configurable consolidation**: Choose averaging method (average, best_performance, weighted_average)
 
 #### Performance Optimization
 - **Parallel processing**: Optional parallel optimization for faster execution
@@ -67,15 +70,23 @@ DirectionalLookbackConfig(
 )
 ```
 
-#### Balanced Configuration (Recommended)
+#### Balanced Configuration with Consolidation (Recommended)
 ```python
 DirectionalLookbackConfig(
-    target_total_features=80,
-    max_features_per_direction=45,
-    min_mutual_info_score=0.02,
-    min_samples_per_direction=75,
+    enable_directional=True,
     cross_directional_analysis=True,
-    adaptive_feature_selection=True
+    
+    # Smart consolidation
+    enable_period_consolidation=True,
+    consolidation_variance_threshold=0.20,  # 20% variance threshold
+    consolidation_method="average",
+    
+    # Pipeline integration
+    use_existing_feature_pipeline=True,
+    generate_features_for_pipeline=True,
+    
+    min_mutual_info_score=0.02,
+    min_samples_per_direction=75
 )
 ```
 
@@ -102,19 +113,17 @@ config.enable_directional_optimization = True
 config.max_features_to_optimize = 30  # Limit base features
 ```
 
-### 2. Configure Feature Targets
+### 2. Configure Consolidation and Pipeline Integration
 
 ```python
-# For 60-feature ML model
+# Enable smart consolidation with existing pipeline
 directional_config = DirectionalLookbackConfig(
-    target_total_features=60,
-    max_features_per_direction=35
-)
-
-# For 100-feature ML model
-directional_config = DirectionalLookbackConfig(
-    target_total_features=90,
-    max_features_per_direction=50
+    enable_period_consolidation=True,
+    consolidation_variance_threshold=0.20,  # 20% variance threshold
+    consolidation_method="average",  # or "best_performance", "weighted_average"
+    
+    use_existing_feature_pipeline=True,  # Use 100→80→60 pipeline
+    generate_features_for_pipeline=True
 )
 ```
 
@@ -132,10 +141,11 @@ selection_config = DirectionalFeatureSelectionConfig(
 ## Benefits
 
 ### 1. Feature Count Management
-- ✅ **50% reduction** in feature count vs legacy approach
-- ✅ **Stays within 60-100 feature optimal range** for ML models
-- ✅ **Configurable targets** based on model requirements
+- ✅ **Up to 75% reduction** in feature count vs legacy approach
+- ✅ **Smart consolidation**: <20% variance between long/short → single feature
+- ✅ **Pipeline integration**: Works with existing 100→80→60 feature selection
 - ✅ **Intelligent selection** to maximize quality within limits
+- ✅ **Configurable consolidation methods** for different use cases
 
 ### 2. Directional Optimization
 - ✅ **Maintains long/short differentiation** for market dynamics
@@ -160,8 +170,9 @@ selection_config = DirectionalFeatureSelectionConfig(
 | Aspect | Legacy Approach | New Approach | Improvement |
 |--------|----------------|--------------|-------------|
 | **Feature Generation** | 2 periods per feature | 1 period per feature | 50% reduction |
-| **Total Features** | N × 2 × 2 = 4N | N × 1 × 2 = 2N | 50% reduction |
-| **ML Model Compatibility** | Often exceeds 100 features | Configurable 60-100 | ✅ Optimal range |
+| **Total Features** | N × 2 × 2 = 4N | N × 1 × 2 = 2N (+ consolidation) | Up to 75% reduction |
+| **Period Consolidation** | None | Smart <20% variance merge | ✅ Further reduction |
+| **Pipeline Integration** | Manual selection | 100→80→60 pipeline | ✅ Automated |
 | **Directional Analysis** | Yes | Enhanced | ✅ Improved |
 | **Feature Selection** | Basic | Intelligent multi-criteria | ✅ Advanced |
 | **Performance** | Slower (more optimization) | Faster (fewer periods) | ✅ Better |

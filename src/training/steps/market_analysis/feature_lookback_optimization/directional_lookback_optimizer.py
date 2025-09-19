@@ -35,7 +35,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class DirectionalLookbackConfig:
-    """Configuration for directional lookback optimization."""
+    """Configuration for directional lookbook optimization."""
     
     # Base optimization settings
     min_lookback: int = 5
@@ -47,10 +47,14 @@ class DirectionalLookbackConfig:
     min_samples_per_direction: int = 50
     direction_balance_threshold: float = 0.3  # Min ratio of smaller/larger direction
     
-    # Feature count management
-    max_features_per_direction: int = 50  # Max features per direction
-    target_total_features: int = 80  # Target total features (40 long + 40 short)
-    feature_selection_method: str = "mutual_info"  # "mutual_info", "correlation", "mrmr"
+    # Period consolidation settings
+    enable_period_consolidation: bool = True
+    consolidation_variance_threshold: float = 0.20  # If variance < 20%, consolidate periods
+    consolidation_method: str = "average"  # "average", "best_performance", "weighted_average"
+    
+    # Integration with existing pipeline
+    use_existing_feature_pipeline: bool = True  # Use existing 100→80→60 pipeline
+    generate_features_for_pipeline: bool = True  # Generate features for the pipeline to select from
     
     # Quality thresholds
     min_mutual_info_score: float = 0.01
@@ -72,13 +76,20 @@ class DirectionalFeatureResult:
     """Result for a single feature's directional optimization."""
     
     feature_name: str
-    direction: str  # "long" or "short"
+    direction: str  # "long", "short", or "consolidated"
     
     # Optimization results
     optimal_lookback_period: int
     mutual_info_score: float
     optimization_method: str
     optimization_time: float
+    
+    # Consolidation information
+    is_consolidated: bool = False
+    original_long_period: Optional[int] = None
+    original_short_period: Optional[int] = None
+    consolidation_variance: Optional[float] = None
+    consolidation_reason: Optional[str] = None
     
     # Quality metrics
     sample_count: int
@@ -116,6 +127,7 @@ class DirectionalOptimizationResult:
     # Optimization results by direction
     long_features: Dict[str, DirectionalFeatureResult] = field(default_factory=dict)
     short_features: Dict[str, DirectionalFeatureResult] = field(default_factory=dict)
+    consolidated_features: Dict[str, DirectionalFeatureResult] = field(default_factory=dict)  # Features with <20% variance
     
     # Selected features (after feature selection)
     selected_long_features: List[str] = field(default_factory=list)
@@ -141,7 +153,7 @@ class DirectionalOptimizationResult:
     optimization_metadata: Dict[str, Any] = field(default_factory=dict)
     
     def get_all_selected_features(self) -> Dict[str, DirectionalFeatureResult]:
-        """Get all selected features from both directions."""
+        """Get all selected features from both directions and consolidated."""
         all_features = {}
         
         for feature_name in self.selected_long_features:
@@ -152,6 +164,10 @@ class DirectionalOptimizationResult:
             if feature_name in self.short_features:
                 all_features[f"{feature_name}_short"] = self.short_features[feature_name]
         
+        # Add consolidated features
+        for feature_name, feature_result in self.consolidated_features.items():
+            all_features[f"{feature_name}_consolidated"] = feature_result
+        
         return all_features
     
     def to_dict(self) -> Dict[str, Any]:
@@ -159,6 +175,7 @@ class DirectionalOptimizationResult:
         return {
             'long_features': {k: v.to_dict() for k, v in self.long_features.items()},
             'short_features': {k: v.to_dict() for k, v in self.short_features.items()},
+            'consolidated_features': {k: v.to_dict() for k, v in self.consolidated_features.items()},
             'selected_long_features': self.selected_long_features,
             'selected_short_features': self.selected_short_features,
             'final_feature_count': self.final_feature_count,
@@ -170,7 +187,12 @@ class DirectionalOptimizationResult:
             'feature_selection_quality': self.feature_selection_quality,
             'directional_differences': self.directional_differences,
             'complementary_features': self.complementary_features,
-            'optimization_metadata': self.optimization_metadata
+            'optimization_metadata': self.optimization_metadata,
+            'consolidation_summary': {
+                'consolidated_count': len(self.consolidated_features),
+                'consolidation_enabled': True,
+                'consolidation_method': getattr(self.config_used, 'consolidation_method', 'average') if self.config_used else 'unknown'
+            }
         }
 
 class DirectionalLookbackOptimizer:
@@ -250,6 +272,11 @@ class DirectionalLookbackOptimizer:
             result.complementary_features = self._find_complementary_features(
                 result.long_features, result.short_features
             )
+        
+        # Perform period consolidation if enabled
+        if self.config.enable_period_consolidation:
+            tprint("🔀 Consolidating similar periods...")
+            result = self._consolidate_similar_periods(result)
         
         # Select final features
         tprint("🎯 Selecting optimal feature subset...")
@@ -474,35 +501,191 @@ class DirectionalLookbackOptimizer:
         
         return complementary
     
+    def _consolidate_similar_periods(self, result: DirectionalOptimizationResult) -> DirectionalOptimizationResult:
+        """Consolidate long/short features with similar periods (< 20% variance)."""
+        
+        # Find common features between long and short
+        common_features = set(result.long_features.keys()) & set(result.short_features.keys())
+        
+        consolidated_count = 0
+        
+        for feature_name in common_features:
+            long_result = result.long_features[feature_name]
+            short_result = result.short_features[feature_name]
+            
+            # Calculate variance between periods
+            long_period = long_result.optimal_lookback_period
+            short_period = short_result.optimal_lookback_period
+            
+            # Calculate relative variance
+            avg_period = (long_period + short_period) / 2
+            if avg_period == 0:
+                continue
+                
+            variance = abs(long_period - short_period) / avg_period
+            
+            # Check if variance is below threshold
+            if variance < self.config.consolidation_variance_threshold:
+                tprint(f"🔀 Consolidating {feature_name}: long={long_period}, short={short_period}, variance={variance:.3f}")
+                
+                # Create consolidated feature
+                consolidated_result = self._create_consolidated_feature(
+                    feature_name, long_result, short_result, variance
+                )
+                
+                # Add to consolidated features
+                result.consolidated_features[feature_name] = consolidated_result
+                
+                # Remove from individual directions (they'll be replaced by consolidated)
+                if feature_name in result.long_features:
+                    del result.long_features[feature_name]
+                if feature_name in result.short_features:
+                    del result.short_features[feature_name]
+                
+                consolidated_count += 1
+        
+        tprint(f"✅ Consolidated {consolidated_count} features with similar periods")
+        
+        return result
+    
+    def _create_consolidated_feature(self,
+                                   feature_name: str,
+                                   long_result: DirectionalFeatureResult,
+                                   short_result: DirectionalFeatureResult,
+                                   variance: float) -> DirectionalFeatureResult:
+        """Create a consolidated feature from long and short variants."""
+        
+        # Calculate consolidated values based on method
+        if self.config.consolidation_method == "average":
+            consolidated_period = int((long_result.optimal_lookback_period + short_result.optimal_lookback_period) / 2)
+            consolidated_score = (long_result.mutual_info_score + short_result.mutual_info_score) / 2
+            consolidation_reason = "averaged_periods"
+            
+        elif self.config.consolidation_method == "best_performance":
+            if long_result.mutual_info_score >= short_result.mutual_info_score:
+                consolidated_period = long_result.optimal_lookback_period
+                consolidated_score = long_result.mutual_info_score
+                consolidation_reason = "best_performance_long"
+            else:
+                consolidated_period = short_result.optimal_lookback_period
+                consolidated_score = short_result.mutual_info_score
+                consolidation_reason = "best_performance_short"
+                
+        elif self.config.consolidation_method == "weighted_average":
+            # Weight by mutual information scores
+            total_score = long_result.mutual_info_score + short_result.mutual_info_score
+            if total_score > 0:
+                long_weight = long_result.mutual_info_score / total_score
+                short_weight = short_result.mutual_info_score / total_score
+                
+                consolidated_period = int(
+                    long_result.optimal_lookback_period * long_weight +
+                    short_result.optimal_lookback_period * short_weight
+                )
+                consolidated_score = (long_result.mutual_info_score + short_result.mutual_info_score) / 2
+                consolidation_reason = "weighted_by_performance"
+            else:
+                # Fallback to simple average
+                consolidated_period = int((long_result.optimal_lookback_period + short_result.optimal_lookback_period) / 2)
+                consolidated_score = 0.0
+                consolidation_reason = "fallback_average"
+        else:
+            # Default to average
+            consolidated_period = int((long_result.optimal_lookback_period + short_result.optimal_lookback_period) / 2)
+            consolidated_score = (long_result.mutual_info_score + short_result.mutual_info_score) / 2
+            consolidation_reason = "default_average"
+        
+        # Create consolidated result
+        consolidated_result = DirectionalFeatureResult(
+            feature_name=feature_name,
+            direction="consolidated",
+            optimal_lookback_period=consolidated_period,
+            mutual_info_score=consolidated_score,
+            optimization_method="consolidated_directional",
+            optimization_time=long_result.optimization_time + short_result.optimization_time,
+            
+            # Consolidation info
+            is_consolidated=True,
+            original_long_period=long_result.optimal_lookback_period,
+            original_short_period=short_result.optimal_lookback_period,
+            consolidation_variance=variance,
+            consolidation_reason=consolidation_reason,
+            
+            # Quality metrics (average of both)
+            sample_count=long_result.sample_count + short_result.sample_count,
+            data_quality_score=(long_result.data_quality_score + short_result.data_quality_score) / 2,
+            convergence_achieved=long_result.convergence_achieved and short_result.convergence_achieved,
+            cross_validation_score=(long_result.cross_validation_score + short_result.cross_validation_score) / 2,
+            stability_score=(long_result.stability_score + short_result.stability_score) / 2,
+            
+            # Metadata
+            optimization_metadata={
+                'consolidation_method': self.config.consolidation_method,
+                'variance_threshold': self.config.consolidation_variance_threshold,
+                'actual_variance': variance,
+                'long_original': long_result.to_dict(),
+                'short_original': short_result.to_dict()
+            }
+        )
+        
+        return consolidated_result
+    
     def _select_final_features(self, result: DirectionalOptimizationResult) -> DirectionalOptimizationResult:
-        """Select final features based on configuration and performance."""
+        """Select final features for the existing 100→80→60 pipeline."""
         
-        # Calculate target features per direction
-        target_per_direction = self.config.target_total_features // 2
-        max_per_direction = min(self.config.max_features_per_direction, target_per_direction)
-        
-        # Select long features
-        long_candidates = [(name, res.mutual_info_score) for name, res in result.long_features.items()]
-        long_candidates.sort(key=lambda x: x[1], reverse=True)
-        result.selected_long_features = [name for name, _ in long_candidates[:max_per_direction]]
-        
-        # Select short features
-        short_candidates = [(name, res.mutual_info_score) for name, res in result.short_features.items()]
-        short_candidates.sort(key=lambda x: x[1], reverse=True)
-        result.selected_short_features = [name for name, _ in short_candidates[:max_per_direction]]
-        
-        # Update final count
-        result.final_feature_count = len(result.selected_long_features) + len(result.selected_short_features)
-        
-        tprint(f"🎯 Feature selection completed: {len(result.selected_long_features)} long + "
-               f"{len(result.selected_short_features)} short = {result.final_feature_count} total")
+        if self.config.use_existing_feature_pipeline:
+            # Generate features for the existing pipeline to select from
+            # Don't limit here - let the existing pipeline handle the selection
+            tprint("🎯 Generating features for existing 100→80→60 pipeline...")
+            
+            # Include all optimized features (long, short, consolidated)
+            result.selected_long_features = list(result.long_features.keys())
+            result.selected_short_features = list(result.short_features.keys())
+            
+            # Add consolidated features to a separate list for tracking
+            consolidated_features = list(result.consolidated_features.keys())
+            
+            total_generated = (len(result.selected_long_features) + 
+                             len(result.selected_short_features) + 
+                             len(consolidated_features))
+            
+            result.final_feature_count = total_generated
+            
+            tprint(f"🎯 Generated features for pipeline: {len(result.selected_long_features)} long + "
+                   f"{len(result.selected_short_features)} short + {len(consolidated_features)} consolidated = "
+                   f"{total_generated} total")
+            tprint("📋 Existing pipeline will select 100→80→60 features from these candidates")
+            
+        else:
+            # Legacy selection logic (if not using existing pipeline)
+            target_per_direction = self.config.target_total_features // 2
+            max_per_direction = min(self.config.max_features_per_direction, target_per_direction)
+            
+            # Select long features
+            long_candidates = [(name, res.mutual_info_score) for name, res in result.long_features.items()]
+            long_candidates.sort(key=lambda x: x[1], reverse=True)
+            result.selected_long_features = [name for name, _ in long_candidates[:max_per_direction]]
+            
+            # Select short features
+            short_candidates = [(name, res.mutual_info_score) for name, res in result.short_features.items()]
+            short_candidates.sort(key=lambda x: x[1], reverse=True)
+            result.selected_short_features = [name for name, _ in short_candidates[:max_per_direction]]
+            
+            # Update final count
+            result.final_feature_count = len(result.selected_long_features) + len(result.selected_short_features) + len(result.consolidated_features)
+            
+            tprint(f"🎯 Feature selection completed: {len(result.selected_long_features)} long + "
+                   f"{len(result.selected_short_features)} short + {len(result.consolidated_features)} consolidated = "
+                   f"{result.final_feature_count} total")
         
         return result
     
     def _calculate_final_metrics(self, result: DirectionalOptimizationResult) -> DirectionalOptimizationResult:
         """Calculate final performance metrics."""
         
-        all_features = list(result.long_features.values()) + list(result.short_features.values())
+        all_features = (list(result.long_features.values()) + 
+                       list(result.short_features.values()) + 
+                       list(result.consolidated_features.values()))
         
         if all_features:
             # Average mutual information score
@@ -515,14 +698,19 @@ class DirectionalLookbackOptimizer:
             # Average stability score
             result.average_stability_score = np.mean([f.stability_score for f in all_features])
             
-            # Directional balance
+            # Directional balance (considering consolidated as neutral)
             long_count = len(result.selected_long_features)
             short_count = len(result.selected_short_features)
+            consolidated_count = len(result.consolidated_features)
+            
             if long_count + short_count > 0:
                 result.directional_balance_ratio = min(long_count, short_count) / max(long_count, short_count)
+            elif consolidated_count > 0:
+                # All features are consolidated, perfect balance
+                result.directional_balance_ratio = 1.0
             
             # Feature selection quality (based on selected vs total)
-            total_available = len(result.long_features) + len(result.short_features)
+            total_available = len(result.long_features) + len(result.short_features) + len(result.consolidated_features)
             if total_available > 0:
                 result.feature_selection_quality = result.final_feature_count / total_available
         

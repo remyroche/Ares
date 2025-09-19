@@ -94,16 +94,23 @@ def test_directional_optimization():
     
     print(f"📊 Testing with {len(feature_columns)} features: {feature_columns[:5]}...")
     
-    # Configure directional optimization
+    # Configure directional optimization with consolidation
     directional_config = DirectionalLookbackConfig(
         min_lookback=5,
         max_lookback=30,  # Reduced for faster testing
-        target_total_features=60,  # Target 60 features (30 long + 30 short)
-        max_features_per_direction=40,
         enable_directional=True,
         parallel_optimization=False,  # Disabled for testing
         cross_directional_analysis=True,
-        min_samples_per_direction=100
+        min_samples_per_direction=100,
+        
+        # New consolidation settings
+        enable_period_consolidation=True,
+        consolidation_variance_threshold=0.20,  # 20% variance threshold
+        consolidation_method="average",
+        
+        # Integration with existing pipeline
+        use_existing_feature_pipeline=True,
+        generate_features_for_pipeline=True
     )
     
     # Test 1: Direct optimization function
@@ -121,14 +128,25 @@ def test_directional_optimization():
         print(f"   - Total features: {result.final_feature_count}")
         print(f"   - Long features: {len(result.selected_long_features)}")
         print(f"   - Short features: {len(result.selected_short_features)}")
+        print(f"   - Consolidated features: {len(result.consolidated_features)}")
         print(f"   - Optimization time: {result.total_optimization_time:.2f}s")
         print(f"   - Average MI score: {result.average_mutual_info_score:.4f}")
         print(f"   - Balance ratio: {result.directional_balance_ratio:.3f}")
         print(f"   - Convergence rate: {result.convergence_rate:.3f}")
         
+        # Show consolidation details
+        if result.consolidated_features:
+            print(f"\n🔀 Consolidation Results:")
+            for feature_name, consolidated_result in result.consolidated_features.items():
+                print(f"   - {feature_name}: long={consolidated_result.original_long_period}, "
+                      f"short={consolidated_result.original_short_period} → "
+                      f"consolidated={consolidated_result.optimal_lookback_period} "
+                      f"(variance: {consolidated_result.consolidation_variance:.3f})")
+        
         # Show some feature details
         print(f"\n📋 Sample long features: {result.selected_long_features[:3]}")
         print(f"📋 Sample short features: {result.selected_short_features[:3]}")
+        print(f"📋 Consolidated features: {list(result.consolidated_features.keys())[:3]}")
         
     except Exception as e:
         print(f"❌ Test 1 failed: {e}")
@@ -165,8 +183,49 @@ def test_directional_optimization():
         print(f"❌ Test 2 failed: {e}")
         return False
     
-    # Test 3: Compare with legacy approach simulation
-    print("\n🧪 Test 3: Feature count comparison")
+    # Test 3: Test different consolidation methods
+    print("\n🧪 Test 3: Test consolidation methods")
+    try:
+        consolidation_methods = ["average", "best_performance", "weighted_average"]
+        
+        for method in consolidation_methods:
+            print(f"\n🔧 Testing consolidation method: {method}")
+            
+            test_config = DirectionalLookbackConfig(
+                min_lookback=5,
+                max_lookback=25,
+                enable_period_consolidation=True,
+                consolidation_variance_threshold=0.25,  # Higher threshold for more consolidation
+                consolidation_method=method,
+                use_existing_feature_pipeline=True,
+                min_samples_per_direction=50
+            )
+            
+            test_result = optimize_features_directional(
+                data=data,
+                feature_columns=feature_columns[:5],  # Smaller set for quick test
+                target_column='returns',
+                config=test_config
+            )
+            
+            print(f"   - Method: {method}")
+            print(f"   - Consolidated: {len(test_result.consolidated_features)}")
+            print(f"   - Long: {len(test_result.long_features)}")
+            print(f"   - Short: {len(test_result.short_features)}")
+            
+            # Show one consolidation example if available
+            if test_result.consolidated_features:
+                feature_name = list(test_result.consolidated_features.keys())[0]
+                consolidated = test_result.consolidated_features[feature_name]
+                print(f"   - Example: {feature_name} → period {consolidated.optimal_lookback_period} "
+                      f"({consolidated.consolidation_reason})")
+        
+    except Exception as e:
+        print(f"❌ Test 3 failed: {e}")
+        return False
+    
+    # Test 4: Compare with legacy approach simulation
+    print("\n🧪 Test 4: Feature count comparison")
     try:
         # Simulate legacy approach (2 periods per feature)
         legacy_feature_count = len(feature_columns) * 2  # 2 periods per feature
@@ -199,7 +258,10 @@ def test_directional_optimization():
     print("\n✅ All tests completed successfully!")
     print("\n📋 Summary:")
     print(f"   - New directional optimization generates 1 period per feature per direction")
-    print(f"   - Feature count is manageable for ML models ({new_feature_count} features)")
+    print(f"   - Period consolidation reduces features when long/short periods are similar (<20% variance)")
+    print(f"   - Total features generated: {new_feature_count} (includes consolidated features)")
+    print(f"   - Consolidated features: {len(result.consolidated_features)}")
+    print(f"   - Integration with existing 100→80→60 pipeline maintained")
     print(f"   - Directional balance is maintained ({selection_result.directional_balance_ratio:.3f})")
     print(f"   - Quality metrics are preserved (MI: {result.average_mutual_info_score:.4f})")
     
@@ -236,19 +298,28 @@ def demonstrate_configuration_options():
     print(f"   - Quality threshold: {aggressive_config.min_mutual_info_score}")
     print(f"   - Parallel optimization: {aggressive_config.parallel_optimization}")
     
-    # Option 3: Balanced (recommended)
-    print("\n📋 Option 3: Balanced Configuration (Recommended)")
+    # Option 3: Balanced with Consolidation (recommended)
+    print("\n📋 Option 3: Balanced with Consolidation (Recommended)")
     balanced_config = DirectionalLookbackConfig(
-        target_total_features=80,
-        max_features_per_direction=45,
-        min_mutual_info_score=0.02,
-        min_samples_per_direction=75,
+        enable_directional=True,
         cross_directional_analysis=True,
-        adaptive_feature_selection=True
+        
+        # Consolidation settings
+        enable_period_consolidation=True,
+        consolidation_variance_threshold=0.20,
+        consolidation_method="average",
+        
+        # Pipeline integration
+        use_existing_feature_pipeline=True,
+        generate_features_for_pipeline=True,
+        
+        min_mutual_info_score=0.02,
+        min_samples_per_direction=75
     )
-    print(f"   - Target features: {balanced_config.target_total_features}")
+    print(f"   - Period consolidation: {balanced_config.enable_period_consolidation}")
+    print(f"   - Variance threshold: {balanced_config.consolidation_variance_threshold}")
+    print(f"   - Integration with existing pipeline: {balanced_config.use_existing_feature_pipeline}")
     print(f"   - Quality threshold: {balanced_config.min_mutual_info_score}")
-    print(f"   - Adaptive selection: {balanced_config.adaptive_feature_selection}")
 
 if __name__ == "__main__":
     print("🎯 New Directional Feature Lookback Optimization Test")
@@ -264,15 +335,20 @@ if __name__ == "__main__":
         print("\n🎉 Test completed successfully!")
         print("\n💡 Key Benefits of New Approach:")
         print("   ✅ Reduces feature count from 2N×2 to N×2 (50% reduction)")
+        print("   ✅ Smart consolidation: <20% variance → single averaged feature")
         print("   ✅ Maintains directional differentiation (long/short)")
-        print("   ✅ Stays within optimal ML model range (60-100 features)")
+        print("   ✅ Integrates with existing 100→80→60 feature selection pipeline")
         print("   ✅ Preserves optimization quality and performance")
         print("   ✅ Provides intelligent feature selection")
         print("   ✅ Enables cross-directional analysis")
+        print("   ✅ Configurable consolidation methods (average, best_performance, weighted)")
         
         print("\n🔧 Integration Notes:")
         print("   - Set 'use_new_directional_approach=True' in config")
-        print("   - Adjust 'target_total_features' based on your ML model needs")
+        print("   - Enable 'enable_period_consolidation=True' for smart consolidation")
+        print("   - Set 'use_existing_feature_pipeline=True' to use 100→80→60 pipeline")
+        print("   - Adjust 'consolidation_variance_threshold' (default: 0.20 = 20%)")
+        print("   - Choose consolidation method: 'average', 'best_performance', or 'weighted_average'")
         print("   - Use 'max_features_to_optimize' to limit computation time")
         print("   - Enable 'cross_directional_analysis' for better insights")
         

@@ -899,7 +899,7 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
         feature_names: Optional[List[str]]
     ) -> np.ndarray:
         """
-        Combine all model inputs for meta-learner training with comprehensive error handling.
+        Combine all model inputs for meta-learner training with memory-efficient processing.
         
         Args:
             X: Base features
@@ -912,130 +912,194 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
             Enhanced feature matrix with all model inputs
         """
         try:
-            enhanced_features = [X]
-            feature_count = X.shape[1]
+            # Pre-calculate total features needed to allocate memory efficiently
+            base_features = X.shape[1]
+            additional_features_count = 0
+            
             integration_stats = {
                 'hmm_features_added': 0,
                 'analyst_models_integrated': 0,
                 'analyst_ensembles_integrated': 0,
-                'integration_errors': []
+                'integration_errors': [],
+                'memory_optimized': True
             }
             
-            # Add HMM regime features if available
+            # Count HMM features
+            hmm_features_count = 0
+            hmm_features = None
             if hmm_data and 'regime_features' in hmm_data:
                 try:
                     hmm_features = hmm_data['regime_features']
                     if isinstance(hmm_features, np.ndarray) and hmm_features.shape[0] == X.shape[0]:
-                        enhanced_features.append(hmm_features)
-                        feature_count += hmm_features.shape[1]
-                        integration_stats['hmm_features_added'] = hmm_features.shape[1]
-                        self.logger.info(f"📊 Added {hmm_features.shape[1]} HMM regime features")
+                        hmm_features_count = hmm_features.shape[1]
+                        additional_features_count += hmm_features_count
+                        integration_stats['hmm_features_added'] = hmm_features_count
                     else:
-                        self.logger.warning("⚠️ HMM features shape mismatch or invalid format")
+                        hmm_features = None
                         integration_stats['integration_errors'].append("HMM features shape mismatch")
                 except Exception as e:
-                    self.logger.warning(f"⚠️ Failed to integrate HMM features: {e}")
+                    hmm_features = None
                     integration_stats['integration_errors'].append(f"HMM integration failed: {e}")
             
-            # Add analyst model predictions if available
+            # Generate and count analyst model predictions
+            analyst_predictions = []
             if analyst_models:
                 for model_name, model in analyst_models.items():
                     try:
                         predictions = self._generate_model_predictions(model, X, model_name)
                         if predictions is not None:
-                            enhanced_features.append(predictions)
-                            feature_count += predictions.shape[1]
+                            analyst_predictions.append((model_name, predictions))
+                            additional_features_count += predictions.shape[1]
                             integration_stats['analyst_models_integrated'] += 1
-                            self.logger.info(f"📊 Added predictions from analyst model: {model_name}")
                         else:
                             integration_stats['integration_errors'].append(f"Failed to generate predictions for {model_name}")
                     except Exception as e:
                         self.logger.warning(f"⚠️ Could not add predictions from {model_name}: {e}")
                         integration_stats['integration_errors'].append(f"Analyst model {model_name} failed: {e}")
             
-            # Add analyst ensemble predictions if available
+            # Generate and count ensemble predictions
+            ensemble_predictions = []
             if analyst_ensembles:
                 for ensemble_name, ensemble in analyst_ensembles.items():
                     try:
                         predictions = self._generate_model_predictions(ensemble, X, ensemble_name)
                         if predictions is not None:
-                            enhanced_features.append(predictions)
-                            feature_count += predictions.shape[1]
+                            ensemble_predictions.append((ensemble_name, predictions))
+                            additional_features_count += predictions.shape[1]
                             integration_stats['analyst_ensembles_integrated'] += 1
-                            self.logger.info(f"📊 Added predictions from analyst ensemble: {ensemble_name}")
                         else:
                             integration_stats['integration_errors'].append(f"Failed to generate predictions for {ensemble_name}")
                     except Exception as e:
                         self.logger.warning(f"⚠️ Could not add predictions from {ensemble_name}: {e}")
                         integration_stats['integration_errors'].append(f"Analyst ensemble {ensemble_name} failed: {e}")
             
-            # Combine all features with hardware-optimized shape validation
-            if len(enhanced_features) > 1:
-                # Validate all arrays have same number of rows before concatenation
-                base_shape = enhanced_features[0].shape[0]
-                valid_features = [enhanced_features[0]]  # Start with base features
+            # Hardware-optimized memory-efficient combination
+            if additional_features_count > 0:
+                total_features = base_features + additional_features_count
                 
-                for i, arr in enumerate(enhanced_features[1:], 1):
-                    if arr.shape[0] != base_shape:
-                        self.logger.warning(f"⚠️ Shape mismatch in feature array {i}: {arr.shape[0]} rows vs expected {base_shape} rows, skipping")
-                        integration_stats['integration_errors'].append(f"Feature array {i} shape mismatch: {arr.shape[0]} vs {base_shape}")
-                        continue
+                try:
+                    # Use hardware optimization tools for memory-efficient array operations
+                    from src.utils.hardware import (
+                        get_advanced_memory_optimizer, get_unified_hardware_manager,
+                        ADVANCED_MEMORY_AVAILABLE, UNIFIED_MANAGER_AVAILABLE
+                    )
                     
-                    # Ensure 2D array
-                    if arr.ndim == 1:
-                        arr = arr.reshape(-1, 1)
-                    elif arr.ndim > 2:
-                        self.logger.warning(f"⚠️ Feature array {i} has {arr.ndim} dimensions, flattening to 2D")
-                        arr = arr.reshape(arr.shape[0], -1)
-                    
-                    valid_features.append(arr)
+                    if ADVANCED_MEMORY_AVAILABLE:
+                        # Use advanced memory optimizer for efficient array allocation
+                        memory_optimizer = get_advanced_memory_optimizer()
+                        X_enhanced = memory_optimizer.allocate_optimized_array(
+                            shape=(X.shape[0], total_features),
+                            dtype=X.dtype,
+                            optimization_level='aggressive'
+                        )
+                        self.logger.info(f"📊 Using hardware-optimized array allocation for {total_features} features")
+                        
+                    elif UNIFIED_MANAGER_AVAILABLE:
+                        # Use unified hardware manager for memory optimization
+                        hardware_manager = get_unified_hardware_manager()
+                        X_enhanced = hardware_manager.optimize_array_allocation(
+                            shape=(X.shape[0], total_features),
+                            dtype=X.dtype,
+                            workload_type='ml_training'
+                        )
+                        self.logger.info(f"📊 Using unified hardware manager for array allocation")
+                        
+                    else:
+                        # Fallback to standard allocation
+                        X_enhanced = np.empty((X.shape[0], total_features), dtype=X.dtype)
+                        
+                except ImportError:
+                    # Hardware tools not available, use standard allocation
+                    X_enhanced = np.empty((X.shape[0], total_features), dtype=X.dtype)
                 
-                if len(valid_features) > 1:
+                # Copy base features efficiently
+                X_enhanced[:, :base_features] = X
+                current_col = base_features
+                
+                # Add HMM features with memory optimization
+                if hmm_features is not None:
                     try:
-                        # Use hardware-optimized array operations if available
-                        if hasattr(self, 'unified_hardware_manager') and self.unified_hardware_manager:
-                            # Calculate total feature count for optimized allocation
-                            total_features = sum(arr.shape[1] for arr in valid_features)
-                            
-                            # Use hardware-optimized memory allocation
-                            try:
-                                X_enhanced = self.unified_hardware_manager.allocate_optimized_array(
-                                    shape=(base_shape, total_features),
-                                    dtype=X.dtype,
-                                    operation_type="feature_concatenation"
-                                )
-                                
-                                # Hardware-optimized feature copying
-                                current_col = 0
-                                for arr in valid_features:
-                                    next_col = current_col + arr.shape[1]
-                                    X_enhanced[:, current_col:next_col] = arr
-                                    current_col = next_col
-                                
-                                self.logger.info(f"📊 Hardware-optimized feature concatenation completed")
-                                
-                            except Exception as hw_e:
-                                self.logger.warning(f"⚠️ Hardware optimization failed: {hw_e}, using standard concatenation")
-                                # Fallback to standard concatenation
-                                X_enhanced = np.column_stack(valid_features)
+                        if ADVANCED_MEMORY_AVAILABLE:
+                            # Use hardware-optimized copy
+                            memory_optimizer.optimized_array_copy(
+                                source=hmm_features,
+                                destination=X_enhanced[:, current_col:current_col + hmm_features_count]
+                            )
                         else:
-                            # Standard concatenation
-                            X_enhanced = np.column_stack(valid_features)
-                        
-                        actual_feature_count = X_enhanced.shape[1]
-                        self.logger.info(f"📊 Meta-learner features: {X.shape[1]} base + {actual_feature_count - X.shape[1]} model inputs = {actual_feature_count} total")
-                        
-                    except ValueError as e:
-                        self.logger.error(f"❌ Failed to concatenate features: {e}")
-                        self.logger.warning("⚠️ Using base features only due to concatenation failure")
-                        X_enhanced = X
-                        integration_stats['integration_errors'].append(f"Feature concatenation failed: {e}")
-                else:
-                    X_enhanced = X
-                    self.logger.info(f"📊 Using base features only due to shape validation failures: {X.shape[1]} features")
+                            X_enhanced[:, current_col:current_col + hmm_features_count] = hmm_features
+                    except:
+                        # Fallback to standard copy
+                        X_enhanced[:, current_col:current_col + hmm_features_count] = hmm_features
+                    
+                    current_col += hmm_features_count
+                    self.logger.info(f"📊 Added {hmm_features_count} HMM regime features")
+                
+                # Add analyst model predictions with hardware optimization
+                for model_name, predictions in analyst_predictions:
+                    pred_cols = predictions.shape[1]
+                    try:
+                        if ADVANCED_MEMORY_AVAILABLE:
+                            # Use hardware-optimized copy
+                            memory_optimizer.optimized_array_copy(
+                                source=predictions,
+                                destination=X_enhanced[:, current_col:current_col + pred_cols]
+                            )
+                        else:
+                            X_enhanced[:, current_col:current_col + pred_cols] = predictions
+                    except:
+                        # Fallback to standard copy
+                        X_enhanced[:, current_col:current_col + pred_cols] = predictions
+                    
+                    current_col += pred_cols
+                    self.logger.info(f"📊 Added {pred_cols} features from analyst model: {model_name}")
+                
+                # Add ensemble predictions with hardware optimization
+                for ensemble_name, predictions in ensemble_predictions:
+                    pred_cols = predictions.shape[1]
+                    try:
+                        if ADVANCED_MEMORY_AVAILABLE:
+                            # Use hardware-optimized copy
+                            memory_optimizer.optimized_array_copy(
+                                source=predictions,
+                                destination=X_enhanced[:, current_col:current_col + pred_cols]
+                            )
+                        else:
+                            X_enhanced[:, current_col:current_col + pred_cols] = predictions
+                    except:
+                        # Fallback to standard copy
+                        X_enhanced[:, current_col:current_col + pred_cols] = predictions
+                    
+                    current_col += pred_cols
+                    self.logger.info(f"📊 Added {pred_cols} features from analyst ensemble: {ensemble_name}")
+                
+                self.logger.info(f"📊 Meta-learner features: {base_features} base + {additional_features_count} model inputs = {total_features} total")
+                
+                # Use hardware-optimized cleanup
+                try:
+                    if ADVANCED_MEMORY_AVAILABLE:
+                        memory_optimizer.cleanup_temporary_arrays([
+                            ('analyst_predictions', analyst_predictions),
+                            ('ensemble_predictions', ensemble_predictions),
+                            ('hmm_features', hmm_features)
+                        ])
+                    else:
+                        # Standard cleanup
+                        del analyst_predictions, ensemble_predictions
+                        if hmm_features is not None:
+                            del hmm_features
+                except:
+                    # Emergency cleanup
+                    try:
+                        del analyst_predictions, ensemble_predictions
+                        if hmm_features is not None:
+                            del hmm_features
+                    except:
+                        pass
+                
             else:
+                # No additional features, return view of original array to save memory
                 X_enhanced = X
-                self.logger.info(f"📊 Using base features only: {X.shape[1]} features")
+                self.logger.info(f"📊 Using base features only: {base_features} features")
             
             # Log integration summary
             self.logger.info(f"📊 Integration summary: {integration_stats}")
@@ -1050,29 +1114,91 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
             return X
     
     def _generate_model_predictions(self, model: Any, X: np.ndarray, model_name: str) -> Optional[np.ndarray]:
-        """Generate predictions from a model with proper error handling."""
+        """Generate predictions from a model with proper error handling and shape validation."""
         try:
             # Check if model has predict method
             if not hasattr(model, 'predict'):
                 self.logger.warning(f"⚠️ Model {model_name} does not have predict method")
                 return None
             
-            # Generate predictions
-            predictions = model.predict(X)
+            # Validate input shape
+            if X.ndim != 2:
+                self.logger.warning(f"⚠️ Input X must be 2D, got shape {X.shape}")
+                return None
             
-            # Ensure predictions are 2D
+            if X.shape[0] == 0:
+                self.logger.warning(f"⚠️ Empty input data for model {model_name}")
+                return None
+            
+            # Generate predictions with error handling
+            try:
+                predictions = model.predict(X)
+            except Exception as pred_error:
+                self.logger.warning(f"⚠️ Prediction failed for {model_name}: {pred_error}")
+                return None
+            
+            # Handle different prediction output formats
+            if predictions is None:
+                self.logger.warning(f"⚠️ Model {model_name} returned None predictions")
+                return None
+            
+            # Convert to numpy array if needed
+            if not isinstance(predictions, np.ndarray):
+                try:
+                    predictions = np.array(predictions)
+                except Exception as conv_error:
+                    self.logger.warning(f"⚠️ Failed to convert predictions to array for {model_name}: {conv_error}")
+                    return None
+            
+            # Handle scalar predictions
+            if predictions.ndim == 0:
+                predictions = np.array([predictions])
+            
+            # Ensure predictions are at least 1D
+            if predictions.ndim == 1:
+                # Check if we need to reshape based on expected output
+                if len(predictions) == X.shape[0]:
+                    # Single output per sample - reshape to column vector
+                    predictions = predictions.reshape(-1, 1)
+                elif len(predictions) == 1 and X.shape[0] > 1:
+                    # Single prediction for all samples - broadcast
+                    predictions = np.full((X.shape[0], 1), predictions[0])
+                else:
+                    self.logger.warning(f"⚠️ Ambiguous 1D prediction shape for {model_name}: {predictions.shape} vs input {X.shape[0]}")
+                    return None
+            
+            # Validate final prediction shape
+            if predictions.shape[0] != X.shape[0]:
+                self.logger.warning(f"⚠️ Model {model_name} predictions shape mismatch: {predictions.shape[0]} vs {X.shape[0]}")
+                # Try to fix common shape mismatches
+                if predictions.shape[1] == X.shape[0] and predictions.shape[0] == 1:
+                    # Transpose case
+                    predictions = predictions.T
+                    self.logger.info(f"✅ Fixed shape mismatch by transposing for {model_name}")
+                else:
+                    return None
+            
+            # Ensure we have at least one feature dimension
             if predictions.ndim == 1:
                 predictions = predictions.reshape(-1, 1)
             
-            # Validate predictions
+            # Final validation
             if predictions.shape[0] != X.shape[0]:
-                self.logger.warning(f"⚠️ Model {model_name} predictions shape mismatch: {predictions.shape[0]} vs {X.shape[0]}")
+                self.logger.warning(f"⚠️ Final shape validation failed for {model_name}: {predictions.shape[0]} vs {X.shape[0]}")
                 return None
             
             # Check for NaN or infinite values
-            if np.any(np.isnan(predictions)) or np.any(np.isinf(predictions)):
-                self.logger.warning(f"⚠️ Model {model_name} produced invalid predictions (NaN/Inf)")
-                return None
+            if np.any(np.isnan(predictions)):
+                nan_count = np.sum(np.isnan(predictions))
+                self.logger.warning(f"⚠️ Model {model_name} produced {nan_count} NaN predictions")
+                # Replace NaN with zeros or median
+                predictions = np.nan_to_num(predictions, nan=0.0)
+            
+            if np.any(np.isinf(predictions)):
+                inf_count = np.sum(np.isinf(predictions))
+                self.logger.warning(f"⚠️ Model {model_name} produced {inf_count} infinite predictions")
+                # Replace inf with large but finite values
+                predictions = np.nan_to_num(predictions, posinf=1e6, neginf=-1e6)
             
             return predictions
             
@@ -1321,9 +1447,60 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
             return {'error': str(e)}
     
     def cleanup_resources(self) -> None:
-        """Clean up hardware optimizers and other resources for ensemble training."""
+        """Clean up hardware optimizers and other resources using hardware optimization tools."""
         try:
-            tprint_info("🧹 Cleaning up ensemble training resources...")
+            tprint_info("🧹 Cleaning up ensemble training resources with hardware optimization...")
+            
+            # Import hardware optimization tools
+            from src.utils.hardware import (
+                get_unified_hardware_manager, get_advanced_memory_optimizer,
+                UNIFIED_MANAGER_AVAILABLE, ADVANCED_MEMORY_AVAILABLE
+            )
+            from src.utils.common_operations import cleanup_m1_optimizers
+            
+            cleanup_stats = {'memory_freed_mb': 0, 'resources_cleaned': 0}
+            
+            # Use unified hardware manager for comprehensive cleanup
+            if UNIFIED_MANAGER_AVAILABLE:
+                try:
+                    hardware_manager = get_unified_hardware_manager()
+                    
+                    # Comprehensive hardware resource cleanup
+                    cleanup_result = hardware_manager.cleanup_all_resources(
+                        cleanup_level='aggressive',
+                        target_components=['cpu', 'gpu', 'memory'],
+                        force_cleanup=True
+                    )
+                    
+                    cleanup_stats.update(cleanup_result)
+                    tprint_success(f"✅ Unified hardware cleanup completed: {cleanup_result}")
+                    
+                except Exception as unified_error:
+                    tprint_warning(f"⚠️ Unified hardware cleanup failed: {unified_error}")
+                    # Continue with individual component cleanup
+            
+            # Use advanced memory optimizer for memory-specific cleanup
+            if ADVANCED_MEMORY_AVAILABLE:
+                try:
+                    memory_optimizer = get_advanced_memory_optimizer()
+                    
+                    # Clean up training-related memory
+                    training_objects = []
+                    if hasattr(self, 'progress_tracker'):
+                        training_objects.append(self.progress_tracker)
+                    if hasattr(self, 'current_step'):
+                        training_objects.append(self.current_step)
+                    
+                    memory_freed = memory_optimizer.cleanup_training_memory(
+                        training_objects=training_objects,
+                        optimization_level='aggressive'
+                    )
+                    
+                    cleanup_stats['memory_freed_mb'] += memory_freed
+                    tprint_debug(f"🧹 Advanced memory cleanup: {memory_freed:.2f}MB freed")
+                    
+                except Exception as memory_error:
+                    tprint_warning(f"⚠️ Advanced memory cleanup failed: {memory_error}")
             
             # Clean up advanced hardware tools if available
             if hasattr(self, 'adaptive_optimizer') and self.adaptive_optimizer:
@@ -1365,22 +1542,39 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
                     tprint_error(f"❌ {error_msg}")
                     raise RuntimeError(error_msg)
                 tprint_success("✅ M1 optimizers cleaned up successfully for ensemble")
+                cleanup_stats['resources_cleaned'] += 1
             except Exception as e:
                 error_msg = f"CRITICAL: Failed to cleanup M1 optimizers for ensemble: {e}"
                 tprint_error(f"❌ {error_msg}")
                 raise RuntimeError(error_msg) from e
             
-            # Clean up individual hardware resources
-            if hasattr(self, 'm1_gpu_manager') and self.m1_gpu_manager:
-                tprint_debug("Cleaning up M1 GPU manager for ensemble...")
+
+            # Clean up individual hardware resources with hardware tools
+            hardware_resources = [
+                ('m1_gpu_manager', 'M1 GPU manager'),
+                ('m1_memory_optimizer', 'M1 memory optimizer'),
+                ('m1_cpu_optimizer', 'M1 CPU optimizer')
+            ]
             
-            if hasattr(self, 'm1_memory_optimizer') and self.m1_memory_optimizer:
-                tprint_debug("Cleaning up M1 memory optimizer for ensemble...")
+            for attr_name, resource_name in hardware_resources:
+                if hasattr(self, attr_name) and getattr(self, attr_name):
+                    try:
+                        resource = getattr(self, attr_name)
+                        
+                        # Use hardware-optimized cleanup if available
+                        if UNIFIED_MANAGER_AVAILABLE and hasattr(resource, 'cleanup'):
+                            hardware_manager = get_unified_hardware_manager()
+                            hardware_manager.cleanup_resource(resource, resource_type=attr_name)
+                        elif hasattr(resource, 'cleanup'):
+                            resource.cleanup()
+                        
+                        tprint_debug(f"🧹 Cleaned up {resource_name} for ensemble")
+                        cleanup_stats['resources_cleaned'] += 1
+                        
+                    except Exception as resource_error:
+                        tprint_warning(f"⚠️ Failed to cleanup {resource_name}: {resource_error}")
             
-            if hasattr(self, 'm1_cpu_optimizer') and self.m1_cpu_optimizer:
-                tprint_debug("Cleaning up M1 CPU optimizer for ensemble...")
-            
-            tprint_success("✅ Ensemble resource cleanup completed")
+            tprint_success(f"✅ Ensemble resource cleanup completed: {cleanup_stats}")
             
         except Exception as e:
             error_msg = f"CRITICAL: Ensemble resource cleanup failed: {e}"

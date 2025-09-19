@@ -87,14 +87,22 @@ try:
     ML_EVALUATION_AVAILABLE = True
 except ImportError:
     ML_EVALUATION_AVAILABLE = False
-    EvaluationUtils = None
+    # Create a dummy class to prevent None reference errors
+    class EvaluationUtils:
+        @staticmethod
+        def evaluate_model_performance(*args, **kwargs):
+            raise ImportError("EvaluationUtils not available")
 
 try:
     from src.utils.ml_common.validation.validation_utils import ValidationUtils as MLValidationUtils
     ML_VALIDATION_AVAILABLE = True
 except ImportError:
     ML_VALIDATION_AVAILABLE = False
-    MLValidationUtils = None
+    # Create a dummy class to prevent None reference errors
+    class MLValidationUtils:
+        @staticmethod
+        def validate_data(*args, **kwargs):
+            raise ImportError("MLValidationUtils not available")
 
 # Hardware optimization imports - ensure availability
 try:
@@ -334,7 +342,18 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
             
             # Fallback to sklearn models if nothing else available
             if not available_models:
-                available_models = ['random_forest']  # Only Random Forest as fallback
+                # Try to use any available model from UnifiedModelFactory
+                try:
+                    from .shared_utilities.unified_model_factory import UnifiedModelFactory
+                    all_available = UnifiedModelFactory.get_available_models()
+                    # Filter to models that are likely to work without external dependencies
+                    sklearn_models = [m for m in all_available if m in ['random_forest', 'logistic_regression']]
+                    if sklearn_models:
+                        available_models = sklearn_models[:1]  # Use first available sklearn model
+                    else:
+                        available_models = ['random_forest']  # Ultimate fallback
+                except ImportError:
+                    available_models = ['random_forest']  # Ultimate fallback
                 
             config = HMMTrainingConfig(
                 model_name="hmm_models_enhanced",
@@ -433,8 +452,14 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
             except ValueError as e:
                 raise ValueError(f"Invalid numeric parameter: {e}")
             
-            # Validate model types are supported
-            available_model_types = ['lightgbm', 'random_forest']  # Updated to match current configuration
+            # Validate model types are supported using UnifiedModelFactory
+            try:
+                from .shared_utilities.unified_model_factory import UnifiedModelFactory
+                available_model_types = UnifiedModelFactory.get_available_models()
+            except ImportError:
+                # Fallback to basic model types if UnifiedModelFactory not available
+                available_model_types = ['lightgbm', 'random_forest', 'xgboost', 'logistic_regression', 'elastic_net_lr', 'elastic_net_cv']
+            
             unsupported_models = [m for m in config.model_types if m not in available_model_types]
             if unsupported_models:
                 supported_models = [m for m in config.model_types if m in available_model_types]
@@ -632,8 +657,75 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
             warnings = []
             unique_clusters = np.unique(cluster_assignments)
             
+            # Enhanced data type validation
+            if not isinstance(X, np.ndarray):
+                critical_failures.append(f"X must be numpy array, got {type(X)}")
+            if not isinstance(y, np.ndarray):
+                critical_failures.append(f"y must be numpy array, got {type(y)}")
+            if not isinstance(cluster_assignments, np.ndarray):
+                critical_failures.append(f"cluster_assignments must be numpy array, got {type(cluster_assignments)}")
+            
+            # Enhanced shape validation
+            if len(X) == 0:
+                critical_failures.append("X is empty")
+            if len(y) == 0:
+                critical_failures.append("y is empty")
+            if len(cluster_assignments) == 0:
+                critical_failures.append("cluster_assignments is empty")
+            
+            # Enhanced memory size validation
+            try:
+                import psutil
+                X_memory_mb = X.nbytes / (1024 * 1024)
+                y_memory_mb = y.nbytes / (1024 * 1024)
+                total_memory_mb = X_memory_mb + y_memory_mb
+                
+                if total_memory_mb > 1000:  # 1GB threshold
+                    warnings.append(f"Large dataset detected: {total_memory_mb:.1f}MB total memory usage")
+            except ImportError:
+                pass  # Skip memory validation if psutil not available
+            
+            # Enhanced feature value range validation
+            if X.size > 0:
+                try:
+                    validate_numeric_array(X, "input_features")
+                    if np.any(np.abs(X) > 1e6):
+                        warnings.append("Large feature values detected (>1e6), may indicate data quality issues")
+                except ValueError as e:
+                    critical_failures.append(f"Invalid feature values: {e}")
+            
+            # Enhanced target validation
+            if y.size > 0:
+                try:
+                    validate_numeric_array(y, "target_values")
+                    unique_targets = np.unique(y)
+                    if len(unique_targets) < 2:
+                        critical_failures.append("Target variable has only one unique value")
+                    elif len(unique_targets) > 100:
+                        warnings.append(f"Target variable has many unique values ({len(unique_targets)}), consider if this is classification")
+                except ValueError as e:
+                    critical_failures.append(f"Invalid target values: {e}")
+            
+            # Enhanced cluster validation
             if len(unique_clusters) < 2:
                 critical_failures.append(f"Need at least 2 clusters, found {len(unique_clusters)}")
+            elif len(unique_clusters) > 20:
+                warnings.append(f"Many clusters detected ({len(unique_clusters)}), may indicate overfitting")
+            
+            # Enhanced cluster distribution validation
+            cluster_counts = [np.sum(cluster_assignments == cluster) for cluster in unique_clusters]
+            min_cluster_count = min(cluster_counts)
+            max_cluster_count = max(cluster_counts)
+            
+            if min_cluster_count < 10:
+                critical_failures.append(f"Cluster has only {min_cluster_count} samples (minimum: 10)")
+            elif min_cluster_count < 50:
+                warnings.append(f"Some clusters have few samples (minimum: {min_cluster_count})")
+            
+            # Check for cluster imbalance
+            cluster_balance = min_cluster_count / max_cluster_count
+            if cluster_balance < 0.1:
+                warnings.append(f"Severe cluster imbalance detected (ratio: {cluster_balance:.2f})")
             
             # Early exit on critical failures
             if critical_failures:
@@ -643,12 +735,6 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
             # Warning checks (don't cause early exit)
             if len(X) < 1000:
                 warnings.append(f"Small dataset: {len(X)} samples (recommended: >1000)")
-            
-            # Check minimum samples per cluster
-            for cluster in unique_clusters:
-                cluster_count = np.sum(cluster_assignments == cluster)
-                if cluster_count < 10:  # Minimum samples per cluster
-                    warnings.append(f"Cluster {cluster} has only {cluster_count} samples (minimum: 10)")
             
             # Log warnings
             if warnings:
@@ -785,9 +871,11 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
                 # Filter out missing features
                 valid_selected_features = [f for f in selected_features if f in X.columns]
                 
-                if len(valid_selected_features) < len(selected_features) * 0.5:
-                    # More than 50% of features are missing - this is a serious issue
-                    self.logger.error(f"❌ More than 50% of selected features are missing ({len(missing_features)}/{len(selected_features)})")
+                # Use configurable threshold instead of hardcoded 50%
+                missing_threshold = 0.5  # Could be made configurable
+                if len(valid_selected_features) < len(selected_features) * (1 - missing_threshold):
+                    # More than threshold of features are missing - this is a serious issue
+                    self.logger.error(f"❌ More than {missing_threshold*100:.0f}% of selected features are missing ({len(missing_features)}/{len(selected_features)})")
                     raise ValueError(f"Feature selection returned invalid features: {missing_features[:5]}")
                 
                 selected_features = valid_selected_features
@@ -906,7 +994,16 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
                 # Memory management before training using common operations
                 initial_memory_bytes = get_memory_usage()
                 initial_memory_mb = initial_memory_bytes / (1024 * 1024)  # Convert to MB
-                initial_memory_pct = (initial_memory_bytes / (8 * 1024 * 1024 * 1024)) * 100  # Assume 8GB total for M1
+                
+                # Get actual total system memory instead of hardcoding
+                try:
+                    import psutil
+                    total_memory_bytes = psutil.virtual_memory().total
+                    initial_memory_pct = (initial_memory_bytes / total_memory_bytes) * 100
+                except (ImportError, AttributeError):
+                    # Fallback to reasonable default if psutil not available
+                    total_memory_bytes = 8 * 1024 * 1024 * 1024  # 8GB default
+                    initial_memory_pct = (initial_memory_bytes / total_memory_bytes) * 100
                 if initial_memory_pct > 90:
                     tprint(f"⚠️ High memory usage ({initial_memory_pct:.1f}%) before training {model_type}")
                     optimize_memory()  # Use common memory optimization
@@ -930,7 +1027,13 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
                             
                             # Check memory before training using common operations
                             current_memory_bytes = get_memory_usage()
-                            current_memory_pct = (current_memory_bytes / (8 * 1024 * 1024 * 1024)) * 100  # Assume 8GB total for M1
+                            try:
+                                import psutil
+                                total_memory_bytes = psutil.virtual_memory().total
+                                current_memory_pct = (current_memory_bytes / total_memory_bytes) * 100
+                            except (ImportError, AttributeError):
+                                total_memory_bytes = 8 * 1024 * 1024 * 1024  # 8GB default
+                                current_memory_pct = (current_memory_bytes / total_memory_bytes) * 100
                             if current_memory_pct > 95:
                                 tprint(f"⚠️ Memory usage critical ({current_memory_pct:.1f}%) - skipping {model_type}")
                                 raise MemoryError(f"Insufficient memory for {model_type} training")
@@ -964,28 +1067,42 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
                         except Exception as e:
                             result['exception'] = e
                     
-                    # Start training in a separate thread
+                    # Start training in a separate thread with proper cleanup
                     training_thread = threading.Thread(target=training_worker)
                     training_thread.daemon = True
                     training_thread.start()
-                    training_thread.join(timeout=timeout_seconds)
                     
-                    # Check if training completed or timed out
-                    if training_thread.is_alive():
-                        # Training timed out
-                        tprint(f"⏰ Training timeout for {model_type} after {timeout_seconds}s")
-                        raise TimeoutError(f"Training timeout for {model_type} after {timeout_seconds}s")
-                    
-                    # Check for exceptions
-                    if result['exception']:
-                        if isinstance(result['exception'], MemoryError):
-                            optimize_memory()  # Use common memory optimization
-                        raise result['exception']
-                    
-                    if result['model'] is None:
-                        raise RuntimeError(f"Training failed for unknown reason: {model_type}")
-                    
-                    return result['model']
+                    try:
+                        training_thread.join(timeout=timeout_seconds)
+                        
+                        # Check if training completed or timed out
+                        if training_thread.is_alive():
+                            # Training timed out - thread may still be running
+                            tprint(f"⏰ Training timeout for {model_type} after {timeout_seconds}s")
+                            # Note: Thread will be cleaned up when daemon=True and process exits
+                            # Force garbage collection to help with cleanup
+                            import gc
+                            gc.collect()
+                            raise TimeoutError(f"Training timeout for {model_type} after {timeout_seconds}s")
+                        
+                        # Check for exceptions
+                        if result['exception']:
+                            if isinstance(result['exception'], MemoryError):
+                                optimize_memory()  # Use common memory optimization
+                            raise result['exception']
+                        
+                        if result['model'] is None:
+                            raise RuntimeError(f"Training failed for unknown reason: {model_type}")
+                        
+                        return result['model']
+                        
+                    finally:
+                        # Ensure thread cleanup even if exceptions occur
+                        if training_thread.is_alive():
+                            # Thread is still running, but daemon=True will clean it up
+                            # Force garbage collection to help with memory cleanup
+                            import gc
+                            gc.collect()
                 
                 # Execute with circuit breaker protection
                 model, predictions, feature_importance, hyperparameters = self.circuit_breaker.call(create_and_train_model)
@@ -1005,7 +1122,7 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
                         metrics.f1_score = validate_finite(eval_metrics.get('f1_score', 0.0), "f1_score")
                         metrics.precision = validate_finite(eval_metrics.get('precision', 0.0), "precision")
                         metrics.recall = validate_finite(eval_metrics.get('recall', 0.0), "recall")
-                    except Exception as e:
+                    except (ImportError, Exception) as e:
                         metrics.warnings.append(f"Evaluation utilities failed: {e}")
                         # Fallback to basic metrics using safe operations
                         metrics.accuracy = validate_finite(accuracy, "accuracy")
@@ -1024,12 +1141,16 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
                         metrics.f1_score = validate_finite(f1_score(y, predictions, average='weighted'), "f1_score")
                         metrics.precision = validate_finite(precision_score(y, predictions, average='weighted'), "precision")
                         metrics.recall = validate_finite(recall_score(y, predictions, average='weighted'), "recall")
+                    except ImportError as e:
+                        metrics.warnings.append(f"sklearn metrics not available: {e}")
+                        metrics.accuracy = validate_finite(accuracy, "accuracy")
+                        # Set other metrics to 0.0 when sklearn not available
+                        metrics.f1_score = 0.0
+                        metrics.precision = 0.0
+                        metrics.recall = 0.0
                     except Exception as e:
                         metrics.warnings.append(f"Fallback metrics calculation failed: {e}")
                         metrics.accuracy = validate_finite(accuracy, "accuracy")
-                
-                # Execute with circuit breaker protection
-                model, predictions, feature_importance, hyperparameters = self.circuit_breaker.call(create_and_train_model)
                 
                 training_time = time.time() - start_time
                 metrics.training_time = validate_finite(training_time, "training_time")
@@ -1051,10 +1172,36 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
                 tprint(f"✅ {model_type} trained successfully (accuracy: {metrics.accuracy:.4f}, time: {training_time:.2f}s, memory: {metrics.memory_usage_mb:.1f}MB)")
                 
                 # Cleanup memory using common operations
-                final_memory_pct = (final_memory_bytes / (8 * 1024 * 1024 * 1024)) * 100  # Convert to percentage
-                if final_memory_pct > initial_memory_pct + 10:
+                try:
+                    import psutil
+                    total_memory_bytes = psutil.virtual_memory().total
+                    final_memory_pct = (final_memory_bytes / total_memory_bytes) * 100
+                except (ImportError, AttributeError):
+                    total_memory_bytes = 8 * 1024 * 1024 * 1024  # 8GB default
+                    final_memory_pct = (final_memory_bytes / total_memory_bytes) * 100
+                
+                # Enhanced memory cleanup with multiple strategies
+                memory_increase_threshold = 10  # Percentage
+                if final_memory_pct > initial_memory_pct + memory_increase_threshold:
                     tprint(f"⚠️ Memory usage increased significantly: {initial_memory_pct:.1f}% → {final_memory_pct:.1f}%")
-                    optimize_memory()  # Use common memory optimization
+                    
+                    # Try multiple cleanup strategies
+                    try:
+                        optimize_memory()  # Use common memory optimization
+                    except Exception as e:
+                        tprint(f"⚠️ Memory optimization failed: {e}")
+                    
+                    # Force garbage collection
+                    import gc
+                    collected = gc.collect()
+                    tprint(f"🧹 Garbage collection freed {collected} objects")
+                    
+                    # Clear any cached variables if possible
+                    try:
+                        if hasattr(self, '_temp_variables'):
+                            del self._temp_variables
+                    except:
+                        pass
                 
                 return ModelResult(
                     model=model,
@@ -1078,8 +1225,16 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
                 
                 tprint(f"❌ Failed to train {model_type}: {e}")
                 
-                # Cleanup memory using common operations
-                optimize_memory()
+                # Enhanced memory cleanup using common operations
+                try:
+                    optimize_memory()
+                except Exception as cleanup_error:
+                    tprint(f"⚠️ Memory optimization failed during error handling: {cleanup_error}")
+                
+                # Force garbage collection
+                import gc
+                collected = gc.collect()
+                tprint(f"🧹 Garbage collection freed {collected} objects during error handling")
                 
                 # Use centralized error handler
                 return TrainingErrorHandler.handle_training_error(model_type, e, training_time)

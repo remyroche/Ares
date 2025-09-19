@@ -177,99 +177,107 @@ class BasicBacktestingPostStep:
         if self.config.enable_performance_monitoring:
             self.performance_monitor.start_monitoring()
         
-        try:
-            # Load data if not provided
-            if data is None:
-                data = await self._load_data()
-            
-            # Load baseline results if not provided
-            if baseline_results is None:
-                baseline_results = await self._load_baseline_results()
-            
-            # Validate data and baseline results
-            self._validate_inputs(data, baseline_results)
-            
-            # Execute optimized strategies
-            optimized_results = await self._execute_optimized_strategies(data)
-            
-            # Compare performance with baseline
-            performance_comparison = self._compare_performance(baseline_results, optimized_results)
-            
-            # Calculate improvement metrics
-            improvement_metrics = self._calculate_improvement_metrics(baseline_results, optimized_results)
-            
-            # Calculate risk-adjusted metrics
-            risk_adjusted_metrics = self._calculate_risk_adjusted_metrics(optimized_results)
-            
-            # Assess optimization effectiveness
-            optimization_effectiveness = self._assess_optimization_effectiveness(
-                baseline_results, optimized_results, improvement_metrics
-            )
-            
-            # Create results
-            results = BasicBacktestingPostResults(
-                symbol=self.config.symbol,
-                exchange=self.config.exchange,
-                timeframe=self.config.timeframe,
-                start_time=datetime.now(),
-                end_time=datetime.now(),
-                total_duration=time.time() - start_time,
-                optimized_results=optimized_results,
-                performance_comparison=performance_comparison,
-                improvement_metrics=improvement_metrics,
-                risk_adjusted_metrics=risk_adjusted_metrics,
-                optimization_effectiveness=optimization_effectiveness,
-                config=self.config,
-                execution_time=time.time() - start_time,
-                memory_usage_mb=psutil.Process().memory_info().rss / 1024 / 1024,
-                system_metrics=self._get_system_metrics()
-            )
-            
-            # Save results
-            if self.config.save_detailed_results:
-                await self._save_results(results)
-            
-            self.logger.info("✅ Basic backtesting post-optimization completed successfully")
-            self.logger.info(f"⏱️ Execution time: {results.execution_time:.2f}s")
-            self.logger.info(f"📊 Optimization effectiveness: {optimization_effectiveness.get('overall_score', 0):.2f}")
-            
-            return results
-            
-        except Exception as e:
-            self.logger.error(f"❌ Error in basic backtesting post-optimization: {e}")
-            self.logger.exception("Full traceback:")
-            raise
-        finally:
-            # Stop performance monitoring
-            if self.config.enable_performance_monitoring:
-                self.performance_monitor.stop_monitoring()
+        # Initialize memory optimizer
+        from .memory_optimizer import memory_managed_backtesting
+        
+        with memory_managed_backtesting("basic_backtesting_post") as memory_optimizer:
+            try:
+                # Load data if not provided
+                if data is None:
+                    data = await self._load_data()
+                
+                # Optimize data for memory efficiency
+                data = memory_optimizer.optimize_dataframe(data)
+                
+                # Load baseline results if not provided
+                if baseline_results is None:
+                    baseline_results = await self._load_baseline_results()
+                
+                # Validate data and baseline results
+                self._validate_inputs(data, baseline_results)
+                
+                # Execute optimized strategies
+                optimized_results = await self._execute_optimized_strategies(data)
+                
+                # Compare performance with baseline
+                performance_comparison = self._compare_performance(baseline_results, optimized_results)
+                
+                # Calculate improvement metrics
+                improvement_metrics = self._calculate_improvement_metrics(baseline_results, optimized_results)
+                
+                # Calculate risk-adjusted metrics
+                risk_adjusted_metrics = self._calculate_risk_adjusted_metrics(optimized_results)
+                
+                # Assess optimization effectiveness
+                optimization_effectiveness = self._assess_optimization_effectiveness(
+                    baseline_results, optimized_results, improvement_metrics
+                )
+                
+                # Create results
+                results = BasicBacktestingPostResults(
+                    symbol=self.config.symbol,
+                    exchange=self.config.exchange,
+                    timeframe=self.config.timeframe,
+                    start_time=datetime.now(),
+                    end_time=datetime.now(),
+                    total_duration=time.time() - start_time,
+                    optimized_results=optimized_results,
+                    performance_comparison=performance_comparison,
+                    improvement_metrics=improvement_metrics,
+                    risk_adjusted_metrics=risk_adjusted_metrics,
+                    optimization_effectiveness=optimization_effectiveness,
+                    config=self.config,
+                    execution_time=time.time() - start_time,
+                    memory_usage_mb=memory_optimizer.get_current_memory_stats().process_memory_mb,
+                    system_metrics=self._get_system_metrics()
+                )
+                
+                # Save results
+                if self.config.save_detailed_results:
+                    await self._save_results(results)
+                
+                self.logger.info("✅ Basic backtesting post-optimization completed successfully")
+                self.logger.info(f"⏱️ Execution time: {results.execution_time:.2f}s")
+                self.logger.info(f"📊 Optimization effectiveness: {optimization_effectiveness.get('overall_score', 0):.2f}")
+                
+                return results
+                
+            except Exception as e:
+                self.logger.error(f"❌ Error in basic backtesting post-optimization: {e}")
+                self.logger.exception("Full traceback:")
+                raise
+            finally:
+                # Stop performance monitoring
+                if self.config.enable_performance_monitoring:
+                    self.performance_monitor.stop_monitoring()
     
     async def _load_data(self) -> pd.DataFrame:
-        """Load market data for backtesting."""
+        """Load market data for backtesting using unified data loader."""
+        from .unified_data_loader import DataLoadingConfig, get_unified_data_loader
+        
         self.logger.info("📂 Loading market data...")
         
-        # Try to load consolidated data first
-        consolidated_file = self.data_dir / f"aggtrades_{self.config.exchange}_{self.config.symbol}_consolidated.parquet"
+        # Create loading configuration
+        loading_config = DataLoadingConfig(
+            symbol=self.config.symbol,
+            exchange=self.config.exchange,
+            timeframe=self.config.timeframe,
+            data_dir=str(self.data_dir),
+            enable_memory_optimization=True,
+            memory_limit_mb=1000.0
+        )
         
-        if safe_file_exists(consolidated_file):
-            self.logger.info(f"📁 Loading consolidated data: {consolidated_file}")
-            data = standardized_parquet_handler.read_parquet_standardized(consolidated_file)
-        else:
-            # Fallback to individual files
-            self.logger.info("📁 Consolidated file not found, loading individual files...")
-            data = await self._load_individual_files()
+        # Load data using unified loader
+        loader = get_unified_data_loader()
+        loaded_data = loader.load_data(loading_config)
         
-        self.logger.info(f"📊 Loaded {len(data):,} data points")
-        self.logger.info(f"📅 Date range: {data.index[0]} to {data.index[-1]}")
+        self.logger.info(f"✅ Loaded data via unified loader:")
+        self.logger.info(f"   📊 Records: {len(loaded_data.data):,}")
+        self.logger.info(f"   🧠 Memory: {loaded_data.memory_usage_mb:.1f}MB")
+        self.logger.info(f"   🎯 Quality: {loaded_data.data_quality_score:.2f}")
+        self.logger.info(f"   📅 Date range: {loaded_data.data.index[0]} to {loaded_data.data.index[-1]}")
         
-        return data
-    
-    async def _load_individual_files(self) -> pd.DataFrame:
-        """Load data from individual files."""
-        # This would implement loading from individual parquet files
-        # For now, return empty DataFrame
-        self.logger.warning("⚠️ Individual file loading not implemented")
-        return pd.DataFrame()
+        return loaded_data.data
     
     async def _load_baseline_results(self) -> Dict[str, Any]:
         """Load baseline results from previous run."""

@@ -167,9 +167,13 @@ async def analyze_hmm_clustering_results(symbol: str, exchange: str, timeframe: 
         meta_file = common_ops.join_paths("data/training", f"BINANCE_{symbol}_hmm_composite_meta_{timeframe}.json")
         
         # Fast fail validation for file existence
-        file_validation = await validator.validate_data_file(meta_file)
-        if not file_validation.passed:
-            raise FileNotFoundError(f"HMM metadata file validation failed: {file_validation.message}")
+        from pathlib import Path
+        if not Path(meta_file).exists():
+            raise FileNotFoundError(f"HMM metadata file not found: {meta_file}")
+        if not Path(meta_file).is_file():
+            raise FileNotFoundError(f"HMM metadata path is not a file: {meta_file}")
+        if Path(meta_file).stat().st_size == 0:
+            raise FileNotFoundError(f"HMM metadata file is empty: {meta_file}")
 
         # Load HMM composite metadata with async I/O and utility integration
         meta_data = await io_ops.load_file_async(meta_file, 'json')
@@ -197,18 +201,38 @@ async def analyze_hmm_clustering_results(symbol: str, exchange: str, timeframe: 
                 block_states_df = loaded_dataframes[0] if common_ops.file_exists(block_states_file) else None
                 clusters_df = loaded_dataframes[1] if common_ops.file_exists(clusters_file) and len(loaded_dataframes) > 1 else loaded_dataframes[0] if common_ops.file_exists(clusters_file) else None
                 
-                # Use data processing utils for DataFrame validation
+                # Use data processing utils for DataFrame validation with proper error handling
                 if block_states_df is not None:
-                    validator = data_processing_utils.DataFrameValidator()
-                    validation_result = validator.validate_structure(block_states_df)
-                    if not validation_result.is_valid:
-                        enhanced_logger.logger.warning(f"Block states validation issues: {validation_result.issues}")
+                    try:
+                        if hasattr(data_processing_utils, 'DataFrameValidator'):
+                            validator = data_processing_utils.DataFrameValidator()
+                            validation_result = validator.validate_structure(block_states_df)
+                            if not validation_result.is_valid:
+                                enhanced_logger.logger.warning(f"Block states validation issues: {validation_result.issues}")
+                        else:
+                            # Fallback validation
+                            if block_states_df.empty:
+                                enhanced_logger.logger.warning("Block states DataFrame is empty")
+                            elif block_states_df.isnull().all().all():
+                                enhanced_logger.logger.warning("Block states DataFrame contains only null values")
+                    except Exception as e:
+                        enhanced_logger.logger.warning(f"Block states validation failed: {e}")
                 
                 if clusters_df is not None:
-                    validator = data_processing_utils.DataFrameValidator()
-                    validation_result = validator.validate_structure(clusters_df)
-                    if not validation_result.is_valid:
-                        enhanced_logger.logger.warning(f"Clusters validation issues: {validation_result.issues}")
+                    try:
+                        if hasattr(data_processing_utils, 'DataFrameValidator'):
+                            validator = data_processing_utils.DataFrameValidator()
+                            validation_result = validator.validate_structure(clusters_df)
+                            if not validation_result.is_valid:
+                                enhanced_logger.logger.warning(f"Clusters validation issues: {validation_result.issues}")
+                        else:
+                            # Fallback validation
+                            if clusters_df.empty:
+                                enhanced_logger.logger.warning("Clusters DataFrame is empty")
+                            elif clusters_df.isnull().all().all():
+                                enhanced_logger.logger.warning("Clusters DataFrame contains only null values")
+                    except Exception as e:
+                        enhanced_logger.logger.warning(f"Clusters validation failed: {e}")
             else:
                 block_states_df = None
                 clusters_df = None

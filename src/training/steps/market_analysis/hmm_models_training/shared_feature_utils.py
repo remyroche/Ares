@@ -86,25 +86,26 @@ class HMMEnhancedFeatureCreator:
             return X
     
     @staticmethod
-    def get_enhanced_feature_names(original_feature_count: int) -> List[str]:
+    def get_enhanced_feature_names(original_feature_count: int, original_feature_names: Optional[List[str]] = None) -> List[str]:
         """
         Get names for enhanced features.
         
         Args:
             original_feature_count: Number of original features
+            original_feature_names: Optional names of original features
             
         Returns:
             List of feature names
         """
         feature_names = []
         
-        # Original features
-        if original_feature_count >= 1:
-            feature_names.append("close_return")
-        if original_feature_count >= 2:
-            feature_names.append("volume_return")
-        if original_feature_count >= 3:
-            feature_names.append("price_range_pct")
+        # Use provided original feature names if available, otherwise use generic names
+        if original_feature_names is not None and len(original_feature_names) >= original_feature_count:
+            feature_names.extend(original_feature_names[:original_feature_count])
+        else:
+            # Generate generic feature names based on count
+            for i in range(original_feature_count):
+                feature_names.append(f"feature_{i}")
         
         # Enhanced features
         feature_names.extend([
@@ -138,23 +139,10 @@ class HMMEnhancedFeatureCreator:
         # Create enhanced features
         X_enhanced = HMMEnhancedFeatureCreator.create_enhanced_features(X, regime_labels)
         
-        # Get feature names
-        if original_feature_names is None:
-            enhanced_feature_names = HMMEnhancedFeatureCreator.get_enhanced_feature_names(X.shape[1])
-        else:
-            # Use provided original feature names
-            enhanced_feature_names = original_feature_names.copy()
-            enhanced_feature_names.extend([
-                "rsi_momentum",
-                "macd_momentum", 
-                "volatility_rolling_10",
-                "volatility_regime",
-                "volume_momentum",
-                "volume_trend_strength",
-                "regime_stability",
-                "time_in_regime",
-                "regime_transition_freq"
-            ])
+        # Get feature names using the updated method
+        enhanced_feature_names = HMMEnhancedFeatureCreator.get_enhanced_feature_names(
+            X.shape[1], original_feature_names
+        )
         
         return X_enhanced, enhanced_feature_names
     
@@ -237,9 +225,9 @@ def create_enhanced_features(X: np.ndarray, regime_labels: np.ndarray) -> np.nda
     return HMMEnhancedFeatureCreator.create_enhanced_features(X, regime_labels)
 
 
-def get_enhanced_feature_names(original_feature_count: int) -> List[str]:
+def get_enhanced_feature_names(original_feature_count: int, original_feature_names: Optional[List[str]] = None) -> List[str]:
     """Get names for enhanced features."""
-    return HMMEnhancedFeatureCreator.get_enhanced_feature_names(original_feature_count)
+    return HMMEnhancedFeatureCreator.get_enhanced_feature_names(original_feature_count, original_feature_names)
 
 
 def create_enhanced_features_with_names(X: np.ndarray, regime_labels: np.ndarray, 

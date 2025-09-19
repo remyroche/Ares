@@ -203,96 +203,104 @@ class BasicBacktestingPreStep:
         if self.config.enable_performance_monitoring:
             self.performance_monitor.start_monitoring()
         
-        try:
-            # Load data if not provided
-            if data is None:
-                data = await self._load_data()
-            
-            # Validate data
-            self._validate_data(data)
-            
-            # Assess data quality
-            data_quality_metrics = await self._assess_data_quality(data)
-            
-            # Execute baseline strategies
-            baseline_results = await self._execute_baseline_strategies(data)
-            
-            # Calculate performance benchmarks
-            performance_benchmarks = self._calculate_performance_benchmarks(baseline_results)
-            
-            # Calculate risk metrics
-            risk_metrics = self._calculate_risk_metrics(baseline_results)
-            
-            # Generate optimization recommendations
-            optimization_recommendations = self._generate_optimization_recommendations(
-                baseline_results, performance_benchmarks, risk_metrics
-            )
-            
-            # Create results
-            results = BasicBacktestingPreResults(
-                symbol=self.config.symbol,
-                exchange=self.config.exchange,
-                timeframe=self.config.timeframe,
-                start_time=datetime.now(),
-                end_time=datetime.now(),
-                total_duration=time.time() - start_time,
-                baseline_results=baseline_results,
-                performance_benchmarks=performance_benchmarks,
-                risk_metrics=risk_metrics,
-                data_quality_metrics=data_quality_metrics,
-                optimization_recommendations=optimization_recommendations,
-                config=self.config,
-                execution_time=time.time() - start_time,
-                memory_usage_mb=psutil.Process().memory_info().rss / 1024 / 1024,
-                system_metrics=self._get_system_metrics()
-            )
-            
-            # Save results
-            if self.config.save_detailed_results:
-                await self._save_results(results)
-            
-            self.logger.info("✅ Basic backtesting pre-optimization completed successfully")
-            self.logger.info(f"⏱️ Execution time: {results.execution_time:.2f}s")
-            self.logger.info(f"📊 Baseline strategies tested: {len(baseline_results)}")
-            self.logger.info(f"💡 Optimization recommendations: {len(optimization_recommendations)}")
-            
-            return results
-            
-        except Exception as e:
-            self.logger.error(f"❌ Error in basic backtesting pre-optimization: {e}")
-            self.logger.exception("Full traceback:")
-            raise
-        finally:
-            # Stop performance monitoring
-            if self.config.enable_performance_monitoring:
-                self.performance_monitor.stop_monitoring()
+        # Initialize memory optimizer
+        from .memory_optimizer import memory_managed_backtesting
+        
+        with memory_managed_backtesting("basic_backtesting_pre") as memory_optimizer:
+            try:
+                # Load data if not provided
+                if data is None:
+                    data = await self._load_data()
+                
+                # Optimize data for memory efficiency
+                data = memory_optimizer.optimize_dataframe(data)
+                
+                # Validate data
+                self._validate_data(data)
+                
+                # Assess data quality
+                data_quality_metrics = await self._assess_data_quality(data)
+                
+                # Execute baseline strategies
+                baseline_results = await self._execute_baseline_strategies(data)
+                
+                # Calculate performance benchmarks
+                performance_benchmarks = self._calculate_performance_benchmarks(baseline_results)
+                
+                # Calculate risk metrics
+                risk_metrics = self._calculate_risk_metrics(baseline_results)
+                
+                # Generate optimization recommendations
+                optimization_recommendations = self._generate_optimization_recommendations(
+                    baseline_results, performance_benchmarks, risk_metrics
+                )
+                
+                # Create results
+                results = BasicBacktestingPreResults(
+                    symbol=self.config.symbol,
+                    exchange=self.config.exchange,
+                    timeframe=self.config.timeframe,
+                    start_time=datetime.now(),
+                    end_time=datetime.now(),
+                    total_duration=time.time() - start_time,
+                    baseline_results=baseline_results,
+                    performance_benchmarks=performance_benchmarks,
+                    risk_metrics=risk_metrics,
+                    data_quality_metrics=data_quality_metrics,
+                    optimization_recommendations=optimization_recommendations,
+                    config=self.config,
+                    execution_time=time.time() - start_time,
+                    memory_usage_mb=memory_optimizer.get_current_memory_stats().process_memory_mb,
+                    system_metrics=self._get_system_metrics()
+                )
+                
+                # Save results
+                if self.config.save_detailed_results:
+                    await self._save_results(results)
+                
+                self.logger.info("✅ Basic backtesting pre-optimization completed successfully")
+                self.logger.info(f"⏱️ Execution time: {results.execution_time:.2f}s")
+                self.logger.info(f"📊 Baseline strategies tested: {len(baseline_results)}")
+                self.logger.info(f"💡 Optimization recommendations: {len(optimization_recommendations)}")
+                
+                return results
+                
+            except Exception as e:
+                self.logger.error(f"❌ Error in basic backtesting pre-optimization: {e}")
+                self.logger.exception("Full traceback:")
+                raise
+            finally:
+                # Stop performance monitoring
+                if self.config.enable_performance_monitoring:
+                    self.performance_monitor.stop_monitoring()
     
     async def _load_data(self) -> pd.DataFrame:
-        """Load market data for backtesting."""
+        """Load market data for backtesting using unified data loader."""
+        from .unified_data_loader import DataLoadingConfig, get_unified_data_loader
+        
         self.logger.info("📂 Loading market data...")
         
-        # Try to load consolidated data first
-        consolidated_file = self.data_dir / f"aggtrades_{self.config.exchange}_{self.config.symbol}_consolidated.parquet"
+        # Create loading configuration
+        loading_config = DataLoadingConfig(
+            symbol=self.config.symbol,
+            exchange=self.config.exchange,
+            timeframe=self.config.timeframe,
+            data_dir=str(self.data_dir),
+            enable_memory_optimization=True,
+            memory_limit_mb=1000.0
+        )
         
-        if safe_file_exists(consolidated_file):
-            self.logger.info(f"📁 Loading consolidated data: {consolidated_file}")
-            data = standardized_parquet_handler.read_parquet_standardized(consolidated_file)
-        else:
-            # Fallback to individual files
-            self.logger.info("📁 Consolidated file not found, loading individual files...")
-            data = await self._load_individual_files()
+        # Load data using unified loader
+        loader = get_unified_data_loader()
+        loaded_data = loader.load_data(loading_config)
         
-        self.logger.info(f"📊 Loaded {len(data):,} data points")
-        self.logger.info(f"📅 Date range: {data.index[0]} to {data.index[-1]}")
+        self.logger.info(f"✅ Loaded data via unified loader:")
+        self.logger.info(f"   📊 Records: {len(loaded_data.data):,}")
+        self.logger.info(f"   🧠 Memory: {loaded_data.memory_usage_mb:.1f}MB")
+        self.logger.info(f"   🎯 Quality: {loaded_data.data_quality_score:.2f}")
+        self.logger.info(f"   📅 Date range: {loaded_data.data.index[0]} to {loaded_data.data.index[-1]}")
         
-        return data
-    
-    async def _load_individual_files(self) -> pd.DataFrame:
-        """Load data from individual files."""
-        # This would implement loading from individual parquet files
-        # For now, return empty DataFrame
-        self.logger.warning("⚠️ Individual file loading not implemented")
-        return pd.DataFrame()
+        return loaded_data.data
     
     def _validate_data(self, data: pd.DataFrame) -> None:
         """Validate market data."""
@@ -397,208 +405,318 @@ class BasicBacktestingPreStep:
         return results
     
     async def _execute_buy_and_hold(self, data: pd.DataFrame) -> Dict[str, Any]:
-        """Execute buy and hold strategy."""
-        initial_price = data['close'].iloc[0]
-        final_price = data['close'].iloc[-1]
-        total_return = (final_price - initial_price) / initial_price
+        """Execute buy and hold strategy with improved implementation."""
+        from .memory_optimizer import get_backtesting_memory_optimizer
         
-        # Calculate equity curve
-        equity_curve = pd.DataFrame({
-            'timestamp': data.index,
-            'price': data['close'],
-            'equity': self.config.initial_capital * (1 + total_return),
-            'return': data['close'].pct_change().fillna(0)
-        })
+        if data.empty or len(data) < 2:
+            return self._create_empty_strategy_result('buy_and_hold')
         
-        # Calculate basic metrics
-        returns = data['close'].pct_change().dropna()
-        volatility = returns.std() * np.sqrt(252)
-        sharpe_ratio = (returns.mean() * 252) / volatility if volatility > 0 else 0
+        memory_optimizer = get_backtesting_memory_optimizer()
         
-        return {
-            'strategy_type': 'buy_and_hold',
-            'total_return': total_return,
-            'annualized_return': (1 + total_return) ** (252 / len(data)) - 1,
-            'volatility': volatility,
-            'sharpe_ratio': sharpe_ratio,
-            'max_drawdown': self._calculate_max_drawdown(equity_curve['equity']),
-            'total_trades': 1,
-            'win_rate': 1.0 if total_return > 0 else 0.0,
-            'equity_curve': equity_curve,
-            'trade_log': pd.DataFrame({
+        with memory_optimizer.memory_managed_operation("buy_and_hold"):
+            initial_price = data['close'].iloc[0]
+            final_price = data['close'].iloc[-1]
+            
+            # Validate prices
+            if not (validate_finite(initial_price) and validate_finite(final_price) and 
+                    validate_positive(initial_price) and validate_positive(final_price)):
+                return self._create_empty_strategy_result('buy_and_hold')
+            
+            total_return = (final_price - initial_price) / initial_price
+            
+            # Calculate equity curve using memory-optimized method
+            equity_curve = memory_optimizer.optimize_equity_curve_calculation(
+                pd.DataFrame({
+                    'timestamp': data.index,
+                    'pnl': [0] + [0] * (len(data) - 1)  # No intermediate trades
+                }),
+                self.config.initial_capital
+            )
+            
+            # Add price and return data
+            equity_curve['price'] = data['close'].values
+            equity_curve['return'] = data['close'].pct_change().fillna(0).values
+            equity_curve['equity'] = self.config.initial_capital * (1 + data['close'].pct_change().cumsum().fillna(0))
+            
+            # Calculate basic metrics
+            returns = data['close'].pct_change().dropna()
+            volatility = returns.std() * np.sqrt(252) if len(returns) > 1 else 0
+            sharpe_ratio = (returns.mean() * 252) / volatility if volatility > 0 else 0
+            
+            # Create trade log
+            trade_log = pd.DataFrame({
                 'timestamp': [data.index[0], data.index[-1]],
                 'action': ['buy', 'sell'],
                 'price': [initial_price, final_price],
                 'shares': [self.config.initial_capital / initial_price, 0],
-                'value': [self.config.initial_capital, self.config.initial_capital * (1 + total_return)]
+                'value': [self.config.initial_capital, self.config.initial_capital * (1 + total_return)],
+                'pnl': [0, self.config.initial_capital * total_return]
             })
+            
+            return {
+                'strategy_type': 'buy_and_hold',
+                'total_return': total_return,
+                'annualized_return': (1 + total_return) ** (252 / len(data)) - 1,
+                'volatility': volatility,
+                'sharpe_ratio': sharpe_ratio,
+                'max_drawdown': self._calculate_max_drawdown(equity_curve['equity']),
+                'total_trades': 1,
+                'win_rate': 1.0 if total_return > 0 else 0.0,
+                'equity_curve': memory_optimizer.optimize_dataframe(equity_curve),
+                'trade_log': memory_optimizer.optimize_dataframe(trade_log)
+            }
+    
+    def _create_empty_strategy_result(self, strategy_type: str) -> Dict[str, Any]:
+        """Create empty strategy result for error cases."""
+        return {
+            'strategy_type': strategy_type,
+            'total_return': 0.0,
+            'annualized_return': 0.0,
+            'volatility': 0.0,
+            'sharpe_ratio': 0.0,
+            'max_drawdown': 0.0,
+            'total_trades': 0,
+            'win_rate': 0.0,
+            'equity_curve': pd.DataFrame(),
+            'trade_log': pd.DataFrame()
         }
     
     async def _execute_simple_ma(self, data: pd.DataFrame) -> Dict[str, Any]:
-        """Execute simple moving average strategy."""
-        # Calculate moving average
-        data_copy = data.copy()
-        data_copy['ma'] = data_copy['close'].rolling(window=self.config.ma_period).mean()
+        """Execute improved moving average strategy with proper risk management."""
+        from .improved_trading_strategies import StrategyFactory
+        from .memory_optimizer import get_backtesting_memory_optimizer
         
-        # Generate signals
-        data_copy['signal'] = 0
-        data_copy.loc[data_copy['close'] > data_copy['ma'], 'signal'] = 1
-        data_copy.loc[data_copy['close'] < data_copy['ma'], 'signal'] = -1
+        if data.empty or len(data) < self.config.ma_period + 10:
+            return self._create_empty_strategy_result('simple_ma')
         
-        # Calculate position changes
-        data_copy['position'] = data_copy['signal'].diff()
+        memory_optimizer = get_backtesting_memory_optimizer()
         
-        # Execute trades
-        portfolio = {
-            'cash': self.config.initial_capital,
-            'shares': 0.0,
-            'equity': self.config.initial_capital,
-            'trades': []
-        }
-        
-        for i, (timestamp, row) in enumerate(data_copy.iterrows()):
-            if row['position'] != 0:  # Position change
-                if row['position'] > 0:  # Buy
-                    shares_to_buy = (portfolio['cash'] * self.config.max_position_size) / row['close']
-                    cost = shares_to_buy * row['close'] * (1 + self.config.commission_rate)
+        with memory_optimizer.memory_managed_operation("simple_ma"):
+            # Create improved trend following strategy
+            strategy = StrategyFactory.create_trend_following_strategy(
+                short_ma_period=self.config.ma_period,
+                long_ma_period=self.config.ma_period * 2,
+                max_position_size=self.config.max_position_size,
+                stop_loss_pct=0.02,
+                take_profit_pct=0.04
+            )
+            
+            # Execute strategy
+            portfolio = {
+                'cash': self.config.initial_capital,
+                'shares': 0.0,
+                'equity': self.config.initial_capital,
+                'trades': []
+            }
+            
+            # Generate signals for each timestamp
+            for i in range(max(strategy.config.long_ma_period, 50), len(data)):
+                timestamp = data.index[i]
+                current_price = data.loc[timestamp, 'close']
+                
+                # Generate signal
+                signal = strategy.generate_signal(data, timestamp)
+                
+                # Execute trade based on signal
+                if signal.action == 'buy' and portfolio['shares'] == 0:
+                    # Calculate position size
+                    volatility = data['close'].pct_change().tail(20).std()
+                    position_size = strategy.risk_manager.calculate_position_size(
+                        signal, portfolio['cash'] + portfolio['shares'] * current_price, volatility
+                    )
+                    
+                    shares_to_buy = (portfolio['cash'] * position_size) / current_price
+                    cost = shares_to_buy * current_price * (1 + self.config.commission_rate)
+                    
                     if cost <= portfolio['cash']:
                         portfolio['cash'] -= cost
                         portfolio['shares'] += shares_to_buy
                         portfolio['trades'].append({
                             'timestamp': timestamp,
                             'action': 'buy',
-                            'price': row['close'],
+                            'price': current_price,
                             'shares': shares_to_buy,
-                            'cost': cost
+                            'cost': cost,
+                            'signal_confidence': signal.confidence,
+                            'stop_loss': signal.stop_loss,
+                            'take_profit': signal.take_profit,
+                            'pnl': 0
                         })
-                elif row['position'] < 0 and portfolio['shares'] > 0:  # Sell
-                    proceeds = portfolio['shares'] * row['close'] * (1 - self.config.commission_rate)
+                
+                elif signal.action == 'sell' and portfolio['shares'] > 0:
+                    proceeds = portfolio['shares'] * current_price * (1 - self.config.commission_rate)
+                    
+                    # Calculate P&L
+                    last_buy = next((t for t in reversed(portfolio['trades']) if t['action'] == 'buy'), None)
+                    pnl = proceeds - last_buy['cost'] if last_buy else 0
+                    
                     portfolio['cash'] += proceeds
                     portfolio['trades'].append({
                         'timestamp': timestamp,
                         'action': 'sell',
-                        'price': row['close'],
+                        'price': current_price,
                         'shares': portfolio['shares'],
-                        'proceeds': proceeds
+                        'proceeds': proceeds,
+                        'signal_confidence': signal.confidence,
+                        'pnl': pnl
                     })
                     portfolio['shares'] = 0.0
+                
+                # Update equity
+                portfolio['equity'] = portfolio['cash'] + (portfolio['shares'] * current_price)
             
-            # Update equity
-            portfolio['equity'] = portfolio['cash'] + (portfolio['shares'] * row['close'])
-        
-        # Calculate final metrics
-        final_equity = portfolio['equity']
-        total_return = (final_equity - self.config.initial_capital) / self.config.initial_capital
-        
-        # Create equity curve
-        equity_curve = pd.DataFrame({
-            'timestamp': data_copy.index,
-            'price': data_copy['close'],
-            'ma': data_copy['ma'],
-            'signal': data_copy['signal'],
-            'equity': [portfolio['equity']] * len(data_copy)  # Simplified
-        })
-        
-        # Create trade log
-        trade_log = pd.DataFrame(portfolio['trades']) if portfolio['trades'] else pd.DataFrame()
-        
-        return {
-            'strategy_type': 'simple_ma',
-            'total_return': total_return,
-            'annualized_return': (1 + total_return) ** (252 / len(data)) - 1,
-            'volatility': data_copy['close'].pct_change().std() * np.sqrt(252),
-            'sharpe_ratio': 0.0,  # Would need to calculate properly
-            'max_drawdown': 0.0,  # Would need to calculate properly
-            'total_trades': len(portfolio['trades']),
-            'win_rate': 0.0,  # Would need to calculate properly
-            'equity_curve': equity_curve,
-            'trade_log': trade_log
-        }
+            # Calculate final metrics
+            final_equity = portfolio['equity']
+            total_return = (final_equity - self.config.initial_capital) / self.config.initial_capital
+            
+            # Create optimized equity curve
+            trade_df = pd.DataFrame(portfolio['trades']) if portfolio['trades'] else pd.DataFrame()
+            equity_curve = memory_optimizer.optimize_equity_curve_calculation(trade_df, self.config.initial_capital)
+            
+            # Calculate proper metrics
+            if not trade_df.empty and 'pnl' in trade_df.columns:
+                winning_trades = len(trade_df[trade_df['pnl'] > 0])
+                total_trades = len(trade_df[trade_df['action'] == 'sell'])
+                win_rate = winning_trades / total_trades if total_trades > 0 else 0.0
+            else:
+                win_rate = 0.0
+                total_trades = 0
+            
+            returns = data['close'].pct_change().dropna()
+            volatility = returns.std() * np.sqrt(252) if len(returns) > 1 else 0
+            sharpe_ratio = (total_return * 252) / volatility if volatility > 0 else 0
+            
+            return {
+                'strategy_type': 'simple_ma',
+                'total_return': total_return,
+                'annualized_return': (1 + total_return) ** (252 / len(data)) - 1,
+                'volatility': volatility,
+                'sharpe_ratio': sharpe_ratio,
+                'max_drawdown': self._calculate_max_drawdown(equity_curve['equity']) if not equity_curve.empty else 0.0,
+                'total_trades': total_trades,
+                'win_rate': win_rate,
+                'equity_curve': memory_optimizer.optimize_dataframe(equity_curve),
+                'trade_log': memory_optimizer.optimize_dataframe(trade_df)
+            }
     
     async def _execute_rsi_strategy(self, data: pd.DataFrame) -> Dict[str, Any]:
-        """Execute RSI strategy."""
-        # Calculate RSI
-        data_copy = data.copy()
-        delta = data_copy['close'].diff()
-        gain = (delta.where(delta > 0, 0)).rolling(window=self.config.rsi_period).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(window=self.config.rsi_period).mean()
-        rs = gain / loss
-        data_copy['rsi'] = 100 - (100 / (1 + rs))
+        """Execute improved RSI mean reversion strategy."""
+        from .improved_trading_strategies import StrategyFactory
+        from .memory_optimizer import get_backtesting_memory_optimizer
         
-        # Generate signals
-        data_copy['signal'] = 0
-        data_copy.loc[data_copy['rsi'] < self.config.rsi_oversold, 'signal'] = 1  # Buy
-        data_copy.loc[data_copy['rsi'] > self.config.rsi_overbought, 'signal'] = -1  # Sell
+        if data.empty or len(data) < self.config.rsi_period + 20:
+            return self._create_empty_strategy_result('rsi_strategy')
         
-        # Calculate position changes
-        data_copy['position'] = data_copy['signal'].diff()
+        memory_optimizer = get_backtesting_memory_optimizer()
         
-        # Execute trades (similar to MA strategy)
-        portfolio = {
-            'cash': self.config.initial_capital,
-            'shares': 0.0,
-            'equity': self.config.initial_capital,
-            'trades': []
-        }
-        
-        for i, (timestamp, row) in enumerate(data_copy.iterrows()):
-            if row['position'] != 0:  # Position change
-                if row['position'] > 0:  # Buy
-                    shares_to_buy = (portfolio['cash'] * self.config.max_position_size) / row['close']
-                    cost = shares_to_buy * row['close'] * (1 + self.config.commission_rate)
+        with memory_optimizer.memory_managed_operation("rsi_strategy"):
+            # Create improved mean reversion strategy
+            strategy = StrategyFactory.create_mean_reversion_strategy(
+                rsi_period=self.config.rsi_period,
+                rsi_oversold=self.config.rsi_oversold,
+                rsi_overbought=self.config.rsi_overbought,
+                max_position_size=self.config.max_position_size,
+                stop_loss_pct=0.025,
+                take_profit_pct=0.035
+            )
+            
+            # Execute strategy with improved logic
+            portfolio = {
+                'cash': self.config.initial_capital,
+                'shares': 0.0,
+                'equity': self.config.initial_capital,
+                'trades': []
+            }
+            
+            # Generate signals for each timestamp
+            for i in range(max(strategy.config.rsi_period, 30), len(data)):
+                timestamp = data.index[i]
+                current_price = data.loc[timestamp, 'close']
+                
+                # Generate signal
+                signal = strategy.generate_signal(data, timestamp)
+                
+                # Execute trade based on signal
+                if signal.action == 'buy' and portfolio['shares'] == 0:
+                    # Calculate position size
+                    volatility = data['close'].pct_change().tail(20).std()
+                    position_size = strategy.risk_manager.calculate_position_size(
+                        signal, portfolio['cash'] + portfolio['shares'] * current_price, volatility
+                    )
+                    
+                    shares_to_buy = (portfolio['cash'] * position_size) / current_price
+                    cost = shares_to_buy * current_price * (1 + self.config.commission_rate)
+                    
                     if cost <= portfolio['cash']:
                         portfolio['cash'] -= cost
                         portfolio['shares'] += shares_to_buy
                         portfolio['trades'].append({
                             'timestamp': timestamp,
                             'action': 'buy',
-                            'price': row['close'],
+                            'price': current_price,
                             'shares': shares_to_buy,
-                            'cost': cost
+                            'cost': cost,
+                            'signal_confidence': signal.confidence,
+                            'stop_loss': signal.stop_loss,
+                            'take_profit': signal.take_profit,
+                            'pnl': 0
                         })
-                elif row['position'] < 0 and portfolio['shares'] > 0:  # Sell
-                    proceeds = portfolio['shares'] * row['close'] * (1 - self.config.commission_rate)
+                
+                elif signal.action == 'sell' and portfolio['shares'] > 0:
+                    proceeds = portfolio['shares'] * current_price * (1 - self.config.commission_rate)
+                    
+                    # Calculate P&L
+                    last_buy = next((t for t in reversed(portfolio['trades']) if t['action'] == 'buy'), None)
+                    pnl = proceeds - last_buy['cost'] if last_buy else 0
+                    
                     portfolio['cash'] += proceeds
                     portfolio['trades'].append({
                         'timestamp': timestamp,
                         'action': 'sell',
-                        'price': row['close'],
+                        'price': current_price,
                         'shares': portfolio['shares'],
-                        'proceeds': proceeds
+                        'proceeds': proceeds,
+                        'signal_confidence': signal.confidence,
+                        'pnl': pnl
                     })
                     portfolio['shares'] = 0.0
+                
+                # Update equity
+                portfolio['equity'] = portfolio['cash'] + (portfolio['shares'] * current_price)
             
-            # Update equity
-            portfolio['equity'] = portfolio['cash'] + (portfolio['shares'] * row['close'])
-        
-        # Calculate final metrics
-        final_equity = portfolio['equity']
-        total_return = (final_equity - self.config.initial_capital) / self.config.initial_capital
-        
-        # Create equity curve
-        equity_curve = pd.DataFrame({
-            'timestamp': data_copy.index,
-            'price': data_copy['close'],
-            'rsi': data_copy['rsi'],
-            'signal': data_copy['signal'],
-            'equity': [portfolio['equity']] * len(data_copy)  # Simplified
-        })
-        
-        # Create trade log
-        trade_log = pd.DataFrame(portfolio['trades']) if portfolio['trades'] else pd.DataFrame()
-        
-        return {
-            'strategy_type': 'rsi_strategy',
-            'total_return': total_return,
-            'annualized_return': (1 + total_return) ** (252 / len(data)) - 1,
-            'volatility': data_copy['close'].pct_change().std() * np.sqrt(252),
-            'sharpe_ratio': 0.0,  # Would need to calculate properly
-            'max_drawdown': 0.0,  # Would need to calculate properly
-            'total_trades': len(portfolio['trades']),
-            'win_rate': 0.0,  # Would need to calculate properly
-            'equity_curve': equity_curve,
-            'trade_log': trade_log
-        }
+            # Calculate final metrics
+            final_equity = portfolio['equity']
+            total_return = (final_equity - self.config.initial_capital) / self.config.initial_capital
+            
+            # Create optimized equity curve
+            trade_df = pd.DataFrame(portfolio['trades']) if portfolio['trades'] else pd.DataFrame()
+            equity_curve = memory_optimizer.optimize_equity_curve_calculation(trade_df, self.config.initial_capital)
+            
+            # Calculate proper metrics
+            if not trade_df.empty and 'pnl' in trade_df.columns:
+                winning_trades = len(trade_df[trade_df['pnl'] > 0])
+                total_trades = len(trade_df[trade_df['action'] == 'sell'])
+                win_rate = winning_trades / total_trades if total_trades > 0 else 0.0
+            else:
+                win_rate = 0.0
+                total_trades = 0
+            
+            returns = data['close'].pct_change().dropna()
+            volatility = returns.std() * np.sqrt(252) if len(returns) > 1 else 0
+            sharpe_ratio = (total_return * 252) / volatility if volatility > 0 else 0
+            
+            return {
+                'strategy_type': 'rsi_strategy',
+                'total_return': total_return,
+                'annualized_return': (1 + total_return) ** (252 / len(data)) - 1,
+                'volatility': volatility,
+                'sharpe_ratio': sharpe_ratio,
+                'max_drawdown': self._calculate_max_drawdown(equity_curve['equity']) if not equity_curve.empty else 0.0,
+                'total_trades': total_trades,
+                'win_rate': win_rate,
+                'equity_curve': memory_optimizer.optimize_dataframe(equity_curve),
+                'trade_log': memory_optimizer.optimize_dataframe(trade_df)
+            }
     
     async def _execute_bollinger_bands(self, data: pd.DataFrame) -> Dict[str, Any]:
         """Execute Bollinger Bands strategy."""

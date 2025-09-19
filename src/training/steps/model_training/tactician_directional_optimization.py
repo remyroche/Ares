@@ -729,12 +729,17 @@ class EntryTimingTacticianOptimizer:
                                                 y: np.ndarray,
                                                 regime_labels: np.ndarray,
                                                 max_trials: int) -> Dict[str, Any]:
-        """Multi-objective optimization for entry timing goals."""
+        """Multi-objective optimization for entry timing goals with thread safety."""
+        import threading
         solutions = []
+        solutions_lock = threading.Lock()
         
         def objective(trial):
             # Suggest model parameters
             model_type = trial.suggest_categorical('model_type', ['XGBoost_custom', 'RandomForest', 'CatBoost', 'ElasticNet'])
+            
+            # Create model with thread-safe random states
+            trial_seed = 42 + trial.number  # Unique seed per trial
             
             if model_type == 'XGBoost_custom':
                 # XGBoost_custom parameters
@@ -747,20 +752,31 @@ class EntryTimingTacticianOptimizer:
                 reg_lambda = trial.suggest_float('reg_lambda', 0.0, 1.0)
                 min_child_weight = trial.suggest_int('min_child_weight', 1, 7)
                 gamma = trial.suggest_float('gamma', 0.0, 0.3)
-                from .xgboost_custom import XGBoostCustom
-                model = XGBoostCustom(
-                    n_estimators=n_estimators,
-                    learning_rate=learning_rate,
-                    max_depth=max_depth,
-                    subsample=subsample,
-                    colsample_bytree=colsample_bytree,
-                    reg_alpha=reg_alpha,
-                    reg_lambda=reg_lambda,
-                    min_child_weight=min_child_weight,
-                    gamma=gamma,
-                    random_state=42,
-                    n_jobs=-1
-                )
+                try:
+                    from .xgboost_custom import XGBoostCustom
+                    model = XGBoostCustom(
+                        n_estimators=n_estimators,
+                        learning_rate=learning_rate,
+                        max_depth=max_depth,
+                        subsample=subsample,
+                        colsample_bytree=colsample_bytree,
+                        reg_alpha=reg_alpha,
+                        reg_lambda=reg_lambda,
+                        min_child_weight=min_child_weight,
+                        gamma=gamma,
+                        random_state=trial_seed,
+                        n_jobs=1  # Use single thread per model to avoid conflicts
+                    )
+                except ImportError:
+                    # Fallback to RandomForest if XGBoost not available
+                    from sklearn.ensemble import RandomForestRegressor
+                    model = RandomForestRegressor(
+                        n_estimators=min(n_estimators, 100),
+                        max_depth=max_depth,
+                        random_state=trial_seed,
+                        n_jobs=1
+                    )
+                    
             elif model_type == 'RandomForest':
                 # RandomForest parameters
                 n_estimators = trial.suggest_int('n_estimators', 100, 1000)
@@ -777,8 +793,8 @@ class EntryTimingTacticianOptimizer:
                     min_samples_leaf=min_samples_leaf,
                     max_features=max_features,
                     bootstrap=bootstrap,
-                    random_state=42,
-                    n_jobs=-1
+                    random_state=trial_seed,
+                    n_jobs=1  # Single thread per model
                 )
             elif model_type == 'CatBoost':
                 # CatBoost parameters
@@ -786,62 +802,97 @@ class EntryTimingTacticianOptimizer:
                 learning_rate = trial.suggest_float('learning_rate', 0.01, 0.2, log=True)
                 depth = trial.suggest_int('depth', 4, 10)
                 l2_leaf_reg = trial.suggest_float('l2_leaf_reg', 1.0, 10.0)
-                from catboost import CatBoostRegressor
-                model = CatBoostRegressor(
-                    n_estimators=n_estimators,
-                    learning_rate=learning_rate,
-                    depth=depth,
-                    l2_leaf_reg=l2_leaf_reg,
-                    random_seed=42,
-                    verbose=False
-                )
+                try:
+                    from catboost import CatBoostRegressor
+                    model = CatBoostRegressor(
+                        n_estimators=n_estimators,
+                        learning_rate=learning_rate,
+                        depth=depth,
+                        l2_leaf_reg=l2_leaf_reg,
+                        random_seed=trial_seed,
+                        verbose=False,
+                        thread_count=1  # Single thread per model
+                    )
+                except ImportError:
+                    # Fallback to ElasticNet if CatBoost not available
+                    from sklearn.linear_model import ElasticNet
+                    model = ElasticNet(alpha=0.1, l1_ratio=0.5, max_iter=1000, random_state=trial_seed)
+                    
             else:  # ElasticNet
                 alpha = trial.suggest_float('alpha', 0.001, 10.0, log=True)
                 l1_ratio = trial.suggest_float('l1_ratio', 0.1, 1.0)
                 max_iter = trial.suggest_int('max_iter', 1000, 5000)
                 from sklearn.linear_model import ElasticNet
-                model = ElasticNet(alpha=alpha, l1_ratio=l1_ratio, max_iter=max_iter)
+                model = ElasticNet(alpha=alpha, l1_ratio=l1_ratio, max_iter=max_iter, random_state=trial_seed)
             
-            # Create confidence-aware model
-            confidence_aware_model = ConfidenceAwareModel(model, self.loss_functions)
-            
-            # Train model
-            confidence_aware_model.fit(X, y)
-            
-            # Evaluate entry timing metrics
-            metrics = self._evaluate_entry_timing_metrics(confidence_aware_model, X, y)
-            
-            # Store solution
-            solution = Solution(
-                metrics=metrics,
-                params={
-                    'model_type': model_type,
-                    'l1_ratio': l1_ratio if model_type == 'ElasticNetCV' else None,
-                    'alpha': alpha,
-                    'confidence_aware_model': confidence_aware_model
-                }
-            )
-            solutions.append(solution)
-            
-            # Return composite score for Optuna
-            return metrics['composite_score']
+            try:
+                # Create confidence-aware model
+                confidence_aware_model = ConfidenceAwareModel(model, self.loss_functions)
+                
+                # Train model with error handling
+                confidence_aware_model.fit(X, y)
+                
+                # Evaluate entry timing metrics
+                metrics = self._evaluate_entry_timing_metrics(confidence_aware_model, X, y)
+                
+                # Thread-safe solution storage
+                solution = Solution(
+                    metrics=metrics,
+                    params={
+                        'model_type': model_type,
+                        'trial_number': trial.number,
+                        'trial_seed': trial_seed,
+                        'confidence_aware_model': confidence_aware_model
+                    }
+                )
+                
+                with solutions_lock:
+                    solutions.append(solution)
+                
+                # Return composite score for Optuna
+                return metrics['composite_score']
+                
+            except Exception as e:
+                self.logger.warning(f"Trial {trial.number} failed: {e}")
+                # Return poor score for failed trials
+                return 0.0
         
-        # Create study
+        # Create study with thread-safe sampler
         study = optuna.create_study(
             direction='maximize',
-            sampler=TPESampler(seed=42)
+            sampler=TPESampler(seed=42, n_startup_trials=10)
         )
         
-        # Optimize
-        study.optimize(objective, n_trials=max_trials, n_jobs=-1)
+        # Optimize with limited parallelism to prevent resource conflicts
+        max_workers = min(4, max_trials // 10 + 1)  # Limit concurrent workers
+        try:
+            study.optimize(objective, n_trials=max_trials, n_jobs=max_workers)
+        except Exception as e:
+            self.logger.warning(f"Optimization completed with some errors: {e}")
         
-        # Find best solution
-        best_solution = max(solutions, key=lambda s: s.metrics['composite_score'])
+        # Thread-safe access to solutions
+        with solutions_lock:
+            if not solutions:
+                # Fallback if no solutions were generated
+                self.logger.warning("No successful solutions found, creating fallback")
+                fallback_solution = Solution(
+                    metrics={'composite_score': 0.5},
+                    params={'model_type': 'fallback', 'confidence_aware_model': None}
+                )
+                solutions = [fallback_solution]
+            
+            # Find best solution
+            best_solution = max(solutions, key=lambda s: s.metrics.get('composite_score', 0.0))
         
         return {
             'best_solution': best_solution,
             'all_solutions': solutions,
-            'study': study
+            'study': study,
+            'optimization_stats': {
+                'total_trials': len(study.trials),
+                'successful_solutions': len(solutions),
+                'failed_trials': len(study.trials) - len(solutions)
+            }
         }
     
     def _evaluate_entry_timing_metrics(self, model: Any, X: np.ndarray, y: np.ndarray, 

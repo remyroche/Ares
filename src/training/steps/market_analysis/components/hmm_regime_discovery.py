@@ -29,6 +29,31 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
         """Initialize the HMM regime discovery component."""
         super().__init__(config)
         self.logger = system_logger.getChild('HMMRegimeDiscovery')
+        self._resources_to_cleanup = []
+    
+    def __enter__(self):
+        """Context manager entry."""
+        return self
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Context manager exit with resource cleanup."""
+        self._cleanup_resources()
+        
+    def _cleanup_resources(self):
+        """Clean up any allocated resources."""
+        try:
+            for resource in self._resources_to_cleanup:
+                if hasattr(resource, 'cleanup'):
+                    resource.cleanup()
+                elif hasattr(resource, 'close'):
+                    resource.close()
+            self._resources_to_cleanup.clear()
+        except Exception as e:
+            self.logger.warning(f"Error during resource cleanup: {e}")
+    
+    def __del__(self):
+        """Destructor with resource cleanup."""
+        self._cleanup_resources()
     
     def get_required_artifacts(self) -> List[str]:
         """Get list of required artifacts this component must produce."""
@@ -249,14 +274,35 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
                 }
             )
             
+        except (ValueError, TypeError) as e:
+            self.logger.error(f'❌ HMM Regime Discovery failed with data/parameter error: {e}')
+            return ComponentResult(
+                success=False,
+                artifacts={},
+                error_message=f"Data or parameter error: {str(e)}"
+            )
+        except ImportError as e:
+            self.logger.error(f'❌ HMM Regime Discovery failed with missing dependency: {e}')
+            return ComponentResult(
+                success=False,
+                artifacts={},
+                error_message=f"Missing required dependency: {str(e)}"
+            )
+        except RuntimeError as e:
+            self.logger.error(f'❌ HMM Regime Discovery failed with runtime error: {e}')
+            return ComponentResult(
+                success=False,
+                artifacts={},
+                error_message=f"Runtime error: {str(e)}"
+            )
         except Exception as e:
-            self.logger.error(f'❌ HMM Regime Discovery failed: {e}')
+            self.logger.error(f'❌ HMM Regime Discovery failed with unexpected error: {e}')
             import traceback
             self.logger.error(f'❌ Error details: {traceback.format_exc()}')
             return ComponentResult(
                 success=False,
                 artifacts={},
-                error_message=str(e)
+                error_message=f"Unexpected error: {str(e)}"
             )
     
     async def _load_market_data(self, data: Any, symbol: Optional[str] = None) -> Optional[pd.DataFrame]:
@@ -337,9 +383,15 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             
             return regime_dataframe, optimization_results
             
+        except (ValueError, TypeError) as e:
+            # Data or parameter related errors
+            raise ValueError(f"Direct regime discovery failed due to data/parameter issue: {e}") from e
+        except ImportError as e:
+            # Missing dependencies
+            raise ImportError(f"Direct regime discovery failed due to missing dependency: {e}") from e
         except Exception as e:
-            # Propagate the error with context for higher-level handling
-            raise RuntimeError(f"Direct regime discovery failed: {e}")
+            # Other unexpected errors
+            raise RuntimeError(f"Direct regime discovery failed with unexpected error: {e}") from e
     
     def _prepare_data_for_regime_detection(self, data: pd.DataFrame) -> pd.DataFrame:
         """Prepare market data for regime detection with comprehensive validation."""
@@ -744,19 +796,40 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
                 'note': 'True 3D regime space with separate dimensional HMMs'
             }
             
-            # Create regime dataframe - align with feature indices (skip 7 rows for 6h max lookback)
-            market_data_aligned = market_data.iloc[7:].reset_index(drop=True)
-            min_length = min(len(momentum_features), len(market_data_aligned))
-            market_data_aligned = market_data_aligned.iloc[:min_length]
+            # Calculate actual feature offset based on max rolling window (24h for volume baseline)
+            max_lookback = 24  # Maximum lookback window (24h for volume baseline)
+            feature_offset = max_lookback
             
-            # Create regime dataframe
+            # Preserve original index and align properly
+            if len(market_data) <= feature_offset:
+                raise ValueError(f"Insufficient data: need at least {feature_offset + 1} rows, got {len(market_data)}")
+            
+            # Align data preserving original timestamps
+            original_index = market_data.index
+            market_data_aligned = market_data.iloc[feature_offset:].copy()
+            
+            # Validate feature lengths match expected alignment
+            expected_length = len(market_data) - feature_offset
+            if len(momentum_features) != expected_length:
+                self.logger.warning(f"Feature length mismatch: expected {expected_length}, got {len(momentum_features)}")
+            
+            min_length = min(len(momentum_features), len(volatility_features), len(volume_features), len(market_data_aligned))
+            
+            # Ensure all arrays are the same length and preserve index alignment
+            market_data_aligned = market_data_aligned.iloc[:min_length]
+            regime_assignments_aligned = regime_assignments[:min_length]
+            momentum_assignments_aligned = momentum_assignments[:min_length]
+            volatility_assignments_aligned = volatility_assignments[:min_length]
+            volume_assignments_aligned = volume_assignments[:min_length]
+            
+            # Create regime dataframe with preserved index
             regime_dataframe = market_data_aligned.copy()
-            regime_dataframe['regime'] = regime_assignments[:min_length]
+            regime_dataframe['regime'] = regime_assignments_aligned
             
             # Add dimensional state information
-            regime_dataframe['momentum_state'] = momentum_assignments[:min_length]
-            regime_dataframe['volatility_state'] = volatility_assignments[:min_length]
-            regime_dataframe['volume_state'] = volume_assignments[:min_length]
+            regime_dataframe['momentum_state'] = momentum_assignments_aligned
+            regime_dataframe['volatility_state'] = volatility_assignments_aligned
+            regime_dataframe['volume_state'] = volume_assignments_aligned
             
             unique_regimes = len(set(regime_assignments))
             total_possible = momentum_states * volatility_states * volume_states
@@ -774,77 +847,72 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
         """
         Prepare features grouped by dimension for 3D regime discovery.
         
+        This method implements the simplified 3D dimensional approach:
+        - Momentum dimension: 1h, 2h price changes (pure reactivity)
+        - Volatility dimension: intrabar volatility, 6h rolling std, 6h ATR
+        - Volume dimension: 3h volume momentum, 24h volume ratio baseline
+        
+        Features are optimized for regime detection without unnecessary complexity.
+        Features are designed to be compatible with HMM clustering expectations.
+        
         Args:
-            market_data: Market data DataFrame
+            market_data: Market data DataFrame with OHLCV columns
             
         Returns:
             tuple: (momentum_features, volatility_features, volume_features)
+                  Each DataFrame contains clean, finite features ready for HMM training
         """
         try:
             import pandas as pd
             import numpy as np
             
-            # Momentum features (max 6h lookback)
+            # Momentum features (simplified - price changes only)
             momentum_features = pd.DataFrame(index=market_data.index)
-            momentum_features['momentum_1h'] = market_data['close'].pct_change(1)
-            momentum_features['momentum_2h'] = market_data['close'].pct_change(2)
-            momentum_features['momentum_3h'] = market_data['close'].pct_change(3)
-            momentum_features['momentum_6h'] = market_data['close'].pct_change(6)
+            # High reactivity for momentum detection
+            momentum_features['momentum_1h'] = market_data['close'].pct_change(1)  # Most reactive
+            momentum_features['momentum_2h'] = market_data['close'].pct_change(2)  # Balance
             
-            # Volatility features (max 6h lookback)
+            # Volatility features (simplified)
             volatility_features = pd.DataFrame(index=market_data.index)
-            # Fix: Use intrabar volatility for 1h, not rolling(1).std() which is always 0
-            volatility_features['volatility_1h'] = (market_data['high'] - market_data['low']) / market_data['close']
-            volatility_features['volatility_3h'] = market_data['close'].rolling(3).std()
+            # Intrabar volatility for immediate reactivity
+            volatility_features['volatility_intrabar'] = (market_data['high'] - market_data['low']) / market_data['close']
+            # Rolling volatility 
             volatility_features['volatility_6h'] = market_data['close'].rolling(6).std()
+            # ATR for true range volatility
+            high_vals = market_data['high'].values.astype(np.float32)
+            low_vals = market_data['low'].values.astype(np.float32)
+            close_vals = market_data['close'].values.astype(np.float32)
+            tr1 = high_vals[1:] - low_vals[1:]
+            tr2 = np.abs(high_vals[1:] - close_vals[:-1])
+            tr3 = np.abs(low_vals[1:] - close_vals[:-1])
+            true_range = np.maximum(np.maximum(tr1, tr2), tr3)
+            atr_values = pd.Series(true_range).rolling(6).mean()
+            # Pad with NaN to match original index length
+            atr_padded = np.full(len(market_data), np.nan)
+            atr_padded[1:len(atr_values)+1] = atr_values
+            volatility_features['atr_6h'] = atr_padded
             
-            # Volume features (max 6h lookback)
+            # Volume features (simplified)
             epsilon = 1e-8
             volume_features = pd.DataFrame(index=market_data.index)
-            volume_features['volume_momentum_1h'] = market_data['volume'].pct_change(1)
+            # Volume momentum - 3h only
             volume_features['volume_momentum_3h'] = market_data['volume'].pct_change(3)
-            volume_features['volume_momentum_6h'] = market_data['volume'].pct_change(6)
-            volume_features['volume_ratio'] = market_data['volume'] / (market_data['volume'].rolling(6).mean() + epsilon)
-            volume_features['volume_weighted_price'] = market_data['close'] * market_data['volume']
+            # Volume ratio - 24h baseline for stable comparison
+            volume_features['volume_ratio_24h'] = market_data['volume'] / (market_data['volume'].rolling(24).mean() + epsilon)
             
             # Clean features and align indices
-            all_features = [momentum_features, volatility_features, volume_features]
+            max_lookback = 24  # Maximum lookback window used (24h for volume baseline)
             cleaned_features = []
             
-            for features in all_features:
-                # Skip first 7 rows for rolling calculations (max 6h lookback + 1)
-                features = features.iloc[7:]
+            for i, (features, feature_type) in enumerate(zip([momentum_features, volatility_features, volume_features], 
+                                                          ['momentum', 'volatility', 'volume'])):
+                # Skip rows based on max lookback (24h for volume baseline)
+                features = features.iloc[max_lookback:]
                 
-                # Replace infinite values with NaN
-                features = features.replace([np.inf, -np.inf], np.nan)
+                # Apply consistent NaN handling based on feature type
+                features = self._handle_feature_nans(features, feature_type)
                 
-                # Fill NaN values with median or appropriate defaults
-                for col in features.columns:
-                    if features[col].isnull().any():
-                        median_val = features[col].median()
-                        if pd.isna(median_val):
-                            if 'momentum' in col or 'pct' in col:
-                                features[col] = features[col].fillna(0.0)
-                            elif 'volatility' in col or 'std' in col:
-                                # Use median for volatility features instead of constant 0.01
-                                median_val = features[col].median()
-                                if pd.isna(median_val) or median_val == 0:
-                                    median_val = 0.01  # Only fallback if no valid data
-                                features[col] = features[col].fillna(median_val)
-                            elif 'ratio' in col:
-                                features[col] = features[col].fillna(1.0)
-                            else:
-                                features[col] = features[col].fillna(0.0)
-                        else:
-                            features[col] = features[col].fillna(median_val)
-                
-                # Clip extreme values
-                for col in features.columns:
-                    q99 = features[col].quantile(0.99)
-                    q01 = features[col].quantile(0.01)
-                    features[col] = features[col].clip(lower=q01, upper=q99)
-                
-                # Ensure finite values
+                # Ensure finite values and proper dtype
                 features = features.astype(np.float64)
                 cleaned_features.append(features)
             
@@ -860,6 +928,157 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
         except Exception as e:
             self.logger.error(f"Failed to prepare grouped features: {e}")
             return None, None, None
+
+    def _handle_feature_nans(self, features: pd.DataFrame, feature_type: str) -> pd.DataFrame:
+        """
+        Apply consistent NaN handling based on feature type.
+        
+        Args:
+            features: Feature DataFrame
+            feature_type: Type of features ('momentum', 'volatility', 'volume')
+            
+        Returns:
+            DataFrame with NaN values handled consistently
+        """
+        try:
+            # Replace infinite values with NaN first
+            features = features.replace([np.inf, -np.inf], np.nan)
+            
+            for col in features.columns:
+                if features[col].isnull().any():
+                    if feature_type == 'momentum':
+                        # For momentum features, use 0 (no change)
+                        features[col] = features[col].fillna(0.0)
+                    elif feature_type == 'volatility':
+                        # For volatility features, use forward fill then median, fallback to small positive value
+                        features[col] = features[col].fillna(method='ffill')
+                        median_val = features[col].median()
+                        if pd.isna(median_val) or median_val <= 0:
+                            median_val = 0.01  # Small positive fallback for volatility
+                        features[col] = features[col].fillna(median_val)
+                    elif feature_type == 'volume':
+                        if 'ratio' in col.lower():
+                            # Volume ratios default to 1.0 (neutral)
+                            features[col] = features[col].fillna(1.0)
+                        elif 'weighted' in col.lower():
+                            # Volume-weighted features use forward fill then median
+                            features[col] = features[col].fillna(method='ffill')
+                            median_val = features[col].median()
+                            features[col] = features[col].fillna(median_val if not pd.isna(median_val) else 0.0)
+                        else:
+                            # Other volume features (momentum) use 0
+                            features[col] = features[col].fillna(0.0)
+                    else:
+                        # Default: use median or 0
+                        median_val = features[col].median()
+                        features[col] = features[col].fillna(median_val if not pd.isna(median_val) else 0.0)
+                
+                # Clip extreme values to prevent numerical issues
+                if len(features[col].dropna()) > 0:
+                    q99 = features[col].quantile(0.99)
+                    q01 = features[col].quantile(0.01)
+                    if not pd.isna(q99) and not pd.isna(q01):
+                        features[col] = features[col].clip(lower=q01, upper=q99)
+                
+                # Final safety check - ensure no infinite or NaN values remain
+                features[col] = features[col].replace([np.inf, -np.inf], 0.0)
+                features[col] = features[col].fillna(0.0)
+            
+            return features
+            
+        except Exception as e:
+            self.logger.error(f"Error in NaN handling for {feature_type} features: {e}")
+            # Fallback: fill all NaN with 0
+            return features.fillna(0.0).replace([np.inf, -np.inf], 0.0)
+
+    def _initialize_hmm_parameters(self, model: Any, n_states: int, X: np.ndarray, conservative: bool = False) -> None:
+        """
+        Initialize HMM parameters properly to avoid race conditions.
+        
+        Args:
+            model: HMM model to initialize
+            n_states: Number of states
+            X: Training data
+            conservative: Whether to use conservative initialization
+        """
+        try:
+            # Initialize start probabilities (uniform distribution)
+            model.startprob_ = np.full(n_states, 1.0 / n_states, dtype=np.float64)
+            
+            if conservative:
+                # Conservative initialization: strong diagonal dominance
+                model.transmat_ = np.eye(n_states, dtype=np.float64) * 0.9
+                for i in range(n_states):
+                    remaining_prob = 0.1
+                    if n_states > 1:
+                        off_diagonal_prob = remaining_prob / (n_states - 1)
+                        for j in range(n_states):
+                            if i != j:
+                                model.transmat_[i, j] = off_diagonal_prob
+            else:
+                # Standard initialization with regularization
+                epsilon = 1e-3
+                model.transmat_ = np.full((n_states, n_states), epsilon, dtype=np.float64)
+                
+                # Set higher self-transition probabilities
+                diagonal_prob = 0.7
+                np.fill_diagonal(model.transmat_, diagonal_prob)
+                
+                # Distribute remaining probability to off-diagonal elements
+                for i in range(n_states):
+                    remaining_prob = 1.0 - model.transmat_[i, i]
+                    if n_states > 1:
+                        off_diagonal_prob = remaining_prob / (n_states - 1)
+                        for j in range(n_states):
+                            if i != j:
+                                model.transmat_[i, j] = off_diagonal_prob
+            
+            # Ensure exact normalization
+            model.transmat_ = model.transmat_ / model.transmat_.sum(axis=1, keepdims=True)
+            
+            # Initialize means by grouping data samples (no clustering, just grouping)
+            try:
+                if len(X) >= n_states:
+                    # Split data into n_states groups and use group means for initialization
+                    group_size = len(X) // n_states
+                    means = []
+                    for i in range(n_states):
+                        start_idx = i * group_size
+                        end_idx = (i + 1) * group_size if i < n_states - 1 else len(X)
+                        group_data = X[start_idx:end_idx]
+                        if len(group_data) > 0:
+                            means.append(np.mean(group_data, axis=0))
+                        else:
+                            # Fallback for empty groups
+                            means.append(X[i % len(X)])
+                    model.means_ = np.array(means, dtype=np.float64)
+                else:
+                    # Use available samples as means
+                    model.means_ = X[:n_states].astype(np.float64)
+            except Exception:
+                # Final fallback: use data statistics
+                model.means_ = np.random.randn(n_states, X.shape[1]).astype(np.float64) * X.std(axis=0) + X.mean(axis=0)
+            
+            # Initialize covariances (diagonal)
+            model.covars_ = np.tile(np.var(X, axis=0), (n_states, 1)).astype(np.float64)
+            # Ensure minimum variance to prevent numerical issues
+            model.covars_ = np.maximum(model.covars_, 1e-6)
+            
+            # Validate initialization
+            assert np.allclose(model.startprob_.sum(), 1.0, atol=1e-10), "Start probabilities don't sum to 1"
+            assert np.allclose(model.transmat_.sum(axis=1), 1.0, atol=1e-10), "Transition matrix rows don't sum to 1"
+            assert not np.any(np.isnan(model.startprob_)), "Start probabilities contain NaN"
+            assert not np.any(np.isnan(model.transmat_)), "Transition matrix contains NaN"
+            assert not np.any(np.isnan(model.means_)), "Means contain NaN"
+            assert not np.any(np.isnan(model.covars_)), "Covariances contain NaN"
+            
+        except Exception as e:
+            self.logger.error(f"Error initializing HMM parameters: {e}")
+            # Emergency fallback
+            model.startprob_ = np.ones(n_states, dtype=np.float64) / n_states
+            model.transmat_ = np.eye(n_states, dtype=np.float64) * 0.8 + 0.2 / n_states
+            model.means_ = np.random.randn(n_states, X.shape[1]).astype(np.float64)
+            model.covars_ = np.ones((n_states, X.shape[1]), dtype=np.float64)
 
     def _train_dimensional_hmm(self, features: pd.DataFrame, n_states: int, dimension_name: str) -> Tuple[Any, List[int]]:
         """
@@ -927,57 +1146,42 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             # Convert to numpy array for HMM training
             X = features_clean.values.astype(np.float64)
             
-            # Create HMM model with manual initialization to avoid NaN issues
+            # Create HMM model with proper initialization control
             model = hmm.GaussianHMM(
                 n_components=n_states,
                 covariance_type='diag',
                 n_iter=150,
                 tol=1e-4,
                 random_state=42,
-                init_params='mc'  # Only initialize means and covariances, we'll set start/transition manually
+                init_params=''  # Don't auto-initialize anything - we'll do it manually
             )
             
-            # Manually initialize start probabilities (uniform distribution)
-            model.startprob_ = np.full(n_states, 1.0 / n_states, dtype=np.float64)
+            # Initialize model parameters before fitting to prevent race conditions
+            self._initialize_hmm_parameters(model, n_states, X)
             
-            # Manually initialize transition matrix with regularization
-            epsilon = 1e-3  # Larger epsilon for numerical stability
-            model.transmat_ = np.full((n_states, n_states), epsilon, dtype=np.float64)
-            
-            # Set higher self-transition probabilities
-            diagonal_prob = 0.7
-            np.fill_diagonal(model.transmat_, diagonal_prob)
-            
-            # Distribute remaining probability to off-diagonal elements
-            for i in range(n_states):
-                remaining_prob = 1.0 - model.transmat_[i, i]
-                if n_states > 1:
-                    off_diagonal_prob = remaining_prob / (n_states - 1)
-                    for j in range(n_states):
-                        if i != j:
-                            model.transmat_[i, j] = off_diagonal_prob
-            
-            # Ensure exact normalization
-            model.transmat_ = model.transmat_ / model.transmat_.sum(axis=1, keepdims=True)
-            
-            # Validate our initialization
-            assert np.allclose(model.startprob_.sum(), 1.0, atol=1e-10), "Start probabilities don't sum to 1"
-            assert np.allclose(model.transmat_.sum(axis=1), 1.0, atol=1e-10), "Transition matrix rows don't sum to 1"
-            assert not np.any(np.isnan(model.startprob_)), "Start probabilities contain NaN"
-            assert not np.any(np.isnan(model.transmat_)), "Transition matrix contains NaN"
-            
-            # Train the model
+            # Train the model with proper error handling
             try:
                 model.fit(X)
+                
+                # Validate model after training
+                self._validate_and_fix_transition_matrix(model, n_states)
+                
             except ValueError as fit_error:
-                if "startprob_" in str(fit_error):
-                    self.logger.error(f"❌ {dimension_name} HMM fit failed with startprob error: {fit_error}")
-                    # Try with even more conservative initialization
-                    model.startprob_ = np.ones(n_states, dtype=np.float64) / n_states
-                    model.transmat_ = np.eye(n_states, dtype=np.float64) * 0.8 + 0.2 / n_states
+                if "startprob_" in str(fit_error) or "transmat_" in str(fit_error):
+                    self.logger.warning(f"⚠️ {dimension_name} HMM fit failed with parameter error: {fit_error}")
+                    # Re-initialize with more conservative parameters
+                    self._initialize_hmm_parameters(model, n_states, X, conservative=True)
                     model.fit(X)
+                    self._validate_and_fix_transition_matrix(model, n_states)
                 else:
                     raise fit_error
+            except Exception as fit_error:
+                self.logger.error(f"❌ {dimension_name} HMM fit failed: {fit_error}")
+                # Try one more time with most conservative settings
+                self._initialize_hmm_parameters(model, n_states, X, conservative=True)
+                model.n_iter = 50  # Reduce iterations
+                model.fit(X)
+                self._validate_and_fix_transition_matrix(model, n_states)
             
             # Get state assignments
             assignments = model.predict(X)

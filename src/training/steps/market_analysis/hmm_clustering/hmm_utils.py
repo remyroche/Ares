@@ -297,6 +297,8 @@ class TechnicalIndicators:
             # Use safe division to avoid division by zero
             rs = safe_divide(gain, loss, 1.0)  # Default to 1.0 if loss is 0
             rsi = 100 - safe_divide(100, 1 + rs, 50.0)  # Default to 50 if division fails
+            # Ensure RSI is within bounds [0, 100]
+            rsi = np.clip(rsi, 0, 100)
             return rsi.fillna(50)  # Fill NaN with neutral RSI value
         except Exception as e:
             logger = system_logger.getChild('HMMUtils')
@@ -345,9 +347,9 @@ class TechnicalIndicators:
             bb_upper = sma + std * num_std
             bb_lower = sma - std * num_std
             
-            # Avoid division by zero
-            bb_width = (bb_upper - bb_lower) / (sma + 1e-10)
-            bb_position = (prices - bb_lower) / (bb_upper - bb_lower + 1e-10)
+            # Use safe division to avoid division by zero
+            bb_width = safe_divide(bb_upper - bb_lower, sma + 1e-10, 0.0)
+            bb_position = safe_divide(prices - bb_lower, bb_upper - bb_lower + 1e-10, 0.5)
             
             bb_features = pd.DataFrame({
                 'bb_upper': bb_upper, 
@@ -361,5 +363,141 @@ class TechnicalIndicators:
             logger = system_logger.getChild('HMMUtils')
             logger.exception(f"Bollinger Bands calculation failed: {e}")
             return pd.DataFrame()
+
+    @staticmethod
+    @handles_errors(fallback=pd.Series())
+    def calculate_atr(data: pd.DataFrame, window: int = 14) -> pd.Series:
+        """Calculate Average True Range using safe math operations."""
+        try:
+            if data is None or data.empty:
+                raise ValueError("Data DataFrame cannot be None or empty")
+            
+            required_cols = ['high', 'low', 'close']
+            missing_cols = [col for col in required_cols if col not in data.columns]
+            if missing_cols:
+                raise ValueError(f"Missing required columns for ATR: {missing_cols}")
+            
+            if window < 1:
+                raise ValueError("Window must be >= 1")
+            if len(data) < 2:
+                raise ValueError("Need at least 2 periods for ATR calculation")
+            
+            high = data['high']
+            low = data['low']
+            close = data['close']
+            
+            # Calculate True Range components
+            tr1 = high - low
+            tr2 = abs(high - close.shift(1))
+            tr3 = abs(low - close.shift(1))
+            
+            # Handle NaN values in true range calculation
+            tr1 = tr1.fillna(0)
+            tr2 = tr2.fillna(tr1)  # If no previous close, use high-low
+            tr3 = tr3.fillna(tr1)  # If no previous close, use high-low
+            
+            true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+            atr = true_range.rolling(window=window, min_periods=1).mean()
+            
+            # Fill any remaining NaN values
+            atr = atr.fillna(0.0)
+            
+            return atr
+            
+        except Exception as e:
+            logger = system_logger.getChild('HMMUtils')
+            logger.exception(f"ATR calculation failed: {e}")
+            return pd.Series()
+
+    @staticmethod
+    @handles_errors(fallback=(pd.Series(), pd.Series()))
+    def calculate_stochastic(data: pd.DataFrame, window: int = 14, d_window: int = 3) -> tuple:
+        """Calculate Stochastic Oscillator using safe math operations."""
+        try:
+            if data is None or data.empty:
+                raise ValueError("Data DataFrame cannot be None or empty")
+            
+            required_cols = ['high', 'low', 'close']
+            missing_cols = [col for col in required_cols if col not in data.columns]
+            if missing_cols:
+                raise ValueError(f"Missing required columns for Stochastic: {missing_cols}")
+            
+            if window < 1:
+                raise ValueError("Window must be >= 1")
+            if d_window < 1:
+                raise ValueError("D window must be >= 1")
+            if len(data) < window:
+                raise ValueError(f"Data length ({len(data)}) must be >= window ({window})")
+            
+            high = data['high']
+            low = data['low']
+            close = data['close']
+            
+            lowest_low = low.rolling(window=window, min_periods=1).min()
+            highest_high = high.rolling(window=window, min_periods=1).max()
+            range_diff = highest_high - lowest_low
+            
+            # Use safe division from math validation
+            k_percent = 100 * safe_divide(close - lowest_low, range_diff, 0.5)  # Default to 50%
+            
+            k_percent = pd.Series(k_percent, index=close.index)
+            
+            # Ensure K% is within bounds [0, 100]
+            k_percent = np.clip(k_percent, 0, 100)
+            
+            # Calculate D% as moving average of K%
+            d_percent = k_percent.rolling(window=d_window, min_periods=1).mean()
+            
+            # Fill NaN values with neutral values
+            k_percent = k_percent.fillna(50.0)
+            d_percent = d_percent.fillna(50.0)
+            
+            return k_percent, d_percent
+            
+        except Exception as e:
+            logger = system_logger.getChild('HMMUtils')
+            logger.exception(f"Stochastic calculation failed: {e}")
+            empty_series = pd.Series()
+            return empty_series, empty_series
+
+    @staticmethod
+    @handles_errors(fallback=pd.Series())
+    def calculate_williams_r(data: pd.DataFrame, window: int = 14) -> pd.Series:
+        """Calculate Williams %R using safe math operations."""
+        try:
+            if data is None or data.empty:
+                raise ValueError("Data DataFrame cannot be None or empty")
+            
+            required_cols = ['high', 'low', 'close']
+            missing_cols = [col for col in required_cols if col not in data.columns]
+            if missing_cols:
+                raise ValueError(f"Missing required columns for Williams %R: {missing_cols}")
+            
+            if window < 1:
+                raise ValueError("Window must be >= 1")
+            if len(data) < window:
+                raise ValueError(f"Data length ({len(data)}) must be >= window ({window})")
+            
+            high = data['high']
+            low = data['low']
+            close = data['close']
+            
+            highest_high = high.rolling(window=window, min_periods=1).max()
+            lowest_low = low.rolling(window=window, min_periods=1).min()
+            range_diff = highest_high - lowest_low
+            
+            # Use safe division - Williams %R is typically negative
+            williams_r = -100 * safe_divide(highest_high - close, range_diff, 0.5)  # Default to -50
+            
+            # Ensure Williams %R is within bounds [-100, 0]
+            williams_r = np.clip(williams_r, -100, 0)
+            williams_r = williams_r.fillna(-50.0)  # Fill with neutral value
+            
+            return pd.Series(williams_r, index=close.index)
+            
+        except Exception as e:
+            logger = system_logger.getChild('HMMUtils')
+            logger.exception(f"Williams %R calculation failed: {e}")
+            return pd.Series()
 
 

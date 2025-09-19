@@ -10,6 +10,10 @@ from src.utils.data.klines_parquet import get_klines_manager
 from .validation_utils import get_validator, ValidationErrorType, ValidationResult, validate_training_input, validate_pipeline_state
 from .config_utils import get_config_manager, get_path_manager
 
+# Use existing data validation utilities
+from src.utils.data.validation.validators import CrossStepValidator
+from src.utils.data.quality.data_quality import DataQualityFramework
+
 # Standardized imports from utils
 from src.utils.core.common import (
     safe_read_parquet,
@@ -137,6 +141,10 @@ class Step4RegimeDataSplittingValidator(BaseValidator):
         except Exception:
             pass
         self.logger = system_logger.getChild('Validator.Step4')
+        
+        # Initialize data validation using existing utilities
+        self.cross_step_validator = CrossStepValidator()
+        self.data_quality_framework = DataQualityFramework()
 
     async def validate_step4_regime_data_splitting(self, symbol: str, exchange: str, data_dir: str, training_input: dict[str, Any]) -> bool:
         """Validate Step 4: Regime Data Splitting."
@@ -161,14 +169,14 @@ class Step4RegimeDataSplittingValidator(BaseValidator):
                 self.logger.warning('⚠️ No regime split files found')
                 return False
             for regime_file in regime_files:
-                if not await self._validate_regime_file(regime_file):
+                if not self._validate_regime_file(regime_file):
                     return False
             timeframe = training_input.get('timeframe', '1m') if isinstance(training_input, dict) else '1m'
             stats_file = Path(data_dir) / exchange.lower() / symbol.lower() / 'models' / 'regime_statistics.json'
             if not stats_file.exists():
                 self.logger.warning(f'⚠️ Regime statistics file not found: {stats_file}')
                 return False
-            if not await self._validate_statistics_file(stats_file):
+            if not self._validate_statistics_file(stats_file):
                 return False
             self.logger.info('✅ Step 4: Regime Data Splitting validation passed')
             return True
@@ -178,7 +186,7 @@ class Step4RegimeDataSplittingValidator(BaseValidator):
             return False
 
     @smart_validation_cache(ttl_seconds = 300)
-    async def _validate_regime_file(self, regime_file: Path) -> bool:
+    def _validate_regime_file(self, regime_file: Path) -> bool:
         """Validate a regime split file with caching."""
         try:
             self.logger.info(f'📁 Validating regime file: {regime_file.name}')
@@ -194,6 +202,8 @@ class Step4RegimeDataSplittingValidator(BaseValidator):
                 return False
             if 'composite_cluster_id' in df.columns:
                 unique_regimes = df['composite_cluster_id'].nunique()
+                
+                # Use existing validation patterns for regime count
                 if unique_regimes < 2:
                     self.logger.warning(f'⚠️ Very few regimes ({unique_regimes}) in {regime_file.name}')
                 elif unique_regimes > 100:
@@ -208,7 +218,7 @@ class Step4RegimeDataSplittingValidator(BaseValidator):
             return False
 
     @smart_validation_cache(ttl_seconds = 600)
-    async def _validate_statistics_file(self, stats_file: Path) -> bool:
+    def _validate_statistics_file(self, stats_file: Path) -> bool:
         """Validate the regime statistics file with caching."""
         try:
             self.logger.info(f'📊 Validating statistics file: {stats_file.name}')

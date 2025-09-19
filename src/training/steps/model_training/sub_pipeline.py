@@ -28,6 +28,13 @@ from dataclasses import dataclass, field
 from src.utils.logger import system_logger
 from src.utils.tprint import tprint
 
+# Import additional tprint functions - fail fast if not available
+try:
+    from src.utils.tprint import tprint_warning, tprint_error, tprint_info, tprint_success
+except ImportError as e:
+    raise ImportError(f"Extended tprint functions required but not available: {e}. "
+                     f"Please ensure src.utils.tprint is properly installed.")
+
 logger = system_logger.getChild('ModelTrainingSubPipeline')
 
 class ExecutionMode(Enum):
@@ -1507,6 +1514,117 @@ class ModelTrainingSubPipeline:
             if result.sub_pipeline_name == sub_pipeline_name:
                 return result.status
         return None
+    
+    async def execute_sub_pipeline_with_next(
+        self, 
+        sub_pipeline_name: str, 
+        config: SubPipelineConfig
+    ) -> SubPipelineResult:
+        """
+        Execute a specific sub-pipeline and conditionally trigger subsequent sub-pipelines.
+        
+        This method provides the interface expected by the main training pipeline for
+        automatic sequential execution of sub-pipelines in model training stage.
+        
+        Args:
+            sub_pipeline_name: Name of the sub-pipeline to execute
+            config: Configuration for the sub-pipeline
+            
+        Returns:
+            SubPipelineResult with execution details
+        """
+        self.logger.info(f'🚀 Starting {sub_pipeline_name} sub-pipeline with sequential execution')
+        
+        # Check if we should execute only a single stage
+        if hasattr(config, 'single_stage_only') and config.single_stage_only:
+            self.logger.info('🎯 Single stage execution mode - executing only the requested sub-pipeline')
+            return await self.execute_sub_pipeline(sub_pipeline_name, config)
+        
+        # Define logical execution groups for model training
+        analyst_steps = [
+            'analyst_model_training',
+            'analyst_ensemble_training'
+        ]
+        
+        tactician_steps = [
+            'tactician_lookback_optimization',
+            'tactician_models_training',
+            'tactician_ensemble_training'
+        ]
+        
+        # Complete execution sequence
+        execution_sequence = analyst_steps + tactician_steps
+        
+        # Find the starting index
+        try:
+            start_index = execution_sequence.index(sub_pipeline_name)
+        except ValueError:
+            self.logger.error(f"❌ Unknown sub-pipeline: {sub_pipeline_name}")
+            raise ValueError(f"Unknown sub-pipeline: {sub_pipeline_name}")
+        
+        # Determine which group we're starting from
+        current_group = None
+        if sub_pipeline_name in analyst_steps:
+            current_group = "Analyst Steps"
+            self.logger.info('🎯 Starting from Analyst steps group - will complete all Analyst steps before moving to Tactician')
+        elif sub_pipeline_name in tactician_steps:
+            current_group = "Tactician Steps"
+            self.logger.info('🎯 Starting from Tactician steps group')
+        
+        self.logger.info(f'📋 Execution sequence: {execution_sequence}')
+        self.logger.info(f'🚀 Starting from index {start_index}: {sub_pipeline_name}')
+        
+        # Execute sub-pipelines starting from the specified one
+        results = []
+        for i in range(start_index, len(execution_sequence)):
+            pipeline_name = execution_sequence[i]
+            
+            # Log group transitions
+            if pipeline_name in analyst_steps and current_group != "Analyst Steps":
+                self.logger.info('🔄 Transitioning to Analyst steps group')
+                current_group = "Analyst Steps"
+            elif pipeline_name in tactician_steps and current_group != "Tactician Steps":
+                self.logger.info('🔄 Transitioning to Tactician steps group')
+                current_group = "Tactician Steps"
+            
+            try:
+                progress_info = f"({i+1-start_index}/{len(execution_sequence)-start_index})"
+                self.logger.info(f'🔄 Executing {pipeline_name} {progress_info} [Group: {current_group}]')
+                result = await self.execute_sub_pipeline(pipeline_name, config)
+                results.append(result)
+                
+                # If this sub-pipeline failed, stop the sequence
+                if not result.success:
+                    self.logger.error(f"❌ {pipeline_name} failed, stopping execution sequence")
+                    break
+                    
+            except Exception as e:
+                self.logger.error(f"❌ Error executing {pipeline_name}: {e}")
+                # Create a failed result
+                failed_result = SubPipelineResult(
+                    sub_pipeline_name=pipeline_name,
+                    status=SubPipelineStatus.FAILED,
+                    start_time=datetime.now(),
+                    end_time=datetime.now(),
+                    duration_seconds=0.0,
+                    error_message=str(e)
+                )
+                results.append(failed_result)
+                break
+        
+        # Return the first result (the one that was requested)
+        if results:
+            return results[0]
+        else:
+            # Return a failed result if no execution occurred
+            return SubPipelineResult(
+                sub_pipeline_name=sub_pipeline_name,
+                status=SubPipelineStatus.FAILED,
+                start_time=datetime.now(),
+                end_time=datetime.now(),
+                duration_seconds=0.0,
+                error_message="No execution occurred"
+            )
     
     def get_execution_summary(self) -> Dict[str, Any]:
         """Get comprehensive summary of all sub-pipeline executions."""

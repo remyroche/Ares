@@ -775,7 +775,7 @@ class MarketAnalysisSubPipeline:
             self.logger.info('📊 Loading market data for sub-pipeline execution...')
             await self._load_market_data(config)
         
-        # Define logical execution groups
+        # Define logical execution groups - ALL sub-pipelines in market_analysis stage
         sr_steps = [
             'sr_parameter_optimization',
             'sr_detection', 
@@ -791,13 +791,18 @@ class MarketAnalysisSubPipeline:
         
         data_processing_steps = [
             'regime_data_splitting',
-            'multi_horizon_labeling',
+            'multi_horizon_profit_labeler',  # Updated from multi_horizon_labeling
             'feature_lookback_optimization',
             'pid_based_feature_generation'
         ]
         
-        # Complete execution sequence
-        execution_sequence = sr_steps + hmm_steps + data_processing_steps
+        # Additional sub-pipelines that were missing
+        additional_steps = [
+            'cross_timeframe_analysis'
+        ]
+        
+        # Complete execution sequence - ALL sub-pipelines in market_analysis stage
+        execution_sequence = sr_steps + hmm_steps + data_processing_steps + additional_steps
         
         # Find the starting index
         try:
@@ -817,6 +822,9 @@ class MarketAnalysisSubPipeline:
         elif sub_pipeline_name in data_processing_steps:
             current_group = "Data Processing Steps"
             self.logger.info('🎯 Starting from data processing steps group')
+        elif sub_pipeline_name in additional_steps:
+            current_group = "Additional Steps"
+            self.logger.info('🎯 Starting from additional steps group')
         
         self.logger.info(f'📋 Execution sequence: {execution_sequence}')
         self.logger.info(f'🚀 Starting from index {start_index}: {sub_pipeline_name}')
@@ -836,6 +844,9 @@ class MarketAnalysisSubPipeline:
             elif pipeline_name in data_processing_steps and current_group != "Data Processing Steps":
                 self.logger.info('🔄 Transitioning to data processing steps group')
                 current_group = "Data Processing Steps"
+            elif pipeline_name in additional_steps and current_group != "Additional Steps":
+                self.logger.info('🔄 Transitioning to additional steps group')
+                current_group = "Additional Steps"
             
             try:
                 progress_info = f"({i+1-start_index}/{len(execution_sequence)-start_index})"

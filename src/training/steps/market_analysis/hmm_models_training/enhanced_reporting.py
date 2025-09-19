@@ -353,8 +353,11 @@ class HMMTrainingReporter:
                 min_count = min(regime_counts)
                 max_count = max(regime_counts)
                 
-                if max_count > 0:
+                # Enhanced boundary checking to prevent division by zero
+                if max_count > 0 and min_count >= 0:
                     regime_balance_score = safe_divide(min_count, max_count, 0.0)
+                    # Ensure balance score is within valid range [0, 1]
+                    regime_balance_score = max(0.0, min(1.0, regime_balance_score))
                 else:
                     regime_balance_score = 0.0
             else:

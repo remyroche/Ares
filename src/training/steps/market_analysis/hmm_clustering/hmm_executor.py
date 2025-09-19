@@ -108,8 +108,8 @@ def train_hmm_gpu_optimized(
 			"converged": hmm_model.monitor_.converged if hasattr(hmm_model, 'monitor_') else False,
 			"n_iterations": hmm_model.monitor_.iter if hasattr(hmm_model, 'monitor_') else n_iter,
 			"log_likelihood": score,
-			"aic": 2 * features_scaled.shape[1] * n_components - 2 * score,
-			"bic": np.log(features_scaled.shape[0]) * features_scaled.shape[1] * n_components - 2 * score
+			"aic": 2 * features_scaled.shape[1] * n_components - 2 * score if score is not None else 0,
+			"bic": safe_log(features_scaled.shape[0], 0) * features_scaled.shape[1] * n_components - 2 * score if score is not None else 0
 		}
 
 		return {
@@ -196,8 +196,8 @@ def train_hmm_cpu_optimized(
 			"converged": hmm_model.monitor_.converged if hasattr(hmm_model, 'monitor_') else False,
 			"n_iterations": hmm_model.monitor_.iter if hasattr(hmm_model, 'monitor_') else n_iter,
 			"log_likelihood": score,
-			"aic": 2 * features_scaled.shape[1] * n_components - 2 * score,
-			"bic": np.log(features_scaled.shape[0]) * features_scaled.shape[1] * n_components - 2 * score
+			"aic": 2 * features_scaled.shape[1] * n_components - 2 * score if score is not None else 0,
+			"bic": safe_log(features_scaled.shape[0], 0) * features_scaled.shape[1] * n_components - 2 * score if score is not None else 0
 		}
 
 		return {

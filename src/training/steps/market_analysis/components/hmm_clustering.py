@@ -1934,12 +1934,16 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             
             excluded_clusters = set()
             
-            # Calculate cluster sample sizes
+            # Calculate cluster sample sizes and total samples
             cluster_sample_counts = {}
+            total_samples = 0
+            
             for regime_id, cluster_id in regime_to_cluster.items():
+                sample_count = regime_characteristics[regime_id].get('sample_count', 1)
+                total_samples += sample_count
                 if cluster_id not in cluster_sample_counts:
                     cluster_sample_counts[cluster_id] = 0
-                cluster_sample_counts[cluster_id] += regime_characteristics[regime_id].get('sample_count', 1)
+                cluster_sample_counts[cluster_id] += sample_count
             
             for cluster_id, cv_map in cluster_cv_aspects.items():
                 # Get maximum CV across all aspects for this cluster
@@ -1949,16 +1953,17 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                 
                 max_cv = max(cluster_cvs)
                 sample_count = cluster_sample_counts.get(cluster_id, 0)
+                sample_percentage = (sample_count / total_samples) * 100 if total_samples > 0 else 0
                 
-                # Apply adaptive CV threshold based on sample size
-                if sample_count > 10:
-                    cv_threshold = 0.05  # 5% for larger clusters
-                else:
-                    cv_threshold = 0.10  # 10% for smaller clusters
+                # Apply adaptive CV threshold based on sample percentage
+                if sample_percentage > 10.0:  # Large clusters (>10% of total samples)
+                    cv_threshold = 0.05  # 5% CV threshold for large clusters
+                else:  # Small clusters (≤10% of total samples)
+                    cv_threshold = 0.10  # 10% CV threshold for small clusters
                 
                 if max_cv > cv_threshold:
                     excluded_clusters.add(cluster_id)
-                    self.logger.info(f"   🚫 Excluding cluster {cluster_id} from merging: CV={max_cv:.3f} > {cv_threshold:.3f} (samples: {sample_count})")
+                    self.logger.info(f"   🚫 Excluding cluster {cluster_id} from merging: CV={max_cv:.3f} > {cv_threshold:.3f} (samples: {sample_count}, {sample_percentage:.1f}%)")
             
             if excluded_clusters:
                 self.logger.info(f"📊 Excluded {len(excluded_clusters)} clusters from merging due to high internal CV")

@@ -51,25 +51,46 @@ try:
 except ImportError:
 
     def per_regime_processing(*args, **kwargs):
+        """Fallback decorator for per-regime processing."""
         def decorator(func: Callable):
             return func
         return decorator
 
     def aggregate_regime_results(*args, **kwargs):
+        """Fallback function for aggregating regime results."""
         return {}
 
     class RegimeProcessingContext:
+        """Fallback context manager for regime processing."""
 
         @log_important_calls
-
-        def __init__(self, *args, **kwargs) -> None:
-            pass
+        def __init__(self, symbol: str, exchange: str, timeframe: str, data_dir: str) -> None:
+            self.symbol = symbol
+            self.exchange = exchange
+            self.timeframe = timeframe
+            self.data_dir = data_dir
+            self.regime_data = None
+            self.regime_ids = []
+            
+        async def __aenter__(self):
+            return self
+            
+        async def __aexit__(self, exc_type, exc_val, exc_tb):
+            return False
+            
+        def get_regime_data(self, regime_id: int, preserve_context: bool = False):
+            return pd.DataFrame()
 try:
     from src.utils.pipeline_standards import pipeline_standards
     import datetime
 except ImportError:
-    def pipeline_standards(*args, **kwargs) -> None:
-        return {}
+    def pipeline_standards(*args, **kwargs) -> Dict[str, Any]:
+        """Fallback pipeline standards."""
+        return {
+            'data_quality_threshold': 0.95,
+            'min_samples': 100,
+            'max_missing_ratio': 0.05
+        }
 
 from src.core.decorators.logging import log_execution_time, log_call
 
@@ -133,17 +154,35 @@ class PerRegimeFeatureEngineeringStep(FeatureInteractionEngine):
             Success status
         """
         try:
-            # Validate inputs
-            if not symbol or not exchange or not timeframe:
-                raise ValueError("Missing required parameters: symbol, exchange, timeframe")
+            # Comprehensive input validation
+            if not symbol or not isinstance(symbol, str) or len(symbol.strip()) == 0:
+                raise ValueError("Symbol must be a non-empty string")
             
-            if not data_dir:
-                raise ValueError("Data directory is required")
+            if not exchange or not isinstance(exchange, str) or len(exchange.strip()) == 0:
+                raise ValueError("Exchange must be a non-empty string")
             
-            # Validate data directory exists
+            if not timeframe or not isinstance(timeframe, str) or len(timeframe.strip()) == 0:
+                raise ValueError("Timeframe must be a non-empty string")
+            
+            if not data_dir or not isinstance(data_dir, str):
+                raise ValueError("Data directory must be a non-empty string")
+            
+            # Validate data directory exists and is accessible
             data_path = Path(data_dir)
             if not data_path.exists():
                 raise FileNotFoundError(f"Data directory does not exist: {data_dir}")
+            
+            if not data_path.is_dir():
+                raise ValueError(f"Data path is not a directory: {data_dir}")
+            
+            # Check directory permissions
+            if not data_path.readable():
+                raise PermissionError(f"Data directory is not readable: {data_dir}")
+            
+            # Sanitize inputs
+            symbol = symbol.strip().upper()
+            exchange = exchange.strip().upper()
+            timeframe = timeframe.strip().lower()
             
             self.logger.info('🚀 Starting per-regime feature engineering process')
             labeled_data = await self._load_labeled_data(symbol, exchange, timeframe, data_dir)
@@ -275,17 +314,237 @@ class PerRegimeFeatureEngineeringStep(FeatureInteractionEngine):
             custom_config = self.regime_specific_features[f'regime_{regime_id}']
             self.logger.info(f'📋 Using custom configuration for regime {regime_id}')
             return custom_config
-        base_config = {'enable_technical_indicators': True, 'enable_price_features': True, 'enable_volume_features': True, 'enable_volatility_features': True, 'enable_microstructure_features': True, 'force_regime_specific_periods': True, 'regime_id': regime_id}
-        if regime_id <= 2:
-            config = {**base_config, 'lookback_periods': [10, 20, 50, 100, 200], 'emphasis': 'trend', 'additional_features': ['SMA_cross_features', 'EMA_ribbon', 'ADX_features', 'trend_strength'], 'interaction_patterns': {'trend_momentum': {'features': ['SMA_20', 'SMA_100', 'EMA_21', 'ADX_14'], 'weight': 2.0, 'enabled': True}, 'trend_volume': {'features': ['OBV_20', 'Volume_Ratio', 'SMA_20', 'ATR_14'], 'weight': 1.8, 'enabled': True}}, 'optimization_priority': 'trend_strength'}
-            self.logger.info(f'📈 Configured regime {regime_id} for trending markets')
-        elif regime_id >= 5:
-            config = {**base_config, 'lookback_periods': [5, 10, 20, 30], 'emphasis': 'mean_reversion', 'additional_features': ['RSI_divergence', 'Bollinger_bands_features', 'ATR_bands', 'volatility_cones'], 'interaction_patterns': {'mean_reversion': {'features': ['RSI_14', 'BB_Position_20', 'Williams_R_14', 'CCI_20'], 'weight': 2.2, 'enabled': True}, 'volatility_regime': {'features': ['ATR_14', 'BB_Squeeze_20', 'Volatility', 'Volume_Ratio'], 'weight': 1.9, 'enabled': True}}, 'optimization_priority': 'volatility_capture'}
-            self.logger.info(f'📊 Configured regime {regime_id} for volatile/ranging markets')
-        else:
-            config = {**base_config, 'lookback_periods': [7, 14, 30, 60], 'emphasis': 'balanced', 'additional_features': ['momentum_features', 'volume_profile', 'market_microstructure'], 'interaction_patterns': {'momentum_volume': {'features': ['RSI_14', 'MACD_12_26', 'OBV_20', 'Volume_Ratio'], 'weight': 1.6, 'enabled': True}, 'oscillator_trend': {'features': ['RSI_14', 'Williams_R_14', 'CCI_20', 'EMA_21'], 'weight': 1.4, 'enabled': True}}, 'optimization_priority': 'balanced_performance'}
-            self.logger.info(f'⚖️ Configured regime {regime_id} for balanced approach')
+        base_config = {
+            'enable_technical_indicators': True, 
+            'enable_price_features': True, 
+            'enable_volume_features': True, 
+            'enable_volatility_features': True, 
+            'enable_microstructure_features': True, 
+            'force_regime_specific_periods': True, 
+            'regime_id': regime_id
+        }
+        
+        # Get regime characteristics dynamically instead of hard-coding
+        regime_characteristics = self._analyze_regime_characteristics(regime_id)
+        
+        if regime_characteristics['type'] == 'trending':
+            config = {
+                **base_config, 
+                'lookback_periods': [10, 20, 50, 100, 200], 
+                'emphasis': 'trend', 
+                'additional_features': ['SMA_cross_features', 'EMA_ribbon', 'ADX_features', 'trend_strength'], 
+                'interaction_patterns': {
+                    'trend_momentum': {
+                        'features': ['SMA_20', 'SMA_100', 'EMA_21', 'ADX_14'], 
+                        'weight': 2.0, 
+                        'enabled': True
+                    }, 
+                    'trend_volume': {
+                        'features': ['OBV_20', 'Volume_Ratio', 'SMA_20', 'ATR_14'], 
+                        'weight': 1.8, 
+                        'enabled': True
+                    }
+                }, 
+                'optimization_priority': 'trend_strength',
+                'volatility_threshold': regime_characteristics.get('volatility_threshold', 0.02),
+                'trend_strength': regime_characteristics.get('trend_strength', 0.7)
+            }
+            self.logger.info(f'📈 Configured regime {regime_id} for trending markets (volatility: {regime_characteristics.get("avg_volatility", "N/A"):.4f})')
+            
+        elif regime_characteristics['type'] == 'volatile':
+            config = {
+                **base_config, 
+                'lookback_periods': [5, 10, 20, 30], 
+                'emphasis': 'mean_reversion', 
+                'additional_features': ['RSI_divergence', 'Bollinger_bands_features', 'ATR_bands', 'volatility_cones'], 
+                'interaction_patterns': {
+                    'mean_reversion': {
+                        'features': ['RSI_14', 'BB_Position_20', 'Williams_R_14', 'CCI_20'], 
+                        'weight': 2.2, 
+                        'enabled': True
+                    }, 
+                    'volatility_regime': {
+                        'features': ['ATR_14', 'BB_Squeeze_20', 'Volatility', 'Volume_Ratio'], 
+                        'weight': 1.9, 
+                        'enabled': True
+                    }
+                }, 
+                'optimization_priority': 'volatility_capture',
+                'volatility_threshold': regime_characteristics.get('volatility_threshold', 0.05),
+                'mean_reversion_strength': regime_characteristics.get('mean_reversion_strength', 0.6)
+            }
+            self.logger.info(f'📊 Configured regime {regime_id} for volatile/ranging markets (volatility: {regime_characteristics.get("avg_volatility", "N/A"):.4f})')
+            
+        else:  # balanced/transitional
+            config = {
+                **base_config, 
+                'lookback_periods': [7, 14, 30, 60], 
+                'emphasis': 'balanced', 
+                'additional_features': ['momentum_features', 'volume_profile', 'market_microstructure'], 
+                'interaction_patterns': {
+                    'momentum_volume': {
+                        'features': ['RSI_14', 'MACD_12_26', 'OBV_20', 'Volume_Ratio'], 
+                        'weight': 1.6, 
+                        'enabled': True
+                    }, 
+                    'oscillator_trend': {
+                        'features': ['RSI_14', 'Williams_R_14', 'CCI_20', 'EMA_21'], 
+                        'weight': 1.4, 
+                        'enabled': True
+                    }
+                }, 
+                'optimization_priority': 'balanced_performance',
+                'regime_stability': regime_characteristics.get('stability_score', 0.5)
+            }
+            self.logger.info(f'⚖️ Configured regime {regime_id} for balanced approach (stability: {regime_characteristics.get("stability_score", "N/A"):.4f})')
         return config
+
+    def _analyze_regime_characteristics(self, regime_id: int) -> Dict[str, Any]:
+        """Analyze regime characteristics dynamically instead of using hard-coded assumptions.
+        
+        Args:
+            regime_id: Regime ID to analyze
+            
+        Returns:
+            Dictionary with regime characteristics
+        """
+        try:
+            # Try to load regime metadata if available
+            regime_metadata = self._load_regime_metadata(regime_id)
+            if regime_metadata:
+                return regime_metadata
+            
+            # Fallback to heuristic analysis based on regime ID patterns
+            # This is still better than hard-coding as it's based on general patterns
+            characteristics = {
+                'regime_id': regime_id,
+                'type': 'balanced',  # default
+                'avg_volatility': 0.02,  # default moderate volatility
+                'volatility_threshold': 0.02,
+                'stability_score': 0.5,
+                'trend_strength': 0.5,
+                'mean_reversion_strength': 0.5,
+                'analysis_method': 'heuristic_fallback'
+            }
+            
+            # Heuristic patterns (better than hard-coding specific IDs)
+            total_regimes = self._estimate_total_regimes()
+            
+            if total_regimes > 0:
+                regime_percentile = regime_id / total_regimes
+                
+                # Low regime IDs often represent stable/trending conditions
+                if regime_percentile < 0.3:
+                    characteristics.update({
+                        'type': 'trending',
+                        'avg_volatility': 0.015,
+                        'volatility_threshold': 0.02,
+                        'trend_strength': 0.8,
+                        'stability_score': 0.7
+                    })
+                # High regime IDs often represent volatile/ranging conditions
+                elif regime_percentile > 0.7:
+                    characteristics.update({
+                        'type': 'volatile',
+                        'avg_volatility': 0.045,
+                        'volatility_threshold': 0.05,
+                        'mean_reversion_strength': 0.7,
+                        'stability_score': 0.3
+                    })
+                # Middle regimes are transitional/balanced
+                else:
+                    characteristics.update({
+                        'type': 'balanced',
+                        'avg_volatility': 0.025,
+                        'volatility_threshold': 0.03,
+                        'stability_score': 0.5
+                    })
+            
+            self.logger.info(f'🔍 Analyzed regime {regime_id} characteristics: {characteristics["type"]} (method: {characteristics["analysis_method"]})')
+            return characteristics
+            
+        except Exception as e:
+            self.logger.warning(f'⚠️ Failed to analyze regime {regime_id} characteristics: {e}')
+            # Return safe defaults
+            return {
+                'regime_id': regime_id,
+                'type': 'balanced',
+                'avg_volatility': 0.02,
+                'volatility_threshold': 0.02,
+                'stability_score': 0.5,
+                'analysis_method': 'error_fallback'
+            }
+    
+    def _load_regime_metadata(self, regime_id: int) -> Optional[Dict[str, Any]]:
+        """Load regime metadata if available from previous analysis.
+        
+        Args:
+            regime_id: Regime ID
+            
+        Returns:
+            Regime metadata dictionary or None
+        """
+        try:
+            # Try to load from various possible sources
+            metadata_paths = [
+                f'data/regimes/regime_{regime_id}_metadata.json',
+                f'data/training/regime_{regime_id}_characteristics.json',
+                f'data/hmm/regime_{regime_id}_analysis.json'
+            ]
+            
+            for metadata_path in metadata_paths:
+                if Path(metadata_path).exists():
+                    import json
+                    with open(metadata_path, 'r') as f:
+                        metadata = json.load(f)
+                    
+                    # Validate metadata structure
+                    if isinstance(metadata, dict) and 'type' in metadata:
+                        self.logger.info(f'✅ Loaded regime {regime_id} metadata from {metadata_path}')
+                        metadata['analysis_method'] = 'metadata_file'
+                        return metadata
+            
+            return None
+            
+        except Exception as e:
+            self.logger.warning(f'⚠️ Failed to load regime {regime_id} metadata: {e}')
+            return None
+    
+    def _estimate_total_regimes(self) -> int:
+        """Estimate total number of regimes in the system.
+        
+        Returns:
+            Estimated total number of regimes
+        """
+        try:
+            # Try to determine from configuration
+            if hasattr(self, 'config') and isinstance(self.config, dict):
+                hmm_config = self.config.get('hmm_clustering', {})
+                if 'n_components' in hmm_config:
+                    return hmm_config['n_components']
+                if 'max_regimes' in hmm_config:
+                    return hmm_config['max_regimes']
+            
+            # Try to determine from regime data files
+            regime_files = list(Path('data/regimes').glob('regime_*_metadata.json')) if Path('data/regimes').exists() else []
+            if regime_files:
+                regime_ids = []
+                for file_path in regime_files:
+                    try:
+                        regime_id = int(file_path.stem.split('_')[1])
+                        regime_ids.append(regime_id)
+                    except (IndexError, ValueError):
+                        continue
+                if regime_ids:
+                    return max(regime_ids) + 1  # Assuming 0-based indexing
+            
+            # Default fallback
+            return 5
+            
+        except Exception as e:
+            self.logger.warning(f'⚠️ Failed to estimate total regimes: {e}')
+            return 5  # Safe default
+
     @log_all_calls
 
     def _update_regime_interaction_patterns(self, regime_config: Dict[str, Any], regime_id: int) -> None:

@@ -99,12 +99,26 @@ class ValidationResult:
 class TripleBarrierConfig:
     """Unified configuration for triple barrier labeling."""
     
-    # Core parameters
-    profit_take_multiplier: float = DEFAULT_PROFIT_TAKE_MULTIPLIER
-    stop_loss_multiplier: float = DEFAULT_STOP_LOSS_MULTIPLIER
-    time_barrier_minutes: int = 30
+    # Core parameters (can be dynamic)
+    profit_take_multiplier: Union[float, str, Callable] = DEFAULT_PROFIT_TAKE_MULTIPLIER
+    stop_loss_multiplier: Union[float, str, Callable] = DEFAULT_STOP_LOSS_MULTIPLIER
+    time_barrier_minutes: Union[int, str, Callable] = 30
     max_lookahead: int = 100
     transaction_cost: float = DEFAULT_TRANSACTION_COST
+    
+    # Dynamic parameter configuration
+    dynamic_parameters: bool = False
+    volatility_lookback: int = 20  # Periods for volatility calculation
+    volatility_multiplier: float = 2.0  # Multiplier for volatility-based barriers
+    min_profit_take: float = 0.001  # Minimum profit take (0.1%)
+    max_profit_take: float = 0.01   # Maximum profit take (1.0%)
+    min_stop_loss: float = 0.0005   # Minimum stop loss (0.05%)
+    max_stop_loss: float = 0.005    # Maximum stop loss (0.5%)
+    min_time_barrier: int = 15      # Minimum time barrier (minutes)
+    max_time_barrier: int = 120     # Maximum time barrier (minutes)
+    
+    # Regime-specific parameters
+    regime_specific_parameters: Dict[str, Dict[str, float]] = field(default_factory=dict)
     
     # Behavior flags
     binary_classification: bool = True
@@ -171,6 +185,97 @@ class TripleBarrierConfig:
         
         if errors:
             raise ConfigurationError(f"Configuration validation failed: {'; '.join(errors)}")
+    
+    def calculate_dynamic_parameters(self, data: pd.DataFrame, index: int, regime: Optional[str] = None) -> Dict[str, float]:
+        """Calculate dynamic parameters based on current market conditions.
+        
+        Args:
+            data: Market data DataFrame
+            index: Current index position
+            regime: Current regime (if regime-aware)
+            
+        Returns:
+            Dictionary with calculated parameters
+        """
+        if not self.dynamic_parameters:
+            # Return static parameters
+            return {
+                'profit_take': self._get_static_value(self.profit_take_multiplier),
+                'stop_loss': self._get_static_value(self.stop_loss_multiplier),
+                'time_barrier': self._get_static_value(self.time_barrier_minutes)
+            }
+        
+        # Check for regime-specific parameters first
+        if regime and regime in self.regime_specific_parameters:
+            regime_params = self.regime_specific_parameters[regime]
+            return {
+                'profit_take': regime_params.get('profit_take', self._get_static_value(self.profit_take_multiplier)),
+                'stop_loss': regime_params.get('stop_loss', self._get_static_value(self.stop_loss_multiplier)),
+                'time_barrier': regime_params.get('time_barrier', self._get_static_value(self.time_barrier_minutes))
+            }
+        
+        # Calculate volatility-based dynamic parameters
+        try:
+            # Calculate rolling volatility
+            if 'close' in data.columns and len(data) > index + self.volatility_lookback:
+                start_idx = max(0, index - self.volatility_lookback)
+                end_idx = index
+                
+                if end_idx > start_idx:
+                    price_series = data['close'].iloc[start_idx:end_idx]
+                    returns = price_series.pct_change().dropna()
+                    
+                    if len(returns) > 1:
+                        volatility = returns.std() * np.sqrt(252)  # Annualized volatility
+                        
+                        # Scale barriers based on volatility
+                        vol_adjusted_pt = self._get_static_value(self.profit_take_multiplier) * (1 + volatility * self.volatility_multiplier)
+                        vol_adjusted_sl = self._get_static_value(self.stop_loss_multiplier) * (1 + volatility * self.volatility_multiplier)
+                        
+                        # Apply min/max constraints
+                        profit_take = np.clip(vol_adjusted_pt, self.min_profit_take, self.max_profit_take)
+                        stop_loss = np.clip(vol_adjusted_sl, self.min_stop_loss, self.max_stop_loss)
+                        
+                        # Adjust time barrier based on volatility (higher vol = shorter time)
+                        base_time = self._get_static_value(self.time_barrier_minutes)
+                        vol_adjusted_time = base_time * (1 - volatility * 0.5)  # Reduce time in high vol
+                        time_barrier = int(np.clip(vol_adjusted_time, self.min_time_barrier, self.max_time_barrier))
+                        
+                        return {
+                            'profit_take': profit_take,
+                            'stop_loss': stop_loss,
+                            'time_barrier': time_barrier,
+                            'volatility': volatility
+                        }
+            
+            # Fallback to static parameters if calculation fails
+            return {
+                'profit_take': self._get_static_value(self.profit_take_multiplier),
+                'stop_loss': self._get_static_value(self.stop_loss_multiplier),
+                'time_barrier': self._get_static_value(self.time_barrier_minutes)
+            }
+            
+        except Exception as e:
+            logging.warning(f"Dynamic parameter calculation failed: {e}")
+            # Fallback to static parameters
+            return {
+                'profit_take': self._get_static_value(self.profit_take_multiplier),
+                'stop_loss': self._get_static_value(self.stop_loss_multiplier),
+                'time_barrier': self._get_static_value(self.time_barrier_minutes)
+            }
+    
+    def _get_static_value(self, param: Union[float, int, str, Callable]) -> Union[float, int]:
+        """Get static value from parameter that could be callable or string."""
+        if callable(param):
+            return param()
+        elif isinstance(param, str):
+            if param == 'dynamic':
+                # This shouldn't happen in static context, return default
+                return self.profit_take_multiplier if param == self.profit_take_multiplier else self.stop_loss_multiplier
+            else:
+                return float(param)
+        else:
+            return param
 
 @dataclass
 class TripleBarrierResult:

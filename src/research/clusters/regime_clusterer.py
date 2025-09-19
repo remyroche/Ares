@@ -26,20 +26,30 @@ from abc import ABC, abstractmethod
 
 from src.utils.logger import system_logger
 
+# Import similarity matrix clustering
+try:
+    from .similarity_matrix_clustering import SimilarityMatrixClusterer, SimilarityClusteringConfig
+    SIMILARITY_MATRIX_AVAILABLE = True
+except ImportError:
+    SIMILARITY_MATRIX_AVAILABLE = False
+
 
 class ClusteringMethod(Enum):
     """Enumeration of clustering methods."""
-    KMEANS = "kmeans"
-    GMM = "gaussian_mixture"
+    # Primary method - similarity matrix clustering
+    SIMILARITY_MATRIX = "similarity_matrix"
+    
+    # Legacy methods (deprecated - use similarity matrix instead)
     DBSCAN = "dbscan"
     HDBSCAN = "hdbscan"
     HIERARCHICAL = "hierarchical"
     SPECTRAL = "spectral"
     DTW_CLUSTERING = "dtw_clustering"
-    SHAPE_CLUSTERING = "shape_clustering"
     ENSEMBLE = "ensemble"
-    ONLINE_KMEANS = "online_kmeans"
-    BIRCH = "birch"
+    
+    # Removed methods (no longer appropriate for regime discovery)
+    # KMEANS = "kmeans"  # Removed - not suitable for regime clustering
+    # GMM = "gaussian_mixture"  # Removed - not suitable for regime clustering
 
 
 @dataclass
@@ -312,70 +322,12 @@ class BaseClusterer(ABC):
         return float(bcss)
 
 
-class KMeansClusterer(BaseClusterer):
-    """K-Means clustering implementation."""
-    
-    def fit_predict(self, data: np.ndarray) -> ClusteringResult:
-        from sklearn.cluster import KMeans
-        from sklearn.preprocessing import StandardScaler
-        
-        # Standardize data
-        scaler = StandardScaler()
-        data_scaled = scaler.fit_transform(data)
-        
-        # Fit K-Means
-        kmeans = KMeans(
-            n_clusters=self.config.n_clusters,
-            random_state=self.config.random_state,
-            **self.config.kmeans_params
-        )
-        
-        labels = kmeans.fit_predict(data_scaled)
-        metrics = self._calculate_metrics(data_scaled, labels)
-        metrics['inertia'] = kmeans.inertia_
-        
-        return ClusteringResult(
-            method=ClusteringMethod.KMEANS,
-            labels=labels,
-            n_clusters=self.config.n_clusters,
-            cluster_centers=scaler.inverse_transform(kmeans.cluster_centers_),
-            metrics=metrics,
-            metadata={'scaler': scaler, 'model': kmeans}
-        )
+# KMeansClusterer removed - not suitable for regime discovery
+# Use SimilarityMatrixClusterer instead
 
 
-class GMMClusterer(BaseClusterer):
-    """Gaussian Mixture Model clustering implementation."""
-    
-    def fit_predict(self, data: np.ndarray) -> ClusteringResult:
-        from sklearn.mixture import GaussianMixture
-        from sklearn.preprocessing import StandardScaler
-        
-        # Standardize data
-        scaler = StandardScaler()
-        data_scaled = scaler.fit_transform(data)
-        
-        # Fit GMM
-        gmm = GaussianMixture(
-            n_components=self.config.n_clusters,
-            random_state=self.config.random_state,
-            **self.config.gmm_params
-        )
-        
-        labels = gmm.fit_predict(data_scaled)
-        metrics = self._calculate_metrics(data_scaled, labels)
-        metrics['aic'] = gmm.aic(data_scaled)
-        metrics['bic'] = gmm.bic(data_scaled)
-        metrics['log_likelihood'] = gmm.score(data_scaled)
-        
-        return ClusteringResult(
-            method=ClusteringMethod.GMM,
-            labels=labels,
-            n_clusters=self.config.n_clusters,
-            cluster_centers=scaler.inverse_transform(gmm.means_),
-            metrics=metrics,
-            metadata={'scaler': scaler, 'model': gmm}
-        )
+# GMMClusterer removed - not suitable for regime discovery
+# Use SimilarityMatrixClusterer instead
 
 
 class DBSCANClusterer(BaseClusterer):
@@ -758,26 +710,32 @@ class RegimeClusterer:
         self.results: Dict[ClusteringMethod, ClusteringResult] = {}
         
         # Initialize clusterers
-        self.clusterers = {
-            ClusteringMethod.KMEANS: KMeansClusterer(self.config),
-            ClusteringMethod.GMM: GMMClusterer(self.config),
-            ClusteringMethod.DBSCAN: DBSCANClusterer(self.config),
-            ClusteringMethod.HDBSCAN: HDBSCANClusterer(self.config),
-            ClusteringMethod.HIERARCHICAL: HierarchicalClusterer(self.config),
-            ClusteringMethod.SPECTRAL: SpectralClusterer(self.config),
-            ClusteringMethod.DTW_CLUSTERING: DTWClusterer(self.config),
-            ClusteringMethod.ENSEMBLE: EnsembleClusterer(self.config)
-        }
+        self.clusterers = {}
+        
+        # Primary method - similarity matrix clustering
+        if SIMILARITY_MATRIX_AVAILABLE:
+            similarity_config = SimilarityClusteringConfig()
+            self.clusterers[ClusteringMethod.SIMILARITY_MATRIX] = SimilarityMatrixClusterer(similarity_config)
+        
+        # Legacy methods (deprecated but available for comparison)
+        self.clusterers[ClusteringMethod.DBSCAN] = DBSCANClusterer(self.config)
+        self.clusterers[ClusteringMethod.HDBSCAN] = HDBSCANClusterer(self.config)
+        self.clusterers[ClusteringMethod.HIERARCHICAL] = HierarchicalClusterer(self.config)
+        self.clusterers[ClusteringMethod.SPECTRAL] = SpectralClusterer(self.config)
+        self.clusterers[ClusteringMethod.DTW_CLUSTERING] = DTWClusterer(self.config)
+        self.clusterers[ClusteringMethod.ENSEMBLE] = EnsembleClusterer(self.config)
     
     def run_single_method(self, 
-                         data: np.ndarray,
-                         method: ClusteringMethod) -> ClusteringResult:
+                         data: Union[np.ndarray, pd.DataFrame],
+                         method: ClusteringMethod,
+                         price_data: Optional[pd.DataFrame] = None) -> ClusteringResult:
         """
         Run a single clustering method.
         
         Args:
-            data: Input data for clustering
+            data: Input data for clustering (DataFrame for similarity matrix, ndarray for legacy)
             method: Clustering method to use
+            price_data: Optional price data for economic validation (similarity matrix only)
             
         Returns:
             Clustering result
@@ -787,7 +745,40 @@ class RegimeClusterer:
         if method not in self.clusterers:
             raise ValueError(f"Clustering method {method.value} not supported")
         
-        result = self.clusterers[method].fit_predict(data)
+        # Handle similarity matrix clustering differently
+        if method == ClusteringMethod.SIMILARITY_MATRIX:
+            if not isinstance(data, pd.DataFrame):
+                self.logger.warning("Converting ndarray to DataFrame for similarity matrix clustering")
+                data = pd.DataFrame(data, columns=[f'feature_{i}' for i in range(data.shape[1])])
+            
+            similarity_result = self.clusterers[method].fit_predict(data, price_data)
+            
+            # Convert to standard ClusteringResult format
+            result = ClusteringResult(
+                method=method,
+                labels=similarity_result.labels,
+                n_clusters=similarity_result.n_clusters,
+                cluster_centers=None,  # Not applicable for similarity matrix clustering
+                metrics={
+                    'silhouette_score': similarity_result.final_similarity_scores.get(0, 0.0),
+                    'n_clusters': similarity_result.n_clusters,
+                    'cv_scores': similarity_result.final_cv_scores,
+                    'similarity_scores': similarity_result.final_similarity_scores,
+                    'economic_significance_scores': similarity_result.economic_significance_scores
+                },
+                metadata={
+                    'similarity_matrix_result': similarity_result,
+                    'cluster_validations': similarity_result.cluster_validations,
+                    **similarity_result.metadata
+                }
+            )
+        else:
+            # Legacy clustering methods
+            if isinstance(data, pd.DataFrame):
+                data = data.values  # Convert to ndarray for legacy methods
+            
+            result = self.clusterers[method].fit_predict(data)
+        
         self.results[method] = result
         
         self.logger.info(f"✅ {method.value} completed: {result.n_clusters} clusters, "

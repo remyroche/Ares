@@ -77,7 +77,31 @@ from .advanced_model_integration import (
     ValidationResult
 )
 
-# Import existing clustering and validation (if available)
+# Import data-driven clustering components
+try:
+    from .data_driven_clustering_framework import (
+        DataDrivenClusteringFramework,
+        DataDrivenClusteringConfig,
+        DataDrivenClusteringResult,
+        data_driven_regime_discovery,
+        quick_regime_discovery
+    )
+    from .similarity_matrix_clustering import (
+        SimilarityMatrixClusterer,
+        SimilarityClusteringConfig,
+        SimilarityMethod,
+        similarity_matrix_clustering
+    )
+    from .empirical_threshold_discovery import (
+        EmpiricalThresholdDiscovery,
+        EmpiricalDiscoveryConfig,
+        discover_optimal_clustering_thresholds
+    )
+    DATA_DRIVEN_CLUSTERING_AVAILABLE = True
+except ImportError:
+    DATA_DRIVEN_CLUSTERING_AVAILABLE = False
+
+# Import legacy clustering and validation (if available)
 try:
     from .regime_clusterer import (
         RegimeClusterer,
@@ -94,9 +118,9 @@ try:
         IntegrationConfig,
         IntegrationMethod
     )
-    CLUSTERING_COMPONENTS_AVAILABLE = True
+    LEGACY_CLUSTERING_AVAILABLE = True
 except ImportError:
-    CLUSTERING_COMPONENTS_AVAILABLE = False
+    LEGACY_CLUSTERING_AVAILABLE = False
 
 # Export main classes
 __all__ = [
@@ -128,8 +152,30 @@ __all__ = [
     'ValidationResult',
 ]
 
-# Add clustering components if available
-if CLUSTERING_COMPONENTS_AVAILABLE:
+# Add data-driven clustering components if available
+if DATA_DRIVEN_CLUSTERING_AVAILABLE:
+    __all__.extend([
+        # Data-driven clustering framework
+        'DataDrivenClusteringFramework',
+        'DataDrivenClusteringConfig',
+        'DataDrivenClusteringResult',
+        'data_driven_regime_discovery',
+        'quick_regime_discovery',
+        
+        # Similarity matrix clustering
+        'SimilarityMatrixClusterer',
+        'SimilarityClusteringConfig',
+        'SimilarityMethod',
+        'similarity_matrix_clustering',
+        
+        # Empirical threshold discovery
+        'EmpiricalThresholdDiscovery',
+        'EmpiricalDiscoveryConfig',
+        'discover_optimal_clustering_thresholds'
+    ])
+
+# Add legacy clustering components if available
+if LEGACY_CLUSTERING_AVAILABLE:
     __all__.extend([
         'RegimeClusterer',
         'ClusteringConfig', 

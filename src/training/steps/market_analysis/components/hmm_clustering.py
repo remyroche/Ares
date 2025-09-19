@@ -1648,43 +1648,29 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
         return Z
     
     def _calculate_regime_pair_similarity(self, regime_1: Dict[str, Any], regime_2: Dict[str, Any]) -> float:
-        """Calculate similarity between two regimes using the global robust scaler if available.
-
-        Falls back to a conservative cosine similarity if the global scaler is not set.
+        """Calculate similarity between two regimes using robust per-feature normalization.
+        
+        This method uses a robust normalization approach that:
+        1. Extracts features from both regimes
+        2. For each feature, normalizes by the maximum absolute value between the two regimes
+        3. Calculates cosine similarity on the normalized feature vectors
+        
+        This preserves both direction (sign) and relative magnitude while handling
+        extreme scale differences between features.
         """
         try:
             import numpy as np
-            # Prefer using the global scaler fitted on all regimes
-            scaler = getattr(self, '_global_feature_scaler', None)
-            if scaler and scaler.get('feature_order'):
-                feature_order = scaler['feature_order']
-                features_1 = regime_1.get('features', {})
-                features_2 = regime_2.get('features', {})
-                # Build 2 x F matrix in the same feature order the scaler expects
-                X_pair = np.full((2, len(feature_order)), np.nan, dtype=float)
-                for i, key in enumerate(feature_order):
-                    v1 = features_1.get(key, np.nan)
-                    v2 = features_2.get(key, np.nan)
-                    X_pair[0, i] = float(v1) if isinstance(v1, (int, float)) else np.nan
-                    X_pair[1, i] = float(v2) if isinstance(v2, (int, float)) else np.nan
-                # Standardize using global scaler and compute cosine
-                Z_pair = self._standardize_with_scaler(X_pair, scaler)
-                norms = np.linalg.norm(Z_pair, axis=1, keepdims=True)
-                norms[norms == 0] = 1.0
-                Z_pair = Z_pair / norms
-                similarity = float(np.clip(np.dot(Z_pair[0], Z_pair[1]), -1.0, 1.0))
-                # Limited debug
-                if not hasattr(self, '_similarity_debug_count'):
-                    self._similarity_debug_count = 0
-                if self._similarity_debug_count < 3:
-                    self.logger.warning(f"🔍 DEBUG: Overall cosine similarity: {similarity:.6f}")
-                    self._similarity_debug_count += 1
-                return similarity
-
-            # Fallback: conservative cosine on intersecting numeric features
+            
+            # Extract features from both regimes
             features_1 = regime_1.get('features', {})
             features_2 = regime_2.get('features', {})
-            keys = sorted((set(features_1.keys()) | set(features_2.keys())))
+            
+            # Get common feature keys
+            keys = sorted((set(features_1.keys()) & set(features_2.keys())))
+            if not keys:
+                return 0.0
+            
+            # Extract values for common features
             vals_1, vals_2 = [], []
             for k in keys:
                 v1 = features_1.get(k)
@@ -1692,15 +1678,55 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                 if isinstance(v1, (int, float)) and isinstance(v2, (int, float)):
                     vals_1.append(float(v1))
                     vals_2.append(float(v2))
+            
             if not vals_1:
                 return 0.0
-            v1 = np.array(vals_1)
-            v2 = np.array(vals_2)
-            n1 = np.linalg.norm(v1)
-            n2 = np.linalg.norm(v2)
-            if n1 == 0 or n2 == 0:
+            
+            vec_1 = np.array(vals_1)
+            vec_2 = np.array(vals_2)
+            
+            # Robust per-feature normalization using max absolute value scaling
+            # This preserves relative relationships while making features comparable
+            normalized_1 = np.zeros_like(vec_1)
+            normalized_2 = np.zeros_like(vec_2)
+            
+            for i in range(len(vec_1)):
+                val_1, val_2 = vec_1[i], vec_2[i]
+                max_abs = max(abs(val_1), abs(val_2))
+                
+                if max_abs > 1e-12:  # Avoid division by zero
+                    normalized_1[i] = val_1 / max_abs
+                    normalized_2[i] = val_2 / max_abs
+                else:
+                    # Both values are essentially zero, treat as identical
+                    normalized_1[i] = 0.0
+                    normalized_2[i] = 0.0
+            
+            # Calculate cosine similarity
+            norm_1 = np.linalg.norm(normalized_1)
+            norm_2 = np.linalg.norm(normalized_2)
+            
+            if norm_1 == 0 or norm_2 == 0:
                 return 0.0
-            return float(np.clip(np.dot(v1, v2) / (n1 * n2), -1.0, 1.0))
+            
+            similarity = float(np.clip(np.dot(normalized_1, normalized_2) / (norm_1 * norm_2), -1.0, 1.0))
+            
+            # Limited debug output
+            if not hasattr(self, '_similarity_debug_count'):
+                self._similarity_debug_count = 0
+            if self._similarity_debug_count < 3:
+                self.logger.warning(f"🔍 DEBUG: Features 1 keys: {keys[:5]}...")
+                self.logger.warning(f"🔍 DEBUG: Features 2 keys: {keys[:5]}...")
+                self.logger.warning(f"🔍 DEBUG: Features 1 sample values: {vals_1[:5]}")
+                self.logger.warning(f"🔍 DEBUG: Features 2 sample values: {vals_2[:5]}")
+                self.logger.warning(f"🔍 DEBUG: Original vec_1[:5]: {vec_1[:5]}")
+                self.logger.warning(f"🔍 DEBUG: Original vec_2[:5]: {vec_2[:5]}")
+                self.logger.warning(f"🔍 DEBUG: Normalized vec_1[:5]: {normalized_1[:5]}")
+                self.logger.warning(f"🔍 DEBUG: Normalized vec_2[:5]: {normalized_2[:5]}")
+                self.logger.warning(f"🔍 DEBUG: Overall cosine similarity: {similarity:.6f}")
+                self._similarity_debug_count += 1
+            
+            return similarity
 
         except Exception as e:
             self.logger.error(f"❌ Failed to calculate regime pair similarity: {e}")

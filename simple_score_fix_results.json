@@ -1,0 +1,112 @@
+{
+  "original_scores": {
+    "rsi_14": 0.45,
+    "macd_signal": -0.23,
+    "bollinger_upper": 0.12,
+    "volume_sma": -0.67,
+    "price_momentum": 0.34,
+    "volatility_ratio": -0.15,
+    "support_distance": 0.78,
+    "resistance_distance": -0.41,
+    "trend_strength": 0.23,
+    "market_regime": -0.09
+  },
+  "fixed_scores_by_method": {
+    "min_max": {
+      "rsi_14": 0.7724137931034483,
+      "macd_signal": 0.30344827586206896,
+      "bollinger_upper": 0.5448275862068965,
+      "volume_sma": 0.0,
+      "price_momentum": 0.696551724137931,
+      "volatility_ratio": 0.3586206896551724,
+      "support_distance": 1.0,
+      "resistance_distance": 0.17931034482758623,
+      "trend_strength": 0.6206896551724137,
+      "market_regime": 0.4
+    },
+    "sigmoid": {
+      "rsi_14": 0.610639233949222,
+      "macd_signal": 0.44275214540144436,
+      "bollinger_upper": 0.5299640517645717,
+      "volume_sma": 0.33849684079704756,
+      "price_momentum": 0.5841905229354074,
+      "volatility_ratio": 0.46257015465625045,
+      "support_distance": 0.6856801139382539,
+      "resistance_distance": 0.3989121211516302,
+      "trend_strength": 0.5572478545985555,
+      "market_regime": 0.4775151752081999
+    },
+    "rank": {
+      "volume_sma": 0.1,
+      "resistance_distance": 0.2,
+      "macd_signal": 0.3,
+      "volatility_ratio": 0.4,
+      "market_regime": 0.5,
+      "bollinger_upper": 0.6,
+      "trend_strength": 0.7,
+      "price_momentum": 0.8,
+      "rsi_14": 0.9,
+      "support_distance": 1.0
+    }
+  },
+  "ensemble_scores": {
+    "market_regime": 0.18059999999999998,
+    "volume_sma": 0.4288,
+    "resistance_distance": 0.28940000000000005,
+    "rsi_14": 0.573,
+    "price_momentum": 0.4696,
+    "volatility_ratio": 0.201,
+    "support_distance": 0.8832000000000001,
+    "bollinger_upper": 0.26280000000000003,
+    "trend_strength": 0.3662,
+    "macd_signal": 0.22820000000000001
+  },
+  "report": {
+    "summary": {
+      "total_features": 10,
+      "original_negative_count": 5,
+      "fixed_negative_count": 0,
+      "improvement": 5
+    },
+    "statistics": {
+      "original": {
+        "min": -0.67,
+        "max": 0.78,
+        "mean": 0.037000000000000005,
+        "negative_percentage": 50.0
+      },
+      "fixed": {
+        "min": 0.0,
+        "max": 1.0,
+        "mean": 0.48758620689655174,
+        "negative_percentage": 0.0
+      }
+    }
+  },
+  "triple_barrier_example": {
+    "original_profits": [
+      0.012,
+      -0.008,
+      0.003,
+      -0.015,
+      0.007,
+      -0.002,
+      0.018,
+      -0.011,
+      0.004,
+      -0.006
+    ],
+    "fixed_profits": [
+      0.013439999999999999,
+      -0.0036,
+      0.00312,
+      -0.0070999999999999995,
+      0.0074399999999999996,
+      -0.0008,
+      0.02064,
+      -0.0050999999999999995,
+      0.00432,
+      -0.0026
+    ]
+  }
+}

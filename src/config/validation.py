@@ -47,7 +47,7 @@ def validate_system_config(config: dict[str, Any]) -> tuple[bool, list[str]]:
         if influx_cfg and not isinstance(influx_cfg.get("url", ""), str):
             errors.append("database.influxdb.url must be a string when provided")
 
-    return len(errors) == 0, errors
+    return not errors, errors
 
 def validate_trading_config(config: dict[str, Any]) -> tuple[bool, list[str]]:
     errors: list[str] = []
@@ -67,7 +67,7 @@ def validate_trading_config(config: dict[str, Any]) -> tuple[bool, list[str]]:
     elif "position_sizing" not in rm:
         errors.append("risk_management.position_sizing is required")
 
-    return len(errors) == 0, errors
+    return not errors, errors
 
 def validate_training_config(config: dict[str, Any]) -> tuple[bool, list[str]]:
     errors: list[str] = []
@@ -83,7 +83,7 @@ def validate_training_config(config: dict[str, Any]) -> tuple[bool, list[str]]:
     elif not isinstance(data_cfg.get("default_lookback_days", 730), int):
         errors.append("DATA_CONFIG.default_lookback_days must be an int")
 
-    return len(errors) == 0, errors
+    return not errors, errors
 
 def validate_complete_config(config: dict[str, Any]) -> tuple[bool, list[str]]:
     """Validate the combined top-level config structure and sections."""
@@ -106,4 +106,4 @@ def validate_complete_config(config: dict[str, Any]) -> tuple[bool, list[str]]:
     errors.extend(tr_err)
     errors.extend(trn_err)
 
-    return len(errors) == 0, errors
+    return not errors, errors

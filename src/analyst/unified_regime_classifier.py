@@ -539,7 +539,7 @@ class UnifiedRegimeClassifier:
         atr_norm_threshold = self.atr_normalized_threshold
         for state in range(self.n_states):
             state_data = analysis_df[analysis_df['state'] == state]
-            if len(state_data) == 0:
+            if not len(state_data):
                 continue
             mean_return = state_data['log_returns'].mean()
             mean_volatility = state_data['volatility_20'].mean()
@@ -698,7 +698,7 @@ class UnifiedRegimeClassifier:
         for i, (level_bin, level_volume) in enumerate(top_hvns.items()):
             level_price = level_bin.mid
             level_indices = df_window.index[df_window['close'].between(level_bin.left, level_bin.right)]
-            if len(level_indices) == 0:
+            if not len(level_indices):
                 continue
             first_touch_index = level_indices[0]
             age = len(df_window) - df_window.index.get_loc(first_touch_index)
@@ -1018,7 +1018,7 @@ class UnifiedRegimeClassifier:
             features_df = await self._calculate_features(current_klines)
             if features_df.empty:
                 return ('SIDEWAYS', 0.5, {})
-            current_features = features_df.iloc[-1] if len(features_df) > 0 else None
+            current_features = features_df.iloc[-1] if len(features_df) else None
             if current_features is None:
                 return ('SIDEWAYS', 0.5, {})
             regime_features = features_df[['log_returns', 'volatility_20', 'volume_ratio', 'rsi', 'macd', 'macd_signal', 'macd_histogram', 'bb_position', 'bb_width', 'atr', 'volatility_regime', 'volatility_acceleration']].fillna(0)
@@ -1053,7 +1053,7 @@ class UnifiedRegimeClassifier:
             features_df = await self._calculate_features(current_klines)
             if features_df.empty:
                 return ('SIDEWAYS', 'OPEN_RANGE', 0.5, {})
-            current_features = features_df.iloc[-1] if len(features_df) > 0 else None
+            current_features = features_df.iloc[-1] if len(features_df) else None
             if current_features is None:
                 return ('SIDEWAYS', 'OPEN_RANGE', 0.5, {})
             regime_features = features_df[['log_returns', 'volatility_20', 'volume_ratio', 'rsi', 'macd', 'macd_signal', 'macd_histogram', 'bb_position', 'bb_width', 'atr', 'volatility_regime', 'volatility_acceleration']].fillna(0)

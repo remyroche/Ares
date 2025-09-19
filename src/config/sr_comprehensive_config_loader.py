@@ -47,7 +47,7 @@ class SRComprehensiveConfigLoader:
             self.config = SRComprehensiveConfig(sr_optimization = sr_optimization, sr_levels_manager = yaml_config.get('sr_levels_manager', {}), sr_trading_intelligence = yaml_config.get('sr_trading_intelligence', {}), sr_breakout_predictor = yaml_config.get('sr_breakout_predictor', {}), data_integration = yaml_config.get('data_integration', {}), performance = yaml_config.get('performance', {}), risk_management = yaml_config.get('risk_management', {}), reporting = yaml_config.get('reporting', {}), integrations = yaml_config.get('integrations', {}), testing = yaml_config.get('testing', {}), sr_comprehensive_integration = self._get_comprehensive_integration_config())
             self.logger.info('✅ Comprehensive S/R configuration loaded successfully')
             return self.config
-        except Exception as e:
+        except (FileNotFoundError, yaml.YAMLError, KeyError, ValueError) as e:
             self.logger.error(f'Failed to load comprehensive S/R configuration: {e}')
             return self._get_default_config()
 
@@ -62,7 +62,7 @@ class SRComprehensiveConfigLoader:
             else:
                 self.logger.warning(f'S/R configuration file not found: {self.yaml_config_path}')
                 return {}
-        except Exception as e:
+        except (FileNotFoundError, yaml.YAMLError, PermissionError) as e:
             self.logger.error(f'Error loading YAML configuration: {e}')
             return {}
 
@@ -102,7 +102,7 @@ class SRComprehensiveConfigLoader:
                             setattr(self.config.sr_optimization, param_key, param_value)
             self.logger.info('S/R configuration updated successfully')
             return True
-        except Exception as e:
+        except (AttributeError, TypeError, ValueError) as e:
             self.logger.error(f'Failed to update S/R configuration: {e}')
             return False
 _sr_config_loader: Optional[SRComprehensiveConfigLoader] = None

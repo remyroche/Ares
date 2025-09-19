@@ -159,6 +159,31 @@ def get_trading_config() -> dict[str, Any]:
     }
 
 
+def _get_config_section(section_path: str, default: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Generic function to get a configuration section by path.
+    
+    Args:
+        section_path: Dot-separated path to config section (e.g., 'risk_management.position_sizing')
+        default: Default value if section not found
+        
+    Returns:
+        dict: Configuration section
+    """
+    if default is None:
+        default = {}
+        
+    config = get_trading_config()
+    sections = section_path.split('.')
+    
+    for section in sections:
+        if isinstance(config, dict):
+            config = config.get(section, {})
+        else:
+            return default
+    
+    return config if isinstance(config, dict) else default
+
+
 def get_exchange_config(exchange_name: str) -> dict[str, Any]:
     """Get configuration for a specific exchange.
 
@@ -169,8 +194,7 @@ def get_exchange_config(exchange_name: str) -> dict[str, Any]:
         dict: Exchange configuration
 
     """
-    trading_config = get_trading_config()
-    exchanges = trading_config.get("exchanges", {})
+    exchanges = _get_config_section("exchanges")
     return exchanges.get(exchange_name.lower(), {})
 
 
@@ -181,8 +205,7 @@ def get_risk_management_config() -> dict[str, Any]:
         dict: Risk management configuration
 
     """
-    trading_config = get_trading_config()
-    return trading_config.get("risk_management", {})
+    return _get_config_section("risk_management")
 
 
 def get_position_sizing_config() -> dict[str, Any]:
@@ -192,8 +215,7 @@ def get_position_sizing_config() -> dict[str, Any]:
         dict: Position sizing configuration
 
     """
-    risk_config = get_risk_management_config()
-    return risk_config.get("position_sizing", {})
+    return _get_config_section("risk_management.position_sizing")
 
 
 def get_stop_loss_config() -> dict[str, Any]:
@@ -203,8 +225,7 @@ def get_stop_loss_config() -> dict[str, Any]:
         dict: Stop loss configuration
 
     """
-    trading_config = get_trading_config()
-    return trading_config.get("stop_loss", {})
+    return _get_config_section("stop_loss")
 
 
 def get_take_profit_config() -> dict[str, Any]:
@@ -214,8 +235,7 @@ def get_take_profit_config() -> dict[str, Any]:
         dict: Take profit configuration
 
     """
-    trading_config = get_trading_config()
-    return trading_config.get("take_profit", {})
+    return _get_config_section("take_profit")
 
 
 def get_time_based_exit_config() -> dict[str, Any]:
@@ -225,8 +245,7 @@ def get_time_based_exit_config() -> dict[str, Any]:
         dict: Time-based exit configuration
 
     """
-    trading_config = get_trading_config()
-    return trading_config.get("time_based_exit", {})
+    return _get_config_section("time_based_exit")
 
 
 def get_leverage_sizing_config() -> dict[str, Any]:
@@ -236,8 +255,7 @@ def get_leverage_sizing_config() -> dict[str, Any]:
         dict: Leverage sizing configuration
 
     """
-    trading_config = get_trading_config()
-    return trading_config.get("leverage_sizing", {
+    return _get_config_section("leverage_sizing", {
         "enabled": True,
         "max_leverage": 10,
         "min_leverage": 1,
@@ -252,8 +270,7 @@ def get_position_closing_config() -> dict[str, Any]:
         dict: Position closing configuration
 
     """
-    trading_config = get_trading_config()
-    return trading_config.get("position_closing", {
+    return _get_config_section("position_closing", {
         "enabled": True,
         "profit_target_pct": 0.05,
         "stop_loss_pct": 0.03,
@@ -268,8 +285,7 @@ def get_position_division_config() -> dict[str, Any]:
         dict: Position division configuration
 
     """
-    trading_config = get_trading_config()
-    return trading_config.get("position_division", {
+    return _get_config_section("position_division", {
         "enabled": False,
         "max_divisions": 3,
         "division_interval_pct": 0.02
@@ -283,8 +299,7 @@ def get_position_monitoring_config() -> dict[str, Any]:
         dict: Position monitoring configuration
 
     """
-    trading_config = get_trading_config()
-    return trading_config.get("position_monitoring", {
+    return _get_config_section("position_monitoring", {
         "enabled": True,
         "alert_interval_minutes": 5,
         "max_position_age_hours": 24

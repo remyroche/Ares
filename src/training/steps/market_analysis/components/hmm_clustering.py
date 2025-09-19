@@ -1791,12 +1791,13 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             
             # Criterion 1: High median CV indicates poor cluster homogeneity
             for aspect, stats in aspect_stats.items():
-                if stats['median'] > 0.3:  # 30% CV is quite high
+                # More conservative thresholds for better cluster quality
+                if stats['median'] > 0.15:  # 15% CV is high for financial regimes
                     stop_criteria.append(f"High {aspect} CV (median: {stats['median']:.3f})")
                 
-                # Criterion 2: Many clusters with very high CV (>40%)
-                high_cv_count = sum(1 for cv in aspect_cvs[aspect] if cv > 0.4)
-                if high_cv_count > len(aspect_cvs[aspect]) * 0.5:  # More than 50% of clusters
+                # Criterion 2: Many clusters with very high CV (>20%)
+                high_cv_count = sum(1 for cv in aspect_cvs[aspect] if cv > 0.20)
+                if high_cv_count > len(aspect_cvs[aspect]) * 0.4:  # More than 40% of clusters
                     stop_criteria.append(f"Too many high-CV {aspect} clusters ({high_cv_count}/{len(aspect_cvs[aspect])})")
             
             # Criterion 3: Overall cluster heterogeneity
@@ -1808,13 +1809,25 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                 overall_median_cv = np.median(all_cvs)
                 overall_q90_cv = np.percentile(all_cvs, 90)
                 
-                if overall_median_cv > 0.25:  # 25% median CV across all aspects
+                if overall_median_cv > 0.12:  # 12% median CV across all aspects
                     stop_criteria.append(f"High overall cluster heterogeneity (median CV: {overall_median_cv:.3f})")
                 
-                if overall_q90_cv > 0.5:  # 90th percentile > 50% CV
+                if overall_q90_cv > 0.25:  # 90th percentile > 25% CV
                     stop_criteria.append(f"Many very heterogeneous clusters (Q90 CV: {overall_q90_cv:.3f})")
             
-            # Criterion 4: Check if we have enough clusters for meaningful analysis
+            # Criterion 4: Individual cluster CV degradation
+            # Stop if any individual cluster becomes too heterogeneous
+            high_cv_clusters = []
+            for cluster_id, cv_map in cluster_cv_aspects.items():
+                cluster_max_cv = max([cv for cv in cv_map.values() if cv is not None and np.isfinite(cv)], default=0)
+                if cluster_max_cv > 0.18:  # 18% CV is too high for any individual cluster
+                    high_cv_clusters.append((cluster_id, cluster_max_cv))
+            
+            if len(high_cv_clusters) > 0:
+                worst_cluster = max(high_cv_clusters, key=lambda x: x[1])
+                stop_criteria.append(f"Individual cluster {worst_cluster[0]} has high CV ({worst_cluster[1]:.3f})")
+            
+            # Criterion 5: Check if we have enough clusters for meaningful analysis
             unique_clusters = len(set(regime_to_cluster.values()))
             if unique_clusters < 15:  # Too few clusters for meaningful market analysis
                 stop_criteria.append(f"Too few clusters for meaningful analysis ({unique_clusters})")

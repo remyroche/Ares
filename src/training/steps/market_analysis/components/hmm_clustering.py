@@ -650,7 +650,7 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             # Descend from 99.9% to 98.0% in 0.1% steps
             similarity_thresholds = [0.999, 0.998, 0.997, 0.996, 0.995, 0.994, 0.993, 0.992, 0.991, 0.990, 0.989, 0.988, 0.987, 0.986, 0.985, 0.984, 0.983, 0.982, 0.981, 0.980]
             min_cv_threshold = 0.01  # Very strict CV difference threshold
-            max_sample_pct = 6.0  # Freeze clusters at or above 6% of samples
+            # Note: Merging logic allows clusters >6% to merge as long as resulting cluster <12%
             
             for threshold in similarity_thresholds:
                 if cluster_count <= 20:  # Stop when we reach lower bound of optimal range (20-40)
@@ -667,9 +667,6 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                     if cluster_id not in cluster_sample_counts:
                         cluster_sample_counts[cluster_id] = 0
                     cluster_sample_counts[cluster_id] += regime_characteristics[regime_id].get('sample_count', 1)
-                
-                cluster_sample_pcts = {cluster_id: (count / total_samples) * 100 
-                                     for cluster_id, count in cluster_sample_counts.items()}
                 
                 # Compute within-cluster CV by aspect and derive soft penalties
                 cluster_cv_aspects = self._compute_cluster_cv_by_aspect(regime_characteristics, regime_to_cluster)
@@ -1650,17 +1647,10 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
     def _calculate_regime_pair_similarity(self, regime_1: Dict[str, Any], regime_2: Dict[str, Any]) -> float:
         """Calculate similarity between two regimes using robust per-feature normalization.
         
-        This method uses a robust normalization approach that:
-        1. Extracts features from both regimes
-        2. For each feature, normalizes by the maximum absolute value between the two regimes
-        3. Calculates cosine similarity on the normalized feature vectors
-        
-        This preserves both direction (sign) and relative magnitude while handling
-        extreme scale differences between features.
+        This method reuses the existing robust normalization approach but extends it to support
+        negative similarities for opposite directions, enabling proper cosine-like similarity.
         """
         try:
-            import numpy as np
-            
             # Extract features from both regimes
             features_1 = regime_1.get('features', {})
             features_2 = regime_2.get('features', {})
@@ -1670,46 +1660,27 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             if not keys:
                 return 0.0
             
-            # Extract values for common features
-            vals_1, vals_2 = [], []
+            # Calculate similarity for each feature using the shared utility function
+            similarities = []
+            feature_values_1 = []
+            feature_values_2 = []
+            
             for k in keys:
                 v1 = features_1.get(k)
                 v2 = features_2.get(k)
                 if isinstance(v1, (int, float)) and isinstance(v2, (int, float)):
-                    vals_1.append(float(v1))
-                    vals_2.append(float(v2))
+                    val_1, val_2 = float(v1), float(v2)
+                    feature_values_1.append(val_1)
+                    feature_values_2.append(val_2)
+                    # Use shared utility function with negative similarity support
+                    similarity = self._calculate_feature_similarity(val_1, val_2, support_negative=True)
+                    similarities.append(similarity)
             
-            if not vals_1:
+            if not similarities:
                 return 0.0
             
-            vec_1 = np.array(vals_1)
-            vec_2 = np.array(vals_2)
-            
-            # Robust per-feature normalization using max absolute value scaling
-            # This preserves relative relationships while making features comparable
-            normalized_1 = np.zeros_like(vec_1)
-            normalized_2 = np.zeros_like(vec_2)
-            
-            for i in range(len(vec_1)):
-                val_1, val_2 = vec_1[i], vec_2[i]
-                max_abs = max(abs(val_1), abs(val_2))
-                
-                if max_abs > 1e-12:  # Avoid division by zero
-                    normalized_1[i] = val_1 / max_abs
-                    normalized_2[i] = val_2 / max_abs
-                else:
-                    # Both values are essentially zero, treat as identical
-                    normalized_1[i] = 0.0
-                    normalized_2[i] = 0.0
-            
-            # Calculate cosine similarity
-            norm_1 = np.linalg.norm(normalized_1)
-            norm_2 = np.linalg.norm(normalized_2)
-            
-            if norm_1 == 0 or norm_2 == 0:
-                return 0.0
-            
-            similarity = float(np.clip(np.dot(normalized_1, normalized_2) / (norm_1 * norm_2), -1.0, 1.0))
+            # Calculate weighted average similarity
+            overall_similarity = np.mean(similarities)
             
             # Limited debug output
             if not hasattr(self, '_similarity_debug_count'):
@@ -1717,21 +1688,64 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             if self._similarity_debug_count < 3:
                 self.logger.warning(f"🔍 DEBUG: Features 1 keys: {keys[:5]}...")
                 self.logger.warning(f"🔍 DEBUG: Features 2 keys: {keys[:5]}...")
-                self.logger.warning(f"🔍 DEBUG: Features 1 sample values: {vals_1[:5]}")
-                self.logger.warning(f"🔍 DEBUG: Features 2 sample values: {vals_2[:5]}")
-                self.logger.warning(f"🔍 DEBUG: Original vec_1[:5]: {vec_1[:5]}")
-                self.logger.warning(f"🔍 DEBUG: Original vec_2[:5]: {vec_2[:5]}")
-                self.logger.warning(f"🔍 DEBUG: Normalized vec_1[:5]: {normalized_1[:5]}")
-                self.logger.warning(f"🔍 DEBUG: Normalized vec_2[:5]: {normalized_2[:5]}")
-                self.logger.warning(f"🔍 DEBUG: Overall cosine similarity: {similarity:.6f}")
+                self.logger.warning(f"🔍 DEBUG: Features 1 sample values: {feature_values_1[:5]}")
+                self.logger.warning(f"🔍 DEBUG: Features 2 sample values: {feature_values_2[:5]}")
+                self.logger.warning(f"🔍 DEBUG: Feature similarities[:5]: {similarities[:5]}")
+                self.logger.warning(f"🔍 DEBUG: Overall cosine similarity: {overall_similarity:.6f}")
                 self._similarity_debug_count += 1
             
-            return similarity
+            return float(np.clip(overall_similarity, -1.0, 1.0))
 
         except Exception as e:
             self.logger.error(f"❌ Failed to calculate regime pair similarity: {e}")
             return 0.0
     
+    def _calculate_feature_similarity(self, val_1: float, val_2: float, support_negative: bool = False) -> float:
+        """Calculate similarity between two feature values using robust normalization.
+        
+        Args:
+            val_1: First feature value
+            val_2: Second feature value  
+            support_negative: If True, allows negative similarities for opposite directions
+            
+        Returns:
+            Similarity score between -1 and +1 (if support_negative) or 0 and +1 (otherwise)
+        """
+        try:
+            # Handle zero cases
+            if val_1 == 0 and val_2 == 0:
+                return 1.0
+            elif val_1 == 0 or val_2 == 0:
+                return 0.0
+            
+            # Use max absolute value for robust normalization
+            max_val = max(abs(val_1), abs(val_2))
+            if max_val == 0:
+                return 1.0
+            
+            if support_negative:
+                # For cosine-like similarity, normalize both values and compute dot product
+                norm_1 = val_1 / max_val
+                norm_2 = val_2 / max_val
+                
+                # Calculate similarity considering both magnitude and direction
+                # This gives us values between -1 and +1
+                similarity = norm_1 * norm_2
+                
+                # If both values are very small relative to max, they're similar
+                if abs(norm_1) < 0.1 and abs(norm_2) < 0.1:
+                    similarity = 1.0 if (norm_1 >= 0) == (norm_2 >= 0) else -1.0
+                
+                return max(-1.0, min(1.0, similarity))
+            else:
+                # Original distance-based approach (0 to 1 range)
+                distance = abs(val_1 - val_2) / max_val
+                return max(0.0, 1.0 - distance)
+                
+        except Exception as e:
+            self.logger.error(f"❌ Failed to calculate feature similarity: {e}")
+            return 0.0
+
     def _calculate_characteristic_similarity(self, chars_1: Dict[str, Any], chars_2: Dict[str, Any], feature_keys: List[str]) -> float:
         """Calculate similarity between two characteristic dictionaries for specific features."""
         try:
@@ -1745,19 +1759,8 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                 if isinstance(val_1, str) and isinstance(val_2, str):
                     similarity = 1.0 if val_1 == val_2 else 0.0
                 else:
-                    # Handle numeric comparisons
-                    if val_1 == 0 and val_2 == 0:
-                        similarity = 1.0
-                    elif val_1 == 0 or val_2 == 0:
-                        similarity = 0.0
-                    else:
-                        # Normalized similarity (1 - normalized distance)
-                        max_val = max(abs(val_1), abs(val_2))
-                        if max_val == 0:
-                            similarity = 1.0
-                        else:
-                            distance = abs(val_1 - val_2) / max_val
-                            similarity = max(0.0, 1.0 - distance)
+                    # Use shared utility function (original 0-1 range)
+                    similarity = self._calculate_feature_similarity(val_1, val_2, support_negative=False)
                 
                 similarities.append(similarity)
             

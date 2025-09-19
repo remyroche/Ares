@@ -74,7 +74,7 @@ def _get_default_training_modes_config() -> Dict[str, Any]:
             },
             "light": {
                 "description": "Ultra-light development mode - Minimal data for code testing only",
-                "lookback_days": 10,
+                "lookback_days": 730,  # Override: HMM regime discovery needs 2 years of data
                 "training_mode": "light",
                 "enable_blank_training_mode": False,
                 "enable_light_training_mode": True,
@@ -99,7 +99,7 @@ def get_intensity_percentage(training_mode: str) -> float:
     }
     return intensity_map.get(training_mode, 1.0)
 
-def get_training_mode_config(training_mode: str) -> TrainingModeConfig:
+def get_training_mode_config(training_mode: str, sub_pipeline_name: Optional[str] = None) -> TrainingModeConfig:
     """Get training mode configuration."""
     config_data = _load_training_modes_config()
     modes = config_data.get("training_modes", {})
@@ -109,9 +109,14 @@ def get_training_mode_config(training_mode: str) -> TrainingModeConfig:
     
     mode_data = modes[training_mode]
     
+    # Special exception: HMM regime discovery always uses 730 days (2 years) regardless of training mode
+    lookback_days = mode_data.get("lookback_days", 30)
+    if sub_pipeline_name == "hmm_regime_discovery":
+        lookback_days = 730
+    
     return TrainingModeConfig(
         description=mode_data.get("description", ""),
-        lookback_days=mode_data.get("lookback_days", 30),
+        lookback_days=lookback_days,
         training_mode=mode_data.get("training_mode", training_mode),
         enable_blank_training_mode=mode_data.get("enable_blank_training_mode", False),
         enable_light_training_mode=mode_data.get("enable_light_training_mode", False),
@@ -216,12 +221,18 @@ def get_training_config_dict(training_mode: str) -> Dict[str, Any]:
         "intensity_percentage": get_intensity_percentage(training_mode)
     }
 
-def get_training_input_dict(training_mode: str) -> Dict[str, Any]:
+def get_training_input_dict(training_mode: str, sub_pipeline_name: Optional[str] = None) -> Dict[str, Any]:
     """Get training input dictionary for a mode."""
     mode_config = get_training_mode_config(training_mode)
+    
+    # Special exception: HMM regime discovery always uses 730 days (2 years) regardless of training mode
+    lookback_days = mode_config.lookback_days
+    if sub_pipeline_name == "hmm_regime_discovery":
+        lookback_days = 730
+    
     return {
         "training_mode": training_mode,
-        "lookback_days": mode_config.lookback_days,
+        "lookback_days": lookback_days,
         "intensity_percentage": get_intensity_percentage(training_mode),
         "computational_intensity": mode_config.computational_intensity,
         "estimated_duration_minutes": mode_config.estimated_duration_minutes

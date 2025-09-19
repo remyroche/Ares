@@ -565,8 +565,14 @@ class AresLauncher:
         tprint("✅ [SUB_PIPELINE_CONFIG] Stage and sub-pipeline enabled")
         
         # Set single stage execution mode for individual sub-pipeline execution
-        config.single_stage_only = True
-        tprint("🎯 [SUB_PIPELINE_CONFIG] Single stage execution mode enabled")
+        # Enable chaining for SR components to automatically run the full SR pipeline
+        sr_components = ['sr_parameter_optimization', 'sr_detection', 'sr_clustering']
+        if sub_pipeline in sr_components:
+            config.single_stage_only = False
+            tprint(f"🔗 [SUB_PIPELINE_CONFIG] SR chaining enabled for {sub_pipeline} - will automatically run: sr_parameter_optimization -> sr_detection -> sr_clustering")
+        else:
+            config.single_stage_only = True
+            tprint("🎯 [SUB_PIPELINE_CONFIG] Single stage execution mode enabled")
         
         # Add intensity parameters to stage configuration
         tprint("🔧 [SUB_PIPELINE_CONFIG] Adding intensity parameters...")

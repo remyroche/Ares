@@ -528,7 +528,7 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
             return None
     
     def _check_memory_usage(self) -> Dict[str, float]:
-        \"\"\"Check current memory usage and issue warnings if necessary.\"\"\"
+        """"Check current memory usage and issue warnings if necessary."""
         try:
             import psutil
             process = psutil.Process()
@@ -549,11 +549,11 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
             # Issue warnings if necessary
             if memory_mb > self.memory_critical_threshold_mb:
                 self.performance_monitor['memory_warnings'] += 1
-                tprint(f\"🚨 CRITICAL: Memory usage {memory_mb:.1f}MB exceeds critical threshold {self.memory_critical_threshold_mb}MB\")
-                raise MemoryError(f\"Memory usage {memory_mb:.1f}MB exceeds critical threshold\")
+                tprint(f"🚨 CRITICAL: Memory usage {memory_mb:.1f}MB exceeds critical threshold {self.memory_critical_threshold_mb}MB")
+                raise MemoryError(f"Memory usage {memory_mb:.1f}MB exceeds critical threshold")
             elif memory_mb > self.memory_warning_threshold_mb:
                 self.performance_monitor['memory_warnings'] += 1
-                tprint(f\"⚠️ WARNING: Memory usage {memory_mb:.1f}MB exceeds warning threshold {self.memory_warning_threshold_mb}MB\")
+                tprint(f"⚠️ WARNING: Memory usage {memory_mb:.1f}MB exceeds warning threshold {self.memory_warning_threshold_mb}MB")
             
             return {
                 'current_memory_mb': memory_mb,
@@ -565,7 +565,7 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
             # psutil not available, use basic memory tracking
             return {'current_memory_mb': 0.0, 'peak_memory_mb': 0.0, 'memory_warnings': 0}
         except Exception as e:
-            tprint(f\"Memory monitoring failed: {e}\")
+            tprint(f"Memory monitoring failed: {e}")
             return {'current_memory_mb': 0.0, 'peak_memory_mb': 0.0, 'memory_warnings': 0}
     
     def _quick_validate_data(self, data: pd.DataFrame) -> bool:

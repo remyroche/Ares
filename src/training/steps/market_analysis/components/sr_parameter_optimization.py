@@ -29,6 +29,19 @@ except ImportError:
 from .base_component import BaseMarketAnalysisComponent, ComponentConfig, ComponentResult
 from src.utils.logger import system_logger
 
+# Import SR clustering components
+try:
+    from src.utils.sr_clustering.sr_backtesting_engine import SRBacktestingEngine, BacktestConfig
+    from src.utils.sr_clustering.parameter_optimization_engine import get_parameter_optimization_engine, ParameterOptimizationConfig
+    SR_CLUSTERING_AVAILABLE = True
+except ImportError as e:
+    SR_CLUSTERING_AVAILABLE = False
+    SRBacktestingEngine = None
+    BacktestConfig = None
+    get_parameter_optimization_engine = None
+    ParameterOptimizationConfig = None
+    print(f"Warning: SR clustering components not available: {e}")
+
 
 class SRParameterOptimizationComponent(BaseMarketAnalysisComponent):
     """
@@ -60,12 +73,9 @@ class SRParameterOptimizationComponent(BaseMarketAnalysisComponent):
         self.logger.info('🎯 Starting SR Parameter Optimization')
         
         try:
-            # Import SR backtesting engine with validation
-            try:
-                from src.utils.sr_clustering.sr_backtesting_engine import SRBacktestingEngine, BacktestConfig
-                from src.utils.sr_clustering.parameter_optimization_engine import get_parameter_optimization_engine, ParameterOptimizationConfig
-            except ImportError as e:
-                error_msg = f"Required imports not available: {e}"
+            # Check if SR clustering components are available
+            if not SR_CLUSTERING_AVAILABLE:
+                error_msg = "SR clustering components not available"
                 self.logger.error(error_msg)
                 return ComponentResult(
                     success=False, 
@@ -430,6 +440,9 @@ class SRParameterOptimizationComponent(BaseMarketAnalysisComponent):
     
     def _create_validated_param_config(self):
         """Create parameter optimization config with hardware capability validation."""
+        if not SR_CLUSTERING_AVAILABLE or ParameterOptimizationConfig is None:
+            raise RuntimeError("ParameterOptimizationConfig not available")
+            
         # Check GPU availability
         gpu_available = False
         try:
@@ -464,6 +477,9 @@ class SRParameterOptimizationComponent(BaseMarketAnalysisComponent):
     
     def _create_validated_backtest_config(self):
         """Create backtesting config with hardware capability validation."""
+        if not SR_CLUSTERING_AVAILABLE or BacktestConfig is None:
+            raise RuntimeError("BacktestConfig not available")
+            
         # Check GPU availability
         gpu_available = False
         try:

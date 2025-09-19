@@ -90,13 +90,6 @@ class DirectionalFeatureResult:
     optimization_method: str
     optimization_time: float
     
-    # Consolidation information
-    is_consolidated: bool = False
-    original_long_period: Optional[int] = None
-    original_short_period: Optional[int] = None
-    consolidation_variance: Optional[float] = None
-    consolidation_reason: Optional[str] = None
-    
     # Quality metrics
     sample_count: int
     data_quality_score: float
@@ -105,6 +98,13 @@ class DirectionalFeatureResult:
     # Performance metrics
     cross_validation_score: float
     stability_score: float
+    
+    # Consolidation information
+    is_consolidated: bool = False
+    original_long_period: Optional[int] = None
+    original_short_period: Optional[int] = None
+    consolidation_variance: Optional[float] = None
+    consolidation_reason: Optional[str] = None
     
     # Metadata
     optimization_metadata: Dict[str, Any] = field(default_factory=dict)

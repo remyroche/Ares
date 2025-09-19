@@ -528,17 +528,17 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
         """
         try:
             if data_size < 500:
-                # Small datasets: conservative states
-                momentum_states, volatility_states, volume_states = 3, 3, 3
-                self.logger.info(f"📊 Small dataset ({data_size} points): using conservative dimensional states")
+                # Small datasets: use enhanced states for better granularity
+                momentum_states, volatility_states, volume_states = 9, 9, 9
+                self.logger.info(f"📊 Small dataset ({data_size} points): using enhanced dimensional states")
             elif data_size < 2000:
-                # Medium datasets: moderate states
-                momentum_states, volatility_states, volume_states = 5, 4, 5
-                self.logger.info(f"📊 Medium dataset ({data_size} points): using moderate dimensional states")
+                # Medium datasets: enhanced states
+                momentum_states, volatility_states, volume_states = 9, 9, 9
+                self.logger.info(f"📊 Medium dataset ({data_size} points): using enhanced dimensional states")
             elif data_size < 5000:
-                # Large datasets: expanded states
-                momentum_states, volatility_states, volume_states = 6, 6, 6
-                self.logger.info(f"📊 Large dataset ({data_size} points): using expanded dimensional states")
+                # Large datasets: enhanced states
+                momentum_states, volatility_states, volume_states = 9, 9, 9
+                self.logger.info(f"📊 Large dataset ({data_size} points): using enhanced dimensional states")
             elif data_size < 15000:
                 # Very large datasets: enhanced granularity
                 momentum_states, volatility_states, volume_states = 8, 7, 8
@@ -701,9 +701,9 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             if optimal_components > theoretical_max:
                 # Reduce dimensional states proportionally
                 scale_factor = (theoretical_max / optimal_components) ** (1/3)  # Cube root for 3D scaling
-                momentum_states = max(3, int(momentum_states * scale_factor))
-                volatility_states = max(3, int(volatility_states * scale_factor))
-                volume_states = max(3, int(volume_states * scale_factor))
+                momentum_states = max(9, int(momentum_states * scale_factor))
+                volatility_states = max(9, int(volatility_states * scale_factor))
+                volume_states = max(9, int(volume_states * scale_factor))
                 optimal_components = momentum_states * volatility_states * volume_states
                 
                 self.logger.warning(f"⚠️ Reduced dimensional states due to parameter constraints:")
@@ -866,18 +866,26 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             import pandas as pd
             import numpy as np
             
-            # Momentum features (simplified - price changes only)
+            # Momentum features (enhanced sensitivity with multiple timeframes)
             momentum_features = pd.DataFrame(index=market_data.index)
-            # High reactivity for momentum detection
-            momentum_features['momentum_1h'] = market_data['close'].pct_change(1)  # Most reactive
-            momentum_features['momentum_2h'] = market_data['close'].pct_change(2)  # Balance
+            # Multiple timeframes for better sensitivity
+            momentum_features['momentum_1h'] = market_data['close'].pct_change(1)  # Short-term
+            momentum_features['momentum_2h'] = market_data['close'].pct_change(2)  # Medium-term  
+            momentum_features['momentum_4h'] = market_data['close'].pct_change(4)  # Longer-term
+            # Add momentum acceleration (change in momentum)
+            momentum_features['momentum_acceleration'] = momentum_features['momentum_1h'].diff(1)
+            # Add relative strength vs moving average
+            momentum_features['rsi_divergence'] = (market_data['close'] - market_data['close'].rolling(6).mean()) / market_data['close'].rolling(6).std()
             
-            # Volatility features (simplified)
+            # Volatility features (enhanced sensitivity with multiple measures)
             volatility_features = pd.DataFrame(index=market_data.index)
-            # Intrabar volatility for immediate reactivity
+            # Multiple volatility measures for better sensitivity
             volatility_features['volatility_intrabar'] = (market_data['high'] - market_data['low']) / market_data['close']
-            # Rolling volatility 
-            volatility_features['volatility_6h'] = market_data['close'].rolling(6).std()
+            volatility_features['volatility_3h'] = market_data['close'].rolling(3).std()  # Short-term
+            volatility_features['volatility_6h'] = market_data['close'].rolling(6).std()  # Medium-term
+            volatility_features['volatility_12h'] = market_data['close'].rolling(12).std()  # Longer-term
+            # Add volatility of volatility (volatility clustering detection)
+            volatility_features['volatility_of_volatility'] = volatility_features['volatility_6h'].rolling(3).std()
             # ATR for true range volatility
             high_vals = market_data['high'].values.astype(np.float32)
             low_vals = market_data['low'].values.astype(np.float32)
@@ -892,11 +900,15 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             atr_padded[1:len(atr_values)+1] = atr_values
             volatility_features['atr_6h'] = atr_padded
             
-            # Volume features (simplified)
+            # Volume features (enhanced sensitivity with multiple measures)
             epsilon = 1e-8
             volume_features = pd.DataFrame(index=market_data.index)
-            # Volume momentum - 3h only
-            volume_features['volume_momentum_3h'] = market_data['volume'].pct_change(3)
+            # Multiple volume timeframes for better sensitivity
+            volume_features['volume_momentum_1h'] = market_data['volume'].pct_change(1)  # Short-term
+            volume_features['volume_momentum_3h'] = market_data['volume'].pct_change(3)  # Medium-term
+            volume_features['volume_momentum_6h'] = market_data['volume'].pct_change(6)  # Longer-term
+            # Add volume acceleration (change in volume momentum)
+            volume_features['volume_acceleration'] = volume_features['volume_momentum_1h'].diff(1)
             # Volume ratio - 24h baseline for stable comparison
             volume_features['volume_ratio_24h'] = market_data['volume'] / (market_data['volume'].rolling(24).mean() + epsilon)
             
@@ -911,6 +923,9 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
                 
                 # Apply consistent NaN handling based on feature type
                 features = self._handle_feature_nans(features, feature_type)
+                
+                # Apply feature standardization for improved HMM sensitivity
+                features = self._standardize_features(features, feature_type)
                 
                 # Ensure finite values and proper dtype
                 features = features.astype(np.float64)
@@ -990,6 +1005,40 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             self.logger.error(f"Error in NaN handling for {feature_type} features: {e}")
             # Fallback: fill all NaN with 0
             return features.fillna(0.0).replace([np.inf, -np.inf], 0.0)
+
+    def _standardize_features(self, features: pd.DataFrame, feature_type: str) -> pd.DataFrame:
+        """
+        Standardize features to improve HMM sensitivity by ensuring comparable scales.
+        
+        Args:
+            features: Features DataFrame
+            feature_type: Type of features (momentum, volatility, volume)
+            
+        Returns:
+            Standardized features DataFrame
+        """
+        try:
+            from sklearn.preprocessing import RobustScaler
+            import numpy as np
+            
+            # Use RobustScaler to handle outliers better than StandardScaler
+            scaler = RobustScaler()
+            
+            # Only standardize if we have enough valid data
+            if len(features.dropna()) < 10:
+                self.logger.warning(f"⚠️ Insufficient data for {feature_type} standardization, skipping")
+                return features
+            
+            # Fit and transform features
+            features_scaled = features.copy()
+            features_scaled.iloc[:, :] = scaler.fit_transform(features.values)
+            
+            self.logger.info(f"✅ {feature_type.capitalize()} features standardized using RobustScaler")
+            return features_scaled
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Failed to standardize {feature_type} features: {e}, using original features")
+            return features
 
     def _initialize_hmm_parameters(self, model: Any, n_states: int, X: np.ndarray, conservative: bool = False) -> None:
         """
@@ -1146,7 +1195,7 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             # Convert to numpy array for HMM training
             X = features_clean.values.astype(np.float64)
             
-            # Create HMM model with proper initialization control
+            # Create HMM model with proper initialization control - FIXED VERSION
             model = hmm.GaussianHMM(
                 n_components=n_states,
                 covariance_type='diag',
@@ -1157,7 +1206,11 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             )
             
             # Initialize model parameters before fitting to prevent race conditions
-            self._initialize_hmm_parameters(model, n_states, X)
+            # Fix: Initialize parameters directly without accessing n_features
+            model.startprob_ = np.ones(n_states, dtype=np.float64) / n_states
+            model.transmat_ = np.eye(n_states, dtype=np.float64) * 0.8 + 0.2 / n_states
+            model.means_ = np.random.randn(n_states, X.shape[1]).astype(np.float64)
+            model.covars_ = np.ones((n_states, X.shape[1]), dtype=np.float64)
             
             # Train the model with proper error handling
             try:
@@ -1170,7 +1223,10 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
                 if "startprob_" in str(fit_error) or "transmat_" in str(fit_error):
                     self.logger.warning(f"⚠️ {dimension_name} HMM fit failed with parameter error: {fit_error}")
                     # Re-initialize with more conservative parameters
-                    self._initialize_hmm_parameters(model, n_states, X, conservative=True)
+                    model.startprob_ = np.ones(n_states, dtype=np.float64) / n_states
+                    model.transmat_ = np.eye(n_states, dtype=np.float64) * 0.9 + 0.1 / n_states
+                    model.means_ = np.zeros((n_states, X.shape[1]), dtype=np.float64)
+                    model.covars_ = np.ones((n_states, X.shape[1]), dtype=np.float64) * 0.1
                     model.fit(X)
                     self._validate_and_fix_transition_matrix(model, n_states)
                 else:
@@ -1178,7 +1234,10 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             except Exception as fit_error:
                 self.logger.error(f"❌ {dimension_name} HMM fit failed: {fit_error}")
                 # Try one more time with most conservative settings
-                self._initialize_hmm_parameters(model, n_states, X, conservative=True)
+                model.startprob_ = np.ones(n_states, dtype=np.float64) / n_states
+                model.transmat_ = np.eye(n_states, dtype=np.float64) * 0.9 + 0.1 / n_states
+                model.means_ = np.zeros((n_states, X.shape[1]), dtype=np.float64)
+                model.covars_ = np.ones((n_states, X.shape[1]), dtype=np.float64) * 0.1
                 model.n_iter = 50  # Reduce iterations
                 model.fit(X)
                 self._validate_and_fix_transition_matrix(model, n_states)

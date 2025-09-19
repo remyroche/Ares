@@ -711,7 +711,7 @@ def get_unified_hardware_manager(config: Optional[HardwareConfig] = None, conser
         # Use conservative configuration if requested or if no config provided
         if conservative_mode or config is None:
             config = HardwareConfig(
-                cpu_optimization_level=OptimizationLevel.CONSERVATIVE,
+                cpu_optimization_level=OptimizationLevel.MINIMAL,
                 enable_thermal_monitoring=False,
                 enable_adaptive_optimization=False,
                 monitoring_interval=30.0,

@@ -659,6 +659,11 @@ class MarketAnalysisSubPipeline:
         self.logger.info(f'🚀 Starting {sub_pipeline_name} sub-pipeline')
         
         try:
+            # Load market data if not already available
+            if self._current_data is None:
+                self.logger.info('📊 Loading market data for single-stage sub-pipeline execution...')
+                await self._load_market_data(config)
+            
             # Convert config to component config
             component_config = self._convert_to_component_config(config)
             
@@ -895,8 +900,8 @@ class MarketAnalysisSubPipeline:
             config: Sub-pipeline configuration containing symbol, exchange, timeframe, etc.
         """
         try:
-            # Import the unified data loader
-            from ..data_collection.unified_data_loader import UnifiedDataLoader
+            # Import the klines data loader
+            from src.utils.data.klines_parquet import load_klines_from_parquet
             
             self.logger.info(f'📊 Loading market data for {config.symbol} on {config.exchange} ({config.timeframe})')
             
@@ -912,14 +917,13 @@ class MarketAnalysisSubPipeline:
                 end_date = datetime.strptime(config.end_date, '%Y-%m-%d')
                 self.logger.info(f'📅 Using end_date filter: {end_date} (mode: {config.mode.value})')
             
-            # Create data loader
-            data_loader = UnifiedDataLoader()
-            
-            # Load the data (UnifiedDataLoader doesn't support date filtering, so we'll filter after loading)
-            market_data = await data_loader.load_unified_data(
-                symbol=config.symbol,
-                exchange=config.exchange,
-                timeframe=config.timeframe,
+            # Load the klines data directly
+            market_data = load_klines_from_parquet(
+                symbol=config.symbol.lower(),  # Convert to lowercase to match directory structure
+                interval=config.timeframe,
+                start_date=start_date,
+                end_date=end_date,
+                data_type="raw",  # Load raw klines data
                 data_dir=config.data_dir
             )
             

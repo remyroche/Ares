@@ -191,6 +191,11 @@ class KlinesParquetManager:
             DataFrame with klines data or None if not found
         """
         try:
+            # Auto-detect data type: use processed data for timeframes > 1m
+            if data_type == "raw" and interval in ["1h", "2h", "4h", "6h", "8h", "12h", "1d", "3d", "1w"]:
+                self.logger.info(f"🔄 Auto-switching to processed data for {interval} timeframe")
+                data_type = "processed"
+            
             if data_type == "raw":
                 data_dir = self.raw_data_dir / symbol.lower() / "raw"
                 pattern = f"{symbol.lower()}_{interval}_*.parquet"
@@ -200,13 +205,21 @@ class KlinesParquetManager:
             
             if not data_dir.exists():
                 self.logger.warning(f"No data directory found for {symbol} {interval}")
+                self.logger.warning(f"🔍 DEBUG: Looking for directory: {data_dir}")
                 return None
             
             # Find matching files
             files = list(data_dir.glob(f"{pattern}*"))
             
+            self.logger.info(f"🔍 DEBUG: Searching in {data_dir}")
+            self.logger.info(f"🔍 DEBUG: Using pattern: {pattern}*")
+            self.logger.info(f"🔍 DEBUG: Found {len(files)} files: {[f.name for f in files]}")
+            
             if not files:
-                self.logger.warning(f"No files found for {symbol} {interval}")
+                self.logger.warning(f"⚠️ No files found for {symbol} {interval}")
+                # List all files in the directory for debugging
+                all_files = list(data_dir.glob("*"))
+                self.logger.warning(f"🔍 DEBUG: All files in {data_dir}: {[f.name for f in all_files]}")
                 return None
             
             # Load and combine data

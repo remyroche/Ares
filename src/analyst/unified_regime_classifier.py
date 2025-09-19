@@ -2,7 +2,7 @@ from src.utils.tprint import tprint
 
 import os
 from datetime import datetime
-from typing import Any, Callable
+from typing import Any, Callable, Dict, List
 import logging
 import asyncio
 import joblib
@@ -11,8 +11,15 @@ from lightgbm import LGBMClassifier
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 import numpy as np
 import pandas as pd
-from typing import Dict, List, Optional, Union, Any, Tuple
 from src.utils.logger import system_logger
+
+# Import existing feature engineer for technical indicators
+try:
+    from src.utils.data.feature_engineer import FeatureEngineer
+    FEATURE_ENGINEER_AVAILABLE = True
+except ImportError:
+    FEATURE_ENGINEER_AVAILABLE = False
+
 try:
     from src.core.decorators import handles_errors
 except ImportError:
@@ -80,6 +87,9 @@ class UnifiedRegimeClassifier:
 
     def __init__(self, config: dict[str, Any], exchange: str='UNKNOWN', symbol: str='UNKNOWN') -> None:
         self.logger = logging.getLogger(self.__class__.__name__)
+        
+        # Initialize feature engineer for technical indicators
+        self.feature_engineer = FeatureEngineer() if FEATURE_ENGINEER_AVAILABLE else None
         self._enable_numpy_rng_unpickle_compat(system_logger)
         self.config = config.get('analyst', {}).get('unified_regime_classifier', {})
         self.global_config = config
@@ -453,23 +463,34 @@ class UnifiedRegimeClassifier:
 
     @handles_errors(exceptions=(Exception,), default_return = None, context='UnifiedRegimeClassifier._calculate_rsi')
     def _calculate_rsi(self, df: pd.DataFrame, period: int = 14) -> pd.DataFrame:
-        """Calculate RSI indicator using price differences."""
-        close_diff = df['close'].diff()
-        gain = close_diff.where(close_diff > 0, 0).rolling(window = period).mean()
-        loss = (-close_diff.where(close_diff < 0, 0)).rolling(window = period).mean()
-        rs = gain / loss
-        df['rsi'] = 100 - 100 / (1 + rs)
+        """Calculate RSI indicator using existing FeatureEngineer."""
+        if self.feature_engineer is not None:
+            df['rsi'] = self.feature_engineer._calculate_rsi(df['close'], period)
+        else:
+            # Fallback implementation
+            close_diff = df['close'].diff()
+            gain = close_diff.where(close_diff > 0, 0).rolling(window = period).mean()
+            loss = (-close_diff.where(close_diff < 0, 0)).rolling(window = period).mean()
+            rs = gain / loss
+            df['rsi'] = 100 - 100 / (1 + rs)
         return df
 
     @handles_errors(exceptions=(Exception,), default_return = None, context='UnifiedRegimeClassifier._calculate_macd')
     def _calculate_macd(self, df: pd.DataFrame, fast: int = 12, slow: int = 26, signal: int = 9) -> pd.DataFrame:
-        """Calculate MACD indicator using price differences."""
-        close_diff = df['close'].diff()
-        exp1 = close_diff.ewm(span = fast).mean()
-        exp2 = close_diff.ewm(span = slow).mean()
-        df['macd'] = exp1 - exp2
-        df['macd_signal'] = df['macd'].ewm(span = signal).mean()
-        df['macd_histogram'] = df['macd'] - df['macd_signal']
+        """Calculate MACD indicator using existing FeatureEngineer."""
+        if self.feature_engineer is not None:
+            macd_line, signal_line, histogram = self.feature_engineer._calculate_macd(df['close'], fast, slow, signal)
+            df['macd'] = macd_line
+            df['macd_signal'] = signal_line
+            df['macd_histogram'] = histogram
+        else:
+            # Fallback implementation
+            close_diff = df['close'].diff()
+            exp1 = close_diff.ewm(span = fast).mean()
+            exp2 = close_diff.ewm(span = slow).mean()
+            df['macd'] = exp1 - exp2
+            df['macd_signal'] = df['macd'].ewm(span = signal).mean()
+            df['macd_histogram'] = df['macd'] - df['macd_signal']
         return df
 
     @handles_errors(exceptions=(Exception,), default_return = None, context='UnifiedRegimeClassifier._calculate_adx')

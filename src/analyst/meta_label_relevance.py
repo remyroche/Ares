@@ -56,7 +56,6 @@ def compute_mutual_information(
     context="compute_mutual_information_pair",
 )
 
-
 @handles_errors(
     exceptions=(Exception,), default_return={}, context="compute_shap_importance"
 )

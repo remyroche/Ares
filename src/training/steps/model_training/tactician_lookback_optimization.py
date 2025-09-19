@@ -524,9 +524,91 @@ class TacticianLookbackOptimizer:
         }
     
     async def _cleanup_resources(self):
-        """Clean up resources and connections."""
+        """Clean up resources using hardware optimization tools."""
         try:
-            # Clear large data structures
+            # Import hardware optimization tools
+            from src.utils.hardware import (
+                get_unified_hardware_manager, get_advanced_memory_optimizer,
+                UNIFIED_MANAGER_AVAILABLE, ADVANCED_MEMORY_AVAILABLE
+            )
+            
+            cleanup_stats = {'memory_freed_mb': 0, 'objects_cleaned': 0}
+            
+            # Use advanced memory optimizer if available
+            if ADVANCED_MEMORY_AVAILABLE:
+                try:
+                    memory_optimizer = get_advanced_memory_optimizer()
+                    
+                    # Optimize large data structures
+                    if hasattr(self, 'optimization_history') and len(self.optimization_history) > 1000:
+                        original_size = len(self.optimization_history)
+                        # Use memory optimizer to efficiently trim history
+                        self.optimization_history = memory_optimizer.optimize_list_memory(
+                            self.optimization_history, max_size=100, keep_recent=True
+                        )
+                        cleanup_stats['objects_cleaned'] += original_size - len(self.optimization_history)
+                        tprint_debug(f"🧹 Trimmed optimization history: {original_size} → {len(self.optimization_history)}")
+                    
+                    # Optimize cached outputs using hardware tools
+                    for key in list(self.analyst_outputs_cache.keys()):
+                        if hasattr(self.analyst_outputs_cache[key], '__len__') and len(self.analyst_outputs_cache[key]) > 10000:
+                            original_array = self.analyst_outputs_cache[key]
+                            # Use memory optimizer to compress or clear large arrays
+                            self.analyst_outputs_cache[key] = memory_optimizer.optimize_array_memory(
+                                original_array, max_elements=5000, compression_enabled=True
+                            )
+                            cleanup_stats['objects_cleaned'] += 1
+                    
+                    # Force memory optimization
+                    memory_freed = memory_optimizer.force_memory_optimization()
+                    cleanup_stats['memory_freed_mb'] = memory_freed
+                    
+                    tprint_debug(f"🧹 Advanced memory cleanup: {memory_freed:.2f}MB freed, {cleanup_stats['objects_cleaned']} objects optimized")
+                    
+                except Exception as memory_error:
+                    tprint_warning(f"⚠️ Advanced memory optimization failed: {memory_error}")
+                    # Fallback to basic cleanup
+                    await self._basic_cleanup_fallback()
+            
+            # Use unified hardware manager for comprehensive cleanup
+            elif UNIFIED_MANAGER_AVAILABLE:
+                try:
+                    hardware_manager = get_unified_hardware_manager()
+                    
+                    # Perform memory cleanup using unified manager
+                    cleanup_result = hardware_manager.cleanup_memory_resources(
+                        target_objects=[self.optimization_history, self.analyst_outputs_cache],
+                        cleanup_level='aggressive'
+                    )
+                    
+                    cleanup_stats.update(cleanup_result)
+                    tprint_debug(f"🧹 Unified hardware cleanup: {cleanup_result}")
+                    
+                except Exception as unified_error:
+                    tprint_warning(f"⚠️ Unified hardware cleanup failed: {unified_error}")
+                    # Fallback to basic cleanup
+                    await self._basic_cleanup_fallback()
+            
+            else:
+                # Fallback to basic cleanup if hardware tools not available
+                await self._basic_cleanup_fallback()
+            
+            tprint_success(f"✅ Resource cleanup completed: {cleanup_stats}")
+            
+        except Exception as e:
+            tprint_error(f"❌ Resource cleanup failed: {e}")
+            # Emergency fallback
+            try:
+                await self._basic_cleanup_fallback()
+            except Exception as fallback_error:
+                tprint_error(f"❌ Emergency cleanup fallback failed: {fallback_error}")
+    
+    async def _basic_cleanup_fallback(self):
+        """Basic cleanup fallback when hardware tools are not available."""
+        try:
+            import gc
+            
+            # Clear large data structures (basic approach)
             if hasattr(self, 'optimization_history') and len(self.optimization_history) > 1000:
                 # Keep only last 100 entries to prevent memory bloat
                 self.optimization_history = self.optimization_history[-100:]
@@ -536,9 +618,12 @@ class TacticianLookbackOptimizer:
                 if hasattr(self.analyst_outputs_cache[key], '__len__') and len(self.analyst_outputs_cache[key]) > 10000:
                     self.analyst_outputs_cache[key] = np.array([])
             
-            tprint_debug("🧹 Resource cleanup completed")
+            # Force garbage collection
+            collected = gc.collect()
+            tprint_debug(f"🧹 Basic cleanup completed, {collected} objects collected")
+            
         except Exception as e:
-            tprint_warning(f"⚠️ Resource cleanup failed: {e}")
+            tprint_warning(f"⚠️ Basic cleanup fallback failed: {e}")
     
     def _validate_input_data(self, market_data: pd.DataFrame) -> bool:
         """Validate input market data with comprehensive edge case checking."""

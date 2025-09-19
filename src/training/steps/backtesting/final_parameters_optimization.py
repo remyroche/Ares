@@ -641,11 +641,19 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 'tactician_confidence_weight': {'type': 'float', 'min': 0.3, 'max': 0.8},
                 'analyst_confidence_weight': {'type': 'float', 'min': 0.2, 'max': 0.7},
                 'confidence_combination_method': {'type': 'categorical', 'choices': ['multiplicative', 'logarithmic', 'harmonic', 'weighted_average']},
-                # Exit-specific confidence parameters
+                # 0.3% Micro Movement Entry Thresholds (immediate only)
+                'micro_immediate_long_threshold': {'type': 'float', 'min': 0.65, 'max': 0.85},
+                'micro_immediate_short_threshold': {'type': 'float', 'min': 0.68, 'max': 0.88},
+                # Exit-specific confidence parameters for 0.3% micro movements
                 'exit_confidence_threshold': {'type': 'float', 'min': 0.3, 'max': 0.7},
                 'tactician_exit_confidence_weight': {'type': 'float', 'min': 0.4, 'max': 0.8},
                 'analyst_exit_confidence_weight': {'type': 'float', 'min': 0.2, 'max': 0.6},
-                'exit_confidence_combination_method': {'type': 'categorical', 'choices': ['multiplicative', 'logarithmic', 'weighted_average']}
+                'exit_confidence_combination_method': {'type': 'categorical', 'choices': ['multiplicative', 'logarithmic', 'weighted_average']},
+                # 0.3% Micro Movement Exit Thresholds (immediate only)
+                'exit_micro_immediate_long_threshold': {'type': 'float', 'min': 0.1, 'max': 0.5},
+                'exit_micro_immediate_short_threshold': {'type': 'float', 'min': 0.1, 'max': 0.5},
+                # Directional Reversal Detection (MAIN EXIT TRIGGER)
+                'directional_confidence_min': {'type': 'float', 'min': 0.05, 'max': 0.5}
             },
             'intensity': {
                 # Signal intensity and strength parameters

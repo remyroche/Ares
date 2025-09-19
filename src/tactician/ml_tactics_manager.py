@@ -51,10 +51,35 @@ class MLTacticsManager:
         self.multi_output_models: dict[str, Any] = {}
         self.is_trained: bool = False
         self.last_training_time: datetime | None = None
-        self.barrier_config = {'fifty_percent': {'profit_target_multiplier': 0.5, 'stop_loss_multiplier': 0.5, 'timeframe': '1m'}, 'twenty_five_percent': {'profit_target_multiplier': 0.25, 'stop_loss_multiplier': 0.25, 'timeframe': '1m'}, 'fifty_percent_5m': {'profit_target_multiplier': 0.5, 'stop_loss_multiplier': 0.5, 'timeframe': '5m'}, 'twenty_five_percent_5m': {'profit_target_multiplier': 0.25, 'stop_loss_multiplier': 0.25, 'timeframe': '5m'}}
-        self.green_light_thresholds = {'fifty_percent': ml_tactics_optimization.get('fifty_percent_threshold', 0.75), 'twenty_five_percent': ml_tactics_optimization.get('twenty_five_percent_threshold', 0.8), 'combined_threshold': ml_tactics_optimization.get('combined_threshold', 0.7)}
-        self.exit_thresholds = {'fifty_percent': ml_tactics_optimization.get('exit_fifty_percent_threshold', 0.4), 'twenty_five_percent': ml_tactics_optimization.get('exit_twenty_five_percent_threshold', 0.35), 'combined_exit_threshold': ml_tactics_optimization.get('combined_exit_threshold', 0.45)}
-        self.confidence_weights = {'analyst_weight': ml_tactics_optimization.get('analyst_confidence_weight', 0.3), 'fifty_percent_1m_weight': ml_tactics_optimization.get('fifty_percent_1m_weight', 0.25), 'twenty_five_percent_1m_weight': ml_tactics_optimization.get('twenty_five_percent_1m_weight', 0.15), 'fifty_percent_5m_weight': ml_tactics_optimization.get('fifty_percent_5m_weight', 0.2), 'twenty_five_percent_5m_weight': ml_tactics_optimization.get('twenty_five_percent_5m_weight', 0.1)}
+        # Updated to use 0.3% micro movement predictions instead of barrier-based approach
+        self.micro_movement_config = {
+            'micro_immediate': {'target': 0.003, 'timeframe': '1m', 'horizon': 'immediate'},  # 0.3% within 10 minutes
+            'micro_short': {'target': 0.003, 'timeframe': '5m', 'horizon': 'short'},  # 0.3% within 20 minutes
+            'small_immediate': {'target': 0.005, 'timeframe': '1m', 'horizon': 'immediate'},  # 0.5% within 10 minutes
+            'small_short': {'target': 0.005, 'timeframe': '5m', 'horizon': 'short'}  # 0.5% within 20 minutes
+        }
+        # Updated thresholds for 0.3% micro movement predictions
+        self.green_light_thresholds = {
+            'micro_immediate_long': ml_tactics_optimization.get('micro_immediate_long_threshold', 0.75),
+            'micro_immediate_short': ml_tactics_optimization.get('micro_immediate_short_threshold', 0.78),
+            'micro_short_long': ml_tactics_optimization.get('micro_short_long_threshold', 0.70),
+            'micro_short_short': ml_tactics_optimization.get('micro_short_short_threshold', 0.73),
+            'combined_threshold': ml_tactics_optimization.get('combined_threshold', 0.70)
+        }
+        self.exit_thresholds = {
+            'micro_immediate_long': ml_tactics_optimization.get('exit_micro_immediate_long_threshold', 0.40),
+            'micro_immediate_short': ml_tactics_optimization.get('exit_micro_immediate_short_threshold', 0.35),
+            'micro_short_long': ml_tactics_optimization.get('exit_micro_short_long_threshold', 0.45),
+            'micro_short_short': ml_tactics_optimization.get('exit_micro_short_short_threshold', 0.40),
+            'combined_exit_threshold': ml_tactics_optimization.get('combined_exit_threshold', 0.45),
+            'directional_confidence_min': ml_tactics_optimization.get('directional_confidence_min', 0.10)
+        }
+        self.confidence_weights = {
+            'analyst_weight': ml_tactics_optimization.get('analyst_confidence_weight', 0.3),
+            'micro_immediate_weight': ml_tactics_optimization.get('micro_immediate_weight', 0.4),
+            'micro_short_weight': ml_tactics_optimization.get('micro_short_weight', 0.2),
+            'directional_weight': ml_tactics_optimization.get('directional_weight', 0.1)
+        }
         self.model_storage_dir: str = self.config.get('model_storage_dir', 'models')
 
     class ProbabilityAveragingEnsemble:
@@ -619,31 +644,52 @@ class MLTacticsManager:
     @handles_errors(fallback = None)
     async def generate_multi_output_predictions(self, market_data: pd.DataFrame, analyst_barriers: dict[str, float], symbol: str, timeframe: str, analyst_confidence: float = 0.5) -> dict[str, Any]:
         """
-        Generate multi-output predictions for 50% and 25% barriers.
+        Generate multi-output predictions for 0.3% micro movements.
 
         Args:
             market_data: Market data with OHLCV
-            analyst_barriers: Analyst's barrier values (for reference)
+            analyst_barriers: Analyst's barrier values (for reference - not used in new approach)
             symbol: Trading symbol
             timeframe: Current timeframe
+            analyst_confidence: Analyst confidence score
 
         Returns:
-            dict: Multi-output predictions with confidence scores and directions
+            dict: Multi-output predictions with 0.3% micro movement probabilities and directional confidence
         """
         try:
             if not self.is_trained:
                 self.logger.warning('Models not trained, using fallback predictions')
                 return self._generate_fallback_predictions()
-            tactician_barriers = self._calculate_tactician_barriers(analyst_barriers)
+            # Generate 0.3% micro movement predictions
             predictions = {}
-            for barrier_type in ['fifty_percent', 'twenty_five_percent', 'fifty_percent_5m', 'twenty_five_percent_5m']:
-                barrier_prediction = await self._generate_barrier_prediction(barrier_type = barrier_type, market_data = market_data, barriers = tactician_barriers[barrier_type], symbol = symbol, timeframe = timeframe)
-                if barrier_prediction:
-                    predictions[barrier_type] = barrier_prediction
-            combined_confidence = self._calculate_combined_confidence(predictions, analyst_confidence)
-            green_light_signal = self._evaluate_green_light_signal(predictions, combined_confidence)
-            triple_barrier_analysis = self._generate_tactician_triple_barrier_analysis(predictions)
-            result = {**predictions, 'combined_confidence': combined_confidence, 'green_light_signal': green_light_signal, 'triple_barrier_analysis': triple_barrier_analysis, 'metadata': {'symbol': symbol, 'timeframe': timeframe, 'generation_timestamp': datetime.now().isoformat(), 'model_type': 'tactician_multi_output', 'barrier_config': self.barrier_config}}
+            for movement_type in ['micro_immediate_long', 'micro_immediate_short', 'micro_short_long', 'micro_short_short']:
+                movement_prediction = await self._generate_micro_movement_prediction(
+                    movement_type=movement_type, 
+                    market_data=market_data, 
+                    symbol=symbol, 
+                    timeframe=timeframe
+                )
+                if movement_prediction:
+                    predictions[movement_type] = movement_prediction
+            
+            # Calculate directional analysis
+            directional_analysis = self._calculate_directional_analysis(predictions)
+            combined_confidence = self._calculate_combined_micro_confidence(predictions, analyst_confidence)
+            green_light_signal = self._evaluate_micro_movement_signal(predictions, combined_confidence, directional_analysis)
+            
+            result = {
+                **predictions, 
+                'combined_confidence': combined_confidence, 
+                'directional_analysis': directional_analysis,
+                'green_light_signal': green_light_signal, 
+                'metadata': {
+                    'symbol': symbol, 
+                    'timeframe': timeframe, 
+                    'generation_timestamp': datetime.now().isoformat(), 
+                    'model_type': 'tactician_micro_movement', 
+                    'micro_movement_config': self.micro_movement_config
+                }
+            }
             self.logger.info(f"Generated multi-output predictions for {symbol}: {green_light_signal['signal']}")
             return result
         except Exception as e:
@@ -1007,56 +1053,213 @@ class MLTacticsManager:
         else:
             return f'TACTICIAN ML NO GREEN LIGHT: Upper barrier confidence ({cumulative_upper_confidence:.1%}) below threshold (60.0%)'
 
+    async def _generate_micro_movement_prediction(self, movement_type: str, market_data: pd.DataFrame, symbol: str, timeframe: str) -> dict[str, Any]:
+        """
+        Generate prediction for a specific 0.3% micro movement type.
+
+        Args:
+            movement_type: "micro_immediate_long", "micro_immediate_short", "micro_short_long", "micro_short_short"
+            market_data: Market data
+            symbol: Trading symbol
+            timeframe: Timeframe
+
+        Returns:
+            dict: Micro movement prediction with probability
+        """
+        try:
+            features = self._extract_features(market_data)
+            
+            if self.multi_output_models.get(movement_type, {}).get('model') == 'fallback':
+                probability = self._generate_fallback_micro_probability(movement_type, features)
+            else:
+                probability = self._predict_micro_movement_with_model(movement_type, features)
+            
+            probability = np.clip(probability, 0.0, 1.0)
+            
+            config = self.micro_movement_config.get(
+                movement_type.replace('_long', '').replace('_short', ''), 
+                {'target': 0.003, 'timeframe': '1m', 'horizon': 'immediate'}
+            )
+            
+            return {
+                'probability': probability,
+                'movement_type': movement_type,
+                'target': config['target'],
+                'timeframe': config['timeframe'],
+                'horizon': config['horizon'],
+                'direction': 'LONG' if '_long' in movement_type else 'SHORT'
+            }
+        except Exception as e:
+            self.logger.exception(failed(f'❌ Micro movement prediction failed for {movement_type}: {e}'))
+            return None
+
+    def _calculate_directional_analysis(self, predictions: dict[str, Any]) -> dict[str, Any]:
+        """
+        Calculate directional analysis from micro movement predictions.
+
+        Args:
+            predictions: Dictionary of micro movement predictions
+
+        Returns:
+            dict: Directional analysis with bias and confidence
+        """
+        try:
+            long_immediate = predictions.get('micro_immediate_long', {}).get('probability', 0.5)
+            short_immediate = predictions.get('micro_immediate_short', {}).get('probability', 0.5)
+            long_short = predictions.get('micro_short_long', {}).get('probability', 0.5)
+            short_short = predictions.get('micro_short_short', {}).get('probability', 0.5)
+            
+            # Calculate overall directional probabilities
+            long_overall = (long_immediate + long_short) / 2
+            short_overall = (short_immediate + short_short) / 2
+            
+            # Calculate directional bias and confidence
+            directional_difference = long_overall - short_overall
+            directional_confidence = abs(directional_difference)
+            directional_bias = 'LONG' if directional_difference > 0 else 'SHORT'
+            
+            # Calculate opportunity asymmetry
+            opportunity_asymmetry = abs(long_overall - short_overall)
+            
+            return {
+                'long_overall_probability': long_overall,
+                'short_overall_probability': short_overall,
+                'directional_bias': directional_bias,
+                'directional_confidence': directional_confidence,
+                'opportunity_asymmetry': opportunity_asymmetry,
+                'immediate_vs_short_ratio': {
+                    'long': long_immediate / max(long_short, 0.01),
+                    'short': short_immediate / max(short_short, 0.01)
+                }
+            }
+        except Exception as e:
+            self.logger.exception(failed(f'❌ Directional analysis calculation failed: {e}'))
+            return {
+                'long_overall_probability': 0.5,
+                'short_overall_probability': 0.5,
+                'directional_bias': 'NEUTRAL',
+                'directional_confidence': 0.0,
+                'opportunity_asymmetry': 0.0,
+                'immediate_vs_short_ratio': {'long': 1.0, 'short': 1.0}
+            }
+
     def _generate_fallback_predictions(self) -> dict[str, Any]:
         """
         Generate fallback predictions when models are not available.
 
         Returns:
-            dict: Fallback predictions
+            dict: Fallback predictions for 0.3% micro movements
         """
-        return {'fifty_percent': {'confidence': 0.5, 'direction': 'UP', 'upper_barrier': 0.01, 'lower_barrier': -0.005, 'timeframe': '1m', 'barrier_type': 'fifty_percent'}, 'twenty_five_percent': {'confidence': 0.5, 'direction': 'UP', 'upper_barrier': 0.005, 'lower_barrier': -0.0025, 'timeframe': '1m', 'barrier_type': 'twenty_five_percent'}, 'fifty_percent_5m': {'confidence': 0.5, 'direction': 'UP', 'upper_barrier': 0.01, 'lower_barrier': -0.005, 'timeframe': '5m', 'barrier_type': 'fifty_percent_5m'}, 'twenty_five_percent_5m': {'confidence': 0.5, 'direction': 'UP', 'upper_barrier': 0.005, 'lower_barrier': -0.0025, 'timeframe': '5m', 'barrier_type': 'twenty_five_percent_5m'}, 'combined_confidence': 0.5, 'green_light_signal': {'signal': 'RED_LIGHT', 'reason': 'Fallback mode', 'fifty_percent_ok': False, 'twenty_five_percent_ok': False, 'combined_ok': False, 'combined_confidence': 0.5, 'thresholds': self.green_light_thresholds}, 'metadata': {'model_type': 'fallback', 'generation_timestamp': datetime.now().isoformat()}}
+        return {
+            'micro_immediate_long': {'probability': 0.5, 'movement_type': 'micro_immediate_long', 'target': 0.003, 'timeframe': '1m', 'horizon': 'immediate', 'direction': 'LONG'},
+            'micro_immediate_short': {'probability': 0.5, 'movement_type': 'micro_immediate_short', 'target': 0.003, 'timeframe': '1m', 'horizon': 'immediate', 'direction': 'SHORT'},
+            'micro_short_long': {'probability': 0.5, 'movement_type': 'micro_short_long', 'target': 0.003, 'timeframe': '5m', 'horizon': 'short', 'direction': 'LONG'},
+            'micro_short_short': {'probability': 0.5, 'movement_type': 'micro_short_short', 'target': 0.003, 'timeframe': '5m', 'horizon': 'short', 'direction': 'SHORT'},
+            'combined_confidence': 0.5,
+            'directional_analysis': {
+                'long_overall_probability': 0.5,
+                'short_overall_probability': 0.5,
+                'directional_bias': 'NEUTRAL',
+                'directional_confidence': 0.0,
+                'opportunity_asymmetry': 0.0,
+                'immediate_vs_short_ratio': {'long': 1.0, 'short': 1.0}
+            },
+            'green_light_signal': {
+                'signal': 'RED_LIGHT', 
+                'reason': 'Fallback mode - models not trained', 
+                'micro_immediate_long_ok': False, 
+                'micro_immediate_short_ok': False, 
+                'combined_ok': False, 
+                'combined_confidence': 0.5, 
+                'thresholds': self.green_light_thresholds
+            },
+            'metadata': {
+                'model_type': 'fallback_micro_movement', 
+                'generation_timestamp': datetime.now().isoformat()
+            }
+        }
 
     @handles_errors(fallback = None)
     async def evaluate_exit_signal(self, current_predictions: dict[str, Any], position_context: dict[str, Any]) -> dict[str, Any]:
         """
-        Evaluate exit signal based on current predictions and position context.
+        Evaluate exit signal based on 0.3% micro movement predictions and position context.
 
         Args:
-            current_predictions: Current multi-output predictions
-            position_context: Current position context
+            current_predictions: Current multi-output predictions with micro movements
+            position_context: Current position context (including position direction)
 
         Returns:
-            dict: Exit signal evaluation
+            dict: Exit signal evaluation based on probability degradation
         """
         try:
             combined_confidence = current_predictions.get('combined_confidence', 0.5)
-            fifty_percent_exit = False
-            twenty_five_percent_exit = False
-            fifty_percent_confidences = []
-            if 'fifty_percent' in current_predictions and current_predictions['fifty_percent']:
-                fifty_percent_confidences.append(current_predictions['fifty_percent']['confidence'])
-            if 'fifty_percent_5m' in current_predictions and current_predictions['fifty_percent_5m']:
-                fifty_percent_confidences.append(current_predictions['fifty_percent_5m']['confidence'])
-            if fifty_percent_confidences:
-                fifty_percent_exit = min(fifty_percent_confidences) <= self.exit_thresholds['fifty_percent']
-            twenty_five_percent_confidences = []
-            if 'twenty_five_percent' in current_predictions and current_predictions['twenty_five_percent']:
-                twenty_five_percent_confidences.append(current_predictions['twenty_five_percent']['confidence'])
-            if 'twenty_five_percent_5m' in current_predictions and current_predictions['twenty_five_percent_5m']:
-                twenty_five_percent_confidences.append(current_predictions['twenty_five_percent_5m']['confidence'])
-            if twenty_five_percent_confidences:
-                twenty_five_percent_exit = min(twenty_five_percent_confidences) <= self.exit_thresholds['twenty_five_percent']
+            directional_analysis = current_predictions.get('directional_analysis', {})
+            
+            # Get position direction from context
+            position_side = position_context.get('side', '').upper()
+            
+            # Evaluate exit conditions based on position direction (immediate probabilities only)
+            if position_side == 'LONG':
+                micro_immediate_prob = current_predictions.get('micro_immediate_long', {}).get('probability', 0.5)
+                
+                # Check if immediate probability drops below exit threshold
+                immediate_exit = micro_immediate_prob <= self.exit_thresholds['micro_immediate_long']
+                
+            elif position_side == 'SHORT':
+                micro_immediate_prob = current_predictions.get('micro_immediate_short', {}).get('probability', 0.5)
+                
+                # Check if immediate probability drops below exit threshold
+                immediate_exit = micro_immediate_prob <= self.exit_thresholds['micro_immediate_short']
+                
+            else:
+                # No position or unknown direction
+                immediate_exit = False
+                micro_immediate_prob = 0.5
+            
+            # Check directional confidence degradation (MAIN EXIT TRIGGER for price reversals)
+            directional_confidence = directional_analysis.get('directional_confidence', 0.0)
+            directional_bias = directional_analysis.get('directional_bias', 'NEUTRAL')
+            
+            # Directional reversal detection - exit when direction confidence drops OR bias changes against position
+            directional_reversal = (
+                directional_confidence < self.exit_thresholds['directional_confidence_min'] or
+                (position_side == 'LONG' and directional_bias == 'SHORT') or
+                (position_side == 'SHORT' and directional_bias == 'LONG')
+            )
+            
+            # Check combined confidence exit
             combined_exit = combined_confidence <= self.exit_thresholds['combined_exit_threshold']
-            if combined_exit or (fifty_percent_exit and twenty_five_percent_exit):
+            
+            # Determine exit signal - PRIORITIZE directional reversal as main exit trigger
+            if directional_reversal:
                 exit_signal = 'EXIT'
-                reason = 'Confidence below exit thresholds'
-            elif fifty_percent_exit or twenty_five_percent_exit:
-                exit_signal = 'PARTIAL_EXIT'
-                reason = 'Partial confidence below exit thresholds'
+                if directional_bias != 'NEUTRAL' and ((position_side == 'LONG' and directional_bias == 'SHORT') or (position_side == 'SHORT' and directional_bias == 'LONG')):
+                    reason = f'DIRECTIONAL REVERSAL: Price direction changed from {position_side} to {directional_bias} (confidence: {directional_confidence:.3f})'
+                else:
+                    reason = f'DIRECTIONAL CONFIDENCE LOSS: Direction confidence ({directional_confidence:.3f}) below minimum ({self.exit_thresholds["directional_confidence_min"]})'
+            elif combined_exit:
+                exit_signal = 'EXIT'
+                reason = f'Combined confidence ({combined_confidence:.3f}) below threshold ({self.exit_thresholds["combined_exit_threshold"]})'
+            elif immediate_exit:
+                exit_signal = 'EXIT'
+                reason = f'Immediate probability degraded: {micro_immediate_prob:.3f} below threshold ({self.exit_thresholds[f"micro_immediate_{position_side.lower()}"]})'
             else:
                 exit_signal = 'HOLD'
-                reason = 'Confidence above exit thresholds'
-            return {'exit_signal': exit_signal, 'reason': reason, 'fifty_percent_exit': fifty_percent_exit, 'twenty_five_percent_exit': twenty_five_percent_exit, 'combined_exit': combined_exit, 'combined_confidence': combined_confidence, 'exit_thresholds': self.exit_thresholds}
+                reason = f'No exit signals - immediate: {micro_immediate_prob:.3f}, directional: {directional_confidence:.3f} ({directional_bias}), combined: {combined_confidence:.3f}'
+            
+            return {
+                'exit_signal': exit_signal, 
+                'reason': reason, 
+                'immediate_exit': immediate_exit, 
+                'directional_reversal': directional_reversal,
+                'combined_exit': combined_exit, 
+                'combined_confidence': combined_confidence,
+                'directional_confidence': directional_confidence,
+                'directional_bias': directional_bias,
+                'micro_immediate_prob': micro_immediate_prob,
+                'exit_thresholds': self.exit_thresholds,
+                'position_side': position_side
+            }
         except Exception as e:
             self.logger.exception(failed(f'❌ Exit signal evaluation failed: {e}'))
             return {'exit_signal': 'HOLD', 'reason': 'Evaluation failed', 'fifty_percent_exit': False, 'twenty_five_percent_exit': False, 'combined_exit': False, 'combined_confidence': 0.5, 'exit_thresholds': self.exit_thresholds}

@@ -84,8 +84,7 @@ class TradingDecisionConfig:
     reassessment_frequency: int = 3          # Reassess every 3 minutes (more frequent)
     
     # Risk management
-    transaction_cost: float = 0.001      # 0.1% transaction cost (including bid-ask spread)
-    slippage_allowance: float = 0.0005   # 0.05% slippage allowance (more realistic for high-frequency)
+    transaction_cost: float = 0.001      # 0.1% transaction cost
     
     # Strategy weights for different scenarios (SHORT-TERM FOCUSED)
     strategy_weights: Dict[str, float] = field(default_factory=lambda: {
@@ -359,8 +358,8 @@ class MultiHorizonDecisionEngine:
         strategy = analysis['best_strategy']
         confidence = analysis['confidence']
         
-        # Calculate position size based on confidence, strategy, and risk factors
-        position_size = self._calculate_position_size(confidence, strategy, predictions)
+        # Calculate position size based on confidence and strategy
+        position_size = self._calculate_position_size(confidence, strategy)
         
         # Estimate expected profit and risk
         expected_profit = self._estimate_expected_profit(strategy, predictions)
@@ -385,9 +384,8 @@ class MultiHorizonDecisionEngine:
             }
         )
     
-    def _calculate_position_size(self, confidence: float, strategy: str, 
-                               current_predictions: Optional[Dict[str, float]] = None) -> float:
-        """Calculate position size based on confidence, strategy, and correlation risk with safe operations."""
+    def _calculate_position_size(self, confidence: float, strategy: str) -> float:
+        """Calculate position size based on confidence and strategy with safe operations."""
         base_size = validate_finite(self.config.position_sizing['base_size'], 'base_size')
         confidence_multiplier = validate_finite(self.config.position_sizing['confidence_multiplier'], 'confidence_multiplier')
         confidence = validate_finite(confidence, 'confidence')
@@ -402,26 +400,8 @@ class MultiHorizonDecisionEngine:
         
         strategy_multiplier = validate_finite(strategy_multipliers.get(strategy, 1.0), 'strategy_multiplier')
         
-        # Correlation risk adjustment
-        correlation_adjustment = 1.0
-        if current_predictions and len(self.active_positions) > 0:
-            # Reduce position size if we have many active positions (correlation risk)
-            active_position_count = len(self.active_positions)
-            if active_position_count >= 3:
-                correlation_adjustment = 0.7  # 30% reduction for high correlation risk
-            elif active_position_count >= 2:
-                correlation_adjustment = 0.85  # 15% reduction for moderate correlation risk
-        
-        # Volatility adjustment for position sizing
-        volatility_adjustment = 1.0
-        if current_predictions:
-            current_volatility = current_predictions.get('current_volatility', 0.02)
-            # In high volatility, reduce position size; in low volatility, allow larger positions
-            volatility_adjustment = np.clip(0.02 / current_volatility, 0.5, 1.5)
-        
-        # Calculate size using safe operations with all adjustments
-        raw_size = (base_size * confidence * confidence_multiplier * 
-                   strategy_multiplier * correlation_adjustment * volatility_adjustment)
+        # Calculate size using safe operations
+        raw_size = base_size * confidence * confidence_multiplier * strategy_multiplier
         raw_size = validate_finite(raw_size, 'raw_position_size')
         
         # Apply limits
@@ -477,7 +457,7 @@ class MultiHorizonDecisionEngine:
         important_keys = [
             'micro_immediate_prob', 'small_immediate_prob', 'medium_immediate_prob',
             'small_short_prob', 'medium_short_prob',
-            'overall_opportunity', 'leverage_adjusted_score', 'current_volatility'
+            'overall_opportunity', 'leverage_adjusted_score'
         ]
         
         for key in important_keys:
@@ -486,96 +466,17 @@ class MultiHorizonDecisionEngine:
         
         return key_probs
     
-    def _calculate_prediction_uncertainty(self, predictions: Dict[str, float]) -> float:
-        """Calculate uncertainty in predictions for confidence adjustment."""
+    def _calculate_confidence_score(self, predictions: Dict[str, float]) -> float:
+        """Calculate simple confidence score based on predictions."""
         try:
-            # Extract probability values
-            prob_values = []
-            for key, value in predictions.items():
-                if 'prob' in key and isinstance(value, (int, float)):
-                    prob_values.append(value)
-            
-            if not prob_values:
-                return 0.5  # High uncertainty if no probabilities
-            
-            # Calculate uncertainty metrics
-            prob_array = np.array(prob_values)
-            
-            # Entropy-based uncertainty (higher entropy = higher uncertainty)
-            # Normalize probabilities to [0,1] range
-            normalized_probs = np.clip(prob_array, 0.01, 0.99)
-            entropy = -np.sum(normalized_probs * np.log(normalized_probs))
-            max_entropy = -len(normalized_probs) * 0.5 * np.log(0.5)  # Maximum entropy for uniform distribution
-            
-            # Normalize entropy to [0,1] where 0 = low uncertainty, 1 = high uncertainty
-            uncertainty = entropy / max_entropy if max_entropy > 0 else 0.5
-            
-            # Variance-based uncertainty
-            variance = np.var(prob_array)
-            max_variance = 0.25  # Maximum variance for binary probabilities
-            variance_uncertainty = variance / max_variance
-            
-            # Combine entropy and variance uncertainty
-            combined_uncertainty = (uncertainty + variance_uncertainty) / 2
-            
-            return np.clip(combined_uncertainty, 0.0, 1.0)
-            
-        except Exception as e:
-            self.logger.warning(f"⚠️ Failed to calculate prediction uncertainty: {e}")
-            return 0.5  # Default high uncertainty
-    
-    def _calculate_confidence_score(self, predictions: Dict[str, float], 
-                                  market_context: Optional[Dict[str, float]] = None) -> float:
-        """Calculate calibrated confidence score based on predictions and market context."""
-        try:
-            # Base confidence from prediction uncertainty
-            uncertainty = self._calculate_prediction_uncertainty(predictions)
-            base_confidence = 1.0 - uncertainty
-            
-            # Market context adjustments
-            market_adjustment = 1.0
-            if market_context:
-                # Volatility adjustment
-                volatility = market_context.get('current_volatility', 0.02)
-                volatility_adjustment = np.clip(0.02 / volatility, 0.7, 1.3)  # Lower confidence in high volatility
-                
-                # Volume adjustment
-                volume_ratio = market_context.get('volume_ratio', 1.0)
-                volume_adjustment = np.clip(volume_ratio, 0.8, 1.2)  # Higher confidence with higher volume
-                
-                # Trend strength adjustment
-                trend_strength = market_context.get('trend_strength', 0.5)
-                trend_adjustment = 0.8 + (trend_strength * 0.4)  # Higher confidence in strong trends
-                
-                market_adjustment = (volatility_adjustment + volume_adjustment + trend_adjustment) / 3
-            
-            # Prediction consistency adjustment
-            consistency_adjustment = 1.0
+            # Simple confidence based on overall opportunity
             overall_opportunity = predictions.get('overall_opportunity', 0.5)
             leverage_adjusted = predictions.get('leverage_adjusted_score', 0.5)
             
-            # Check consistency between different prediction scores
-            score_consistency = 1.0 - abs(overall_opportunity - leverage_adjusted)
-            consistency_adjustment = 0.7 + (score_consistency * 0.3)
+            # Average the main prediction scores
+            confidence = (overall_opportunity + leverage_adjusted) / 2
             
-            # Model ensemble uncertainty adjustment
-            ensemble_adjustment = 1.0
-            if 'model_agreement' in predictions:
-                # If we have model agreement information, use it to adjust confidence
-                model_agreement = predictions.get('model_agreement', 0.5)
-                ensemble_adjustment = 0.7 + (model_agreement * 0.3)  # Higher confidence with higher agreement
-            
-            # Historical performance adjustment
-            historical_adjustment = 1.0
-            if 'historical_accuracy' in predictions:
-                historical_accuracy = predictions.get('historical_accuracy', 0.5)
-                historical_adjustment = 0.8 + (historical_accuracy * 0.4)  # Weight historical performance
-            
-            # Final calibrated confidence with all adjustments
-            calibrated_confidence = (base_confidence * market_adjustment * 
-                                   consistency_adjustment * ensemble_adjustment * historical_adjustment)
-            
-            return np.clip(calibrated_confidence, 0.1, 0.95)  # Keep within reasonable bounds
+            return np.clip(confidence, 0.1, 0.95)  # Keep within reasonable bounds
             
         except Exception as e:
             self.logger.warning(f"⚠️ Failed to calculate confidence score: {e}")
@@ -584,19 +485,16 @@ class MultiHorizonDecisionEngine:
     def _track_new_position(self, position_id: str, decision: TradingDecision, 
                           predictions: Dict[str, float], entry_price: float):
         """Track new position for reassessment."""
-        entry_volatility = predictions.get('current_volatility', 0.02)  # Store entry volatility for comparison
-        
         self.active_positions[position_id] = {
             'entry_time': datetime.now(),
             'entry_price': entry_price,
             'entry_decision': decision,
             'entry_predictions': predictions,
-            'entry_volatility': entry_volatility,
             'last_reassessment': datetime.now(),
             'reassessment_count': 0
         }
         
-        self.logger.info(f'📈 Tracking new position {position_id}: {decision.action} at {entry_price} (vol: {entry_volatility:.1%})')
+        self.logger.info(f'📈 Tracking new position {position_id}: {decision.action} at {entry_price}')
     
     def _reassess_existing_position(self, position_id: str, 
                                   current_predictions: Dict[str, float], 
@@ -613,10 +511,9 @@ class MultiHorizonDecisionEngine:
         else:  # sell
             current_pnl = (entry_price - current_price) / entry_price
         
-        # Check exit conditions with current volatility
-        current_volatility = current_predictions.get('current_volatility', 0.02)
+        # Check exit conditions
         exit_analysis = self._analyze_exit_conditions(
-            position, current_predictions, current_pnl, current_volatility
+            position, current_predictions, current_pnl
         )
         
         if exit_analysis['should_exit']:
@@ -657,9 +554,8 @@ class MultiHorizonDecisionEngine:
     
     def _analyze_exit_conditions(self, position: Dict[str, Any], 
                                current_predictions: Dict[str, float], 
-                               current_pnl: float,
-                               market_volatility: Optional[float] = None) -> Dict[str, Any]:
-        """Analyze whether to exit existing position with volatility-aware logic."""
+                               current_pnl: float) -> Dict[str, Any]:
+        """Analyze whether to exit existing position."""
         exit_analysis = {
             'should_exit': False,
             'confidence': 0.0,
@@ -667,82 +563,47 @@ class MultiHorizonDecisionEngine:
             'reasoning': []
         }
         
-        # Get current market volatility context
-        if market_volatility is None:
-            market_volatility = current_predictions.get('current_volatility', 0.02)  # Default 2% volatility
-        
-        # Volatility-adjusted thresholds
-        volatility_multiplier = np.clip(market_volatility / 0.02, 0.5, 2.0)  # Normalize to 2% baseline
-        
-        # Time-based exit with volatility adjustment
+        # Time-based exit
         position_duration = (datetime.now() - position['entry_time']).seconds // 60
-        max_duration = self.config.max_position_duration
-        
-        # In high volatility, reduce holding time; in low volatility, allow longer holds
-        volatility_adjusted_duration = max_duration * (2.0 - volatility_multiplier)
-        
-        if position_duration >= volatility_adjusted_duration:
+        if position_duration >= self.config.max_position_duration:
             exit_analysis.update({
                 'should_exit': True,
                 'confidence': 0.8,
-                'exit_type': 'time_based_volatility_adjusted',
-                'reasoning': [f'Volatility-adjusted max duration reached: {position_duration} minutes (limit: {volatility_adjusted_duration:.1f})']
+                'exit_type': 'time_based',
+                'reasoning': [f'Maximum position duration reached: {position_duration} minutes']
             })
             return exit_analysis
         
-        # Volatility-aware profit protection
+        # Profit protection
         if current_pnl > 0.002:  # If profitable
-            # In high volatility, protect profits more aggressively
-            volatility_adjusted_protection = self.config.exit_thresholds['profit_protection'] * volatility_multiplier
-            protection_threshold = current_pnl * volatility_adjusted_protection
-            
+            protection_threshold = current_pnl * self.config.exit_thresholds['profit_protection']
             if current_pnl < protection_threshold:
                 exit_analysis.update({
                     'should_exit': True,
-                    'confidence': 0.7 + (volatility_multiplier - 1.0) * 0.2,  # Higher confidence in volatile markets
-                    'exit_type': 'volatility_aware_profit_protection',
-                    'reasoning': [f'Volatility-adjusted profit protection: {current_pnl:.1%} < {protection_threshold:.1%} (vol: {market_volatility:.1%})']
+                    'confidence': 0.7,
+                    'exit_type': 'profit_protection',
+                    'reasoning': [f'Profit protection triggered: {current_pnl:.1%} < {protection_threshold:.1%}']
                 })
                 return exit_analysis
         
-        # Opportunity decline with volatility context
+        # Opportunity decline
         current_opportunity = current_predictions.get('overall_opportunity', 0.0)
-        # In high volatility, be more sensitive to opportunity decline
-        volatility_adjusted_opportunity_threshold = self.config.exit_thresholds['opportunity_decline'] * (2.0 - volatility_multiplier)
-        
-        if current_opportunity < volatility_adjusted_opportunity_threshold:
+        if current_opportunity < self.config.exit_thresholds['opportunity_decline']:
             exit_analysis.update({
                 'should_exit': True,
-                'confidence': 0.6 + (volatility_multiplier - 1.0) * 0.1,
-                'exit_type': 'volatility_aware_opportunity_decline',
-                'reasoning': [f'Volatility-adjusted opportunity decline: {current_opportunity:.1%} < {volatility_adjusted_opportunity_threshold:.1%}']
+                'confidence': 0.6,
+                'exit_type': 'opportunity_decline',
+                'reasoning': [f'Opportunity declined: {current_opportunity:.1%}']
             })
             return exit_analysis
         
-        # Volatility-aware stop loss
-        # In high volatility, allow wider stops; in low volatility, use tighter stops
-        base_stop_loss = -0.002  # Base 0.2% stop loss
-        volatility_adjusted_stop = base_stop_loss * volatility_multiplier
-        
-        if current_pnl < volatility_adjusted_stop:
+        # Stop loss
+        if current_pnl < -0.002:  # If losing more than 0.2%
             exit_analysis.update({
                 'should_exit': True,
                 'confidence': 0.9,
-                'exit_type': 'volatility_aware_stop_loss',
-                'reasoning': [f'Volatility-adjusted stop loss: {current_pnl:.1%} < {volatility_adjusted_stop:.1%} (vol: {market_volatility:.1%})']
-            })
-            return exit_analysis
-        
-        # Volatility spike exit - exit if volatility suddenly increases
-        entry_volatility = position.get('entry_volatility', market_volatility)
-        volatility_increase = market_volatility / entry_volatility if entry_volatility > 0 else 1.0
-        
-        if volatility_increase > 2.0:  # Volatility doubled since entry
-            exit_analysis.update({
-                'should_exit': True,
-                'confidence': 0.8,
-                'exit_type': 'volatility_spike',
-                'reasoning': [f'Volatility spike detected: {volatility_increase:.1f}x increase since entry']
+                'exit_type': 'stop_loss',
+                'reasoning': [f'Stop loss triggered: {current_pnl:.1%}']
             })
             return exit_analysis
         

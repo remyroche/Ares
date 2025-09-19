@@ -33,12 +33,26 @@ try:
     from src.utils.common_operations import (
         validate_dataframe, validate_finite, validate_positive, validate_range, 
         safe_percentage_change, safe_json_dump, safe_json_load, safe_file_exists,
-        get_m1_gpu_manager, get_m1_memory_optimizer, get_m1_cpu_optimizer,
         gpu_context
     )
     EXTENDED_COMMON_OPS_AVAILABLE = True
 except ImportError:
     EXTENDED_COMMON_OPS_AVAILABLE = False
+
+# Import hardware optimization tools from hardware/ directory
+try:
+    from src.utils.hardware import (
+        get_advanced_memory_optimizer, get_enhanced_gpu_manager, get_advanced_cpu_optimizer,
+        get_unified_hardware_manager, optimize_dataframe_advanced,
+        AdvancedM1MemoryOptimizer, EnhancedM1GPUManager, AdvancedM1CPUOptimizer,
+        ADVANCED_MEMORY_AVAILABLE, ENHANCED_GPU_AVAILABLE, ADVANCED_CPU_AVAILABLE
+    )
+    HARDWARE_OPTIMIZATIONS_AVAILABLE = True
+except ImportError:
+    HARDWARE_OPTIMIZATIONS_AVAILABLE = False
+    ADVANCED_MEMORY_AVAILABLE = False
+    ENHANCED_GPU_AVAILABLE = False
+    ADVANCED_CPU_AVAILABLE = False
 
 from src.utils.math_validation import (
     safe_divide as math_safe_divide, safe_divide, safe_log, safe_sqrt,
@@ -219,15 +233,20 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
             self.klines_manager = get_klines_manager() if KLINES_AVAILABLE else None
             self.evaluation_utils = EvaluationUtils() if ML_EVAL_AVAILABLE else None
             
-            # Initialize M1 hardware optimizers with availability checks
-            if EXTENDED_COMMON_OPS_AVAILABLE:
-                self.gpu_manager = get_m1_gpu_manager()
-                self.memory_optimizer = get_m1_memory_optimizer()
-                self.cpu_optimizer = get_m1_cpu_optimizer()
+            # Initialize advanced hardware optimizers from hardware/ directory
+            if HARDWARE_OPTIMIZATIONS_AVAILABLE:
+                # Use advanced hardware optimization tools
+                self.gpu_manager = get_enhanced_gpu_manager() if ENHANCED_GPU_AVAILABLE else None
+                self.memory_optimizer = get_advanced_memory_optimizer() if ADVANCED_MEMORY_AVAILABLE else None
+                self.cpu_optimizer = get_advanced_cpu_optimizer() if ADVANCED_CPU_AVAILABLE else None
+                self.unified_hardware_manager = get_unified_hardware_manager()
+                tprint("🚀 Advanced hardware optimizations loaded from hardware/ directory")
             else:
                 self.gpu_manager = None
                 self.memory_optimizer = None
                 self.cpu_optimizer = None
+                self.unified_hardware_manager = None
+                tprint("⚠️ Advanced hardware optimizations not available, using fallback")
             
             # Set default configuration for HMM ensemble models
             if config is None:
@@ -278,8 +297,13 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
                 'timeframe': config.timeframe,
                 'hardware_optimization': {
                     'gpu_available': self.gpu_manager is not None,
+                    'enhanced_gpu_available': ENHANCED_GPU_AVAILABLE,
                     'memory_optimizer_available': self.memory_optimizer is not None,
-                    'cpu_optimizer_available': self.cpu_optimizer is not None
+                    'advanced_memory_available': ADVANCED_MEMORY_AVAILABLE,
+                    'cpu_optimizer_available': self.cpu_optimizer is not None,
+                    'advanced_cpu_available': ADVANCED_CPU_AVAILABLE,
+                    'unified_hardware_manager_available': hasattr(self, 'unified_hardware_manager') and self.unified_hardware_manager is not None,
+                    'hardware_tools_source': 'hardware_directory' if HARDWARE_OPTIMIZATIONS_AVAILABLE else 'fallback'
                 }
             }
             
@@ -310,34 +334,82 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
     def cleanup_memory(self) -> None:
         """
         Explicitly cleanup large arrays and resources to prevent memory leaks.
+        Uses advanced memory optimization tools from hardware/ directory.
         Should be called after training is complete.
         """
         try:
-            # Clean up tracked large arrays
-            for array_name in self._large_arrays:
-                if hasattr(self, array_name):
-                    delattr(self, array_name)
-                    tprint(f"🧹 Cleaned up large array: {array_name}")
-            
-            # Clear the tracking list
-            self._large_arrays.clear()
-            
-            # Clear global classifier if no longer needed
-            if hasattr(self, 'global_regime_clf') and self.global_regime_clf is not None:
-                # Only clear if it's a large model
-                try:
-                    # Estimate model size (rough approximation)
-                    if hasattr(self.global_regime_clf, 'n_features_in_') and self.global_regime_clf.n_features_in_ > 1000:
-                        self.global_regime_clf = None
-                        tprint("🧹 Cleaned up global regime classifier")
-                except:
-                    pass
-            
-            # Force garbage collection
-            import gc
-            collected = gc.collect()
-            if collected > 0:
-                tprint(f"🧹 Memory cleanup completed: {collected} objects collected")
+            # Use advanced memory optimizer if available
+            if self.memory_optimizer and ADVANCED_MEMORY_AVAILABLE:
+                tprint("🧹 Using advanced memory optimizer for cleanup")
+                
+                # Track memory before cleanup
+                memory_before = self.memory_optimizer.get_memory_usage()
+                
+                # Clean up tracked large arrays using advanced optimizer
+                for array_name in self._large_arrays:
+                    if hasattr(self, array_name):
+                        array_obj = getattr(self, array_name)
+                        # Use advanced memory optimizer to clean up array
+                        self.memory_optimizer.cleanup_object(array_obj)
+                        delattr(self, array_name)
+                        tprint(f"🧹 Advanced cleanup of large array: {array_name}")
+                
+                # Clear the tracking list
+                self._large_arrays.clear()
+                
+                # Use advanced memory optimizer for global classifier cleanup
+                if hasattr(self, 'global_regime_clf') and self.global_regime_clf is not None:
+                    try:
+                        # Use memory optimizer to estimate and cleanup model
+                        if hasattr(self.global_regime_clf, 'n_features_in_') and self.global_regime_clf.n_features_in_ > 1000:
+                            self.memory_optimizer.cleanup_object(self.global_regime_clf)
+                            with self._classifier_lock:
+                                self.global_regime_clf = None
+                            tprint("🧹 Advanced cleanup of global regime classifier")
+                    except Exception as model_cleanup_error:
+                        tprint(f"⚠️ Advanced model cleanup warning: {model_cleanup_error}")
+                
+                # Trigger advanced garbage collection
+                collected = self.memory_optimizer.force_garbage_collection()
+                
+                # Track memory after cleanup
+                memory_after = self.memory_optimizer.get_memory_usage()
+                memory_freed = memory_before - memory_after
+                
+                tprint(f"🧹 Advanced memory cleanup completed:")
+                tprint(f"   • Objects collected: {collected}")
+                tprint(f"   • Memory freed: {memory_freed:.1f} MB")
+                
+            else:
+                # Fallback to basic cleanup
+                tprint("🧹 Using basic memory cleanup (advanced optimizer not available)")
+                
+                # Clean up tracked large arrays
+                for array_name in self._large_arrays:
+                    if hasattr(self, array_name):
+                        delattr(self, array_name)
+                        tprint(f"🧹 Cleaned up large array: {array_name}")
+                
+                # Clear the tracking list
+                self._large_arrays.clear()
+                
+                # Clear global classifier if no longer needed
+                if hasattr(self, 'global_regime_clf') and self.global_regime_clf is not None:
+                    # Only clear if it's a large model
+                    try:
+                        # Estimate model size (rough approximation)
+                        if hasattr(self.global_regime_clf, 'n_features_in_') and self.global_regime_clf.n_features_in_ > 1000:
+                            with self._classifier_lock:
+                                self.global_regime_clf = None
+                            tprint("🧹 Cleaned up global regime classifier")
+                    except:
+                        pass
+                
+                # Force garbage collection
+                import gc
+                collected = gc.collect()
+                if collected > 0:
+                    tprint(f"🧹 Memory cleanup completed: {collected} objects collected")
             
         except Exception as e:
             tprint(f"⚠️ Memory cleanup warning: {e}")
@@ -350,36 +422,85 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
             pass  # Ignore errors in destructor
     
     def _gpu_context_manager(self):
-        """Context manager for GPU resource management."""
+        """Context manager for GPU resource management using enhanced GPU manager from hardware/."""
         from contextlib import contextmanager
         
         @contextmanager
         def gpu_resource_context():
             gpu_acquired = False
+            memory_pool_created = False
             try:
-                # Acquire GPU resources if available
-                if self.gpu_manager:
+                # Acquire GPU resources using enhanced GPU manager if available
+                if self.gpu_manager and ENHANCED_GPU_AVAILABLE:
                     try:
-                        # Initialize GPU context
+                        tprint("🎮 Using enhanced GPU manager from hardware/ directory")
+                        
+                        # Initialize enhanced GPU context with memory pooling
+                        if hasattr(self.gpu_manager, 'initialize_enhanced_context'):
+                            self.gpu_manager.initialize_enhanced_context()
+                        elif hasattr(self.gpu_manager, 'initialize_context'):
+                            self.gpu_manager.initialize_context()
+                        
+                        # Create memory pool for efficient GPU memory management
+                        if hasattr(self.gpu_manager, 'create_memory_pool'):
+                            pool_config = {
+                                'initial_size_mb': 100.0,
+                                'max_size_mb': 1000.0,
+                                'enable_auto_cleanup': True
+                            }
+                            self.gpu_manager.create_memory_pool('hmm_training', **pool_config)
+                            memory_pool_created = True
+                            tprint("🏊 GPU memory pool created for efficient memory management")
+                        
+                        gpu_acquired = True
+                        tprint("🎮 Enhanced GPU resources acquired successfully")
+                        
+                    except Exception as e:
+                        tprint(f"⚠️ Enhanced GPU acquisition failed: {e}")
+                        gpu_acquired = False
+                        
+                elif self.gpu_manager:
+                    # Fallback to basic GPU manager
+                    try:
+                        tprint("🎮 Using basic GPU manager (enhanced not available)")
                         if hasattr(self.gpu_manager, 'initialize_context'):
                             self.gpu_manager.initialize_context()
                         gpu_acquired = True
-                        tprint("🎮 GPU resources acquired successfully")
+                        tprint("🎮 Basic GPU resources acquired successfully")
                     except Exception as e:
-                        tprint(f"⚠️ GPU acquisition failed: {e}")
+                        tprint(f"⚠️ Basic GPU acquisition failed: {e}")
                         gpu_acquired = False
                 
                 yield gpu_acquired
                 
             finally:
-                # Always cleanup GPU resources
+                # Always cleanup GPU resources using enhanced methods
                 if gpu_acquired and self.gpu_manager:
                     try:
-                        if hasattr(self.gpu_manager, 'cleanup_gpu_memory'):
-                            self.gpu_manager.cleanup_gpu_memory()
-                        if hasattr(self.gpu_manager, 'cleanup_context'):
-                            self.gpu_manager.cleanup_context()
-                        tprint("🧹 GPU resources cleaned up successfully")
+                        if ENHANCED_GPU_AVAILABLE:
+                            # Enhanced cleanup
+                            if memory_pool_created and hasattr(self.gpu_manager, 'cleanup_memory_pool'):
+                                self.gpu_manager.cleanup_memory_pool('hmm_training')
+                                tprint("🧹 GPU memory pool cleaned up")
+                            
+                            if hasattr(self.gpu_manager, 'cleanup_enhanced_context'):
+                                self.gpu_manager.cleanup_enhanced_context()
+                            elif hasattr(self.gpu_manager, 'cleanup_gpu_memory'):
+                                self.gpu_manager.cleanup_gpu_memory()
+                                
+                            if hasattr(self.gpu_manager, 'force_memory_cleanup'):
+                                freed_mb = self.gpu_manager.force_memory_cleanup()
+                                tprint(f"🧹 Enhanced GPU cleanup: {freed_mb:.1f} MB freed")
+                            
+                            tprint("🧹 Enhanced GPU resources cleaned up successfully")
+                        else:
+                            # Basic cleanup
+                            if hasattr(self.gpu_manager, 'cleanup_gpu_memory'):
+                                self.gpu_manager.cleanup_gpu_memory()
+                            if hasattr(self.gpu_manager, 'cleanup_context'):
+                                self.gpu_manager.cleanup_context()
+                            tprint("🧹 Basic GPU resources cleaned up successfully")
+                            
                     except Exception as cleanup_error:
                         tprint(f"⚠️ GPU cleanup warning: {cleanup_error}")
         
@@ -855,7 +976,25 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
             
             # Normalize features using matrix operations with fallback
             # Note: X.shape[1] > 0 check is redundant since earlier validation ensures non-empty data
-            if self.matrix_ops is not None:
+            # Use advanced memory optimizer for dataframe operations if available
+            if self.memory_optimizer and ADVANCED_MEMORY_AVAILABLE:
+                try:
+                    X_normalized = optimize_dataframe_advanced(X, operation='normalize', method='standard')
+                    tprint(f"✅ Features normalized using advanced memory optimizer: {X_normalized.shape}")
+                except Exception as e:
+                    tprint(f"⚠️ Advanced normalization failed: {e}, falling back to matrix operations")
+                    # Fallback to matrix operations
+                    if self.matrix_ops is not None:
+                        X_normalized = self.matrix_ops.normalize_matrix(X, method='zscore')
+                        tprint(f"✅ Features normalized using matrix operations: {X_normalized.shape}")
+                    else:
+                        # Final fallback to standard sklearn normalization
+                        tprint("⚠️ Matrix operations not available, using fallback normalization")
+                        from sklearn.preprocessing import StandardScaler
+                        scaler = StandardScaler()
+                        X_normalized = scaler.fit_transform(X)
+                        tprint(f"✅ Features normalized using fallback StandardScaler: {X_normalized.shape}")
+            elif self.matrix_ops is not None:
                 X_normalized = self.matrix_ops.normalize_matrix(X, method='zscore')
                 tprint(f"✅ Features normalized using matrix operations: {X_normalized.shape}")
             else:

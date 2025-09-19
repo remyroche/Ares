@@ -46,6 +46,11 @@ from src.utils.common_operations import (
     get_m1_memory_optimizer, get_m1_cpu_optimizer, validate_dataframe
 )
 
+# Import existing indicator implementations from feature_generation
+from src.feature_generation.utils.optimized_cross_timeframe_analysis_integration import (
+    OptimizedCrossTimeframeAnalysisIntegration
+)
+
 from src.utils.math_validation import (
     safe_divide, safe_log, safe_sqrt, safe_power, validate_finite,
     validate_positive, validate_range, safe_kelly_calculation,
@@ -169,6 +174,9 @@ class TacticianLookbackOptimizer:
             'pickle': PickleSerializer(),
             'parquet': ParquetSerializer()
         }
+        
+        # Initialize feature generator for indicator calculations
+        self.feature_generator = OptimizedCrossTimeframeAnalysisIntegration()
         
         # Optimization state
         self.optimization_results = {}
@@ -322,11 +330,17 @@ class TacticianLookbackOptimizer:
             raise
     
     def _get_indicator_calculator(self, indicator: str):
-        """Get calculator function for a specific indicator."""
-        indicator_calculators = {
-            "rsi": self._calculate_rsi,
+        """Get calculator function for a specific indicator using existing feature_generation implementations."""
+        # Map indicators to feature generator methods where available
+        feature_generator_map = {
+            "rsi": lambda data, lookback: self.feature_generator._calculate_rsi(data['close'], period=lookback),
+            "atr": lambda data, lookback: self.feature_generator._calculate_atr(data, period=lookback),
+        }
+        
+        # For indicators not yet in feature_generator, use local implementations
+        # TODO: Move these to feature_generation module for consistency
+        local_calculators = {
             "macd": self._calculate_macd,
-            "atr": self._calculate_atr,
             "bollinger_bands": self._calculate_bollinger_bands,
             "stoch": self._calculate_stochastic,
             "volume_sma": self._calculate_volume_sma,
@@ -343,28 +357,33 @@ class TacticianLookbackOptimizer:
             "ema": self._calculate_ema
         }
         
-        calculator = indicator_calculators.get(indicator)
-        if calculator is None:
+        # Prefer feature generator implementations
+        if indicator in feature_generator_map:
+            return feature_generator_map[indicator]
+        elif indicator in local_calculators:
+            return local_calculators[indicator]
+        else:
             tprint_warning(f"⚠️ Unknown indicator: {indicator}, using SMA as fallback")
             return self._calculate_sma
-        
-        return calculator
+    
+    # ========================================================================
+    # TECHNICAL INDICATOR CALCULATIONS
+    # 
+    # NOTE: These implementations should be consolidated with feature_generation/
+    # Currently using feature_generator for RSI and ATR, local implementations for others
+    # TODO: Move all remaining indicators to feature_generation module for consistency
+    # ========================================================================
     
     def _calculate_rsi(self, data: pd.DataFrame, lookback: int) -> pd.Series:
-        """Calculate RSI with given lookback period."""
+        """Calculate RSI with given lookback period using existing feature generator."""
         try:
-            delta = data['close'].diff()
-            gain = (delta.where(delta > 0, 0)).rolling(window=lookback).mean()
-            loss = (-delta.where(delta < 0, 0)).rolling(window=lookback).mean()
-            rs = safe_divide(gain, loss, default_value=1.0)
-            rsi = 100 - (100 / (1 + rs))
-            return rsi
+            return self.feature_generator._calculate_rsi(data['close'], period=lookback)
         except Exception as e:
             self.logger.warning(f"RSI calculation failed: {e}")
             return pd.Series(index=data.index, dtype=float)
     
     def _calculate_macd(self, data: pd.DataFrame, lookback: int) -> pd.Series:
-        """Calculate MACD with given lookback period."""
+        """Calculate MACD with given lookback period. TODO: Move to feature_generation module."""
         try:
             fast_period = max(1, lookback // 2)
             slow_period = lookback
@@ -378,21 +397,15 @@ class TacticianLookbackOptimizer:
             return pd.Series(index=data.index, dtype=float)
     
     def _calculate_atr(self, data: pd.DataFrame, lookback: int) -> pd.Series:
-        """Calculate ATR with given lookback period."""
+        """Calculate ATR with given lookback period using existing feature generator."""
         try:
-            high_low = data['high'] - data['low']
-            high_close = np.abs(data['high'] - data['close'].shift())
-            low_close = np.abs(data['low'] - data['close'].shift())
-            
-            true_range = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
-            atr = true_range.rolling(window=lookback).mean()
-            return atr
+            return self.feature_generator._calculate_atr(data, period=lookback)
         except Exception as e:
             self.logger.warning(f"ATR calculation failed: {e}")
             return pd.Series(index=data.index, dtype=float)
     
     def _calculate_bollinger_bands(self, data: pd.DataFrame, lookback: int) -> pd.Series:
-        """Calculate Bollinger Bands middle line (SMA) with given lookback period."""
+        """Calculate Bollinger Bands middle line (SMA) with given lookback period. TODO: Move to feature_generation module."""
         try:
             sma = data['close'].rolling(window=lookback).mean()
             return sma

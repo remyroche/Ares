@@ -11,6 +11,10 @@ This module provides feature generators organized by category, including:
 - Support/Resistance features (pivot points, levels, etc.)
 - Candlestick pattern features (doji, hammer, etc.)
 - HMM regime features (regime detection, regime-specific features, etc.)
+- Acceleration features (momentum, acceleration, jerk, trend strength, etc.)
+- Interaction features (momentum divergence, volatility-volume, etc.)
+- Cross-timeframe features (multi-timeframe momentum, volatility, etc.)
+- Entropy features (15 comprehensive entropy indicators)
 """
 
 from .returns import ReturnsFeatureGenerator
@@ -38,17 +42,71 @@ from .hmm_performance_metrics import (
     create_hmm_performance_features_from_result,
     integrate_hmm_metrics_with_features
 )
+
+# New consolidated categories
+from .acceleration import (
+    AccelerationFeatureGenerator,
+    MomentumGenerator,
+    PriceAccelerationGenerator,
+    PriceJerkGenerator,
+    TrendStrengthGenerator,
+    TrendConsistencyGenerator,
+    VolumeAccelerationGenerator,
+    VolatilityAccelerationGenerator,
+    create_acceleration_generators
+)
 from .interaction import (
     InteractionFeatureGenerator,
+    MomentumDivergenceGenerator,
+    MomentumVolumeGenerator,
+    MomentumVolatilityGenerator,
+    MomentumTrendGenerator,
+    VolatilityVolumeGenerator,
+    VolatilityPriceGenerator,
+    VolatilityHighLowGenerator,
+    VolatilityMomentumGenerator,
+    VolatilityTrendGenerator,
+    create_interaction_generators,
+    # Legacy interaction generators
     CrossTimeframeInteractionGenerator,
     FeatureRatioGenerator,
     PolynomialFeatureGenerator,
     CorrelationInteractionGenerator,
-    create_interaction_generators,
     create_default_interaction_generators
 )
+from .cross_timeframe import (
+    CrossTimeframeFeatureGenerator,
+    CrossTimeframeMomentumGenerator,
+    CrossTimeframeVolatilityGenerator,
+    CrossTimeframeVolumeGenerator,
+    CrossTimeframeTrendGenerator,
+    CrossTimeframeHighLowGenerator,
+    CrossTimeframeRatioGenerator,
+    CrossTimeframeCorrelationGenerator,
+    CrossTimeframeDivergenceGenerator,
+    create_cross_timeframe_generators
+)
+from .entropy import (
+    EntropyFeatureGenerator,
+    PriceEntropyGenerator,
+    VolumeEntropyGenerator,
+    ReturnEntropyGenerator,
+    PriceEntropyMAGenerator,
+    VolumeEntropyMAGenerator,
+    ReturnEntropyMAGenerator,
+    HighLowEntropyGenerator,
+    VolatilityEntropyGenerator,
+    MomentumEntropyGenerator,
+    RSIEntropyGenerator,
+    MACDEntropyGenerator,
+    BollingerBandsEntropyGenerator,
+    CrossAssetEntropyGenerator,
+    RegimeEntropyGenerator,
+    create_entropy_generators,
+    create_default_entropy_generators
+)
+
 from .microstructure import create_default_microstructure_generators
-from .entropy import create_default_entropy_generators
 from .autoencoder import create_default_autoencoder_generators
 from .order_flow import create_default_order_flow_generators
 from .cross_timeframe import create_default_cross_timeframe_generators
@@ -57,6 +115,7 @@ from .legacy import create_default_legacy_generators
 from .time import create_default_time_generators
 
 __all__ = [
+    # Core categories
     "ReturnsFeatureGenerator",
     "MomentumFeatureGenerator",
     "VolumeFeatureGenerator", 
@@ -65,6 +124,8 @@ __all__ = [
     "OscillatorFeatureGenerator",
     "SupportResistanceFeatureGenerator",
     "CandlestickPatternFeatureGenerator",
+    
+    # HMM Regime
     "HMMRegimeFeatureGenerator",
     "HMMRegimeLabelGenerator",
     "HMMRegimeProbabilityGenerator",
@@ -78,19 +139,71 @@ __all__ = [
     "HMMPerformanceMetricsFeatureGenerator",
     "create_hmm_performance_features_from_result",
     "integrate_hmm_metrics_with_features",
+    
+    # New consolidated categories
+    "AccelerationFeatureGenerator",
+    "MomentumGenerator",
+    "PriceAccelerationGenerator",
+    "PriceJerkGenerator",
+    "TrendStrengthGenerator",
+    "TrendConsistencyGenerator",
+    "VolumeAccelerationGenerator",
+    "VolatilityAccelerationGenerator",
+    "create_acceleration_generators",
+    
     "InteractionFeatureGenerator",
+    "MomentumDivergenceGenerator",
+    "MomentumVolumeGenerator",
+    "MomentumVolatilityGenerator",
+    "MomentumTrendGenerator",
+    "VolatilityVolumeGenerator",
+    "VolatilityPriceGenerator",
+    "VolatilityHighLowGenerator",
+    "VolatilityMomentumGenerator",
+    "VolatilityTrendGenerator",
+    "create_interaction_generators",
+    
+    "CrossTimeframeFeatureGenerator",
+    "CrossTimeframeMomentumGenerator",
+    "CrossTimeframeVolatilityGenerator",
+    "CrossTimeframeVolumeGenerator",
+    "CrossTimeframeTrendGenerator",
+    "CrossTimeframeHighLowGenerator",
+    "CrossTimeframeRatioGenerator",
+    "CrossTimeframeCorrelationGenerator",
+    "CrossTimeframeDivergenceGenerator",
+    "create_cross_timeframe_generators",
+    
+    "EntropyFeatureGenerator",
+    "PriceEntropyGenerator",
+    "VolumeEntropyGenerator",
+    "ReturnEntropyGenerator",
+    "PriceEntropyMAGenerator",
+    "VolumeEntropyMAGenerator",
+    "ReturnEntropyMAGenerator",
+    "HighLowEntropyGenerator",
+    "VolatilityEntropyGenerator",
+    "MomentumEntropyGenerator",
+    "RSIEntropyGenerator",
+    "MACDEntropyGenerator",
+    "BollingerBandsEntropyGenerator",
+    "CrossAssetEntropyGenerator",
+    "RegimeEntropyGenerator",
+    "create_entropy_generators",
+    
+    # Legacy interaction generators
     "CrossTimeframeInteractionGenerator",
     "FeatureRatioGenerator",
     "PolynomialFeatureGenerator",
     "CorrelationInteractionGenerator",
-    "create_interaction_generators",
     "create_default_interaction_generators",
+    
+    # Other categories
     "create_default_microstructure_generators",
     "create_default_entropy_generators",
     "create_default_autoencoder_generators",
     "create_default_order_flow_generators",
     "create_default_cross_timeframe_generators",
-    # "create_default_regime_generators", # Deleted - replaced by HMM regime system
     "create_default_legacy_generators",
     "create_default_time_generators"
 ]

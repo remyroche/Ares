@@ -91,6 +91,7 @@ except ImportError as e:
 # Category-specific generators
 try:
     from .categories import (
+        # Core categories
         ReturnsFeatureGenerator,
         MomentumFeatureGenerator,
         VolumeFeatureGenerator,
@@ -100,12 +101,52 @@ try:
         VolatilityFeatureGenerator,
         TrendFeatureGenerator,
         OscillatorFeatureGenerator,
+        
+        # New consolidated categories
+        AccelerationFeatureGenerator,
         InteractionFeatureGenerator,
+        CrossTimeframeFeatureGenerator,
+        EntropyFeatureGenerator,
+        
+        # Specific generators from new categories
+        MomentumGenerator,
+        PriceAccelerationGenerator,
+        PriceJerkGenerator,
+        TrendStrengthGenerator,
+        TrendConsistencyGenerator,
+        VolumeAccelerationGenerator,
+        VolatilityAccelerationGenerator,
+        create_acceleration_generators,
+        
+        MomentumDivergenceGenerator,
+        MomentumVolumeGenerator,
+        MomentumVolatilityGenerator,
+        VolatilityVolumeGenerator,
+        create_interaction_generators,
+        
+        CrossTimeframeMomentumGenerator,
+        CrossTimeframeVolatilityGenerator,
+        CrossTimeframeVolumeGenerator,
+        create_cross_timeframe_generators,
+        
+        PriceEntropyGenerator,
+        VolumeEntropyGenerator,
+        ReturnEntropyGenerator,
+        HighLowEntropyGenerator,
+        VolatilityEntropyGenerator,
+        MomentumEntropyGenerator,
+        RSIEntropyGenerator,
+        MACDEntropyGenerator,
+        BollingerBandsEntropyGenerator,
+        CrossAssetEntropyGenerator,
+        RegimeEntropyGenerator,
+        create_entropy_generators,
+        
+        # Legacy interaction generators
         CrossTimeframeInteractionGenerator,
         FeatureRatioGenerator,
         PolynomialFeatureGenerator,
         CorrelationInteractionGenerator,
-        create_interaction_generators,
         create_default_interaction_generators
     )
     CATEGORIES_AVAILABLE = True

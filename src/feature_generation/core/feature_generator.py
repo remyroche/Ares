@@ -36,6 +36,8 @@ class FeatureCategory(Enum):
     LEGACY = "legacy"
     TIME = "time"
     CUSTOM = "custom"
+    ACCELERATION = "acceleration"
+    INTERACTION = "interaction"
 
 @dataclass
 class FeatureConfig:

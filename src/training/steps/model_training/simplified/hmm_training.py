@@ -198,15 +198,38 @@ class HMMTrainingPipeline:
             return None
 
     async def _extract_100_hmm_features(self, regime_data: Dict[str, Any]) -> pd.DataFrame:
-        """Extract 100 features suitable for enhanced HMM training - same features used in live trading."""
+        """Extract 100+ features suitable for enhanced HMM training using consolidated feature generators."""
         try:
             # Convert regime data to DataFrame
             df = pd.DataFrame.from_dict(regime_data)
 
-            # Initialize features DataFrame
-            features = pd.DataFrame()
+            # Initialize features DataFrame using consolidated feature generators
+            from src.feature_generation.categories import (
+                create_acceleration_generators,
+                create_interaction_generators,
+                create_cross_timeframe_generators,
+                create_entropy_generators
+            )
+            
+            features = pd.DataFrame(index=df.index)
 
-            # Price-based features (20 features)
+            # Generate features using consolidated generators
+            all_generators = []
+            all_generators.extend(create_acceleration_generators())
+            all_generators.extend(create_interaction_generators())
+            all_generators.extend(create_cross_timeframe_generators())
+            all_generators.extend(create_entropy_generators())
+            
+            # Generate features from consolidated generators
+            for generator in all_generators:
+                try:
+                    feature_series = generator._generate_feature(df)
+                    features[generator.config.name] = feature_series
+                except Exception as e:
+                    tprint_warning(f"⚠️ Failed to generate {generator.config.name}: {e}")
+                    continue
+
+            # Price-based features (20 features) - keep original implementation for compatibility
             if 'close' in df.columns:
                 features['returns'] = df['close'].pct_change()
                 features['log_returns'] = np.log(df['close'] / df['close'].shift(1))
@@ -323,22 +346,30 @@ class HMMTrainingPipeline:
             features['ctf_15m_hl'] = (df['high'] - df['low']).rolling(window=15).mean()
             features['ctf_30m_hl'] = (df['high'] - df['low']).rolling(window=30).mean()
 
-            # Fill missing values and ensure we have exactly 100 features
+            # Fill missing values and clean up features
             features = features.fillna(method='ffill').fillna(0)
             
-            # Select exactly 100 features
-            if len(features.columns) > self.n_features:
-                # Select the most important features
-                feature_importance = features.corrwith(features['returns']).abs().sort_values(ascending=False)
-                selected_features = feature_importance.head(self.n_features).index.tolist()
-                features = features[selected_features]
-            elif len(features.columns) < self.n_features:
-                # Pad with additional features if needed
-                missing_features = self.n_features - len(features.columns)
-                for i in range(missing_features):
-                    features[f'feature_{i}'] = np.random.randn(len(features))
+            # Remove any infinite values
+            features = features.replace([np.inf, -np.inf], 0)
+            
+            # Feature selection based on target number
+            target_features = self.n_features if hasattr(self, 'n_features') else 100
+            
+            if len(features.columns) > target_features:
+                # Select the most important features using correlation with returns
+                if 'returns' in features.columns:
+                    feature_importance = features.corrwith(features['returns']).abs().sort_values(ascending=False)
+                    selected_features = feature_importance.head(target_features).index.tolist()
+                    features = features[selected_features]
+                else:
+                    # If no returns column, select first N features
+                    features = features.iloc[:, :target_features]
+            elif len(features.columns) < target_features:
+                # We have consolidated features, so this should provide more than enough
+                tprint_info(f"ℹ️ Generated {len(features.columns)} consolidated features (target: {target_features})")
 
-            tprint_success(f"✅ Extracted {len(features.columns)} features for enhanced HMM training")
+            tprint_success(f"✅ Extracted {len(features.columns)} consolidated features for enhanced HMM training")
+            tprint_info(f"📊 Feature categories: Acceleration, Interaction, Cross-timeframe, Entropy + Legacy features")
             return features
 
         except Exception as e:

@@ -866,26 +866,18 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             import pandas as pd
             import numpy as np
             
-            # Momentum features (enhanced sensitivity with multiple timeframes)
+            # Momentum features (focused set for clustering compatibility)
             momentum_features = pd.DataFrame(index=market_data.index)
-            # Multiple timeframes for better sensitivity
+            # Only the 3 specified momentum features
             momentum_features['momentum_1h'] = market_data['close'].pct_change(1)  # Short-term
             momentum_features['momentum_2h'] = market_data['close'].pct_change(2)  # Medium-term  
             momentum_features['momentum_4h'] = market_data['close'].pct_change(4)  # Longer-term
-            # Add momentum acceleration (change in momentum)
-            momentum_features['momentum_acceleration'] = momentum_features['momentum_1h'].diff(1)
-            # Add relative strength vs moving average
-            momentum_features['rsi_divergence'] = (market_data['close'] - market_data['close'].rolling(6).mean()) / market_data['close'].rolling(6).std()
             
-            # Volatility features (enhanced sensitivity with multiple measures)
+            # Volatility features (focused set for clustering compatibility)
             volatility_features = pd.DataFrame(index=market_data.index)
-            # Multiple volatility measures for better sensitivity
+            # Only the 3 specified volatility features
             volatility_features['volatility_intrabar'] = (market_data['high'] - market_data['low']) / market_data['close']
             volatility_features['volatility_3h'] = market_data['close'].rolling(3).std()  # Short-term
-            volatility_features['volatility_6h'] = market_data['close'].rolling(6).std()  # Medium-term
-            volatility_features['volatility_12h'] = market_data['close'].rolling(12).std()  # Longer-term
-            # Add volatility of volatility (volatility clustering detection)
-            volatility_features['volatility_of_volatility'] = volatility_features['volatility_6h'].rolling(3).std()
             # ATR for true range volatility
             high_vals = market_data['high'].values.astype(np.float32)
             low_vals = market_data['low'].values.astype(np.float32)
@@ -900,15 +892,12 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             atr_padded[1:len(atr_values)+1] = atr_values
             volatility_features['atr_6h'] = atr_padded
             
-            # Volume features (enhanced sensitivity with multiple measures)
+            # Volume features (focused set for clustering compatibility)
             epsilon = 1e-8
             volume_features = pd.DataFrame(index=market_data.index)
-            # Multiple volume timeframes for better sensitivity
+            # Only the 3 specified volume features
             volume_features['volume_momentum_1h'] = market_data['volume'].pct_change(1)  # Short-term
             volume_features['volume_momentum_3h'] = market_data['volume'].pct_change(3)  # Medium-term
-            volume_features['volume_momentum_6h'] = market_data['volume'].pct_change(6)  # Longer-term
-            # Add volume acceleration (change in volume momentum)
-            volume_features['volume_acceleration'] = volume_features['volume_momentum_1h'].diff(1)
             # Volume ratio - 24h baseline for stable comparison
             volume_features['volume_ratio_24h'] = market_data['volume'] / (market_data['volume'].rolling(24).mean() + epsilon)
             
@@ -933,10 +922,11 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             
             momentum_clean, volatility_clean, volume_clean = cleaned_features
             
-            self.logger.info(f"📊 Prepared grouped features:")
-            self.logger.info(f"   • Momentum: {momentum_clean.shape[1]} features")
-            self.logger.info(f"   • Volatility: {volatility_clean.shape[1]} features")
-            self.logger.info(f"   • Volume: {volume_clean.shape[1]} features")
+            self.logger.info(f"📊 Prepared focused feature set for clustering:")
+            self.logger.info(f"   • Momentum: {momentum_clean.shape[1]} features (1h, 2h, 4h)")
+            self.logger.info(f"   • Volatility: {volatility_clean.shape[1]} features (intrabar, 3h, atr_6h)")
+            self.logger.info(f"   • Volume: {volume_clean.shape[1]} features (1h, 3h, ratio_24h)")
+            self.logger.info(f"   • Total: {momentum_clean.shape[1] + volatility_clean.shape[1] + volume_clean.shape[1]} features")
             
             return momentum_clean, volatility_clean, volume_clean
             

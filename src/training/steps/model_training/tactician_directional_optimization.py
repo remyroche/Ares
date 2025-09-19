@@ -65,7 +65,7 @@ class DirectionalOptimizationResult:
 
 
 class EntryTimingLossFunction:
-    """Custom loss functions for entry timing optimization with confidence scoring."""
+    """Custom loss functions for entry timing optimization with confidence scoring and asymmetric directional optimization."""
     
     @staticmethod
     def early_entry_penalty_loss(y_true: np.ndarray, y_pred: np.ndarray, 
@@ -88,6 +88,47 @@ class EntryTimingLossFunction:
         early_penalty = np.mean(np.maximum(0, -timing_error))
         
         return early_penalty
+    
+    @staticmethod
+    def asymmetric_entry_timing_loss(y_true: np.ndarray, y_pred: np.ndarray, 
+                                   analyst_confidence: np.ndarray, 
+                                   direction_labels: np.ndarray) -> float:
+        """
+        Asymmetric loss that considers direction-specific timing requirements.
+        
+        Args:
+            y_true: True optimal entry timing
+            y_pred: Predicted entry timing
+            analyst_confidence: Analyst confidence levels
+            direction_labels: Direction labels (>0 for long, <0 for short)
+            
+        Returns:
+            Asymmetric entry timing loss
+        """
+        # Separate long and short predictions
+        long_mask = direction_labels > 0
+        short_mask = direction_labels < 0
+        
+        total_loss = 0.0
+        
+        # Long positions: Allow more patient timing (20% more tolerance)
+        if np.any(long_mask):
+            long_timing_error = np.abs(y_pred[long_mask] - y_true[long_mask])
+            long_loss = np.mean(long_timing_error * 0.8)  # 20% more tolerance
+            total_loss += long_loss
+        
+        # Short positions: Require faster execution (30% less tolerance)
+        if np.any(short_mask):
+            short_timing_error = np.abs(y_pred[short_mask] - y_true[short_mask])
+            short_loss = np.mean(short_timing_error * 1.3)  # 30% less tolerance
+            total_loss += short_loss
+        
+        # Weight by analyst confidence
+        if len(analyst_confidence) > 0:
+            confidence_weight = np.mean(analyst_confidence)
+            total_loss = total_loss / max(confidence_weight, 0.1)  # Avoid division by zero
+        
+        return total_loss
     
     @staticmethod
     def late_entry_penalty_loss(y_true: np.ndarray, y_pred: np.ndarray, 
@@ -160,6 +201,87 @@ class EntryTimingLossFunction:
         efficiency = np.mean(potential_profit) / max_profit if max_profit > 0 else 0
         
         return 1.0 - efficiency  # Return loss (1 - efficiency)
+    
+    @staticmethod
+    def directional_profit_efficiency_loss(y_true: np.ndarray, y_pred: np.ndarray, 
+                                         direction_labels: np.ndarray, 
+                                         expected_movement: float = 0.01) -> float:
+        """
+        Asymmetric profit efficiency considering direction-specific expectations.
+        
+        Args:
+            y_true: True optimal entry timing
+            y_pred: Predicted entry timing
+            direction_labels: Direction labels (>0 for long, <0 for short)
+            expected_movement: Base expected movement
+            
+        Returns:
+            Directional profit efficiency loss
+        """
+        long_mask = direction_labels > 0
+        short_mask = direction_labels < 0
+        
+        total_efficiency = 0.0
+        
+        # Long efficiency: Optimize for sustained moves
+        if np.any(long_mask):
+            long_timing_error = np.abs(y_pred[long_mask] - y_true[long_mask])
+            # Longer expected movement for longs (20% higher expectation)
+            long_expected = expected_movement * 1.2
+            long_profit = long_expected - long_timing_error
+            long_efficiency = np.mean(long_profit) / long_expected if long_expected > 0 else 0
+            total_efficiency += long_efficiency
+        
+        # Short efficiency: Optimize for quick moves
+        if np.any(short_mask):
+            short_timing_error = np.abs(y_pred[short_mask] - y_true[short_mask])
+            # Shorter but more volatile expected movement for shorts (20% lower but faster)
+            short_expected = expected_movement * 0.8
+            short_profit = short_expected - short_timing_error
+            short_efficiency = np.mean(short_profit) / short_expected if short_expected > 0 else 0
+            total_efficiency += short_efficiency
+        
+        # Return combined efficiency loss
+        avg_efficiency = total_efficiency / 2 if (np.any(long_mask) and np.any(short_mask)) else total_efficiency
+        return 1.0 - avg_efficiency
+    
+    @staticmethod
+    def risk_adjusted_asymmetric_loss(y_true: np.ndarray, y_pred: np.ndarray, 
+                                    direction_labels: np.ndarray, 
+                                    volatility_context: float) -> float:
+        """
+        Risk-adjusted loss considering directional volatility patterns.
+        
+        Args:
+            y_true: True optimal entry timing
+            y_pred: Predicted entry timing
+            direction_labels: Direction labels (>0 for long, <0 for short)
+            volatility_context: Current market volatility context
+            
+        Returns:
+            Risk-adjusted asymmetric loss
+        """
+        long_mask = direction_labels > 0
+        short_mask = direction_labels < 0
+        
+        # Adjust for volatility context
+        vol_adjustment = np.clip(volatility_context, 0.5, 2.0)  # Cap volatility impact
+        
+        total_risk = 0.0
+        
+        # Long risk adjustment: Lower volatility tolerance
+        if np.any(long_mask):
+            long_error = np.abs(y_pred[long_mask] - y_true[long_mask])
+            long_risk = np.mean(long_error * vol_adjustment * 0.9)  # 10% lower vol tolerance
+            total_risk += long_risk
+        
+        # Short risk adjustment: Higher volatility tolerance
+        if np.any(short_mask):
+            short_error = np.abs(y_pred[short_mask] - y_true[short_mask])
+            short_risk = np.mean(short_error * vol_adjustment * 1.1)  # 10% higher vol tolerance
+            total_risk += short_risk
+        
+        return total_risk / 2 if (np.any(long_mask) and np.any(short_mask)) else total_risk
     
     @staticmethod
     def directional_consistency_simple_loss(y_true: np.ndarray, y_pred: np.ndarray) -> float:
@@ -598,16 +720,24 @@ class EntryTimingTacticianOptimizer:
             'study': study
         }
     
-    def _evaluate_entry_timing_metrics(self, model: Any, X: np.ndarray, y: np.ndarray) -> Dict[str, float]:
-        """Evaluate entry timing metrics for a model."""
+    def _evaluate_entry_timing_metrics(self, model: Any, X: np.ndarray, y: np.ndarray, 
+                                      direction_labels: Optional[np.ndarray] = None, 
+                                      analyst_confidence: Optional[np.ndarray] = None) -> Dict[str, float]:
+        """Evaluate entry timing metrics for a model with asymmetric directional optimization."""
         # Get predictions
         y_pred = model.predict(X)
         
-        # Calculate early entry penalty (minimize entering too early)
+        # Infer direction labels if not provided
+        if direction_labels is None:
+            direction_labels = np.sign(y)
+        
+        # Default analyst confidence if not provided
+        if analyst_confidence is None:
+            analyst_confidence = np.ones(len(y)) * 0.8
+        
+        # Calculate traditional metrics
         timing_error = y_pred - y
         early_entry_penalty = np.mean(np.maximum(0, -timing_error))
-        
-        # Calculate late entry penalty (minimize entering too late)
         late_entry_penalty = np.mean(np.maximum(0, timing_error))
         
         # Calculate optimal entry reward (maximize entries within tolerance)
@@ -616,10 +746,26 @@ class EntryTimingTacticianOptimizer:
         optimal_mask = timing_accuracy <= tolerance
         optimal_entry_reward = np.mean(optimal_mask)
         
-        # Calculate entry timing efficiency (maximize profit from optimal timing)
+        # Calculate traditional entry timing efficiency
         expected_movement = 0.01  # Expected 1% movement
         potential_profit = expected_movement - timing_accuracy
         entry_timing_efficiency = np.mean(potential_profit) / expected_movement if expected_movement > 0 else 0
+        
+        # Calculate asymmetric loss functions
+        asymmetric_timing_loss = self.loss_functions.asymmetric_entry_timing_loss(
+            y, y_pred, analyst_confidence, direction_labels
+        )
+        
+        asymmetric_profit_loss = self.loss_functions.directional_profit_efficiency_loss(
+            y, y_pred, direction_labels, expected_movement
+        )
+        
+        # Calculate volatility context for risk adjustment
+        volatility_context = np.std(y) / np.mean(np.abs(y)) if np.mean(np.abs(y)) > 0 else 1.0
+        
+        asymmetric_risk_loss = self.loss_functions.risk_adjusted_asymmetric_loss(
+            y, y_pred, direction_labels, volatility_context
+        )
         
         # Calculate simple directional consistency
         directional_consistency = self.loss_functions.directional_consistency_simple_loss(y, y_pred)
@@ -628,25 +774,75 @@ class EntryTimingTacticianOptimizer:
         confidence_scores = self.loss_functions.calculate_confidence_score(y, y_pred, tolerance)
         avg_confidence = np.mean(confidence_scores)
         
-        # Calculate composite score (optimized weights)
+        # Calculate directional breakdown statistics
+        directional_breakdown = self._calculate_directional_breakdown(y, y_pred, direction_labels)
+        
+        # Enhanced composite score with asymmetric weighting
         composite_score = (
-            0.25 * (1 - early_entry_penalty) +      # Minimize early entry penalty
-            0.25 * (1 - late_entry_penalty) +       # Minimize late entry penalty
-            0.2 * optimal_entry_reward +            # Maximize optimal entry reward
-            0.2 * entry_timing_efficiency +         # Maximize entry timing efficiency
-            0.1 * (1 - directional_consistency)     # Minimize directional inconsistency
+            0.2 * (1 - early_entry_penalty) +          # Traditional early penalty
+            0.2 * (1 - late_entry_penalty) +           # Traditional late penalty
+            0.25 * (1 - asymmetric_timing_loss) +      # Asymmetric timing loss
+            0.15 * (1 - asymmetric_profit_loss) +      # Asymmetric profit efficiency
+            0.1 * (1 - asymmetric_risk_loss) +         # Asymmetric risk adjustment
+            0.1 * (1 - directional_consistency)        # Directional consistency
         )
         
         return {
+            # Traditional metrics
             'early_entry_penalty': early_entry_penalty,
             'late_entry_penalty': late_entry_penalty,
             'optimal_entry_reward': optimal_entry_reward,
             'entry_timing_efficiency': entry_timing_efficiency,
+            
+            # Asymmetric metrics
+            'asymmetric_timing_loss': asymmetric_timing_loss,
+            'asymmetric_profit_loss': asymmetric_profit_loss,
+            'asymmetric_risk_loss': asymmetric_risk_loss,
+            
+            # General metrics
             'directional_consistency': directional_consistency,
             'avg_confidence_score': avg_confidence,
             'confidence_scores': confidence_scores,
-            'composite_score': composite_score
+            'volatility_context': volatility_context,
+            
+            # Composite and breakdown
+            'composite_score': composite_score,
+            'directional_breakdown': directional_breakdown
         }
+    
+    def _calculate_directional_breakdown(self, y_true: np.ndarray, y_pred: np.ndarray, 
+                                       direction_labels: np.ndarray) -> Dict[str, float]:
+        """Calculate performance breakdown by direction."""
+        long_mask = direction_labels > 0
+        short_mask = direction_labels < 0
+        
+        breakdown = {
+            'total_samples': len(y_true),
+            'long_samples': np.sum(long_mask),
+            'short_samples': np.sum(short_mask),
+            'long_ratio': np.mean(long_mask),
+            'short_ratio': np.mean(short_mask)
+        }
+        
+        # Long performance
+        if np.any(long_mask):
+            long_error = np.abs(y_pred[long_mask] - y_true[long_mask])
+            breakdown.update({
+                'long_mae': np.mean(long_error),
+                'long_std': np.std(long_error),
+                'long_accuracy_01pct': np.mean(long_error <= 0.001)  # Within 0.1%
+            })
+        
+        # Short performance
+        if np.any(short_mask):
+            short_error = np.abs(y_pred[short_mask] - y_true[short_mask])
+            breakdown.update({
+                'short_mae': np.mean(short_error),
+                'short_std': np.std(short_error),
+                'short_accuracy_01pct': np.mean(short_error <= 0.001)  # Within 0.1%
+            })
+        
+        return breakdown
     
     def _train_final_entry_timing_model(self,
                                      X: np.ndarray,

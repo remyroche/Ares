@@ -50,6 +50,9 @@ from src.utils.common_operations import (
 from src.feature_generation.utils.optimized_cross_timeframe_analysis_integration import (
     OptimizedCrossTimeframeAnalysisIntegration
 )
+from src.feature_generation.categories.momentum import MomentumFeatureGenerator
+from src.feature_generation.categories.trend import TrendFeatureGenerator  
+from src.feature_generation.categories.volume import VolumeFeatureGenerator
 
 from src.utils.math_validation import (
     safe_divide, safe_log, safe_sqrt, safe_power, validate_finite,
@@ -175,8 +178,11 @@ class TacticianLookbackOptimizer:
             'parquet': ParquetSerializer()
         }
         
-        # Initialize feature generator for indicator calculations
-        self.feature_generator = OptimizedCrossTimeframeAnalysisIntegration()
+        # Initialize feature generators for indicator calculations
+        self.cross_timeframe_generator = OptimizedCrossTimeframeAnalysisIntegration()
+        self.momentum_generator = MomentumFeatureGenerator()
+        self.trend_generator = TrendFeatureGenerator() 
+        self.volume_generator = VolumeFeatureGenerator()
         
         # Optimization state
         self.optimization_results = {}
@@ -331,19 +337,36 @@ class TacticianLookbackOptimizer:
     
     def _get_indicator_calculator(self, indicator: str):
         """Get calculator function for a specific indicator using existing feature_generation implementations."""
-        # Map indicators to feature generator methods where available
+        # Map indicators to existing feature generator methods
         feature_generator_map = {
-            "rsi": lambda data, lookback: self.feature_generator._calculate_rsi(data['close'], period=lookback),
-            "atr": lambda data, lookback: self.feature_generator._calculate_atr(data, period=lookback),
+            "rsi": lambda data, lookback: pd.Series(
+                self.momentum_generator._calculate_rsi(data['close'].values, period=lookback), 
+                index=data.index
+            ),
+            "macd": lambda data, lookback: pd.Series(
+                self.momentum_generator._calculate_macd(data['close'].values, fast=max(1, lookback//2), slow=lookback)['macd'],
+                index=data.index
+            ),
+            "ema": lambda data, lookback: pd.Series(
+                self.momentum_generator._calculate_ema(data['close'].values, period=lookback),
+                index=data.index
+            ),
+            "sma": lambda data, lookback: pd.Series(
+                self.trend_generator._calculate_sma(data['close'].values, period=lookback),
+                index=data.index
+            ),
+            "volume_sma": lambda data, lookback: pd.Series(
+                self.volume_generator._calculate_volume_ma(data['volume'].values, period=lookback),
+                index=data.index
+            ),
+            "atr": lambda data, lookback: self.cross_timeframe_generator._calculate_atr(data, period=lookback),
         }
         
         # For indicators not yet in feature_generator, use local implementations
-        # TODO: Move these to feature_generation module for consistency
+        # TODO: Move these 9 remaining indicators to feature_generation module for consistency
         local_calculators = {
-            "macd": self._calculate_macd,
             "bollinger_bands": self._calculate_bollinger_bands,
             "stoch": self._calculate_stochastic,
-            "volume_sma": self._calculate_volume_sma,
             "vwap": self._calculate_vwap,
             "obv": self._calculate_obv,
             "volume_roc": self._calculate_volume_roc,
@@ -352,9 +375,7 @@ class TacticianLookbackOptimizer:
             "momentum": self._calculate_momentum,
             "roc": self._calculate_roc,
             "volatility_bands": self._calculate_volatility_bands,
-            "keltner_channels": self._calculate_keltner_channels,
-            "sma": self._calculate_sma,
-            "ema": self._calculate_ema
+            "keltner_channels": self._calculate_keltner_channels
         }
         
         # Prefer feature generator implementations
@@ -364,45 +385,26 @@ class TacticianLookbackOptimizer:
             return local_calculators[indicator]
         else:
             tprint_warning(f"⚠️ Unknown indicator: {indicator}, using SMA as fallback")
-            return self._calculate_sma
+            return feature_generator_map["sma"]
     
     # ========================================================================
     # TECHNICAL INDICATOR CALCULATIONS
     # 
-    # NOTE: These implementations should be consolidated with feature_generation/
-    # Currently using feature_generator for RSI and ATR, local implementations for others
-    # TODO: Move all remaining indicators to feature_generation module for consistency
+    # USING EXISTING FEATURE_GENERATION IMPLEMENTATIONS (6 indicators):
+    # ✅ RSI - MomentumFeatureGenerator._calculate_rsi()
+    # ✅ MACD - MomentumFeatureGenerator._calculate_macd() 
+    # ✅ EMA - MomentumFeatureGenerator._calculate_ema()
+    # ✅ SMA - TrendFeatureGenerator._calculate_sma()
+    # ✅ Volume SMA - VolumeFeatureGenerator._calculate_volume_ma()
+    # ✅ ATR - OptimizedCrossTimeframeAnalysisIntegration._calculate_atr()
+    #
+    # LOCAL IMPLEMENTATIONS REMAINING (9 indicators):
+    # TODO: Move these to appropriate feature_generation categories:
+    # - bollinger_bands, stoch, williams_r, cci → oscillator.py or trend.py
+    # - vwap, obv, volume_roc → volume.py  
+    # - momentum, roc → momentum.py
+    # - volatility_bands, keltner_channels → volatility.py or trend.py
     # ========================================================================
-    
-    def _calculate_rsi(self, data: pd.DataFrame, lookback: int) -> pd.Series:
-        """Calculate RSI with given lookback period using existing feature generator."""
-        try:
-            return self.feature_generator._calculate_rsi(data['close'], period=lookback)
-        except Exception as e:
-            self.logger.warning(f"RSI calculation failed: {e}")
-            return pd.Series(index=data.index, dtype=float)
-    
-    def _calculate_macd(self, data: pd.DataFrame, lookback: int) -> pd.Series:
-        """Calculate MACD with given lookback period. TODO: Move to feature_generation module."""
-        try:
-            fast_period = max(1, lookback // 2)
-            slow_period = lookback
-            
-            ema_fast = data['close'].ewm(span=fast_period).mean()
-            ema_slow = data['close'].ewm(span=slow_period).mean()
-            macd = ema_fast - ema_slow
-            return macd
-        except Exception as e:
-            self.logger.warning(f"MACD calculation failed: {e}")
-            return pd.Series(index=data.index, dtype=float)
-    
-    def _calculate_atr(self, data: pd.DataFrame, lookback: int) -> pd.Series:
-        """Calculate ATR with given lookback period using existing feature generator."""
-        try:
-            return self.feature_generator._calculate_atr(data, period=lookback)
-        except Exception as e:
-            self.logger.warning(f"ATR calculation failed: {e}")
-            return pd.Series(index=data.index, dtype=float)
     
     def _calculate_bollinger_bands(self, data: pd.DataFrame, lookback: int) -> pd.Series:
         """Calculate Bollinger Bands middle line (SMA) with given lookback period. TODO: Move to feature_generation module."""
@@ -528,21 +530,7 @@ class TacticianLookbackOptimizer:
             self.logger.warning(f"Keltner Channels calculation failed: {e}")
             return pd.Series(index=data.index, dtype=float)
     
-    def _calculate_sma(self, data: pd.DataFrame, lookback: int) -> pd.Series:
-        """Calculate Simple Moving Average with given lookback period."""
-        try:
-            return data['close'].rolling(window=lookback).mean()
-        except Exception as e:
-            self.logger.warning(f"SMA calculation failed: {e}")
-            return pd.Series(index=data.index, dtype=float)
-    
-    def _calculate_ema(self, data: pd.DataFrame, lookback: int) -> pd.Series:
-        """Calculate Exponential Moving Average with given lookback period."""
-        try:
-            return data['close'].ewm(span=lookback).mean()
-        except Exception as e:
-            self.logger.warning(f"EMA calculation failed: {e}")
-            return pd.Series(index=data.index, dtype=float)
+    # SMA and EMA implementations removed - now using feature_generation implementations
     
     def _create_output_directories(self):
         """Create output directories for results."""

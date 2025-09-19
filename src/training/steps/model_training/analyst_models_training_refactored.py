@@ -22,101 +22,67 @@ import json
 import time
 import traceback
 
-# Safe psutil import with simple fallback
+# Required psutil import - fail fast if not available for production use
 try:
     import psutil
     PSUTIL_AVAILABLE = True
 except ImportError:
-    print("Warning: psutil not available, using fallback system monitoring")
     PSUTIL_AVAILABLE = False
-    # Simple fallback class
-    class SimplePsutilFallback:
-        def cpu_percent(self, interval=None):
-            return 50.0
-        def virtual_memory(self):
-            return type('MemInfo', (), {'total': 8*1024**3, 'available': 4*1024**3, 'percent': 50.0})()
-        def Process(self):
-            return type('ProcessInfo', (), {'memory_info': lambda: type('MemInfo', (), {'rss': 100*1024**2})()})()
-    
-    psutil = SimplePsutilFallback()
+    psutil = None
 from contextlib import contextmanager
 import sys
 import os
 
-# Safe numpy import with simple fallback
+# Required numpy import - fail fast if not available
 try:
     import numpy as np
     NUMPY_AVAILABLE = True
 except ImportError:
-    print("Warning: numpy not available, using fallback array operations")
     NUMPY_AVAILABLE = False
-    # Simple fallback for essential numpy functions
-    class SimpleNumpyFallback:
-        inf = float('inf')
-        nan = float('nan')
-        
-        def array(self, data, dtype=None):
-            return list(data) if hasattr(data, '__iter__') else [data]
-        
-        def mean(self, arr):
-            return sum(arr) / len(arr) if arr else 0.0
-        
-        def std(self, arr):
-            if not arr or len(arr) <= 1:
-                return 0.0
-            mean_val = self.mean(arr)
-            return (sum((x - mean_val) ** 2 for x in arr) / (len(arr) - 1)) ** 0.5
-        
-        def isfinite(self, val):
-            return not (val == float('inf') or val == float('-inf') or val != val)
-        
-        def isnan(self, val):
-            return val != val
-        
-        def isinf(self, val):
-            return val == float('inf') or val == float('-inf')
-    
-    np = SimpleNumpyFallback()
+    np = None
 
-# Safe pandas import with simple fallback
+# Required pandas import - fail fast if not available
 try:
     import pandas as pd
     PANDAS_AVAILABLE = True
 except ImportError:
-    print("Warning: pandas not available, using fallback DataFrame operations")
     PANDAS_AVAILABLE = False
-    # Simple pandas fallback
-    class SimplePandasFallback:
-        class DataFrame:
-            def __init__(self, data=None, columns=None):
-                self.data = data or []
-                self.columns = columns or []
-                self.shape = (len(self.data) if self.data else 0, len(self.columns))
-            
-            def isnull(self):
-                return SimplePandasFallback.DataFrame()
-            
-            def sum(self):
-                return [0] * len(self.columns)
-            
-            def to_parquet(self, path):
-                pass
-        
-        def read_parquet(self, path):
-            return self.DataFrame()
-        
-        def to_datetime(self, x):
-            return x
-        
-        def isna(self, x):
-            return x != x  # NaN check
-    
-    pd = SimplePandasFallback()
+    pd = None
 
 # Core imports
 from src.utils.logger import system_logger
 from src.utils.ml_common.config import PerRegimeTrainingConfig
 from src.utils.ml_common.training import PerRegimeTrainingStep
+
+# Dependency validation functions
+def validate_critical_dependencies():
+    """Validate that all critical dependencies are available. Fast fail if not."""
+    missing_deps = []
+    
+    if not NUMPY_AVAILABLE:
+        missing_deps.append("numpy")
+    
+    if not PANDAS_AVAILABLE:
+        missing_deps.append("pandas")
+    
+    if not PSUTIL_AVAILABLE:
+        missing_deps.append("psutil")
+    
+    if missing_deps:
+        error_msg = f"Critical dependencies missing: {', '.join(missing_deps)}. " \
+                   f"Install with: pip install {' '.join(missing_deps)}"
+        raise ImportError(error_msg)
+
+def validate_runtime_dependencies():
+    """Validate dependencies at runtime before executing operations."""
+    if np is None:
+        raise RuntimeError("NumPy is required for array operations. Install with: pip install numpy")
+    
+    if pd is None:
+        raise RuntimeError("Pandas is required for data operations. Install with: pip install pandas")
+    
+    if psutil is None:
+        raise RuntimeError("psutil is required for system monitoring. Install with: pip install psutil")
 
 # Enhanced tprint logging
 from src.utils.tprint import (
@@ -422,7 +388,11 @@ logger = system_logger.getChild('AnalystModelsTrainingEnhanced')
 
 @contextmanager
 def monitor_resources(operation_name: str, logger: logging.Logger):
-    """Enhanced context manager for monitoring resource usage with hardware optimization."""
+    """Enhanced context manager for monitoring resource usage - fails fast if psutil unavailable."""
+    # Fast fail if psutil is not available
+    if not PSUTIL_AVAILABLE or psutil is None:
+        raise RuntimeError("psutil is required for resource monitoring. Install with: pip install psutil")
+    
     start_time = time.time()
     start_memory = get_memory_usage() / 1024 / 1024  # MB
     start_cpu = psutil.cpu_percent()
@@ -854,6 +824,9 @@ class AnalystModelsTrainingStepRefactored(PerRegimeTrainingStep):
             config: Per-regime training configuration
         """
         try:
+            # Fast fail if critical dependencies are missing
+            validate_critical_dependencies()
+            
             with monitor_resources("Enhanced Analyst Models Training Initialization", logger):
                 tprint_info("🚀 Initializing Enhanced Analyst Models Training Step")
                 
@@ -1456,6 +1429,9 @@ class AnalystModelsTrainingStepRefactored(PerRegimeTrainingStep):
             RuntimeError: If training fails
         """
         try:
+            # Fast fail if runtime dependencies are missing
+            validate_runtime_dependencies()
+            
             # Initialize training metrics and progress tracking
             self.training_metrics['start_time'] = datetime.now()
             start_time = time.time()
@@ -2637,6 +2613,9 @@ def execute_analyst_models_training_enhanced(
         RuntimeError: If training fails
     """
     try:
+        # Fast fail if critical dependencies are missing
+        validate_critical_dependencies()
+        
         tprint_info("🚀 Starting enhanced analyst models training execution")
         
         # Create enhanced step

@@ -2,93 +2,28 @@ from src.utils.tprint import tprint
 
 from typing import Dict, List, Optional, Union, Any, Tuple
 
-# Optional imports
+# Required dependencies - fail fast if not available
 try:
     import numpy as np
     NUMPY_AVAILABLE = True
 except ImportError:
     NUMPY_AVAILABLE = False
-    # Simple numpy fallback
-    class SimpleNumpyFallback:
-        inf = float('inf')
-        nan = float('nan')
-        
-        def array(self, data, dtype=None):
-            return list(data) if hasattr(data, '__iter__') else [data]
-        
-        def mean(self, arr):
-            return sum(arr) / len(arr) if arr else 0.0
-        
-        def isfinite(self, val):
-            return not (val == float('inf') or val == float('-inf') or val != val)
-        
-        def isnan(self, val):
-            return val != val
-        
-        def isinf(self, val):
-            return val == float('inf') or val == float('-inf')
-    
-    np = SimpleNumpyFallback()
+    np = None
 
 try:
     import pandas as pd
     PANDAS_AVAILABLE = True
 except ImportError:
     PANDAS_AVAILABLE = False
-    # Simple pandas fallback
-    class SimplePandasFallback:
-        class DataFrame:
-            def __init__(self, data=None, columns=None):
-                self.data = data or []
-                self.columns = columns or []
-                self.shape = (len(self.data) if self.data else 0, len(self.columns))
-            
-            def isnull(self):
-                return SimplePandasFallback.DataFrame()
-            
-            def sum(self):
-                return [0] * len(self.columns)
-            
-            def to_parquet(self, path):
-                pass
-        
-        def read_parquet(self, path):
-            return SimplePandasFallback.DataFrame()
-        
-        def to_datetime(self, x):
-            return x
-        
-        def isna(self, x):
-            return x != x  # NaN check
-    
-    pd = SimplePandasFallback()
+    pd = None
 
 from src.utils.logger import system_logger
-# Import decorators with fallback for testing
+# Import decorators - fail fast if not available
 try:
     from src.core.decorators import handles_errors, log_call, traced, validates
 except Exception as e:
-    print(f"Warning: Could not import decorators: {e}")
-    # Create simple fallback decorators
-    def handles_errors(*args, **kwargs):
-        def decorator(func):
-            return func
-        return decorator
-    
-    def log_call(*args, **kwargs):
-        def decorator(func):
-            return func
-        return decorator
-    
-    def traced(*args, **kwargs):
-        def decorator(func):
-            return func
-        return decorator
-    
-    def validates(*args, **kwargs):
-        def decorator(func):
-            return func
-        return decorator
+    raise ImportError(f"Required decorators not available: {e}. "
+                     f"Please ensure src.core.decorators is properly installed.")
 from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 
 # Import missing utility functions with fallbacks

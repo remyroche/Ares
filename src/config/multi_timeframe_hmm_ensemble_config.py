@@ -213,7 +213,7 @@ def validate_ensemble_config(config: Dict[str, Any]) -> bool:
         valid_learner_types = ["lgbm", "random_forest", "logistic"]
         return meta_learner_type in valid_learner_types
 
-    except Exception:
+    except (KeyError, TypeError, AttributeError):
         return False
 
 def get_optimized_timeframe_weights() -> Dict[str, float]:

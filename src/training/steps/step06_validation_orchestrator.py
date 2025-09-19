@@ -83,10 +83,10 @@ class Step06ValidationOrchestrator:
                 execution_time = time.time() - start_time
                 
                 # Determine validation result
-                if result is True:
+                if result:
                     validation_result = ValidationResult.PASS
                     message = f"Validation {step.name} passed"
-                elif result is False:
+                elif not result:
                     validation_result = ValidationResult.FAIL
                     message = f"Validation {step.name} failed"
                 elif isinstance(result, str):

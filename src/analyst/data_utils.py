@@ -659,14 +659,6 @@ def load_klines_data(filename: str) -> Any:
         tprint(critical('CRITICAL ERROR: Error loading klines data from {filename}: {e}'))
         return pd.DataFrame()
 
-def load_agg_trades_data(filename: str) -> Any:
-    raise NotImplementedError('Removed unused function: load_agg_trades_data')
-
-def load_futures_data(filename: str) -> Any:
-    raise NotImplementedError('Removed unused function: load_futures_data')
-
-def simulate_order_book_data(current_price: Any) -> None:
-    raise NotImplementedError('Removed unused function: simulate_order_book_data')
 
 def _get_column_names(klines_df: pd.DataFrame) -> tuple[str, str, str, str]:
     """Get standardized column names for OHLCV data."""
@@ -824,11 +816,6 @@ def _consolidate_hvn_results(all_levels: list[tuple[float, float]], volume_profi
     hvn_results.sort(key = lambda x: x['strength'], reverse = True)
     return hvn_results
 
-def calculate_volume_profile(klines_df: pd.DataFrame, num_bins: int = 100) -> float:
-    raise NotImplementedError('Removed unused function: calculate_volume_profile')
-
-def create_dummy_data(filename: str, data_type: Any, num_records: List[Any]=1000, start_date: Union[str, datetime]='2023-01-01') -> Any:
-    raise NotImplementedError('Removed unused function: create_dummy_data')
 
 def create_ethusdt_1h_csv() -> Any:
     """Convert downloaded klines data to the expected ETHUSDT_1h.csv format."""

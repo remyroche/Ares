@@ -638,7 +638,7 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             regime_ids = list(regime_characteristics.keys())
             n_regimes = len(regime_ids)
             
-            self.logger.info(f"🎯 Starting hierarchical matrix clustering: {n_regimes} regimes → target: 25-40 clusters")
+            self.logger.info(f"🎯 Starting hierarchical matrix clustering: {n_regimes} regimes → target: 15-40 clusters")
             
             # Initialize regime-to-cluster mapping (each regime starts as its own cluster)
             regime_to_cluster = {regime_id: i for i, regime_id in enumerate(regime_ids)}
@@ -647,14 +647,14 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             # Hierarchical batch merging with VERY CONSERVATIVE similarity thresholds
             # Only merge regimes that are extremely similar (>99.0% similar)
             # Start with realistic thresholds based on actual similarity range (97-99%)
-            # 0.2% increments from 99.8% down to 98%
-            similarity_thresholds = [0.999, 0.9995, 0.998, 0.9985, 0.997, 0.996, 0.995, 0.994, 0.993, 0.992, 0.991, 0.990, 0.988, 0.986, 0.984, 0.982, 0.980]
+            # Descend from 99.9% to 98.0% in 0.1% steps
+            similarity_thresholds = [0.999, 0.998, 0.997, 0.996, 0.995, 0.994, 0.993, 0.992, 0.991, 0.990, 0.989, 0.988, 0.987, 0.986, 0.985, 0.984, 0.983, 0.982, 0.981, 0.980]
             min_cv_threshold = 0.01  # Very strict CV difference threshold
-            max_sample_pct = 5.0  # Very conservative sample percentage limit
+            max_sample_pct = 6.0  # Freeze clusters at or above 6% of samples
             
             for threshold in similarity_thresholds:
-                if cluster_count <= 25:  # Stop only when we reach optimal range (25-40)
-                    self.logger.info(f"🎯 STOPPING: Reached optimal cluster count ({cluster_count} <= 25)")
+                if cluster_count <= 15:  # Stop when we reach lower bound of optimal range (15-40)
+                    self.logger.info(f"🎯 STOPPING: Reached optimal cluster count ({cluster_count} <= 15)")
                     break
                     
                 self.logger.info(f"🔄 Batch merging at {threshold*100:.1f}% similarity threshold ({threshold:.3f})...")
@@ -671,8 +671,8 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                 cluster_sample_pcts = {cluster_id: (count / total_samples) * 100 
                                      for cluster_id, count in cluster_sample_counts.items()}
                 
-                # Exclude clusters that are already too large from merging
-                excluded_clusters = {cluster_id for cluster_id, pct in cluster_sample_pcts.items() if pct > max_sample_pct}
+                # Exclude clusters that are already too large from merging (freeze at >= 6%)
+                excluded_clusters = {cluster_id for cluster_id, pct in cluster_sample_pcts.items() if pct >= max_sample_pct}
                 
                 # Find mergeable pairs based on similarity threshold
                 mergeable_pairs = []
@@ -757,7 +757,7 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                     
                     self.logger.info(f"   ✅ Updated similarity matrix for {cluster_count} clusters")
                 
-                if cluster_count <= 25:  # Stop if we reach optimal range
+                if cluster_count <= 15:  # Stop if we reach lower bound of optimal range
                     break
             
             # Renumber clusters sequentially
@@ -784,7 +784,7 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                 'similarity_matrix': similarity_matrix,
                 'quality_score': quality_score,
                 'method': 'hierarchical_matrix_based',
-                'merging_thresholds_used': similarity_thresholds[:similarity_thresholds.index(0.95) + 1] if final_cluster_count < n_regimes else []
+                'merging_thresholds_used': similarity_thresholds
             }
             
             self.logger.info(f"✅ Hierarchical matrix clustering completed: {final_cluster_count} clusters created")
@@ -1325,148 +1325,208 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
 
 
     def _calculate_regime_similarity_matrix(self, regime_characteristics: Dict[str, Any]) -> np.ndarray:
-        """Calculate similarity matrix between regimes based on their characteristics."""
+        """Calculate similarity matrix between regimes using global, per-feature robust scaling.
+
+        This constructs a regime-by-feature matrix, applies winsorization and robust
+        standardization per feature across all regimes, L2-normalizes each regime vector,
+        and returns the cosine similarity matrix.
+        """
         try:
+            import numpy as np
             if not regime_characteristics:
                 self.logger.warning("⚠️ No regime characteristics available for similarity calculation")
                 return np.array([])
-            
+
             regime_ids = list(regime_characteristics.keys())
             n_regimes = len(regime_ids)
-            
             if n_regimes == 0:
                 return np.array([])
-            
-            # Initialize similarity matrix
-            similarity_matrix = np.zeros((n_regimes, n_regimes))
-            
-            # Calculate similarity between each pair of regimes
-            for i, regime_i in enumerate(regime_ids):
-                for j, regime_j in enumerate(regime_ids):
-                    if i == j:
-                        similarity_matrix[i, j] = 1.0  # Perfect similarity with self
-                    else:
-                        similarity = self._calculate_regime_pair_similarity(
-                            regime_characteristics[regime_i],
-                            regime_characteristics[regime_j]
-                        )
-                        similarity_matrix[i, j] = similarity
-            
-            self.logger.info(f"✅ Calculated similarity matrix for {n_regimes} regimes")
+
+            # Build feature matrix X (n_regimes x n_features) with deterministic feature order
+            X, feature_order = self._build_feature_matrix(regime_characteristics, regime_ids)
+            if X.size == 0:
+                self.logger.warning("⚠️ Empty feature matrix for similarity calculation")
+                return np.array([])
+
+            # Fit robust per-feature scaler (winsorize + median/MAD or IQR)
+            scaler = self._fit_global_robust_scaler(X)
+
+            # Standardize and L2-normalize regime vectors
+            Z = self._standardize_with_scaler(X, scaler)
+            norms = np.linalg.norm(Z, axis=1, keepdims=True)
+            # Avoid division by zero
+            norms[norms == 0] = 1.0
+            Z_normalized = Z / norms
+
+            # Cosine similarity matrix as dot product of normalized vectors
+            similarity_matrix = np.clip(np.dot(Z_normalized, Z_normalized.T), -1.0, 1.0)
+
+            # Persist scaler for pairwise similarity calls and debugging
+            self._global_feature_scaler = {
+                'feature_order': feature_order,
+                'median': scaler['median'],
+                'scale': scaler['scale'],
+                'winsor_low': scaler['winsor_low'],
+                'winsor_high': scaler['winsor_high'],
+                'valid_mask': scaler['valid_mask']
+            }
+
+            # Log summary statistics
+            kept_features = int(np.sum(scaler['valid_mask']))
+            dropped_features = int(len(feature_order) - kept_features)
+            sim_vals = similarity_matrix[np.triu_indices(n_regimes, k=1)] if n_regimes > 1 else np.array([1.0])
+            if sim_vals.size > 0:
+                sim_min = float(np.min(sim_vals))
+                sim_max = float(np.max(sim_vals))
+                sim_mean = float(np.mean(sim_vals))
+                self.logger.info(
+                    f"✅ Calculated similarity matrix for {n_regimes} regimes | features kept: {kept_features}, dropped: {dropped_features} | similarity range: {sim_min:.3f}-{sim_max:.3f}, mean: {sim_mean:.3f}"
+                )
+            else:
+                self.logger.info(
+                    f"✅ Calculated similarity matrix for {n_regimes} regimes | features kept: {kept_features}, dropped: {dropped_features}"
+                )
+
             return similarity_matrix
-            
+
         except Exception as e:
             self.logger.error(f"❌ Failed to calculate regime similarity matrix: {e}")
             return np.array([])
+
+    def _build_feature_matrix(self, regime_characteristics: Dict[str, Any], regime_ids: List[str]):
+        """Construct a dense regime-by-feature matrix and deterministic feature order.
+
+        - Collects union of numeric feature keys from regime['features'] for all regimes
+        - Returns X (n_regimes x n_features) with NaNs for missing values
+        - Imputation is handled later by the scaler using medians
+        """
+        import numpy as np
+        # Collect all numeric feature keys
+        feature_keys = set()
+        for regime_id in regime_ids:
+            features = regime_characteristics.get(regime_id, {}).get('features', {})
+            for key, val in features.items():
+                if isinstance(val, (int, float)):
+                    feature_keys.add(key)
+        feature_order = sorted(feature_keys)
+        if len(feature_order) == 0:
+            return np.array([]), []
+        # Build matrix with NaNs for missing
+        X = np.full((len(regime_ids), len(feature_order)), np.nan, dtype=float)
+        feature_index = {k: i for i, k in enumerate(feature_order)}
+        for r_idx, regime_id in enumerate(regime_ids):
+            features = regime_characteristics.get(regime_id, {}).get('features', {})
+            for key, val in features.items():
+                if key in feature_index and isinstance(val, (int, float)):
+                    X[r_idx, feature_index[key]] = float(val)
+        return X, feature_order
+
+    def _fit_global_robust_scaler(self, X: 'np.ndarray') -> Dict[str, Any]:
+        """Fit a robust scaler on columns of X using winsorization and MAD/IQR.
+
+        Returns a dict with median, scale, winsor bounds, and valid feature mask.
+        """
+        import numpy as np
+        # Compute winsorization bounds per feature (columns)
+        # Use 1st-99th percentiles to dampen extreme outliers
+        with np.errstate(invalid='ignore'):
+            winsor_low = np.nanpercentile(X, 1.0, axis=0)
+            winsor_high = np.nanpercentile(X, 99.0, axis=0)
+        X_clipped = np.clip(X, winsor_low, winsor_high)
+        # Compute medians per feature
+        median = np.nanmedian(X_clipped, axis=0)
+        # Compute MAD (median absolute deviation)
+        abs_dev = np.abs(X_clipped - median)
+        mad = np.nanmedian(abs_dev, axis=0)
+        scale_mad = 1.4826 * mad
+        # Fallback to IQR-based scale if MAD is too small
+        q25 = np.nanpercentile(X_clipped, 25.0, axis=0)
+        q75 = np.nanpercentile(X_clipped, 75.0, axis=0)
+        iqr = q75 - q25
+        scale_iqr = iqr / 1.349
+        # Choose the larger of MAD-based and IQR-based scales to be conservative
+        scale = np.where(scale_mad > 1e-12, scale_mad, scale_iqr)
+        # Mark invalid features with near-zero scale
+        valid_mask = scale > 1e-12
+        # Ensure no zeros
+        scale = np.where(valid_mask, scale, 1.0)
+        return {
+            'median': median,
+            'scale': scale,
+            'winsor_low': winsor_low,
+            'winsor_high': winsor_high,
+            'valid_mask': valid_mask
+        }
+
+    def _standardize_with_scaler(self, X: 'np.ndarray', scaler: Dict[str, Any]) -> 'np.ndarray':
+        """Apply winsorization and robust standardization using provided scaler."""
+        import numpy as np
+        X_w = np.clip(X, scaler['winsor_low'], scaler['winsor_high'])
+        # Impute NaNs with median before standardization
+        X_w = np.where(np.isnan(X_w), scaler['median'], X_w)
+        Z = (X_w - scaler['median']) / scaler['scale']
+        # Drop invalid columns by zeroing them out (no contribution to cosine)
+        if 'valid_mask' in scaler:
+            invalid_cols = ~scaler['valid_mask']
+            if np.any(invalid_cols):
+                Z[:, invalid_cols] = 0.0
+        return Z
     
     def _calculate_regime_pair_similarity(self, regime_1: Dict[str, Any], regime_2: Dict[str, Any]) -> float:
-        """Calculate similarity between two regimes based on their characteristics."""
+        """Calculate similarity between two regimes using the global robust scaler if available.
+
+        Falls back to a conservative cosine similarity if the global scaler is not set.
+        """
         try:
-            # Extract actual features from regime discovery results
+            import numpy as np
+            # Prefer using the global scaler fitted on all regimes
+            scaler = getattr(self, '_global_feature_scaler', None)
+            if scaler and scaler.get('feature_order'):
+                feature_order = scaler['feature_order']
+                features_1 = regime_1.get('features', {})
+                features_2 = regime_2.get('features', {})
+                # Build 2 x F matrix in the same feature order the scaler expects
+                X_pair = np.full((2, len(feature_order)), np.nan, dtype=float)
+                for i, key in enumerate(feature_order):
+                    v1 = features_1.get(key, np.nan)
+                    v2 = features_2.get(key, np.nan)
+                    X_pair[0, i] = float(v1) if isinstance(v1, (int, float)) else np.nan
+                    X_pair[1, i] = float(v2) if isinstance(v2, (int, float)) else np.nan
+                # Standardize using global scaler and compute cosine
+                Z_pair = self._standardize_with_scaler(X_pair, scaler)
+                norms = np.linalg.norm(Z_pair, axis=1, keepdims=True)
+                norms[norms == 0] = 1.0
+                Z_pair = Z_pair / norms
+                similarity = float(np.clip(np.dot(Z_pair[0], Z_pair[1]), -1.0, 1.0))
+                # Limited debug
+                if not hasattr(self, '_similarity_debug_count'):
+                    self._similarity_debug_count = 0
+                if self._similarity_debug_count < 3:
+                    self.logger.warning(f"🔍 DEBUG: Overall cosine similarity: {similarity:.6f}")
+                    self._similarity_debug_count += 1
+                return similarity
+
+            # Fallback: conservative cosine on intersecting numeric features
             features_1 = regime_1.get('features', {})
             features_2 = regime_2.get('features', {})
-            
-            # DEBUG: Check if features exist and what they contain
-            if not hasattr(self, '_similarity_debug_count'):
-                self._similarity_debug_count = 0
-            
-            if self._similarity_debug_count < 3:
-                self.logger.warning(f"🔍 DEBUG: Features 1 keys: {list(features_1.keys())[:5]}...")
-                self.logger.warning(f"🔍 DEBUG: Features 2 keys: {list(features_2.keys())[:5]}...")
-                self.logger.warning(f"🔍 DEBUG: Features 1 sample values: {list(features_1.values())[:5]}")
-                self.logger.warning(f"🔍 DEBUG: Features 2 sample values: {list(features_2.values())[:5]}")
-                self._similarity_debug_count += 1
-            
-            # Convert features to vectors for cosine similarity calculation
-            feature_values_1 = []
-            feature_values_2 = []
-            
-            # Get all feature keys (should be the same for both regimes)
-            feature_keys = set(features_1.keys()) | set(features_2.keys())
-            
-            for key in sorted(feature_keys):  # Sort for consistency
-                val_1 = features_1.get(key, 0.0)
-                val_2 = features_2.get(key, 0.0)
-                
-                # Only include numeric values
-                if isinstance(val_1, (int, float)) and isinstance(val_2, (int, float)):
-                    feature_values_1.append(float(val_1))
-                    feature_values_2.append(float(val_2))
-            
-            # Calculate cosine similarity
-            if len(feature_values_1) == 0:
-                if self._similarity_debug_count <= 3:
-                    self.logger.warning(f"🔍 DEBUG: No numeric features found!")
+            keys = sorted((set(features_1.keys()) | set(features_2.keys())))
+            vals_1, vals_2 = [], []
+            for k in keys:
+                v1 = features_1.get(k)
+                v2 = features_2.get(k)
+                if isinstance(v1, (int, float)) and isinstance(v2, (int, float)):
+                    vals_1.append(float(v1))
+                    vals_2.append(float(v2))
+            if not vals_1:
                 return 0.0
-            
-            import numpy as np
-            vec_1 = np.array(feature_values_1)
-            vec_2 = np.array(feature_values_2)
-            
-            # Check if vectors are identical (which would cause 100% similarity)
-            if np.array_equal(vec_1, vec_2):
-                if self._similarity_debug_count <= 3:
-                    self.logger.warning(f"🔍 DEBUG: Vectors are identical! This will cause 100% similarity")
-                return 1.0
-            
-            # Calculate cosine similarity with proper magnitude consideration
-            # Standardize each feature independently to preserve relative differences
-            
-            vec_1_std = np.zeros_like(vec_1)
-            vec_2_std = np.zeros_like(vec_2)
-            feature_similarities = []
-            
-            for i in range(len(vec_1)):
-                # Get values for this feature from both vectors
-                val_1 = vec_1[i]
-                val_2 = vec_2[i]
-                
-                # Calculate mean and std for this specific feature across both regimes
-                feature_mean = (val_1 + val_2) / 2
-                feature_std = np.std([val_1, val_2])
-                
-                # Avoid division by zero
-                if feature_std == 0:
-                    feature_std = 1.0
-                
-                # Standardize this feature
-                vec_1_std[i] = (val_1 - feature_mean) / feature_std
-                vec_2_std[i] = (val_2 - feature_mean) / feature_std
-                
-                # Calculate cosine similarity for this feature
-                if vec_1_std[i] == 0 and vec_2_std[i] == 0:
-                    feature_similarity = 1.0
-                elif vec_1_std[i] == 0 or vec_2_std[i] == 0:
-                    feature_similarity = 0.0
-                else:
-                    # This gives us proper cosine similarity based on standardized magnitudes
-                    feature_similarity = (vec_1_std[i] * vec_2_std[i]) / (abs(vec_1_std[i]) * abs(vec_2_std[i]))
-                
-                feature_similarities.append(feature_similarity)
-            
-            # Calculate overall cosine similarity on per-feature standardized vectors
-            dot_product = np.dot(vec_1_std, vec_2_std)
-            norm_1 = np.linalg.norm(vec_1_std)
-            norm_2 = np.linalg.norm(vec_2_std)
-            
-            if norm_1 == 0 or norm_2 == 0:
-                overall_similarity = 0.0
-            else:
-                overall_similarity = dot_product / (norm_1 * norm_2)
-            
-            # DEBUG: Check feature similarities
-            if self._similarity_debug_count <= 3:
-                self.logger.warning(f"🔍 DEBUG: Original vec_1[:5]: {vec_1[:5]}")
-                self.logger.warning(f"🔍 DEBUG: Original vec_2[:5]: {vec_2[:5]}")
-                self.logger.warning(f"🔍 DEBUG: Standardized vec_1[:5]: {vec_1_std[:5]}")
-                self.logger.warning(f"🔍 DEBUG: Standardized vec_2[:5]: {vec_2_std[:5]}")
-                self.logger.warning(f"🔍 DEBUG: Feature similarities[:5]: {feature_similarities[:5]}")
-                self.logger.warning(f"🔍 DEBUG: Overall cosine similarity: {overall_similarity:.6f}")
-            
-            cosine_similarity = overall_similarity
-            
-            return float(cosine_similarity)
-            
+            v1 = np.array(vals_1)
+            v2 = np.array(vals_2)
+            n1 = np.linalg.norm(v1)
+            n2 = np.linalg.norm(v2)
+            if n1 == 0 or n2 == 0:
+                return 0.0
+            return float(np.clip(np.dot(v1, v2) / (n1 * n2), -1.0, 1.0))
+
         except Exception as e:
             self.logger.error(f"❌ Failed to calculate regime pair similarity: {e}")
             return 0.0

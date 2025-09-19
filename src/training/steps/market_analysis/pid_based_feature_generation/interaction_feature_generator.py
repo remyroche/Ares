@@ -520,6 +520,30 @@ class InteractionFeatureGenerator(BaseFeatureGenerator):
     ) -> Tuple[Optional[np.ndarray], str]:
         """Create a specific type of interaction feature."""
         try:
+            # Early input validation to avoid expensive computations
+            if not isinstance(x1, np.ndarray) or not isinstance(x2, np.ndarray):
+                self.logger.warning(f"⚠️ Input arrays must be numpy arrays for {feat1} x {feat2}")
+                return None, ""
+            
+            if x1.size == 0 or x2.size == 0:
+                self.logger.warning(f"⚠️ Input arrays cannot be empty for {feat1} x {feat2}")
+                return None, ""
+            
+            if len(x1) != len(x2):
+                self.logger.warning(f"⚠️ Input arrays must have same length for {feat1} x {feat2}: {len(x1)} vs {len(x2)}")
+                return None, ""
+            
+            # Check for excessive NaN/Inf values early
+            x1_finite = np.isfinite(x1)
+            x2_finite = np.isfinite(x2)
+            
+            if np.sum(x1_finite) < len(x1) * 0.5:  # Less than 50% finite values
+                self.logger.warning(f"⚠️ {feat1} has too many non-finite values ({np.sum(~x1_finite)}/{len(x1)})")
+                return None, ""
+            
+            if np.sum(x2_finite) < len(x2) * 0.5:  # Less than 50% finite values
+                self.logger.warning(f"⚠️ {feat2} has too many non-finite values ({np.sum(~x2_finite)}/{len(x2)})")
+                return None, ""
             if interaction_type == InteractionType.MULTIPLICATIVE:
                 feature = x1 * x2
                 name = f"{feat1}_x_{feat2}"
@@ -586,9 +610,17 @@ class InteractionFeatureGenerator(BaseFeatureGenerator):
             else:
                 return None, ""
             
-            # Validate feature
+            # Validate feature - check for invalid values early
+            if not isinstance(feature, np.ndarray):
+                self.logger.warning(f"⚠️ Feature {name} is not a numpy array, skipping")
+                return None, ""
+            
+            if feature.size == 0:
+                self.logger.warning(f"⚠️ Feature {name} is empty, skipping")
+                return None, ""
+            
             if np.any(np.isnan(feature)) or np.any(np.isinf(feature)):
-                self.logger.warning(f"⚠️ Invalid values in {name}, skipping")
+                self.logger.warning(f"⚠️ Feature {name} contains invalid values, skipping")
                 return None, ""
             
             return feature, name

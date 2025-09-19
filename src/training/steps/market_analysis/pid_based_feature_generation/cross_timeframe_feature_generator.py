@@ -62,6 +62,31 @@ except ImportError:
     logger = logging.getLogger('CrossTimeframeFeatureGenerator')
     logger.setLevel(logging.INFO)
 
+# Import configuration constants
+try:
+    from .constants import (
+        COMPUTATION, CROSS_TIMEFRAME, VALIDATION, 
+        get_rolling_window_size, validate_lookback_period
+    )
+    CONSTANTS_AVAILABLE = True
+except ImportError:
+    CONSTANTS_AVAILABLE = False
+    # Fallback constants
+    class _Constants:
+        DEFAULT_ROLLING_WINDOW = 20
+        MIN_ROLLING_WINDOW = 3
+        MAX_LAG_PERIODS = 5
+        STANDARD_TIMEFRAMES = ['1m', '5m', '15m', '30m', '1h', '4h', '1d']
+    
+    COMPUTATION = _Constants()
+    CROSS_TIMEFRAME = _Constants()
+    
+    def get_rolling_window_size(data_length, preferred=None):
+        return min(20, max(3, data_length // 4))
+    
+    def validate_lookback_period(period, feature_type=None):
+        return 1 <= period <= 200
+
 
 class CrossTimeframeType(Enum):
     """Types of cross-timeframe features."""
@@ -89,9 +114,7 @@ class CrossTimeframeConfig:
     max_lag_periods: int = 5
     
     # Timeframe Settings
-    timeframes: List[str] = field(default_factory=lambda: [
-        '1m', '5m', '15m', '30m', '1h', '4h', '1d'
-    ])
+    timeframes: List[str] = field(default_factory=lambda: CROSS_TIMEFRAME.STANDARD_TIMEFRAMES)
     
     # Cross Timeframe Types
     cross_timeframe_types: List[CrossTimeframeType] = field(default_factory=lambda: [
@@ -638,34 +661,22 @@ class CrossTimeframeFeatureGenerator:
                 name = f"{feat1}_minus_{feat2}"
                 
             elif cross_timeframe_type == CrossTimeframeType.CORRELATION:
-                # Rolling correlation between timeframes
-                window = min(20, len(x1))
-                if window >= 3:
-                    x1_mean = np.convolve(x1, np.ones(window)/window, mode='valid')
-                    x2_mean = np.convolve(x2, np.ones(window)/window, mode='valid')
-                    x1_centered = x1[window-1:] - x1_mean
-                    x2_centered = x2[window-1:] - x2_mean
-                    num = np.convolve(x1_centered * x2_centered, np.ones(1), mode='valid')
-                    den = np.sqrt(
-                        np.convolve(x1_centered**2, np.ones(1), mode='valid') *
-                        np.convolve(x2_centered**2, np.ones(1), mode='valid')
-                    )
-                    corr_valid = np.divide(num, den, out=np.zeros_like(num), where=(den != 0))
-                    feature = np.zeros_like(x1, dtype=float)
-                    feature[:window-1] = 0.0
-                    feature[window-1:] = corr_valid
+                # Memory-efficient rolling correlation between timeframes
+                window = get_rolling_window_size(len(x1), COMPUTATION.DEFAULT_ROLLING_WINDOW)
+                if window >= COMPUTATION.MIN_ROLLING_WINDOW:
+                    feature = self._compute_rolling_correlation_efficient(x1, x2, window)
                 else:
                     feature = np.zeros_like(x1, dtype=float)
                 name = f"{feat1}_rolling_corr_{feat2}"
                 
             elif cross_timeframe_type == CrossTimeframeType.LAG_CORRELATION:
                 # True lag-based rolling correlation
-                lag = min(5, len(x1) // 4)
+                lag = min(CROSS_TIMEFRAME.MAX_LAG_PERIODS, len(x1) // 4)
                 if lag > 0:
                     x1_lag = np.roll(x1, lag)
                     x1_lag[:lag] = x1_lag[lag]
-                    window = min(20, len(x1))
-                    if window >= 3:
+                    window = get_rolling_window_size(len(x1), COMPUTATION.DEFAULT_ROLLING_WINDOW)
+                    if window >= COMPUTATION.MIN_ROLLING_WINDOW:
                         x1_mean = np.convolve(x1_lag, np.ones(window)/window, mode='valid')
                         x2_mean = np.convolve(x2, np.ones(window)/window, mode='valid')
                         x1_centered = x1_lag[window-1:] - x1_mean
@@ -693,20 +704,12 @@ class CrossTimeframeFeatureGenerator:
                 name = f"{feat1}_momentum_minus_{feat2}_momentum"
                 
             elif cross_timeframe_type == CrossTimeframeType.VOLATILITY:
-                # Rolling volatility ratio between timeframes
+                # Memory-efficient rolling volatility ratio between timeframes
                 window = min(20, len(x1))
                 if window >= 3:
-                    def rolling_std(arr, w):
-                        mean = np.convolve(arr, np.ones(w)/w, mode='valid')
-                        sq_mean = np.convolve(arr*arr, np.ones(w)/w, mode='valid')
-                        var = np.maximum(sq_mean - mean*mean, 0.0)
-                        return np.sqrt(var)
-                    vol1 = rolling_std(x1, window)
-                    vol2 = rolling_std(x2, window)
-                    ratio = np.divide(vol1, vol2, out=np.zeros_like(vol1), where=(vol2 != 0))
-                    feature = np.zeros_like(x1, dtype=float)
-                    feature[:window-1] = 0.0
-                    feature[window-1:] = ratio
+                    vol1 = self._compute_rolling_statistic_efficient(x1, window, np.std)
+                    vol2 = self._compute_rolling_statistic_efficient(x2, window, np.std)
+                    feature = np.divide(vol1, vol2, out=np.zeros_like(vol1), where=(vol2 != 0))
                     name = f"{feat1}_rolling_vol_ratio_{feat2}"
                 else:
                     return None, ""
@@ -849,6 +852,65 @@ class CrossTimeframeFeatureGenerator:
         except Exception:
             return 0.0
     
+    def _compute_rolling_correlation_efficient(self, x1: np.ndarray, x2: np.ndarray, window: int) -> np.ndarray:
+        """Compute rolling correlation efficiently to avoid memory issues."""
+        try:
+            n = len(x1)
+            result = np.zeros(n, dtype=float)
+            
+            # Pre-allocate arrays for window calculations to avoid repeated allocations
+            x1_window = np.zeros(window)
+            x2_window = np.zeros(window)
+            
+            for i in range(window - 1, n):
+                start_idx = i - window + 1
+                
+                # Copy data to pre-allocated arrays
+                x1_window[:] = x1[start_idx:i + 1]
+                x2_window[:] = x2[start_idx:i + 1]
+                
+                # Compute correlation using numpy's built-in function (more efficient)
+                try:
+                    corr_matrix = np.corrcoef(x1_window, x2_window)
+                    if corr_matrix.shape == (2, 2):
+                        corr_val = corr_matrix[0, 1]
+                        result[i] = corr_val if np.isfinite(corr_val) else 0.0
+                    else:
+                        result[i] = 0.0
+                except (np.linalg.LinAlgError, ValueError):
+                    result[i] = 0.0
+            
+            return result
+            
+        except Exception as e:
+            self.logger.warning(f"Efficient rolling correlation failed: {e}, using fallback")
+            # Fallback to simple approach
+            return np.zeros_like(x1, dtype=float)
+    
+    def _compute_rolling_statistic_efficient(self, x: np.ndarray, window: int, stat_func) -> np.ndarray:
+        """Compute rolling statistics efficiently to avoid memory issues."""
+        try:
+            n = len(x)
+            result = np.zeros(n, dtype=float)
+            
+            # Pre-allocate window array
+            x_window = np.zeros(window)
+            
+            for i in range(window - 1, n):
+                start_idx = i - window + 1
+                x_window[:] = x[start_idx:i + 1]
+                
+                try:
+                    result[i] = stat_func(x_window)
+                except Exception:
+                    result[i] = 0.0
+            
+            return result
+            
+        except Exception as e:
+            self.logger.warning(f"Efficient rolling statistic failed: {e}")
+            return np.zeros_like(x, dtype=float)
+
     def get_performance_metrics(self) -> Dict[str, Any]:
         """Get performance metrics."""
         metrics = {

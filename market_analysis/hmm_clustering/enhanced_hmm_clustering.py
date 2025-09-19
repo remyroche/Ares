@@ -18,14 +18,12 @@ import logging
 import numpy as np
 import pandas as pd
 from typing import Any, Dict, List, Optional, Tuple, Union, Callable
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 import warnings
 from dataclasses import dataclass, field
 from enum import Enum
-import asyncio
 import time
-from concurrent.futures import ThreadPoolExecutor
 import json
 
 # Import common utilities - fixed paths and added error handling
@@ -145,9 +143,16 @@ class RegimeType(Enum):
     TRENDING = "trending"
     MEAN_REVERTING = "mean_reverting"
 
+# Import unified technical indicators
+try:
+    from src.utils.technical_indicators import TechnicalIndicators
+    TECHNICAL_INDICATORS_AVAILABLE = True
+except ImportError:
+    TECHNICAL_INDICATORS_AVAILABLE = False
+
 # Import unified configuration
 try:
-    from src.training.steps.market_analysis.hmm_clustering_config import UnifiedHMMClusteringConfig as HMMClusteringConfig
+    from src.utils.hmm_config import UnifiedHMMConfig as HMMClusteringConfig, create_default_hmm_config
     UNIFIED_CONFIG_AVAILABLE = True
 except ImportError:
     # Fallback configuration if unified config is not available
@@ -857,88 +862,87 @@ class EnhancedHMMClustering:
         features = features.dropna()
         return features
     
-    # Technical indicator calculation methods
-    def _calculate_rsi_fixed(self, prices: pd.Series, window: int = 14) -> pd.Series:
-        """Calculate Relative Strength Index with fixed logic."""
-        delta = prices.diff()
-        gain = delta.where(delta > 0, 0).rolling(window=window).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(window=window).mean()
-        
-        # Fixed RS calculation with proper validation
-        if MATH_VALIDATION_AVAILABLE:
-            rs = safe_divide(gain, loss, default=0.0)
-            # Fixed RSI calculation - check for valid RS values
-            rsi = np.where((rs >= 0) & np.isfinite(rs), 100 - (100 / (1 + rs)), 50.0)
+    # Technical indicator calculation methods - using unified implementations
+    def _calculate_rsi(self, prices: pd.Series, window: int = 14) -> pd.Series:
+        """Calculate RSI using unified technical indicators."""
+        if TECHNICAL_INDICATORS_AVAILABLE:
+            return TechnicalIndicators.calculate_rsi(prices, window)
         else:
+            # Fallback implementation
+            delta = prices.diff()
+            gain = delta.where(delta > 0, 0).rolling(window=window).mean()
+            loss = (-delta.where(delta < 0, 0)).rolling(window=window).mean()
             rs = np.where(loss != 0, gain / loss, 0.0)
             rsi = np.where((rs >= 0) & np.isfinite(rs), 100 - (100 / (1 + rs)), 50.0)
-        
-        return pd.Series(rsi, index=prices.index)
-    
-    def _calculate_rsi(self, prices: pd.Series, window: int = 14) -> pd.Series:
-        """Calculate Relative Strength Index with safety checks."""
-        return self._calculate_rsi_fixed(prices, window)
+            return pd.Series(rsi, index=prices.index)
     
     def _calculate_macd(self, prices: pd.Series, fast: int = 12, slow: int = 26, signal: int = 9) -> Tuple[pd.Series, pd.Series, pd.Series]:
-        """Calculate MACD indicator."""
-        ema_fast = prices.ewm(span=fast).mean()
-        ema_slow = prices.ewm(span=slow).mean()
-        macd_line = ema_fast - ema_slow
-        macd_signal = macd_line.ewm(span=signal).mean()
-        macd_hist = macd_line - macd_signal
-        return macd_line, macd_signal, macd_hist
+        """Calculate MACD using unified technical indicators."""
+        if TECHNICAL_INDICATORS_AVAILABLE:
+            return TechnicalIndicators.calculate_macd(prices, fast, slow, signal)
+        else:
+            # Fallback implementation
+            ema_fast = prices.ewm(span=fast).mean()
+            ema_slow = prices.ewm(span=slow).mean()
+            macd_line = ema_fast - ema_slow
+            macd_signal = macd_line.ewm(span=signal).mean()
+            macd_hist = macd_line - macd_signal
+            return macd_line, macd_signal, macd_hist
     
     def _calculate_bollinger_bands(self, prices: pd.Series, window: int = 20, num_std: float = 2) -> Tuple[pd.Series, pd.Series, pd.Series]:
-        """Calculate Bollinger Bands."""
-        rolling_mean = prices.rolling(window=window).mean()
-        rolling_std = prices.rolling(window=window).std()
-        upper_band = rolling_mean + (rolling_std * num_std)
-        lower_band = rolling_mean - (rolling_std * num_std)
-        return upper_band, rolling_mean, lower_band
+        """Calculate Bollinger Bands using unified technical indicators."""
+        if TECHNICAL_INDICATORS_AVAILABLE:
+            return TechnicalIndicators.calculate_bollinger_bands(prices, window, num_std)
+        else:
+            # Fallback implementation
+            rolling_mean = prices.rolling(window=window).mean()
+            rolling_std = prices.rolling(window=window).std()
+            upper_band = rolling_mean + (rolling_std * num_std)
+            lower_band = rolling_mean - (rolling_std * num_std)
+            return upper_band, rolling_mean, lower_band
     
     def _calculate_atr(self, data: pd.DataFrame, window: int = 14) -> pd.Series:
-        """Calculate Average True Range."""
-        high = data['high']
-        low = data['low']
-        close = data['close']
-        
-        tr1 = high - low
-        tr2 = abs(high - close.shift(1))
-        tr3 = abs(low - close.shift(1))
-        
-        true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-        atr = true_range.rolling(window=window).mean()
-        return atr
-    
-    def _calculate_stochastic_fixed(self, data: pd.DataFrame, window: int = 14) -> Tuple[pd.Series, pd.Series]:
-        """Calculate Stochastic Oscillator with fixed safety checks."""
-        high = data['high']
-        low = data['low']
-        close = data['close']
-        
-        lowest_low = low.rolling(window=window).min()
-        highest_high = high.rolling(window=window).max()
-        
-        # Fixed calculation with proper range validation
-        range_diff = highest_high - lowest_low
-        
-        if MATH_VALIDATION_AVAILABLE:
-            k_percent = safe_divide(100 * (close - lowest_low), range_diff, default=50.0)
+        """Calculate ATR using unified technical indicators."""
+        if TECHNICAL_INDICATORS_AVAILABLE:
+            return TechnicalIndicators.calculate_atr(data, window)
         else:
+            # Fallback implementation
+            high = data['high']
+            low = data['low']
+            close = data['close']
+            
+            tr1 = high - low
+            tr2 = abs(high - close.shift(1))
+            tr3 = abs(low - close.shift(1))
+            
+            true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+            atr = true_range.rolling(window=window).mean()
+            return atr
+    
+    def _calculate_stochastic(self, data: pd.DataFrame, window: int = 14) -> Tuple[pd.Series, pd.Series]:
+        """Calculate Stochastic using unified technical indicators."""
+        if TECHNICAL_INDICATORS_AVAILABLE:
+            return TechnicalIndicators.calculate_stochastic(data, window)
+        else:
+            # Fallback implementation
+            high = data['high']
+            low = data['low']
+            close = data['close']
+            
+            lowest_low = low.rolling(window=window).min()
+            highest_high = high.rolling(window=window).max()
+            range_diff = highest_high - lowest_low
+            
             k_percent = np.where(
-                (range_diff > 1e-10),  # Use small epsilon instead of zero
+                (range_diff > 1e-10),
                 100 * ((close - lowest_low) / range_diff),
                 50.0
             )
-        
-        k_percent = pd.Series(k_percent, index=close.index)
-        d_percent = k_percent.rolling(window=3).mean()
-        
-        return k_percent, d_percent
-    
-    def _calculate_stochastic(self, data: pd.DataFrame, window: int = 14) -> Tuple[pd.Series, pd.Series]:
-        """Calculate Stochastic Oscillator with safety checks."""
-        return self._calculate_stochastic_fixed(data, window)
+            
+            k_percent = pd.Series(k_percent, index=close.index)
+            d_percent = k_percent.rolling(window=3).mean()
+            
+            return k_percent, d_percent
 
 
 def run_hmm_clustering_analysis(

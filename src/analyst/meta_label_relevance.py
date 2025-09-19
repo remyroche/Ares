@@ -55,14 +55,7 @@ def compute_mutual_information(
     default_return=0.0,
     context="compute_mutual_information_pair",
 )
-def compute_mutual_information_pair(
-    Xi: pd.Series,
-    Xj: pd.Series,
-    y: pd.Series,
-    task: str = "regression",
-    random_state: int = 42,
-) -> float:
-    raise NotImplementedError("Removed unused function: compute_mutual_information_pair")
+# Dead function removed - compute_mutual_information_pair was marked as unused
 
 
 @handles_errors(

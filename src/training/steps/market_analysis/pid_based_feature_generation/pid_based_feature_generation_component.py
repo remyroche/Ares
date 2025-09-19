@@ -973,6 +973,107 @@ class PIDBasedFeatureGenerationComponent(BaseMarketAnalysisComponent):
             ]
         }
     
+    def _validate_and_normalize_target(
+        self, 
+        target: Union[np.ndarray, Dict[str, np.ndarray]], 
+        expected_length: int
+    ) -> Optional[Union[np.ndarray, Dict[str, np.ndarray]]]:
+        """
+        Validate and normalize target variable with proper type checking.
+        
+        Args:
+            target: Target variable in various formats
+            expected_length: Expected length to match data
+            
+        Returns:
+            Validated and normalized target or None if validation fails
+        """
+        try:
+            if isinstance(target, dict):
+                # Validate dictionary format for long/short differentiation
+                validated_targets = {}
+                
+                for target_type, target_values in target.items():
+                    # Validate target_type is string
+                    if not isinstance(target_type, str):
+                        tprint_warning(f"Target type must be string, got {type(target_type)}")
+                        continue
+                    
+                    # Validate target_values is array-like
+                    if not hasattr(target_values, '__len__') or not hasattr(target_values, '__getitem__'):
+                        tprint_warning(f"Target values for '{target_type}' must be array-like")
+                        continue
+                    
+                    # Convert to numpy array for validation
+                    try:
+                        target_array = np.asarray(target_values)
+                        if target_array.ndim != 1:
+                            tprint_warning(f"Target '{target_type}' must be 1-dimensional, got {target_array.ndim}D")
+                            continue
+                    except Exception as e:
+                        tprint_warning(f"Cannot convert target '{target_type}' to array: {e}")
+                        continue
+                    
+                    # Validate length
+                    if len(target_array) > expected_length:
+                        tprint_warning(f"Target '{target_type}' length ({len(target_array)}) exceeds data length ({expected_length})")
+                        # Truncate to match data length
+                        target_array = target_array[:expected_length]
+                        tprint_info(f"Truncated target '{target_type}' to match data length")
+                    elif len(target_array) < expected_length:
+                        tprint_warning(f"Target '{target_type}' length ({len(target_array)}) is less than data length ({expected_length})")
+                        continue
+                    
+                    # Check for invalid values
+                    finite_mask = np.isfinite(target_array)
+                    if not np.any(finite_mask):
+                        tprint_warning(f"Target '{target_type}' contains no finite values")
+                        continue
+                    elif not np.all(finite_mask):
+                        finite_count = np.sum(finite_mask)
+                        tprint_warning(f"Target '{target_type}' contains {len(target_array) - finite_count} non-finite values")
+                    
+                    validated_targets[target_type] = target_array
+                
+                if not validated_targets:
+                    tprint_error("No valid targets found in dictionary format")
+                    return None
+                
+                tprint_info(f"Validated dictionary targets: {list(validated_targets.keys())}")
+                return validated_targets
+                
+            else:
+                # Handle array format
+                try:
+                    target_array = np.asarray(target)
+                    if target_array.ndim != 1:
+                        tprint_error(f"Target must be 1-dimensional, got {target_array.ndim}D")
+                        return None
+                except Exception as e:
+                    tprint_error(f"Cannot convert target to array: {e}")
+                    return None
+                
+                # Validate length
+                if len(target_array) != expected_length:
+                    tprint_error(f"Target length ({len(target_array)}) doesn't match data length ({expected_length})")
+                    return None
+                
+                # Check for invalid values
+                finite_mask = np.isfinite(target_array)
+                if not np.any(finite_mask):
+                    tprint_error("Target contains no finite values")
+                    return None
+                elif not np.all(finite_mask):
+                    finite_count = np.sum(finite_mask)
+                    tprint_warning(f"Target contains {len(target_array) - finite_count} non-finite values")
+                
+                tprint_info("Validated array target format")
+                return target_array
+                
+        except Exception as e:
+            tprint_error(f"Target validation failed: {e}")
+            return None
+    
     def _report_checkpoint(self, step: str, status: str, details: Dict[str, Any]):
         """Report progress at key checkpoints."""
         self.logger.info(f"📊 [{step}] {status} - {details}")

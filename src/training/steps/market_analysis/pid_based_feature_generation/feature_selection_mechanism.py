@@ -78,6 +78,24 @@ except ImportError:
     logger = logging.getLogger('FeatureSelectionMechanism')
     logger.setLevel(logging.INFO)
 
+# Import configuration constants
+try:
+    from .constants import FEATURE_GEN, VALIDATION, CROSS_TIMEFRAME
+    CONSTANTS_AVAILABLE = True
+except ImportError:
+    CONSTANTS_AVAILABLE = False
+    # Fallback constants
+    class _Constants:
+        MIN_SYNERGY_SCORE = 0.05
+        MIN_UNIQUE_INFO_SCORE = 0.02
+        MAX_REDUNDANCY_SCORE = 0.8
+        MIN_VARIANCE_THRESHOLD = 0.01
+        STANDARD_TIMEFRAMES = ['1m', '5m', '15m', '30m', '1h', '4h', '1d']
+    
+    FEATURE_GEN = _Constants()
+    VALIDATION = _Constants()
+    CROSS_TIMEFRAME = _Constants()
+
 
 class SelectionStrategy(Enum):
     """Feature selection strategies."""
@@ -105,9 +123,9 @@ class FeatureSelectionConfig:
     max_cross_timeframe_features: int = 50
     
     # Selection Criteria (Initial thresholds)
-    min_synergy_score: float = 0.05
-    min_unique_info_score: float = 0.02
-    max_redundancy_score: float = 0.8
+    min_synergy_score: float = FEATURE_GEN.MIN_SYNERGY_SCORE
+    min_unique_info_score: float = FEATURE_GEN.MIN_UNIQUE_INFO_SCORE
+    max_redundancy_score: float = FEATURE_GEN.MAX_REDUNDANCY_SCORE
     
     # Dynamic Threshold Adjustment
     enable_dynamic_thresholds: bool = True
@@ -586,7 +604,7 @@ class FeatureSelectionMechanism:
             selected_features = []
             
             for idx in variance_indices:
-                if variances[idx] > 0.01:  # Minimum variance threshold
+                if variances[idx] > VALIDATION.MIN_VARIANCE_THRESHOLD:
                     selected_features.append(feature_names[idx])
                     if len(selected_features) >= self.config.max_polynomial_features:
                         break
@@ -636,7 +654,7 @@ class FeatureSelectionMechanism:
     def _identify_timeframe_features(self, feature_names: List[str]) -> List[str]:
         """Identify features that contain timeframe information."""
         timeframe_features = []
-        timeframes = ['1m', '5m', '15m', '30m', '1h', '4h', '1d']
+        timeframes = CROSS_TIMEFRAME.STANDARD_TIMEFRAMES
         
         for feature_name in feature_names:
             for timeframe in timeframes:
@@ -648,7 +666,7 @@ class FeatureSelectionMechanism:
     
     def _are_different_timeframes(self, feat1: str, feat2: str) -> bool:
         """Check if two features are from different timeframes."""
-        timeframes = ['1m', '5m', '15m', '30m', '1h', '4h', '1d']
+        timeframes = CROSS_TIMEFRAME.STANDARD_TIMEFRAMES
         
         tf1 = None
         tf2 = None

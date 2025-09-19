@@ -38,65 +38,108 @@ except ImportError:
     PANDAS_AVAILABLE = False
     pd = None
 
-# Import feature generators with fallbacks
+# Import feature generators with proper fallback handling
+class _MissingGeneratorError(Exception):
+    """Raised when a required generator is not available."""
+    pass
+
+# Import feature generators - fail early if critical components are missing
 try:
     from .interaction_feature_generator import InteractionFeatureGenerator, InteractionConfig, InteractionResult
     INTERACTION_GENERATOR_AVAILABLE = True
 except ImportError as e:
-    logging.warning(f"Interaction feature generator not available: {e}")
+    logging.error(f"Critical dependency missing - Interaction feature generator not available: {e}")
     INTERACTION_GENERATOR_AVAILABLE = False
-    InteractionFeatureGenerator = None
-    InteractionConfig = None
-    InteractionResult = None
+    # Create placeholder classes that raise informative errors
+    class InteractionFeatureGenerator:
+        def __init__(self, *args, **kwargs):
+            raise _MissingGeneratorError("InteractionFeatureGenerator is not available due to import failure")
+    class InteractionConfig:
+        def __init__(self, *args, **kwargs):
+            raise _MissingGeneratorError("InteractionConfig is not available due to import failure")
+    class InteractionResult:
+        def __init__(self, *args, **kwargs):
+            raise _MissingGeneratorError("InteractionResult is not available due to import failure")
 
 try:
     from .polynomial_feature_generator import PolynomialFeatureGenerator, PolynomialConfig, PolynomialResult
     POLYNOMIAL_GENERATOR_AVAILABLE = True
 except ImportError as e:
-    logging.warning(f"Polynomial feature generator not available: {e}")
+    logging.error(f"Critical dependency missing - Polynomial feature generator not available: {e}")
     POLYNOMIAL_GENERATOR_AVAILABLE = False
-    PolynomialFeatureGenerator = None
-    PolynomialConfig = None
-    PolynomialResult = None
+    # Create placeholder classes that raise informative errors
+    class PolynomialFeatureGenerator:
+        def __init__(self, *args, **kwargs):
+            raise _MissingGeneratorError("PolynomialFeatureGenerator is not available due to import failure")
+    class PolynomialConfig:
+        def __init__(self, *args, **kwargs):
+            raise _MissingGeneratorError("PolynomialConfig is not available due to import failure")
+    class PolynomialResult:
+        def __init__(self, *args, **kwargs):
+            raise _MissingGeneratorError("PolynomialResult is not available due to import failure")
 
 try:
     from .cross_timeframe_feature_generator import CrossTimeframeFeatureGenerator, CrossTimeframeConfig, CrossTimeframeResult
     CROSS_TIMEFRAME_GENERATOR_AVAILABLE = True
 except ImportError as e:
-    logging.warning(f"Cross timeframe feature generator not available: {e}")
+    logging.error(f"Critical dependency missing - Cross timeframe feature generator not available: {e}")
     CROSS_TIMEFRAME_GENERATOR_AVAILABLE = False
-    CrossTimeframeFeatureGenerator = None
-    CrossTimeframeConfig = None
-    CrossTimeframeResult = None
+    # Create placeholder classes that raise informative errors
+    class CrossTimeframeFeatureGenerator:
+        def __init__(self, *args, **kwargs):
+            raise _MissingGeneratorError("CrossTimeframeFeatureGenerator is not available due to import failure")
+    class CrossTimeframeConfig:
+        def __init__(self, *args, **kwargs):
+            raise _MissingGeneratorError("CrossTimeframeConfig is not available due to import failure")
+    class CrossTimeframeResult:
+        def __init__(self, *args, **kwargs):
+            raise _MissingGeneratorError("CrossTimeframeResult is not available due to import failure")
 
 try:
     from .optimized_lookback_integration import OptimizedLookbackIntegration, LookbackIntegrationResult
     LOOKBACK_INTEGRATION_AVAILABLE = True
 except ImportError as e:
-    logging.warning(f"Lookback integration not available: {e}")
+    logging.error(f"Critical dependency missing - Lookback integration not available: {e}")
     LOOKBACK_INTEGRATION_AVAILABLE = False
-    OptimizedLookbackIntegration = None
-    LookbackIntegrationResult = None
+    # Create placeholder classes that raise informative errors
+    class OptimizedLookbackIntegration:
+        def __init__(self, *args, **kwargs):
+            raise _MissingGeneratorError("OptimizedLookbackIntegration is not available due to import failure")
+    class LookbackIntegrationResult:
+        def __init__(self, *args, **kwargs):
+            raise _MissingGeneratorError("LookbackIntegrationResult is not available due to import failure")
 
 try:
     from .feature_selection_mechanism import FeatureSelectionMechanism, FeatureSelectionConfig, FeatureSelectionResult
     FEATURE_SELECTION_AVAILABLE = True
 except ImportError as e:
-    logging.warning(f"Feature selection mechanism not available: {e}")
+    logging.error(f"Critical dependency missing - Feature selection mechanism not available: {e}")
     FEATURE_SELECTION_AVAILABLE = False
-    FeatureSelectionMechanism = None
-    FeatureSelectionConfig = None
-    FeatureSelectionResult = None
+    # Create placeholder classes that raise informative errors
+    class FeatureSelectionMechanism:
+        def __init__(self, *args, **kwargs):
+            raise _MissingGeneratorError("FeatureSelectionMechanism is not available due to import failure")
+    class FeatureSelectionConfig:
+        def __init__(self, *args, **kwargs):
+            raise _MissingGeneratorError("FeatureSelectionConfig is not available due to import failure")
+    class FeatureSelectionResult:
+        def __init__(self, *args, **kwargs):
+            raise _MissingGeneratorError("FeatureSelectionResult is not available due to import failure")
 
-# Import simple feature generator as fallback
+# Import simple feature generator as fallback - this should always be available
 try:
     from .simple_feature_generator import SimpleFeatureGenerator, SimpleFeatureResult
     SIMPLE_GENERATOR_AVAILABLE = True
 except ImportError as e:
-    logging.warning(f"Simple feature generator not available: {e}")
+    logging.critical(f"Fallback generator not available - Simple feature generator not available: {e}")
     SIMPLE_GENERATOR_AVAILABLE = False
-    SimpleFeatureGenerator = None
-    SimpleFeatureResult = None
+    # Even the fallback failed - create minimal placeholders
+    class SimpleFeatureGenerator:
+        def __init__(self, *args, **kwargs):
+            raise _MissingGeneratorError("SimpleFeatureGenerator is not available due to import failure")
+    class SimpleFeatureResult:
+        def __init__(self, *args, **kwargs):
+            raise _MissingGeneratorError("SimpleFeatureResult is not available due to import failure")
 
 # Import matrix operations
 try:
@@ -1360,24 +1403,38 @@ class PIDBasedFeatureOrchestrator:
         optimized_lookback_periods: Optional[Dict[str, int]], 
         target: Optional[Union[np.ndarray, Dict[str, np.ndarray]]]
     ):
-        """Safe wrapper for interaction feature generation."""
+        """Safe wrapper for interaction feature generation with proper async handling."""
         try:
-            # Check if the method is async or sync
-            if hasattr(self.interaction_generator, 'generate_interaction_features'):
-                method = self.interaction_generator.generate_interaction_features
-                if asyncio.iscoroutinefunction(method):
-                    return await method(X, feature_names, optimized_lookback_periods, target)
-                else:
-                    return method(X, feature_names, optimized_lookback_periods, target)
-            else:
+            if not hasattr(self.interaction_generator, 'generate_interaction_features'):
                 raise AttributeError("Interaction generator missing generate_interaction_features method")
+            
+            method = self.interaction_generator.generate_interaction_features
+            
+            # Standardize on async interface - all generators should implement async methods
+            if asyncio.iscoroutinefunction(method):
+                return await method(X, feature_names, optimized_lookback_periods, target)
+            else:
+                # Wrap sync method in async call for consistency
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor() as executor:
+                    future = executor.submit(method, X, feature_names, optimized_lookback_periods, target)
+                    return future.result(timeout=300)  # 5 minute timeout for safety
+                    
+        except _MissingGeneratorError as e:
+            tprint_error(f"Generator not available: {e}")
+            return self._create_empty_interaction_result()
+        except concurrent.futures.TimeoutError as e:
+            tprint_error(f"Interaction feature generation timed out: {e}")
+            return self._create_empty_interaction_result()
         except Exception as e:
             tprint_error(f"Interaction feature generation failed: {e}")
             # Try simple generator as fallback
-            if self.simple_generator:
+            if self.simple_generator and SIMPLE_GENERATOR_AVAILABLE:
                 tprint_info("Attempting fallback to simple interaction feature generator...")
                 try:
-                    return self.simple_generator.generate_interaction_features(X, feature_names, optimized_lookback_periods, target)
+                    # Simple generator should also follow the same async pattern
+                    if hasattr(self.simple_generator, 'generate_interaction_features'):
+                        return self.simple_generator.generate_interaction_features(X, feature_names, optimized_lookback_periods, target)
                 except Exception as fallback_error:
                     tprint_error(f"Simple generator fallback also failed: {fallback_error}")
             # Return a minimal result to prevent pipeline failure
@@ -1390,24 +1447,38 @@ class PIDBasedFeatureOrchestrator:
         optimized_lookback_periods: Optional[Dict[str, int]], 
         target: Optional[Union[np.ndarray, Dict[str, np.ndarray]]]
     ):
-        """Safe wrapper for polynomial feature generation."""
+        """Safe wrapper for polynomial feature generation with proper async handling."""
         try:
-            # Check if the method is async or sync
-            if hasattr(self.polynomial_generator, 'generate_polynomial_features'):
-                method = self.polynomial_generator.generate_polynomial_features
-                if asyncio.iscoroutinefunction(method):
-                    return await method(X, feature_names, optimized_lookback_periods, target)
-                else:
-                    return method(X, feature_names, optimized_lookback_periods, target)
-            else:
+            if not hasattr(self.polynomial_generator, 'generate_polynomial_features'):
                 raise AttributeError("Polynomial generator missing generate_polynomial_features method")
+            
+            method = self.polynomial_generator.generate_polynomial_features
+            
+            # Standardize on async interface - all generators should implement async methods
+            if asyncio.iscoroutinefunction(method):
+                return await method(X, feature_names, optimized_lookback_periods, target)
+            else:
+                # Wrap sync method in async call for consistency
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor() as executor:
+                    future = executor.submit(method, X, feature_names, optimized_lookback_periods, target)
+                    return future.result(timeout=300)  # 5 minute timeout for safety
+                    
+        except _MissingGeneratorError as e:
+            tprint_error(f"Generator not available: {e}")
+            return self._create_empty_polynomial_result()
+        except concurrent.futures.TimeoutError as e:
+            tprint_error(f"Polynomial feature generation timed out: {e}")
+            return self._create_empty_polynomial_result()
         except Exception as e:
             tprint_error(f"Polynomial feature generation failed: {e}")
             # Try simple generator as fallback
-            if self.simple_generator:
+            if self.simple_generator and SIMPLE_GENERATOR_AVAILABLE:
                 tprint_info("Attempting fallback to simple polynomial feature generator...")
                 try:
-                    return self.simple_generator.generate_polynomial_features(X, feature_names, optimized_lookback_periods, target)
+                    # Simple generator should also follow the same async pattern
+                    if hasattr(self.simple_generator, 'generate_polynomial_features'):
+                        return self.simple_generator.generate_polynomial_features(X, feature_names, optimized_lookback_periods, target)
                 except Exception as fallback_error:
                     tprint_error(f"Simple generator fallback also failed: {fallback_error}")
             # Return a minimal result to prevent pipeline failure
@@ -1420,24 +1491,38 @@ class PIDBasedFeatureOrchestrator:
         optimized_lookback_periods: Optional[Dict[str, int]], 
         target: Optional[Union[np.ndarray, Dict[str, np.ndarray]]]
     ):
-        """Safe wrapper for cross-timeframe feature generation."""
+        """Safe wrapper for cross-timeframe feature generation with proper async handling."""
         try:
-            # Check if the method is async or sync
-            if hasattr(self.cross_timeframe_generator, 'generate_cross_timeframe_features'):
-                method = self.cross_timeframe_generator.generate_cross_timeframe_features
-                if asyncio.iscoroutinefunction(method):
-                    return await method(X, feature_names, optimized_lookback_periods, target)
-                else:
-                    return method(X, feature_names, optimized_lookback_periods, target)
-            else:
+            if not hasattr(self.cross_timeframe_generator, 'generate_cross_timeframe_features'):
                 raise AttributeError("Cross-timeframe generator missing generate_cross_timeframe_features method")
+            
+            method = self.cross_timeframe_generator.generate_cross_timeframe_features
+            
+            # Standardize on async interface - all generators should implement async methods
+            if asyncio.iscoroutinefunction(method):
+                return await method(X, feature_names, optimized_lookback_periods, target)
+            else:
+                # Wrap sync method in async call for consistency
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor() as executor:
+                    future = executor.submit(method, X, feature_names, optimized_lookback_periods, target)
+                    return future.result(timeout=300)  # 5 minute timeout for safety
+                    
+        except _MissingGeneratorError as e:
+            tprint_error(f"Generator not available: {e}")
+            return self._create_empty_cross_timeframe_result()
+        except concurrent.futures.TimeoutError as e:
+            tprint_error(f"Cross-timeframe feature generation timed out: {e}")
+            return self._create_empty_cross_timeframe_result()
         except Exception as e:
             tprint_error(f"Cross-timeframe feature generation failed: {e}")
             # Try simple generator as fallback
-            if self.simple_generator:
+            if self.simple_generator and SIMPLE_GENERATOR_AVAILABLE:
                 tprint_info("Attempting fallback to simple cross-timeframe feature generator...")
                 try:
-                    return self.simple_generator.generate_cross_timeframe_features(X, feature_names, optimized_lookback_periods, target)
+                    # Simple generator should also follow the same async pattern
+                    if hasattr(self.simple_generator, 'generate_cross_timeframe_features'):
+                        return self.simple_generator.generate_cross_timeframe_features(X, feature_names, optimized_lookback_periods, target)
                 except Exception as fallback_error:
                     tprint_error(f"Simple generator fallback also failed: {fallback_error}")
             # Return a minimal result to prevent pipeline failure

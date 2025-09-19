@@ -114,6 +114,19 @@ except ImportError:
     logger = logging.getLogger('PolynomialFeatureGenerator')
     logger.setLevel(logging.INFO)
 
+# Import standardized error handling
+try:
+    from .error_handling import ErrorHandler, ErrorCategory, ErrorSeverity, safe_operation, create_fallback_result
+    ERROR_HANDLING_AVAILABLE = True
+except ImportError:
+    ERROR_HANDLING_AVAILABLE = False
+    # Create minimal fallback
+    class ErrorHandler:
+        def __init__(self, *args, **kwargs): pass
+        def handle_data_validation_error(self, e, **kwargs): logging.error(f"Data validation error: {e}")
+        def handle_computation_error(self, e, **kwargs): logging.error(f"Computation error: {e}")
+        def get_error_summary(self): return {'total_errors': 0}
+
 
 class PolynomialType(Enum):
     """Types of polynomial features."""
@@ -195,9 +208,13 @@ class PolynomialFeatureGenerator(BaseFeatureGenerator):
         """Initialize the polynomial feature generator with common utilities integration."""
         super().__init__(config or PolynomialConfig(), "PolynomialFeatureGenerator")
         
+        # Initialize error handler
+        self.error_handler = ErrorHandler("PolynomialFeatureGenerator")
+        
         tprint_info(f"📊 Max polynomial features: {self.config.max_polynomial_features}")
         tprint_info(f"📊 Max polynomial degree: {self.config.max_polynomial_degree}")
         tprint_info(f"📊 Polynomial types: {[t.value for t in self.config.polynomial_types]}")
+        tprint_info(f"📊 Error handling available: {ERROR_HANDLING_AVAILABLE}")
     
     def _initialize_components(self):
         """Initialize required components."""
@@ -253,12 +270,21 @@ class PolynomialFeatureGenerator(BaseFeatureGenerator):
         result = PolynomialResult()
         
         try:
-            # Fast-fail input validation
+            # Enhanced input validation with standardized error handling
             if data is None:
-                raise ValueError("Data cannot be None - fast failing")
+                self.error_handler.handle_data_validation_error(
+                    ValueError("Data cannot be None"),
+                    data_shape=None,
+                    data_type="None"
+                )
+                return result
             
             if feature_names is None or len(feature_names) == 0:
-                raise ValueError("Feature names cannot be None or empty - fast failing")
+                self.error_handler.handle_data_validation_error(
+                    ValueError("Feature names cannot be None or empty"),
+                    feature_count=0 if feature_names is None else len(feature_names)
+                )
+                return result
             
             # Convert data to numpy array if needed
             if isinstance(data, pd.DataFrame):
@@ -285,15 +311,61 @@ class PolynomialFeatureGenerator(BaseFeatureGenerator):
                     raise TypeError(f"Data must be array-like, got {type(data)} - fast failing")
                 X = data
                 
-                # Ensure numeric data
-                if X.dtype == object:
-                    tprint_warning("Input data contains non-numeric types, attempting conversion")
-                    try:
-                        X = pd.DataFrame(X).select_dtypes(include=[np.number]).values
-                        if X.shape[1] == 0:
-                            raise ValueError("No numeric columns found after conversion - fast failing")
-                    except Exception as e:
-                        raise ValueError(f"Cannot convert input data to numeric format: {e} - fast failing")
+            # Ensure numeric data with proper validation
+            if X.dtype == object or not np.issubdtype(X.dtype, np.number):
+                tprint_warning("Input data contains non-numeric types, attempting safe conversion")
+                try:
+                    # Validate input shape first
+                    if len(X.shape) != 2:
+                        raise ValueError(f"Expected 2D array, got {len(X.shape)}D array with shape {X.shape}")
+                    
+                    # Convert to DataFrame for safer processing
+                    if isinstance(X, np.ndarray):
+                        temp_df = pd.DataFrame(X, columns=[f"col_{i}" for i in range(X.shape[1])])
+                    else:
+                        temp_df = pd.DataFrame(X)
+                    
+                    # Convert to numeric, handling errors gracefully
+                    numeric_df = temp_df.apply(pd.to_numeric, errors='coerce')
+                    
+                    # Check if we have any numeric data
+                    numeric_columns = numeric_df.select_dtypes(include=[np.number]).columns
+                    if len(numeric_columns) == 0:
+                        raise ValueError("No numeric columns found after conversion - all data is non-numeric")
+                    
+                    # Filter to only numeric columns and convert back to numpy
+                    X_numeric = numeric_df[numeric_columns].values
+                    
+                    # Update feature names to match the filtered columns
+                    if len(numeric_columns) < len(feature_names):
+                        tprint_warning(f"Filtered from {len(feature_names)} to {len(numeric_columns)} numeric features")
+                        # Map back to original feature names if possible
+                        original_indices = [int(col.split('_')[1]) for col in numeric_columns if col.startswith('col_')]
+                        if len(original_indices) == len(numeric_columns):
+                            feature_names = [feature_names[i] for i in original_indices]
+                        else:
+                            feature_names = [f"numeric_feature_{i}" for i in range(len(numeric_columns))]
+                    
+                    X = X_numeric
+                    tprint_info(f"Successfully converted to numeric data: {X.shape}")
+                    
+                except Exception as e:
+                    raise ValueError(f"Cannot convert input data to numeric format: {e}")
+                    
+            # Additional validation for numeric data
+            if X.size == 0:
+                raise ValueError("Input data is empty after conversion")
+            
+            # Check for all-NaN columns
+            nan_columns = np.all(np.isnan(X), axis=0)
+            if np.any(nan_columns):
+                valid_columns = ~nan_columns
+                if not np.any(valid_columns):
+                    raise ValueError("All columns contain only NaN values")
+                
+                X = X[:, valid_columns]
+                feature_names = [name for i, name in enumerate(feature_names) if valid_columns[i]]
+                tprint_warning(f"Removed {np.sum(nan_columns)} all-NaN columns, {X.shape[1]} columns remain")
             
             # Validate data shape
             if X.shape[0] == 0:
@@ -813,9 +885,10 @@ class PolynomialFeatureGenerator(BaseFeatureGenerator):
                 mean_val = np.mean(feature)
                 std_val = np.std(feature)
                 
-                if mean_val != 0:
+                if mean_val != 0 and abs(mean_val) > 1e-12:  # Avoid division by very small numbers
                     cv = std_val / abs(mean_val)
-                    cv_scores.append(cv)
+                    if np.isfinite(cv):  # Ensure the result is finite
+                        cv_scores.append(cv)
             
             if cv_scores:
                 # Lower CV = higher stability

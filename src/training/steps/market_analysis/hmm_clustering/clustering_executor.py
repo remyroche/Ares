@@ -58,7 +58,9 @@ def kmeans_standard(features_array: np.ndarray, n_clusters: int, random_state: i
 		unique_regimes, counts = np.unique(labels, return_counts=True)
 		regime_percentages = safe_divide(counts, len(labels), 0.0)
 		balance_score = 1.0 - (np.max(regime_percentages) - np.min(regime_percentages))
-		regime_entropy = -np.sum(regime_percentages * safe_log(regime_percentages + 1e-10, 0.0))
+		# Safe entropy calculation with proper handling of zero probabilities
+		log_probs = safe_log(regime_percentages + 1e-10, 0.0)
+		regime_entropy = -np.sum(regime_percentages * log_probs)
 		
 		# Calculate additional quality metrics
 		quality_metrics = {
@@ -119,7 +121,9 @@ def kmeans_minibatch(features_array: np.ndarray, n_clusters: int, random_state: 
 		unique_regimes, counts = np.unique(labels, return_counts=True)
 		regime_percentages = safe_divide(counts, len(labels), 0.0)
 		balance_score = 1.0 - (np.max(regime_percentages) - np.min(regime_percentages))
-		regime_entropy = -np.sum(regime_percentages * safe_log(regime_percentages + 1e-10, 0.0))
+		# Safe entropy calculation with proper handling of zero probabilities
+		log_probs = safe_log(regime_percentages + 1e-10, 0.0)
+		regime_entropy = -np.sum(regime_percentages * log_probs)
 		
 		# Calculate additional quality metrics
 		quality_metrics = {

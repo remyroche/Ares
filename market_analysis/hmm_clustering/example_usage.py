@@ -125,20 +125,20 @@ def analyze_regime_transitions(result):
         plt.ylabel('Count')
         plt.grid(True, alpha=0.3)
         
-            plt.tight_layout()
-            
-            # Create results directory if it doesn't exist
-            results_dir = Path('market_analysis/hmm_clustering/results')
-            results_dir.mkdir(parents=True, exist_ok=True)
-            
-            plt.savefig(results_dir / 'regime_analysis.png', dpi=300, bbox_inches='tight')
-            logger.info(f"Regime analysis plot saved to {results_dir / 'regime_analysis.png'}")
-            
-            # Only show plot if in interactive environment
-            try:
-                plt.show()
-            except Exception:
-                logger.info("Non-interactive environment detected, plot saved only")
+        plt.tight_layout()
+        
+        # Create results directory if it doesn't exist
+        results_dir = Path('market_analysis/hmm_clustering/results')
+        results_dir.mkdir(parents=True, exist_ok=True)
+        
+        plt.savefig(results_dir / 'regime_analysis.png', dpi=300, bbox_inches='tight')
+        logger.info(f"Regime analysis plot saved to {results_dir / 'regime_analysis.png'}")
+        
+        # Only show plot if in interactive environment
+        try:
+            plt.show()
+        except Exception:
+            logger.info("Non-interactive environment detected, plot saved only")
                 
         except ImportError:
             logger.warning("Matplotlib not available, skipping visualization")

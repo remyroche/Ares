@@ -26,6 +26,9 @@ from enum import Enum
 import time
 import json
 
+# Setup logging first
+logger = logging.getLogger(__name__)
+
 # Import common utilities - fixed paths and added error handling
 try:
     from src.utils.common_operations import (
@@ -130,8 +133,7 @@ except ImportError as e:
     HMMLEARN_AVAILABLE = False
     hmm = None
 
-# Setup logging
-logger = logging.getLogger(__name__)
+# Logger already initialized above
 
 class RegimeType(Enum):
     """Enumeration of market regime types."""
@@ -225,17 +227,45 @@ class EnhancedHMMClustering:
         if not HMMLEARN_AVAILABLE:
             raise ImportError("hmmlearn is required but not available. Please install with: pip install hmmlearn")
         
-        # Initialize hardware optimizers with availability checks
+        # Initialize hardware optimizers using proper hardware tools
+        self.hardware_manager = None
         self.gpu_manager = None
         self.memory_optimizer = None
         self.cpu_optimizer = None
         
-        if COMMON_OPERATIONS_AVAILABLE and self.config.use_gpu:
-            self.gpu_manager = get_m1_gpu_manager()
-        if COMMON_OPERATIONS_AVAILABLE and self.config.use_memory_optimization:
-            self.memory_optimizer = get_m1_memory_optimizer()
-        if COMMON_OPERATIONS_AVAILABLE and self.config.use_cpu_optimization:
-            self.cpu_optimizer = get_m1_cpu_optimizer()
+        try:
+            # Use unified hardware manager for coordinated optimization
+            from src.utils.hardware.unified_hardware_manager import UnifiedHardwareManager, WorkloadType
+            self.hardware_manager = UnifiedHardwareManager()
+            
+            # Configure for ML training workload
+            if self.config.use_gpu or self.config.use_memory_optimization or self.config.use_cpu_optimization:
+                optimization_config = {
+                    'workload_type': WorkloadType.ML_TRAINING,
+                    'enable_gpu': self.config.use_gpu,
+                    'enable_memory_optimization': self.config.use_memory_optimization,
+                    'enable_cpu_optimization': self.config.use_cpu_optimization
+                }
+                self.hardware_manager.configure_optimization(**optimization_config)
+                
+                # Get individual components if needed
+                if self.config.use_gpu:
+                    self.gpu_manager = self.hardware_manager.gpu_manager
+                if self.config.use_memory_optimization:
+                    self.memory_optimizer = self.hardware_manager.memory_optimizer
+                if self.config.use_cpu_optimization:
+                    self.cpu_optimizer = self.hardware_manager.cpu_optimizer
+                    
+        except ImportError as e:
+            self.logger.warning(f"Unified hardware manager not available: {e}, falling back to individual components")
+            
+            # Fallback to individual components
+            if COMMON_OPERATIONS_AVAILABLE and self.config.use_gpu:
+                self.gpu_manager = get_m1_gpu_manager()
+            if COMMON_OPERATIONS_AVAILABLE and self.config.use_memory_optimization:
+                self.memory_optimizer = get_m1_memory_optimizer()
+            if COMMON_OPERATIONS_AVAILABLE and self.config.use_cpu_optimization:
+                self.cpu_optimizer = get_m1_cpu_optimizer()
         
         # Initialize utilities with availability checks
         self.klines_manager = KlinesParquetManager() if KLINES_AVAILABLE else None
@@ -450,37 +480,70 @@ class EnhancedHMMClustering:
             feature_array = features.values.astype(np.float32)
             self.feature_names = features.columns.tolist()
             
-            # Memory optimization - ensure consistent usage
-            if self.memory_optimizer:
+            # Use unified hardware manager for optimization if available
+            if self.hardware_manager:
                 try:
-                    feature_array = self.memory_optimizer.create_memory_efficient_array(
-                        feature_array, dtype=np.float32
-                    )
-                    self.logger.info("Applied memory optimization to feature array")
+                    with self.hardware_manager.optimization_context():
+                        # Memory optimization
+                        if self.memory_optimizer:
+                            feature_array = self.memory_optimizer.create_memory_efficient_array(
+                                feature_array, dtype=np.float32
+                            )
+                            self.logger.info("Applied unified memory optimization to feature array")
+                        else:
+                            feature_array = np.asarray(feature_array, dtype=np.float32)
+                        
+                        # Scale features
+                        from sklearn.preprocessing import StandardScaler
+                        self.scaler = StandardScaler()
+                        features_scaled = self.scaler.fit_transform(feature_array)
+                        
+                        # Note: HMM training is CPU-only (hmmlearn limitation), so no GPU operations needed
+                        # CPU optimization for HMM training
+                        if self.cpu_optimizer:
+                            features_scaled = self.cpu_optimizer.optimize_array(features_scaled)
+                            self.logger.info("Applied unified CPU optimization to features")
+                        
+                        # Train HMM model (always on CPU due to hmmlearn limitations)
+                        model = self._train_hmm_cpu(features_scaled)
+                        
                 except Exception as e:
-                    self.logger.warning(f"Memory optimization failed, using standard array: {e}")
+                    self.logger.warning(f"Unified hardware optimization failed: {e}, falling back to basic training")
+                    # Fallback to basic training
                     feature_array = np.asarray(feature_array, dtype=np.float32)
+                    from sklearn.preprocessing import StandardScaler
+                    self.scaler = StandardScaler()
+                    features_scaled = self.scaler.fit_transform(feature_array)
+                    model = self._train_hmm_cpu(features_scaled)
             else:
-                feature_array = np.asarray(feature_array, dtype=np.float32)
-            
-            # Scale features
-            from sklearn.preprocessing import StandardScaler
-            self.scaler = StandardScaler()
-            features_scaled = self.scaler.fit_transform(feature_array)
-            
-            # Removed wasteful GPU transfers - only use GPU for actual computations
-            # HMM training is CPU-only, so no GPU preprocessing needed
-            
-            # CPU optimization for actual HMM training
-            if self.cpu_optimizer:
-                try:
-                    features_scaled = self.cpu_optimizer.optimize_array(features_scaled)
-                    self.logger.info("Applied CPU optimization to features")
-                except Exception as e:
-                    self.logger.warning(f"CPU optimization failed: {e}")
-            
-            # Train HMM model (always on CPU due to hmmlearn limitations)
-            model = self._train_hmm_cpu(features_scaled)
+                # Fallback to individual optimizations
+                if self.memory_optimizer:
+                    try:
+                        feature_array = self.memory_optimizer.create_memory_efficient_array(
+                            feature_array, dtype=np.float32
+                        )
+                        self.logger.info("Applied memory optimization to feature array")
+                    except Exception as e:
+                        self.logger.warning(f"Memory optimization failed, using standard array: {e}")
+                        feature_array = np.asarray(feature_array, dtype=np.float32)
+                else:
+                    feature_array = np.asarray(feature_array, dtype=np.float32)
+                
+                # Scale features
+                from sklearn.preprocessing import StandardScaler
+                self.scaler = StandardScaler()
+                features_scaled = self.scaler.fit_transform(feature_array)
+                
+                # CPU optimization for actual HMM training
+                if self.cpu_optimizer:
+                    try:
+                        features_scaled = self.cpu_optimizer.optimize_array(features_scaled)
+                        self.logger.info("Applied CPU optimization to features")
+                    except Exception as e:
+                        self.logger.warning(f"CPU optimization failed: {e}")
+                
+                # Train HMM model (always on CPU due to hmmlearn limitations)
+                model = self._train_hmm_cpu(features_scaled)
             
             # Get regime labels and probabilities
             regime_labels = model.predict(features_scaled)
@@ -501,10 +564,18 @@ class EnhancedHMMClustering:
                 features, regime_labels
             )
             
-            # Memory usage
+            # Memory usage tracking
             memory_usage = {}
-            if self.memory_optimizer:
-                memory_usage = self.memory_optimizer.get_memory_usage()
+            if self.hardware_manager:
+                try:
+                    memory_usage = self.hardware_manager.get_performance_metrics().get('memory', {})
+                except Exception as e:
+                    self.logger.warning(f"Could not get memory usage from hardware manager: {e}")
+            elif self.memory_optimizer:
+                try:
+                    memory_usage = self.memory_optimizer.get_memory_usage()
+                except Exception as e:
+                    self.logger.warning(f"Could not get memory usage from memory optimizer: {e}")
             
             processing_time = time.time() - start_time
             
@@ -591,43 +662,95 @@ class EnhancedHMMClustering:
         regime_labels: np.ndarray, 
         regime_probabilities: np.ndarray
     ) -> Dict[str, float]:
-        """Calculate performance metrics for the HMM model."""
+        """Calculate comprehensive performance metrics for the HMM model."""
         try:
             metrics = {}
             
-            # Fixed regime stability calculation
-            regime_changes = np.sum(np.diff(regime_labels) != 0)
-            metrics['regime_stability'] = 1 - (regime_changes / (len(regime_labels) - 1))  # Fixed denominator
-            
-            # Regime balance
+            # Basic regime statistics
             unique_regimes, counts = np.unique(regime_labels, return_counts=True)
-            regime_balance = 1 - np.std(counts) / np.mean(counts)
-            metrics['regime_balance'] = regime_balance
+            n_regimes = len(unique_regimes)
+            total_samples = len(regime_labels)
             
-            # Probability confidence
+            # 1. Regime Stability Metrics
+            regime_changes = np.sum(np.diff(regime_labels) != 0)
+            total_transitions = len(regime_labels) - 1
+            if MATH_VALIDATION_AVAILABLE:
+                metrics['regime_stability'] = 1 - safe_divide(regime_changes, total_transitions, 0.0)
+                metrics['transition_rate'] = safe_divide(regime_changes, total_samples, 0.0)
+            else:
+                metrics['regime_stability'] = 1 - (regime_changes / total_transitions) if total_transitions > 0 else 0.0
+                metrics['transition_rate'] = regime_changes / total_samples if total_samples > 0 else 0.0
+            
+            # 2. Regime Balance Metrics
+            if MATH_VALIDATION_AVAILABLE:
+                regime_balance = 1 - safe_divide(np.std(counts), np.mean(counts), 0.0)
+                regime_entropy = -np.sum(safe_divide(counts, total_samples, 0.0) * 
+                                       safe_log(safe_divide(counts, total_samples, 1e-10), 0.0))
+            else:
+                mean_count = np.mean(counts)
+                regime_balance = 1 - (np.std(counts) / mean_count) if mean_count != 0 else 0.0
+                regime_probs = counts / total_samples
+                regime_entropy = -np.sum(regime_probs * np.log(regime_probs + 1e-10))
+            
+            metrics['regime_balance'] = regime_balance
+            metrics['regime_entropy'] = regime_entropy
+            metrics['regime_gini_coefficient'] = self._calculate_gini_coefficient(counts)
+            
+            # 3. Confidence Metrics
             max_probs = np.max(regime_probabilities, axis=1)
             metrics['avg_confidence'] = np.mean(max_probs)
             metrics['min_confidence'] = np.min(max_probs)
+            metrics['max_confidence'] = np.max(max_probs)
+            metrics['confidence_std'] = np.std(max_probs)
             
-            # Regime duration statistics
-            regime_durations = []
-            current_regime = regime_labels[0]
-            current_duration = 1
+            # Confidence quartiles
+            confidence_quartiles = np.percentile(max_probs, [25, 50, 75])
+            metrics['confidence_q1'] = confidence_quartiles[0]
+            metrics['confidence_median'] = confidence_quartiles[1]
+            metrics['confidence_q3'] = confidence_quartiles[2]
             
-            for i in range(1, len(regime_labels)):
-                if regime_labels[i] == current_regime:
-                    current_duration += 1
-                else:
-                    regime_durations.append(current_duration)
-                    current_regime = regime_labels[i]
-                    current_duration = 1
-            
-            regime_durations.append(current_duration)
-            
+            # 4. Regime Duration Statistics
+            regime_durations = self._calculate_regime_durations(regime_labels)
             if regime_durations:
                 metrics['avg_regime_duration'] = np.mean(regime_durations)
                 metrics['min_regime_duration'] = np.min(regime_durations)
                 metrics['max_regime_duration'] = np.max(regime_durations)
+                metrics['regime_duration_std'] = np.std(regime_durations)
+                metrics['regime_duration_cv'] = safe_divide(np.std(regime_durations), 
+                                                          np.mean(regime_durations), 0.0) if MATH_VALIDATION_AVAILABLE else (np.std(regime_durations) / np.mean(regime_durations) if np.mean(regime_durations) != 0 else 0.0)
+            
+            # 5. Regime Persistence Metrics (how likely a regime is to continue)
+            persistence_scores = []
+            for regime in unique_regimes:
+                regime_mask = regime_labels == regime
+                if np.sum(regime_mask) > 1:
+                    # Calculate how often this regime follows itself
+                    transitions = regime_labels[1:][regime_mask[:-1]]
+                    same_regime_transitions = np.sum(transitions == regime)
+                    total_regime_transitions = len(transitions)
+                    if total_regime_transitions > 0:
+                        persistence = same_regime_transitions / total_regime_transitions
+                        persistence_scores.append(persistence)
+            
+            if persistence_scores:
+                metrics['avg_regime_persistence'] = np.mean(persistence_scores)
+                metrics['min_regime_persistence'] = np.min(persistence_scores)
+                metrics['max_regime_persistence'] = np.max(persistence_scores)
+            
+            # 6. Model Quality Metrics
+            metrics['n_regimes_detected'] = n_regimes
+            metrics['regime_coverage'] = n_regimes / self.config.n_components  # How many of expected regimes were found
+            
+            # 7. Uncertainty Metrics
+            # Average uncertainty (1 - max probability)
+            uncertainties = 1 - max_probs
+            metrics['avg_uncertainty'] = np.mean(uncertainties)
+            metrics['uncertainty_std'] = np.std(uncertainties)
+            
+            # 8. Feature-based Regime Quality (if features available)
+            if not features.empty and 'returns' in features.columns:
+                regime_quality_metrics = self._calculate_regime_quality_metrics(features, regime_labels)
+                metrics.update(regime_quality_metrics)
             
             return metrics
             
@@ -768,7 +891,7 @@ class EnhancedHMMClustering:
         for window in self.config.lookback_windows:
             # RSI with fixed calculation
             if "rsi" in self.config.technical_indicators:
-                features[f"rsi_{window}"] = self._calculate_rsi_fixed(features['close'], window)
+                features[f"rsi_{window}"] = self._calculate_rsi(features['close'], window)
             
             # MACD with standard parameters
             if "macd" in self.config.technical_indicators:
@@ -801,7 +924,7 @@ class EnhancedHMMClustering:
             
             # Stochastic
             if "stochastic" in self.config.technical_indicators:
-                stoch_k, stoch_d = self._calculate_stochastic_fixed(features, window)
+                stoch_k, stoch_d = self._calculate_stochastic(features, window)
                 features[f"stoch_k_{window}"] = stoch_k
                 features[f"stoch_d_{window}"] = stoch_d
         
@@ -865,87 +988,352 @@ class EnhancedHMMClustering:
         features = features.dropna()
         return features
     
-    # Technical indicator calculation methods - using existing FeatureEngineer
+    # Technical indicator calculation methods - using centralized TechnicalIndicators from hmm_utils
     def _calculate_rsi(self, prices: pd.Series, window: int = 14) -> pd.Series:
-        """Calculate RSI using existing FeatureEngineer."""
-        if self.feature_engineer is not None:
-            return self.feature_engineer._calculate_rsi(prices, window)
-        else:
-            # Fallback implementation
-            delta = prices.diff()
-            gain = delta.where(delta > 0, 0).rolling(window=window).mean()
-            loss = (-delta.where(delta < 0, 0)).rolling(window=window).mean()
-            rs = np.where(loss != 0, gain / loss, 0.0)
-            rsi = np.where((rs >= 0) & np.isfinite(rs), 100 - (100 / (1 + rs)), 50.0)
-            return pd.Series(rsi, index=prices.index)
+        """Calculate RSI using centralized TechnicalIndicators from hmm_utils."""
+        try:
+            from .hmm_utils import TechnicalIndicators
+            return TechnicalIndicators.calculate_rsi(prices, window)
+        except ImportError:
+            self.logger.warning("Could not import TechnicalIndicators from hmm_utils, using fallback")
+            # Minimal fallback
+            return pd.Series([50.0] * len(prices), index=prices.index)
     
     def _calculate_macd(self, prices: pd.Series, fast: int = 12, slow: int = 26, signal: int = 9) -> Tuple[pd.Series, pd.Series, pd.Series]:
-        """Calculate MACD using existing FeatureEngineer."""
-        if self.feature_engineer is not None:
-            return self.feature_engineer._calculate_macd(prices, fast, slow, signal)
-        else:
-            # Fallback implementation
-            ema_fast = prices.ewm(span=fast).mean()
-            ema_slow = prices.ewm(span=slow).mean()
-            macd_line = ema_fast - ema_slow
-            macd_signal = macd_line.ewm(span=signal).mean()
+        """Calculate MACD using centralized TechnicalIndicators from hmm_utils."""
+        try:
+            from .hmm_utils import TechnicalIndicators
+            macd_line = TechnicalIndicators.calculate_macd(prices, fast, slow, signal)
+            # For compatibility, return MACD line, signal line (smoothed), and histogram
+            macd_signal = macd_line.ewm(span=signal, adjust=False).mean()
             macd_hist = macd_line - macd_signal
             return macd_line, macd_signal, macd_hist
+        except ImportError:
+            self.logger.warning("Could not import TechnicalIndicators from hmm_utils, using fallback")
+            # Minimal fallback
+            zero_series = pd.Series([0.0] * len(prices), index=prices.index)
+            return zero_series, zero_series, zero_series
     
     def _calculate_bollinger_bands(self, prices: pd.Series, window: int = 20, num_std: float = 2) -> Tuple[pd.Series, pd.Series, pd.Series]:
-        """Calculate Bollinger Bands using existing FeatureEngineer."""
-        if self.feature_engineer is not None:
-            return self.feature_engineer._calculate_bollinger_bands(prices, window, num_std)
-        else:
-            # Fallback implementation
-            rolling_mean = prices.rolling(window=window).mean()
-            rolling_std = prices.rolling(window=window).std()
-            upper_band = rolling_mean + (rolling_std * num_std)
-            lower_band = rolling_mean - (rolling_std * num_std)
-            return upper_band, rolling_mean, lower_band
+        """Calculate Bollinger Bands using centralized TechnicalIndicators from hmm_utils."""
+        try:
+            from .hmm_utils import TechnicalIndicators
+            bb_features = TechnicalIndicators.calculate_bollinger_bands(prices, window, num_std)
+            if not bb_features.empty:
+                return bb_features['bb_upper'], bb_features['bb_middle'], bb_features['bb_lower']
+            else:
+                # Fallback to price series
+                price_series = pd.Series([prices.mean()] * len(prices), index=prices.index)
+                return price_series, price_series, price_series
+        except ImportError:
+            self.logger.warning("Could not import TechnicalIndicators from hmm_utils, using fallback")
+            # Minimal fallback
+            price_series = pd.Series([prices.mean()] * len(prices), index=prices.index)
+            return price_series, price_series, price_series
     
     def _calculate_atr(self, data: pd.DataFrame, window: int = 14) -> pd.Series:
-        """Calculate ATR using existing FeatureEngineer."""
-        if self.feature_engineer is not None:
-            return self.feature_engineer._calculate_atr(data, window)
-        else:
-            # Fallback implementation
-            high = data['high']
-            low = data['low']
-            close = data['close']
-            
-            tr1 = high - low
-            tr2 = abs(high - close.shift(1))
-            tr3 = abs(low - close.shift(1))
-            
-            true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-            atr = true_range.rolling(window=window).mean()
-            return atr
+        """Calculate ATR using centralized TechnicalIndicators from hmm_utils."""
+        try:
+            from .hmm_utils import TechnicalIndicators
+            return TechnicalIndicators.calculate_atr(data, window)
+        except ImportError:
+            self.logger.warning("Could not import TechnicalIndicators from hmm_utils, using fallback")
+            # Minimal fallback
+            return pd.Series([0.0] * len(data), index=data.index)
     
     def _calculate_stochastic(self, data: pd.DataFrame, window: int = 14) -> Tuple[pd.Series, pd.Series]:
-        """Calculate Stochastic using existing FeatureEngineer."""
-        if self.feature_engineer is not None:
-            return self.feature_engineer._calculate_stochastic(data, window)
-        else:
-            # Fallback implementation
-            high = data['high']
-            low = data['low']
-            close = data['close']
+        """Calculate Stochastic using centralized TechnicalIndicators from hmm_utils."""
+        try:
+            from .hmm_utils import TechnicalIndicators
+            return TechnicalIndicators.calculate_stochastic(data, window)
+        except ImportError:
+            self.logger.warning("Could not import TechnicalIndicators from hmm_utils, using fallback")
+            # Minimal fallback
+            neutral_series = pd.Series([50.0] * len(data), index=data.index)
+            return neutral_series, neutral_series
+    
+    def _calculate_gini_coefficient(self, counts: np.ndarray) -> float:
+        """Calculate Gini coefficient for regime distribution balance."""
+        try:
+            if len(counts) <= 1:
+                return 0.0
             
-            lowest_low = low.rolling(window=window).min()
-            highest_high = high.rolling(window=window).max()
-            range_diff = highest_high - lowest_low
+            # Sort counts
+            sorted_counts = np.sort(counts)
+            n = len(counts)
             
-            k_percent = np.where(
-                (range_diff > 1e-10),
-                100 * ((close - lowest_low) / range_diff),
-                50.0
+            # Calculate Gini coefficient
+            cumsum = np.cumsum(sorted_counts)
+            gini = (2 * np.sum((np.arange(1, n + 1) * sorted_counts))) / (n * cumsum[-1]) - (n + 1) / n
+            return max(0.0, gini)  # Ensure non-negative
+            
+        except Exception as e:
+            self.logger.warning(f"Gini coefficient calculation failed: {e}")
+            return 0.0
+    
+    def _calculate_regime_durations(self, regime_labels: np.ndarray) -> list:
+        """Calculate list of regime durations."""
+        try:
+            if len(regime_labels) == 0:
+                return []
+            
+            durations = []
+            current_regime = regime_labels[0]
+            current_duration = 1
+            
+            for i in range(1, len(regime_labels)):
+                if regime_labels[i] == current_regime:
+                    current_duration += 1
+                else:
+                    durations.append(current_duration)
+                    current_regime = regime_labels[i]
+                    current_duration = 1
+            
+            durations.append(current_duration)  # Add the last regime duration
+            return durations
+            
+        except Exception as e:
+            self.logger.warning(f"Regime duration calculation failed: {e}")
+            return []
+    
+    def _calculate_regime_quality_metrics(self, features: pd.DataFrame, regime_labels: np.ndarray) -> Dict[str, float]:
+        """Calculate regime quality metrics based on feature characteristics."""
+        try:
+            quality_metrics = {}
+            unique_regimes = np.unique(regime_labels)
+            
+            # Calculate within-regime vs between-regime variance for returns
+            if 'returns' in features.columns:
+                returns = features['returns'].dropna()
+                if len(returns) > 0:
+                    # Within-regime variance
+                    within_regime_vars = []
+                    for regime in unique_regimes:
+                        regime_returns = returns[regime_labels[:len(returns)] == regime]
+                        if len(regime_returns) > 1:
+                            within_regime_vars.append(np.var(regime_returns))
+                    
+                    if within_regime_vars:
+                        avg_within_regime_var = np.mean(within_regime_vars)
+                        total_var = np.var(returns)
+                        
+                        if MATH_VALIDATION_AVAILABLE:
+                            quality_metrics['regime_separation_ratio'] = safe_divide(
+                                total_var - avg_within_regime_var, total_var, 0.0
+                            )
+                        else:
+                            quality_metrics['regime_separation_ratio'] = (
+                                (total_var - avg_within_regime_var) / total_var 
+                                if total_var > 0 else 0.0
+                            )
+            
+            # Calculate regime distinctiveness (how different regimes are from each other)
+            regime_means = {}
+            for regime in unique_regimes:
+                regime_mask = regime_labels == regime
+                if np.sum(regime_mask) > 0:
+                    regime_features = features.iloc[:len(regime_labels)][regime_mask]
+                    if not regime_features.empty:
+                        # Calculate mean of numeric features for this regime
+                        numeric_features = regime_features.select_dtypes(include=[np.number])
+                        if not numeric_features.empty:
+                            regime_means[regime] = numeric_features.mean()
+            
+            # Calculate average pairwise distance between regime centroids
+            if len(regime_means) > 1:
+                distances = []
+                regimes = list(regime_means.keys())
+                for i in range(len(regimes)):
+                    for j in range(i + 1, len(regimes)):
+                        try:
+                            # Calculate Euclidean distance between regime means
+                            mean1 = regime_means[regimes[i]]
+                            mean2 = regime_means[regimes[j]]
+                            common_features = mean1.index.intersection(mean2.index)
+                            if len(common_features) > 0:
+                                dist = np.sqrt(np.sum((mean1[common_features] - mean2[common_features]) ** 2))
+                                distances.append(dist)
+                        except Exception:
+                            continue
+                
+                if distances:
+                    quality_metrics['avg_regime_distance'] = np.mean(distances)
+                    quality_metrics['min_regime_distance'] = np.min(distances)
+                    quality_metrics['max_regime_distance'] = np.max(distances)
+            
+            return quality_metrics
+            
+        except Exception as e:
+            self.logger.warning(f"Regime quality metrics calculation failed: {e}")
+            return {}
+    
+    def get_performance_metrics_as_features(self, performance_metrics: Dict[str, float]) -> pd.DataFrame:
+        """Convert performance metrics to a DataFrame suitable for ML training."""
+        try:
+            # Create a single-row DataFrame with metrics as features
+            metrics_df = pd.DataFrame([performance_metrics])
+            
+            # Add prefixes to avoid naming conflicts
+            metrics_df.columns = ['hmm_' + col for col in metrics_df.columns]
+            
+            return metrics_df
+            
+        except Exception as e:
+            self.logger.error(f"Failed to convert performance metrics to features: {e}")
+            return pd.DataFrame()
+    
+    def create_ml_features_for_training(
+        self,
+        data: pd.DataFrame,
+        result: 'HMMClusteringResult',
+        lookback_window: int = 20,
+        include_dynamic_features: bool = True
+    ) -> pd.DataFrame:
+        """
+        Create comprehensive ML features from HMM results for downstream training.
+        
+        Args:
+            data: Original market data
+            result: HMM clustering result
+            lookback_window: Window size for rolling features
+            include_dynamic_features: Include time-varying features
+            
+        Returns:
+            DataFrame with comprehensive ML features
+        """
+        try:
+            # Import feature generator
+            try:
+                from src.feature_generation.categories.hmm_performance_metrics import (
+                    create_hmm_performance_features_from_result
+                )
+                
+                # Generate comprehensive features
+                ml_features = create_hmm_performance_features_from_result(
+                    data, result, lookback_window
+                )
+                
+                self.logger.info(f"Created {len(ml_features.columns)} ML features from HMM results")
+                return ml_features
+                
+            except ImportError:
+                self.logger.warning("HMM performance metrics feature generator not available, using basic features")
+                
+                # Fallback to basic feature creation
+                basic_features = pd.DataFrame(index=data.index)
+                
+                # Static metrics (broadcast to all rows)
+                for metric_name, metric_value in result.performance_metrics.items():
+                    basic_features[f'hmm_{metric_name}'] = metric_value
+                
+                # Dynamic features if requested
+                if include_dynamic_features:
+                    basic_features['hmm_current_regime'] = result.regime_labels
+                    basic_features['hmm_regime_confidence'] = np.max(result.regime_probabilities, axis=1)
+                    basic_features['hmm_regime_uncertainty'] = 1 - np.max(result.regime_probabilities, axis=1)
+                
+                return basic_features
+                
+        except Exception as e:
+            self.logger.error(f"Failed to create ML features for training: {e}")
+            return pd.DataFrame(index=data.index)
+    
+    def integrate_with_feature_pipeline(
+        self,
+        base_features: pd.DataFrame,
+        result: 'HMMClusteringResult',
+        integration_method: str = 'concatenate',
+        feature_prefix: str = 'hmm_'
+    ) -> pd.DataFrame:
+        """
+        Integrate HMM features with existing feature pipeline.
+        
+        Args:
+            base_features: Existing features DataFrame
+            result: HMM clustering result
+            integration_method: How to integrate features ('concatenate', 'replace', 'selective')
+            feature_prefix: Prefix for HMM features
+            
+        Returns:
+            Integrated features DataFrame
+        """
+        try:
+            # Create HMM features
+            hmm_features = self.create_ml_features_for_training(
+                pd.DataFrame(index=base_features.index), 
+                result, 
+                include_dynamic_features=True
             )
             
-            k_percent = pd.Series(k_percent, index=close.index)
-            d_percent = k_percent.rolling(window=3).mean()
+            if hmm_features.empty:
+                self.logger.warning("No HMM features generated, returning base features")
+                return base_features
             
-            return k_percent, d_percent
+            # Ensure feature prefix
+            if feature_prefix and not feature_prefix.endswith('_'):
+                feature_prefix += '_'
+            
+            if feature_prefix:
+                hmm_features.columns = [
+                    col if col.startswith(feature_prefix) else f"{feature_prefix}{col}"
+                    for col in hmm_features.columns
+                ]
+            
+            # Integration based on method
+            if integration_method == 'concatenate':
+                # Simply concatenate features
+                integrated_features = pd.concat([base_features, hmm_features], axis=1)
+                
+            elif integration_method == 'replace':
+                # Replace any existing HMM features
+                non_hmm_features = base_features[[
+                    col for col in base_features.columns 
+                    if not col.startswith(feature_prefix)
+                ]]
+                integrated_features = pd.concat([non_hmm_features, hmm_features], axis=1)
+                
+            elif integration_method == 'selective':
+                # Only add HMM features that don't correlate highly with existing features
+                correlation_threshold = 0.9
+                features_to_add = []
+                
+                for hmm_col in hmm_features.columns:
+                    max_corr = 0
+                    for base_col in base_features.columns:
+                        try:
+                            corr = abs(base_features[base_col].corr(hmm_features[hmm_col]))
+                            if not np.isnan(corr):
+                                max_corr = max(max_corr, corr)
+                        except:
+                            continue
+                    
+                    if max_corr < correlation_threshold:
+                        features_to_add.append(hmm_col)
+                
+                if features_to_add:
+                    integrated_features = pd.concat([
+                        base_features, 
+                        hmm_features[features_to_add]
+                    ], axis=1)
+                else:
+                    integrated_features = base_features
+                    self.logger.warning("No HMM features passed correlation filter")
+            
+            else:
+                self.logger.error(f"Unknown integration method: {integration_method}")
+                return base_features
+            
+            # Remove duplicate columns
+            integrated_features = integrated_features.loc[:, ~integrated_features.columns.duplicated()]
+            
+            self.logger.info(f"Integrated features: {len(base_features.columns)} base + "
+                           f"{len(hmm_features.columns)} HMM = {len(integrated_features.columns)} total")
+            
+            return integrated_features
+            
+        except Exception as e:
+            self.logger.error(f"Failed to integrate with feature pipeline: {e}")
+            return base_features
 
 
 def run_hmm_clustering_analysis(
@@ -1022,7 +1410,7 @@ def run_hmm_clustering_analysis(
                 if not save_success:
                     logger.warning(f"Failed to save model to {model_path}")
                 
-                # Save results
+                # Save comprehensive results including ML-ready performance metrics
                 results_path = output_path / f"hmm_results_{symbol}_{interval}.json"
                 results_data = {
                     'symbol': symbol,
@@ -1041,7 +1429,15 @@ def run_hmm_clustering_analysis(
                 with open(results_path, 'w') as f:
                     json.dump(results_data, f, indent=2, default=str)
                 
+                # Save performance metrics as ML features
+                ml_features_path = output_path / f"hmm_ml_features_{symbol}_{interval}.csv"
+                ml_features = clustering.get_performance_metrics_as_features(result.performance_metrics)
+                if not ml_features.empty:
+                    ml_features.to_csv(ml_features_path, index=False)
+                    logger.info(f"ML-ready performance metrics saved to {ml_features_path}")
+                
                 logger.info(f"Results saved to {output_path}")
+                logger.info(f"Performance metrics summary: {len(result.performance_metrics)} metrics available for ML training")
             except Exception as save_e:
                 logger.warning(f"Failed to save results: {save_e}")
         elif save_results:

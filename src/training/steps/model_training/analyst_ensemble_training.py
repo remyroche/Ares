@@ -28,6 +28,7 @@ Enhanced with:
 - Integration with common utilities (math_validation, serialization, hardware optimization)
 - ML common utilities (CV, lookahead, HPO, etc.)
 - Vectorized training capabilities for improved performance
+- Fast failing for missing required ML dependencies (TensorFlow, CatBoost, LightGBM)
 """
 
 import numpy as np
@@ -105,6 +106,7 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
     - Integration with common utilities (math_validation, serialization, hardware optimization)
     - ML common utilities (CV, lookahead, HPO, etc.)
     - Per-regime ensemble training, HPO, saving, and metrics
+    - Fast failing for missing required ML dependencies (TensorFlow, CatBoost, LightGBM)
     """
     
     def __init__(self, config: Optional[EnsembleTrainingConfig] = None, enable_vectorization: bool = True):
@@ -1352,11 +1354,18 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
         """
         Create base models for ensemble training.
         
+        Required Dependencies:
+        - TensorFlow/Keras for TCN model
+        - CatBoost for CatBoost model  
+        - LightGBM for LightGBM model
+        - Scikit-learn for Elastic Net
+        
         Returns:
             Dictionary of base models
             
         Raises:
-            RuntimeError: If no models can be created
+            ImportError: If required ML libraries are not available
+            RuntimeError: If models cannot be created
         """
         tprint_info("🤖 Creating base models for ensemble training")
         
@@ -1364,20 +1373,20 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
         from sklearn.linear_model import ElasticNet
         from sklearn.svm import SVR
         
-        # Import specialized models
+        # Import specialized models - fast fail if not available
         try:
             import catboost as cb
-            catboost_available = True
-        except ImportError:
-            catboost_available = False
-            tprint_warning("⚠️ CatBoost not available, using fallback")
+        except ImportError as e:
+            error_msg = f"CatBoost is required but not available: {e}"
+            tprint_error(f"❌ {error_msg}")
+            raise ImportError(error_msg) from e
         
         try:
             import lightgbm as lgb
-            lightgbm_available = True
-        except ImportError:
-            lightgbm_available = False
-            tprint_warning("⚠️ LightGBM not available, using fallback")
+        except ImportError as e:
+            error_msg = f"LightGBM is required but not available: {e}"
+            tprint_error(f"❌ {error_msg}")
+            raise ImportError(error_msg) from e
         
         try:
             from tensorflow.keras.models import Sequential
@@ -1385,140 +1394,109 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
             from tensorflow.keras.optimizers import Adam
             from sklearn.base import BaseEstimator, RegressorMixin
             import tensorflow as tf
+        except ImportError as e:
+            error_msg = f"TensorFlow/Keras is required for TCN but not available: {e}"
+            tprint_error(f"❌ {error_msg}")
+            raise ImportError(error_msg) from e
+        
+        class TCNRegressor(BaseEstimator, RegressorMixin):
+            """Temporal Convolutional Network Regressor wrapper for sklearn compatibility."""
             
-            class TCNRegressor(BaseEstimator, RegressorMixin):
-                """Temporal Convolutional Network Regressor wrapper for sklearn compatibility."""
-                
-                def __init__(self, filters=64, kernel_size=3, dropout=0.2, epochs=50, batch_size=32, random_state=42):
-                    self.filters = filters
-                    self.kernel_size = kernel_size
-                    self.dropout = dropout
-                    self.epochs = epochs
-                    self.batch_size = batch_size
-                    self.random_state = random_state
-                    self.model_ = None
-                    self.scaler_ = None
-                
-                def fit(self, X, y):
-                    from sklearn.preprocessing import StandardScaler
-                    from sklearn.utils.validation import check_X_y
-                    
-                    X, y = check_X_y(X, y)
-                    
-                    # Reshape X for Conv1D (samples, timesteps, features)
-                    if len(X.shape) == 2:
-                        X_reshaped = X.reshape(X.shape[0], X.shape[1], 1)
-                    else:
-                        X_reshaped = X
-                    
-                    # Scale features
-                    self.scaler_ = StandardScaler()
-                    X_scaled = self.scaler_.fit_transform(X.reshape(-1, X.shape[-1])).reshape(X_reshaped.shape)
-                    
-                    # Build TCN model
-                    self.model_ = Sequential([
-                        Conv1D(self.filters, self.kernel_size, activation='relu', input_shape=(X_reshaped.shape[1], X_reshaped.shape[2])),
-                        Dropout(self.dropout),
-                        Conv1D(self.filters * 2, self.kernel_size, activation='relu'),
-                        Dropout(self.dropout),
-                        GlobalMaxPooling1D(),
-                        Dense(50, activation='relu'),
-                        Dropout(self.dropout),
-                        Dense(1, activation='linear')
-                    ])
-                    
-                    self.model_.compile(optimizer=Adam(learning_rate=0.001), loss='mse', metrics=['mae'])
-                    
-                    # Set random seed
-                    tf.random.set_seed(self.random_state)
-                    
-                    # Train model
-                    self.model_.fit(X_scaled, y, epochs=self.epochs, batch_size=self.batch_size, verbose=0)
-                    return self
-                
-                def predict(self, X):
-                    if self.model_ is None or self.scaler_ is None:
-                        raise ValueError("Model must be fitted before prediction")
-                    
-                    # Reshape X for Conv1D
-                    if len(X.shape) == 2:
-                        X_reshaped = X.reshape(X.shape[0], X.shape[1], 1)
-                    else:
-                        X_reshaped = X
-                    
-                    # Scale features
-                    X_scaled = self.scaler_.transform(X.reshape(-1, X.shape[-1])).reshape(X_reshaped.shape)
-                    
-                    return self.model_.predict(X_scaled, verbose=0).flatten()
+            def __init__(self, filters=64, kernel_size=3, dropout=0.2, epochs=50, batch_size=32, random_state=42):
+                self.filters = filters
+                self.kernel_size = kernel_size
+                self.dropout = dropout
+                self.epochs = epochs
+                self.batch_size = batch_size
+                self.random_state = random_state
+                self.model_ = None
+                self.scaler_ = None
             
-            tcn_available = True
-        except ImportError:
-            tcn_available = False
-            tprint_warning("⚠️ TensorFlow/Keras not available for TCN, using fallback")
+            def fit(self, X, y):
+                from sklearn.preprocessing import StandardScaler
+                from sklearn.utils.validation import check_X_y
+                
+                X, y = check_X_y(X, y)
+                
+                # Reshape X for Conv1D (samples, timesteps, features)
+                if len(X.shape) == 2:
+                    X_reshaped = X.reshape(X.shape[0], X.shape[1], 1)
+                else:
+                    X_reshaped = X
+                
+                # Scale features
+                self.scaler_ = StandardScaler()
+                X_scaled = self.scaler_.fit_transform(X.reshape(-1, X.shape[-1])).reshape(X_reshaped.shape)
+                
+                # Build TCN model
+                self.model_ = Sequential([
+                    Conv1D(self.filters, self.kernel_size, activation='relu', input_shape=(X_reshaped.shape[1], X_reshaped.shape[2])),
+                    Dropout(self.dropout),
+                    Conv1D(self.filters * 2, self.kernel_size, activation='relu'),
+                    Dropout(self.dropout),
+                    GlobalMaxPooling1D(),
+                    Dense(50, activation='relu'),
+                    Dropout(self.dropout),
+                    Dense(1, activation='linear')
+                ])
+                
+                self.model_.compile(optimizer=Adam(learning_rate=0.001), loss='mse', metrics=['mae'])
+                
+                # Set random seed
+                tf.random.set_seed(self.random_state)
+                
+                # Train model
+                self.model_.fit(X_scaled, y, epochs=self.epochs, batch_size=self.batch_size, verbose=0)
+                return self
+            
+            def predict(self, X):
+                if self.model_ is None or self.scaler_ is None:
+                    raise ValueError("Model must be fitted before prediction")
+                
+                # Reshape X for Conv1D
+                if len(X.shape) == 2:
+                    X_reshaped = X.reshape(X.shape[0], X.shape[1], 1)
+                else:
+                    X_reshaped = X
+                
+                # Scale features
+                X_scaled = self.scaler_.transform(X.reshape(-1, X.shape[-1])).reshape(X_reshaped.shape)
+                
+                return self.model_.predict(X_scaled, verbose=0).flatten()
         
         # Create base models for Analyst (5m timeframe)
         base_models = {}
         
-        # TCN Model
-        if tcn_available:
-            base_models['tcn'] = TCNRegressor(
-                filters=64,
-                kernel_size=3,
-                dropout=0.2,
-                epochs=50,
-                batch_size=32,
-                random_state=42
-            )
-            tprint_success("✅ TCN (Temporal Convolutional Network) model created")
-        else:
-            from sklearn.ensemble import RandomForestRegressor
-            base_models['tcn'] = RandomForestRegressor(
-                n_estimators=100,
-                random_state=42,
-                max_depth=12,
-                n_jobs=-1
-            )
-            tprint_warning("⚠️ Using RandomForest as TCN fallback")
+        # TCN Model - Fast fail if TensorFlow not available
+        base_models['tcn'] = TCNRegressor(
+            filters=64,
+            kernel_size=3,
+            dropout=0.2,
+            epochs=50,
+            batch_size=32,
+            random_state=42
+        )
+        tprint_success("✅ TCN (Temporal Convolutional Network) model created")
         
-        # CatBoost Model
-        if catboost_available:
-            base_models['catboost'] = cb.CatBoostRegressor(
-                iterations=100,
-                depth=6,
-                learning_rate=0.1,
-                random_seed=43,
-                verbose=False
-            )
-            tprint_success("✅ CatBoost Regressor model created")
-        else:
-            from sklearn.ensemble import GradientBoostingRegressor
-            base_models['catboost'] = GradientBoostingRegressor(
-                n_estimators=100,
-                random_state=43,
-                max_depth=6,
-                learning_rate=0.1
-            )
-            tprint_warning("⚠️ Using GradientBoostingRegressor as CatBoost fallback")
+        # CatBoost Model - Fast fail if CatBoost not available
+        base_models['catboost'] = cb.CatBoostRegressor(
+            iterations=100,
+            depth=6,
+            learning_rate=0.1,
+            random_seed=43,
+            verbose=False
+        )
+        tprint_success("✅ CatBoost Regressor model created")
         
-        # LightGBM Model
-        if lightgbm_available:
-            base_models['lightgbm'] = lgb.LGBMRegressor(
-                n_estimators=100,
-                max_depth=8,
-                learning_rate=0.1,
-                random_state=44,
-                verbose=-1
-            )
-            tprint_success("✅ LightGBM Regressor model created")
-        else:
-            from sklearn.ensemble import GradientBoostingRegressor
-            base_models['lightgbm'] = GradientBoostingRegressor(
-                n_estimators=100,
-                random_state=44,
-                max_depth=8,
-                learning_rate=0.1
-            )
-            tprint_warning("⚠️ Using GradientBoostingRegressor as LightGBM fallback")
+        # LightGBM Model - Fast fail if LightGBM not available
+        base_models['lightgbm'] = lgb.LGBMRegressor(
+            n_estimators=100,
+            max_depth=8,
+            learning_rate=0.1,
+            random_state=44,
+            verbose=-1
+        )
+        tprint_success("✅ LightGBM Regressor model created")
         
         # Elastic Net Meta-learner
         base_models['elastic_net'] = ElasticNet(
@@ -2252,6 +2230,7 @@ if __name__ == "__main__":
     tprint_info("- ✅ Enhanced trade decision accuracy through model combination")
     tprint_info("- ✅ Models: TCN (Temporal Convolutional Network), CatBoost, LightGBM, Elastic Net")
     tprint_info("- ✅ Comprehensive context from multi-timeframe dynamics")
+    tprint_info("- ✅ Fast failing for missing ML dependencies - no fallbacks")
     
     tprint_info("🔄 INTEGRATION WITH INDIVIDUAL ANALYST MODELS:")
     tprint_info("- ✅ Receives individual analyst model predictions")

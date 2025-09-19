@@ -21,6 +21,7 @@ import pandas as pd
 from typing import Dict, Any, Tuple, Optional, List, Callable
 import logging
 import time
+import traceback
 from dataclasses import dataclass
 
 # Core ML imports
@@ -39,6 +40,18 @@ from src.utils.ml_common.optimization.pareto import (
 from src.utils.common_operations import (
     get_m1_gpu_manager, get_m1_memory_optimizer, get_m1_cpu_optimizer
 )
+
+# Import advanced hardware optimization tools
+try:
+    from src.utils.hardware.unified_hardware_manager import (
+        UnifiedHardwareManager, WorkloadType, OptimizationLevel
+    )
+    from src.utils.hardware.adaptive_optimization_engine import (
+        AdaptiveOptimizationEngine, LearningAlgorithm
+    )
+    ADVANCED_HARDWARE_AVAILABLE = True
+except ImportError:
+    ADVANCED_HARDWARE_AVAILABLE = False
 from src.utils.math_validation import (
     safe_divide, safe_log, safe_sqrt, validate_finite
 )
@@ -46,7 +59,7 @@ from src.utils.math_validation import (
 # Base training imports
 from .tactician_models_training_refactored import TacticianModelsTrainingStepRefactored
 from .tactician_directional_optimization import (
-    EntryTimingLossFunction, EntryTimingTacticianOptimizer
+    EntryTimingLossFunction, DirectionalOptimizationResult, EntryTimingTacticianOptimizer
 )
 from src.utils.ml_common.config import TacticianTrainingConfig
 
@@ -82,23 +95,48 @@ class DirectionalTacticianTrainingStep(TacticianModelsTrainingStepRefactored):
         self.enable_directional_optimization = enable_directional_optimization
         self.logger = logger.getChild('DirectionalTacticianTrainingStep')
         
+        # Initialize hardware optimization if available
+        if ADVANCED_HARDWARE_AVAILABLE:
+            try:
+                self.unified_hardware_manager = UnifiedHardwareManager()
+                self.unified_hardware_manager.configure_for_workload(
+                    workload_type=WorkloadType.ML_TRAINING,
+                    optimization_level=OptimizationLevel.BALANCED
+                )
+                self.logger.info("✅ Advanced hardware optimization enabled for directional training")
+            except Exception as e:
+                self.logger.warning(f"⚠️ Advanced hardware optimization failed: {e}")
+                self.unified_hardware_manager = None
+        else:
+            self.unified_hardware_manager = None
+        
         # Initialize entry timing components
         if enable_directional_optimization:
-            self.entry_timing_optimizer = EntryTimingTacticianOptimizer(config)
+            # Note: EntryTimingTacticianOptimizer needs to be implemented in tactician_directional_optimization.py
+            # For now, using the loss functions and creating a basic optimizer structure
             self.loss_functions = EntryTimingLossFunction()
             
-            # Entry timing optimization objectives
-            self.entry_timing_objectives = {
+            # Entry timing optimization objectives (renamed from directional_objectives for consistency)
+            self.directional_objectives = {
                 'early_entry_penalty': 'min',
                 'late_entry_penalty': 'min',
                 'optimal_entry_reward': 'max',
                 'entry_timing_efficiency': 'max'
             }
             
+            # Also keep the original name for backward compatibility
+            self.entry_timing_objectives = self.directional_objectives
+            
+            # Initialize directional optimizer (now using proper implementation)
+            self.directional_optimizer = EntryTimingTacticianOptimizer(config)
+            self.entry_timing_optimizer = self.directional_optimizer  # Alias for compatibility
+            
             self.logger.info("🚀 Entry timing optimization enabled")
         else:
+            self.directional_optimizer = None
             self.entry_timing_optimizer = None
             self.loss_functions = None
+            self.directional_objectives = None
             self.entry_timing_objectives = None
             
             self.logger.info("ℹ️ Entry timing optimization disabled")

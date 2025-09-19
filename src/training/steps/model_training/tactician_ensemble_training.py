@@ -66,6 +66,21 @@ except ImportError as e:
     print("❌ Hardware optimizers are essential for performance. Please install common_operations.")
     raise ImportError(f"CRITICAL: Common operations utilities are required but not available: {e}") from e
 
+# Import advanced hardware optimization tools
+try:
+    from src.utils.hardware.unified_hardware_manager import (
+        UnifiedHardwareManager, WorkloadType, OptimizationLevel
+    )
+    from src.utils.hardware.adaptive_optimization_engine import (
+        AdaptiveOptimizationEngine, LearningAlgorithm
+    )
+    ADVANCED_HARDWARE_AVAILABLE = True
+    tprint_info("✅ Advanced hardware optimization tools loaded for ensemble")
+except ImportError as e:
+    ADVANCED_HARDWARE_AVAILABLE = False
+    tprint_warning(f"⚠️ Advanced hardware optimization tools not available: {e}")
+    tprint_info("ℹ️ Falling back to basic hardware optimization")
+
 try:
     from src.utils.common_utilities import (
         safe_dataframe_operation, validate_dataframe_columns, calculate_data_quality_metrics,
@@ -269,11 +284,71 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
             raise RuntimeError(error_msg) from e
     
     def _initialize_hardware_optimizers(self) -> None:
-        """Initialize hardware optimizers - CRITICAL: Fast fail if not available."""
+        """Initialize hardware optimizers with advanced tools when available."""
         try:
-            tprint_info("🧠 Initializing M1 hardware optimizers for ensemble training...")
+            tprint_info("🧠 Initializing hardware optimizers for ensemble training...")
             
-            # Initialize M1 GPU manager - CRITICAL: Fast fail if not available
+            if ADVANCED_HARDWARE_AVAILABLE:
+                # Use advanced unified hardware manager
+                tprint_info("🚀 Using advanced unified hardware management...")
+                
+                try:
+                    self.unified_hardware_manager = UnifiedHardwareManager()
+                    
+                    # Configure for ML training workload
+                    config_result = self.unified_hardware_manager.configure_for_workload(
+                        workload_type=WorkloadType.ML_TRAINING,
+                        optimization_level=OptimizationLevel.AGGRESSIVE,
+                        expected_duration_minutes=30  # Typical ensemble training duration
+                    )
+                    
+                    if config_result['success']:
+                        tprint_success("✅ Advanced hardware configuration successful")
+                        tprint_info(f"   CPU cores optimized: {config_result.get('cpu_cores_optimized', 'N/A')}")
+                        tprint_info(f"   Memory optimization: {config_result.get('memory_strategy', 'N/A')}")
+                        tprint_info(f"   GPU acceleration: {config_result.get('gpu_enabled', 'N/A')}")
+                    else:
+                        tprint_warning("⚠️ Advanced hardware configuration had issues, using basic optimization")
+                        raise RuntimeError("Advanced hardware configuration failed")
+                    
+                    # Initialize adaptive optimization engine
+                    try:
+                        self.adaptive_optimizer = AdaptiveOptimizationEngine(
+                            hardware_manager=self.unified_hardware_manager,
+                            learning_algorithm=LearningAlgorithm.LINEAR_REGRESSION
+                        )
+                        
+                        # Start learning for ML training workloads
+                        self.adaptive_optimizer.start_learning_session(
+                            workload_name="tactician_ensemble_training",
+                            workload_type="ml_training"
+                        )
+                        
+                        tprint_success("✅ Adaptive optimization engine initialized")
+                        
+                    except Exception as e:
+                        tprint_warning(f"⚠️ Adaptive optimization engine failed to initialize: {e}")
+                        self.adaptive_optimizer = None
+                    
+                    # Set basic optimizers as aliases for compatibility
+                    self.m1_gpu_manager = self.unified_hardware_manager.gpu_manager
+                    self.m1_memory_optimizer = self.unified_hardware_manager.memory_optimizer  
+                    self.m1_cpu_optimizer = self.unified_hardware_manager.cpu_optimizer
+                    
+                except Exception as e:
+                    tprint_warning(f"⚠️ Advanced hardware management failed: {e}")
+                    tprint_info("🔄 Falling back to basic hardware optimization...")
+                    raise e  # Re-raise to trigger fallback
+                    
+            else:
+                # Fallback to basic hardware optimization
+                raise ImportError("Advanced hardware tools not available")
+                
+        except Exception:
+            # Fallback to basic hardware optimization
+            tprint_info("🔄 Using basic M1 hardware optimizers...")
+            
+            # Initialize M1 GPU manager
             self.m1_gpu_manager = get_m1_gpu_manager()
             if not self.m1_gpu_manager:
                 error_msg = "CRITICAL: M1 GPU manager is required but not available for ensemble"
@@ -281,7 +356,7 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
                 raise RuntimeError(error_msg)
             tprint_success("✅ M1 GPU manager initialized for ensemble")
             
-            # Initialize M1 memory optimizer - CRITICAL: Fast fail if not available
+            # Initialize M1 memory optimizer
             self.m1_memory_optimizer = get_m1_memory_optimizer()
             if not self.m1_memory_optimizer:
                 error_msg = "CRITICAL: M1 memory optimizer is required but not available for ensemble"
@@ -289,7 +364,7 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
                 raise RuntimeError(error_msg)
             tprint_success("✅ M1 memory optimizer initialized for ensemble")
             
-            # Initialize M1 CPU optimizer - CRITICAL: Fast fail if not available
+            # Initialize M1 CPU optimizer
             self.m1_cpu_optimizer = get_m1_cpu_optimizer()
             if not self.m1_cpu_optimizer:
                 error_msg = "CRITICAL: M1 CPU optimizer is required but not available for ensemble"
@@ -297,7 +372,7 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
                 raise RuntimeError(error_msg)
             tprint_success("✅ M1 CPU optimizer initialized for ensemble")
             
-            # Integrate with M1 optimizers - CRITICAL: Fast fail if not successful
+            # Integrate with M1 optimizers
             integration_result = integrate_with_m1_optimizers()
             if not integration_result.get('success', False):
                 error_msg = "CRITICAL: M1 optimizers integration failed for ensemble"
@@ -305,12 +380,11 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
                 raise RuntimeError(error_msg)
             tprint_success("✅ M1 optimizers integration successful for ensemble")
             
-            tprint_success("✅ Hardware optimizers initialization completed for ensemble")
-            
-        except Exception as e:
-            error_msg = f"CRITICAL: Hardware optimizer initialization failed for ensemble: {e}"
-            tprint_error(f"❌ {error_msg}")
-            raise RuntimeError(error_msg) from e
+            # Set unified manager to None for basic mode
+            self.unified_hardware_manager = None
+            self.adaptive_optimizer = None
+        
+        tprint_success("✅ Hardware optimizers initialization completed for ensemble")
     
     def _initialize_utility_integrations(self) -> None:
         """Initialize utility integrations - All utilities are required."""
@@ -465,9 +539,9 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
                 X, y, regime_labels, analyst_green_light_periods
             )
             filtering_metrics = {
-                'original_samples': len(X),
-                'filtered_samples': len(X_filtered),
-                'green_light_ratio': len(X_filtered) / len(X) if len(X) > 0 else 0
+                'original_samples': len(X) if X is not None else 0,
+                'filtered_samples': len(X_filtered) if X_filtered is not None else 0,
+                'green_light_ratio': (len(X_filtered) / len(X)) if (X is not None and len(X) > 0 and X_filtered is not None) else 0
             }
             self._complete_step(True, metrics=filtering_metrics)
             
@@ -488,19 +562,40 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
             }
             self._complete_step(True, metrics=enhancement_metrics)
             
-            # Step 5: Ensemble training
+            # Step 5: Ensemble training with hardware optimization
             self._start_step("Ensemble Training")
-            results = super().execute(
-                X=X_enhanced,
-                y=y_filtered,
-                regime_labels=regime_labels_filtered,
-                feature_names=feature_names,
-                hmm_states=hmm_states,
-                is_classification=False,  # Tactician ensemble models are typically regression
-                symbol=None,  # Can be passed as kwargs
-                exchange=None,
-                timeframe=self.config.timeframe
-            )
+            
+            # Use hardware optimization context if available
+            if hasattr(self, 'unified_hardware_manager') and self.unified_hardware_manager:
+                tprint_info("🚀 Using optimized hardware context for ensemble training")
+                with self.unified_hardware_manager.optimized_context(
+                    operation_type="ml_training",
+                    expected_duration_minutes=30
+                ):
+                    results = super().execute(
+                        X=X_enhanced,
+                        y=y_filtered,
+                        regime_labels=regime_labels_filtered,
+                        feature_names=feature_names,
+                        hmm_states=hmm_states,
+                        is_classification=False,  # Tactician ensemble models are typically regression
+                        symbol=None,  # Can be passed as kwargs
+                        exchange=None,
+                        timeframe=self.config.timeframe
+                    )
+            else:
+                # Standard training without advanced optimization
+                results = super().execute(
+                    X=X_enhanced,
+                    y=y_filtered,
+                    regime_labels=regime_labels_filtered,
+                    feature_names=feature_names,
+                    hmm_states=hmm_states,
+                    is_classification=False,  # Tactician ensemble models are typically regression
+                    symbol=None,  # Can be passed as kwargs
+                    exchange=None,
+                    timeframe=self.config.timeframe
+                )
             
             if 'error' in results:
                 self._complete_step(False, f"Parent training failed: {results['error']}")
@@ -611,6 +706,13 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
                 self.logger.warning("⚠️ No analyst green light periods provided, using all data")
                 return X, y, regime_labels
             
+            # Validate input arrays
+            if not isinstance(analyst_green_light_periods, np.ndarray):
+                raise ValueError("analyst_green_light_periods must be a numpy array")
+            
+            if len(analyst_green_light_periods) != len(X):
+                raise ValueError(f"analyst_green_light_periods length ({len(analyst_green_light_periods)}) must match X samples ({len(X)})")
+            
             # Filter data based on green light periods
             green_light_mask = analyst_green_light_periods
             
@@ -627,10 +729,21 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
             
             return X_filtered, y_filtered, regime_labels_filtered
             
-        except Exception as e:
-            self.logger.error(f"❌ Green light filtering failed: {e}")
-            self.logger.warning("⚠️ Returning original data due to filtering failure")
+        except ValueError as e:
+            # Only fallback for validation errors - these are expected and recoverable
+            self.logger.warning(f"⚠️ Validation error in green light filtering: {e}")
+            self.logger.warning("⚠️ Returning original data due to validation failure")
             return X, y, regime_labels
+        except (IndexError, TypeError) as e:
+            # Handle indexing and type errors - these are also recoverable
+            self.logger.warning(f"⚠️ Data access error in green light filtering: {e}")
+            self.logger.warning("⚠️ Returning original data due to data access failure")
+            return X, y, regime_labels
+        except Exception as e:
+            # Re-raise critical errors that shouldn't be silently ignored
+            self.logger.error(f"❌ Critical error in green light filtering: {e}")
+            self.logger.error(f"❌ Traceback: {traceback.format_exc()}")
+            raise RuntimeError(f"Critical error in green light filtering: {e}") from e
     
     def _prepare_base_models(self, base_tactician_models: Optional[Dict[str, Any]]) -> Dict[str, Any]:
         """Prepare and validate base tactician models."""
@@ -663,39 +776,76 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
             self.logger.info("🏭 Creating tactician models for 1m timeframe...")
             
             # Create base models for Tactician (1m timeframe)
-            models = {
-                'xgboost_model': RandomForestRegressor(  # XGBoost placeholder
+            # Note: Some models are placeholders until proper implementations are available
+            models = {}
+            
+            # Try to use actual XGBoost if available, otherwise use RandomForest placeholder
+            try:
+                import xgboost as xgb
+                models['xgboost_model'] = xgb.XGBRegressor(
+                    n_estimators=150,
+                    random_state=42,
+                    max_depth=15,
+                    n_jobs=-1,
+                    objective='reg:squarederror'
+                )
+                self.logger.info("✅ Using actual XGBoost implementation")
+            except ImportError:
+                self.logger.warning("⚠️ XGBoost not available, using RandomForest placeholder")
+                models['xgboost_model'] = RandomForestRegressor(  # XGBoost placeholder
                     n_estimators=150, 
                     random_state=42, 
                     max_depth=15,
                     n_jobs=-1
-                ),
-                'randomforest_model': RandomForestRegressor(
-                    n_estimators=150, 
-                    random_state=43, 
-                    max_depth=12,
-                    n_jobs=-1
-                ),
-                'catboost_model': RandomForestRegressor(  # CatBoost placeholder
+                )
+            
+            # RandomForest model (actual implementation)
+            models['randomforest_model'] = RandomForestRegressor(
+                n_estimators=150, 
+                random_state=43, 
+                max_depth=12,
+                n_jobs=-1
+            )
+            
+            # Try to use actual CatBoost if available, otherwise use RandomForest placeholder
+            try:
+                import catboost as cb
+                models['catboost_model'] = cb.CatBoostRegressor(
+                    iterations=150,
+                    random_seed=44,
+                    depth=10,
+                    verbose=False,
+                    allow_writing_files=False
+                )
+                self.logger.info("✅ Using actual CatBoost implementation")
+            except ImportError:
+                self.logger.warning("⚠️ CatBoost not available, using RandomForest placeholder")
+                models['catboost_model'] = RandomForestRegressor(  # CatBoost placeholder
                     n_estimators=150, 
                     random_state=44, 
                     max_depth=10,
                     n_jobs=-1
-                ),
-                'elastic_net_model': ElasticNet(
-                    alpha=0.1,
-                    l1_ratio=0.5,
-                    random_state=45,
-                    max_iter=2000
-                ),
-                'linear_model': LinearRegression(),
-                'svr_model': SVR(kernel='rbf', C=1.0, gamma='scale')
-            }
+                )
+            
+            # Linear models (actual implementations)
+            models['elastic_net_model'] = ElasticNet(
+                alpha=0.1,
+                l1_ratio=0.5,
+                random_state=45,
+                max_iter=2000
+            )
+            
+            models['linear_model'] = LinearRegression()
+            
+            models['svr_model'] = SVR(kernel='rbf', C=1.0, gamma='scale')
             
             # Validate models
             for model_name, model in models.items():
                 if not hasattr(model, 'fit') or not hasattr(model, 'predict'):
                     raise ValueError(f"Model '{model_name}' doesn't have required methods")
+            
+            # Log model implementation status
+            self._log_model_implementation_status(models)
             
             self.logger.info(f"✅ Created {len(models)} tactician models: {list(models.keys())}")
             return models
@@ -703,6 +853,31 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
         except Exception as e:
             self.logger.error(f"❌ Failed to create tactician models from configuration: {e}")
             raise RuntimeError(f"Tactician model creation failed: {e}") from e
+    
+    def _log_model_implementation_status(self, models: Dict[str, Any]) -> None:
+        """Log the implementation status of each model."""
+        try:
+            self.logger.info("📊 Model Implementation Status:")
+            
+            for model_name, model in models.items():
+                model_type = type(model).__name__
+                module = type(model).__module__
+                
+                if 'xgboost' in model_name.lower():
+                    if 'xgboost' in module:
+                        self.logger.info(f"  ✅ {model_name}: Actual XGBoost implementation ({model_type})")
+                    else:
+                        self.logger.warning(f"  ⚠️ {model_name}: RandomForest placeholder for XGBoost ({model_type})")
+                elif 'catboost' in model_name.lower():
+                    if 'catboost' in module:
+                        self.logger.info(f"  ✅ {model_name}: Actual CatBoost implementation ({model_type})")
+                    else:
+                        self.logger.warning(f"  ⚠️ {model_name}: RandomForest placeholder for CatBoost ({model_type})")
+                else:
+                    self.logger.info(f"  ✅ {model_name}: Actual implementation ({model_type})")
+                    
+        except Exception as e:
+            self.logger.warning(f"⚠️ Failed to log model implementation status: {e}")
     
     def _create_error_result(self, error_type: str, error_message: str) -> Dict[str, Any]:
         """Create standardized error result."""
@@ -1327,7 +1502,39 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
                 except Exception as memory_error:
                     tprint_warning(f"⚠️ Advanced memory cleanup failed: {memory_error}")
             
-            # Clean up M1 optimizers - CRITICAL: Must be available
+            # Clean up advanced hardware tools if available
+            if hasattr(self, 'adaptive_optimizer') and self.adaptive_optimizer:
+                try:
+                    tprint_info("🔄 Stopping adaptive optimization learning session...")
+                    self.adaptive_optimizer.stop_learning_session()
+                    
+                    # Get optimization insights before cleanup
+                    insights = self.adaptive_optimizer.get_optimization_insights()
+                    if insights.get('total_sessions', 0) > 0:
+                        tprint_info(f"📊 Optimization insights: {insights['total_sessions']} sessions, "
+                                  f"avg improvement: {insights.get('average_improvement', 0):.2%}")
+                    
+                    tprint_success("✅ Adaptive optimization engine cleaned up")
+                except Exception as e:
+                    tprint_warning(f"⚠️ Failed to cleanup adaptive optimizer: {e}")
+            
+            if hasattr(self, 'unified_hardware_manager') and self.unified_hardware_manager:
+                try:
+                    tprint_info("🔄 Shutting down unified hardware manager...")
+                    
+                    # Get performance metrics before cleanup
+                    metrics = self.unified_hardware_manager.get_performance_metrics()
+                    if metrics:
+                        tprint_info(f"📊 Hardware performance: CPU: {metrics.get('cpu_efficiency', 0):.2%}, "
+                                  f"Memory: {metrics.get('memory_efficiency', 0):.2%}, "
+                                  f"GPU: {metrics.get('gpu_efficiency', 0):.2%}")
+                    
+                    self.unified_hardware_manager.shutdown()
+                    tprint_success("✅ Unified hardware manager cleaned up")
+                except Exception as e:
+                    tprint_warning(f"⚠️ Failed to cleanup unified hardware manager: {e}")
+            
+            # Clean up basic M1 optimizers
             try:
                 cleanup_result = cleanup_m1_optimizers()
                 if not cleanup_result:
@@ -1341,6 +1548,7 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
                 tprint_error(f"❌ {error_msg}")
                 raise RuntimeError(error_msg) from e
             
+
             # Clean up individual hardware resources with hardware tools
             hardware_resources = [
                 ('m1_gpu_manager', 'M1 GPU manager'),
@@ -1377,9 +1585,17 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
         """Destructor to ensure cleanup on object deletion."""
         try:
             self.cleanup_resources()
-        except Exception:
-            # Silently handle cleanup errors in destructor
-            pass
+        except Exception as e:
+            # Log cleanup errors but don't raise in destructor to avoid issues during garbage collection
+            try:
+                if hasattr(self, 'logger') and self.logger:
+                    self.logger.error(f"❌ Cleanup error in destructor: {e}")
+                else:
+                    # Fallback logging if logger is not available
+                    print(f"❌ Cleanup error in TacticianEnsembleTrainingStep destructor: {e}")
+            except Exception:
+                # Last resort - avoid any exceptions in destructor
+                pass
     
     def _log_comprehensive_summary(self, report: Dict[str, Any]) -> None:
         """Log comprehensive training summary with enhanced tprint integration."""

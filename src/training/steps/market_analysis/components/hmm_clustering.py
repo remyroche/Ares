@@ -2619,13 +2619,21 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             # Apply composite weighting: sample-aware reliability and CV-based penalty
             try:
                 # Reliability weights r_i based on sample counts (no dwell/run-length smoothing)
-                # r_i = min(1, sample_count / N_min)
-                N_min = 100.0
+                # Auto-tuned N_min from sample count distribution
                 sample_counts = np.array([
                     float(regime_characteristics.get(rid, {}).get('sample_count', 0.0))
                     for rid in regime_ids
                 ], dtype=float)
-                reliability = np.minimum(1.0, np.nan_to_num(sample_counts / N_min, nan=0.0, posinf=1.0, neginf=0.0))
+                valid_counts = sample_counts[np.isfinite(sample_counts) & (sample_counts > 0)]
+                total_samples = float(np.nansum(valid_counts)) if valid_counts.size > 0 else 0.0
+                # Heuristic: 70th percentile, bounded to [50, max(100, 5% of total)]
+                if valid_counts.size > 0:
+                    perc70 = float(np.nanpercentile(valid_counts, 70.0))
+                else:
+                    perc70 = 100.0
+                upper_cap = max(100.0, 0.05 * total_samples) if total_samples > 0 else 100.0
+                N_min = float(np.clip(perc70, 50.0, upper_cap))
+                reliability = np.minimum(1.0, np.nan_to_num(sample_counts / max(N_min, 1e-6), nan=0.0, posinf=1.0, neginf=0.0))
                 # Outer product to scale pairwise similarities
                 similarity_matrix = similarity_matrix * (reliability[:, None] * reliability[None, :])
 
@@ -2647,8 +2655,21 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                     cv_vals.append(min(cv_i, 10.0))
                 cv = np.array(cv_vals, dtype=float)
 
-                beta = 0.8  # strength vs absolute CV level
-                gamma = 0.5 # strength vs CV mismatch
+                # Auto-tune beta and gamma from CV distribution
+                cv_valid = cv[np.isfinite(cv) & (cv >= 0)]
+                med_cv = float(np.nanmedian(cv_valid)) if cv_valid.size > 0 else 0.2
+                # Target attenuation at median sum (2*med_cv): a_sum ~ 0.7
+                a_sum = 0.7
+                denom_sum = max(2.0 * med_cv, 1e-6)
+                beta = float(np.clip(-np.log(a_sum) / denom_sum, 0.05, 2.0))
+                # Target attenuation at median absolute difference: a_diff ~ 0.85
+                if cv_valid.size > 1:
+                    med_abs_diff = float(np.nanmedian(np.abs(cv_valid[:, None] - cv_valid[None, :])))
+                else:
+                    med_abs_diff = 0.1
+                a_diff = 0.85
+                denom_diff = max(med_abs_diff, 1e-6)
+                gamma = float(np.clip(-np.log(a_diff) / denom_diff, 0.1, 2.0))
                 cv_sum = cv[:, None] + cv[None, :]
                 cv_diff = np.abs(cv[:, None] - cv[None, :])
                 p_cv = np.exp(-beta * cv_sum) * np.exp(-gamma * cv_diff)
@@ -2658,6 +2679,13 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
 
                 # Keep self-similarity exactly 1.0 for downstream expectations
                 np.fill_diagonal(similarity_matrix, 1.0)
+                # Log tuned parameters (once per call)
+                try:
+                    self.logger.info(
+                        f"   🔧 Composite weighting params: N_min={N_min:.1f}, beta={beta:.3f}, gamma={gamma:.3f}, med_cv={med_cv:.3f}, med_abs_cv_diff={med_abs_diff:.3f}, total_samples={total_samples:.0f}"
+                    )
+                except Exception:
+                    pass
             except Exception as _cv_rel_err:
                 # Non-fatal: fall back to base similarity if composite weighting fails
                 self.logger.warning(f"⚠️ Composite similarity weighting skipped due to error: {_cv_rel_err}")

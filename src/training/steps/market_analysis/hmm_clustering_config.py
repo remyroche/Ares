@@ -94,10 +94,13 @@ class UnifiedHMMClusteringConfig:
     silhouette_min: float = 0.15
     max_silhouette_sample: int = 50000
     dimension_feature_map: Dict[str, List[str]] = field(default_factory=lambda: {
-        'volume': ['volume_ratio_5', 'volume_ratio_4', 'volume_ratio_3'],  # 1-6 lookback periods
-        'volatility': ['volatility_5', 'volatility_4', 'volatility_3'],  # 1-6 lookback periods  
-        'momentum': ['momentum_5', 'momentum_4', 'momentum_3']  # 1-6 lookback periods
+        'volume': ['volume_ratio_48h'],  # Current volume / average 48h volume
+        'volatility': ['volatility_5', 'volatility_3'],  # 5 and 3 period volatility
+        'momentum': ['momentum_5', 'momentum_3']  # 5 and 3 period momentum
     })
+    
+    # Note: For consistency, use StandardizedFeatureCalculator.get_primary_features() 
+    # instead of dimension_feature_map when available
     
     # Market-specific settings
     market_type: Optional[MarketType] = None

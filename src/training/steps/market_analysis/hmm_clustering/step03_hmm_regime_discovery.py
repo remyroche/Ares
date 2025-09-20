@@ -23,6 +23,7 @@ from src.utils.logger import system_logger
 from src.core.decorators import handles_errors
 from src.config.environment import get_environment_settings
 from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
+from .standardized_features import StandardizedFeatureCalculator
 
 # Import enhanced MLflow integration
 try:
@@ -344,7 +345,7 @@ class EnhancedFeatureEngineer:
     
     def create_comprehensive_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """
-        Create a comprehensive set of 100+ features for regime detection
+        Create a comprehensive set of features for regime detection using centralized feature calculation
         
         Args:
             df: Input DataFrame with OHLCV data
@@ -352,9 +353,7 @@ class EnhancedFeatureEngineer:
         Returns:
             DataFrame with comprehensive features
         """
-        self.logger.info("🔧 Creating comprehensive feature set (100+ features)...")
-        features = pd.DataFrame()
-        features['timestamp'] = df['timestamp'] if 'timestamp' in df.columns else df.index
+        self.logger.info("🔧 Creating comprehensive feature set using standardized feature calculator...")
         
         # Ensure we have the required columns
         required_cols = ['open', 'high', 'low', 'close', 'volume']
@@ -362,14 +361,11 @@ class EnhancedFeatureEngineer:
             if col not in df.columns:
                 raise ValueError(f"Missing required column: {col}")
         
-        # Price-based features
+        # Use centralized feature calculator for primary features
+        features = StandardizedFeatureCalculator.calculate_all_features(df)
+        
+        # Add additional features for comprehensive analysis
         self._add_price_features(features, df)
-        
-        # Volume-based features
-        self._add_volume_features(features, df)
-        
-        # Volatility features
-        self._add_volatility_features(features, df)
         
         # Technical indicators
         self._add_technical_indicators(features, df)
@@ -506,57 +502,26 @@ class EnhancedFeatureEngineer:
             features[f'price_vs_ema_{window}'] = (df['close'] - features[f'price_ema_{window}']) / features[f'price_ema_{window}']
     
     def _add_volume_features(self, features: pd.DataFrame, df: pd.DataFrame) -> None:
-        """Add volume-based features with standardized 1-6 lookback periods"""
-        # Basic volume features
-        features['volume_change'] = df['volume'].pct_change()
+        """Add volume-based features with standardized periods (DEPRECATED - use StandardizedFeatureCalculator)"""
+        # This method is deprecated - use StandardizedFeatureCalculator.calculate_volume_features() instead
+        self.logger.warning("⚠️ _add_volume_features is deprecated. Use StandardizedFeatureCalculator.calculate_volume_features() instead.")
         
-        # Standardized volume features with 1-6 lookback periods
-        for window in [1, 2, 3, 4, 5, 6]:
-            # Volume moving averages
-            features[f'volume_ma_{window}'] = df['volume'].rolling(window).mean()
-            features[f'volume_std_{window}'] = df['volume'].rolling(window).std()
-            
-            # Safe volume ratio calculation to prevent infinity
-            volume_ma_safe = features[f'volume_ma_{window}'].replace(0, np.nan)
-            volume_ma_safe = volume_ma_safe.fillna(method='bfill').fillna(1.0)
-            features[f'volume_ratio_{window}'] = df['volume'] / volume_ma_safe
-            features[f'volume_ratio_{window}'] = features[f'volume_ratio_{window}'].clip(-100, 100)
-        
-        # Volume-price relationship using standardized periods
-        features['volume_price_trend'] = (df['close'] - df['close'].shift(1)) * df['volume']
-        features['volume_price_correlation'] = df['close'].rolling(6).corr(df['volume'])  # Use 6-period correlation
-        
-        # Volume patterns using standardized periods
-        features['volume_spike'] = df['volume'] > features['volume_ma_6'] * 2
-        features['volume_dry_up'] = df['volume'] < features['volume_ma_6'] * 0.5
+        # Delegate to centralized calculator
+        volume_features = StandardizedFeatureCalculator.calculate_volume_features(df)
+        for col in volume_features.columns:
+            if col not in features.columns:
+                features[col] = volume_features[col]
     
     def _add_volatility_features(self, features: pd.DataFrame, df: pd.DataFrame) -> None:
-        """Add volatility features with standardized 1-6 lookback periods"""
-        # Standardized volatility features with 1-6 lookback periods
-        for window in [1, 2, 3, 4, 5, 6]:
-            features[f'volatility_{window}'] = df['close'].pct_change().rolling(window).std()
-            features[f'volatility_ewma_{window}'] = df['close'].pct_change().ewm(span=window).std()
+        """Add volatility features with standardized periods (DEPRECATED - use StandardizedFeatureCalculator)"""
+        # This method is deprecated - use StandardizedFeatureCalculator.calculate_volatility_features() instead
+        self.logger.warning("⚠️ _add_volatility_features is deprecated. Use StandardizedFeatureCalculator.calculate_volatility_features() instead.")
         
-        # Safe volatility ratios to prevent infinity using standardized periods
-        vol_6_safe = features['volatility_6'].replace(0, np.nan)
-        vol_6_safe = vol_6_safe.fillna(method='bfill').fillna(1e-6)
-        features['volatility_ratio_3_6'] = features['volatility_3'] / vol_6_safe
-        features['volatility_ratio_3_6'] = features['volatility_ratio_3_6'].clip(-1000, 1000)
-
-        vol_5_safe = features['volatility_5'].replace(0, np.nan)
-        vol_5_safe = vol_5_safe.fillna(method='bfill').fillna(1e-6)
-        features['volatility_ratio_2_5'] = features['volatility_2'] / vol_5_safe
-        features['volatility_ratio_2_5'] = features['volatility_ratio_2_5'].clip(-1000, 1000)
-        
-        # Volatility momentum using standardized periods
-        features['volatility_momentum'] = features['volatility_6'] - features['volatility_6'].shift(3)
-        features['volatility_acceleration'] = features['volatility_momentum'].diff()
-        
-        # GARCH-like features using standardized periods
-        features['volatility_clustering'] = (df['close'].pct_change() ** 2).rolling(6).mean()
-        features['volatility_persistence'] = features['volatility_clustering'].rolling(3).corr(
-            features['volatility_clustering'].shift(1)
-        )
+        # Delegate to centralized calculator
+        volatility_features = StandardizedFeatureCalculator.calculate_volatility_features(df)
+        for col in volatility_features.columns:
+            if col not in features.columns:
+                features[col] = volatility_features[col]
     
     def _add_technical_indicators(self, features: pd.DataFrame, df: pd.DataFrame) -> None:
         """Add technical indicators"""
@@ -586,26 +551,15 @@ class EnhancedFeatureEngineer:
         features['adx_14'] = self._calculate_adx(df)
     
     def _add_momentum_features(self, features: pd.DataFrame, df: pd.DataFrame) -> None:
-        """Add momentum features with standardized 1-6 lookback periods"""
-        # Standardized price momentum with 1-6 lookback periods
-        for window in [1, 2, 3, 4, 5, 6]:
-            features[f'momentum_{window}'] = df['close'].pct_change(window)
-            features[f'momentum_ma_{window}'] = features[f'momentum_{window}'].rolling(3).mean()  # Use 3-period MA
+        """Add momentum features with standardized periods (DEPRECATED - use StandardizedFeatureCalculator)"""
+        # This method is deprecated - use StandardizedFeatureCalculator.calculate_momentum_features() instead
+        self.logger.warning("⚠️ _add_momentum_features is deprecated. Use StandardizedFeatureCalculator.calculate_momentum_features() instead.")
         
-        # Standardized volume momentum with 1-6 lookback periods
-        for window in [1, 2, 3, 4, 5, 6]:
-            features[f'volume_momentum_{window}'] = df['volume'].pct_change(window)
-        
-        # Safe momentum ratios to prevent infinity using standardized periods
-        momentum_6_safe = features['momentum_6'].replace(0, np.nan)
-        momentum_6_safe = momentum_6_safe.fillna(method='bfill').fillna(1e-6)
-        features['momentum_ratio_3_6'] = features['momentum_3'] / momentum_6_safe
-        features['momentum_ratio_3_6'] = features['momentum_ratio_3_6'].clip(-1000, 1000)
-
-        momentum_5_safe = features['momentum_5'].replace(0, np.nan)
-        momentum_5_safe = momentum_5_safe.fillna(method='bfill').fillna(1e-6)
-        features['momentum_ratio_2_5'] = features['momentum_2'] / momentum_5_safe
-        features['momentum_ratio_2_5'] = features['momentum_ratio_2_5'].clip(-1000, 1000)
+        # Delegate to centralized calculator
+        momentum_features = StandardizedFeatureCalculator.calculate_momentum_features(df)
+        for col in momentum_features.columns:
+            if col not in features.columns:
+                features[col] = momentum_features[col]
     
     def _add_sr_features(self, features: pd.DataFrame, df: pd.DataFrame) -> None:
         """Add support/resistance features"""
@@ -2924,65 +2878,23 @@ class HMMRegimeDiscoveryStep:
             
             # Handle zero volume periods (data quality issue)
             df = await self._handle_zero_volume_periods(df)
-            self.logger.info('📊 Calculating comprehensive features for HMM...')
-            features = pd.DataFrame()
-            features['timestamp'] = df['timestamp']
-            self.logger.info('🚀 Calculating momentum features...')
-            self.logger.info('   - Standardized momentum (1-6 periods)...')
-            # Standardized momentum features with 1-6 lookback periods
-            for window in [1, 2, 3, 4, 5, 6]:
-                features[f'price_momentum_{window}'] = df['close'].pct_change(window)
-                features[f'volume_momentum_{window}'] = df['volume'].pct_change(window)
-            self.logger.info('   - RSI momentum...')
+            self.logger.info('📊 Calculating comprehensive features for HMM using standardized feature calculator...')
+            
+            # Use centralized feature calculator for primary features
+            features = StandardizedFeatureCalculator.calculate_all_features(df)
+            
+            # Add additional technical indicators
+            self.logger.info('   - RSI...')
             features['rsi'] = self._calculate_rsi(df['close'])
             features['rsi_momentum'] = features['rsi'].diff(5)
-            self.logger.info('   - MACD momentum...')
+            
+            self.logger.info('   - MACD...')
             features['macd'] = self._calculate_macd(df['close'])
             features['macd_momentum'] = features['macd'].diff(5)
-            self.logger.info('📈 Calculating volatility features...')
-            self.logger.info('   - Multi-timeframe volatility...')
-            # Volatility calculations with better handling of edge cases
-            price_returns = df['close'].pct_change()
-            # Fill first NaN with 0 (no change for first period)
-            price_returns = price_returns.fillna(0)
             
-            # Standardized volatility features with 1-6 lookback periods
-            for window in [1, 2, 3, 4, 5, 6]:
-                features[f'volatility_{window}'] = price_returns.rolling(window=window).std()
-                features[f'ewma_volatility_{window}'] = price_returns.ewm(span=window).std()
-            
-            self.logger.info('   - Volatility acceleration and momentum...')
-            features['volatility_acceleration'] = features['volatility_6'].diff()
-            features['volatility_momentum'] = features['volatility_6'] - features['volatility_6'].shift(3)
-            self.logger.info('   - ATR volatility...')
+            self.logger.info('   - ATR...')
             features['atr'] = self._calculate_atr(df)
-            # ATR normalization with zero-division protection
             features['atr_normalized'] = features['atr'] / df['close'].replace(0, np.nan)
-            self.logger.info('📊 Calculating volume features...')
-            self.logger.info('   - Volume ratios...')
-            # Volume ratios with enhanced zero-division protection and minimum thresholds
-            volume_mean_5 = df['volume'].rolling(window = 5).mean()
-            volume_mean_10 = df['volume'].rolling(window = 10).mean()
-            volume_mean_20 = df['volume'].rolling(window = 20).mean()
-
-            # Apply minimum thresholds to prevent extreme ratios
-            min_volume_threshold = df['volume'].quantile(0.01)  # 1st percentile as minimum
-            if min_volume_threshold < 1.0:
-                min_volume_threshold = 1.0
-
-            volume_mean_5_safe = volume_mean_5.clip(lower=min_volume_threshold)
-            volume_mean_10_safe = volume_mean_10.clip(lower=min_volume_threshold)
-            volume_mean_20_safe = volume_mean_20.clip(lower=min_volume_threshold)
-
-            features['volume_ratio_5'] = df['volume'] / volume_mean_5_safe
-            features['volume_ratio_10'] = df['volume'] / volume_mean_10_safe
-            features['volume_ratio_20'] = df['volume'] / volume_mean_20_safe
-
-            # Cap extreme ratios to prevent outliers
-            for col in ['volume_ratio_5', 'volume_ratio_10', 'volume_ratio_20']:
-                extreme_mask = features[col].abs() > 10.0  # Cap at 10x normal volume
-                if extreme_mask.any():
-                    features.loc[extreme_mask, col] = features[col].median()  # Use median for extreme values
             self.logger.info('   - Volume change...')
             # Volume change with better handling of zero volumes
             volume_change = df['volume'].pct_change()
@@ -3953,8 +3865,8 @@ class HMMRegimeDiscoveryStep:
         feature_names = [f'composite_{i}' for i in range(composite_features.shape[1])]
         composite_df = pd.DataFrame(composite_features, columns=feature_names)
         
-        # Select dimension features
-        dim_map = self._select_dimension_features(composite_df, self.config)
+        # Select dimension features using centralized feature mapping
+        dim_map = StandardizedFeatureCalculator.get_primary_features()
         
         # Compute global dimension statistics for separation
         global_dim_std = {}
@@ -4274,8 +4186,8 @@ class HMMRegimeDiscoveryStep:
             feature_names = [f'composite_{i}' for i in range(composite_features_scaled.shape[1])]
             composite_df = pd.DataFrame(composite_features_scaled, columns=feature_names)
             
-            # Select dimension features
-            dim_map = self._select_dimension_features(composite_df, self.config)
+            # Select dimension features using centralized feature mapping
+            dim_map = StandardizedFeatureCalculator.get_primary_features()
             
             # Compute global dimension statistics for separation
             global_dim_std = {}
@@ -5391,19 +5303,26 @@ class HMMRegimeDiscoveryStep:
         selected_features = {}
         available_columns = set(features.columns)
         
-        for dimension, feature_candidates in config.dimension_feature_map.items():
-            selected_feature = None
-            for candidate in feature_candidates:
-                if candidate in available_columns:
-                    selected_feature = candidate
-                    break
+        # Use centralized feature mapping if available, otherwise fall back to config
+        if hasattr(StandardizedFeatureCalculator, 'get_primary_features'):
+            primary_features = StandardizedFeatureCalculator.get_primary_features()
+            feature_candidates = primary_features
+        else:
+            feature_candidates = config.dimension_feature_map
+        
+        for dimension, feature_list in feature_candidates.items():
+            selected_dimension_features = []
+            for feature_name in feature_list:
+                if feature_name in available_columns:
+                    selected_dimension_features.append(feature_name)
+                    self.logger.info(f"📊 Selected {dimension} feature: {feature_name}")
+                else:
+                    self.logger.warning(f"⚠️ {dimension} feature not found: {feature_name}")
             
-            if selected_feature:
-                selected_features[dimension] = [selected_feature]
-                self.logger.info(f"📊 Selected {dimension} feature: {selected_feature}")
-            else:
-                self.logger.warning(f"⚠️ No {dimension} features found from candidates: {feature_candidates}")
-                selected_features[dimension] = []
+            selected_features[dimension] = selected_dimension_features
+            
+            if not selected_dimension_features:
+                self.logger.warning(f"⚠️ No {dimension} features found from candidates: {feature_list}")
         
         return selected_features
     
@@ -5904,8 +5823,8 @@ class HMMRegimeDiscoveryStep:
             cv_by_cluster = dimension_metrics.get('cv_by_cluster', {})
             coherent_mask = dimension_metrics.get('coherent_mask', {})
             
-            # Select dimension features for financial labeling
-            dim_map = self._select_dimension_features(features, self.config)
+            # Select dimension features for financial labeling using centralized feature mapping
+            dim_map = StandardizedFeatureCalculator.get_primary_features()
             financial_labels = self._generate_financial_labels(features, cluster_labels, dim_map)
             
             for cluster_id in unique_clusters:

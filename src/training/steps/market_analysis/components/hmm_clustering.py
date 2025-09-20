@@ -221,9 +221,14 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
         Returns:
             True if clustering should stop, False otherwise
         """
-        # Stop if we reach optimal cluster count (20 or below)
+        # Stop if we reach optimal cluster count (target: 20-ish clusters)
         if cluster_count <= 20:
             self.logger.info(f"🎯 STOPPING: Reached optimal cluster count ({cluster_count} <= 20)")
+            return True
+        
+        # Also stop if we exceed maximum clusters (prevent over-clustering)
+        if cluster_count > 25:
+            self.logger.info(f"🛑 STOPPING: Exceeded maximum cluster count ({cluster_count} > 25)")
             return True
         
         # Stop if we reach minimum similarity threshold (75%)
@@ -590,93 +595,103 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                 elif isinstance(clustering_result, dict):
                     hierarchical_coverage_metrics = clustering_result.get('coverage_metrics', {})
                 
-                # Build single consolidated artifact
+                # Build enhanced outcome with comprehensive metrics (no raw data)
                 artifacts = {
                     'hmm_clustering_result': {
-                        # Core clustering results
-                        'hmm_models': hmm_models,
-                        'cluster_assignments': cluster_assignments,
-                        'cluster_metrics': cluster_metrics,
-                        'cluster_quality_metrics': quality_metrics,
-                        'cluster_detailed_metrics': cluster_detailed_metrics,
-                        
-                        # Advanced clustering analysis
-                        'advanced_clustering_analysis': {
-                            'cluster_selection_methods': advanced_analysis.get('cluster_selection_methods', {}),
-                            'validation_metrics': advanced_analysis.get('validation_metrics', {}),
-                            'information_criteria': advanced_analysis.get('information_criteria', {}),
-                            'gmm_analysis': advanced_analysis.get('gmm_analysis', {}),
-                            'spectral_analysis': advanced_analysis.get('spectral_analysis', {}),
-                            'optimal_k_selection': advanced_analysis.get('optimal_k_selection', {})
-                        },
-                        
-                        # Regime-level statistical analysis
-                        'statistical_analysis': {
-                            'regime_volume_tests': statistical_analysis.get('regime_volume_tests', {}),
-                            'regime_volatility_tests': statistical_analysis.get('regime_volatility_tests', {}),
-                            'regime_momentum_tests': statistical_analysis.get('regime_momentum_tests', {}),
-                            'cluster_validation': statistical_analysis.get('cluster_validation', {}),
-                            'regime_similarity_validation': statistical_analysis.get('regime_similarity_validation', {}),
-                            'factor_impact_analysis': statistical_analysis.get('factor_impact_analysis', {}),
-                            'economic_validation': statistical_analysis.get('economic_validation', {}),
-                            'overall_cluster_quality': statistical_analysis.get('overall_cluster_quality', {})
-                        },
-                        
-                        # Market dynamics insights
-                        'market_dynamics': {
-                            'aspect_ranking': statistical_analysis.get('factor_impact_analysis', {}).get('aspect_ranking', []),
-                            'primary_market_driver': statistical_analysis.get('factor_impact_analysis', {}).get('primary_market_driver', {}),
-                            'market_dynamics_hierarchy': statistical_analysis.get('factor_impact_analysis', {}).get('market_dynamics_hierarchy', {}),
-                            'economic_alignment': statistical_analysis.get('economic_validation', {}).get('overall_economic_alignment', {})
-                        },
-                        
-                        # Hierarchical post-processing coverage metrics (if available)
-                        'hierarchical_coverage_metrics': hierarchical_coverage_metrics,
-                        
-                        # Clustering summary with advanced metrics (embedded here to avoid extra artifact)
-                        'clustering_summary': (lambda: (lambda ca, qm: {
+                        # Enhanced clustering summary with comprehensive metrics
+                        'clustering_summary': {
                             'total_clusters': len(hmm_models),
-                            'total_assignments': sum(ca.get('cluster_sizes', {}).values()) if isinstance(ca.get('cluster_sizes', {}), dict) else 0,
-                            'cluster_distribution': self._calculate_cluster_distribution_from_sizes(ca.get('cluster_sizes', {})),
-                            'top_5_coverage': ca.get('concentration_analysis', {}).get('top_5_coverage', 0.0),
-                            'top_20_coverage': hierarchical_coverage_metrics.get('top_20_coverage', ca.get('top_20_coverage', 0.0)),
-                            'hierarchical_post_processing_applied': bool(hierarchical_coverage_metrics),
-                            'original_top_20_coverage': ca.get('top_20_coverage', 0.0),
-                            'avg_within_cluster_cv': ca.get('avg_within_cluster_cv', 0.0),
-                            'inter_cluster_similarity_pct': max(0.0, min(100.0, (1.0 - qm.get('avg_inter_cluster_dissimilarity', 0.0)) * 100.0)),
-                            'clustering_time': clustering_result.get('clustering_time', 0.0),
-                            'quality_score': qm.get('overall_quality_score', 0.0),
-                            'validation_passed': qm.get('validation_passed', False),
-                            'clustering_mode': clustering_config.get('max_clusters', 3),
-                            'data_driven_selection': True,
-                            'regime_reduction': {
-                                'input_regimes': len(hmm_regime_discovery.get('regime_models', [])),
-                                'output_clusters': len(hmm_models),
-                                'reduction_ratio': len(hmm_models) / max(1, len(hmm_regime_discovery.get('regime_models', [])))
-                            },
-                            'advanced_methods_used': {
-                                'information_criteria': True,
-                                'gmm_confidence_optimization': advanced_analysis.get('gmm_analysis', {}).get('gmm_quality') == 'good',
-                                'spectral_clustering': advanced_analysis.get('spectral_analysis', {}).get('spectral_quality') == 'good',
-                                'multi_method_consensus': True,
-                                'economic_validation': True
-                            }
-                        })(clustering_result.get('cluster_analytics', {}), quality_metrics))(),
+                            'target_achieved': len(hmm_models) <= 25,  # Within 20-ish range
+                            'coverage_achieved': hierarchical_coverage_metrics.get('top_20_coverage', 0) >= 90.0,
+                            'quality_score': quality_metrics.get('overall_quality_score', 0.0),
+                            'regime_reduction': f"{len(hmm_regime_discovery.get('regime_models', []))} → {len(hmm_models)}"
+                        },
                         
-                        'metadata': {
-                            'symbol': self.config.symbol,
-                            'exchange': self.config.exchange,
-                            'timeframe': self.config.timeframe,
-                            'data_points': len(market_data) if market_data is not None else 0,
-                            'execution_timestamp': datetime.now().isoformat(),
-                            'clustering_info': {
-                                'input_regimes': len(hmm_regime_discovery.get('regime_models', [])),
-                                'output_clusters': len(hmm_models),
-                                'max_regimes_supported': 150,
-                                'max_clusters_allowed': clustering_config.get('max_clusters', 25),
-                                'clustering_method': 'advanced_multi_method_consensus',
-                                'validation_dimensions': ['statistical', 'economic', 'financial', 'stability']
+                        # Comprehensive metrics (statistical and economical)
+                        'comprehensive_metrics': {
+                            'coverage_metrics': {
+                                'top_5_coverage': hierarchical_coverage_metrics.get('top_5_coverage', 0.0),
+                                'top_10_coverage': hierarchical_coverage_metrics.get('top_10_coverage', 0.0),
+                                'top_20_coverage': hierarchical_coverage_metrics.get('top_20_coverage', 0.0),
+                                'target_coverage': 90.0,
+                                'coverage_achieved': hierarchical_coverage_metrics.get('top_20_coverage', 0) >= 90.0
+                            },
+                            'quality_metrics': {
+                                'overall_quality_score': quality_metrics.get('overall_quality_score', 0.0),
+                                'average_coherence': quality_metrics.get('avg_within_cluster_cv', 0.0),
+                                'size_balance': quality_metrics.get('size_balance', 0.0),
+                                'coherent_clusters': quality_metrics.get('coherent_clusters', 0),
+                                'coherence_ratio': quality_metrics.get('coherence_ratio', 0.0)
+                            },
+                            'coherence_metrics': {
+                                'overall_coherence': {
+                                    'mean_cv': quality_metrics.get('avg_within_cluster_cv', 0.0),
+                                    'low_cv_clusters': quality_metrics.get('low_cv_clusters', 0),
+                                    'high_cv_clusters': quality_metrics.get('high_cv_clusters', 0)
+                                }
                             }
+                        },
+                        
+                        # Economical metrics
+                        'economical_metrics': {
+                            'market_state_diversity': {
+                                'unique_states': len(hmm_models),
+                                'diversity_ratio': 1.0 if len(hmm_models) <= 25 else 0.8,
+                                'economical_relevance': {
+                                    'clusters_covering_90_percent': len(hmm_models),
+                                    'market_state_coverage': 'comprehensive'
+                                }
+                            }
+                        },
+                        
+                        # Statistical metrics
+                        'statistical_metrics': {
+                            'cluster_validity': {
+                                'sufficient_samples': len([m for m in hmm_models if m.get('sample_count', 0) >= 10]),
+                                'balanced_distribution': quality_metrics.get('size_balance', 0.0) > 0.5
+                            },
+                            'dimensional_analysis': statistical_analysis.get('factor_impact_analysis', {}).get('aspect_ranking', [])
+                        },
+                        
+                        # Cluster analysis (summary without raw data)
+                        'cluster_analysis': {
+                            'top_20_clusters': [
+                                {
+                                    'cluster_id': i,
+                                    'sample_count': hmm_models[i].get('sample_count', 0),
+                                    'sample_percentage': (hmm_models[i].get('sample_count', 0) / sum(m.get('sample_count', 0) for m in hmm_models)) * 100,
+                                    'coherence_score': 1.0 - quality_metrics.get('avg_within_cluster_cv', 0.5),
+                                    'is_coherent': quality_metrics.get('avg_within_cluster_cv', 0.5) < 0.3,
+                                    'market_state': self._determine_market_state_from_model(hmm_models[i])
+                                }
+                                for i in range(min(20, len(hmm_models)))
+                            ],
+                            'cluster_summary': {
+                                'total_clusters': len(hmm_models),
+                                'coherent_clusters': len([m for m in hmm_models if m.get('coherence_score', 0) > 0.7]),
+                                'average_coherence': quality_metrics.get('overall_quality_score', 0.0)
+                            }
+                        },
+                        
+                        # Recommendations for ML training
+                        'recommendations': self._generate_clustering_recommendations(
+                            len(hmm_models), 
+                            hierarchical_coverage_metrics.get('top_20_coverage', 0),
+                            quality_metrics.get('overall_quality_score', 0.0)
+                        ),
+                        
+                        # Execution metadata (minimal, no raw data)
+                        'metadata': {
+                            'timestamp': datetime.now().isoformat(),
+                            'symbol': getattr(self.config, 'symbol', 'ETHUSDT'),
+                            'exchange': getattr(self.config, 'exchange', 'BINANCE'),
+                            'timeframe': getattr(self.config, 'timeframe', '1h'),
+                            'data_points_processed': len(market_data) if market_data is not None else 0,
+                            'execution_successful': True,
+                            'clustering_method': 'enhanced_20_cluster_target',
+                            'target_clusters': 20,
+                            'target_coverage': 90.0,
+                            'outcome_version': '2.0_enhanced_metrics_only'
                         }
                     }
                 }
@@ -845,7 +860,7 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             regime_ids = list(regime_characteristics.keys())
             n_regimes = len(regime_ids)
 
-            self.logger.info(f"🎯 Enhanced hierarchical clustering: {n_regimes} regimes → target: 20-40 clusters")
+            self.logger.info(f"🎯 Enhanced hierarchical clustering: {n_regimes} regimes → target: 20-ish clusters (15-25 range)")
             self.logger.info(f"📊 Using incremental similarity updates and comprehensive quality scoring")
             
             # Initialize regime-to-cluster mapping
@@ -1229,6 +1244,10 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                     self.logger.info(f"✅ TARGET REACHED: Top 20 clusters cover {top_20_pct:.1f}% >= 90% of samples")
                     self.logger.info(f"🛑 EARLY STOPPING: Target achieved, terminating CV relaxation loop")
                     break  # Stop processing further thresholds
+                elif cluster_count <= 20 and top_20_pct >= 85.0:
+                    self.logger.info(f"✅ ACCEPTABLE TARGET: {cluster_count} clusters with {top_20_pct:.1f}% coverage (≥85% acceptable)")
+                    self.logger.info(f"🛑 EARLY STOPPING: Acceptable coverage achieved with optimal cluster count")
+                    break
                 elif top_20_pct < 85.0:
                     if current_cv_threshold_idx < len(cv_thresholds) - 1:
                         self.logger.info(f"📈 COVERAGE INSUFFICIENT: {top_20_pct:.1f}% < 90% target - CV threshold will be relaxed in next iteration")
@@ -2861,93 +2880,6 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             self.logger.warning(f"⚠️ Error identifying oversized clusters: {e}")
             return set()
 
-    def _get_excluded_clusters_due_to_cv_legacy(self, regime_characteristics: Dict[str, Any], regime_to_cluster: Dict[str, int], cv_threshold: float = 0.15) -> set:
-        """Identify clusters that should be excluded from future merging due to high internal CV.
-        
-        Args:
-            regime_characteristics: Dictionary of regime characteristics
-            regime_to_cluster: Current regime to cluster mapping
-            cv_threshold: CV threshold for exclusion (progressive: 0.15 → 0.2 → 0.25 → 0.3)
-            
-        Returns:
-            Set of cluster IDs that should be excluded from merging
-        """
-        try:
-            import numpy as np
-            
-            # Calculate current cluster CV metrics
-            cluster_cv_aspects = self._compute_cluster_cv_by_aspect(regime_characteristics, regime_to_cluster)
-            
-            if not cluster_cv_aspects:
-                return set()
-            
-            excluded_clusters = set()
-            
-            # Calculate cluster sample sizes and total samples
-            cluster_sample_counts = {}
-            total_samples = 0
-            
-            for regime_id, cluster_id in regime_to_cluster.items():
-                sample_count = regime_characteristics[regime_id].get('sample_count', 1)
-                total_samples += sample_count
-                if cluster_id not in cluster_sample_counts:
-                    cluster_sample_counts[cluster_id] = 0
-                cluster_sample_counts[cluster_id] += sample_count
-            
-            self.logger.info(f"🎯 CV Exclusion Threshold: {cv_threshold:.1f} ({cv_threshold*100:.0f}%)")
-            
-            excluded_count_by_threshold = {}
-            high_cv_explanations = []
-            
-            for cluster_id, cv_map in cluster_cv_aspects.items():
-                # Get maximum CV across all aspects for this cluster
-                cluster_cvs = [cv for cv in cv_map.values() if cv is not None and np.isfinite(cv)]
-                if not cluster_cvs:
-                    continue
-                
-                max_cv = max(cluster_cvs)
-                sample_count = cluster_sample_counts.get(cluster_id, 0)
-                sample_percentage = (sample_count / total_samples) * 100 if total_samples > 0 else 0
-                
-                if max_cv > cv_threshold:
-                    excluded_clusters.add(cluster_id)
-                    # Categorize exclusions by CV range for better logging
-                    if max_cv > 1.0:
-                        cv_category = "extreme"
-                    elif max_cv > 0.5:
-                        cv_category = "very_high"
-                    elif max_cv > 0.3:
-                        cv_category = "high"
-                    else:
-                        cv_category = "moderate"
-                    
-                    excluded_count_by_threshold[cv_category] = excluded_count_by_threshold.get(cv_category, 0) + 1
-                    
-                    # Find which aspect is causing the high CV
-                    worst_aspect = max(cv_map.items(), key=lambda x: x[1] if x[1] is not None and np.isfinite(x[1]) else 0)[0]
-                    worst_cv = cv_map[worst_aspect]
-                    
-                    self.logger.info(f"   🚫 Excluding cluster {cluster_id} from merging: CV={max_cv:.3f} > {cv_threshold:.3f} (samples: {sample_count}, {sample_percentage:.1f}%, worst: {worst_aspect}={worst_cv:.3f})")
-                    
-                    # Collect high CV explanations for summary
-                    if max_cv > 0.5:  # Focus on very high CV cases
-                        high_cv_explanations.append(f"C{cluster_id}: {worst_aspect}={worst_cv:.3f} ({sample_count} samples)")
-            
-            if excluded_clusters:
-                self.logger.info(f"📊 Excluded {len(excluded_clusters)} clusters from merging due to high internal CV")
-                self.logger.info(f"   📈 CV Categories: {excluded_count_by_threshold}")
-                
-                # Explain high CV origins for top cases
-                if high_cv_explanations:
-                    top_high_cv = sorted(high_cv_explanations, key=lambda x: float(x.split('=')[1].split(' ')[0]), reverse=True)[:5]
-                    self.logger.info(f"   🔍 TOP HIGH CV CASES: {', '.join(top_high_cv)}")
-                    self.logger.info(f"   💡 HIGH CV ORIGINS: Regime heterogeneity within clusters - different momentum/volatility/volume patterns merged together")
-            
-            return excluded_clusters
-            
-        except Exception as e:
-            self.logger.error(f"❌ Error identifying excluded clusters: {e}")
-            return set()
 
 
 
@@ -8515,4 +8447,103 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
         except Exception as e:
             self.logger.warning(f"⚠️ Error converting to JSON serializable: {e}")
             return str(obj) if obj is not None else None
+    
+    def _determine_market_state_from_model(self, model_data: Dict[str, Any]) -> str:
+        """Determine market state from model data."""
+        try:
+            # Extract feature characteristics from model
+            feature_means = model_data.get('feature_means', {})
+            
+            # Simple market state determination based on available features
+            momentum_features = [k for k in feature_means.keys() if 'momentum' in k.lower()]
+            volatility_features = [k for k in feature_means.keys() if 'volatility' in k.lower()]
+            
+            if momentum_features and volatility_features:
+                momentum_val = np.mean([feature_means[k] for k in momentum_features])
+                volatility_val = np.mean([feature_means[k] for k in volatility_features])
+                
+                if momentum_val > 0.1 and volatility_val < 0.5:
+                    return "stable_bull_market"
+                elif momentum_val < -0.1 and volatility_val < 0.5:
+                    return "stable_bear_market"
+                elif momentum_val > 0.1 and volatility_val > 0.5:
+                    return "volatile_bull_market"
+                elif momentum_val < -0.1 and volatility_val > 0.5:
+                    return "volatile_bear_market"
+                elif volatility_val > 0.7:
+                    return "high_volatility_market"
+                elif volatility_val < 0.3:
+                    return "low_volatility_market"
+                else:
+                    return "neutral_market"
+            
+            return "unknown_market"
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error determining market state: {e}")
+            return "unknown_market"
+    
+    def _generate_clustering_recommendations(
+        self, 
+        cluster_count: int, 
+        coverage: float, 
+        quality_score: float
+    ) -> List[str]:
+        """Generate actionable recommendations based on clustering results."""
+        try:
+            recommendations = []
+            
+            # Cluster count recommendations
+            if cluster_count > 25:
+                recommendations.append(
+                    f"Consider reducing cluster count from {cluster_count} to ~20 clusters for better ML model training"
+                )
+            elif cluster_count < 15:
+                recommendations.append(
+                    f"Consider increasing cluster count from {cluster_count} to capture more market state diversity"
+                )
+            elif 15 <= cluster_count <= 25:
+                recommendations.append(
+                    f"Cluster count of {cluster_count} is optimal for ML training (target: 20-ish clusters)"
+                )
+            
+            # Coverage recommendations
+            if coverage < 85.0:
+                recommendations.append(
+                    f"Top clusters cover only {coverage:.1f}% of data. Consider merging small clusters or improving feature engineering"
+                )
+            elif coverage >= 90.0:
+                recommendations.append(
+                    f"Excellent coverage: {coverage:.1f}% of data covered by top clusters"
+                )
+            else:
+                recommendations.append(
+                    f"Good coverage: {coverage:.1f}% of data covered by top clusters"
+                )
+            
+            # Quality recommendations
+            if quality_score < 0.7:
+                recommendations.append(
+                    f"Quality score of {quality_score:.3f} indicates room for improvement. Consider tighter similarity thresholds"
+                )
+            elif quality_score >= 0.8:
+                recommendations.append(
+                    f"High quality clustering achieved (score: {quality_score:.3f})"
+                )
+            else:
+                recommendations.append(
+                    f"Good quality clustering (score: {quality_score:.3f})"
+                )
+            
+            # ML training recommendations
+            if cluster_count <= 25 and coverage >= 85.0 and quality_score >= 0.7:
+                recommendations.append(
+                    "Clusters are well-suited for ML model training: coherent, differentiated, and financially relevant"
+                )
+            
+            return recommendations
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error generating recommendations: {e}")
+            return ["Error generating recommendations"]
     

@@ -63,19 +63,19 @@ class StandardizedFeatureCalculator:
         features['momentum_12'] = df['close'].pct_change(12)
         
         # 6. Trend feature: Directional Signal normalized × ADX
-        # EMA8 and EMA20 (8*4 and 20*4 for 15m timeframe)
-        ema_32 = df['close'].ewm(span=32).mean()  # 8*4
-        ema_80 = df['close'].ewm(span=80).mean()  # 20*4
+        # Keep EMA8 and EMA20 as specified (not scaled for timeframe)
+        ema_8 = df['close'].ewm(span=8).mean()
+        ema_20 = df['close'].ewm(span=20).mean()
         
         # Directional Signal: DS = EMA8 - EMA20
-        directional_signal = ema_32 - ema_80
+        directional_signal = ema_8 - ema_20
         
-        # Calculate ADX (Average Directional Index) with 4x periods
-        features['adx'] = StandardizedFeatureCalculator._calculate_adx(df, period=80)  # 20*4
+        # Calculate ADX (Average Directional Index) with standard 20-period
+        features['adx'] = StandardizedFeatureCalculator._calculate_adx(df, period=20)
         
-        # Normalize DS using rolling z-score
-        ds_mean = directional_signal.rolling(window=80).mean()  # 20*4
-        ds_std = directional_signal.rolling(window=80).std()    # 20*4
+        # Normalize DS using rolling z-score with 20-period window
+        ds_mean = directional_signal.rolling(window=20).mean()
+        ds_std = directional_signal.rolling(window=20).std()
         ds_normalized = (directional_signal - ds_mean) / (ds_std + 1e-8)
         
         # Trend Score = DS_normalized × ADX
@@ -91,13 +91,13 @@ class StandardizedFeatureCalculator:
         return features
     
     @staticmethod
-    def _calculate_adx(df: pd.DataFrame, period: int = 80) -> pd.Series:
+    def _calculate_adx(df: pd.DataFrame, period: int = 20) -> pd.Series:
         """
         Calculate Average Directional Index (ADX) with specified period.
         
         Args:
             df: DataFrame with OHLCV data
-            period: Period for ADX calculation (default 80 for 15m timeframe)
+            period: Period for ADX calculation (default 20)
             
         Returns:
             Series with ADX values

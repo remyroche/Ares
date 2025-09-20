@@ -4019,7 +4019,9 @@ class HMMRegimeDiscoveryStep:
                 features = features.select_dtypes(include=[np.number]).copy()
 
             # Final validation: ensure no infinity values remain, and only warn on zeros beyond warmup rows
-            inf_count = np.isinf(features).sum().sum()
+            # Ensure features is numpy array before checking for infinity
+            features_array = np.asarray(features)
+            inf_count = np.isinf(features_array).sum()
             warmup_rows = min(50, features.shape[0]) if hasattr(features, 'shape') else 50
             try:
                 zero_count = (features.iloc[warmup_rows:] == 0).sum().sum() if hasattr(features, 'iloc') else 0

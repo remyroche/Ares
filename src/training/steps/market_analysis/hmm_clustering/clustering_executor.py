@@ -57,6 +57,7 @@ def kmeans_standard(features_array: np.ndarray, n_clusters: int, random_state: i
 		# Calculate HMM-relevant regime balance using safe math operations
 		unique_regimes, counts = np.unique(labels, return_counts=True)
 		regime_percentages = safe_divide(counts, len(labels), 0.0)
+		# Vectorized balance score calculation
 		balance_score = 1.0 - (np.max(regime_percentages) - np.min(regime_percentages))
 		# Safe entropy calculation with proper handling of zero probabilities
 		log_probs = safe_log(regime_percentages + 1e-10, 0.0)
@@ -120,6 +121,7 @@ def kmeans_minibatch(features_array: np.ndarray, n_clusters: int, random_state: 
 		# Calculate HMM-relevant regime balance using safe math operations
 		unique_regimes, counts = np.unique(labels, return_counts=True)
 		regime_percentages = safe_divide(counts, len(labels), 0.0)
+		# Vectorized balance score calculation
 		balance_score = 1.0 - (np.max(regime_percentages) - np.min(regime_percentages))
 		# Safe entropy calculation with proper handling of zero probabilities
 		log_probs = safe_log(regime_percentages + 1e-10, 0.0)

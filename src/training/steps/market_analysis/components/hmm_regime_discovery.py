@@ -106,14 +106,14 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             hmm_config = HMMRegimeConfig(
                 n_components=optimal_components,  # Data-driven component count
                 method=RegimeDetectionMethod.ENHANCED_HMM,
-                min_regime_samples=max(10, data_size // (optimal_components * 2)),  # Dynamic minimum based on data size
+                min_regime_samples=max(20, data_size // (optimal_components * 3)),  # More conservative minimum
                 max_regime_imbalance=0.9,  # Allow more imbalance for natural regimes
                 economic_significance_threshold=0.01,  # Lower threshold for regime significance
                 
-                # Remove hardcoded regime limits - let data determine optimal count
-                light_mode_max_regimes=None,  # No artificial limits
-                blank_mode_max_regimes=None,  # No artificial limits  
-                full_mode_max_regimes=None    # No artificial limits
+                # Add reasonable safety bounds to prevent runaway regime creation
+                light_mode_max_regimes=min(50, optimal_components),  # Reasonable upper bound
+                blank_mode_max_regimes=min(100, optimal_components),  # Reasonable upper bound
+                full_mode_max_regimes=min(200, optimal_components)    # Reasonable upper bound
             )
             
             # Direct regime discovery without external detector (simplified)
@@ -796,20 +796,23 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
                 'note': 'True 3D regime space with separate dimensional HMMs'
             }
             
-            # Calculate actual feature offset based on max rolling window (24h for volume baseline)
-            max_lookback = 24  # Maximum lookback window (24h for volume baseline)
-            feature_offset = max_lookback
+            # Calculate actual feature offset based on max rolling window used
+            # Get the maximum lookback period from all feature calculations
+            momentum_lookback = 2  # momentum_2h
+            volatility_lookback = 6  # volatility_6h and atr_6h
+            volume_lookback = 24  # volume_ratio_48h baseline
+            max_lookback = max(momentum_lookback, volatility_lookback, volume_lookback)
             
             # Preserve original index and align properly
-            if len(market_data) <= feature_offset:
-                raise ValueError(f"Insufficient data: need at least {feature_offset + 1} rows, got {len(market_data)}")
+            if len(market_data) <= max_lookback:
+                raise ValueError(f"Insufficient data: need at least {max_lookback + 1} rows, got {len(market_data)}")
             
             # Align data preserving original timestamps
             original_index = market_data.index
-            market_data_aligned = market_data.iloc[feature_offset:].copy()
+            market_data_aligned = market_data.iloc[max_lookback:].copy()
             
             # Validate feature lengths match expected alignment
-            expected_length = len(market_data) - feature_offset
+            expected_length = len(market_data) - max_lookback
             if len(momentum_features) != expected_length:
                 self.logger.warning(f"Feature length mismatch: expected {expected_length}, got {len(momentum_features)}")
             
@@ -898,12 +901,16 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             volume_features['volume_ratio_48h'] = market_data['volume'] / (market_data['volume'].rolling(24).mean() + epsilon)
             
             # Clean features and align indices
-            max_lookback = 24  # Maximum lookback window used (24h for volume baseline)
+            # Use the same max_lookback calculation as in _train_hmm_directly
+            momentum_lookback = 2  # momentum_2h
+            volatility_lookback = 6  # volatility_6h and atr_6h
+            volume_lookback = 24  # volume_ratio_48h baseline
+            max_lookback = max(momentum_lookback, volatility_lookback, volume_lookback)
             cleaned_features = []
             
             for i, (features, feature_type) in enumerate(zip([momentum_features, volatility_features, volume_features], 
                                                           ['momentum', 'volatility', 'volume'])):
-                # Skip rows based on max lookback (24h for volume baseline)
+                # Skip rows based on max lookback
                 features = features.iloc[max_lookback:]
                 
                 # Apply consistent NaN handling based on feature type
@@ -1151,10 +1158,19 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
                         # For momentum features, use 0 (no change)
                         features_clean[col] = features_clean[col].fillna(0.0)
                     elif 'volatility' in col.lower() or 'std' in col.lower():
-                        # For volatility features, use median instead of constant 0.01
+                        # For volatility features, use median but preserve zero values when meaningful
                         median_val = features_clean[col].median()
-                        if pd.isna(median_val) or median_val == 0:
-                            median_val = 0.01  # Only fallback if no valid data
+                        if pd.isna(median_val):
+                            # Only use 0.01 fallback if no valid data at all
+                            median_val = 0.01
+                        elif median_val == 0:
+                            # Check if zeros are meaningful (e.g., no price movement)
+                            non_zero_count = (features_clean[col] != 0).sum()
+                            if non_zero_count > 0:
+                                # Use median of non-zero values
+                                median_val = features_clean[col][features_clean[col] != 0].median()
+                                if pd.isna(median_val):
+                                    median_val = 0.01
                         features_clean[col] = features_clean[col].fillna(median_val)
                     elif 'volume' in col.lower():
                         # For volume features, use median or 0
@@ -1180,22 +1196,15 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             # Convert to numpy array for HMM training
             X = features_clean.values.astype(np.float64)
             
-            # Create HMM model with proper initialization control - FIXED VERSION
+            # Create HMM model with proper initialization - FIXED VERSION
             model = hmm.GaussianHMM(
                 n_components=n_states,
                 covariance_type='diag',
                 n_iter=150,
                 tol=1e-4,
                 random_state=42,
-                init_params=''  # Don't auto-initialize anything - we'll do it manually
+                init_params='stmc'  # Let hmmlearn handle initialization properly
             )
-            
-            # Initialize model parameters before fitting to prevent race conditions
-            # Fix: Initialize parameters directly without accessing n_features
-            model.startprob_ = np.ones(n_states, dtype=np.float64) / n_states
-            model.transmat_ = np.eye(n_states, dtype=np.float64) * 0.8 + 0.2 / n_states
-            model.means_ = np.random.randn(n_states, X.shape[1]).astype(np.float64)
-            model.covars_ = np.ones((n_states, X.shape[1]), dtype=np.float64)
             
             # Train the model with proper error handling
             try:
@@ -1204,28 +1213,22 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
                 # Validate model after training
                 self._validate_and_fix_transition_matrix(model, n_states)
                 
-            except ValueError as fit_error:
-                if "startprob_" in str(fit_error) or "transmat_" in str(fit_error):
-                    self.logger.warning(f"⚠️ {dimension_name} HMM fit failed with parameter error: {fit_error}")
-                    # Re-initialize with more conservative parameters
-                    model.startprob_ = np.ones(n_states, dtype=np.float64) / n_states
-                    model.transmat_ = np.eye(n_states, dtype=np.float64) * 0.9 + 0.1 / n_states
-                    model.means_ = np.zeros((n_states, X.shape[1]), dtype=np.float64)
-                    model.covars_ = np.ones((n_states, X.shape[1]), dtype=np.float64) * 0.1
-                    model.fit(X)
-                    self._validate_and_fix_transition_matrix(model, n_states)
-                else:
-                    raise fit_error
-            except Exception as fit_error:
-                self.logger.error(f"❌ {dimension_name} HMM fit failed: {fit_error}")
-                # Try one more time with most conservative settings
-                model.startprob_ = np.ones(n_states, dtype=np.float64) / n_states
-                model.transmat_ = np.eye(n_states, dtype=np.float64) * 0.9 + 0.1 / n_states
-                model.means_ = np.zeros((n_states, X.shape[1]), dtype=np.float64)
-                model.covars_ = np.ones((n_states, X.shape[1]), dtype=np.float64) * 0.1
-                model.n_iter = 50  # Reduce iterations
+            except (ValueError, np.linalg.LinAlgError) as fit_error:
+                self.logger.warning(f"⚠️ {dimension_name} HMM fit failed with numerical error: {fit_error}")
+                # Retry with more conservative settings
+                model = hmm.GaussianHMM(
+                    n_components=n_states,
+                    covariance_type='diag',
+                    n_iter=50,  # Reduced iterations
+                    tol=1e-3,   # Relaxed tolerance
+                    random_state=42,
+                    init_params='stmc'
+                )
                 model.fit(X)
                 self._validate_and_fix_transition_matrix(model, n_states)
+            except Exception as fit_error:
+                self.logger.error(f"❌ {dimension_name} HMM fit failed with unexpected error: {fit_error}")
+                raise ValueError(f"HMM training failed for {dimension_name}: {fit_error}") from fit_error
             
             # Get state assignments
             assignments = model.predict(X)
@@ -1489,13 +1492,20 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             
             self.logger.debug(f"📊 Transition matrix validation completed - all rows sum to 1")
             
-        except Exception as e:
+        except (ValueError, np.linalg.LinAlgError) as e:
             self.logger.error(f"❌ Error validating transition matrix: {e}")
             # Fallback: create a safe uniform transition matrix
             epsilon = 1e-6
             safe_transmat = np.full((n_components, n_components), 1.0 / n_components)
             model.transmat_ = safe_transmat.astype(np.float64)
             self.logger.info("✅ Applied fallback uniform transition matrix")
+        except Exception as e:
+            self.logger.error(f"❌ Unexpected error validating transition matrix: {e}")
+            # Emergency fallback: create a safe uniform transition matrix
+            epsilon = 1e-6
+            safe_transmat = np.full((n_components, n_components), 1.0 / n_components)
+            model.transmat_ = safe_transmat.astype(np.float64)
+            self.logger.info("✅ Applied emergency fallback uniform transition matrix")
     
     def _create_regime_characteristics_for_clustering(self, regime_dataframe: pd.DataFrame, regime_assignments: List[int], 
                                                     market_data: pd.DataFrame) -> Dict[str, Any]:

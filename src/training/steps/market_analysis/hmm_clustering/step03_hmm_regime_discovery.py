@@ -23,6 +23,7 @@ from src.utils.logger import system_logger
 from src.core.decorators import handles_errors
 from src.config.environment import get_environment_settings
 from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
+from .standardized_features import StandardizedFeatureCalculator
 
 # Import enhanced MLflow integration
 try:
@@ -344,17 +345,15 @@ class EnhancedFeatureEngineer:
     
     def create_comprehensive_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """
-        Create a comprehensive set of 100+ features for regime detection
+        Create the 6 core features for regime detection using centralized feature calculation
         
         Args:
             df: Input DataFrame with OHLCV data
             
         Returns:
-            DataFrame with comprehensive features
+            DataFrame with the 6 core features only (4D: volume, volatility, momentum, trend)
         """
-        self.logger.info("🔧 Creating comprehensive feature set (100+ features)...")
-        features = pd.DataFrame()
-        features['timestamp'] = df['timestamp'] if 'timestamp' in df.columns else df.index
+        self.logger.info("🔧 Creating 6 core features using standardized feature calculator (4D clustering for 15m timeframe)...")
         
         # Ensure we have the required columns
         required_cols = ['open', 'high', 'low', 'close', 'volume']
@@ -362,53 +361,16 @@ class EnhancedFeatureEngineer:
             if col not in df.columns:
                 raise ValueError(f"Missing required column: {col}")
         
-        # Price-based features
-        self._add_price_features(features, df)
+        # Use centralized feature calculator for the 6 core features only
+        features = StandardizedFeatureCalculator.calculate_all_features(df)
         
-        # Volume-based features
-        self._add_volume_features(features, df)
+        # Validate that we have all required features
+        validation_results = StandardizedFeatureCalculator.validate_features(features)
+        missing_features = [k for k, v in validation_results.items() if not v]
+        if missing_features:
+            raise ValueError(f"Missing or invalid features: {missing_features}")
         
-        # Volatility features
-        self._add_volatility_features(features, df)
-        
-        # Technical indicators
-        self._add_technical_indicators(features, df)
-        
-        # Momentum features
-        self._add_momentum_features(features, df)
-        
-        # Support/Resistance features
-        self._add_sr_features(features, df)
-        
-        # Statistical features
-        self._add_statistical_features(features, df)
-        
-        # Time-based features
-        self._add_time_features(features, df)
-        
-        # Feature interactions
-        self._add_feature_interactions(features)
-        
-        # Clean features
-        features = self._clean_features(features)
-        
-        # Count features by category
-        feature_counts = {
-            'price_features': len([col for col in features.columns if 'price' in col or 'ma_' in col or 'ema_' in col or 'gap' in col or 'doji' in col or 'hammer' in col]),
-            'volume_features': len([col for col in features.columns if 'volume' in col]),
-            'volatility_features': len([col for col in features.columns if 'volatility' in col]),
-            'technical_indicators': len([col for col in features.columns if any(ind in col for ind in ['rsi', 'macd', 'bb_', 'atr', 'adx'])]),
-            'momentum_features': len([col for col in features.columns if 'momentum' in col]),
-            'sr_features': len([col for col in features.columns if any(sr in col for sr in ['support', 'resistance', 'pivot', 'swing'])]),
-            'statistical_features': len([col for col in features.columns if any(stat in col for stat in ['skewness', 'kurtosis', 'quantile', 'autocorr'])]),
-            'time_features': len([col for col in features.columns if any(time in col for time in ['hour', 'day', 'month', 'sin', 'cos'])]),
-            'interaction_features': len([col for col in features.columns if 'interaction' in col])
-        }
-        
-        total_features = sum(feature_counts.values())
-        self.logger.info(f"✅ Created {total_features} comprehensive features:")
-        for category, count in feature_counts.items():
-            self.logger.info(f"   {category}: {count} features")
+        self.logger.info(f"✅ Created {len(features.columns)} core features for 4D clustering: {list(features.columns)}")
         return features
     
     def _add_price_features(self, features: pd.DataFrame, df: pd.DataFrame) -> None:
@@ -505,58 +467,7 @@ class EnhancedFeatureEngineer:
             features[f'price_vs_ma_{window}'] = (df['close'] - features[f'price_ma_{window}']) / features[f'price_ma_{window}']
             features[f'price_vs_ema_{window}'] = (df['close'] - features[f'price_ema_{window}']) / features[f'price_ema_{window}']
     
-    def _add_volume_features(self, features: pd.DataFrame, df: pd.DataFrame) -> None:
-        """Add volume-based features"""
-        # Basic volume features
-        features['volume_change'] = df['volume'].pct_change()
-        # Safe volume_ma_ratio calculation to prevent infinity
-        volume_ma = df['volume'].rolling(20).mean()
-        volume_ma_safe = volume_ma.replace(0, np.nan)
-        volume_ma_safe = volume_ma_safe.fillna(method='bfill').fillna(1.0)
-        features['volume_ma_ratio'] = df['volume'] / volume_ma_safe
-        features['volume_ma_ratio'] = features['volume_ma_ratio'].clip(-100, 100)
-        
-        # Volume-price relationship
-        features['volume_price_trend'] = (df['close'] - df['close'].shift(1)) * df['volume']
-        features['volume_price_correlation'] = df['close'].rolling(20).corr(df['volume'])
-        
-        # Volume patterns
-        features['volume_spike'] = df['volume'] > df['volume'].rolling(20).mean() * 2
-        features['volume_dry_up'] = df['volume'] < df['volume'].rolling(20).mean() * 0.5
-        
-        # Multiple timeframe volume features
-        for window in [5, 10, 20, 50]:
-            features[f'volume_ma_{window}'] = df['volume'].rolling(window).mean()
-            features[f'volume_std_{window}'] = df['volume'].rolling(window).std()
-            features[f'volume_ratio_{window}'] = df['volume'] / features[f'volume_ma_{window}']
     
-    def _add_volatility_features(self, features: pd.DataFrame, df: pd.DataFrame) -> None:
-        """Add volatility features"""
-        # Rolling volatility
-        for window in [5, 10, 20, 50]:
-            features[f'volatility_{window}'] = df['close'].pct_change().rolling(window).std()
-            features[f'volatility_ewma_{window}'] = df['close'].pct_change().ewm(span=window).std()
-        
-        # Safe volatility ratios to prevent infinity
-        vol_20_safe = features['volatility_20'].replace(0, np.nan)
-        vol_20_safe = vol_20_safe.fillna(method='bfill').fillna(1e-6)
-        features['volatility_ratio_5_20'] = features['volatility_5'] / vol_20_safe
-        features['volatility_ratio_5_20'] = features['volatility_ratio_5_20'].clip(-1000, 1000)
-
-        vol_50_safe = features['volatility_50'].replace(0, np.nan)
-        vol_50_safe = vol_50_safe.fillna(method='bfill').fillna(1e-6)
-        features['volatility_ratio_10_50'] = features['volatility_10'] / vol_50_safe
-        features['volatility_ratio_10_50'] = features['volatility_ratio_10_50'].clip(-1000, 1000)
-        
-        # Volatility momentum
-        features['volatility_momentum'] = features['volatility_20'] - features['volatility_20'].shift(5)
-        features['volatility_acceleration'] = features['volatility_momentum'].diff()
-        
-        # GARCH-like features
-        features['volatility_clustering'] = (df['close'].pct_change() ** 2).rolling(20).mean()
-        features['volatility_persistence'] = features['volatility_clustering'].rolling(10).corr(
-            features['volatility_clustering'].shift(1)
-        )
     
     def _add_technical_indicators(self, features: pd.DataFrame, df: pd.DataFrame) -> None:
         """Add technical indicators"""
@@ -585,27 +496,6 @@ class EnhancedFeatureEngineer:
         # ADX
         features['adx_14'] = self._calculate_adx(df)
     
-    def _add_momentum_features(self, features: pd.DataFrame, df: pd.DataFrame) -> None:
-        """Add momentum features"""
-        # Price momentum
-        for window in [1, 2, 3, 5, 10, 20, 50]:
-            features[f'momentum_{window}'] = df['close'].pct_change(window)
-            features[f'momentum_ma_{window}'] = features[f'momentum_{window}'].rolling(10).mean()
-        
-        # Volume momentum
-        for window in [1, 2, 3, 5, 10, 20]:
-            features[f'volume_momentum_{window}'] = df['volume'].pct_change(window)
-        
-        # Safe momentum ratios to prevent infinity
-        momentum_20_safe = features['momentum_20'].replace(0, np.nan)
-        momentum_20_safe = momentum_20_safe.fillna(method='bfill').fillna(1e-6)
-        features['momentum_ratio_5_20'] = features['momentum_5'] / momentum_20_safe
-        features['momentum_ratio_5_20'] = features['momentum_ratio_5_20'].clip(-1000, 1000)
-
-        momentum_50_safe = features['momentum_50'].replace(0, np.nan)
-        momentum_50_safe = momentum_50_safe.fillna(method='bfill').fillna(1e-6)
-        features['momentum_ratio_10_50'] = features['momentum_10'] / momentum_50_safe
-        features['momentum_ratio_10_50'] = features['momentum_ratio_10_50'].clip(-1000, 1000)
     
     def _add_sr_features(self, features: pd.DataFrame, df: pd.DataFrame) -> None:
         """Add support/resistance features"""
@@ -2924,136 +2814,48 @@ class HMMRegimeDiscoveryStep:
             
             # Handle zero volume periods (data quality issue)
             df = await self._handle_zero_volume_periods(df)
-            self.logger.info('📊 Calculating comprehensive features for HMM...')
-            features = pd.DataFrame()
-            features['timestamp'] = df['timestamp']
-            self.logger.info('🚀 Calculating momentum features...')
-            self.logger.info('   - Price momentum (5, 20 periods)...')
-            features['price_momentum_5'] = df['close'].pct_change(5)
-            features['price_momentum_20'] = df['close'].pct_change(20)
-            self.logger.info('   - Volume momentum...')
-            features['volume_momentum_5'] = df['volume'].pct_change(5)
-            features['volume_momentum_20'] = df['volume'].pct_change(20)
-            self.logger.info('   - RSI momentum...')
-            features['rsi'] = self._calculate_rsi(df['close'])
-            features['rsi_momentum'] = features['rsi'].diff(5)
-            self.logger.info('   - MACD momentum...')
-            features['macd'] = self._calculate_macd(df['close'])
-            features['macd_momentum'] = features['macd'].diff(5)
-            self.logger.info('📈 Calculating volatility features...')
-            self.logger.info('   - Multi-timeframe volatility...')
-            # Volatility calculations with better handling of edge cases
-            price_returns = df['close'].pct_change()
-            # Fill first NaN with 0 (no change for first period)
-            price_returns = price_returns.fillna(0)
+            self.logger.info('📊 Calculating 6 core features for HMM using standardized feature calculator (4D clustering for 15m timeframe)...')
             
-            features['volatility_5'] = price_returns.rolling(window = 5).std()
-            features['volatility_10'] = price_returns.rolling(window = 10).std()
-            features['volatility_20'] = price_returns.rolling(window = 20).std()
-            self.logger.info('   - EWMA volatility...')
-            features['ewma_volatility_20'] = price_returns.ewm(span = 20).std()
-            self.logger.info('   - Volatility acceleration and momentum...')
-            features['volatility_acceleration'] = features['volatility_20'].diff()
-            features['volatility_momentum'] = features['volatility_20'] - features['volatility_20'].shift(5)
-            self.logger.info('   - ATR volatility...')
-            features['atr'] = self._calculate_atr(df)
-            # ATR normalization with zero-division protection
-            features['atr_normalized'] = features['atr'] / df['close'].replace(0, np.nan)
-            self.logger.info('📊 Calculating volume features...')
-            self.logger.info('   - Volume ratios...')
-            # Volume ratios with enhanced zero-division protection and minimum thresholds
-            volume_mean_5 = df['volume'].rolling(window = 5).mean()
-            volume_mean_10 = df['volume'].rolling(window = 10).mean()
-            volume_mean_20 = df['volume'].rolling(window = 20).mean()
-
-            # Apply minimum thresholds to prevent extreme ratios
-            min_volume_threshold = df['volume'].quantile(0.01)  # 1st percentile as minimum
-            if min_volume_threshold < 1.0:
-                min_volume_threshold = 1.0
-
-            volume_mean_5_safe = volume_mean_5.clip(lower=min_volume_threshold)
-            volume_mean_10_safe = volume_mean_10.clip(lower=min_volume_threshold)
-            volume_mean_20_safe = volume_mean_20.clip(lower=min_volume_threshold)
-
-            features['volume_ratio_5'] = df['volume'] / volume_mean_5_safe
-            features['volume_ratio_10'] = df['volume'] / volume_mean_10_safe
-            features['volume_ratio_20'] = df['volume'] / volume_mean_20_safe
-
-            # Cap extreme ratios to prevent outliers
-            for col in ['volume_ratio_5', 'volume_ratio_10', 'volume_ratio_20']:
-                extreme_mask = features[col].abs() > 10.0  # Cap at 10x normal volume
-                if extreme_mask.any():
-                    features.loc[extreme_mask, col] = features[col].median()  # Use median for extreme values
-            self.logger.info('   - Volume change...')
-            # Volume change with better handling of zero volumes
-            volume_change = df['volume'].pct_change()
-            # For zero volume periods, use a small positive change instead of NaN
-            volume_change = volume_change.fillna(0.001)  # Small positive change for zero volume periods
-            features['volume_change'] = volume_change
-            self.logger.info('   - Volume-price relationship...')
-            # Calculate price change with timestamp validation
-            price_change = df['close'].pct_change()
-            price_change = price_change.fillna(0)  # First value is NaN, fill with 0
+            # Use centralized feature calculator for the 6 core features only
+            features = StandardizedFeatureCalculator.calculate_all_features(df)
             
-            # Validate zero-price-change periods using timestamps
-            zero_price_mask = price_change == 0
-            zero_count = zero_price_mask.sum()
-            self.logger.info(f'   - Found {zero_count:,} zero-price-change periods, validating duration...')
+            # Validate features
+            validation_results = StandardizedFeatureCalculator.validate_features(features)
+            missing_features = [k for k, v in validation_results.items() if not v]
+            if missing_features:
+                self.logger.error(f"Missing or invalid features: {missing_features}")
+                raise ValueError(f"Missing or invalid features: {missing_features}")
             
-            if zero_count > 0:
-                # Convert timestamps to datetime for duration calculation
-                timestamps = pd.to_datetime(df['timestamp'], unit='ms')
+            self.logger.info(f"✅ Created {len(features.columns)} core features for 4D clustering: {list(features.columns)}")
+            
+            # Clean features - remove timestamp column if present
+            if 'timestamp' in features.columns:
+                features = features.drop('timestamp', axis=1)
+            
+            # Handle any remaining NaNs
+            features = features.fillna(0)
+            
+            self.logger.info(f'✅ Feature engineering completed: {features.shape[1]} features, {len(features):,} rows')
+            
+            # Features should now be clean (no infinity values due to root cause fixes)
+            scaler = StandardScaler()
+            
+            # Memory-efficient scaling with dtype optimization
+            if features.shape[0] > 100000:
+                self.logger.info("💾 Using memory-efficient scaling for large dataset")
+                # Process in chunks to avoid memory issues and use float32 for memory savings
+                chunk_size = 50000
                 
-                # Find consecutive zero-price-change periods
-                zero_periods = []
-                current_start = None
-                for i, is_zero in enumerate(zero_price_mask):
-                    if is_zero and current_start is None:
-                        current_start = i
-                    elif not is_zero and current_start is not None:
-                        zero_periods.append((current_start, i-1))
-                        current_start = None
+                # First, fit scaler on a representative sample to avoid memory leaks
+                sample_size = min(100000, features.shape[0])
+                sample_indices = np.random.choice(features.shape[0], sample_size, replace=False)
+                sample_data = features.iloc[sample_indices].astype(np.float32)
+                scaler.fit(sample_data)
+                del sample_data  # Free memory immediately
                 
-                # Handle case where the last period is zero
-                if current_start is not None:
-                    zero_periods.append((current_start, len(zero_price_mask)-1))
-                
-                self.logger.info(f'   - Found {len(zero_periods)} consecutive zero-price-change periods')
-                
-                # Check duration of each zero-price-change period
-                long_zero_periods = []
-                short_zero_periods = []
-                total_long_duration = 0
-                total_short_duration = 0
-                total_long_rows = 0
-                total_short_rows = 0
-                
-                for start_idx, end_idx in zero_periods:
-                    if start_idx < len(timestamps) and end_idx < len(timestamps):
-                        duration_seconds = (timestamps.iloc[end_idx] - timestamps.iloc[start_idx]).total_seconds()
-                        rows_in_period = end_idx - start_idx + 1
-                        
-                        if duration_seconds >= 2.0:  # 2 seconds or more
-                            long_zero_periods.append((start_idx, end_idx, duration_seconds, rows_in_period))
-                            total_long_duration += duration_seconds
-                            total_long_rows += rows_in_period
-                        else:
-                            short_zero_periods.append((start_idx, end_idx, duration_seconds, rows_in_period))
-                            total_short_duration += duration_seconds
-                            total_short_rows += rows_in_period
-                
-                # Only report summary statistics, ignore clusters <2s
-                if short_zero_periods:
-                    self.logger.info(f'   - Ignored {len(short_zero_periods)} short periods (<2s): {total_short_rows} rows over {total_short_duration:.1f}s total')
-                
-                if long_zero_periods:
-                    self.logger.warning(f'   ⚠️ Found {len(long_zero_periods)} significant zero-price-change periods (≥2s): {total_long_rows} rows over {total_long_duration:.1f}s total')
-                    # Show first 3 significant periods with details
-                    for start_idx, end_idx, duration, rows in long_zero_periods[:3]:
-                        start_time = timestamps.iloc[start_idx].strftime('%H:%M:%S')
-                        end_time = timestamps.iloc[end_idx].strftime('%H:%M:%S')
-                        self.logger.warning(f'     - Period {start_idx}-{end_idx} ({start_time}-{end_time}): {rows} rows over {duration:.1f}s')
-                    if len(long_zero_periods) > 3:
+                # Now transform data in chunks without creating large upfront array
+                self.logger.info("🔄 Transforming data in chunks to save memory...")
+                features_scaled_chunks = []
                         self.logger.warning(f'     - ... and {len(long_zero_periods)-3} more significant periods')
                 else:
                     self.logger.info('   ✅ All zero-price-change periods are <2s (ignored as legitimate short-term price stability)')
@@ -3944,40 +3746,95 @@ class HMMRegimeDiscoveryStep:
             features.values
         ])
 
-        # VECTORIZED: Optimize K-means clustering
-        n_clusters_options = [10, 15, 20, 25]
+        # VECTORIZED: Coverage-driven cluster selection
+        cluster_range = getattr(self.config, 'cluster_range', [16, 18, 20, 22, 24])
         best_kmeans = None
         best_score = float('-inf')
+        best_metrics = None
+        
+        # Convert features to DataFrame for dimension analysis
+        feature_names = [f'composite_{i}' for i in range(composite_features.shape[1])]
+        composite_df = pd.DataFrame(composite_features, columns=feature_names)
+        
+        # Select dimension features using centralized feature mapping
+        dim_map = StandardizedFeatureCalculator.get_primary_features()
+        
+        # Compute global dimension statistics for separation
+        global_dim_std = {}
+        for dimension, feature_names in dim_map.items():
+            if feature_names:
+                feature_name = feature_names[0]
+                if feature_name in composite_df.columns:
+                    global_dim_std[dimension] = composite_df[feature_name].std()
 
-        for n_clusters in n_clusters_options:
+        for n_clusters in cluster_range:
             try:
+                self.logger.info(f"🎯 Testing {n_clusters} clusters...")
                 kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
                 cluster_labels = kmeans.fit_predict(composite_features)
 
-                # VECTORIZED: Calculate clustering metrics
                 if len(np.unique(cluster_labels)) > 1:
-                    try:
-                        # Calculate HMM-relevant regime quality instead of clustering metrics
-                        unique_regimes, counts = np.unique(cluster_labels, return_counts=True)
-                        regime_percentages = counts / len(cluster_labels)
-                        balance_score = 1.0 - (np.max(regime_percentages) - np.min(regime_percentages))
-                        regime_entropy = -np.sum(regime_percentages * np.log(regime_percentages + 1e-10))
-
-                        combined_score = balance_score + (regime_entropy / 10)  # Normalize entropy
-                        if combined_score > best_score:
-                            best_score = combined_score
-                            best_kmeans = kmeans
-
-                    except Exception as e:
-                        self.logger.debug(f"⚠️ Clustering metrics failed: {e}")
+                    # Compute dimension-aware quality metrics
+                    cv_by_cluster = self._compute_cluster_cv_by_dimension(composite_df, cluster_labels, dim_map)
+                    coherent_mask = self._compute_coherence_mask(cv_by_cluster, self.config.cv_thresholds)
+                    coverage = self._compute_coverage(cluster_labels, coherent_mask)
+                    
+                    # Compute separation statistics
+                    centroids = self._compute_dimension_centroids(composite_df, cluster_labels, dim_map)
+                    separation_stats = self._compute_separation_stats(centroids, global_dim_std, self.config.separation_min_std)
+                    
+                    # Compute silhouette score
+                    silhouette = self._compute_silhouette_sampled(composite_features, cluster_labels, self.config.max_silhouette_sample)
+                    
+                    # Check minimum cluster size
+                    unique_clusters, counts = np.unique(cluster_labels, return_counts=True)
+                    min_cluster_size = np.min(counts)
+                    min_cluster_size_pct = min_cluster_size / len(cluster_labels)
+                    size_floor_ok = min_cluster_size_pct >= self.config.min_cluster_size_pct
+                    
+                    # Compute average CV across coherent clusters
+                    coherent_cvs = []
+                    for cluster_id, cluster_cv in cv_by_cluster.items():
+                        if coherent_mask.get(cluster_id, False):
+                            for dim_cv in cluster_cv.values():
+                                if not np.isnan(dim_cv):
+                                    coherent_cvs.append(dim_cv)
+                    
+                    avg_cv = np.mean(coherent_cvs) if coherent_cvs else 0.0
+                    
+                    metrics = {
+                        'coverage': coverage,
+                        'avg_cv': avg_cv,
+                        'separation_share': separation_stats['share_separated'],
+                        'silhouette': silhouette or 0.0,
+                        'size_floor_ok': size_floor_ok,
+                        'n_clusters': n_clusters,
+                        'cv_by_cluster': cv_by_cluster,
+                        'coherent_mask': coherent_mask,
+                        'separation_stats': separation_stats
+                    }
+                    
+                    # Score the candidate
+                    score = self._score_candidate(metrics, self.config)
+                    
+                    self.logger.info(f"   📊 {n_clusters} clusters: coverage={coverage:.3f}, avg_cv={avg_cv:.3f}, "
+                                   f"separation={separation_stats['share_separated']:.3f}, silhouette={silhouette or 0:.3f}, "
+                                   f"score={score:.3f}")
+                    
+                    if score > best_score:
+                        best_score = score
+                        best_kmeans = kmeans
+                        best_metrics = metrics
 
             except Exception as e:
                 self.logger.warning(f"⚠️ K-means clustering failed for {n_clusters} clusters: {e}")
 
         if best_kmeans is None:
             # Fallback clustering
+            self.logger.warning("⚠️ No valid clustering found, using fallback")
             best_kmeans = KMeans(n_clusters=20, random_state=42, n_init=10)
             best_kmeans.fit(composite_features)
+            best_metrics = {'coverage': 0.0, 'avg_cv': 0.0, 'separation_share': 0.0, 'silhouette': 0.0}
 
         final_labels = best_kmeans.predict(composite_features)
 
@@ -3986,7 +3843,13 @@ class HMMRegimeDiscoveryStep:
             'regime_probabilities': state_probabilities,
             'cluster_centers': best_kmeans.cluster_centers_,
             'n_clusters': best_kmeans.n_clusters,
-            'composite_features_shape': composite_features.shape
+            'composite_features_shape': composite_features.shape,
+            'dimension_metrics': best_metrics or {},
+            'selected_n_clusters': best_kmeans.n_clusters,
+            'coverage': best_metrics.get('coverage', 0.0) if best_metrics else 0.0,
+            'avg_cv': best_metrics.get('avg_cv', 0.0) if best_metrics else 0.0,
+            'separation_share': best_metrics.get('separation_share', 0.0) if best_metrics else 0.0,
+            'silhouette': best_metrics.get('silhouette', 0.0) if best_metrics else 0.0
         }
 
         self.logger.info(f"✅ VECTORIZED: Created {best_kmeans.n_clusters} composite clusters")
@@ -4199,17 +4062,120 @@ class HMMRegimeDiscoveryStep:
                 pass
             self.logger.info("🧹 Cleaned up features_scaled after HMM predictions")
 
-            self.logger.info('🎯 Phase 2: Creating 20-cluster composite analysis...')
+            self.logger.info('🎯 Phase 2: Creating coverage-driven composite analysis...')
             composite_features = self._create_composite_features(features, hmm_state_sequence, hmm_state_probs)
             composite_scaler = StandardScaler()
             composite_features_scaled = composite_scaler.fit_transform(composite_features)
-            n_clusters = 20
-            kmeans = KMeans(n_clusters = n_clusters, random_state = random_state, n_init = 10, max_iter = 300)
-            cluster_labels = kmeans.fit_predict(composite_features_scaled)
+            
+            # Coverage-driven cluster selection
+            cluster_range = getattr(self.config, 'cluster_range', [16, 18, 20, 22, 24])
+            best_kmeans = None
+            best_score = float('-inf')
+            best_metrics = None
+            
+            # Convert features to DataFrame for dimension analysis
+            feature_names = [f'composite_{i}' for i in range(composite_features_scaled.shape[1])]
+            composite_df = pd.DataFrame(composite_features_scaled, columns=feature_names)
+            
+            # Select dimension features using centralized feature mapping
+            dim_map = StandardizedFeatureCalculator.get_primary_features()
+            
+            # Compute global dimension statistics for separation
+            global_dim_std = {}
+            for dimension, feature_names in dim_map.items():
+                if feature_names:
+                    feature_name = feature_names[0]
+                    if feature_name in composite_df.columns:
+                        global_dim_std[dimension] = composite_df[feature_name].std()
+
+            for n_clusters in cluster_range:
+                try:
+                    self.logger.info(f"🎯 Testing {n_clusters} clusters...")
+                    kmeans = KMeans(n_clusters=n_clusters, random_state=random_state, n_init=10, max_iter=300)
+                    cluster_labels = kmeans.fit_predict(composite_features_scaled)
+
+                    if len(np.unique(cluster_labels)) > 1:
+                        # Compute dimension-aware quality metrics
+                        cv_by_cluster = self._compute_cluster_cv_by_dimension(composite_df, cluster_labels, dim_map)
+                        coherent_mask = self._compute_coherence_mask(cv_by_cluster, self.config.cv_thresholds)
+                        coverage = self._compute_coverage(cluster_labels, coherent_mask)
+                        
+                        # Compute separation statistics
+                        centroids = self._compute_dimension_centroids(composite_df, cluster_labels, dim_map)
+                        separation_stats = self._compute_separation_stats(centroids, global_dim_std, self.config.separation_min_std)
+                        
+                        # Compute silhouette score
+                        silhouette = self._compute_silhouette_sampled(composite_features_scaled, cluster_labels, self.config.max_silhouette_sample)
+                        
+                        # Check minimum cluster size
+                        unique_clusters, counts = np.unique(cluster_labels, return_counts=True)
+                        min_cluster_size = np.min(counts)
+                        min_cluster_size_pct = min_cluster_size / len(cluster_labels)
+                        size_floor_ok = min_cluster_size_pct >= self.config.min_cluster_size_pct
+                        
+                        # Compute average CV across coherent clusters
+                        coherent_cvs = []
+                        for cluster_id, cluster_cv in cv_by_cluster.items():
+                            if coherent_mask.get(cluster_id, False):
+                                for dim_cv in cluster_cv.values():
+                                    if not np.isnan(dim_cv):
+                                        coherent_cvs.append(dim_cv)
+                        
+                        avg_cv = np.mean(coherent_cvs) if coherent_cvs else 0.0
+                        
+                        metrics = {
+                            'coverage': coverage,
+                            'avg_cv': avg_cv,
+                            'separation_share': separation_stats['share_separated'],
+                            'silhouette': silhouette or 0.0,
+                            'size_floor_ok': size_floor_ok,
+                            'n_clusters': n_clusters,
+                            'cv_by_cluster': cv_by_cluster,
+                            'coherent_mask': coherent_mask,
+                            'separation_stats': separation_stats
+                        }
+                        
+                        # Score the candidate
+                        score = self._score_candidate(metrics, self.config)
+                        
+                        self.logger.info(f"   📊 {n_clusters} clusters: coverage={coverage:.3f}, avg_cv={avg_cv:.3f}, "
+                                       f"separation={separation_stats['share_separated']:.3f}, silhouette={silhouette or 0:.3f}, "
+                                       f"score={score:.3f}")
+                        
+                        if score > best_score:
+                            best_score = score
+                            best_kmeans = kmeans
+                            best_metrics = metrics
+
+                except Exception as e:
+                    self.logger.warning(f"⚠️ K-means clustering failed for {n_clusters} clusters: {e}")
+
+            if best_kmeans is None:
+                # Fallback clustering
+                self.logger.warning("⚠️ No valid clustering found, using fallback")
+                best_kmeans = KMeans(n_clusters=20, random_state=random_state, n_init=10, max_iter=300)
+                best_kmeans.fit(composite_features_scaled)
+                best_metrics = {'coverage': 0.0, 'avg_cv': 0.0, 'separation_share': 0.0, 'silhouette': 0.0}
+            
+            cluster_labels = best_kmeans.predict(composite_features_scaled)
             self.logger.info('🎯 Phase 3: Analyzing cluster quality...')
-            cluster_metrics = self._calculate_hmm_regime_quality_metrics(composite_features_scaled, cluster_labels, kmeans)
+            cluster_metrics = self._calculate_hmm_regime_quality_metrics(composite_features_scaled, cluster_labels, best_kmeans)
+            
+            # Add dimension metrics to cluster_metrics
+            if best_metrics:
+                cluster_metrics['dimension_metrics'] = best_metrics
+            
             self.logger.info('🎯 Phase 4: Enhanced regime analysis and interpretation...')
             composite_analysis = self._analyze_composite_clusters(features, hmm_state_sequence, cluster_labels, cluster_metrics)
+            
+            # Persist enhanced cluster analysis
+            if best_metrics:
+                persistence_results = self._persist_enhanced_cluster_analysis(features, cluster_labels, composite_analysis, best_metrics)
+                composite_analysis['persistence_results'] = persistence_results
+                
+                # Validate and monitor metrics
+                self._validate_and_monitor_metrics(best_metrics, composite_analysis)
+            
             self.logger.info('🔍 Performing enhanced regime change detection...')
             regime_change_analysis = self._detect_regime_changes_advanced(hmm_state_probs, hmm_state_sequence, threshold = 0.1, min_persistence = 3)
             self.logger.info('🔧 Calculating adaptive regime boundaries...')
@@ -5213,30 +5179,620 @@ class HMMRegimeDiscoveryStep:
         except Exception as e:
             self.logger.exception(f'❌ Error calculating HMM regime quality metrics: {e}')
             return {}
+    
+    def _select_dimension_features(self, features: pd.DataFrame, config) -> Dict[str, List[str]]:
+        """
+        Select dimension features based on availability and configuration.
+        
+        Args:
+            features: DataFrame with available features
+            config: Configuration object with dimension_feature_map
+            
+        Returns:
+            Dict mapping dimension names to selected feature names
+        """
+        selected_features = {}
+        available_columns = set(features.columns)
+        
+        # Use centralized feature mapping if available, otherwise fall back to config
+        if hasattr(StandardizedFeatureCalculator, 'get_primary_features'):
+            primary_features = StandardizedFeatureCalculator.get_primary_features()
+            feature_candidates = primary_features
+        else:
+            feature_candidates = config.dimension_feature_map
+        
+        for dimension, feature_list in feature_candidates.items():
+            selected_dimension_features = []
+            for feature_name in feature_list:
+                if feature_name in available_columns:
+                    selected_dimension_features.append(feature_name)
+                    self.logger.info(f"📊 Selected {dimension} feature: {feature_name}")
+                else:
+                    self.logger.warning(f"⚠️ {dimension} feature not found: {feature_name}")
+            
+            selected_features[dimension] = selected_dimension_features
+            
+            if not selected_dimension_features:
+                self.logger.warning(f"⚠️ No {dimension} features found from candidates: {feature_list}")
+        
+        return selected_features
+    
+    def _compute_cluster_cv_by_dimension(self, features: pd.DataFrame, labels: np.ndarray, dim_map: Dict[str, List[str]]) -> Dict[int, Dict[str, float]]:
+        """
+        Compute coefficient of variation (CV) by dimension for each cluster.
+        
+        Args:
+            features: Feature DataFrame
+            labels: Cluster labels
+            dim_map: Dimension to feature mapping
+            
+        Returns:
+            Dict[cluster_id, Dict[dimension, cv_value]]
+        """
+        cv_by_cluster = {}
+        unique_clusters = np.unique(labels)
+        epsilon = 1e-8
+        
+        for cluster_id in unique_clusters:
+            cluster_mask = labels == cluster_id
+            cluster_features = features[cluster_mask]
+            cluster_cv = {}
+            
+            for dimension, feature_names in dim_map.items():
+                if not feature_names:
+                    cluster_cv[dimension] = np.nan
+                    continue
+                
+                feature_cvs = []
+                for feature_name in feature_names:
+                    if feature_name in cluster_features.columns:
+                        feature_data = cluster_features[feature_name].dropna()
+                        if len(feature_data) > 1:
+                            feature_std = np.std(feature_data)
+                            feature_mean = np.abs(np.mean(feature_data))
+                            cv = feature_std / (feature_mean + epsilon)
+                            feature_cvs.append(cv)
+                
+                if feature_cvs:
+                    # Use median to stabilize against outliers and near-zero means
+                    cluster_cv[dimension] = np.median(feature_cvs)
+                else:
+                    cluster_cv[dimension] = np.nan
+            
+            cv_by_cluster[cluster_id] = cluster_cv
+        
+        return cv_by_cluster
+    
+    def _compute_coherence_mask(self, cv_by_cluster: Dict[int, Dict[str, float]], thresholds: Dict[str, float]) -> Dict[int, bool]:
+        """
+        Compute coherence mask for clusters based on CV thresholds.
+        
+        Args:
+            cv_by_cluster: CV values by cluster and dimension
+            thresholds: CV thresholds per dimension
+            
+        Returns:
+            Dict[cluster_id, is_coherent]
+        """
+        coherent_mask = {}
+        
+        for cluster_id, cluster_cv in cv_by_cluster.items():
+            is_coherent = True
+            
+            for dimension, threshold in thresholds.items():
+                if dimension in cluster_cv:
+                    cv_value = cluster_cv[dimension]
+                    if not np.isnan(cv_value) and cv_value > threshold:
+                        is_coherent = False
+                        break
+            
+            coherent_mask[cluster_id] = is_coherent
+        
+        return coherent_mask
+    
+    def _compute_coverage(self, labels: np.ndarray, coherent_mask: Dict[int, bool]) -> float:
+        """
+        Compute coverage as share of samples in coherent clusters.
+        
+        Args:
+            labels: Cluster labels
+            coherent_mask: Coherence mask
+            
+        Returns:
+            Coverage ratio (0.0 to 1.0)
+        """
+        total_samples = len(labels)
+        coherent_samples = 0
+        
+        for cluster_id, is_coherent in coherent_mask.items():
+            if is_coherent:
+                cluster_samples = np.sum(labels == cluster_id)
+                coherent_samples += cluster_samples
+        
+        coverage = coherent_samples / total_samples if total_samples > 0 else 0.0
+        return coverage
+    
+    def _compute_dimension_centroids(self, features: pd.DataFrame, labels: np.ndarray, dim_map: Dict[str, List[str]]) -> pd.DataFrame:
+        """
+        Compute dimension centroids (means) for each cluster.
+        
+        Args:
+            features: Feature DataFrame
+            labels: Cluster labels
+            dim_map: Dimension to feature mapping
+            
+        Returns:
+            DataFrame with cluster_id as index and dimensions as columns
+        """
+        unique_clusters = np.unique(labels)
+        centroids_data = []
+        
+        for cluster_id in unique_clusters:
+            cluster_mask = labels == cluster_id
+            cluster_features = features[cluster_mask]
+            centroid_row = {'cluster_id': cluster_id}
+            
+            for dimension, feature_names in dim_map.items():
+                if feature_names:
+                    feature_name = feature_names[0]  # Use first available feature
+                    if feature_name in cluster_features.columns:
+                        centroid_row[dimension] = cluster_features[feature_name].mean()
+                    else:
+                        centroid_row[dimension] = np.nan
+                else:
+                    centroid_row[dimension] = np.nan
+            
+            centroids_data.append(centroid_row)
+        
+        return pd.DataFrame(centroids_data).set_index('cluster_id')
+    
+    def _compute_separation_stats(self, centroids: pd.DataFrame, global_dim_std: Dict[str, float], d_min: float) -> Dict[str, float]:
+        """
+        Compute separation statistics between cluster pairs.
+        
+        Args:
+            centroids: Cluster centroids DataFrame
+            global_dim_std: Global standard deviations per dimension
+            d_min: Minimum separation threshold
+            
+        Returns:
+            Dict with separation statistics
+        """
+        cluster_ids = centroids.index.tolist()
+        n_pairs = len(cluster_ids) * (len(cluster_ids) - 1) // 2
+        separated_pairs = 0
+        separation_deltas = []
+        
+        for i in range(len(cluster_ids)):
+            for j in range(i + 1, len(cluster_ids)):
+                cluster_i, cluster_j = cluster_ids[i], cluster_ids[j]
+                
+                max_delta = 0.0
+                for dimension in centroids.columns:
+                    if dimension in global_dim_std and not pd.isna(centroids.loc[cluster_i, dimension]) and not pd.isna(centroids.loc[cluster_j, dimension]):
+                        mean_i = centroids.loc[cluster_i, dimension]
+                        mean_j = centroids.loc[cluster_j, dimension]
+                        std_dim = global_dim_std[dimension]
+                        
+                        if std_dim > 0:
+                            delta = abs(mean_i - mean_j) / std_dim
+                            max_delta = max(max_delta, delta)
+                
+                separation_deltas.append(max_delta)
+                if max_delta >= d_min:
+                    separated_pairs += 1
+        
+        separation_share = separated_pairs / n_pairs if n_pairs > 0 else 0.0
+        avg_max_delta = np.mean(separation_deltas) if separation_deltas else 0.0
+        
+        return {
+            'share_separated': separation_share,
+            'avg_max_delta': avg_max_delta,
+            'n_pairs': n_pairs,
+            'separated_pairs': separated_pairs
+        }
+    
+    def _compute_silhouette_sampled(self, X: np.ndarray, labels: np.ndarray, max_n: int) -> Optional[float]:
+        """
+        Compute silhouette score on a sampled subset for large datasets.
+        
+        Args:
+            X: Feature matrix
+            labels: Cluster labels
+            max_n: Maximum number of samples for silhouette computation
+            
+        Returns:
+            Silhouette score or None if computation fails
+        """
+        try:
+            from sklearn.metrics import silhouette_score
+            
+            if len(X) <= max_n:
+                return silhouette_score(X, labels)
+            
+            # Sample stratified subset
+            unique_labels = np.unique(labels)
+            sample_indices = []
+            
+            for label in unique_labels:
+                label_indices = np.where(labels == label)[0]
+                n_samples = min(len(label_indices), max_n // len(unique_labels))
+                sampled_indices = np.random.choice(label_indices, size=n_samples, replace=False)
+                sample_indices.extend(sampled_indices)
+            
+            sample_indices = np.array(sample_indices)
+            X_sample = X[sample_indices]
+            labels_sample = labels[sample_indices]
+            
+            return silhouette_score(X_sample, labels_sample)
+        
+        except Exception as e:
+            self.logger.warning(f"⚠️ Silhouette computation failed: {e}")
+            return None
+    
+    def _score_candidate(self, metrics: Dict[str, Any], config) -> float:
+        """
+        Score a clustering candidate based on multiple criteria.
+        
+        Args:
+            metrics: Dictionary with clustering metrics
+            config: Configuration object
+            
+        Returns:
+            Combined score (higher is better)
+        """
+        coverage = metrics.get('coverage', 0.0)
+        avg_cv = metrics.get('avg_cv', 0.0)
+        separation_share = metrics.get('separation_share', 0.0)
+        silhouette = metrics.get('silhouette', 0.0)
+        size_floor_ok = metrics.get('size_floor_ok', True)
+        
+        # Base score components
+        score = (0.5 * coverage + 
+                0.2 * (1.0 / (1.0 + avg_cv)) + 
+                0.2 * separation_share + 
+                0.1 * silhouette)
+        
+        # Apply penalties
+        penalty = 0.0
+        if not size_floor_ok:
+            penalty += 0.2
+        if separation_share < config.separation_target_share:
+            penalty += 0.2
+        if coverage < config.coverage_target:
+            penalty += 0.2
+        
+        final_score = score - penalty
+        return final_score
+    
+    def _generate_financial_labels(self, features: pd.DataFrame, labels: np.ndarray, dim_map: Dict[str, List[str]]) -> Dict[int, str]:
+        """
+        Generate financial labels for clusters based on dimension tertiles and characteristics.
+        
+        Args:
+            features: Feature DataFrame
+            labels: Cluster labels
+            dim_map: Dimension to feature mapping
+            
+        Returns:
+            Dict[cluster_id, financial_label]
+        """
+        financial_labels = {}
+        unique_clusters = np.unique(labels)
+        
+        # Compute global tertiles for each dimension
+        global_tertiles = {}
+        for dimension, feature_names in dim_map.items():
+            if feature_names:
+                feature_name = feature_names[0]
+                if feature_name in features.columns:
+                    feature_data = features[feature_name].dropna()
+                    if len(feature_data) > 0:
+                        global_tertiles[dimension] = {
+                            'low': np.percentile(feature_data, 33.33),
+                            'high': np.percentile(feature_data, 66.67)
+                        }
+        
+        for cluster_id in unique_clusters:
+            cluster_mask = labels == cluster_id
+            cluster_features = features[cluster_mask]
+            
+            # Determine tertiles for each dimension
+            dimension_tiers = {}
+            for dimension, feature_names in dim_map.items():
+                if feature_names and dimension in global_tertiles:
+                    feature_name = feature_names[0]
+                    if feature_name in cluster_features.columns:
+                        cluster_mean = cluster_features[feature_name].mean()
+                        tertiles = global_tertiles[dimension]
+                        
+                        if cluster_mean <= tertiles['low']:
+                            dimension_tiers[dimension] = 'Low'
+                        elif cluster_mean <= tertiles['high']:
+                            dimension_tiers[dimension] = 'Med'
+                        else:
+                            dimension_tiers[dimension] = 'High'
+            
+            # Generate financial label for 4D clustering
+            vol_tier = dimension_tiers.get('volatility', 'Med')
+            mom_tier = dimension_tiers.get('momentum', 'Med')
+            volm_tier = dimension_tiers.get('volume', 'Med')
+            trend_tier = dimension_tiers.get('trend', 'Med')
+            
+            # Map momentum to directional terms
+            if mom_tier == 'Low':
+                mom_label = 'Down'
+            elif mom_tier == 'High':
+                mom_label = 'Up'
+            else:
+                mom_label = 'Flat'
+            
+            # Map volume to activity terms
+            if volm_tier == 'Low':
+                volm_label = 'Dry'
+            elif volm_tier == 'High':
+                volm_label = 'ElevVolm'
+            else:
+                volm_label = 'Normal'
+            
+            # Map trend to directional strength terms
+            if trend_tier == 'Low':
+                trend_label = 'WeakTrend'
+            elif trend_tier == 'High':
+                trend_label = 'StrongTrend'
+            else:
+                trend_label = 'ModTrend'
+            
+            financial_label = f"{vol_tier}Vol-{mom_label}-{volm_label}-{trend_label}"
+            financial_labels[cluster_id] = financial_label
+        
+        return financial_labels
+    
+    def _persist_enhanced_cluster_analysis(self, features: pd.DataFrame, cluster_labels: np.ndarray, 
+                                         analysis: Dict[str, Any], dimension_metrics: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Persist enhanced cluster analysis with dimension-aware metrics.
+        
+        Args:
+            features: Original feature DataFrame
+            cluster_labels: Cluster labels
+            analysis: Cluster analysis results
+            dimension_metrics: Dimension-aware metrics
+            
+        Returns:
+            Dict with persistence results
+        """
+        try:
+            self.logger.info("💾 Persisting enhanced cluster analysis...")
+            
+            # Create cluster-level summary DataFrame
+            cluster_summary_data = []
+            unique_clusters = np.unique(cluster_labels)
+            
+            for cluster_id in unique_clusters:
+                cluster_mask = cluster_labels == cluster_id
+                cluster_data = features[cluster_mask]
+                cluster_char = analysis['cluster_characteristics'].get(cluster_id, {})
+                
+                # Basic cluster info
+                summary_row = {
+                    'cluster_id': cluster_id,
+                    'size': len(cluster_data),
+                    'size_pct': len(cluster_data) / len(features) * 100,
+                    'financial_label': cluster_char.get('financial_label', 'Unknown'),
+                    'coherent': cluster_char.get('coherent', False),
+                    'dominant_hmm_state': cluster_char.get('dominant_hmm_state', -1)
+                }
+                
+                # Add dimension CV values
+                cv_by_dimension = cluster_char.get('cv_by_dimension', {})
+                for dimension in ['volume', 'volatility', 'momentum']:
+                    summary_row[f'cv_{dimension}'] = cv_by_dimension.get(dimension, np.nan)
+                
+                # Add dimension means
+                feature_means = cluster_char.get('feature_means', {})
+                for dimension, feature_names in self.config.dimension_feature_map.items():
+                    if feature_names:
+                        feature_name = feature_names[0]
+                        summary_row[f'{dimension}_mean'] = feature_means.get(feature_name, np.nan)
+                
+                cluster_summary_data.append(summary_row)
+            
+            cluster_summary_df = pd.DataFrame(cluster_summary_data)
+            
+            # Persist cluster summary
+            cluster_summary_path = self.output_dir / f"composite_clusters_enhanced_{self.symbol}_{self.timeframe}.parquet"
+            cluster_summary_df.to_parquet(cluster_summary_path, index=False)
+            
+            # Persist dimension metrics JSON
+            metrics_data = {
+                'chosen_n_clusters': dimension_metrics.get('n_clusters', len(unique_clusters)),
+                'coverage': dimension_metrics.get('coverage', 0.0),
+                'avg_cv': dimension_metrics.get('avg_cv', 0.0),
+                'separation_share': dimension_metrics.get('separation_share', 0.0),
+                'silhouette': dimension_metrics.get('silhouette', 0.0),
+                'cv_thresholds': self.config.cv_thresholds,
+                'coverage_target': self.config.coverage_target,
+                'coverage_achieved': dimension_metrics.get('coverage', 0.0) >= self.config.coverage_target,
+                'separation_target_share': self.config.separation_target_share,
+                'separation_achieved': dimension_metrics.get('separation_share', 0.0) >= self.config.separation_target_share,
+                'n_coherent_clusters': sum(1 for row in cluster_summary_data if row['coherent']),
+                'total_clusters': len(unique_clusters),
+                'failed_clusters': [row['cluster_id'] for row in cluster_summary_data if not row['coherent']],
+                'dimension_features_used': self.config.dimension_feature_map
+            }
+            
+            metrics_path = self.output_dir / f"dimension_metrics_{self.symbol}_{self.timeframe}.json"
+            with open(metrics_path, 'w') as f:
+                json.dump(metrics_data, f, indent=2)
+            
+            # Log persistence summary
+            self.logger.info(f"✅ Enhanced cluster analysis persisted:")
+            self.logger.info(f"   - Cluster summary: {cluster_summary_path}")
+            self.logger.info(f"   - Dimension metrics: {metrics_path}")
+            self.logger.info(f"   - Coverage: {dimension_metrics.get('coverage', 0.0):.3f} (target: {self.config.coverage_target:.3f})")
+            self.logger.info(f"   - Coherent clusters: {metrics_data['n_coherent_clusters']}/{metrics_data['total_clusters']}")
+            
+            return {
+                'cluster_summary_path': str(cluster_summary_path),
+                'metrics_path': str(metrics_path),
+                'cluster_summary_df': cluster_summary_df,
+                'metrics_data': metrics_data
+            }
+            
+        except Exception as e:
+            self.logger.exception(f"❌ Error persisting enhanced cluster analysis: {e}")
+            return {}
+    
+    def _validate_and_monitor_metrics(self, dimension_metrics: Dict[str, Any], cluster_analysis: Dict[str, Any]) -> None:
+        """
+        Validate dimension-aware metrics and emit warnings when targets are not met.
+        
+        Args:
+            dimension_metrics: Dimension-aware clustering metrics
+            cluster_analysis: Cluster analysis results
+        """
+        try:
+            coverage = dimension_metrics.get('coverage', 0.0)
+            separation_share = dimension_metrics.get('separation_share', 0.0)
+            avg_cv = dimension_metrics.get('avg_cv', 0.0)
+            
+            # Coverage validation
+            if coverage < self.config.coverage_target:
+                self.logger.warning(f"🚨 COVERAGE WARNING: {coverage:.3f} < target {self.config.coverage_target:.3f}")
+                self.logger.warning(f"   Consider adjusting CV thresholds or cluster range")
+            
+            # Separation validation
+            if separation_share < self.config.separation_target_share:
+                self.logger.warning(f"🚨 SEPARATION WARNING: {separation_share:.3f} < target {self.config.separation_target_share:.3f}")
+                self.logger.warning(f"   Consider increasing separation_min_std or reducing cluster count")
+            
+            # CV validation
+            cv_thresholds = self.config.cv_thresholds
+            high_cv_dims = []
+            for dim, threshold in cv_thresholds.items():
+                if avg_cv > threshold * 1.5:  # 50% above threshold
+                    high_cv_dims.append(f"{dim}({avg_cv:.3f}>{threshold:.3f})")
+            
+            if high_cv_dims:
+                self.logger.warning(f"🚨 HIGH CV WARNING: {', '.join(high_cv_dims)}")
+                self.logger.warning(f"   Consider tightening CV thresholds or improving feature selection")
+            
+            # Small cluster validation
+            dim_metrics = cluster_analysis.get('dimension_metrics', {})
+            total_clusters = dim_metrics.get('total_clusters', 0)
+            n_coherent = dim_metrics.get('n_coherent_clusters', 0)
+            
+            if total_clusters > 0:
+                coherent_ratio = n_coherent / total_clusters
+                if coherent_ratio < 0.5:  # Less than 50% coherent
+                    self.logger.warning(f"🚨 COHERENCE WARNING: Only {n_coherent}/{total_clusters} clusters are coherent ({coherent_ratio:.1%})")
+                    self.logger.warning(f"   Consider relaxing CV thresholds or reducing cluster count")
+                
+                # Check for too many small clusters
+                cluster_chars = cluster_analysis.get('cluster_characteristics', {})
+                small_clusters = 0
+                for cluster_id, cluster_char in cluster_chars.items():
+                    size_pct = cluster_char.get('percentage', 0.0)
+                    if size_pct < self.config.min_cluster_size_pct * 100:
+                        small_clusters += 1
+                
+                if small_clusters > total_clusters * 0.3:  # More than 30% small clusters
+                    self.logger.warning(f"🚨 SMALL CLUSTER WARNING: {small_clusters}/{total_clusters} clusters below size floor")
+                    self.logger.warning(f"   Consider reducing cluster count or increasing min_cluster_size_pct")
+            
+            # Log success metrics
+            if coverage >= self.config.coverage_target and separation_share >= self.config.separation_target_share:
+                self.logger.info(f"✅ TARGETS ACHIEVED: coverage={coverage:.3f}≥{self.config.coverage_target:.3f}, "
+                               f"separation={separation_share:.3f}≥{self.config.separation_target_share:.3f}")
+            
+        except Exception as e:
+            self.logger.exception(f"❌ Error in validation and monitoring: {e}")
+
     @log_all_calls
 
     def _analyze_composite_clusters(self, features: Any, hmm_states: Any, cluster_labels: Any, cluster_metrics: dict[str, Any]) -> dict[str, Any]:
-        """Analyze composite clusters and their characteristics."""
+        """Analyze composite clusters and their characteristics with dimension-aware metrics."""
         try:
-            self.logger.info('🔍 Analyzing composite clusters...')
-            analysis = {'cluster_characteristics': {}, 'hmm_state_distribution': {}, 'feature_importance': {}, 'cluster_stability': {}, 'market_conditions': {}}
+            self.logger.info('🔍 Analyzing composite clusters with dimension-aware metrics...')
+            analysis = {'cluster_characteristics': {}, 'hmm_state_distribution': {}, 'feature_importance': {}, 'cluster_stability': {}, 'market_conditions': {}, 'dimension_metrics': {}}
             unique_clusters = np.unique(cluster_labels)
+            
+            # Get dimension metrics if available
+            dimension_metrics = cluster_metrics.get('dimension_metrics', {})
+            cv_by_cluster = dimension_metrics.get('cv_by_cluster', {})
+            coherent_mask = dimension_metrics.get('coherent_mask', {})
+            
+            # Select dimension features for financial labeling using centralized feature mapping
+            dim_map = StandardizedFeatureCalculator.get_primary_features()
+            financial_labels = self._generate_financial_labels(features, cluster_labels, dim_map)
+            
             for cluster_id in unique_clusters:
                 cluster_mask = cluster_labels == cluster_id
                 cluster_data = features[cluster_mask]
                 cluster_hmm_states = hmm_states[cluster_mask]
-                cluster_char = {'size': len(cluster_data), 'percentage': len(cluster_data) / len(features) * 100, 'hmm_state_distribution': self._calculate_hmm_state_distribution(cluster_hmm_states), 'feature_means': {}, 'feature_stds': {}, 'dominant_hmm_state': self._get_dominant_hmm_state(cluster_hmm_states)}
+                
+                # Basic cluster characteristics
+                cluster_char = {
+                    'size': len(cluster_data), 
+                    'percentage': len(cluster_data) / len(features) * 100, 
+                    'hmm_state_distribution': self._calculate_hmm_state_distribution(cluster_hmm_states), 
+                    'feature_means': {}, 
+                    'feature_stds': {}, 
+                    'dominant_hmm_state': self._get_dominant_hmm_state(cluster_hmm_states)
+                }
+                
+                # Add feature statistics
                 for col in features.columns:
                     if col in cluster_data.columns:
                         cluster_char['feature_means'][col] = cluster_data[col].mean()
                         cluster_char['feature_stds'][col] = cluster_data[col].std()
+                
+                # Add dimension-aware metrics
+                if cluster_id in cv_by_cluster:
+                    cluster_char['cv_by_dimension'] = cv_by_cluster[cluster_id]
+                    cluster_char['coherent'] = coherent_mask.get(cluster_id, False)
+                    
+                    # Log coherence issues
+                    if not cluster_char['coherent']:
+                        failed_dims = []
+                        for dim, cv_value in cv_by_cluster[cluster_id].items():
+                            threshold = self.config.cv_thresholds.get(dim, 1.0)
+                            if not np.isnan(cv_value) and cv_value > threshold:
+                                failed_dims.append(f"{dim}({cv_value:.3f}>{threshold:.3f})")
+                        self.logger.warning(f"⚠️ Cluster {cluster_id} failed coherence: {', '.join(failed_dims)}")
+                
+                # Add financial label
+                cluster_char['financial_label'] = financial_labels.get(cluster_id, 'Unknown')
+                
                 analysis['cluster_characteristics'][cluster_id] = cluster_char
                 market_condition = self._determine_market_condition(cluster_char)
                 analysis['market_conditions'][cluster_id] = market_condition
+            
+            # Add dimension-aware summary metrics
+            if dimension_metrics:
+                analysis['dimension_metrics'] = {
+                    'coverage': dimension_metrics.get('coverage', 0.0),
+                    'avg_cv': dimension_metrics.get('avg_cv', 0.0),
+                    'separation_share': dimension_metrics.get('separation_share', 0.0),
+                    'silhouette': dimension_metrics.get('silhouette', 0.0),
+                    'n_coherent_clusters': sum(1 for is_coherent in coherent_mask.values() if is_coherent),
+                    'total_clusters': len(unique_clusters),
+                    'coverage_target': self.config.coverage_target,
+                    'coverage_achieved': dimension_metrics.get('coverage', 0.0) >= self.config.coverage_target
+                }
+                
+                # Log coverage summary
+                coverage = dimension_metrics.get('coverage', 0.0)
+                n_coherent = sum(1 for is_coherent in coherent_mask.values() if is_coherent)
+                self.logger.info(f"📊 Dimension-aware summary: {n_coherent}/{len(unique_clusters)} coherent clusters, "
+                               f"coverage={coverage:.3f} (target={self.config.coverage_target:.3f})")
+            
             analysis['hmm_state_distribution'] = self._calculate_hmm_state_distribution(hmm_states)
             analysis['feature_importance'] = self._calculate_feature_importance(features, cluster_labels)
             analysis['cluster_stability'] = self._calculate_cluster_stability(cluster_labels, cluster_metrics)
-            self.logger.info(f'✅ Composite cluster analysis completed for {len(unique_clusters)} clusters')
+            
+            self.logger.info(f'✅ Enhanced composite cluster analysis completed for {len(unique_clusters)} clusters')
             return analysis
         except Exception as e:
             self.logger.exception(f'❌ Error analyzing composite clusters: {e}')

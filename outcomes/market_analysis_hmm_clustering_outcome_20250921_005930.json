@@ -149,6 +149,53 @@
           }
         }
       },
+      "improvement_suggestions": {
+        "distribution_quality": {
+          "summary": "High concentration (Gini=0.977), low entropy (0.333), dominant cluster_19 at 41.44% indicates poor balance and low diversity.",
+          "actions": [
+            "Split dominant cluster_19 via targeted sub-clustering (k=3-6) using volatility, volume, and order-flow features; map resulting sub-states back into the HMM.",
+            "Introduce entropy/occupancy regularization (e.g., Dirichlet priors on initial/transition matrices, size-penalty term) to discourage >20% single-state occupancy.",
+            "Stratify training by volatility and time-of-day; oversample under-represented regimes during EM/Viterbi updates to balance state discovery.",
+            "Allocate extra states specifically within the dominant regime (raise effective target states within cluster_19 to 30-40) while merging micro-states elsewhere.",
+            "Expand regime-separating features (rolling realized volatility, ATR, order-flow imbalance, realized skew/kurtosis, multi-timeframe momentum) to differentiate sub-regimes currently collapsed into cluster_19."
+          ],
+          "validation": [
+            "Post-retrain guardrails: normalized_entropy >= 0.60, Gini <= 0.60, dominant_cluster_percentage <= 20%.",
+            "Track entropy and Gini per retrain; fail build if thresholds are missed twice consecutively."
+          ]
+        },
+        "other_improvements": {
+          "summary": "Resolve metric inconsistencies, correct formulas, and tighten guardrails for reporting.",
+          "issues_detected": [
+            "coverage_metrics.top_20_coverage=97.66% conflicts with top_clusters_analysis.top_20_coverage=0.0% (calculation or data-source mismatch).",
+            "quality_metrics.average_coherence=0.0 while per-cluster coherence_score values are non-zero (aggregation bug).",
+            "statistical_metrics.cluster_validity.balanced_distribution=true despite dominant 41.44% cluster (logic bug).",
+            "size_balance=0.975 conflicts with Gini=0.977 (expected size_balance ≈ 1 - Gini).",
+            "unique_clusters=831 vs clustering_summary.total_clusters=30 (pre/post-filter definitions unclear).",
+            "coverage_analysis.top_5_coverage_percent=25.29% vs cluster_summary.top_5_coverage=74.45% (top-k coverage inconsistency).",
+            "market_state_diversity.diversity_ratio=0.8 vs distribution_diversity.normalized_entropy=0.333 (diversity definition inconsistency).",
+            "execution_metadata.regime_reduction shows '0 → 30' instead of '831 → 30' (typo in string summary).",
+            "top_clusters_analysis fields show zeros alongside non-zero coverage elsewhere (likely uninitialized or wrong dataset reference).",
+            "trainable_clusters empty despite many clusters above sample thresholds (selection logic missing)."
+          ],
+          "actions": [
+            "Unify coverage, diversity, and coherence computations to use the same filtered assignment set and ordering; remove parallel calculators with divergent inputs.",
+            "Compute average_coherence as a sample-weighted mean of per-cluster coherence_score; disallow silent fallbacks to zero.",
+            "Define size_balance = 1 - Gini (or document chosen formula) and set 'balanced_distribution' = true only if Gini <= 0.35 and dominant_cluster_percentage <= 20%.",
+            "Standardize 'unique_clusters' to report post-filter state count; expose original count under 'original_cluster_count' only.",
+            "Fix top_clusters_analysis to mirror coverage_metrics values and ensure identical top-k sorting by frequency.",
+            "Adjust coverage targets: if keeping 20 states, raise target_coverage_max to 98%; otherwise, split dominant state(s) until top_20_coverage falls within 90–95% range.",
+            "Correct regime_reduction string to '831 → 30' and assert this via a unit test on summary formatting.",
+            "Populate trainable_clusters using a minimum sample threshold (e.g., >= 500) and record excluded clusters with reasons.",
+            "Add metric-consistency unit tests: fail if any top-k coverage is 0 while total assignments > 0, or if duplicate metrics diverge by >2%."
+          ],
+          "guardrails": [
+            "coverage_achieved true iff target_coverage_min <= top_20_coverage <= target_coverage_max.",
+            "Fail run if average_coherence == 0.0 while any per-cluster coherence_score > 0.",
+            "Warn if Gini > 0.65 or normalized_entropy < 0.55; block promotion if Gini > 0.8."
+          ]
+        }
+      },
       "per_cluster_metrics": {
         "cluster_analysis": {
           "per_cluster_metrics": {

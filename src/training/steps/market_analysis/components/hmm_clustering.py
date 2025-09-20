@@ -2616,6 +2616,52 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             # Cosine similarity matrix as matrix multiplication of normalized vectors (optimized)
             similarity_matrix = np.clip(np.matmul(Z_normalized, Z_normalized.T), -1.0, 1.0)
 
+            # Apply composite weighting: sample-aware reliability and CV-based penalty
+            try:
+                # Reliability weights r_i based on sample counts (no dwell/run-length smoothing)
+                # r_i = min(1, sample_count / N_min)
+                N_min = 100.0
+                sample_counts = np.array([
+                    float(regime_characteristics.get(rid, {}).get('sample_count', 0.0))
+                    for rid in regime_ids
+                ], dtype=float)
+                reliability = np.minimum(1.0, np.nan_to_num(sample_counts / N_min, nan=0.0, posinf=1.0, neginf=0.0))
+                # Outer product to scale pairwise similarities
+                similarity_matrix = similarity_matrix * (reliability[:, None] * reliability[None, :])
+
+                # CV-based penalty p_cv(i,j) = exp(-beta*(cv_i+cv_j)) * exp(-gamma*|cv_i-cv_j|)
+                # Use regime-level CV estimates from extracted features; fall back to 0.0 if missing
+                cv_vals = []
+                for rid in regime_ids:
+                    feats = regime_characteristics.get(rid, {}).get('features', {})
+                    cv_i = float(feats.get('mean_cv', 0.0))
+                    if cv_i == 0.0:
+                        # Fall back to max across aspects if overall mean not present
+                        mcv = float(feats.get('momentum_cv', 0.0))
+                        vcv = float(feats.get('volatility_cv', 0.0))
+                        volcv = float(feats.get('volume_cv', 0.0))
+                        cv_i = max(mcv, vcv, volcv)
+                    if not np.isfinite(cv_i):
+                        cv_i = 0.0
+                    # Cap extreme CV to stabilize penalties
+                    cv_vals.append(min(cv_i, 10.0))
+                cv = np.array(cv_vals, dtype=float)
+
+                beta = 0.8  # strength vs absolute CV level
+                gamma = 0.5 # strength vs CV mismatch
+                cv_sum = cv[:, None] + cv[None, :]
+                cv_diff = np.abs(cv[:, None] - cv[None, :])
+                p_cv = np.exp(-beta * cv_sum) * np.exp(-gamma * cv_diff)
+                # Numerical safety and bounds
+                p_cv = np.clip(np.nan_to_num(p_cv, nan=1.0, posinf=0.0, neginf=0.0), 1e-6, 1.0)
+                similarity_matrix = similarity_matrix * p_cv
+
+                # Keep self-similarity exactly 1.0 for downstream expectations
+                np.fill_diagonal(similarity_matrix, 1.0)
+            except Exception as _cv_rel_err:
+                # Non-fatal: fall back to base similarity if composite weighting fails
+                self.logger.warning(f"⚠️ Composite similarity weighting skipped due to error: {_cv_rel_err}")
+
             # Persist scaler for pairwise similarity calls and debugging
             self._global_feature_scaler = {
                 'feature_order': feature_order,
@@ -2635,11 +2681,11 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                 sim_max = float(np.max(sim_vals))
                 sim_mean = float(np.mean(sim_vals))
                 self.logger.info(
-                    f"✅ Calculated similarity matrix for {n_regimes} regimes | features kept: {kept_features}, dropped: {dropped_features} | similarity range: {sim_min:.3f}-{sim_max:.3f}, mean: {sim_mean:.3f}"
+                    f"✅ Calculated similarity matrix for {n_regimes} regimes | features kept: {kept_features}, dropped: {dropped_features} | similarity range: {sim_min:.3f}-{sim_max:.3f}, mean: {sim_mean:.3f} | composite weighting applied"
                 )
             else:
                 self.logger.info(
-                    f"✅ Calculated similarity matrix for {n_regimes} regimes | features kept: {kept_features}, dropped: {dropped_features}"
+                    f"✅ Calculated similarity matrix for {n_regimes} regimes | features kept: {kept_features}, dropped: {dropped_features} | composite weighting applied"
                 )
 
             return similarity_matrix

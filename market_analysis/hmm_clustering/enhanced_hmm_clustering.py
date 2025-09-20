@@ -100,6 +100,17 @@ except ImportError as e:
     TemporalCrossValidator = None
     FeatureSelector = None
 
+# Import cluster balancing system
+try:
+    from .cluster_balancing import ClusterBalancer, ClusterBalancingConfig, BalancingMethod
+    CLUSTER_BALANCING_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"Cluster balancing not available: {e}")
+    CLUSTER_BALANCING_AVAILABLE = False
+    ClusterBalancer = None
+    ClusterBalancingConfig = None
+    BalancingMethod = None
+
 try:
     from src.utils.hardware.m1_gpu_utils import M1GPUManager
     from src.utils.hardware.m1_memory_optimizer import M1MemoryOptimizer
@@ -196,6 +207,12 @@ except ImportError:
         # Regime Analysis
         min_regime_duration: int = 10
         regime_stability_threshold: float = 0.7
+        
+        # Cluster Balancing
+        enable_cluster_balancing: bool = True
+        max_cluster_size_pct: float = 15.0
+        min_cluster_size_pct: float = 5.0
+        cluster_balancing_method: str = "hybrid"
 
 @dataclass
 class HMMClusteringResult:
@@ -209,6 +226,7 @@ class HMMClusteringResult:
     config: HMMClusteringConfig
     processing_time: float
     memory_usage: Dict[str, float]
+    balancing_info: Dict[str, Any] = field(default_factory=dict)
 
 class EnhancedHMMClustering:
     """
@@ -284,6 +302,20 @@ class EnhancedHMMClustering:
         else:
             self.feature_generators = None
             self.logger.warning("Feature generation not available - using basic feature engineering")
+        
+        # Initialize cluster balancer
+        if CLUSTER_BALANCING_AVAILABLE and self.config.enable_cluster_balancing:
+            balancing_config = ClusterBalancingConfig(
+                max_cluster_size_pct=self.config.max_cluster_size_pct,
+                min_cluster_size_pct=self.config.min_cluster_size_pct,
+                balancing_method=BalancingMethod(self.config.cluster_balancing_method)
+            )
+            self.cluster_balancer = ClusterBalancer(balancing_config)
+            self.logger.info(f"Cluster balancing enabled with max size: {self.config.max_cluster_size_pct}%")
+        else:
+            self.cluster_balancer = None
+            if self.config.enable_cluster_balancing:
+                self.logger.warning("Cluster balancing requested but not available")
         
         # State tracking
         self.is_fitted = False
@@ -549,6 +581,22 @@ class EnhancedHMMClustering:
             regime_labels = model.predict(features_scaled)
             regime_probabilities = model.predict_proba(features_scaled)
             
+            # Apply cluster balancing if enabled
+            balancing_info = {}
+            if self.cluster_balancer is not None:
+                self.logger.info("Applying cluster balancing...")
+                balanced_labels, balanced_probs, balancing_info = self.cluster_balancer.balance_clusters(
+                    features_scaled, regime_labels, regime_probabilities
+                )
+                
+                if balancing_info.get('balanced', False):
+                    self.logger.info(f"Cluster balancing applied: {balancing_info.get('method', 'unknown')}")
+                    self.logger.info(f"Improvement: {balancing_info.get('improvement', 0):.2f}% reduction in max cluster size")
+                    regime_labels = balanced_labels
+                    regime_probabilities = balanced_probs
+                else:
+                    self.logger.info(f"Cluster balancing skipped: {balancing_info.get('reason', 'unknown')}")
+            
             # Analyze regime characteristics
             regime_characteristics = self._analyze_regime_characteristics(
                 features, regime_labels, regime_probabilities
@@ -589,7 +637,8 @@ class EnhancedHMMClustering:
                 performance_metrics=performance_metrics,
                 config=self.config,
                 processing_time=processing_time,
-                memory_usage=memory_usage
+                memory_usage=memory_usage,
+                balancing_info=balancing_info
             )
             
             self.model = model

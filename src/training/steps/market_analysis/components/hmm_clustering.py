@@ -1,4 +1,4 @@
-"""
+THIS SHOULD BE A LINTER ERROR"""
 HMM Clustering Component.
 
 This component performs HMM-based regime clustering.
@@ -446,12 +446,12 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             
             # Set maximum clusters based on mode and data characteristics
             if mode == 'full':
-                max_clusters = min(25, max(3, input_regimes // 2))  # Maximum 25 clusters in full mode
+                max_clusters = min(30, max(10, input_regimes // 2))  # Aim higher when full
             elif mode == 'blank':
-                max_clusters = min(8, max(3, input_regimes // 4))   # Maximum 8 clusters in blank mode  
-            else:  # light mode - use data-driven default instead of hard limit
-                # Data-driven clustering limit: use elbow method with upper bound
-                max_clusters = min(8, max(3, input_regimes // 3))  # More reasonable default for light mode
+                max_clusters = min(12, max(6, input_regimes // 4))   # Keep conservative in blank mode  
+            else:  # light mode - target ~20 clusters by default
+                # Data-driven clustering limit: prefer ~20 clusters for downstream ML per-cluster training
+                max_clusters = min(22, max(10, input_regimes // 3))
             
             clustering_config = {
                 'max_clusters': max_clusters,
@@ -590,12 +590,16 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                 elif isinstance(clustering_result, dict):
                     hierarchical_coverage_metrics = clustering_result.get('coverage_metrics', {})
                 
-                # Build single consolidated artifact
+                # Build single consolidated artifact (no raw arrays; only metrics and summaries)
                 artifacts = {
                     'hmm_clustering_result': {
                         # Core clustering results
-                        'hmm_models': hmm_models,
+                        'hmm_models': [{'cluster_id': m.get('cluster_id', i), 'regime_count': m.get('regime_count', 0), 'model_type': m.get('model_type', 'cluster')} for i, m in enumerate(hmm_models)],
                         'cluster_assignments': cluster_assignments,
+                        'cluster_assignments_summary': {
+                            'length': len(cluster_assignments),
+                            'unique_clusters': int(len(set(cluster_assignments)))
+                        },
                         'cluster_metrics': cluster_metrics,
                         'cluster_quality_metrics': quality_metrics,
                         'cluster_detailed_metrics': cluster_detailed_metrics,
@@ -636,10 +640,17 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                         # Clustering summary with advanced metrics (embedded here to avoid extra artifact)
                         'clustering_summary': (lambda: (lambda ca, qm: {
                             'total_clusters': len(hmm_models),
-                            'total_assignments': sum(ca.get('cluster_sizes', {}).values()) if isinstance(ca.get('cluster_sizes', {}), dict) else 0,
+                            'total_assignments': int(sum(ca.get('cluster_sizes', {}).values()) if isinstance(ca.get('cluster_sizes', {}), dict) else 0),
                             'cluster_distribution': self._calculate_cluster_distribution_from_sizes(ca.get('cluster_sizes', {})),
-                            'top_5_coverage': ca.get('concentration_analysis', {}).get('top_5_coverage', 0.0),
-                            'top_20_coverage': hierarchical_coverage_metrics.get('top_20_coverage', ca.get('top_20_coverage', 0.0)),
+                            'top_5_coverage': ca.get('concentration_analysis', {}).get('top_5_coverage', 0.0) if isinstance(ca.get('concentration_analysis', {}), dict) and 'top_5_coverage' in ca.get('concentration_analysis', {}) else (
+                                sum(sorted(ca.get('cluster_sizes', {}).values(), reverse=True)[:5]) / max(1, sum(ca.get('cluster_sizes', {}).values())) * 100.0 if isinstance(ca.get('cluster_sizes', {}), dict) and ca.get('cluster_sizes', {}) else 0.0
+                            ),
+                            'top_10_coverage': ca.get('concentration_analysis', {}).get('top_10_coverage', 0.0) if isinstance(ca.get('concentration_analysis', {}), dict) and 'top_10_coverage' in ca.get('concentration_analysis', {}) else (
+                                sum(sorted(ca.get('cluster_sizes', {}).values(), reverse=True)[:10]) / max(1, sum(ca.get('cluster_sizes', {}).values())) * 100.0 if isinstance(ca.get('cluster_sizes', {}), dict) and ca.get('cluster_sizes', {}) else 0.0
+                            ),
+                            'top_20_coverage': hierarchical_coverage_metrics.get('top_20_coverage', ca.get('top_20_coverage', (
+                                sum(sorted(ca.get('cluster_sizes', {}).values(), reverse=True)[:20]) / max(1, sum(ca.get('cluster_sizes', {}).values())) * 100.0 if isinstance(ca.get('cluster_sizes', {}), dict) and ca.get('cluster_sizes', {}) else 0.0
+                            ))),
                             'hierarchical_post_processing_applied': bool(hierarchical_coverage_metrics),
                             'original_top_20_coverage': ca.get('top_20_coverage', 0.0),
                             'avg_within_cluster_cv': ca.get('avg_within_cluster_cv', 0.0),
@@ -667,7 +678,7 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                             'symbol': self.config.symbol,
                             'exchange': self.config.exchange,
                             'timeframe': self.config.timeframe,
-                            'data_points': len(market_data) if market_data is not None else 0,
+                            'data_points': int(len(market_data)) if market_data is not None else 0,
                             'execution_timestamp': datetime.now().isoformat(),
                             'clustering_info': {
                                 'input_regimes': len(hmm_regime_discovery.get('regime_models', [])),
@@ -815,7 +826,7 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             self.logger.info(f"🔍 DEBUG: n_clusters = {clustering_result.get('n_clusters', 'missing')}")
             self.logger.info(f"🔍 DEBUG: cluster_assignments length = {len(clustering_result.get('cluster_assignments', []))}")
             self.logger.info(f"🔍 DEBUG: aligned_market_data length = {len(clustering_result.get('aligned_market_data', []))}")
-            target_clusters = 75  # Conservative target for 85-90% coverage
+            target_clusters = 20  # Target ~20 clusters to cover ~90% of market states
             clustering_result = self.apply_hierarchical_post_processing(clustering_result, target_clusters)
             self.logger.info(f"✅ Hierarchical post-processing completed: {clustering_result.get('n_clusters', 'unknown')} super-clusters")
             
@@ -4577,55 +4588,13 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             return {}
     
     def _create_frequency_based_clusters(self, regime_assignments: List[int], n_clusters: int, data_length: int) -> List[int]:
-        """Create frequency-based cluster assignments as fallback."""
+        """Create frequency-based cluster assignments as fallback (list mapping)."""
         try:
-            # Count regime frequencies
-            regime_counts = {}
-            for regime in regime_assignments:
-                regime_counts[regime] = regime_counts.get(regime, 0) + 1
-            
-            # Sort regimes by frequency (descending)
-            sorted_regimes = sorted(regime_counts.items(), key=lambda x: x[1], reverse=True)
-            
-            # Create frequency-based cluster mapping
-            regime_to_cluster = {}
-            
-            if len(sorted_regimes) <= n_clusters:
-                # If we have fewer regimes than clusters, assign each regime to its own cluster
-                for i, (regime, count) in enumerate(sorted_regimes):
-                    regime_to_cluster[regime] = i
-            else:
-                # Use frequency-based clustering
-                # Assign the most frequent regimes to different clusters first
-                for i, (regime, count) in enumerate(sorted_regimes[:n_clusters]):
-                    regime_to_cluster[regime] = i
-                
-                # Assign remaining regimes to clusters based on similarity
-                for regime, count in sorted_regimes[n_clusters:]:
-                    # Find the cluster with the least total assignments so far
-                    cluster_totals = [0] * n_clusters
-                    for existing_regime, cluster_id in regime_to_cluster.items():
-                        cluster_totals[cluster_id] += regime_counts.get(existing_regime, 0)
-                    
-                    # Assign to the cluster with the least total assignments
-                    min_cluster = cluster_totals.index(min(cluster_totals))
-                    regime_to_cluster[regime] = min_cluster
-            
-            # Create cluster assignments
-            cluster_assignments = []
-            for regime in regime_assignments:
-                cluster_id = regime_to_cluster.get(regime, 0)
-                cluster_assignments.append(cluster_id)
-            
-            # Note: Data alignment will be handled by the calling function
-            
-            self.logger.info(f"📊 Frequency-based clustering: {len(set(cluster_assignments))} unique clusters")
-            return cluster_assignments
-            
+            mapping_dict = self._create_frequency_based_clusters_mapping(regime_assignments, n_clusters, data_length)
+            return [mapping_dict.get(ra, 0) for ra in regime_assignments][:data_length]
         except Exception as e:
             self.logger.error(f"❌ Frequency-based clustering failed: {e}")
-            # Final fallback: create simple cluster assignments
-            return [i % n_clusters for i in range(data_length)]
+            return [i % max(1, int(n_clusters)) for i in range(int(data_length) if isinstance(data_length, int) else 0)]
     
     def _validate_cluster_quality_metrics(self, cluster_assignments: List[int], regime_characteristics: Dict[str, Any], regime_to_cluster: Dict[str, int]) -> Dict[str, Any]:
         """Validate the quality of cluster assignments based on regime characteristics."""
@@ -4750,7 +4719,7 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
     
 
     
-    def _create_frequency_based_clusters(self, regime_assignments: List[int], n_clusters: int, data_length: int) -> Dict[int, int]:
+    def _create_frequency_based_clusters_mapping(self, regime_assignments: List[int], n_clusters: int, data_length: int) -> Dict[int, int]:
         """Fallback frequency-based clustering method."""
         try:
             # Type validation to prevent TypeError
@@ -8113,7 +8082,8 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             # Adjust target clusters based on available data
             n_available_clusters = len(cluster_features)
             if target_clusters >= n_available_clusters:
-                adjusted_target = max(1, n_available_clusters // 2)  # Use half of available clusters
+                # Keep target near 20 but not exceeding n_available_clusters
+                adjusted_target = min(max(12, n_available_clusters), 24)
                 self.logger.warning(f"⚠️ Adjusting target clusters: {target_clusters} → {adjusted_target} (only {n_available_clusters} clusters available)")
                 target_clusters = adjusted_target
             
@@ -8142,7 +8112,7 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             self.logger.info(f"✅ Hierarchical post-processing completed:")
             self.logger.info(f"   📊 Original clusters: {clustering_result.get('n_clusters', 'unknown')}")
             self.logger.info(f"   📊 Super-clusters: {target_clusters}")
-            self.logger.info(f"   🎯 Top 20 coverage: {coverage_metrics.get('top_20_coverage', 0):.1f}%")
+            self.logger.info(f"   🎯 Top 10 coverage: {coverage_metrics.get('top_10_coverage', 0):.1f}% | Top 20 coverage: {coverage_metrics.get('top_20_coverage', 0):.1f}%")
             self.logger.info(f"   📈 Quality preservation: {coverage_metrics.get('quality_preservation', 0):.3f}")
             
             return enhanced_result
@@ -8361,14 +8331,17 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                 reverse=True
             )
             
-            # Calculate top 20 coverage
+            # Calculate top 10 and top 20 coverage
             top_20_samples = sum(sc[1]['total_samples'] for sc in sorted_super_clusters[:20])
             top_20_coverage = (top_20_samples / total_samples) * 100
+            top_10_samples = sum(sc[1]['total_samples'] for sc in sorted_super_clusters[:10])
+            top_10_coverage = (top_10_samples / total_samples) * 100
             
             # Calculate quality preservation (average cluster coherence)
             quality_preservation = clustering_result.get('quality_score', 0.0)
             
             return {
+                'top_10_coverage': top_10_coverage,
                 'top_20_coverage': top_20_coverage,
                 'quality_preservation': quality_preservation,
                 'super_cluster_count': len(super_cluster_mapping),

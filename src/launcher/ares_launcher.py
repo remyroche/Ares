@@ -199,14 +199,69 @@ class AresLauncher:
         filename = f"{stage}_{sub_pipeline}_outcome_{timestamp}.json"
         outcome_file = outcome_dir / filename
         
+        # Sanitize artifacts to avoid raw data dumps (no large arrays/frames)
+        def _sanitize(obj):
+            try:
+                import numpy as _np
+                import pandas as _pd
+            except Exception:
+                _np = None
+                _pd = None
+            # Primitives
+            if obj is None or isinstance(obj, (str, int, float, bool)):
+                return obj
+            # Pandas
+            if _pd is not None and isinstance(obj, _pd.DataFrame):
+                # Strip to schema info only
+                return {
+                    'type': 'dataframe',
+                    'columns': obj.columns.tolist(),
+                    'rows': int(len(obj))
+                }
+            if _pd is not None and isinstance(obj, _pd.Series):
+                return {
+                    'type': 'series',
+                    'name': getattr(obj, 'name', None),
+                    'length': int(len(obj))
+                }
+            # Numpy arrays
+            if _np is not None and isinstance(obj, _np.ndarray):
+                return {
+                    'type': 'ndarray',
+                    'shape': list(obj.shape),
+                    'dtype': str(obj.dtype)
+                }
+            # Dict
+            if isinstance(obj, dict):
+                # Recursively sanitize but trim very large lists
+                sanitized = {}
+                for k, v in obj.items():
+                    try:
+                        sanitized[str(k)] = _sanitize(v)
+                    except Exception:
+                        sanitized[str(k)] = '[[unserializable]]'
+                return sanitized
+            # List/Tuple
+            if isinstance(obj, (list, tuple)):
+                # Don't include raw sequences; include summary only
+                return {
+                    'type': 'sequence',
+                    'length': len(obj)
+                }
+            # Fallback to string
+            try:
+                return str(obj)
+            except Exception:
+                return '[[unserializable]]'
+
         outcome_data = {
             'stage': stage,
             'sub_pipeline': sub_pipeline,
             'timestamp': datetime.now().isoformat(),
             'status': result.status.value if hasattr(result, 'status') else 'completed',
             'output_files': result.output_files if hasattr(result, 'output_files') else [],
-            'metadata': result.metadata if hasattr(result, 'metadata') else {},
-            'artifacts': result.artifacts if hasattr(result, 'artifacts') else {},
+            'metadata': _sanitize(result.metadata if hasattr(result, 'metadata') else {}),
+            'artifacts': _sanitize(result.artifacts if hasattr(result, 'artifacts') else {}),
             'config': {
                 'symbol': config.symbol,
                 'exchange': config.exchange,

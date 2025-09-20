@@ -1003,6 +1003,19 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             
             self.logger.info(f"✅ Enhanced clustering completed: {len(clusters_dict)} clusters")
             self.logger.info(f"📊 Overall Quality Score: {quality_score:.3f}")
+
+            # Select trainable clusters to cover ~90% with ~20 clusters, prioritizing low-CV clusters
+            trainable = self._select_trainable_clusters(
+                clusters_dict=clusters_dict,
+                regime_characteristics=regime_characteristics,
+                coverage_target=90.0,
+                min_clusters=18,
+                max_clusters=25,
+                max_avg_cv=0.35
+            )
+            self.logger.info(
+                f"🎯 Trainable clusters selected: {len(trainable.get('cluster_ids', []))} covering {trainable.get('coverage_pct', 0.0):.1f}% of samples"
+            )
             
             # Create cluster assignments from regime-to-cluster mapping
             cluster_assignments = self._create_cluster_assignments_from_mapping(regime_assignments, regime_to_cluster, list(regime_characteristics.keys()))
@@ -1025,6 +1038,7 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                     'total_merges': len(all_merged_clusters),
                     'incremental_updates': True
                 },
+                'trainable_clusters': trainable,
                 'advanced_clustering_analysis': {
                     'enhanced_features_used': True,
                     'incremental_similarity_updates': len(all_merged_clusters),
@@ -3861,6 +3875,96 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
         except Exception as e:
             self.logger.warning(f"⚠️ Error calculating CV consistency: {e}")
             return 0.0
+
+    def _select_trainable_clusters(
+        self,
+        clusters_dict: Dict[str, List[str]],
+        regime_characteristics: Dict[str, Any],
+        coverage_target: float = 90.0,
+        min_clusters: int = 18,
+        max_clusters: int = 25,
+        max_avg_cv: float = 0.35
+    ) -> Dict[str, Any]:
+        """Select a set of trainable clusters targeting ~90% coverage with ~20 clusters.
+
+        Strategy:
+        - Score clusters by low average per-aspect CV (momentum, volatility, volume) and size
+        - Greedily add clusters by descending score until coverage_target met or max_clusters reached
+        - Ensure at least min_clusters if coverage_target is not yet met
+        - Return coverage stats and selected cluster ids in priority order
+        """
+        try:
+            import numpy as np
+
+            # Compute cluster sizes (sum of regime sample_count)
+            cluster_sizes: Dict[str, int] = {}
+            total_samples = 0
+            for cid, regime_list in clusters_dict.items():
+                size = 0
+                for rid in regime_list:
+                    size += int(regime_characteristics.get(rid, {}).get('sample_count', 0))
+                cluster_sizes[cid] = size
+                total_samples += size
+
+            if total_samples == 0:
+                return {'cluster_ids': [], 'coverage_pct': 0.0, 'reason': 'no_samples'}
+
+            # Compute average CV per cluster across aspects
+            def cluster_avg_cv(cid: str) -> float:
+                regimes = clusters_dict.get(cid, [])
+                aspect_vals = {'momentum_cv': [], 'volatility_cv': [], 'volume_cv': []}
+                for rid in regimes:
+                    feats = regime_characteristics.get(rid, {}).get('features', {})
+                    for k in aspect_vals.keys():
+                        val = feats.get(k, None)
+                        if isinstance(val, (int, float)) and np.isfinite(val):
+                            aspect_vals[k].append(float(val))
+                per_aspect = []
+                for k, vals in aspect_vals.items():
+                    if len(vals) > 0:
+                        per_aspect.append(float(np.median(vals)))
+                return float(np.mean(per_aspect)) if len(per_aspect) > 0 else 0.0
+
+            # Score clusters: prefer low CV and larger size
+            scores: List[Tuple[float, str]] = []
+            for cid in clusters_dict.keys():
+                avg_cv = cluster_avg_cv(cid)
+                size = cluster_sizes.get(cid, 0)
+                # Soft filter on CV
+                cv_ok = 1.0 if avg_cv <= max_avg_cv else np.exp(-(avg_cv - max_avg_cv))
+                # Normalize size by total
+                size_w = size / total_samples if total_samples > 0 else 0.0
+                # Composite score: 70% CV quality, 30% size share
+                score = 0.7 * cv_ok + 0.3 * size_w
+                scores.append((score, cid))
+
+            # Sort clusters by score descending
+            scores.sort(key=lambda x: x[0], reverse=True)
+
+            selected: List[str] = []
+            covered = 0
+            for _, cid in scores:
+                if len(selected) >= max_clusters:
+                    break
+                selected.append(cid)
+                covered += cluster_sizes.get(cid, 0)
+                coverage_pct = covered / total_samples * 100.0
+                if coverage_pct >= coverage_target and len(selected) >= min_clusters:
+                    break
+
+            final_coverage_pct = covered / total_samples * 100.0
+            return {
+                'cluster_ids': selected,
+                'coverage_pct': float(final_coverage_pct),
+                'total_clusters': len(clusters_dict),
+                'target_coverage': coverage_target,
+                'min_clusters': min_clusters,
+                'max_clusters': max_clusters,
+                'max_avg_cv': max_avg_cv
+            }
+        except Exception as e:
+            self.logger.warning(f"⚠️ Failed to select trainable clusters: {e}")
+            return {'cluster_ids': [], 'coverage_pct': 0.0, 'reason': str(e)}
 
     def _get_smart_merge_candidates(self, similarity_matrix: np.ndarray, regime_to_cluster: Dict[str, int], 
                                     regime_ids: List[str], excluded_clusters: set, threshold: float, 

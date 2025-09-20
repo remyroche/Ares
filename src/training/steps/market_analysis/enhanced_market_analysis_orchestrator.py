@@ -62,6 +62,9 @@ from src.utils.matrix_operations import get_unified_matrix_operations
 
 # Import final feature selection step
 from .final_feature_selection_step import FinalFeatureSelectionStep, run_final_feature_selection_step
+
+# Import automatic step triggering
+from .auto_step_trigger import auto_execute_all_market_analysis_steps, auto_execute_from_step
 class EnhancedMatrixOperationsStep:
     def __init__(self, config):
         self.matrix_ops = get_unified_matrix_operations()
@@ -852,6 +855,88 @@ async def run_enhanced_market_analysis_pipeline(symbol: str, exchange: str, time
     """
     orchestrator = MarketAnalysisPipelineOrchestrator(config)
     return await orchestrator.execute_pipeline(symbol = symbol, exchange = exchange, timeframe = timeframe, data_dir = data_dir, **config)
+
+async def run_auto_triggering_market_analysis_pipeline(
+    symbol: str, 
+    exchange: str, 
+    timeframe: str, 
+    data_dir: str = "historical_data",
+    start_from_step: Optional[str] = None,
+    **config
+) -> Dict[str, Any]:
+    """
+    Run the market analysis pipeline with automatic step triggering.
+    
+    When one step completes successfully, it automatically triggers the next step.
+    This ensures all 11 market analysis steps run in sequence without manual intervention.
+    
+    Args:
+        symbol: Trading symbol (e.g., 'ETHUSDT', 'BTCUSDT')
+        exchange: Exchange name (e.g., 'BINANCE', 'BYBIT')
+        timeframe: Data timeframe (e.g., '1m', '5m', '1h')
+        data_dir: Data directory path (default: historical_data)
+        start_from_step: Optional step name to start from (default: None = start from beginning)
+        **config: Additional configuration parameters
+        
+    Returns:
+        Dict with execution results and summary
+    """
+    tprint("🚀 STARTING AUTO-TRIGGERING MARKET ANALYSIS PIPELINE")
+    tprint("=" * 80)
+    tprint(f"🎯 Symbol: {symbol}")
+    tprint(f"🏢 Exchange: {exchange}")
+    tprint(f"📊 Timeframe: {timeframe}")
+    tprint(f"📁 Data directory: {data_dir}")
+    if start_from_step:
+        tprint(f"🎯 Starting from step: {start_from_step}")
+    else:
+        tprint("🎯 Starting from step 1 (sr_parameter_optimization)")
+    tprint("=" * 80)
+    
+    try:
+        if start_from_step:
+            # Execute from a specific step
+            result = await auto_execute_from_step(
+                step_name=start_from_step,
+                config=config,
+                symbol=symbol,
+                exchange=exchange,
+                timeframe=timeframe,
+                data_dir=data_dir,
+                force_rerun=config.get('force_rerun', False)
+            )
+        else:
+            # Execute all steps from the beginning
+            result = await auto_execute_all_market_analysis_steps(
+                config=config,
+                symbol=symbol,
+                exchange=exchange,
+                timeframe=timeframe,
+                data_dir=data_dir,
+                force_rerun=config.get('force_rerun', False)
+            )
+        
+        tprint("🎉 AUTO-TRIGGERING MARKET ANALYSIS PIPELINE COMPLETED")
+        tprint("=" * 80)
+        tprint(f"✅ Successful steps: {result['successful_steps']}/{result['total_steps_executed']}")
+        tprint(f"⏱️ Total execution time: {result['total_execution_time']:.2f} seconds")
+        tprint("=" * 80)
+        
+        return result
+        
+    except Exception as e:
+        tprint("💥 AUTO-TRIGGERING MARKET ANALYSIS PIPELINE FAILED")
+        tprint("=" * 80)
+        tprint(f"❌ Error: {str(e)}")
+        tprint("=" * 80)
+        
+        return {
+            'success': False,
+            'error': str(e),
+            'successful_steps': 0,
+            'total_steps_executed': 0,
+            'total_execution_time': 0.0
+        }
 if __name__ == '__main__':
 
     async def main() -> None:

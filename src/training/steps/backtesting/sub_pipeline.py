@@ -248,6 +248,53 @@ class BacktestingSubPipeline:
             # Execute in parallel
             tasks = [self.execute_sub_pipeline(name, config) for name in sub_pipeline_names]
             return await asyncio.gather(*tasks, return_exceptions=True)
+
+    async def execute_all_steps_from_start(
+        self, 
+        config: Optional[SubPipelineConfig] = None
+    ) -> Dict[str, Any]:
+        """
+        Execute all 7 backtesting steps automatically from the beginning.
+        
+        This is a convenience method that starts from step 1 (basic_backtesting_pre)
+        and automatically triggers all subsequent steps when each completes.
+        
+        Args:
+            config: Configuration for the sub-pipeline (optional)
+            
+        Returns:
+            Dict with execution results and summary
+        """
+        if config is None:
+            config = self.config
+            
+        self.logger.info('🚀 Starting automatic execution of all 7 backtesting steps')
+        self.logger.info('=' * 80)
+        self.logger.info('📋 Steps to be executed automatically:')
+        self.logger.info('   1. basic_backtesting_pre - Pre-optimization baseline backtesting')
+        self.logger.info('   2. final_parameters_optimization - System-wide parameter optimization')
+        self.logger.info('   3. basic_backtesting_post - Post-optimization comparison backtesting')
+        self.logger.info('   4. walk_forward_validation - Walk-forward backtesting')
+        self.logger.info('   5. monte_carlo_simulation - Monte Carlo backtesting')
+        self.logger.info('   6. ab_testing - A/B testing for strategies')
+        self.logger.info('   7. reporting - Comprehensive reporting')
+        self.logger.info('=' * 80)
+        
+        # Execute from the first step - this will automatically trigger all subsequent steps
+        result = await self.execute_sub_pipeline_with_next('basic_backtesting_pre', config)
+        
+        # Get execution summary
+        summary = self.get_execution_summary()
+        
+        return {
+            'success': result.success,
+            'first_step_result': result,
+            'execution_summary': summary,
+            'total_steps_executed': summary['total_sub_pipelines'],
+            'successful_steps': summary['successful_sub_pipelines'],
+            'failed_steps': summary['failed_sub_pipelines'],
+            'total_execution_time': summary['total_execution_time']
+        }
     
     # Sub-pipeline implementations
     async def _walk_forward_validation_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
@@ -721,13 +768,21 @@ class BacktestingSubPipeline:
         config: SubPipelineConfig
     ) -> SubPipelineResult:
         """
-        Execute a specific sub-pipeline and conditionally trigger subsequent sub-pipelines.
+        Execute a specific sub-pipeline and automatically trigger subsequent sub-pipelines.
         
-        This method provides the interface expected by the main training pipeline for
-        automatic sequential execution of sub-pipelines in backtesting stage.
+        This method provides automatic sequential execution of all backtesting steps:
+        1. basic_backtesting_pre - Pre-optimization baseline backtesting
+        2. final_parameters_optimization - System-wide parameter optimization
+        3. basic_backtesting_post - Post-optimization comparison backtesting
+        4. walk_forward_validation - Walk-forward backtesting
+        5. monte_carlo_simulation - Monte Carlo backtesting
+        6. ab_testing - A/B testing for strategies
+        7. reporting - Comprehensive reporting
+        
+        When one step completes successfully, it automatically triggers the next step.
         
         Args:
-            sub_pipeline_name: Name of the sub-pipeline to execute
+            sub_pipeline_name: Name of the sub-pipeline to execute (will trigger all subsequent steps)
             config: Configuration for the sub-pipeline
             
         Returns:

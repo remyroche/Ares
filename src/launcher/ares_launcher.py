@@ -40,7 +40,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 print("✅ [IMPORTS] Additional paths configured")
 
 print("🔧 [IMPORTS] Importing simple_logger...")
-from simple_logger import system_logger
+from src.utils.logger import system_logger
 print("✅ [IMPORTS] Simple logger imported")
 
 print("🔧 [IMPORTS] Importing tprint...")

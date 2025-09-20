@@ -408,6 +408,179 @@ def create_interaction_generators() -> List[FeatureGenerator]:
     
     return generators
 
+
+# Legacy Interaction Generators
+# =============================
+
+class CrossTimeframeInteractionGenerator(FeatureGenerator):
+    """Generator for cross-timeframe feature interactions."""
+    
+    def __init__(self, short_period: int = 5, long_period: int = 20, interaction_type: str = "ratio", base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS, **base_kwargs):
+        if isinstance(base_calculation, str):
+            base_calculation = BaseCalculationType(base_calculation)
+        
+        self.base_calculator = create_base_calculator(base_calculation, **base_kwargs)
+        required_columns = self.base_calculator.get_required_columns()
+        
+        config = FeatureConfig(
+            name=f"cross_timeframe_{interaction_type}_{short_period}_{long_period}_{base_calculation.value}",
+            category=FeatureCategory.INTERACTION,
+            description=f"Cross-timeframe {interaction_type} interaction between {short_period} and {long_period} periods",
+            required_columns=required_columns,
+            default_lookback=max(short_period, long_period),
+            min_lookback=max(short_period, long_period),
+            max_lookback=max(short_period, long_period),
+            parameters={'short_period': short_period, 'long_period': long_period, 'interaction_type': interaction_type, 'base_calculation': base_calculation.value, **base_kwargs}
+        )
+        super().__init__(config)
+        self.short_period = short_period
+        self.long_period = long_period
+        self.interaction_type = interaction_type
+        self.base_calculation = base_calculation
+    
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate cross-timeframe interaction."""
+        base_values = self.base_calculator.calculate(data)
+        
+        # Calculate short and long period features
+        short_ma = base_values.rolling(window=self.short_period).mean()
+        long_ma = base_values.rolling(window=self.long_period).mean()
+        
+        if self.interaction_type == "ratio":
+            interaction = short_ma / (long_ma + 1e-8)  # Add small epsilon to prevent division by zero
+        elif self.interaction_type == "difference":
+            interaction = short_ma - long_ma
+        elif self.interaction_type == "momentum":
+            interaction = (short_ma - long_ma) / (long_ma + 1e-8)
+        elif self.interaction_type == "crossover":
+            # Binary signal: 1 if short > long, 0 otherwise
+            interaction = (short_ma > long_ma).astype(float)
+        else:
+            raise ValueError(f"Unknown interaction_type: {self.interaction_type}")
+        
+        return interaction
+
+
+class FeatureRatioGenerator(FeatureGenerator):
+    """Generator for ratios between different features."""
+    
+    def __init__(self, numerator_column: str = "close", denominator_column: str = "volume", window: int = 1):
+        config = FeatureConfig(
+            name=f"ratio_{numerator_column}_{denominator_column}_{window}",
+            category=FeatureCategory.INTERACTION,
+            description=f"Ratio between {numerator_column} and {denominator_column} with {window} period smoothing",
+            required_columns=[numerator_column, denominator_column],
+            default_lookback=window,
+            min_lookback=window,
+            max_lookback=window,
+            parameters={'numerator_column': numerator_column, 'denominator_column': denominator_column, 'window': window}
+        )
+        super().__init__(config)
+        self.numerator_column = numerator_column
+        self.denominator_column = denominator_column
+        self.window = window
+    
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate feature ratio."""
+        numerator = data[self.numerator_column]
+        denominator = data[self.denominator_column]
+        
+        if self.window > 1:
+            numerator = numerator.rolling(window=self.window).mean()
+            denominator = denominator.rolling(window=self.window).mean()
+        
+        ratio = numerator / (denominator + 1e-8)  # Add small epsilon to prevent division by zero
+        return ratio
+
+
+class PolynomialFeatureGenerator(FeatureGenerator):
+    """Generator for polynomial transformations of features."""
+    
+    def __init__(self, column: str = "close", degree: int = 2, include_bias: bool = False):
+        config = FeatureConfig(
+            name=f"poly_{column}_deg{degree}{'_bias' if include_bias else ''}",
+            category=FeatureCategory.INTERACTION,
+            description=f"Polynomial transformation of {column} with degree {degree}",
+            required_columns=[column],
+            default_lookback=1,
+            min_lookback=1,
+            max_lookback=1,
+            parameters={'column': column, 'degree': degree, 'include_bias': include_bias}
+        )
+        super().__init__(config)
+        self.column = column
+        self.degree = degree
+        self.include_bias = include_bias
+    
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate polynomial transformation."""
+        values = data[self.column]
+        
+        # Normalize values to prevent numerical overflow
+        values_normalized = (values - values.mean()) / (values.std() + 1e-8)
+        
+        # Create polynomial features
+        result = values_normalized ** self.degree
+        
+        if self.include_bias:
+            result = result + 1.0
+        
+        return result
+
+
+class CorrelationInteractionGenerator(FeatureGenerator):
+    """Generator for correlation-based feature interactions."""
+    
+    def __init__(self, column1: str = "close", column2: str = "volume", window: int = 20, method: str = "pearson"):
+        config = FeatureConfig(
+            name=f"corr_{column1}_{column2}_{window}_{method}",
+            category=FeatureCategory.INTERACTION,
+            description=f"{method.capitalize()} correlation between {column1} and {column2} over {window} periods",
+            required_columns=[column1, column2],
+            default_lookback=window,
+            min_lookback=window,
+            max_lookback=window,
+            parameters={'column1': column1, 'column2': column2, 'window': window, 'method': method}
+        )
+        super().__init__(config)
+        self.column1 = column1
+        self.column2 = column2
+        self.window = window
+        self.method = method
+    
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate correlation interaction."""
+        values1 = data[self.column1]
+        values2 = data[self.column2]
+        
+        # Calculate rolling correlation
+        correlation = values1.rolling(window=self.window).corr(values2)
+        
+        return correlation
+
+
+def create_default_interaction_generators() -> List[FeatureGenerator]:
+    """Create default set of legacy interaction generators."""
+    generators = []
+    
+    # Cross-timeframe interactions
+    generators.append(CrossTimeframeInteractionGenerator(short_period=5, long_period=20, interaction_type="ratio"))
+    generators.append(CrossTimeframeInteractionGenerator(short_period=10, long_period=50, interaction_type="momentum"))
+    
+    # Feature ratios
+    generators.append(FeatureRatioGenerator(numerator_column="close", denominator_column="volume"))
+    generators.append(FeatureRatioGenerator(numerator_column="high", denominator_column="low"))
+    
+    # Polynomial features
+    generators.append(PolynomialFeatureGenerator(column="close", degree=2))
+    generators.append(PolynomialFeatureGenerator(column="volume", degree=2))
+    
+    # Correlation interactions
+    generators.append(CorrelationInteractionGenerator(column1="close", column2="volume", window=20))
+    generators.append(CorrelationInteractionGenerator(column1="high", column2="low", window=10))
+    
+    return generators
+
 # Export all generators
 __all__ = [
     'InteractionFeatureGenerator',
@@ -420,5 +593,11 @@ __all__ = [
     'VolatilityHighLowGenerator',
     'VolatilityMomentumGenerator',
     'VolatilityTrendGenerator',
-    'create_interaction_generators'
+    'create_interaction_generators',
+    # Legacy interaction generators
+    'CrossTimeframeInteractionGenerator',
+    'FeatureRatioGenerator',
+    'PolynomialFeatureGenerator',
+    'CorrelationInteractionGenerator',
+    'create_default_interaction_generators'
 ]

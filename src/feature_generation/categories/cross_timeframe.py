@@ -394,6 +394,10 @@ def create_cross_timeframe_generators() -> List[FeatureGenerator]:
     
     return generators
 
+def create_default_cross_timeframe_generators() -> List[FeatureGenerator]:
+    """Create default set of cross-timeframe generators."""
+    return create_cross_timeframe_generators()
+
 # Export all generators
 __all__ = [
     'CrossTimeframeFeatureGenerator',
@@ -405,5 +409,6 @@ __all__ = [
     'CrossTimeframeRatioGenerator',
     'CrossTimeframeCorrelationGenerator',
     'CrossTimeframeDivergenceGenerator',
-    'create_cross_timeframe_generators'
+    'create_cross_timeframe_generators',
+    'create_default_cross_timeframe_generators'
 ]

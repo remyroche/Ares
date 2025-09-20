@@ -5,9 +5,11 @@ from functools import partial
 from typing import TYPE_CHECKING
 import firebase_admin
 from firebase_admin import auth, credentials, firestore
-from .config import CONFIG, get_environment_settings
+from ..config.config import CONFIG
+from ..config.environment import get_environment_settings
 from ..utils.logger import system_logger
-from .utils.warning_symbols import error, missing, warning
+from ..utils.warning_symbols import error, missing, warning
+from ..utils.error_handler import error_context
 
 from typing import Callable
 from typing import Any
@@ -46,8 +48,8 @@ class FirestoreManager:
                 self._initialized = True
                 return
         self._firestore_enabled = True
-        self._app_id = ErrorRecoveryStrategies.safe_dict_access(os.environ, '__app_id', 'default-ares-app-id')
-        initial_auth_token = ErrorRecoveryStrategies.safe_dict_access(os.environ, '__initial_auth_token', None)
+        self._app_id = os.environ.get('__app_id', 'default-ares-app-id')
+        initial_auth_token = os.environ.get('__initial_auth_token', None)
         with error_context('firestore_connection_setup'):
             loop = asyncio.get_running_loop()
             await loop.run_in_executor(None, self._blocking_initialize)

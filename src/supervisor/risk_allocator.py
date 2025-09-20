@@ -5,7 +5,7 @@ import asyncio
 from datetime import datetime
 from typing import Any
 
-from ...utils.logger import system_logger
+from ..utils.logger import system_logger
 import numpy as np
 
 from src.core.decorators import handles_errors

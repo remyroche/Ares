@@ -1499,6 +1499,51 @@ class ModelTrainingSubPipeline:
             if result.sub_pipeline_name == sub_pipeline_name:
                 return result.status
         return None
+
+    async def execute_all_steps_from_start(
+        self, 
+        config: Optional[SubPipelineConfig] = None
+    ) -> Dict[str, Any]:
+        """
+        Execute all 5 model training steps automatically from the beginning.
+        
+        This is a convenience method that starts from step 1 (analyst_model_training)
+        and automatically triggers all subsequent steps when each completes.
+        
+        Args:
+            config: Configuration for the sub-pipeline (optional)
+            
+        Returns:
+            Dict with execution results and summary
+        """
+        if config is None:
+            config = self.config
+            
+        self.logger.info('🚀 Starting automatic execution of all 5 model training steps')
+        self.logger.info('=' * 80)
+        self.logger.info('📋 Steps to be executed automatically:')
+        self.logger.info('   1. analyst_model_training - Per-regime individual model training with HPO, saving, and metrics')
+        self.logger.info('   2. analyst_ensemble_training - Per-regime ensemble training with HPO, saving, and metrics')
+        self.logger.info('   3. tactician_lookback_optimization - Lookback optimization for tactician models')
+        self.logger.info('   4. tactician_models_training - All-regime individual model training with HPO, saving, and metrics')
+        self.logger.info('   5. tactician_ensemble_training - All-regime ensemble training with HPO, saving, and metrics')
+        self.logger.info('=' * 80)
+        
+        # Execute from the first step - this will automatically trigger all subsequent steps
+        result = await self.execute_sub_pipeline_with_next('analyst_model_training', config)
+        
+        # Get execution summary
+        summary = self.get_execution_summary()
+        
+        return {
+            'success': result.success,
+            'first_step_result': result,
+            'execution_summary': summary,
+            'total_steps_executed': summary['total_sub_pipelines'],
+            'successful_steps': summary['successful_sub_pipelines'],
+            'failed_steps': summary['failed_sub_pipelines'],
+            'total_execution_time': summary['total_execution_time']
+        }
     
     async def execute_sub_pipeline_with_next(
         self, 
@@ -1506,13 +1551,19 @@ class ModelTrainingSubPipeline:
         config: SubPipelineConfig
     ) -> SubPipelineResult:
         """
-        Execute a specific sub-pipeline and conditionally trigger subsequent sub-pipelines.
+        Execute a specific sub-pipeline and automatically trigger subsequent sub-pipelines.
         
-        This method provides the interface expected by the main training pipeline for
-        automatic sequential execution of sub-pipelines in model training stage.
+        This method provides automatic sequential execution of all model training steps:
+        1. analyst_model_training - Per-regime individual model training with HPO, saving, and metrics
+        2. analyst_ensemble_training - Per-regime ensemble training with HPO, saving, and metrics  
+        3. tactician_lookback_optimization - Lookback optimization for tactician models
+        4. tactician_models_training - All-regime individual model training with HPO, saving, and metrics
+        5. tactician_ensemble_training - All-regime ensemble training with HPO, saving, and metrics
+        
+        When one step completes successfully, it automatically triggers the next step.
         
         Args:
-            sub_pipeline_name: Name of the sub-pipeline to execute
+            sub_pipeline_name: Name of the sub-pipeline to execute (will trigger all subsequent steps)
             config: Configuration for the sub-pipeline
             
         Returns:

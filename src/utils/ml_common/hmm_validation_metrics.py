@@ -1191,9 +1191,9 @@ class HMMValidationFramework:
             
             regime_assignments = regime_data['regime'].values
             
-            # Calculate traditional metrics
+            # Calculate traditional metrics (silhouette_score removed due to performance issues)
             traditional_metrics = {
-                'silhouette_score': silhouette_score(feature_data_scaled, regime_assignments),
+                'silhouette_score': -1.0,  # Placeholder - removed due to computational complexity
                 'calinski_harabasz_score': calinski_harabasz_score(feature_data_scaled, regime_assignments),
                 'davies_bouldin_score': davies_bouldin_score(feature_data_scaled, regime_assignments)
             }

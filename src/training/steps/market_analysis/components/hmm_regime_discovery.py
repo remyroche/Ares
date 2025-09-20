@@ -871,21 +871,12 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             # Multiple timeframes for better sensitivity
             momentum_features['momentum_1h'] = market_data['close'].pct_change(1)  # Short-term
             momentum_features['momentum_2h'] = market_data['close'].pct_change(2)  # Medium-term  
-            momentum_features['momentum_4h'] = market_data['close'].pct_change(4)  # Longer-term
-            # Add momentum acceleration (change in momentum)
-            momentum_features['momentum_acceleration'] = momentum_features['momentum_1h'].diff(1)
-            # Add relative strength vs moving average
-            momentum_features['rsi_divergence'] = (market_data['close'] - market_data['close'].rolling(6).mean()) / market_data['close'].rolling(6).std()
             
             # Volatility features (enhanced sensitivity with multiple measures)
             volatility_features = pd.DataFrame(index=market_data.index)
             # Multiple volatility measures for better sensitivity
             volatility_features['volatility_intrabar'] = (market_data['high'] - market_data['low']) / market_data['close']
             volatility_features['volatility_3h'] = market_data['close'].rolling(3).std()  # Short-term
-            volatility_features['volatility_6h'] = market_data['close'].rolling(6).std()  # Medium-term
-            volatility_features['volatility_12h'] = market_data['close'].rolling(12).std()  # Longer-term
-            # Add volatility of volatility (volatility clustering detection)
-            volatility_features['volatility_of_volatility'] = volatility_features['volatility_6h'].rolling(3).std()
             # ATR for true range volatility
             high_vals = market_data['high'].values.astype(np.float32)
             low_vals = market_data['low'].values.astype(np.float32)
@@ -903,14 +894,8 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             # Volume features (enhanced sensitivity with multiple measures)
             epsilon = 1e-8
             volume_features = pd.DataFrame(index=market_data.index)
-            # Multiple volume timeframes for better sensitivity
-            volume_features['volume_momentum_1h'] = market_data['volume'].pct_change(1)  # Short-term
-            volume_features['volume_momentum_3h'] = market_data['volume'].pct_change(3)  # Medium-term
-            volume_features['volume_momentum_6h'] = market_data['volume'].pct_change(6)  # Longer-term
-            # Add volume acceleration (change in volume momentum)
-            volume_features['volume_acceleration'] = volume_features['volume_momentum_1h'].diff(1)
             # Volume ratio - 24h baseline for stable comparison
-            volume_features['volume_ratio_24h'] = market_data['volume'] / (market_data['volume'].rolling(24).mean() + epsilon)
+            volume_features['volume_ratio_48h'] = market_data['volume'] / (market_data['volume'].rolling(24).mean() + epsilon)
             
             # Clean features and align indices
             max_lookback = 24  # Maximum lookback window used (24h for volume baseline)

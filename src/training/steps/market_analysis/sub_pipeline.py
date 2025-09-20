@@ -241,6 +241,57 @@ class MarketAnalysisSubPipeline:
         )
         
         return sub_config
+
+    async def execute_all_steps_from_start(
+        self, 
+        config: Optional[SubPipelineConfig] = None
+    ) -> Dict[str, Any]:
+        """
+        Execute all 11 market analysis steps automatically from the beginning.
+        
+        This is a convenience method that starts from step 1 (sr_parameter_optimization)
+        and automatically triggers all subsequent steps when each completes.
+        
+        Args:
+            config: Configuration for the sub-pipeline (optional)
+            
+        Returns:
+            Dict with execution results and summary
+        """
+        if config is None:
+            config = self.config
+            
+        self.logger.info('🚀 Starting automatic execution of all 11 market analysis steps')
+        self.logger.info('=' * 80)
+        self.logger.info('📋 Steps to be executed automatically:')
+        self.logger.info('   1. sr_parameter_optimization - Optimize SR detection levels')
+        self.logger.info('   2. sr_detection - Detect Support/Resistance levels')
+        self.logger.info('   3. sr_clustering - Generate SR clusters')
+        self.logger.info('   4. hmm_regime_discovery - Discover market regimes')
+        self.logger.info('   5. hmm_clustering - HMM-based regime clustering')
+        self.logger.info('   6. hmm_models_training - Base models training, HPO, saving, metrics')
+        self.logger.info('   7. hmm_ensemble_training - Meta-model, HPO, saving, metrics')
+        self.logger.info('   8. regime_data_splitting - Tag data by regimes')
+        self.logger.info('   9. multi_horizon_profit_labeler - Apply triple barrier method')
+        self.logger.info('   10. feature_lookback_optimization - Optimize feature lookback periods')
+        self.logger.info('   11. pid_based_feature_generation - Cross timeframe interaction features')
+        self.logger.info('=' * 80)
+        
+        # Execute from the first step - this will automatically trigger all subsequent steps
+        result = await self.execute_sub_pipeline_with_next('sr_parameter_optimization', config)
+        
+        # Get execution summary
+        summary = self.get_execution_summary()
+        
+        return {
+            'success': result.success,
+            'first_step_result': result,
+            'execution_summary': summary,
+            'total_steps_executed': summary['total_sub_pipelines'],
+            'successful_steps': summary['successful_sub_pipelines'],
+            'failed_steps': summary['failed_sub_pipelines'],
+            'total_execution_time': summary['total_execution_time']
+        }
     
     async def execute(self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -751,16 +802,25 @@ class MarketAnalysisSubPipeline:
         config: SubPipelineConfig
     ) -> SubPipelineResult:
         """
-        Execute a specific sub-pipeline and conditionally trigger subsequent sub-pipelines.
+        Execute a specific sub-pipeline and automatically trigger subsequent sub-pipelines.
         
-        This method provides the interface expected by the main training pipeline for
-        automatic sequential execution of sub-pipelines, following logical groupings:
-        - SR steps: parameter optimization -> detection -> clustering
-        - HMM steps: regime discovery -> clustering -> models -> ensemble
-        - Data processing: regime splitting -> labeling -> feature optimization -> generation
+        This method provides automatic sequential execution of all market analysis steps:
+        1. sr_parameter_optimization - Optimize SR detection levels
+        2. sr_detection - Detect Support/Resistance levels  
+        3. sr_clustering - Generate SR clusters
+        4. hmm_regime_discovery - Discover market regimes
+        5. hmm_clustering - HMM-based regime clustering
+        6. hmm_models_training - Base models training, HPO, saving, metrics
+        7. hmm_ensemble_training - Meta-model, HPO, saving, metrics
+        8. regime_data_splitting - Tag data by regimes
+        9. multi_horizon_profit_labeler - Apply triple barrier method
+        10. feature_lookback_optimization - Optimize feature lookback periods
+        11. pid_based_feature_generation - Cross timeframe interaction features
+        
+        When one step completes successfully, it automatically triggers the next step.
         
         Args:
-            sub_pipeline_name: Name of the sub-pipeline to execute
+            sub_pipeline_name: Name of the sub-pipeline to execute (will trigger all subsequent steps)
             config: Configuration for the sub-pipeline
             
         Returns:

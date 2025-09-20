@@ -551,22 +551,22 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             tuple: (momentum_states, volatility_states, volume_states) with applied constraints
         """
         try:
-            # Feature counts for parameter estimation (same as in _calculate_optimal_component_count)
-            momentum_features_count = 4  # momentum features per HMM (1h, 2h, 3h, 6h)
-            volatility_features_count = 3  # volatility features per HMM (1h, 3h, 6h)
-            volume_features_count = 5  # volume features per HMM (1h, 3h, 6h, ratio, weighted_price)
+            # Feature counts for parameter estimation (updated for behavioral features)
+            momentum_features_count = 3  # momentum_strength, trend_persistence, reversal_probability
+            volatility_features_count = 3  # realized_volatility, volatility_regime, price_efficiency
+            volume_features_count = 3  # volume_percentile_rank, volume_ma_ratio, volume_acceleration
             
             def calculate_hmm_parameters(k_components: int, n_features: int) -> int:
                 """Calculate total parameters for diagonal covariance HMM."""
-                # Correct parameter count for diagonal covariance HMM:
+                # Correct parameter count for diagonal covariance HMM (O(n) scaling):
                 # - Transition probabilities: k*(k-1) (each row sums to 1)
-                # - Start probabilities: k-1 (sum to 1)
+                # - Start probabilities: k-1 (sum to 1)  
                 # - Means: k * n_features
-                # - Diagonal covariances: k * n_features
+                # - Diagonal covariances: k * n_features (much better than full covariance O(n²))
                 transition_params = k_components * (k_components - 1)
                 start_params = k_components - 1
                 mean_params = k_components * n_features
-                covar_params = k_components * n_features
+                covar_params = k_components * n_features  # O(n) instead of O(n²) for full
                 return transition_params + start_params + mean_params + covar_params
             
             def max_dimensional_states_for_data(data_size: int, samples_per_param: int = 15) -> Tuple[int, int, int]:
@@ -614,19 +614,19 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             max_mom, max_vol, max_volume = max_dimensional_states_for_data(data_size)
             
             # Apply the same constraint logic as in _calculate_optimal_component_count
-            # Start with desired states based on data size
+            # With diagonal covariance (O(n) scaling), we can support more components for 20-regime goal
             if data_size < 500:
-                desired_momentum, desired_volatility, desired_volume = 6, 6, 6
+                desired_momentum, desired_volatility, desired_volume = 7, 7, 7  # 343 combinations
             elif data_size < 2000:
-                desired_momentum, desired_volatility, desired_volume = 7, 7, 7
+                desired_momentum, desired_volatility, desired_volume = 8, 8, 8  # 512 combinations
             elif data_size < 5000:
-                desired_momentum, desired_volatility, desired_volume = 8, 7, 8
+                desired_momentum, desired_volatility, desired_volume = 9, 8, 9  # 648 combinations
             elif data_size < 15000:
-                desired_momentum, desired_volatility, desired_volume = 8, 7, 8
+                desired_momentum, desired_volatility, desired_volume = 9, 9, 9  # 729 combinations
             elif data_size < 30000:
-                desired_momentum, desired_volatility, desired_volume = 9, 8, 9
+                desired_momentum, desired_volatility, desired_volume = 10, 9, 10  # 900 combinations
             else:
-                desired_momentum, desired_volatility, desired_volume = 10, 10, 10
+                desired_momentum, desired_volatility, desired_volume = 10, 10, 10  # 1000 combinations
             
             # Apply parameter constraints
             momentum_states = min(desired_momentum, max_mom)
@@ -701,8 +701,8 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
                 self.logger.warning(f"⚠️ Reduced components to {optimal_components} due to regime-based constraints")
                 self.logger.warning(f"   Regime-based max: {regime_based_max}")
             
-            # Final bounds check with enhanced maximum for 10x10x10 support
-            optimal_components = max(9, min(optimal_components, 1000))  # At least 3x3x1, max 1000 (10x10x10)
+            # Final bounds check with support for 20-regime goal (15-25 components)
+            optimal_components = max(15, min(optimal_components, 1000))  # At least 15 for 20-regime goal, max 1000 (10x10x10)
             
             self.logger.info(f"✅ Calculated optimal components: {optimal_components} (base: {base_components}, data_size: {data_size})")
             return optimal_components
@@ -741,7 +741,8 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             
             self.logger.info(f"🎯 Using {n_components} components for fast regime discovery (intermediate features)")
             self.logger.info("⚡ Skipping heavy Bayesian optimization - regimes are intermediate features for clustering")
-            self.logger.info("📊 Final optimization happens in clustering stage using AIC/BIC/Elbow methods where it impacts trading decisions")
+            self.logger.info("📊 Final optimization happens in clustering stage using clustering quality metrics (silhouette_score, calinski_harabasz)")
+            self.logger.info("🎯 Targeting 15-25 components for effective 20-regime behavioral clustering with diagonal covariance O(n) scaling")
             
             # Train separate HMM models for each dimension
             self.logger.info(f"📊 Training separate HMM models:")
@@ -789,9 +790,9 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             
             # Calculate actual feature offset based on max rolling window used
             # Get the maximum lookback period from all feature calculations
-            momentum_lookback = 2  # momentum_2h
-            volatility_lookback = 6  # volatility_6h and atr_6h
-            volume_lookback = 48  # volume_ratio_48h baseline
+            momentum_lookback = 2  # reversal_probability uses 2-period lookback
+            volatility_lookback = 24  # volatility_regime uses 24-period lookback
+            volume_lookback = 48  # volume_percentile_rank uses 48-period lookback
             max_lookback = max(momentum_lookback, volatility_lookback, volume_lookback)
             
             # Preserve original index and align properly
@@ -860,42 +861,33 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             import pandas as pd
             import numpy as np
             
-            # Momentum features (enhanced sensitivity with multiple timeframes)
+            # Momentum features (behavioral instead of temporal)
             momentum_features = pd.DataFrame(index=market_data.index)
-            # Multiple timeframes for better sensitivity
-            momentum_features['momentum_1h'] = market_data['close'].pct_change(1)  # Short-term
-            momentum_features['momentum_2h'] = market_data['close'].pct_change(2)  # Medium-term  
+            # Behavioral momentum indicators
+            momentum_features['momentum_strength'] = market_data['close'].pct_change(1).abs()  # Strength of movement
+            momentum_features['trend_persistence'] = (market_data['close'].pct_change(1) * market_data['close'].pct_change(2)).sign()  # Trend continuation
+            momentum_features['reversal_probability'] = -market_data['close'].pct_change(1) * market_data['close'].pct_change(2)  # Reversal signal  
             
-            # Volatility features (enhanced sensitivity with multiple measures)
+            # Volatility features (behavioral instead of temporal)
             volatility_features = pd.DataFrame(index=market_data.index)
-            # Multiple volatility measures for better sensitivity
-            volatility_features['volatility_intrabar'] = (market_data['high'] - market_data['low']) / market_data['close']
-            volatility_features['volatility_3h'] = market_data['close'].rolling(3).std()  # Short-term
-            # ATR for true range volatility
-            high_vals = market_data['high'].values.astype(np.float32)
-            low_vals = market_data['low'].values.astype(np.float32)
-            close_vals = market_data['close'].values.astype(np.float32)
-            tr1 = high_vals[1:] - low_vals[1:]
-            tr2 = np.abs(high_vals[1:] - close_vals[:-1])
-            tr3 = np.abs(low_vals[1:] - close_vals[:-1])
-            true_range = np.maximum(np.maximum(tr1, tr2), tr3)
-            atr_values = pd.Series(true_range).rolling(6).mean()
-            # Pad with NaN to match original index length
-            atr_padded = np.full(len(market_data), np.nan)
-            atr_padded[1:len(atr_values)+1] = atr_values
-            volatility_features['atr_6h'] = atr_padded
+            # Behavioral volatility indicators
+            volatility_features['realized_volatility'] = market_data['close'].pct_change(1).rolling(6).std()  # Realized volatility
+            volatility_features['volatility_regime'] = (market_data['close'].pct_change(1).rolling(6).std() > market_data['close'].pct_change(1).rolling(24).std()).astype(int)  # High vs low vol regime
+            volatility_features['price_efficiency'] = (market_data['close'].pct_change(1).abs() / ((market_data['high'] - market_data['low']) / market_data['close'] + 1e-8))  # Price efficiency
             
-            # Volume features (enhanced sensitivity with multiple measures)
+            # Volume features (behavioral instead of temporal)
             epsilon = 1e-8
             volume_features = pd.DataFrame(index=market_data.index)
-            # Volume ratio - 48h baseline for stable comparison
-            volume_features['volume_ratio_48h'] = market_data['volume'] / (market_data['volume'].rolling(48).mean() + epsilon)
+            # Behavioral volume indicators
+            volume_features['volume_percentile_rank'] = market_data['volume'].rolling(48).rank(pct=True)  # Volume percentile rank
+            volume_features['volume_ma_ratio'] = market_data['volume'] / (market_data['volume'].rolling(48).mean() + epsilon)  # Volume vs moving average
+            volume_features['volume_acceleration'] = market_data['volume'].pct_change(1)  # Volume momentum/acceleration
             
             # Clean features and align indices
             # Use the same max_lookback calculation as in _train_hmm_directly
-            momentum_lookback = 2  # momentum_2h
-            volatility_lookback = 6  # volatility_6h and atr_6h
-            volume_lookback = 48  # volume_ratio_48h baseline
+            momentum_lookback = 2  # reversal_probability uses 2-period lookback
+            volatility_lookback = 24  # volatility_regime uses 24-period lookback
+            volume_lookback = 48  # volume_percentile_rank uses 48-period lookback
             max_lookback = max(momentum_lookback, volatility_lookback, volume_lookback)
             cleaned_features = []
             

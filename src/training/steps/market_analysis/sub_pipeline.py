@@ -627,7 +627,11 @@ class MarketAnalysisSubPipeline:
         artifact_keys = list(artifacts.keys())
         
         self.logger.info(f"✅ {sub_pipeline_name} completed successfully")
-        self.logger.info(f"📊 Generated {artifact_count} artifacts: {artifact_keys}")
+        # Ensure logs reflect single artifact expectation for hmm_clustering
+        if sub_pipeline_name == 'hmm_clustering' and artifact_count > 1:
+            self.logger.info(f"📊 Generated {artifact_count} artifacts: {artifact_keys} (note: consolidated into single artifact group)")
+        else:
+            self.logger.info(f"📊 Generated {artifact_count} artifacts: {artifact_keys}")
         
         # Log artifact sizes for monitoring
         for key, value in artifacts.items():

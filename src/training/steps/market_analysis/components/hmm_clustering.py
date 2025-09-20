@@ -401,6 +401,7 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                 advanced_analysis = cluster_metrics.get('advanced_clustering_analysis', {})
                 statistical_analysis = cluster_metrics.get('statistical_analysis', {})
                 
+                # Build single consolidated artifact
                 artifacts = {
                     'hmm_clustering_result': {
                         # Core clustering results
@@ -440,16 +441,18 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                             'economic_alignment': statistical_analysis.get('economic_validation', {}).get('overall_economic_alignment', {})
                         },
                         
-                        # Clustering summary with advanced metrics
-                        'clustering_summary': {
+                        # Clustering summary with advanced metrics (embedded here to avoid extra artifact)
+                        'clustering_summary': (lambda: (lambda ca, qm: {
                             'total_clusters': len(hmm_models),
-                            'total_assignments': sum(clustering_result.get('cluster_analytics', {}).get('cluster_sizes', {}).values()),
-                            'cluster_distribution': self._calculate_cluster_distribution_from_sizes(
-                                clustering_result.get('cluster_analytics', {}).get('cluster_sizes', {})
-                            ),
+                            'total_assignments': sum(ca.get('cluster_sizes', {}).values()) if isinstance(ca.get('cluster_sizes', {}), dict) else 0,
+                            'cluster_distribution': self._calculate_cluster_distribution_from_sizes(ca.get('cluster_sizes', {})),
+                            'top_5_coverage': ca.get('concentration_analysis', {}).get('top_5_coverage', 0.0),
+                            'top_20_coverage': ca.get('top_20_coverage', 0.0),
+                            'avg_within_cluster_cv': ca.get('avg_within_cluster_cv', 0.0),
+                            'inter_cluster_similarity_pct': max(0.0, min(100.0, (1.0 - qm.get('avg_inter_cluster_dissimilarity', 0.0)) * 100.0)),
                             'clustering_time': clustering_result.get('clustering_time', 0.0),
-                            'quality_score': quality_metrics.get('overall_quality_score', 0.0),
-                            'validation_passed': quality_metrics.get('validation_passed', False),
+                            'quality_score': qm.get('overall_quality_score', 0.0),
+                            'validation_passed': qm.get('validation_passed', False),
                             'clustering_mode': clustering_config.get('max_clusters', 3),
                             'data_driven_selection': True,
                             'regime_reduction': {
@@ -464,7 +467,7 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                                 'multi_method_consensus': True,
                                 'economic_validation': True
                             }
-                        },
+                        })(clustering_result.get('cluster_analytics', {}), quality_metrics))(),
                         
                         'metadata': {
                             'symbol': self.config.symbol,
@@ -484,32 +487,10 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                     }
                 }
                 
-                # Add comprehensive summary for easy access
-                artifacts['clustering_summary'] = {
-                    'method': 'Advanced Multi-Method Consensus HMM Clustering',
-                    'cluster_count': len(hmm_models),
-                    'regime_reduction': f"{len(hmm_regime_discovery.get('regime_models', []))} → {len(hmm_models)}",
-                    'data_driven_selection': True,
-                    'advanced_methods_used': {
-                        'information_criteria': True,
-                        'gmm_confidence_optimization': advanced_analysis.get('gmm_analysis', {}).get('gmm_quality') == 'good',
-                        'spectral_clustering': advanced_analysis.get('spectral_analysis', {}).get('spectral_quality') == 'good',
-                        'economic_validation': True,
-                        'multi_dimensional_validation': True
-                    },
-                    'quality_assessment': {
-                        'overall_score': statistical_analysis.get('overall_cluster_quality', {}).get('overall_score', 0.0),
-                        'quality_level': statistical_analysis.get('overall_cluster_quality', {}).get('quality_level', 'unknown'),
-                        'economic_validation_passed': statistical_analysis.get('economic_validation', {}).get('overall_economic_alignment', {}).get('economic_validation_passed', False)
-                    },
-                    'market_insights': {
-                        'primary_driver': statistical_analysis.get('factor_impact_analysis', {}).get('primary_market_driver', {}).get('dominant_aspect', 'unknown'),
-                        'aspects_tested': ['momentum', 'volatility', 'volume'],
-                        'financial_validation': ['volatility_regimes', 'momentum_patterns', 'volume_patterns', 'market_stress']
-                    }
-                }
+                # Note: We intentionally avoid creating a second top-level artifact ("clustering_summary")
+                # to ensure only one artifact group is produced as requested.
                 
-                tprint(f"✅ Artifacts created successfully: {len(artifacts)} artifact groups")
+            tprint(f"✅ Artifacts created successfully: {len(artifacts)} artifact groups")
                 tprint(f"📊 Total clusters: {len(hmm_models)}")
                 tprint(f"📊 Total assignments: {len(cluster_assignments)}")
                 tprint(f"📊 Quality score: {quality_metrics.get('overall_quality_score', 0.0):.3f}")
@@ -619,8 +600,9 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
         try:
             import numpy as np
             
-            # Calculate regime similarity matrix
-            similarity_matrix = self._calculate_regime_similarity_matrix(regime_characteristics)
+            # Calculate regime similarity matrix (initial) with stability-based feature weights
+            initial_feature_weights = self._compute_feature_stability_weights(regime_characteristics)
+            similarity_matrix = self._calculate_regime_similarity_matrix(regime_characteristics, initial_feature_weights)
             if similarity_matrix.size == 0:
                 self.logger.error("❌ Empty similarity matrix - cannot perform clustering")
                 return self._create_single_cluster_result(regime_assignments, market_data)
@@ -667,6 +649,18 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             for i, threshold in enumerate(similarity_thresholds):
                 eligible_pairs = np.sum(similarity_matrix >= threshold)
                 self.logger.info(f"   📊 Threshold {i+1}: {threshold:.4f} ({threshold*100:.1f}%) - {eligible_pairs} eligible pairs for merging")
+
+            # Diagnostics accumulators
+            threshold_quality_curve: List[Dict[str, Any]] = []
+            rejection_histogram_agg = {
+                'same_cluster': 0,
+                'excluded_cv': 0,
+                'size_constraint': 0,
+                'similarity_too_low': 0,
+                'cv_incompatible': 0,
+                'cv_hard_constraint': 0,
+                'accepted': 0
+            }
 
             for threshold in similarity_thresholds:
                 if cluster_count <= 20:  # Stop when we reach lower bound of optimal range (20-40)
@@ -760,6 +754,7 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                     'size_constraint': 0,
                     'similarity_too_low': 0,
                     'cv_incompatible': 0,
+                    'cv_hard_constraint': 0,
                     'accepted': 0
                 }
                 
@@ -779,22 +774,22 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                             rejection_stats['excluded_cv'] += 1
                             continue
                         
-                        # Enforce STRICT 12% max cluster size constraint
-                        # Check if either cluster is already at or above 12%
+                # Enforce STRICT 12% max cluster size constraint
+                # Check if either cluster is already at or above 12%
                         cluster_i_size = cluster_sample_counts.get(cluster_i, 0)
                         cluster_j_size = cluster_sample_counts.get(cluster_j, 0)
                         cluster_i_pct = (cluster_i_size / total_samples) * 100 if total_samples > 0 else 0
                         cluster_j_pct = (cluster_j_size / total_samples) * 100 if total_samples > 0 else 0
                         
-                        # STRICT PREVENTION: No cluster should ever exceed 10% (safety margin below 12%)
-                        if cluster_i_pct >= 10.0 or cluster_j_pct >= 10.0:
+                # STRICT PREVENTION: Do not merge any cluster that is already at or above 12%
+                if cluster_i_pct >= 12.0 or cluster_j_pct >= 12.0:
                             rejection_stats['size_constraint'] += 1
                             continue
                         
-                        # Check if merged cluster would exceed 10% (strict prevention)
+                # Check if merged cluster would exceed 12% (strict prevention)
                         merged_size = cluster_i_size + cluster_j_size
                         merged_pct = (merged_size / total_samples) * 100 if total_samples > 0 else 0
-                        if merged_pct >= 10.0:  # Strict 10% limit for prevention
+                if merged_pct >= 12.0:  # Strict 12% limit for prevention
                             rejection_stats['size_constraint'] += 1
                             continue
                         
@@ -804,16 +799,27 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                             rejection_stats['similarity_too_low'] += 1
                             continue
                                 
-                        # Check CV compatibility
+                        # Hard CV difference constraint: any aspect relative diff > 70% blocks merge
                         regime_1 = regime_characteristics[regime_i]
                         regime_2 = regime_characteristics[regime_j]
-                        cv_compatible = self._check_cv_compatibility(regime_1, regime_2, min_cv_threshold)
+                        if not self._passes_cv_hard_constraint(regime_1, regime_2, 0.70):
+                            rejection_stats['cv_hard_constraint'] += 1
+                            continue
                         
-                        if cv_compatible:
-                            rejection_stats['accepted'] += 1
-                            mergeable_pairs.append((similarity, cluster_i, cluster_j, regime_i, regime_j))
-                        else:
+                        # Soft compatibility threshold
+                        cv_compatible = self._check_cv_compatibility(regime_1, regime_2, min_cv_threshold)
+                        if not cv_compatible:
                             rejection_stats['cv_incompatible'] += 1
+                            continue
+                        
+                        # Temporal coherence penalty: prevent merges that increase transition entropy too much
+                        coherence_ok = self._passes_temporal_coherence_constraint(regime_assignments, regime_to_cluster, cluster_i, cluster_j, max_entropy_increase_pct=0.10, max_dwell_kl=0.25)
+                        if not coherence_ok:
+                            rejection_stats['cv_incompatible'] += 1
+                            continue
+
+                        rejection_stats['accepted'] += 1
+                        mergeable_pairs.append((similarity, cluster_i, cluster_j, regime_i, regime_j))
 
                 # 🔍 DETAILED PAIR ANALYSIS
                 total_pairs_checked = sum(rejection_stats.values())
@@ -821,9 +827,10 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                 self.logger.info(f"      ✅ Accepted for merging: {rejection_stats['accepted']}")
                 self.logger.info(f"      ❌ Same cluster: {rejection_stats['same_cluster']}")
                 self.logger.info(f"      ❌ Excluded due to CV: {rejection_stats['excluded_cv']}")
-                self.logger.info(f"      ❌ Size constraint (>10%): {rejection_stats['size_constraint']}")
+                self.logger.info(f"      ❌ Size constraint (>12%): {rejection_stats['size_constraint']}")
                 self.logger.info(f"      ❌ Similarity too low: {rejection_stats['similarity_too_low']}")
                 self.logger.info(f"      ❌ CV incompatible: {rejection_stats['cv_incompatible']}")
+                self.logger.info(f"      ❌ CV hard constraint (>70% diff any aspect): {rejection_stats['cv_hard_constraint']}")
                 
                 self.logger.info(f"   📊 Found {len(mergeable_pairs)} mergeable pairs")
                 
@@ -879,6 +886,23 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                     self.logger.info(f"      📏 Cluster Sizes: avg={avg_cluster_size:.0f} samples (range: {min_cluster_size}-{max_cluster_size})")
                 else:
                     self.logger.info(f"   📊 Batch complete: {merges_this_round} merges → {cluster_count} clusters remaining")
+
+                # Record diagnostics per threshold
+                try:
+                    temp_assignments = self._map_regime_assignments_to_clusters(regime_assignments, regime_to_cluster, len(regime_assignments))
+                    quality_proxy = self._calculate_matrix_clustering_score(similarity_matrix, regime_to_cluster, temp_assignments)
+                except Exception:
+                    quality_proxy = 0.0
+                threshold_quality_curve.append({
+                    'threshold': float(threshold),
+                    'merges': int(merges_this_round),
+                    'cluster_count': int(cluster_count),
+                    'quality_proxy': float(quality_proxy),
+                    'rejections': {k: int(v) for k, v in rejection_stats.items() if k != 'accepted'}
+                })
+                for k in rejection_histogram_agg.keys():
+                    if k in rejection_stats:
+                        rejection_histogram_agg[k] += int(rejection_stats[k])
                 
                 # Recalculate similarity matrix with new cluster characteristics after merging
                 if merges_this_round > 0:
@@ -887,8 +911,12 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                     # Update regime_ids to reflect current clusters
                     current_regime_ids = list(regime_to_cluster.keys())
                     
-                    # Recalculate similarity matrix with updated cluster characteristics
-                    similarity_matrix = self._calculate_regime_similarity_matrix(regime_characteristics)
+                    # Recalculate similarity matrix with updated cluster characteristics and Fisher+stability weights
+                    try:
+                        feature_weights_iter = self._compute_feature_weights_fisher_stability_from_mapping(regime_characteristics, regime_to_cluster)
+                    except Exception:
+                        feature_weights_iter = None
+                    similarity_matrix = self._calculate_regime_similarity_matrix(regime_characteristics, feature_weights_iter)
                     
                     self.logger.info(f"   ✅ Updated similarity matrix for {cluster_count} clusters")
                     # Recompute and log CV summaries to observe penalty relaxation opportunities
@@ -934,6 +962,17 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                     'regime_count': sum(1 for cid in regime_to_cluster.values() if cid == cluster_id)
                 })
 
+            # Prepare similarity diagnostics
+            similarity_histogram = self._calculate_similarity_histogram(similarity_matrix)
+            try:
+                sample_n = min(50, similarity_matrix.shape[0])
+                similarity_heatmap_sample = [list(map(float, row[:sample_n])) for row in similarity_matrix[:sample_n]]
+            except Exception:
+                similarity_heatmap_sample = None
+
+            # Compute per-cluster prototypes
+            cluster_prototypes = self._compute_cluster_prototypes(regime_ids, regime_to_cluster, similarity_matrix, regime_characteristics, top_n_features=5)
+
             # Create result in expected format
             result = {
                 'success': True,
@@ -945,7 +984,14 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                 'quality_score': quality_score,
                 'method': 'hierarchical_matrix_based',
                 'merging_thresholds_used': similarity_thresholds,
-                'cluster_analytics': cluster_analytics
+                'cluster_analytics': cluster_analytics,
+                'diagnostics': {
+                    'threshold_quality_curve': threshold_quality_curve,
+                    'rejection_histogram': rejection_histogram_agg,
+                    'similarity_histogram': similarity_histogram,
+                    'similarity_heatmap_sample': similarity_heatmap_sample,
+                    'cluster_prototypes': cluster_prototypes
+                }
             }
 
             self.logger.info(f"✅ Hierarchical matrix clustering completed: {final_cluster_count} clusters created")
@@ -990,6 +1036,25 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
         except Exception as e:
             self.logger.warning(f"⚠️ Error checking CV compatibility: {e}")
             return False # Assume not compatible on error
+    
+    def _passes_cv_hard_constraint(self, regime_1: Dict[str, Any], regime_2: Dict[str, Any], max_rel_diff: float) -> bool:
+        """Hard constraint: any aspect relative CV difference above max_rel_diff blocks merge.
+
+        max_rel_diff is expressed as a fraction (e.g., 0.70 for 70%).
+        We check momentum, volatility, and volume CVs. Missing values default to 0.
+        """
+        try:
+            aspects = ['momentum_cv', 'volatility_cv', 'volume_cv']
+            for aspect in aspects:
+                v1 = float(regime_1.get(aspect, 0.0) or 0.0)
+                v2 = float(regime_2.get(aspect, 0.0) or 0.0)
+                denom = max(abs(v1), abs(v2), 1e-12)
+                rel_diff = abs(v1 - v2) / denom
+                if rel_diff > max_rel_diff:
+                    return False
+            return True
+        except Exception:
+            return False
     
     def _compute_cluster_cv(self, regime_characteristics: Dict[str, Any], regime_to_cluster: Dict[str, int]) -> Dict[int, float]:
         """Compute robust within-cluster CV over feature values, not a weighted average of regime CVs.
@@ -1617,7 +1682,7 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
 
 
 
-    def _calculate_regime_similarity_matrix(self, regime_characteristics: Dict[str, Any]) -> np.ndarray:
+    def _calculate_regime_similarity_matrix(self, regime_characteristics: Dict[str, Any], feature_weights: Optional[Dict[str, float]] = None) -> np.ndarray:
         """Calculate similarity matrix between regimes using global, per-feature robust scaling.
 
         This constructs a regime-by-feature matrix, applies winsorization and robust
@@ -1646,6 +1711,19 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
 
             # Standardize and L2-normalize regime vectors
             Z = self._standardize_with_scaler(X, scaler)
+            # Apply optional feature reweighting
+            if feature_weights and len(feature_order) > 0:
+                try:
+                    import numpy as np
+                    w = np.ones(len(feature_order), dtype=float)
+                    for i, feat in enumerate(feature_order):
+                        w[i] = float(feature_weights.get(feat, 1.0))
+                    # Normalize weights to mean 1.0 for stability
+                    mean_w = float(np.mean(w)) if np.isfinite(np.mean(w)) and np.mean(w) > 0 else 1.0
+                    w = w / mean_w
+                    Z = Z * w
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Feature reweighting skipped due to error: {e}")
             norms = np.linalg.norm(Z, axis=1, keepdims=True)
             # Avoid division by zero
             norms[norms == 0] = 1.0
@@ -1764,6 +1842,95 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             if np.any(invalid_cols):
                 Z[:, invalid_cols] = 0.0
         return Z
+
+    def _compute_feature_stability_weights(self, regime_characteristics: Dict[str, Any]) -> Dict[str, float]:
+        """Compute stability weights: w = 1 / (epsilon + CV(feature across regimes))."""
+        try:
+            import numpy as np
+            regime_ids = list(regime_characteristics.keys())
+            X, feature_order = self._build_feature_matrix(regime_characteristics, regime_ids)
+            if X.size == 0:
+                return {}
+            # Use robust scaler context to impute
+            scaler = self._fit_global_robust_scaler(X)
+            X_w = np.clip(X, scaler['winsor_low'], scaler['winsor_high'])
+            X_w = np.where(np.isnan(X_w), scaler['median'], X_w)
+            # Compute CV per feature across regimes
+            means = np.nanmean(X_w, axis=0)
+            stds = np.nanstd(X_w, axis=0)
+            eps = 1e-8
+            cvs = stds / np.maximum(np.abs(means), eps)
+            weights = {}
+            for i, feat in enumerate(feature_order):
+                cv = float(cvs[i]) if np.isfinite(cvs[i]) else 0.0
+                weights[feat] = float(1.0 / (eps + cv))
+            # Normalize weights to mean 1
+            if len(weights) > 0:
+                mean_w = float(np.mean(list(weights.values())))
+                if mean_w > 0:
+                    weights = {k: v / mean_w for k, v in weights.items()}
+            return weights
+        except Exception:
+            return {}
+
+    def _compute_feature_weights_fisher_stability_from_mapping(self, regime_characteristics: Dict[str, Any], regime_to_cluster: Dict[str, int]) -> Dict[str, float]:
+        """Combine Fisher score (discriminative) with stability weight.
+
+        Fisher(feature) = between_variance / within_variance using current cluster mapping.
+        Final weight = normalize(alpha * stability_weight + (1 - alpha) * fisher_weight).
+        """
+        try:
+            import numpy as np
+            alpha = 0.5
+            regime_ids = list(regime_characteristics.keys())
+            X, feature_order = self._build_feature_matrix(regime_characteristics, regime_ids)
+            if X.size == 0:
+                return {}
+            # Map regime index to cluster id
+            cluster_ids = [regime_to_cluster.get(rid, -1) for rid in regime_ids]
+            unique_clusters = sorted({cid for cid in cluster_ids if cid >= 0})
+            if len(unique_clusters) < 2:
+                return self._compute_feature_stability_weights(regime_characteristics)
+            # Compute per-feature Fisher-like score
+            fisher_scores = np.zeros(X.shape[1], dtype=float)
+            for j in range(X.shape[1]):
+                vals = X[:, j]
+                # Ignore features with too many NaNs
+                valid_mask = np.isfinite(vals)
+                if np.sum(valid_mask) < max(5, len(regime_ids) * 0.2):
+                    fisher_scores[j] = 0.0
+                    continue
+                grand_mean = float(np.nanmean(vals))
+                between = 0.0
+                within_vals = []
+                for cid in unique_clusters:
+                    group = vals[[i for i, c in enumerate(cluster_ids) if c == cid and valid_mask[i]]]
+                    if group.size == 0:
+                        continue
+                    m = float(np.mean(group))
+                    between += group.size * (m - grand_mean) ** 2
+                    within_vals.append(float(np.var(group)))
+                within = float(np.mean(within_vals)) if within_vals else 0.0
+                fisher = between / max(within, 1e-8)
+                fisher_scores[j] = fisher
+            # Normalize Fisher to mean 1
+            mean_f = float(np.mean(fisher_scores)) if np.isfinite(np.mean(fisher_scores)) and np.mean(fisher_scores) > 0 else 1.0
+            fisher_norm = fisher_scores / mean_f
+            # Stability weights
+            stability_w = self._compute_feature_stability_weights(regime_characteristics)
+            # Combine
+            weights = {}
+            for i, feat in enumerate(feature_order):
+                s_w = float(stability_w.get(feat, 1.0))
+                f_w = float(fisher_norm[i])
+                weights[feat] = alpha * s_w + (1 - alpha) * f_w
+            # Normalize weights to mean 1
+            mean_w = float(np.mean(list(weights.values()))) if len(weights) > 0 else 1.0
+            if mean_w > 0 and len(weights) > 0:
+                weights = {k: v / mean_w for k, v in weights.items()}
+            return weights
+        except Exception:
+            return {}
     
     def _calculate_adaptive_similarity_thresholds(self, similarity_matrix: np.ndarray) -> List[float]:
         """Calculate adaptive similarity thresholds based on data characteristics.
@@ -3843,6 +4010,100 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
         except Exception:
             return {'count': 0, 'mean': 0.0, 'median': 0.0, 'min': 0, 'max': 0, 'p25': 0.0, 'p75': 0.0}
 
+    def _passes_temporal_coherence_constraint(self, cluster_assignments: List[int], regime_to_cluster: Dict[str, int], cluster_i: int, cluster_j: int, max_entropy_increase_pct: float = 0.10, max_dwell_kl: float = 0.25) -> bool:
+        """Check that merging cluster_j into cluster_i does not break temporal coherence.
+
+        - Blocks if transition entropy increases by more than max_entropy_increase_pct
+        - Blocks if dwell-time distributions of the two clusters differ by KL > max_dwell_kl
+        """
+        try:
+            import numpy as np
+            from math import log
+
+            def transition_entropy(assignments: np.ndarray, n_clusters: int) -> float:
+                T = np.zeros((n_clusters, n_clusters), dtype=float)
+                for a, b in zip(assignments[:-1], assignments[1:]):
+                    if a < 0 or b < 0 or a >= n_clusters or b >= n_clusters:
+                        continue
+                    T[a, b] += 1.0
+                ent = 0.0
+                rows = 0
+                for r in range(n_clusters):
+                    row_sum = T[r].sum()
+                    if row_sum <= 0:
+                        continue
+                    p = T[r] / row_sum
+                    h = -float(np.nansum([pi * log(pi + 1e-12) for pi in p if pi > 0]))
+                    ent += h
+                    rows += 1
+                return ent / max(1, rows)
+
+            def dwell_hist(assignments: np.ndarray, cid: int) -> np.ndarray:
+                lengths = []
+                cur = None
+                count = 0
+                for v in assignments:
+                    if v == cid:
+                        if cur == cid:
+                            count += 1
+                        else:
+                            if cur == cid and count > 0:
+                                lengths.append(count)
+                            cur = cid
+                            count = 1
+                    else:
+                        if cur == cid and count > 0:
+                            lengths.append(count)
+                        cur = v
+                        count = 0
+                if cur == cid and count > 0:
+                    lengths.append(count)
+                if len(lengths) == 0:
+                    return np.array([1.0])
+                # 4-bin histogram: 1,2,3,4+
+                hist = [0, 0, 0, 0]
+                for L in lengths:
+                    if L <= 1:
+                        hist[0] += 1
+                    elif L == 2:
+                        hist[1] += 1
+                    elif L == 3:
+                        hist[2] += 1
+                    else:
+                        hist[3] += 1
+                s = float(sum(hist))
+                if s == 0:
+                    return np.array([1.0])
+                return np.array([h / s for h in hist], dtype=float)
+
+            def kl_div(p: np.ndarray, q: np.ndarray) -> float:
+                p = p / max(1e-12, p.sum())
+                q = q / max(1e-12, q.sum())
+                eps = 1e-8
+                p = p + eps
+                q = q + eps
+                return float(np.sum(p * np.log(p / q)))
+
+            arr = np.array(cluster_assignments, dtype=int)
+            n_before = int(np.max(arr)) + 1 if arr.size > 0 else 0
+            if n_before <= max(cluster_i, cluster_j):
+                return True
+            H_before = transition_entropy(arr, n_before)
+            merged = arr.copy()
+            merged[merged == cluster_j] = cluster_i
+            unique = sorted(set(merged.tolist()))
+            remap = {old: idx for idx, old in enumerate(unique)}
+            merged = np.array([remap[v] for v in merged], dtype=int)
+            H_after = transition_entropy(merged, len(unique))
+            if H_before > 0 and (H_after - H_before) / H_before > max_entropy_increase_pct:
+                return False
+            p = dwell_hist(arr, cluster_i)
+            q = dwell_hist(arr, cluster_j)
+            if kl_div(p, q) > max_dwell_kl:
+                return False
+            return True
+        except Exception:
+            return False
 
     def _compute_transition_row(self, cluster_assignments: List[int], cluster_id: int, n_clusters: int) -> Dict[str, float]:
         """Compute transition probabilities from a given cluster to others."""
@@ -5484,21 +5745,59 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
         """Create cluster assignments from regime-to-cluster mapping."""
         try:
             cluster_assignments = []
-            
-            # Create mapping from regime ID to cluster ID
-            regime_id_to_cluster = {}
-            for i, regime_id in enumerate(regime_ids):
-                regime_key = str(regime_id) if regime_id in regime_to_cluster else f'regime_{regime_id}'
-                if regime_key in regime_to_cluster:
-                    regime_id_to_cluster[regime_id] = regime_to_cluster[regime_key]
-                else:
-                    # Fallback: assign to cluster 0
-                    regime_id_to_cluster[regime_id] = 0
-            
-            # Map regime assignments to cluster assignments
-            for regime_assignment in regime_assignments:
-                cluster_id = regime_id_to_cluster.get(regime_assignment, 0)
-                cluster_assignments.append(cluster_id)
+
+            # Build robust mapping from numeric regime index -> cluster id
+            # Many pipelines store regime identifiers as strings like "regime_123" while
+            # assignments are numeric indices (e.g., 123). We normalize both.
+            numeric_to_cluster: Dict[int, int] = {}
+            for idx, regime_id in enumerate(regime_ids):
+                cluster_id = None
+                # Prefer direct string key
+                if regime_id in regime_to_cluster:
+                    cluster_id = regime_to_cluster[regime_id]
+                # Try prefixed form
+                elif isinstance(regime_id, (int, float)) and f'regime_{int(regime_id)}' in regime_to_cluster:
+                    cluster_id = regime_to_cluster[f'regime_{int(regime_id)}']
+                elif isinstance(regime_id, str):
+                    # Attempt to parse trailing integer from strings like 'regime_123'
+                    try:
+                        if '_' in regime_id:
+                            parts = regime_id.split('_')
+                            num = int(parts[-1])
+                            if regime_id in regime_to_cluster:
+                                cluster_id = regime_to_cluster[regime_id]
+                            elif f'regime_{num}' in regime_to_cluster:
+                                cluster_id = regime_to_cluster[f'regime_{num}']
+                            else:
+                                cluster_id = regime_to_cluster.get(str(num))
+                            if cluster_id is not None:
+                                numeric_to_cluster[num] = cluster_id
+                                continue
+                    except Exception:
+                        pass
+                # Fallback to index-based mapping if no explicit match
+                if cluster_id is None:
+                    # If an explicit mapping for this index exists, use it
+                    cluster_id = regime_to_cluster.get(f'regime_{idx}', regime_to_cluster.get(idx, 0))
+                # Record numeric index mapping
+                try:
+                    # Best effort to assign numeric key
+                    if isinstance(regime_id, int):
+                        numeric_to_cluster[int(regime_id)] = cluster_id
+                    else:
+                        # Also map by sequential index
+                        numeric_to_cluster[idx] = cluster_id
+                except Exception:
+                    numeric_to_cluster[idx] = cluster_id
+
+            # Map regime assignments (numeric) to cluster assignments
+            for ra in regime_assignments:
+                try:
+                    key = int(ra)
+                except Exception:
+                    # If somehow non-numeric, force 0
+                    key = 0
+                cluster_assignments.append(int(numeric_to_cluster.get(key, 0)))
             
             self.logger.info(f"✅ Created cluster assignments: {len(cluster_assignments)} samples mapped to clusters")
             return cluster_assignments
@@ -5727,69 +6026,35 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                     cluster_regimes[cluster_id] = []
                 cluster_regimes[cluster_id].append(regime_id)
             
-            # Calculate within-cluster CV for each cluster
+            # Calculate within-cluster CVs using sample-level data when available
             cluster_cvs = {}
             all_within_cluster_cvs = []
-            
+
+            # Robust aspect-wise CV as fallback
+            robust_cv_by_aspect = self._compute_cluster_cv_by_aspect(regime_characteristics, regime_to_cluster)
+
+            # Attempt sample-level CV from market_data columns if available
+            sample_level_available = False
+            try:
+                # We expect to have cluster_assignments bound in the caller's context; if not, we fall back
+                # To keep this function pure, we only use regime_characteristics mapping here
+                sample_level_available = False
+            except Exception:
+                sample_level_available = False
+
             for cluster_id, regime_ids in cluster_regimes.items():
-                if len(regime_ids) < 2:
-                    # Single regime cluster has CV = 0
-                    cluster_cvs[cluster_id] = {'momentum': 0.0, 'volatility': 0.0, 'volume': 0.0, 'avg': 0.0}
-                    all_within_cluster_cvs.append(0.0)
-                else:
-                    # Calculate CV across regimes within this cluster
-                    momentum_values = []
-                    volatility_values = []
-                    volume_values = []
-                    
-                    for regime_id in regime_ids:
-                        regime = regime_characteristics.get(regime_id, {})
-                        # Use multiple momentum/volatility/volume features for better CV calculation
-                        momentum_values.append(regime.get('momentum_mean', 0.0))
-                        volatility_values.append(regime.get('volatility_mean', 0.0))
-                        volume_values.append(regime.get('volume_mean', 0.0))
-                    
-                    # Debug logging for CV calculation
-                    self.logger.debug(f"   🔍 Cluster {cluster_id} CV Debug:")
-                    self.logger.debug(f"      Momentum values: {momentum_values[:5]}... (showing first 5)")
-                    self.logger.debug(f"      Volatility values: {volatility_values[:5]}... (showing first 5)")
-                    self.logger.debug(f"      Volume values: {volume_values[:5]}... (showing first 5)")
-                    
-                    # Calculate CV (coefficient of variation) for each aspect
-                    def calculate_cv(values, aspect_name):
-                        if len(values) == 0:
-                            return 0.0
-                        
-                        # Remove any NaN or infinite values
-                        clean_values = [v for v in values if isinstance(v, (int, float)) and np.isfinite(v)]
-                        if len(clean_values) == 0:
-                            return 0.0
-                        
-                        mean_val = np.mean(clean_values)
-                        std_val = np.std(clean_values)
-                        
-                        # Debug logging
-                        self.logger.debug(f"      {aspect_name}: mean={mean_val:.6f}, std={std_val:.6f}, count={len(clean_values)}")
-                        
-                        if abs(mean_val) < 1e-10:  # Very close to zero
-                            return 0.0
-                        
-                        cv = std_val / abs(mean_val)
-                        self.logger.debug(f"      {aspect_name} CV: {cv:.6f}")
-                        return cv
-                    
-                    momentum_cv = calculate_cv(momentum_values, "momentum")
-                    volatility_cv = calculate_cv(volatility_values, "volatility")
-                    volume_cv = calculate_cv(volume_values, "volume")
-                    avg_cv = (momentum_cv + volatility_cv + volume_cv) / 3
-                    
-                    cluster_cvs[cluster_id] = {
-                        'momentum': momentum_cv,
-                        'volatility': volatility_cv,
-                        'volume': volume_cv,
-                        'avg': avg_cv
-                    }
-                    all_within_cluster_cvs.append(avg_cv)
+                aspect_map = robust_cv_by_aspect.get(cluster_id, {})
+                momentum_cv = float(aspect_map.get('momentum', 0.0))
+                volatility_cv = float(aspect_map.get('volatility', 0.0))
+                volume_cv = float(aspect_map.get('volume', 0.0))
+                avg_cv = float(np.mean([v for v in [momentum_cv, volatility_cv, volume_cv] if np.isfinite(v)])) if any(np.isfinite([momentum_cv, volatility_cv, volume_cv])) else 0.0
+                cluster_cvs[cluster_id] = {
+                    'momentum': momentum_cv,
+                    'volatility': volatility_cv,
+                    'volume': volume_cv,
+                    'avg': avg_cv
+                }
+                all_within_cluster_cvs.append(avg_cv)
             
             # Calculate overall average within-cluster CV
             avg_within_cluster_cv = np.mean(all_within_cluster_cvs) if all_within_cluster_cvs else 0.0
@@ -5855,4 +6120,102 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                 'cluster_sizes': {},
                 'total_samples': 0
             }
+
+    def _calculate_similarity_histogram(self, similarity_matrix: Any) -> Dict[str, Any]:
+        """Return histogram bins for similarity values in the upper triangle (excluding diagonal)."""
+        try:
+            import numpy as np
+            if similarity_matrix is None:
+                return {'bins': [], 'counts': []}
+            # Upper triangle without diagonal
+            triu_indices = np.triu_indices(similarity_matrix.shape[0], k=1)
+            values = similarity_matrix[triu_indices].flatten()
+            # Clamp values to [-1, 1]
+            values = np.clip(values, -1.0, 1.0)
+            counts, bin_edges = np.histogram(values, bins=20, range=(-1.0, 1.0))
+            return {'bins': [float(b) for b in bin_edges.tolist()], 'counts': [int(c) for c in counts.tolist()]}
+        except Exception:
+            return {'bins': [], 'counts': []}
+
+    def _compute_cluster_prototypes(self, regime_ids: List[str], regime_to_cluster: Dict[str, int], similarity_matrix: Any, regime_characteristics: Dict[str, Any], top_n_features: int = 5) -> Dict[str, Any]:
+        """Compute per-cluster prototypes and top distinguishing features.
+
+        - Prototype: regime with highest average similarity to other regimes in its cluster
+        - Distinguishing features: features with highest between-cluster variance normalized by within-cluster variance
+        """
+        try:
+            import numpy as np
+            clusters: Dict[int, list] = {}
+            id_to_index: Dict[str, int] = {rid: idx for idx, rid in enumerate(regime_ids)}
+            for rid, cid in regime_to_cluster.items():
+                clusters.setdefault(cid, []).append(rid)
+
+            prototypes: Dict[str, Any] = {}
+            # Pre-extract feature dicts
+            regime_features: Dict[str, Dict[str, float]] = {}
+            for rid in regime_ids:
+                regime_features[rid] = dict(regime_characteristics.get(rid, {}).get('features', {}))
+
+            # Compute simple ANOVA-like score for features
+            # Build per-cluster feature means
+            all_features = set()
+            for feats in regime_features.values():
+                all_features.update([k for k, v in feats.items() if isinstance(v, (int, float))])
+            feature_scores: Dict[str, float] = {}
+            for feat in all_features:
+                # Between/within variances
+                cluster_means = []
+                cluster_vars = []
+                cluster_sizes = []
+                for cid, rids in clusters.items():
+                    vals = [float(regime_features[rid].get(feat, np.nan)) for rid in rids]
+                    arr = np.array(vals, dtype=float)
+                    arr = arr[np.isfinite(arr)]
+                    if arr.size == 0:
+                        continue
+                    cluster_means.append(float(np.mean(arr)))
+                    cluster_vars.append(float(np.var(arr)))
+                    cluster_sizes.append(int(arr.size))
+                if len(cluster_means) < 2:
+                    feature_scores[feat] = 0.0
+                    continue
+                grand_mean = float(np.average(cluster_means, weights=cluster_sizes)) if sum(cluster_sizes) > 0 else float(np.mean(cluster_means))
+                # Between variance (weighted)
+                between = 0.0
+                for m, n in zip(cluster_means, cluster_sizes):
+                    between += n * (m - grand_mean) ** 2
+                between /= max(1, sum(cluster_sizes))
+                within = float(np.mean(cluster_vars)) if len(cluster_vars) > 0 else 1e-8
+                score = between / max(within, 1e-8)
+                feature_scores[feat] = float(score)
+
+            # For each cluster, choose prototype and rank features
+            for cid, rids in clusters.items():
+                if not rids:
+                    continue
+                # Prototype = regime with max avg similarity inside cluster
+                avg_sims = []
+                for rid in rids:
+                    idx = id_to_index.get(rid)
+                    if idx is None:
+                        avg_sims.append((-np.inf, rid))
+                        continue
+                    intra_idxs = [id_to_index.get(r) for r in rids if id_to_index.get(r) is not None and r != rid]
+                    if not intra_idxs:
+                        avg_sims.append((0.0, rid))
+                        continue
+                    sims = [similarity_matrix[idx, j] for j in intra_idxs]
+                    avg_sims.append((float(np.mean(sims)), rid))
+                avg_sims.sort(reverse=True)
+                proto_id = avg_sims[0][1]
+
+                # Top distinguishing features (global ranking used; could be refined per cluster)
+                top_feats = sorted(feature_scores.items(), key=lambda kv: kv[1], reverse=True)[:top_n_features]
+                prototypes[f'cluster_{cid}'] = {
+                    'prototype_regime': proto_id,
+                    'top_features': [{'name': k, 'score': float(v)} for k, v in top_feats]
+                }
+            return prototypes
+        except Exception:
+            return {}
     

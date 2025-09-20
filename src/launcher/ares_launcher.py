@@ -440,13 +440,11 @@ class AresLauncher:
         filtered_config = {k: v for k, v in base_config.items() if k in supported_params}
         tprint(f"✅ [STAGE_CONFIG] Filtered config: {list(filtered_config.keys())}")
         
-        # OVERRIDE TIMEFRAME FOR MARKET ANALYSIS STAGE (WHICH INCLUDES HMM SUB-PIPELINES)
+        # Keep requested timeframe for MARKET_ANALYSIS; do not override
         if stage == PipelineStage.MARKET_ANALYSIS:
             original_timeframe = filtered_config.get('timeframe', '1m')
-            filtered_config['timeframe'] = '1h'
             tprint(f"🎯 [STAGE_CONFIG] Market Analysis stage detected")
-            tprint(f"🎯 [STAGE_CONFIG] Overriding timeframe: {original_timeframe} → 1h")
-            tprint("🎯 [STAGE_CONFIG] Using 1h data for HMM sub-pipelines in market analysis stage")
+            tprint(f"🎯 [STAGE_CONFIG] Keeping requested timeframe: {original_timeframe}")
         else:
             tprint(f"📊 [STAGE_CONFIG] Using standard timeframe for {stage.value}: {filtered_config.get('timeframe', '1m')}")
 
@@ -509,7 +507,7 @@ class AresLauncher:
         supported_params = ['symbol', 'exchange', 'timeframe', 'data_dir']
         filtered_config = {k: v for k, v in base_config.items() if k in supported_params}
 
-        # OVERRIDE TIMEFRAME FOR HMM-RELATED SUB-PIPELINES TO USE 1H DATA
+        # Timeframe policy for HMM-RELATED SUB-PIPELINES
         hmm_sub_pipelines = [
             'hmm_regime_discovery',     # Discover market regimes
             'hmm_clustering',           # HMM-based regime clustering
@@ -518,11 +516,12 @@ class AresLauncher:
         ]
 
         if sub_pipeline in hmm_sub_pipelines:
-            original_timeframe = filtered_config.get('timeframe', '1m')
-            filtered_config['timeframe'] = '1h'
+            # Keep the requested timeframe; if none provided, default to 15m for HMM pipelines
+            original_timeframe = filtered_config.get('timeframe', '')
+            if not original_timeframe:
+                filtered_config['timeframe'] = '15m'
             tprint(f"🎯 [SUB_PIPELINE_CONFIG] HMM sub-pipeline detected: {sub_pipeline}")
-            tprint(f"🎯 [SUB_PIPELINE_CONFIG] Overriding timeframe: {original_timeframe} → 1h")
-            tprint("🎯 [SUB_PIPELINE_CONFIG] Using 1h data for better regime stability and reduced computational load")
+            tprint(f"🎯 [SUB_PIPELINE_CONFIG] Using timeframe: {filtered_config.get('timeframe', '15m')} (requested: {original_timeframe or 'default'})")
         else:
             tprint(f"📊 [SUB_PIPELINE_CONFIG] Using standard timeframe for {sub_pipeline}: {filtered_config.get('timeframe', '1m')}")
 

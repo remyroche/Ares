@@ -226,9 +226,9 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             self.logger.info(f"🎯 STOPPING: Reached optimal cluster count ({cluster_count} <= 20)")
             return True
         
-        # Stop if we reach minimum similarity threshold (55%)
-        if threshold < 0.55:
-            self.logger.info(f"🛑 STOPPING: Reached minimum similarity threshold (55%)")
+        # Stop if we reach minimum similarity threshold (75%)
+        if threshold < 0.75:
+            self.logger.info(f"🛑 STOPPING: Reached minimum similarity threshold (75%)")
             return True
         
         # Stop if we've reached the end of CV thresholds and coverage is good
@@ -854,8 +854,8 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             cv_thresholds = self._generate_adaptive_cv_thresholds(regime_characteristics)
             current_cv_threshold_idx = 0
             
-            # Calculate progressive similarity thresholds
-            similarity_thresholds = self._calculate_progressive_similarity_thresholds()
+            # Calculate progressive similarity thresholds and enforce 0.75 minimum
+            similarity_thresholds = [t for t in self._calculate_progressive_similarity_thresholds() if t >= 0.75]
             
             self.logger.info(f"🎯 Enhanced CV Thresholds: {[f'{t:.2f}' for t in cv_thresholds]}")
             
@@ -880,7 +880,7 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                                               current_cv_threshold_idx, cv_thresholds):
                     break
                     
-                self.logger.info(f"🔄 Enhanced merging at {threshold*100:.1f}% similarity threshold")
+                self.logger.info(f"🔄 Enhanced merging at {threshold*100:.1f}% similarity threshold (floor=75.0%)")
 
                 # Adaptive CV threshold progression using extracted method
                 if self._should_relax_cv_threshold(previous_top_20_coverage, current_cv_threshold_idx, cv_thresholds):
@@ -1090,8 +1090,8 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             min_cv_threshold = 11.25  # Another 50% more relaxed for faster convergence (was 7.5)
             # Note: Merging logic allows clusters >6% to merge as long as resulting cluster <12%
             
-            # Calculate progressive similarity thresholds from 99% down to 80%
-            similarity_thresholds = self._calculate_progressive_similarity_thresholds()
+            # Calculate progressive similarity thresholds and enforce 0.75 minimum
+            similarity_thresholds = [t for t in self._calculate_progressive_similarity_thresholds() if t >= 0.75]
             
             # 🔍 DETAILED THRESHOLD ANALYSIS
             self.logger.info(f"🎯 Adaptive Similarity Thresholds:")
@@ -1131,9 +1131,9 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                 self.logger.info(f"🔄 Batch merging at {threshold*100:.1f}% similarity threshold ({threshold:.3f})...")
                 self.logger.info(f"   📊 Starting with {cluster_count} clusters")
                 
-                # Progressive merging approach - continue down to 55% similarity
-                if threshold < 0.55:  # Stop only when we reach 55% similarity
-                    self.logger.info(f"🛑 STOPPING: Reached minimum similarity threshold (55%)")
+                # Enforce hard merge floor at 75% similarity
+                if threshold < 0.75:
+                    self.logger.info(f"🛑 STOPPING: Reached minimum similarity threshold (75%)")
                     break
 
                 # Check if we need to relax CV threshold based on previous iteration's coverage
@@ -1337,11 +1337,8 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                         elif merged_pct <= 15.0:
                             size_penalty = (merged_pct - 12.0) / 3.0  # 0.0 at 12%, 1.0 at 15%
                             penalty_reason = f"medium cluster ({merged_pct:.1f}%)"
-                        elif merged_pct <= 20.0:
-                            size_penalty = 0.6 + (merged_pct - 15.0) / 5.0 * 0.3  # 0.6 at 15%, 0.9 at 20%
-                            penalty_reason = f"large cluster ({merged_pct:.1f}%)"
                         else:
-                            size_penalty = 1.0  # Hard block for clusters >20%
+                            size_penalty = 1.0  # Hard block for clusters >15%
                             penalty_reason = f"oversized cluster ({merged_pct:.1f}%)"
                         
                         # Apply graduated penalty based on coverage progress (use previous iteration's coverage)
@@ -2833,12 +2830,12 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             for cluster_id, sample_count in cluster_sample_counts.items():
                 sample_percentage = (sample_count / total_samples) * 100 if total_samples > 0 else 0
                 
-                if sample_percentage > 18.0:  # Only exclude truly oversized clusters (>18%) from merging
+                if sample_percentage > 15.0:  # Enforce 15% max cluster size
                     excluded_clusters.add(cluster_id)
                     oversized_clusters.append((cluster_id, sample_count, sample_percentage))
             
             if oversized_clusters:
-                self.logger.warning(f"⚠️ Found {len(oversized_clusters)} oversized clusters (>18%), will prevent further merging:")
+                self.logger.warning(f"⚠️ Found {len(oversized_clusters)} oversized clusters (>15%), will prevent further merging:")
                 for cluster_id, size, pct in oversized_clusters:
                     self.logger.warning(f"   🚫 Cluster C{cluster_id}: {size} samples ({pct:.1f}%) - NO MERGE ALLOWED")
             

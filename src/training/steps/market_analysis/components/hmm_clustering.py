@@ -5758,9 +5758,6 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                     volatility_values = []
                     volume_values = []
                     
-                    # Detect market regime for adaptive weighting
-                    market_regime = self._detect_market_regime(market_data)
-                    
                     for regime_id in regime_ids:
                         regime = regime_characteristics.get(regime_id, {})
                         
@@ -5768,14 +5765,14 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                         features = regime.get('features', {})
                         feature_means = regime.get('feature_means', {})
                         
-                        # Calculate momentum value from actual momentum features with regime weighting
-                        momentum_val = self._calculate_momentum_from_features(feature_means, market_regime)
+                        # Calculate momentum value from actual momentum features with normalized weighting
+                        momentum_val = self._calculate_momentum_from_features(feature_means)
                         
-                        # Calculate volatility value from actual volatility features with regime weighting
-                        volatility_val = self._calculate_volatility_from_features(feature_means, market_regime)
+                        # Calculate volatility value from actual volatility features with normalized weighting
+                        volatility_val = self._calculate_volatility_from_features(feature_means)
                         
-                        # Calculate volume value from actual volume features with regime weighting
-                        volume_val = self._calculate_volume_from_features(feature_means, market_regime)
+                        # Calculate volume value from actual volume features with normalized weighting
+                        volume_val = self._calculate_volume_from_features(feature_means)
                         
                         momentum_values.append(momentum_val)
                         volatility_values.append(volatility_val)
@@ -5783,7 +5780,6 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                     
                     # Enhanced debug logging for CV calculation
                     self.logger.info(f"   🔍 Cluster {cluster_id} CV Debug:")
-                    self.logger.info(f"      Market regime: {market_regime}")
                     self.logger.info(f"      Regimes in cluster: {len(regime_ids)}")
                     self.logger.info(f"      Momentum values: {momentum_values[:5]}... (showing first 5)")
                     self.logger.info(f"      Volatility values: {volatility_values[:5]}... (showing first 5)")
@@ -5972,18 +5968,19 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
         
         return distribution
     
-    def _calculate_momentum_from_features(self, feature_means: Dict[str, float], market_regime: str = "normal") -> float:
-        """Calculate a representative momentum value from the specified momentum features with regime-based weighting."""
+    def _calculate_momentum_from_features(self, feature_means: Dict[str, float]) -> float:
+        """Calculate a representative momentum value from the specified momentum features with normalized weighting."""
         try:
             # Momentum features: momentum_1h, momentum_2h, momentum_4h (only these 3)
             momentum_1h = feature_means.get('momentum_1h', 0.0)
             momentum_2h = feature_means.get('momentum_2h', 0.0)
             momentum_4h = feature_means.get('momentum_4h', 0.0)
             
-            # Get regime-specific weights
-            weights = self._get_regime_specific_momentum_weights(market_regime)
+            # Calculate normalized weights based on proximity to 1 and 0
+            momentum_values = [momentum_1h, momentum_2h, momentum_4h]
+            weights = self._calculate_normalized_weights(momentum_values)
             
-            total_momentum = sum(v * w for v, w in zip([momentum_1h, momentum_2h, momentum_4h], weights))
+            total_momentum = sum(v * w for v, w in zip(momentum_values, weights))
             
             return total_momentum
             
@@ -5991,21 +5988,19 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             self.logger.warning(f"⚠️ Failed to calculate momentum from features: {e}")
             return 0.0
     
-    def _calculate_volatility_from_features(self, feature_means: Dict[str, float], market_regime: str = "normal") -> float:
-        """Calculate a representative volatility value from the specified volatility features with regime-based weighting."""
+    def _calculate_volatility_from_features(self, feature_means: Dict[str, float]) -> float:
+        """Calculate a representative volatility value from the specified volatility features with normalized weighting."""
         try:
             # Volatility features: volatility_intrabar, volatility_3h, atr_6h (only these 3)
             volatility_intrabar = feature_means.get('volatility_intrabar', 0.0)
             volatility_3h = feature_means.get('volatility_3h', 0.0)
             atr_6h = feature_means.get('atr_6h', 0.0)
             
-            # Get regime-specific weights
-            weights = self._get_regime_specific_volatility_weights(market_regime)
+            # Calculate normalized weights based on proximity to 1 and 0
+            volatility_values = [volatility_intrabar, volatility_3h, atr_6h]
+            weights = self._calculate_normalized_weights(volatility_values)
             
-            weighted_volatility = sum(v * w for v, w in zip([volatility_intrabar, volatility_3h], weights[:2]))
-            
-            # Add ATR component with regime-specific weight
-            total_volatility = weighted_volatility + weights[2] * atr_6h
+            total_volatility = sum(v * w for v, w in zip(volatility_values, weights))
             
             return total_volatility
             
@@ -6013,21 +6008,19 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             self.logger.warning(f"⚠️ Failed to calculate volatility from features: {e}")
             return 0.0
     
-    def _calculate_volume_from_features(self, feature_means: Dict[str, float], market_regime: str = "normal") -> float:
-        """Calculate a representative volume value from the specified volume features with regime-based weighting."""
+    def _calculate_volume_from_features(self, feature_means: Dict[str, float]) -> float:
+        """Calculate a representative volume value from the specified volume features with normalized weighting."""
         try:
             # Volume features: volume_momentum_1h, volume_momentum_3h, volume_ratio_24h (only these 3)
             volume_momentum_1h = feature_means.get('volume_momentum_1h', 0.0)
             volume_momentum_3h = feature_means.get('volume_momentum_3h', 0.0)
             volume_ratio_24h = feature_means.get('volume_ratio_24h', 0.0)
             
-            # Get regime-specific weights
-            weights = self._get_regime_specific_volume_weights(market_regime)
+            # Calculate normalized weights based on proximity to 1 and 0
+            volume_values = [volume_momentum_1h, volume_momentum_3h, volume_ratio_24h]
+            weights = self._calculate_normalized_weights(volume_values)
             
-            weighted_volume_momentum = sum(v * w for v, w in zip([volume_momentum_1h, volume_momentum_3h], weights[:2]))
-            
-            # Add ratio component with regime-specific weight (subtract 1 to center around 0)
-            total_volume = weighted_volume_momentum + weights[2] * (volume_ratio_24h - 1.0)
+            total_volume = sum(v * w for v, w in zip(volume_values, weights))
             
             return total_volume
             
@@ -6035,93 +6028,41 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             self.logger.warning(f"⚠️ Failed to calculate volume from features: {e}")
             return 0.0
     
-    def _detect_market_regime(self, market_data: Any) -> str:
-        """Detect current market regime based on market data characteristics."""
+    def _calculate_normalized_weights(self, feature_values: List[float]) -> List[float]:
+        """Calculate weights based on proximity to 1 and 0 (normalized on scale 1 to 0)."""
         try:
             import numpy as np
             
-            if market_data is None or len(market_data) < 50:
-                return "normal"
+            if not feature_values:
+                return []
             
-            # Calculate recent market characteristics
-            recent_data = market_data.tail(50) if hasattr(market_data, 'tail') else market_data[-50:]
+            # Convert to numpy array for easier computation
+            values = np.array(feature_values)
             
-            # Price volatility (last 50 periods)
-            if hasattr(recent_data, 'close'):
-                returns = recent_data['close'].pct_change().dropna()
-                volatility = returns.std() * np.sqrt(24)  # Annualized for hourly data
-                
-                # Volume characteristics
-                if hasattr(recent_data, 'volume'):
-                    volume_ratio = recent_data['volume'].mean() / market_data['volume'].mean() if hasattr(market_data, 'volume') else 1.0
-                else:
-                    volume_ratio = 1.0
-                
-                # Price momentum (trend strength)
-                price_change = (recent_data['close'].iloc[-1] - recent_data['close'].iloc[0]) / recent_data['close'].iloc[0]
-                
-                # Regime classification logic
-                if volatility > 0.8:  # High volatility threshold
-                    if volume_ratio > 1.5:  # High volume
-                        return "high_volatility_high_volume"
-                    else:
-                        return "high_volatility"
-                elif volatility < 0.3:  # Low volatility threshold
-                    if abs(price_change) > 0.1:  # Strong trend
-                        return "low_volatility_trending"
-                    else:
-                        return "low_volatility_ranging"
-                elif abs(price_change) > 0.15:  # Strong momentum
-                    return "strong_trend"
-                elif volume_ratio > 2.0:  # Very high volume
-                    return "high_volume"
-                else:
-                    return "normal"
+            # Calculate proximity to 1 and 0
+            # For each value, calculate how close it is to either 1 or 0
+            # Weight = max(proximity_to_1, proximity_to_0)
+            
+            proximity_to_1 = 1.0 - np.abs(values - 1.0)  # Closer to 1 = higher value
+            proximity_to_0 = 1.0 - np.abs(values - 0.0)  # Closer to 0 = higher value
+            
+            # Take the maximum proximity (closer to either 1 or 0 gets higher weight)
+            weights = np.maximum(proximity_to_1, proximity_to_0)
+            
+            # Normalize weights so they sum to 1
+            if np.sum(weights) > 0:
+                weights = weights / np.sum(weights)
             else:
-                return "normal"
-                
+                # If all weights are 0, give equal weights
+                weights = np.ones(len(values)) / len(values)
+            
+            return weights.tolist()
+            
         except Exception as e:
-            self.logger.warning(f"⚠️ Failed to detect market regime: {e}")
-            return "normal"
+            self.logger.warning(f"⚠️ Failed to calculate normalized weights: {e}")
+            # Return equal weights as fallback
+            return [1.0 / len(feature_values)] * len(feature_values)
     
-    def _get_regime_specific_momentum_weights(self, market_regime: str) -> List[float]:
-        """Get momentum feature weights based on market regime."""
-        regime_weights = {
-            "normal": [0.5, 0.3, 0.2],  # [1h, 2h, 4h] - balanced
-            "high_volatility": [0.6, 0.25, 0.15],  # Emphasize short-term in volatile markets
-            "high_volatility_high_volume": [0.7, 0.2, 0.1],  # Very short-term focus
-            "low_volatility_trending": [0.3, 0.4, 0.3],  # Medium-term focus for trends
-            "low_volatility_ranging": [0.4, 0.35, 0.25],  # Balanced for ranging
-            "strong_trend": [0.2, 0.3, 0.5],  # Long-term focus for strong trends
-            "high_volume": [0.6, 0.3, 0.1],  # Short-term focus during high volume
-        }
-        return regime_weights.get(market_regime, [0.5, 0.3, 0.2])
-    
-    def _get_regime_specific_volatility_weights(self, market_regime: str) -> List[float]:
-        """Get volatility feature weights based on market regime."""
-        regime_weights = {
-            "normal": [0.6, 0.4, 0.3],  # [intrabar, 3h, atr_6h] - balanced
-            "high_volatility": [0.7, 0.3, 0.4],  # Emphasize intrabar and ATR in volatile markets
-            "high_volatility_high_volume": [0.8, 0.2, 0.5],  # Strong intrabar and ATR focus
-            "low_volatility_trending": [0.4, 0.6, 0.2],  # Emphasize 3h in trending low-vol
-            "low_volatility_ranging": [0.5, 0.5, 0.2],  # Balanced for ranging
-            "strong_trend": [0.3, 0.5, 0.3],  # Medium-term focus for trends
-            "high_volume": [0.7, 0.3, 0.4],  # Intrabar focus during high volume
-        }
-        return regime_weights.get(market_regime, [0.6, 0.4, 0.3])
-    
-    def _get_regime_specific_volume_weights(self, market_regime: str) -> List[float]:
-        """Get volume feature weights based on market regime."""
-        regime_weights = {
-            "normal": [0.6, 0.4, 0.3],  # [1h, 3h, ratio_24h] - balanced
-            "high_volatility": [0.7, 0.3, 0.4],  # Emphasize short-term and ratio in volatile markets
-            "high_volatility_high_volume": [0.8, 0.2, 0.5],  # Strong short-term and ratio focus
-            "low_volatility_trending": [0.4, 0.6, 0.2],  # Medium-term focus for trends
-            "low_volatility_ranging": [0.5, 0.5, 0.3],  # Balanced for ranging
-            "strong_trend": [0.3, 0.5, 0.2],  # Medium-term focus for trends
-            "high_volume": [0.7, 0.3, 0.6],  # Strong short-term and ratio focus
-        }
-        return regime_weights.get(market_regime, [0.6, 0.4, 0.3])
     
     def _comprehensive_validation(self, clusters: Dict[str, Any], cluster_assignments: List[int], 
                                 market_data: Any, regime_characteristics: Dict[str, Any]) -> Dict[str, Any]:

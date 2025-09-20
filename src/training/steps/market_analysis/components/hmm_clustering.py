@@ -226,9 +226,9 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             self.logger.info(f"🎯 STOPPING: Reached optimal cluster count ({cluster_count} <= 20)")
             return True
         
-        # Stop if we reach minimum similarity threshold (55%)
-        if threshold < 0.55:
-            self.logger.info(f"🛑 STOPPING: Reached minimum similarity threshold (55%)")
+        # Stop if we reach minimum similarity threshold (75%)
+        if threshold < 0.75:
+            self.logger.info(f"🛑 STOPPING: Reached minimum similarity threshold (75%)")
             return True
         
         # Stop if we've reached the end of CV thresholds and coverage is good
@@ -854,8 +854,8 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             cv_thresholds = self._generate_adaptive_cv_thresholds(regime_characteristics)
             current_cv_threshold_idx = 0
             
-            # Calculate progressive similarity thresholds
-            similarity_thresholds = self._calculate_progressive_similarity_thresholds()
+            # Calculate progressive similarity thresholds and enforce 0.75 minimum
+            similarity_thresholds = [t for t in self._calculate_progressive_similarity_thresholds() if t >= 0.75]
             
             self.logger.info(f"🎯 Enhanced CV Thresholds: {[f'{t:.2f}' for t in cv_thresholds]}")
             
@@ -880,7 +880,7 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                                               current_cv_threshold_idx, cv_thresholds):
                     break
                     
-                self.logger.info(f"🔄 Enhanced merging at {threshold*100:.1f}% similarity threshold")
+                self.logger.info(f"🔄 Enhanced merging at {threshold*100:.1f}% similarity threshold (floor=75.0%)")
 
                 # Adaptive CV threshold progression using extracted method
                 if self._should_relax_cv_threshold(previous_top_20_coverage, current_cv_threshold_idx, cv_thresholds):
@@ -1003,6 +1003,19 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             
             self.logger.info(f"✅ Enhanced clustering completed: {len(clusters_dict)} clusters")
             self.logger.info(f"📊 Overall Quality Score: {quality_score:.3f}")
+
+            # Select trainable clusters to cover ~90% with ~20 clusters, prioritizing low-CV clusters
+            trainable = self._select_trainable_clusters(
+                clusters_dict=clusters_dict,
+                regime_characteristics=regime_characteristics,
+                coverage_target=90.0,
+                min_clusters=18,
+                max_clusters=25,
+                max_avg_cv=0.35
+            )
+            self.logger.info(
+                f"🎯 Trainable clusters selected: {len(trainable.get('cluster_ids', []))} covering {trainable.get('coverage_pct', 0.0):.1f}% of samples"
+            )
             
             # Create cluster assignments from regime-to-cluster mapping
             cluster_assignments = self._create_cluster_assignments_from_mapping(regime_assignments, regime_to_cluster, list(regime_characteristics.keys()))
@@ -1025,6 +1038,7 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                     'total_merges': len(all_merged_clusters),
                     'incremental_updates': True
                 },
+                'trainable_clusters': trainable,
                 'advanced_clustering_analysis': {
                     'enhanced_features_used': True,
                     'incremental_similarity_updates': len(all_merged_clusters),
@@ -1090,8 +1104,8 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             min_cv_threshold = 11.25  # Another 50% more relaxed for faster convergence (was 7.5)
             # Note: Merging logic allows clusters >6% to merge as long as resulting cluster <12%
             
-            # Calculate progressive similarity thresholds from 99% down to 80%
-            similarity_thresholds = self._calculate_progressive_similarity_thresholds()
+            # Calculate progressive similarity thresholds and enforce 0.75 minimum
+            similarity_thresholds = [t for t in self._calculate_progressive_similarity_thresholds() if t >= 0.75]
             
             # 🔍 DETAILED THRESHOLD ANALYSIS
             self.logger.info(f"🎯 Adaptive Similarity Thresholds:")
@@ -1131,9 +1145,9 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                 self.logger.info(f"🔄 Batch merging at {threshold*100:.1f}% similarity threshold ({threshold:.3f})...")
                 self.logger.info(f"   📊 Starting with {cluster_count} clusters")
                 
-                # Progressive merging approach - continue down to 55% similarity
-                if threshold < 0.55:  # Stop only when we reach 55% similarity
-                    self.logger.info(f"🛑 STOPPING: Reached minimum similarity threshold (55%)")
+                # Enforce hard merge floor at 75% similarity
+                if threshold < 0.75:
+                    self.logger.info(f"🛑 STOPPING: Reached minimum similarity threshold (75%)")
                     break
 
                 # Check if we need to relax CV threshold based on previous iteration's coverage
@@ -1337,11 +1351,8 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                         elif merged_pct <= 15.0:
                             size_penalty = (merged_pct - 12.0) / 3.0  # 0.0 at 12%, 1.0 at 15%
                             penalty_reason = f"medium cluster ({merged_pct:.1f}%)"
-                        elif merged_pct <= 20.0:
-                            size_penalty = 0.6 + (merged_pct - 15.0) / 5.0 * 0.3  # 0.6 at 15%, 0.9 at 20%
-                            penalty_reason = f"large cluster ({merged_pct:.1f}%)"
                         else:
-                            size_penalty = 1.0  # Hard block for clusters >20%
+                            size_penalty = 1.0  # Hard block for clusters >15%
                             penalty_reason = f"oversized cluster ({merged_pct:.1f}%)"
                         
                         # Apply graduated penalty based on coverage progress (use previous iteration's coverage)
@@ -2616,6 +2627,80 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             # Cosine similarity matrix as matrix multiplication of normalized vectors (optimized)
             similarity_matrix = np.clip(np.matmul(Z_normalized, Z_normalized.T), -1.0, 1.0)
 
+            # Apply composite weighting: sample-aware reliability and CV-based penalty
+            try:
+                # Reliability weights r_i based on sample counts (no dwell/run-length smoothing)
+                # Auto-tuned N_min from sample count distribution
+                sample_counts = np.array([
+                    float(regime_characteristics.get(rid, {}).get('sample_count', 0.0))
+                    for rid in regime_ids
+                ], dtype=float)
+                valid_counts = sample_counts[np.isfinite(sample_counts) & (sample_counts > 0)]
+                total_samples = float(np.nansum(valid_counts)) if valid_counts.size > 0 else 0.0
+                # Heuristic: 70th percentile, bounded to [50, max(100, 5% of total)]
+                if valid_counts.size > 0:
+                    perc70 = float(np.nanpercentile(valid_counts, 70.0))
+                else:
+                    perc70 = 100.0
+                upper_cap = max(100.0, 0.05 * total_samples) if total_samples > 0 else 100.0
+                N_min = float(np.clip(perc70, 50.0, upper_cap))
+                reliability = np.minimum(1.0, np.nan_to_num(sample_counts / max(N_min, 1e-6), nan=0.0, posinf=1.0, neginf=0.0))
+                # Outer product to scale pairwise similarities
+                similarity_matrix = similarity_matrix * (reliability[:, None] * reliability[None, :])
+
+                # CV-based penalty p_cv(i,j) = exp(-beta*(cv_i+cv_j)) * exp(-gamma*|cv_i-cv_j|)
+                # Use regime-level CV estimates from extracted features; fall back to 0.0 if missing
+                cv_vals = []
+                for rid in regime_ids:
+                    feats = regime_characteristics.get(rid, {}).get('features', {})
+                    cv_i = float(feats.get('mean_cv', 0.0))
+                    if cv_i == 0.0:
+                        # Fall back to max across aspects if overall mean not present
+                        mcv = float(feats.get('momentum_cv', 0.0))
+                        vcv = float(feats.get('volatility_cv', 0.0))
+                        volcv = float(feats.get('volume_cv', 0.0))
+                        cv_i = max(mcv, vcv, volcv)
+                    if not np.isfinite(cv_i):
+                        cv_i = 0.0
+                    # Cap extreme CV to stabilize penalties
+                    cv_vals.append(min(cv_i, 10.0))
+                cv = np.array(cv_vals, dtype=float)
+
+                # Auto-tune beta and gamma from CV distribution
+                cv_valid = cv[np.isfinite(cv) & (cv >= 0)]
+                med_cv = float(np.nanmedian(cv_valid)) if cv_valid.size > 0 else 0.2
+                # Target attenuation at median sum (2*med_cv): a_sum ~ 0.7
+                a_sum = 0.7
+                denom_sum = max(2.0 * med_cv, 1e-6)
+                beta = float(np.clip(-np.log(a_sum) / denom_sum, 0.05, 2.0))
+                # Target attenuation at median absolute difference: a_diff ~ 0.85
+                if cv_valid.size > 1:
+                    med_abs_diff = float(np.nanmedian(np.abs(cv_valid[:, None] - cv_valid[None, :])))
+                else:
+                    med_abs_diff = 0.1
+                a_diff = 0.85
+                denom_diff = max(med_abs_diff, 1e-6)
+                gamma = float(np.clip(-np.log(a_diff) / denom_diff, 0.1, 2.0))
+                cv_sum = cv[:, None] + cv[None, :]
+                cv_diff = np.abs(cv[:, None] - cv[None, :])
+                p_cv = np.exp(-beta * cv_sum) * np.exp(-gamma * cv_diff)
+                # Numerical safety and bounds
+                p_cv = np.clip(np.nan_to_num(p_cv, nan=1.0, posinf=0.0, neginf=0.0), 1e-6, 1.0)
+                similarity_matrix = similarity_matrix * p_cv
+
+                # Keep self-similarity exactly 1.0 for downstream expectations
+                np.fill_diagonal(similarity_matrix, 1.0)
+                # Log tuned parameters (once per call)
+                try:
+                    self.logger.info(
+                        f"   🔧 Composite weighting params: N_min={N_min:.1f}, beta={beta:.3f}, gamma={gamma:.3f}, med_cv={med_cv:.3f}, med_abs_cv_diff={med_abs_diff:.3f}, total_samples={total_samples:.0f}"
+                    )
+                except Exception:
+                    pass
+            except Exception as _cv_rel_err:
+                # Non-fatal: fall back to base similarity if composite weighting fails
+                self.logger.warning(f"⚠️ Composite similarity weighting skipped due to error: {_cv_rel_err}")
+
             # Persist scaler for pairwise similarity calls and debugging
             self._global_feature_scaler = {
                 'feature_order': feature_order,
@@ -2635,11 +2720,11 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                 sim_max = float(np.max(sim_vals))
                 sim_mean = float(np.mean(sim_vals))
                 self.logger.info(
-                    f"✅ Calculated similarity matrix for {n_regimes} regimes | features kept: {kept_features}, dropped: {dropped_features} | similarity range: {sim_min:.3f}-{sim_max:.3f}, mean: {sim_mean:.3f}"
+                    f"✅ Calculated similarity matrix for {n_regimes} regimes | features kept: {kept_features}, dropped: {dropped_features} | similarity range: {sim_min:.3f}-{sim_max:.3f}, mean: {sim_mean:.3f} | composite weighting applied"
                 )
             else:
                 self.logger.info(
-                    f"✅ Calculated similarity matrix for {n_regimes} regimes | features kept: {kept_features}, dropped: {dropped_features}"
+                    f"✅ Calculated similarity matrix for {n_regimes} regimes | features kept: {kept_features}, dropped: {dropped_features} | composite weighting applied"
                 )
 
             return similarity_matrix
@@ -2759,12 +2844,12 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             for cluster_id, sample_count in cluster_sample_counts.items():
                 sample_percentage = (sample_count / total_samples) * 100 if total_samples > 0 else 0
                 
-                if sample_percentage > 18.0:  # Only exclude truly oversized clusters (>18%) from merging
+                if sample_percentage > 15.0:  # Enforce 15% max cluster size
                     excluded_clusters.add(cluster_id)
                     oversized_clusters.append((cluster_id, sample_count, sample_percentage))
             
             if oversized_clusters:
-                self.logger.warning(f"⚠️ Found {len(oversized_clusters)} oversized clusters (>18%), will prevent further merging:")
+                self.logger.warning(f"⚠️ Found {len(oversized_clusters)} oversized clusters (>15%), will prevent further merging:")
                 for cluster_id, size, pct in oversized_clusters:
                     self.logger.warning(f"   🚫 Cluster C{cluster_id}: {size} samples ({pct:.1f}%) - NO MERGE ALLOWED")
             
@@ -3790,6 +3875,96 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
         except Exception as e:
             self.logger.warning(f"⚠️ Error calculating CV consistency: {e}")
             return 0.0
+
+    def _select_trainable_clusters(
+        self,
+        clusters_dict: Dict[str, List[str]],
+        regime_characteristics: Dict[str, Any],
+        coverage_target: float = 90.0,
+        min_clusters: int = 18,
+        max_clusters: int = 25,
+        max_avg_cv: float = 0.35
+    ) -> Dict[str, Any]:
+        """Select a set of trainable clusters targeting ~90% coverage with ~20 clusters.
+
+        Strategy:
+        - Score clusters by low average per-aspect CV (momentum, volatility, volume) and size
+        - Greedily add clusters by descending score until coverage_target met or max_clusters reached
+        - Ensure at least min_clusters if coverage_target is not yet met
+        - Return coverage stats and selected cluster ids in priority order
+        """
+        try:
+            import numpy as np
+
+            # Compute cluster sizes (sum of regime sample_count)
+            cluster_sizes: Dict[str, int] = {}
+            total_samples = 0
+            for cid, regime_list in clusters_dict.items():
+                size = 0
+                for rid in regime_list:
+                    size += int(regime_characteristics.get(rid, {}).get('sample_count', 0))
+                cluster_sizes[cid] = size
+                total_samples += size
+
+            if total_samples == 0:
+                return {'cluster_ids': [], 'coverage_pct': 0.0, 'reason': 'no_samples'}
+
+            # Compute average CV per cluster across aspects
+            def cluster_avg_cv(cid: str) -> float:
+                regimes = clusters_dict.get(cid, [])
+                aspect_vals = {'momentum_cv': [], 'volatility_cv': [], 'volume_cv': []}
+                for rid in regimes:
+                    feats = regime_characteristics.get(rid, {}).get('features', {})
+                    for k in aspect_vals.keys():
+                        val = feats.get(k, None)
+                        if isinstance(val, (int, float)) and np.isfinite(val):
+                            aspect_vals[k].append(float(val))
+                per_aspect = []
+                for k, vals in aspect_vals.items():
+                    if len(vals) > 0:
+                        per_aspect.append(float(np.median(vals)))
+                return float(np.mean(per_aspect)) if len(per_aspect) > 0 else 0.0
+
+            # Score clusters: prefer low CV and larger size
+            scores: List[Tuple[float, str]] = []
+            for cid in clusters_dict.keys():
+                avg_cv = cluster_avg_cv(cid)
+                size = cluster_sizes.get(cid, 0)
+                # Soft filter on CV
+                cv_ok = 1.0 if avg_cv <= max_avg_cv else np.exp(-(avg_cv - max_avg_cv))
+                # Normalize size by total
+                size_w = size / total_samples if total_samples > 0 else 0.0
+                # Composite score: 70% CV quality, 30% size share
+                score = 0.7 * cv_ok + 0.3 * size_w
+                scores.append((score, cid))
+
+            # Sort clusters by score descending
+            scores.sort(key=lambda x: x[0], reverse=True)
+
+            selected: List[str] = []
+            covered = 0
+            for _, cid in scores:
+                if len(selected) >= max_clusters:
+                    break
+                selected.append(cid)
+                covered += cluster_sizes.get(cid, 0)
+                coverage_pct = covered / total_samples * 100.0
+                if coverage_pct >= coverage_target and len(selected) >= min_clusters:
+                    break
+
+            final_coverage_pct = covered / total_samples * 100.0
+            return {
+                'cluster_ids': selected,
+                'coverage_pct': float(final_coverage_pct),
+                'total_clusters': len(clusters_dict),
+                'target_coverage': coverage_target,
+                'min_clusters': min_clusters,
+                'max_clusters': max_clusters,
+                'max_avg_cv': max_avg_cv
+            }
+        except Exception as e:
+            self.logger.warning(f"⚠️ Failed to select trainable clusters: {e}")
+            return {'cluster_ids': [], 'coverage_pct': 0.0, 'reason': str(e)}
 
     def _get_smart_merge_candidates(self, similarity_matrix: np.ndarray, regime_to_cluster: Dict[str, int], 
                                     regime_ids: List[str], excluded_clusters: set, threshold: float, 

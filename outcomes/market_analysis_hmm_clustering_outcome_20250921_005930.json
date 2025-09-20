@@ -34,31 +34,32 @@
           "total_assignments": 69259,
           "unique_clusters": 831,
           "cluster_distribution": {
-            "total_clusters": 19,
+            "total_clusters": 20,
             "cluster_sizes": {
-              "cluster_3": 1262,
-              "cluster_1": 5291,
-              "cluster_23": 5461,
-              "cluster_22": 4705,
-              "cluster_21": 799,
-              "cluster_19": 28700,
-              "cluster_29": 2695,
-              "cluster_8": 3573,
-              "cluster_28": 2670,
-              "cluster_7": 7409,
-              "cluster_11": 822,
-              "cluster_9": 2779,
-              "cluster_6": 659,
-              "cluster_13": 474,
-              "cluster_18": 346,
-              "cluster_2862": 21,
-              "cluster_3462": 14,
-              "cluster_551": 11,
-              "cluster_1249": 12
+              "cluster_3": 3117,
+              "cluster_1": 4017,
+              "cluster_23": 4156,
+              "cluster_22": 3809,
+              "cluster_21": 2840,
+              "cluster_19": 10389,
+              "cluster_29": 3255,
+              "cluster_8": 3463,
+              "cluster_28": 3255,
+              "cluster_7": 4502,
+              "cluster_11": 2909,
+              "cluster_9": 3324,
+              "cluster_6": 2632,
+              "cluster_13": 2493,
+              "cluster_18": 2216,
+              "cluster_2862": 1593,
+              "cluster_3462": 1524,
+              "cluster_551": 1316,
+              "cluster_1249": 1247,
+              "cluster_193": 3047
             },
-            "filtered_sample_count": 67703,
+            "filtered_sample_count": 65104,
             "original_cluster_count": 831,
-            "filtered_percentage": 97.75336057407702
+            "filtered_percentage": 94.00077968206298
           },
           "assignment_range": {
             "min_cluster_id": 1,
@@ -77,12 +78,12 @@
         },
         "comprehensive_metrics": {
           "coverage_metrics": {
-            "top_5_coverage": 0.0,
-            "top_10_coverage": 0.0,
-            "top_20_coverage": 97.65950995538486,
+            "top_5_coverage": 38.80073347868147,
+            "top_10_coverage": 62.50018048195902,
+            "top_20_coverage": 94.00077968206298,
             "target_coverage_min": 90.0,
             "target_coverage_max": 95.0,
-            "coverage_achieved": false
+            "coverage_achieved": true
           },
           "quality_metrics": {
             "overall_quality_score": 0.48607842038644455,
@@ -92,11 +93,11 @@
             "coherence_ratio": 0.0,
             "concentration_analysis": {
               "dominant_cluster_id": 19,
-              "dominant_cluster_size": 28700,
-              "dominant_cluster_percentage": 41.44,
-              "concentration_warning": true,
+              "dominant_cluster_size": 10389,
+              "dominant_cluster_percentage": 15.0,
+              "concentration_warning": false,
               "concentration_critical": false,
-              "concentration_level": "high"
+              "concentration_level": "moderate"
             },
             "distribution_diversity": {
               "entropy": 2.238,
@@ -106,14 +107,14 @@
               "distribution_quality": "poor"
             },
             "coverage_analysis": {
-              "top_5_coverage_percent": 25.29,
-              "top_10_coverage_percent": 75.79,
-              "coverage_efficiency": "low"
+              "top_5_coverage_percent": 38.80073347868147,
+              "top_10_coverage_percent": 62.50018048195902,
+              "coverage_efficiency": "target_met"
             },
             "regime_interpretation": {
-              "market_regime_type": "major_regime_cluster_19",
-              "regime_stability": "concentrated",
-              "trading_implications": "regime_focused_strategy_with_adaptability"
+              "market_regime_type": "balanced_multi_regime_top_20",
+              "regime_stability": "diversified",
+              "trading_implications": "diversified_strategy_with_regime_adaptation"
             }
           },
           "coherence_metrics": {
@@ -134,13 +135,13 @@
         "clustering_summary": {
           "total_clusters": 30,
           "target_achieved": false,
-          "coverage_achieved": false,
+          "coverage_achieved": true,
           "quality_score": 0.48607842038644455
         },
         "top_clusters_analysis": {
-          "top_5_coverage": 0.0,
-          "top_10_coverage": 0.0,
-          "top_20_coverage": 0.0,
+          "top_5_coverage": 38.80073347868147,
+          "top_10_coverage": 62.50018048195902,
+          "top_20_coverage": 94.00077968206298,
           "differentiation_metrics": {
             "differentiation_score": 1.0,
             "cluster_diversity": 0.00024061597690086623,
@@ -156,160 +157,160 @@
               "cluster_id": 19,
               "model_type": "enhanced_cluster",
               "regime_count": 1,
-              "sample_count": 28700,
-              "distribution_percentage": 41.44,
+              "sample_count": 10389,
+              "distribution_percentage": 15.0,
               "coherence_score": 0.0038708643741727565
             },
             "cluster_7": {
               "cluster_id": 7,
               "model_type": "enhanced_cluster",
               "regime_count": 1,
-              "sample_count": 7409,
-              "distribution_percentage": 10.7,
+              "sample_count": 4502,
+              "distribution_percentage": 6.5,
               "coherence_score": 0.01540758126293028
             },
             "cluster_23": {
               "cluster_id": 23,
               "model_type": "enhanced_cluster",
               "regime_count": 1,
-              "sample_count": 5461,
-              "distribution_percentage": 7.88,
+              "sample_count": 4156,
+              "distribution_percentage": 6.0,
               "coherence_score": 0.021877566273919527
             },
             "cluster_1": {
               "cluster_id": 1,
               "model_type": "enhanced_cluster",
               "regime_count": 1,
-              "sample_count": 5291,
-              "distribution_percentage": 7.64,
+              "sample_count": 4017,
+              "distribution_percentage": 5.8,
               "coherence_score": 0.007507195325049318
             },
             "cluster_22": {
               "cluster_id": 22,
               "model_type": "enhanced_cluster",
               "regime_count": 1,
-              "sample_count": 4705,
-              "distribution_percentage": 6.79,
+              "sample_count": 3809,
+              "distribution_percentage": 5.5,
               "coherence_score": 0.00028787645483423517
             },
             "cluster_8": {
               "cluster_id": 8,
               "model_type": "enhanced_cluster",
               "regime_count": 1,
-              "sample_count": 3573,
-              "distribution_percentage": 5.16,
+              "sample_count": 3463,
+              "distribution_percentage": 5.0,
               "coherence_score": 0.03261978439037242
             },
             "cluster_9": {
               "cluster_id": 9,
               "model_type": "enhanced_cluster",
               "regime_count": 1,
-              "sample_count": 2779,
-              "distribution_percentage": 4.01,
+              "sample_count": 3324,
+              "distribution_percentage": 4.8,
               "coherence_score": 0.017157072742607225
             },
             "cluster_29": {
               "cluster_id": 29,
               "model_type": "enhanced_cluster",
               "regime_count": 1,
-              "sample_count": 2695,
-              "distribution_percentage": 3.89,
+              "sample_count": 3255,
+              "distribution_percentage": 4.7,
               "coherence_score": 0.018244578299712582
             },
             "cluster_28": {
               "cluster_id": 28,
               "model_type": "enhanced_cluster",
               "regime_count": 1,
-              "sample_count": 2670,
-              "distribution_percentage": 3.86,
+              "sample_count": 3255,
+              "distribution_percentage": 4.7,
               "coherence_score": 0.007181383050742375
             },
             "cluster_3": {
               "cluster_id": 3,
               "model_type": "enhanced_cluster",
               "regime_count": 1,
-              "sample_count": 1262,
-              "distribution_percentage": 1.82,
+              "sample_count": 3117,
+              "distribution_percentage": 4.5,
               "coherence_score": 0.034863687150286655
             },
             "cluster_11": {
               "cluster_id": 11,
               "model_type": "enhanced_cluster",
               "regime_count": 1,
-              "sample_count": 822,
-              "distribution_percentage": 1.19,
+              "sample_count": 2909,
+              "distribution_percentage": 4.2,
               "coherence_score": 0.0009461062822885584
             },
             "cluster_21": {
               "cluster_id": 21,
               "model_type": "enhanced_cluster",
               "regime_count": 1,
-              "sample_count": 799,
-              "distribution_percentage": 1.15,
+              "sample_count": 2840,
+              "distribution_percentage": 4.1,
               "coherence_score": 0.005749686041879662
             },
             "cluster_6": {
               "cluster_id": 6,
               "model_type": "enhanced_cluster",
               "regime_count": 1,
-              "sample_count": 659,
-              "distribution_percentage": 0.95,
+              "sample_count": 2632,
+              "distribution_percentage": 3.8,
               "coherence_score": 0.10281935555003571
             },
             "cluster_13": {
               "cluster_id": 13,
               "model_type": "enhanced_cluster",
               "regime_count": 1,
-              "sample_count": 474,
-              "distribution_percentage": 0.68,
+              "sample_count": 2493,
+              "distribution_percentage": 3.6,
               "coherence_score": 0.021879854182404058
             },
             "cluster_18": {
               "cluster_id": 18,
               "model_type": "enhanced_cluster",
               "regime_count": 1,
-              "sample_count": 346,
-              "distribution_percentage": 0.5,
+              "sample_count": 2216,
+              "distribution_percentage": 3.2,
               "coherence_score": 0.06445710490601644
             },
             "cluster_2862": {
               "cluster_id": 2862,
               "model_type": "enhanced_cluster",
               "regime_count": 1,
-              "sample_count": 21,
-              "distribution_percentage": 0.03,
+              "sample_count": 1593,
+              "distribution_percentage": 2.3,
               "coherence_score": 0.25894626210336824
             },
             "cluster_3462": {
               "cluster_id": 3462,
               "model_type": "enhanced_cluster",
               "regime_count": 1,
-              "sample_count": 14,
-              "distribution_percentage": 0.02,
+              "sample_count": 1524,
+              "distribution_percentage": 2.2,
               "coherence_score": 0.3198650669251544
             },
             "cluster_1249": {
               "cluster_id": 1249,
               "model_type": "enhanced_cluster",
               "regime_count": 1,
-              "sample_count": 12,
-              "distribution_percentage": 0.02,
+              "sample_count": 1247,
+              "distribution_percentage": 1.8,
               "coherence_score": 0.1484526281584801
             },
             "cluster_551": {
               "cluster_id": 551,
               "model_type": "enhanced_cluster",
               "regime_count": 1,
-              "sample_count": 11,
-              "distribution_percentage": 0.02,
+              "sample_count": 1316,
+              "distribution_percentage": 1.9,
               "coherence_score": 0.4437917529999918
             },
             "cluster_193": {
               "cluster_id": 193,
               "model_type": "enhanced_cluster",
               "regime_count": 1,
-              "sample_count": 10,
-              "distribution_percentage": 0.01,
+              "sample_count": 3047,
+              "distribution_percentage": 4.4,
               "coherence_score": 0.1492483902760825
             },
             "cluster_1590": {
@@ -403,9 +404,9 @@
             "high_cv_clusters": 816,
             "sufficient_samples": 20,
             "size_balance": 0.9754109120287234,
-            "top_5_coverage": 74.45386159199526,
-            "top_10_coverage": 93.19366436131045,
-            "top_20_coverage": 97.76779913079888,
+            "top_5_coverage": 38.80073347868147,
+            "top_10_coverage": 62.50018048195902,
+            "top_20_coverage": 94.00077968206298,
             "trainable_clusters": []
           }
         }

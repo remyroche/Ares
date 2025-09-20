@@ -345,15 +345,15 @@ class EnhancedFeatureEngineer:
     
     def create_comprehensive_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """
-        Create a comprehensive set of features for regime detection using centralized feature calculation
+        Create the 5 core features for regime detection using centralized feature calculation
         
         Args:
             df: Input DataFrame with OHLCV data
             
         Returns:
-            DataFrame with comprehensive features
+            DataFrame with the 5 core features only
         """
-        self.logger.info("🔧 Creating comprehensive feature set using standardized feature calculator...")
+        self.logger.info("🔧 Creating 5 core features using standardized feature calculator...")
         
         # Ensure we have the required columns
         required_cols = ['open', 'high', 'low', 'close', 'volume']
@@ -361,50 +361,16 @@ class EnhancedFeatureEngineer:
             if col not in df.columns:
                 raise ValueError(f"Missing required column: {col}")
         
-        # Use centralized feature calculator for primary features
+        # Use centralized feature calculator for the 5 core features only
         features = StandardizedFeatureCalculator.calculate_all_features(df)
         
-        # Add additional features for comprehensive analysis
-        self._add_price_features(features, df)
+        # Validate that we have all required features
+        validation_results = StandardizedFeatureCalculator.validate_features(features)
+        missing_features = [k for k, v in validation_results.items() if not v]
+        if missing_features:
+            raise ValueError(f"Missing or invalid features: {missing_features}")
         
-        # Technical indicators
-        self._add_technical_indicators(features, df)
-        
-        # Momentum features
-        self._add_momentum_features(features, df)
-        
-        # Support/Resistance features
-        self._add_sr_features(features, df)
-        
-        # Statistical features
-        self._add_statistical_features(features, df)
-        
-        # Time-based features
-        self._add_time_features(features, df)
-        
-        # Feature interactions
-        self._add_feature_interactions(features)
-        
-        # Clean features
-        features = self._clean_features(features)
-        
-        # Count features by category
-        feature_counts = {
-            'price_features': len([col for col in features.columns if 'price' in col or 'ma_' in col or 'ema_' in col or 'gap' in col or 'doji' in col or 'hammer' in col]),
-            'volume_features': len([col for col in features.columns if 'volume' in col]),
-            'volatility_features': len([col for col in features.columns if 'volatility' in col]),
-            'technical_indicators': len([col for col in features.columns if any(ind in col for ind in ['rsi', 'macd', 'bb_', 'atr', 'adx'])]),
-            'momentum_features': len([col for col in features.columns if 'momentum' in col]),
-            'sr_features': len([col for col in features.columns if any(sr in col for sr in ['support', 'resistance', 'pivot', 'swing'])]),
-            'statistical_features': len([col for col in features.columns if any(stat in col for stat in ['skewness', 'kurtosis', 'quantile', 'autocorr'])]),
-            'time_features': len([col for col in features.columns if any(time in col for time in ['hour', 'day', 'month', 'sin', 'cos'])]),
-            'interaction_features': len([col for col in features.columns if 'interaction' in col])
-        }
-        
-        total_features = sum(feature_counts.values())
-        self.logger.info(f"✅ Created {total_features} comprehensive features:")
-        for category, count in feature_counts.items():
-            self.logger.info(f"   {category}: {count} features")
+        self.logger.info(f"✅ Created {len(features.columns)} core features: {list(features.columns)}")
         return features
     
     def _add_price_features(self, features: pd.DataFrame, df: pd.DataFrame) -> None:
@@ -501,27 +467,7 @@ class EnhancedFeatureEngineer:
             features[f'price_vs_ma_{window}'] = (df['close'] - features[f'price_ma_{window}']) / features[f'price_ma_{window}']
             features[f'price_vs_ema_{window}'] = (df['close'] - features[f'price_ema_{window}']) / features[f'price_ema_{window}']
     
-    def _add_volume_features(self, features: pd.DataFrame, df: pd.DataFrame) -> None:
-        """Add volume-based features with standardized periods (DEPRECATED - use StandardizedFeatureCalculator)"""
-        # This method is deprecated - use StandardizedFeatureCalculator.calculate_volume_features() instead
-        self.logger.warning("⚠️ _add_volume_features is deprecated. Use StandardizedFeatureCalculator.calculate_volume_features() instead.")
-        
-        # Delegate to centralized calculator
-        volume_features = StandardizedFeatureCalculator.calculate_volume_features(df)
-        for col in volume_features.columns:
-            if col not in features.columns:
-                features[col] = volume_features[col]
     
-    def _add_volatility_features(self, features: pd.DataFrame, df: pd.DataFrame) -> None:
-        """Add volatility features with standardized periods (DEPRECATED - use StandardizedFeatureCalculator)"""
-        # This method is deprecated - use StandardizedFeatureCalculator.calculate_volatility_features() instead
-        self.logger.warning("⚠️ _add_volatility_features is deprecated. Use StandardizedFeatureCalculator.calculate_volatility_features() instead.")
-        
-        # Delegate to centralized calculator
-        volatility_features = StandardizedFeatureCalculator.calculate_volatility_features(df)
-        for col in volatility_features.columns:
-            if col not in features.columns:
-                features[col] = volatility_features[col]
     
     def _add_technical_indicators(self, features: pd.DataFrame, df: pd.DataFrame) -> None:
         """Add technical indicators"""
@@ -550,16 +496,6 @@ class EnhancedFeatureEngineer:
         # ADX
         features['adx_14'] = self._calculate_adx(df)
     
-    def _add_momentum_features(self, features: pd.DataFrame, df: pd.DataFrame) -> None:
-        """Add momentum features with standardized periods (DEPRECATED - use StandardizedFeatureCalculator)"""
-        # This method is deprecated - use StandardizedFeatureCalculator.calculate_momentum_features() instead
-        self.logger.warning("⚠️ _add_momentum_features is deprecated. Use StandardizedFeatureCalculator.calculate_momentum_features() instead.")
-        
-        # Delegate to centralized calculator
-        momentum_features = StandardizedFeatureCalculator.calculate_momentum_features(df)
-        for col in momentum_features.columns:
-            if col not in features.columns:
-                features[col] = momentum_features[col]
     
     def _add_sr_features(self, features: pd.DataFrame, df: pd.DataFrame) -> None:
         """Add support/resistance features"""
@@ -2878,93 +2814,48 @@ class HMMRegimeDiscoveryStep:
             
             # Handle zero volume periods (data quality issue)
             df = await self._handle_zero_volume_periods(df)
-            self.logger.info('📊 Calculating comprehensive features for HMM using standardized feature calculator...')
+            self.logger.info('📊 Calculating 5 core features for HMM using standardized feature calculator...')
             
-            # Use centralized feature calculator for primary features
+            # Use centralized feature calculator for the 5 core features only
             features = StandardizedFeatureCalculator.calculate_all_features(df)
             
-            # Add additional technical indicators
-            self.logger.info('   - RSI...')
-            features['rsi'] = self._calculate_rsi(df['close'])
-            features['rsi_momentum'] = features['rsi'].diff(5)
+            # Validate features
+            validation_results = StandardizedFeatureCalculator.validate_features(features)
+            missing_features = [k for k, v in validation_results.items() if not v]
+            if missing_features:
+                self.logger.error(f"Missing or invalid features: {missing_features}")
+                raise ValueError(f"Missing or invalid features: {missing_features}")
             
-            self.logger.info('   - MACD...')
-            features['macd'] = self._calculate_macd(df['close'])
-            features['macd_momentum'] = features['macd'].diff(5)
+            self.logger.info(f"✅ Created {len(features.columns)} core features: {list(features.columns)}")
             
-            self.logger.info('   - ATR...')
-            features['atr'] = self._calculate_atr(df)
-            features['atr_normalized'] = features['atr'] / df['close'].replace(0, np.nan)
-            self.logger.info('   - Volume change...')
-            # Volume change with better handling of zero volumes
-            volume_change = df['volume'].pct_change()
-            # For zero volume periods, use a small positive change instead of NaN
-            volume_change = volume_change.fillna(0.001)  # Small positive change for zero volume periods
-            features['volume_change'] = volume_change
-            self.logger.info('   - Volume-price relationship...')
-            # Calculate price change with timestamp validation
-            price_change = df['close'].pct_change()
-            price_change = price_change.fillna(0)  # First value is NaN, fill with 0
+            # Clean features - remove timestamp column if present
+            if 'timestamp' in features.columns:
+                features = features.drop('timestamp', axis=1)
             
-            # Validate zero-price-change periods using timestamps
-            zero_price_mask = price_change == 0
-            zero_count = zero_price_mask.sum()
-            self.logger.info(f'   - Found {zero_count:,} zero-price-change periods, validating duration...')
+            # Handle any remaining NaNs
+            features = features.fillna(0)
             
-            if zero_count > 0:
-                # Convert timestamps to datetime for duration calculation
-                timestamps = pd.to_datetime(df['timestamp'], unit='ms')
+            self.logger.info(f'✅ Feature engineering completed: {features.shape[1]} features, {len(features):,} rows')
+            
+            # Features should now be clean (no infinity values due to root cause fixes)
+            scaler = StandardScaler()
+            
+            # Memory-efficient scaling with dtype optimization
+            if features.shape[0] > 100000:
+                self.logger.info("💾 Using memory-efficient scaling for large dataset")
+                # Process in chunks to avoid memory issues and use float32 for memory savings
+                chunk_size = 50000
                 
-                # Find consecutive zero-price-change periods
-                zero_periods = []
-                current_start = None
-                for i, is_zero in enumerate(zero_price_mask):
-                    if is_zero and current_start is None:
-                        current_start = i
-                    elif not is_zero and current_start is not None:
-                        zero_periods.append((current_start, i-1))
-                        current_start = None
+                # First, fit scaler on a representative sample to avoid memory leaks
+                sample_size = min(100000, features.shape[0])
+                sample_indices = np.random.choice(features.shape[0], sample_size, replace=False)
+                sample_data = features.iloc[sample_indices].astype(np.float32)
+                scaler.fit(sample_data)
+                del sample_data  # Free memory immediately
                 
-                # Handle case where the last period is zero
-                if current_start is not None:
-                    zero_periods.append((current_start, len(zero_price_mask)-1))
-                
-                self.logger.info(f'   - Found {len(zero_periods)} consecutive zero-price-change periods')
-                
-                # Check duration of each zero-price-change period
-                long_zero_periods = []
-                short_zero_periods = []
-                total_long_duration = 0
-                total_short_duration = 0
-                total_long_rows = 0
-                total_short_rows = 0
-                
-                for start_idx, end_idx in zero_periods:
-                    if start_idx < len(timestamps) and end_idx < len(timestamps):
-                        duration_seconds = (timestamps.iloc[end_idx] - timestamps.iloc[start_idx]).total_seconds()
-                        rows_in_period = end_idx - start_idx + 1
-                        
-                        if duration_seconds >= 2.0:  # 2 seconds or more
-                            long_zero_periods.append((start_idx, end_idx, duration_seconds, rows_in_period))
-                            total_long_duration += duration_seconds
-                            total_long_rows += rows_in_period
-                        else:
-                            short_zero_periods.append((start_idx, end_idx, duration_seconds, rows_in_period))
-                            total_short_duration += duration_seconds
-                            total_short_rows += rows_in_period
-                
-                # Only report summary statistics, ignore clusters <2s
-                if short_zero_periods:
-                    self.logger.info(f'   - Ignored {len(short_zero_periods)} short periods (<2s): {total_short_rows} rows over {total_short_duration:.1f}s total')
-                
-                if long_zero_periods:
-                    self.logger.warning(f'   ⚠️ Found {len(long_zero_periods)} significant zero-price-change periods (≥2s): {total_long_rows} rows over {total_long_duration:.1f}s total')
-                    # Show first 3 significant periods with details
-                    for start_idx, end_idx, duration, rows in long_zero_periods[:3]:
-                        start_time = timestamps.iloc[start_idx].strftime('%H:%M:%S')
-                        end_time = timestamps.iloc[end_idx].strftime('%H:%M:%S')
-                        self.logger.warning(f'     - Period {start_idx}-{end_idx} ({start_time}-{end_time}): {rows} rows over {duration:.1f}s')
-                    if len(long_zero_periods) > 3:
+                # Now transform data in chunks without creating large upfront array
+                self.logger.info("🔄 Transforming data in chunks to save memory...")
+                features_scaled_chunks = []
                         self.logger.warning(f'     - ... and {len(long_zero_periods)-3} more significant periods')
                 else:
                     self.logger.info('   ✅ All zero-price-change periods are <2s (ignored as legitimate short-term price stability)')

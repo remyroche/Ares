@@ -72,8 +72,9 @@ def train_hmm_gpu_optimized(
 			})
 		
 		# Convert to numpy and optimize memory usage
+		features_data = features.values if hasattr(features, 'values') else features
 		features_array = deps.m1_memory_optimizer.create_memory_efficient_array(
-			features.values if hasattr(features, 'values') else features, 
+			features_data, 
 			dtype=np.float32
 		)
 
@@ -108,8 +109,8 @@ def train_hmm_gpu_optimized(
 			"converged": hmm_model.monitor_.converged if hasattr(hmm_model, 'monitor_') else False,
 			"n_iterations": hmm_model.monitor_.iter if hasattr(hmm_model, 'monitor_') else n_iter,
 			"log_likelihood": score,
-			"aic": 2 * features_scaled.shape[1] * n_components - 2 * score if score is not None else 0,
-			"bic": safe_log(features_scaled.shape[0], 0) * features_scaled.shape[1] * n_components - 2 * score if score is not None else 0
+			"aic": 2 * features_scaled.shape[1] * n_components - 2 * score if score is not None and not np.isnan(score) and not np.isinf(score) else 0,
+			"bic": safe_log(features_scaled.shape[0], 0) * features_scaled.shape[1] * n_components - 2 * score if score is not None and not np.isnan(score) and not np.isinf(score) else 0
 		}
 
 		return {
@@ -196,8 +197,8 @@ def train_hmm_cpu_optimized(
 			"converged": hmm_model.monitor_.converged if hasattr(hmm_model, 'monitor_') else False,
 			"n_iterations": hmm_model.monitor_.iter if hasattr(hmm_model, 'monitor_') else n_iter,
 			"log_likelihood": score,
-			"aic": 2 * features_scaled.shape[1] * n_components - 2 * score if score is not None else 0,
-			"bic": safe_log(features_scaled.shape[0], 0) * features_scaled.shape[1] * n_components - 2 * score if score is not None else 0
+			"aic": 2 * features_scaled.shape[1] * n_components - 2 * score if score is not None and not np.isnan(score) and not np.isinf(score) else 0,
+			"bic": safe_log(features_scaled.shape[0], 0) * features_scaled.shape[1] * n_components - 2 * score if score is not None and not np.isnan(score) and not np.isinf(score) else 0
 		}
 
 		return {

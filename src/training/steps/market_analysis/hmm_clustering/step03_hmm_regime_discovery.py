@@ -506,55 +506,55 @@ class EnhancedFeatureEngineer:
             features[f'price_vs_ema_{window}'] = (df['close'] - features[f'price_ema_{window}']) / features[f'price_ema_{window}']
     
     def _add_volume_features(self, features: pd.DataFrame, df: pd.DataFrame) -> None:
-        """Add volume-based features"""
+        """Add volume-based features with standardized 1-6 lookback periods"""
         # Basic volume features
         features['volume_change'] = df['volume'].pct_change()
-        # Safe volume_ma_ratio calculation to prevent infinity
-        volume_ma = df['volume'].rolling(20).mean()
-        volume_ma_safe = volume_ma.replace(0, np.nan)
-        volume_ma_safe = volume_ma_safe.fillna(method='bfill').fillna(1.0)
-        features['volume_ma_ratio'] = df['volume'] / volume_ma_safe
-        features['volume_ma_ratio'] = features['volume_ma_ratio'].clip(-100, 100)
         
-        # Volume-price relationship
-        features['volume_price_trend'] = (df['close'] - df['close'].shift(1)) * df['volume']
-        features['volume_price_correlation'] = df['close'].rolling(20).corr(df['volume'])
-        
-        # Volume patterns
-        features['volume_spike'] = df['volume'] > df['volume'].rolling(20).mean() * 2
-        features['volume_dry_up'] = df['volume'] < df['volume'].rolling(20).mean() * 0.5
-        
-        # Multiple timeframe volume features
-        for window in [5, 10, 20, 50]:
+        # Standardized volume features with 1-6 lookback periods
+        for window in [1, 2, 3, 4, 5, 6]:
+            # Volume moving averages
             features[f'volume_ma_{window}'] = df['volume'].rolling(window).mean()
             features[f'volume_std_{window}'] = df['volume'].rolling(window).std()
-            features[f'volume_ratio_{window}'] = df['volume'] / features[f'volume_ma_{window}']
+            
+            # Safe volume ratio calculation to prevent infinity
+            volume_ma_safe = features[f'volume_ma_{window}'].replace(0, np.nan)
+            volume_ma_safe = volume_ma_safe.fillna(method='bfill').fillna(1.0)
+            features[f'volume_ratio_{window}'] = df['volume'] / volume_ma_safe
+            features[f'volume_ratio_{window}'] = features[f'volume_ratio_{window}'].clip(-100, 100)
+        
+        # Volume-price relationship using standardized periods
+        features['volume_price_trend'] = (df['close'] - df['close'].shift(1)) * df['volume']
+        features['volume_price_correlation'] = df['close'].rolling(6).corr(df['volume'])  # Use 6-period correlation
+        
+        # Volume patterns using standardized periods
+        features['volume_spike'] = df['volume'] > features['volume_ma_6'] * 2
+        features['volume_dry_up'] = df['volume'] < features['volume_ma_6'] * 0.5
     
     def _add_volatility_features(self, features: pd.DataFrame, df: pd.DataFrame) -> None:
-        """Add volatility features"""
-        # Rolling volatility
-        for window in [5, 10, 20, 50]:
+        """Add volatility features with standardized 1-6 lookback periods"""
+        # Standardized volatility features with 1-6 lookback periods
+        for window in [1, 2, 3, 4, 5, 6]:
             features[f'volatility_{window}'] = df['close'].pct_change().rolling(window).std()
             features[f'volatility_ewma_{window}'] = df['close'].pct_change().ewm(span=window).std()
         
-        # Safe volatility ratios to prevent infinity
-        vol_20_safe = features['volatility_20'].replace(0, np.nan)
-        vol_20_safe = vol_20_safe.fillna(method='bfill').fillna(1e-6)
-        features['volatility_ratio_5_20'] = features['volatility_5'] / vol_20_safe
-        features['volatility_ratio_5_20'] = features['volatility_ratio_5_20'].clip(-1000, 1000)
+        # Safe volatility ratios to prevent infinity using standardized periods
+        vol_6_safe = features['volatility_6'].replace(0, np.nan)
+        vol_6_safe = vol_6_safe.fillna(method='bfill').fillna(1e-6)
+        features['volatility_ratio_3_6'] = features['volatility_3'] / vol_6_safe
+        features['volatility_ratio_3_6'] = features['volatility_ratio_3_6'].clip(-1000, 1000)
 
-        vol_50_safe = features['volatility_50'].replace(0, np.nan)
-        vol_50_safe = vol_50_safe.fillna(method='bfill').fillna(1e-6)
-        features['volatility_ratio_10_50'] = features['volatility_10'] / vol_50_safe
-        features['volatility_ratio_10_50'] = features['volatility_ratio_10_50'].clip(-1000, 1000)
+        vol_5_safe = features['volatility_5'].replace(0, np.nan)
+        vol_5_safe = vol_5_safe.fillna(method='bfill').fillna(1e-6)
+        features['volatility_ratio_2_5'] = features['volatility_2'] / vol_5_safe
+        features['volatility_ratio_2_5'] = features['volatility_ratio_2_5'].clip(-1000, 1000)
         
-        # Volatility momentum
-        features['volatility_momentum'] = features['volatility_20'] - features['volatility_20'].shift(5)
+        # Volatility momentum using standardized periods
+        features['volatility_momentum'] = features['volatility_6'] - features['volatility_6'].shift(3)
         features['volatility_acceleration'] = features['volatility_momentum'].diff()
         
-        # GARCH-like features
-        features['volatility_clustering'] = (df['close'].pct_change() ** 2).rolling(20).mean()
-        features['volatility_persistence'] = features['volatility_clustering'].rolling(10).corr(
+        # GARCH-like features using standardized periods
+        features['volatility_clustering'] = (df['close'].pct_change() ** 2).rolling(6).mean()
+        features['volatility_persistence'] = features['volatility_clustering'].rolling(3).corr(
             features['volatility_clustering'].shift(1)
         )
     
@@ -586,26 +586,26 @@ class EnhancedFeatureEngineer:
         features['adx_14'] = self._calculate_adx(df)
     
     def _add_momentum_features(self, features: pd.DataFrame, df: pd.DataFrame) -> None:
-        """Add momentum features"""
-        # Price momentum
-        for window in [1, 2, 3, 5, 10, 20, 50]:
+        """Add momentum features with standardized 1-6 lookback periods"""
+        # Standardized price momentum with 1-6 lookback periods
+        for window in [1, 2, 3, 4, 5, 6]:
             features[f'momentum_{window}'] = df['close'].pct_change(window)
-            features[f'momentum_ma_{window}'] = features[f'momentum_{window}'].rolling(10).mean()
+            features[f'momentum_ma_{window}'] = features[f'momentum_{window}'].rolling(3).mean()  # Use 3-period MA
         
-        # Volume momentum
-        for window in [1, 2, 3, 5, 10, 20]:
+        # Standardized volume momentum with 1-6 lookback periods
+        for window in [1, 2, 3, 4, 5, 6]:
             features[f'volume_momentum_{window}'] = df['volume'].pct_change(window)
         
-        # Safe momentum ratios to prevent infinity
-        momentum_20_safe = features['momentum_20'].replace(0, np.nan)
-        momentum_20_safe = momentum_20_safe.fillna(method='bfill').fillna(1e-6)
-        features['momentum_ratio_5_20'] = features['momentum_5'] / momentum_20_safe
-        features['momentum_ratio_5_20'] = features['momentum_ratio_5_20'].clip(-1000, 1000)
+        # Safe momentum ratios to prevent infinity using standardized periods
+        momentum_6_safe = features['momentum_6'].replace(0, np.nan)
+        momentum_6_safe = momentum_6_safe.fillna(method='bfill').fillna(1e-6)
+        features['momentum_ratio_3_6'] = features['momentum_3'] / momentum_6_safe
+        features['momentum_ratio_3_6'] = features['momentum_ratio_3_6'].clip(-1000, 1000)
 
-        momentum_50_safe = features['momentum_50'].replace(0, np.nan)
-        momentum_50_safe = momentum_50_safe.fillna(method='bfill').fillna(1e-6)
-        features['momentum_ratio_10_50'] = features['momentum_10'] / momentum_50_safe
-        features['momentum_ratio_10_50'] = features['momentum_ratio_10_50'].clip(-1000, 1000)
+        momentum_5_safe = features['momentum_5'].replace(0, np.nan)
+        momentum_5_safe = momentum_5_safe.fillna(method='bfill').fillna(1e-6)
+        features['momentum_ratio_2_5'] = features['momentum_2'] / momentum_5_safe
+        features['momentum_ratio_2_5'] = features['momentum_ratio_2_5'].clip(-1000, 1000)
     
     def _add_sr_features(self, features: pd.DataFrame, df: pd.DataFrame) -> None:
         """Add support/resistance features"""
@@ -2928,12 +2928,11 @@ class HMMRegimeDiscoveryStep:
             features = pd.DataFrame()
             features['timestamp'] = df['timestamp']
             self.logger.info('🚀 Calculating momentum features...')
-            self.logger.info('   - Price momentum (5, 20 periods)...')
-            features['price_momentum_5'] = df['close'].pct_change(5)
-            features['price_momentum_20'] = df['close'].pct_change(20)
-            self.logger.info('   - Volume momentum...')
-            features['volume_momentum_5'] = df['volume'].pct_change(5)
-            features['volume_momentum_20'] = df['volume'].pct_change(20)
+            self.logger.info('   - Standardized momentum (1-6 periods)...')
+            # Standardized momentum features with 1-6 lookback periods
+            for window in [1, 2, 3, 4, 5, 6]:
+                features[f'price_momentum_{window}'] = df['close'].pct_change(window)
+                features[f'volume_momentum_{window}'] = df['volume'].pct_change(window)
             self.logger.info('   - RSI momentum...')
             features['rsi'] = self._calculate_rsi(df['close'])
             features['rsi_momentum'] = features['rsi'].diff(5)
@@ -2947,14 +2946,14 @@ class HMMRegimeDiscoveryStep:
             # Fill first NaN with 0 (no change for first period)
             price_returns = price_returns.fillna(0)
             
-            features['volatility_5'] = price_returns.rolling(window = 5).std()
-            features['volatility_10'] = price_returns.rolling(window = 10).std()
-            features['volatility_20'] = price_returns.rolling(window = 20).std()
-            self.logger.info('   - EWMA volatility...')
-            features['ewma_volatility_20'] = price_returns.ewm(span = 20).std()
+            # Standardized volatility features with 1-6 lookback periods
+            for window in [1, 2, 3, 4, 5, 6]:
+                features[f'volatility_{window}'] = price_returns.rolling(window=window).std()
+                features[f'ewma_volatility_{window}'] = price_returns.ewm(span=window).std()
+            
             self.logger.info('   - Volatility acceleration and momentum...')
-            features['volatility_acceleration'] = features['volatility_20'].diff()
-            features['volatility_momentum'] = features['volatility_20'] - features['volatility_20'].shift(5)
+            features['volatility_acceleration'] = features['volatility_6'].diff()
+            features['volatility_momentum'] = features['volatility_6'] - features['volatility_6'].shift(3)
             self.logger.info('   - ATR volatility...')
             features['atr'] = self._calculate_atr(df)
             # ATR normalization with zero-division protection

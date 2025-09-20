@@ -81,7 +81,7 @@ class UnifiedHMMClusteringConfig:
     min_improvement: float = 0.001
     patience: int = 3
     
-    # Dimension-aware quality evaluation
+    # Dimension-aware quality evaluation (optimized for ETH 1h)
     target_clusters: int = 20
     cluster_range: List[int] = field(default_factory=lambda: [16, 18, 20, 22, 24])
     coverage_target: float = 0.90
@@ -94,9 +94,9 @@ class UnifiedHMMClusteringConfig:
     silhouette_min: float = 0.15
     max_silhouette_sample: int = 50000
     dimension_feature_map: Dict[str, List[str]] = field(default_factory=lambda: {
-        'volume': ['volume_ratio_20'],  # Primary volume feature
-        'volatility': ['volatility_20', 'realized_vol'],  # Prefer volatility_20, fallback to realized_vol
-        'momentum': ['momentum_10', 'momentum', 'roc']  # Prefer momentum_10, fallback to momentum or roc
+        'volume': ['volume_ratio_5', 'volume_ratio_4', 'volume_ratio_3'],  # 1-6 lookback periods
+        'volatility': ['volatility_5', 'volatility_4', 'volatility_3'],  # 1-6 lookback periods  
+        'momentum': ['momentum_5', 'momentum_4', 'momentum_3']  # 1-6 lookback periods
     })
     
     # Market-specific settings

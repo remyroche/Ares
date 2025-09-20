@@ -1477,7 +1477,7 @@ class HMMRegimeDiscoveryStep:
                 feature_selection_config = {
                     'symbol': self.config.get('SYMBOL', 'ETHUSDT'),
                     'exchange': self.config.get('EXCHANGE', 'BINANCE'),
-                    'timeframe': self.config.get('TIMEFRAME', '1m'),
+                    'timeframe': self.config.get('TIMEFRAME', '15m'),
                     'step08_unified': {
                         'phase1_target_features': 150,
                         'phase2_targets': [100, 80, 60],
@@ -1618,7 +1618,7 @@ class HMMRegimeDiscoveryStep:
             data_dir = training_input.get('data_dir', 'historical_data')
             symbol = training_input.get('symbol', '')
             exchange = training_input.get('exchange', '')
-            timeframe = training_input.get('timeframe', '1m')
+            timeframe = training_input.get('timeframe', '15m')
 
             self.logger.info(f"🔍 DEBUG: Attempting to load from data_dir: {data_dir}")
             self.logger.info(f"🔍 DEBUG: Symbol: {symbol}, Exchange: {exchange}, Timeframe: {timeframe}")
@@ -1888,7 +1888,7 @@ class HMMRegimeDiscoveryStep:
                 return pipeline_state
             symbol = training_input.get('symbol', get_default_symbol())
             exchange = training_input.get('exchange', 'BINANCE')
-            timeframe = training_input.get('timeframe', '1m')
+            timeframe = training_input.get('timeframe', '15m')
             data_dir = training_input.get('data_dir')
             if data_dir is None:
                 data_dir = 'historical_data'
@@ -1979,7 +1979,7 @@ class HMMRegimeDiscoveryStep:
         try:
             symbol = training_input.get('symbol', get_default_symbol())
             exchange = training_input.get('exchange', 'BINANCE')
-            timeframe = training_input.get('timeframe', '1m')
+            timeframe = training_input.get('timeframe', '15m')
             data_dir = training_input.get('data_dir', 'historical_data')
             if 'composite_df' in regime_results:
                 composite_df = regime_results['composite_df']
@@ -2099,7 +2099,7 @@ class HMMRegimeDiscoveryStep:
             try:
                 symbol = training_input.get('symbol', 'UNKNOWN')
                 exchange = training_input.get('exchange', 'BINANCE')
-                timeframe = training_input.get('timeframe', '1m')
+                timeframe = training_input.get('timeframe', '15m')
                 
                 self.logger.info(f'🎯 Validating data quality for {symbol} on {exchange} ({timeframe})...')
                 
@@ -2204,7 +2204,7 @@ class HMMRegimeDiscoveryStep:
         try:
             symbol = training_input.get('symbol', get_default_symbol())
             exchange = training_input.get('exchange', 'BINANCE')
-            timeframe = training_input.get('timeframe', '1m')
+            timeframe = training_input.get('timeframe', '15m')
             self.logger.info(f'🔄 Fixing missing data for {symbol} on {exchange} ({timeframe})...')
             step1_success = False
             try:
@@ -2243,7 +2243,7 @@ class HMMRegimeDiscoveryStep:
         try:
             symbol = training_input.get('symbol', get_default_symbol())
             exchange = training_input.get('exchange', 'BINANCE')
-            timeframe = training_input.get('timeframe', '1m')
+            timeframe = training_input.get('timeframe', '15m')
             data_dir = training_input.get('data_dir')
             if data_dir is None:
                 data_dir = 'data/training'
@@ -2375,7 +2375,7 @@ class HMMRegimeDiscoveryStep:
         try:
             symbol = training_input.get('symbol', get_default_symbol())
             exchange = training_input.get('exchange', 'BINANCE')
-            timeframe = training_input.get('timeframe', '1m')
+            timeframe = training_input.get('timeframe', '15m')
             data_dir = training_input.get('data_dir')
             if data_dir is None:
                 data_dir = 'historical_data'
@@ -2495,7 +2495,7 @@ class HMMRegimeDiscoveryStep:
                     if hasattr(self, 'data_quality_manager') and self.data_quality_manager:
                         symbol = self.config.get('SYMBOL', 'UNKNOWN')
                         exchange = self.config.get('EXCHANGE', 'BINANCE')
-                        timeframe_cfg = self.config.get('TIMEFRAME', '1m')
+                        timeframe_cfg = self.config.get('TIMEFRAME', '15m')
                         # Run fix sequence (async) and ignore result if it fails
                         import asyncio as _asyncio
                         _asyncio.create_task(
@@ -2828,15 +2828,32 @@ class HMMRegimeDiscoveryStep:
                 # Now transform data in chunks without creating large upfront array
                 self.logger.info("🔄 Transforming data in chunks to save memory...")
                 features_scaled_chunks = []
-                        self.logger.warning(f'     - ... and {len(long_zero_periods)-3} more significant periods')
-                else:
-                    self.logger.info('   ✅ All zero-price-change periods are <2s (ignored as legitimate short-term price stability)')
-            else:
-                self.logger.info('   ✅ No zero-price-change periods found')
+                
+                # Transform data in chunks to save memory
+                chunk_size = 50000
+                for i in range(0, features.shape[0], chunk_size):
+                    chunk = features.iloc[i:i+chunk_size].astype(np.float32)
+                    chunk_scaled = scaler.transform(chunk)
+                    features_scaled_chunks.append(chunk_scaled)
+                    del chunk, chunk_scaled  # Free memory
+                
+                # Combine all chunks
+                features_scaled = np.vstack(features_scaled_chunks)
+                del features_scaled_chunks  # Free memory
+                
+                # Convert back to DataFrame
+                features = pd.DataFrame(
+                    features_scaled,
+                    columns=features.columns,
+                    index=features.index
+                )
+                del features_scaled  # Free memory
+                
+            self.logger.info("✅ Features scaled successfully with memory optimization")
             
             # Keep legitimate zeros (≤5s periods) and replace others with small values
             # For now, we'll keep all zeros as they are legitimate short-term price stability
-            features['volume_price_trend'] = price_change * df['volume']
+            features['volume_price_trend'] = features['price_change'] * df['volume']
             
             # Volume-price trend ratio with zero-division protection
             vpt_mean = features['volume_price_trend'].rolling(20).mean()
@@ -3972,7 +3989,7 @@ class HMMRegimeDiscoveryStep:
             # Normalize naming to uppercase exchange/symbol and lowercase timeframe
             ex = str(self.config.get('EXCHANGE', 'EX')).upper()
             sym = str(self.config.get('SYMBOL', 'SYM')).upper()
-            tf = str(self.config.get('TIMEFRAME', '1m')).lower()
+            tf = str(self.config.get('TIMEFRAME', '15m')).lower()
             ckpt_path = model_ckpt_dir / f"{ex}_{sym}_{tf}_hmm_{n_hmm_states}.npz"
             try:
                 if ckpt_path.exists():
@@ -5832,14 +5849,14 @@ class HMMRegimeDiscoveryStep:
 
 @monitor_feature_engineering()
 @handles_errors(fallback = False)
-async def run_step(symbol: str, exchange: str, timeframe: str='1m', data_dir: str = None, force_rerun: bool = False,
+async def run_step(symbol: str, exchange: str, timeframe: str='15m', data_dir: str = None, force_rerun: bool = False,
                 use_optimized_pipeline: bool = True, force_optimized_pipeline: bool = False, **kwargs: Any) -> bool:
     """Run the HMM regime discovery step with standardized data quality management and optimizations.
 
     Args:
         symbol: Trading symbol (e.g., "ETHUSDT" or configured default)
         exchange: Exchange name (e.g., "BINANCE")
-        timeframe: Timeframe (e.g., "1m")
+        timeframe: Timeframe (e.g., "15m")
         data_dir: Data directory (will use standardized path if None)
         force_rerun: Force re-run even if results exist
         use_optimized_pipeline: Whether to use optimized pipeline components (default: True)

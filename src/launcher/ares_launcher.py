@@ -305,7 +305,7 @@ class AresLauncher:
         mode: LauncherMode = LauncherMode.FULL,
         symbol: str = "ETHUSDT",
         exchange: str = "binance",
-        timeframe: str = "1m",
+        timeframe: str = "15m",
         data_dir: str = "historical_data",
         stage: Optional[PipelineStage] = None,
         sub_pipeline: Optional[str] = None,

@@ -88,7 +88,7 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             if timeframe is None and 'timeframe' in pipeline_state:
                 timeframe = pipeline_state['timeframe']
             if timeframe is None:
-                timeframe = '1h'  # Default timeframe for regime discovery
+                timeframe = '15m'  # Default timeframe for regime discovery
 
             # Get market data
             market_data = await self._load_market_data(data, symbol)
@@ -156,7 +156,7 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             if not unique_regimes:
                 raise ValueError("No unique regimes found in assignments")
             
-            # Create descriptive 3D regime model names
+            # Create descriptive 4D regime model names
             regime_models = []
             momentum_states = optimization_results.get('best_params', {}).get('momentum_states', 6)
             volatility_states = optimization_results.get('best_params', {}).get('volatility_states', 5)
@@ -191,7 +191,7 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             )
             
             # Get timeframe from config
-            timeframe = getattr(self.config, 'timeframe', "1h")
+            timeframe = getattr(self.config, 'timeframe', "15m")
 
             artifacts = {
                 'hmm_regime_discovery_result': {
@@ -203,38 +203,42 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
                     'regime_distribution': regime_distribution,
                     'regime_characteristics': regime_characteristics,
                     
-                    # Enhanced 3D regime information
-                    '3d_regime_info': {
+                    # Enhanced 4D regime information
+                    '4d_regime_info': {
                         'dimensional_structure': {
                             'momentum_states': optimization_results.get('best_params', {}).get('momentum_states', 6),
                             'volatility_states': optimization_results.get('best_params', {}).get('volatility_states', 5),
                             'volume_states': optimization_results.get('best_params', {}).get('volume_states', 5),
+                            'trend_states': optimization_results.get('best_params', {}).get('trend_states', 5),
                             'max_lookback_hours': 6
                         },
                         'dimensional_assignments': {
                             'momentum_assignments': optimization_results.get('dimensional_assignments', {}).get('momentum_assignments', []),
                             'volatility_assignments': optimization_results.get('dimensional_assignments', {}).get('volatility_assignments', []),  
-                            'volume_assignments': optimization_results.get('dimensional_assignments', {}).get('volume_assignments', [])
+                            'volume_assignments': optimization_results.get('dimensional_assignments', {}).get('volume_assignments', []),
+                            'trend_assignments': optimization_results.get('dimensional_assignments', {}).get('trend_assignments', [])
                         },
                         'regime_decomposition': {
                             regime_name: {
                                 'composite_id': regime_id,
                                 'momentum_state': regime_id % optimization_results.get('best_params', {}).get('momentum_states', 6),
                                 'volatility_state': (regime_id // optimization_results.get('best_params', {}).get('momentum_states', 6)) % optimization_results.get('best_params', {}).get('volatility_states', 5),
-                                'volume_state': regime_id // (optimization_results.get('best_params', {}).get('momentum_states', 6) * optimization_results.get('best_params', {}).get('volatility_states', 5))
+                                'volume_state': (regime_id // (optimization_results.get('best_params', {}).get('momentum_states', 6) * optimization_results.get('best_params', {}).get('volatility_states', 5))) % optimization_results.get('best_params', {}).get('volume_states', 5),
+                                'trend_state': regime_id // (optimization_results.get('best_params', {}).get('momentum_states', 6) * optimization_results.get('best_params', {}).get('volatility_states', 5) * optimization_results.get('best_params', {}).get('volume_states', 5))
                             } for regime_id, regime_name in zip(sorted(unique_regimes), regime_models)
                         },
-                        'composite_mapping': 'regime_id = momentum + volatility*M + volume*M*V',
+                        'composite_mapping': 'regime_id = momentum + volatility*M + volume*M*V + trend*M*V*Vol',
                         'decomposition_formula': {
                             'momentum_state': 'regime_id % momentum_states',
                             'volatility_state': '(regime_id // momentum_states) % volatility_states',
-                            'volume_state': 'regime_id // (momentum_states * volatility_states)'
+                            'volume_state': '(regime_id // (momentum_states * volatility_states)) % volume_states',
+                            'trend_state': 'regime_id // (momentum_states * volatility_states * volume_states)'
                         },
                         'interpretation': {
-                            'regime_type': '3d_dimensional_composite',
+                            'regime_type': '4d_dimensional_composite',
                             'can_decompose': True,
                             'dimensional_models_available': True,
-                            'regime_name_format': 'regime_M{momentum}_V{volatility}_Vol{volume}'
+                            'regime_name_format': 'regime_M{momentum}_V{volatility}_Vol{volume}_T{trend}'
                         }
                     },
                     
@@ -260,7 +264,7 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
                 }
             }
             
-            self.logger.info(f'✅ HMM Regime Discovery completed: {len(regime_models)} regimes discovered (3D regime space: up to 10×10×10 states)')
+            self.logger.info(f'✅ HMM Regime Discovery completed: {len(regime_models)} regimes discovered (4D regime space: up to 10×10×10×10 states)')
             return ComponentResult(
                 success=True,
                 artifacts=artifacts,
@@ -322,7 +326,7 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
                 manager = get_klines_manager()
                 
                 # Use provided symbol and configured timeframe for HMM regime discovery
-                timeframe = getattr(self.config, 'timeframe', "1h")  # Default to 1h if not configured
+                timeframe = getattr(self.config, 'timeframe', "15m")  # Default to 15m if not configured
                 
                 self.logger.info(f"📊 Loading {symbol} {timeframe} data using klines_parquet manager")
                 
@@ -516,7 +520,7 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
         
         return regime_distribution
 
-    def _calculate_dimensional_states(self, data_size: int) -> Tuple[int, int, int]:
+    def _calculate_dimensional_states(self, data_size: int) -> Tuple[int, int, int, int]:
         """
         Calculate optimal states per dimension based on data size with parameter constraints.
         
@@ -524,23 +528,23 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             data_size: Number of data points
             
         Returns:
-            tuple: (momentum_states, volatility_states, volume_states)
+            tuple: (momentum_states, volatility_states, volume_states, trend_states)
         """
         try:
             # Calculate theoretical maximum for each dimension using parameter estimation theory
-            momentum_states, volatility_states, volume_states = self._calculate_constrained_dimensional_states(data_size)
+            momentum_states, volatility_states, volume_states, trend_states = self._calculate_constrained_dimensional_states(data_size)
             
-            self.logger.info(f"📊 Dimensional states calculated: M={momentum_states}, V={volatility_states}, Vol={volume_states}")
-            self.logger.info(f"📊 Total combinations: {momentum_states * volatility_states * volume_states}")
+            self.logger.info(f"📊 Dimensional states calculated: M={momentum_states}, V={volatility_states}, Vol={volume_states}, T={trend_states}")
+            self.logger.info(f"📊 Total combinations: {momentum_states * volatility_states * volume_states * trend_states}")
             
-            return momentum_states, volatility_states, volume_states
+            return momentum_states, volatility_states, volume_states, trend_states
             
         except Exception as e:
             self.logger.error(f"❌ Error calculating dimensional states: {e}")
             # Fallback to moderate states
-            return 5, 4, 5
+            return 5, 5, 5, 5
 
-    def _calculate_constrained_dimensional_states(self, data_size: int) -> Tuple[int, int, int]:
+    def _calculate_constrained_dimensional_states(self, data_size: int) -> Tuple[int, int, int, int]:
         """
         Calculate dimensional states with parameter constraints from _calculate_optimal_component_count.
         
@@ -548,13 +552,14 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             data_size: Number of data points
             
         Returns:
-            tuple: (momentum_states, volatility_states, volume_states) with applied constraints
+            tuple: (momentum_states, volatility_states, volume_states, trend_states) with applied constraints
         """
         try:
-            # Feature counts for parameter estimation (updated for behavioral features)
-            momentum_features_count = 3  # momentum_strength, trend_persistence, reversal_probability
-            volatility_features_count = 3  # realized_volatility, volatility_regime, price_efficiency
-            volume_features_count = 3  # volume_percentile_rank, volume_ma_ratio, volume_acceleration
+            # Feature counts for parameter estimation (updated for standardized features)
+            momentum_features_count = 2  # momentum_20, momentum_12
+            volatility_features_count = 2  # volatility_20, volatility_12
+            volume_features_count = 1  # volume_ratio_192m
+            trend_features_count = 1  # trend_score
             
             def calculate_hmm_parameters(k_components: int, n_features: int) -> int:
                 """Calculate total parameters for diagonal covariance HMM."""
@@ -569,20 +574,25 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
                 covar_params = k_components * n_features  # O(n) instead of O(n²) for full
                 return transition_params + start_params + mean_params + covar_params
             
-            def max_dimensional_states_for_data(data_size: int, samples_per_param: int = 15) -> Tuple[int, int, int]:
+            def max_dimensional_states_for_data(data_size: int, samples_per_param: int = 15) -> Tuple[int, int, int, int]:
                 """Calculate maximum dimensional states based on parameter estimation theory."""
-                # Use adaptive samples per parameter based on data size
+                # Use very lenient samples per parameter for 9×9×9×9 granularity
                 if data_size < 200:
-                    samples_per_param = max(5, data_size // 20)  # More lenient for small datasets
+                    samples_per_param = max(3, data_size // 40)  # Very lenient for small datasets
                 elif data_size < 1000:
-                    samples_per_param = max(8, data_size // 30)
+                    samples_per_param = max(4, data_size // 60)  # More lenient
+                elif data_size < 5000:
+                    samples_per_param = 5  # Lenient for medium datasets
+                elif data_size < 15000:
+                    samples_per_param = 4  # Very lenient for large datasets
                 else:
-                    samples_per_param = 15  # Standard for large datasets
+                    samples_per_param = 3  # Extremely lenient for very large datasets (15k+ points)
                 
                 # Calculate max states for each dimension separately
                 max_momentum = 1
                 max_volatility = 1  
                 max_volume = 1
+                max_trend = 1
                 
                 # Find max momentum states
                 for states in range(1, 10):
@@ -593,7 +603,7 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
                         break
                 
                 # Find max volatility states  
-                for states in range(1, 8):
+                for states in range(1, 10):
                     params = calculate_hmm_parameters(states, volatility_features_count)
                     if params * samples_per_param <= data_size:
                         max_volatility = states
@@ -601,54 +611,69 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
                         break
                 
                 # Find max volume states
-                for states in range(1, 8):
+                for states in range(1, 10):
                     params = calculate_hmm_parameters(states, volume_features_count)
                     if params * samples_per_param <= data_size:
                         max_volume = states
                     else:
                         break
                 
-                return max_momentum, max_volatility, max_volume
+                # Find max trend states
+                for states in range(1, 10):
+                    params = calculate_hmm_parameters(states, trend_features_count)
+                    if params * samples_per_param <= data_size:
+                        max_trend = states
+                    else:
+                        break
+                
+                return max_momentum, max_volatility, max_volume, max_trend
             
             # Calculate theoretical maximum for each dimension
-            max_mom, max_vol, max_volume = max_dimensional_states_for_data(data_size)
+            max_mom, max_vol, max_volume, max_trend = max_dimensional_states_for_data(data_size)
             
-            # Apply the same constraint logic as in _calculate_optimal_component_count
-            # With diagonal covariance (O(n) scaling), we can support more components for 20-regime goal
+            # Apply constraint logic for 9×9×9×9 granularity (6561 combinations)
+            # With diagonal covariance (O(n) scaling), we can support more components for granular regime detection
             if data_size < 500:
-                desired_momentum, desired_volatility, desired_volume = 7, 7, 7  # 343 combinations
+                desired_momentum, desired_volatility, desired_volume, desired_trend = 6, 6, 6, 6  # 1296 combinations
+            elif data_size < 1000:
+                desired_momentum, desired_volatility, desired_volume, desired_trend = 7, 7, 7, 7  # 2401 combinations
             elif data_size < 2000:
-                desired_momentum, desired_volatility, desired_volume = 8, 8, 8  # 512 combinations
-            elif data_size < 5000:
-                desired_momentum, desired_volatility, desired_volume = 9, 8, 9  # 648 combinations
-            elif data_size < 15000:
-                desired_momentum, desired_volatility, desired_volume = 9, 9, 9  # 729 combinations
-            elif data_size < 30000:
-                desired_momentum, desired_volatility, desired_volume = 10, 9, 10  # 900 combinations
+                desired_momentum, desired_volatility, desired_volume, desired_trend = 8, 8, 8, 8  # 4096 combinations
             else:
-                desired_momentum, desired_volatility, desired_volume = 10, 10, 10  # 1000 combinations
+                # Default to 9×9×9×9 for more granular regime detection (6561 combinations)
+                desired_momentum, desired_volatility, desired_volume, desired_trend = 9, 9, 9, 9  # 6561 combinations
             
-            # Apply parameter constraints
-            momentum_states = min(desired_momentum, max_mom)
-            volatility_states = min(desired_volatility, max_vol)
-            volume_states = min(desired_volume, max_volume)
+            # Apply parameter constraints - but be more lenient for large datasets
+            if data_size > 15000:
+                # For very large datasets (17k+ points), allow up to 9 states per dimension
+                momentum_states = min(desired_momentum, max(9, max_mom))
+                volatility_states = min(desired_volatility, max(9, max_vol))
+                volume_states = min(desired_volume, max(9, max_volume))
+                trend_states = min(desired_trend, max(9, max_trend))
+            else:
+                # Use normal parameter constraints
+                momentum_states = min(desired_momentum, max_mom)
+                volatility_states = min(desired_volatility, max_vol)
+                volume_states = min(desired_volume, max_volume)
+                trend_states = min(desired_trend, max_trend)
             
             # Ensure minimum viable states
             momentum_states = max(3, momentum_states)
             volatility_states = max(3, volatility_states)
             volume_states = max(3, volume_states)
+            trend_states = max(3, trend_states)
             
             self.logger.info(f"📊 Constrained dimensional states:")
-            self.logger.info(f"   • Desired: M={desired_momentum}, V={desired_volatility}, Vol={desired_volume}")
-            self.logger.info(f"   • Max allowed: M={max_mom}, V={max_vol}, Vol={max_volume}")
-            self.logger.info(f"   • Final: M={momentum_states}, V={volatility_states}, Vol={volume_states}")
+            self.logger.info(f"   • Desired: M={desired_momentum}, V={desired_volatility}, Vol={desired_volume}, T={desired_trend}")
+            self.logger.info(f"   • Max allowed: M={max_mom}, V={max_vol}, Vol={max_volume}, T={max_trend}")
+            self.logger.info(f"   • Final: M={momentum_states}, V={volatility_states}, Vol={volume_states}, T={trend_states}")
             
-            return momentum_states, volatility_states, volume_states
+            return momentum_states, volatility_states, volume_states, trend_states
             
         except Exception as e:
             self.logger.error(f"❌ Error calculating constrained dimensional states: {e}")
             # Fallback to safe defaults
-            return 5, 4, 5
+            return 5, 4, 5, 5
 
     def _calculate_optimal_component_count(self, data_size: int, pipeline_state: Dict[str, Any]) -> int:
         """
@@ -669,23 +694,24 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             
             if user_components is not None:
                 self.logger.info(f"🎯 Using user-specified component count: {user_components}")
-                return max(3, min(user_components, 20))  # Clamp to reasonable range for 3D regime space
+                return max(3, min(user_components, 20))  # Clamp to reasonable range for 4D regime space
             
             # Data-driven calculation
             # Rule of thumb: sqrt(data_size) with bounds based on statistical reliability
             base_components = int(np.sqrt(data_size))
             
             # Use the shared helper that applies parameter constraints
-            momentum_states, volatility_states, volume_states = self._calculate_constrained_dimensional_states(data_size)
+            momentum_states, volatility_states, volume_states, trend_states = self._calculate_constrained_dimensional_states(data_size)
             
             # Total regime combinations
-            optimal_components = momentum_states * volatility_states * volume_states
+            optimal_components = momentum_states * volatility_states * volume_states * trend_states
             
-            self.logger.info(f"📊 3D Regime Space Configuration:")
+            self.logger.info(f"📊 4D Regime Space Configuration:")
             self.logger.info(f"   • Momentum states: {momentum_states}")
             self.logger.info(f"   • Volatility states: {volatility_states}")  
             self.logger.info(f"   • Volume states: {volume_states}")
-            self.logger.info(f"   • Total combinations: {optimal_components} ({momentum_states}×{volatility_states}×{volume_states})")
+            self.logger.info(f"   • Trend states: {trend_states}")
+            self.logger.info(f"   • Total combinations: {optimal_components} ({momentum_states}×{volatility_states}×{volume_states}×{trend_states})")
             
             # Constraint logic is now handled by _calculate_constrained_dimensional_states
             # Additional validation: ensure minimum samples per regime
@@ -728,16 +754,16 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
         try:
             self.logger.info(f"🔍 Starting direct HMM regime discovery with {len(market_data)} data points...")
             
-            # Prepare grouped features for 3D regime detection
-            momentum_features, volatility_features, volume_features = self._prepare_grouped_features_for_regime_discovery(market_data)
+            # Prepare grouped features for 4D regime detection
+            momentum_features, volatility_features, volume_features, trend_features = self._prepare_grouped_features_for_regime_discovery(market_data)
             
-            if momentum_features is None or volatility_features is None or volume_features is None:
+            if momentum_features is None or volatility_features is None or volume_features is None or trend_features is None:
                 raise ValueError("Failed to prepare grouped features for regime discovery")
             
             # Get dimensional state counts with parameter constraints
             data_size = len(market_data)
-            momentum_states, volatility_states, volume_states = self._calculate_constrained_dimensional_states(data_size)
-            n_components = momentum_states * volatility_states * volume_states
+            momentum_states, volatility_states, volume_states, trend_states = self._calculate_constrained_dimensional_states(data_size)
+            n_components = momentum_states * volatility_states * volume_states * trend_states
             
             self.logger.info(f"🎯 Using {n_components} components for fast regime discovery (intermediate features)")
             self.logger.info("⚡ Skipping heavy Bayesian optimization - regimes are intermediate features for clustering")
@@ -749,30 +775,35 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             self.logger.info(f"   • Momentum: {momentum_features.shape[1]} features → {momentum_states} states")
             self.logger.info(f"   • Volatility: {volatility_features.shape[1]} features → {volatility_states} states")
             self.logger.info(f"   • Volume: {volume_features.shape[1]} features → {volume_states} states")
+            self.logger.info(f"   • Trend: {trend_features.shape[1]} features → {trend_states} states")
             
             momentum_model, momentum_assignments = self._train_dimensional_hmm(
                 momentum_features, momentum_states, "momentum"
             )
             volatility_model, volatility_assignments = self._train_dimensional_hmm(
-                volatility_features, volatility_states, "volatility"  
+                volatility_features, volatility_states, "volatility"
             )
             volume_model, volume_assignments = self._train_dimensional_hmm(
                 volume_features, volume_states, "volume"
             )
+            trend_model, trend_assignments = self._train_dimensional_hmm(
+                trend_features, trend_states, "trend"
+            )
             
             # Combine dimensional assignments into composite regime states
             regime_assignments = self._combine_dimensional_assignments(
-                momentum_assignments, volatility_assignments, volume_assignments,
-                momentum_states, volatility_states, volume_states
+                momentum_assignments, volatility_assignments, volume_assignments, trend_assignments,
+                momentum_states, volatility_states, volume_states, trend_states
             )
             
-            # Enhanced optimization results with 3D information
+            # Enhanced optimization results with 4D information
             optimization_results = {
                 'best_params': {
                     'n_components': n_components,
                     'momentum_states': momentum_states,
                     'volatility_states': volatility_states,
                     'volume_states': volume_states,
+                    'trend_states': trend_states,
                     'covariance_type': 'diag',
                     'n_iter': 100,
                     'tol': 1e-3
@@ -780,12 +811,13 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
                 'dimensional_assignments': {
                     'momentum_assignments': momentum_assignments,
                     'volatility_assignments': volatility_assignments,
-                    'volume_assignments': volume_assignments
+                    'volume_assignments': volume_assignments,
+                    'trend_assignments': trend_assignments
                 },
                 'best_score': 0.0,
-                'method': '3d_dimensional_hmm_regime_discovery',
+                'method': '4d_dimensional_hmm_regime_discovery',
                 'optimization_time': 0.0,
-                'note': 'True 3D regime space with separate dimensional HMMs'
+                'note': 'True 4D regime space with separate dimensional HMMs'
             }
             
             # Calculate actual feature offset based on max rolling window used
@@ -793,7 +825,8 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             momentum_lookback = 2  # reversal_probability uses 2-period lookback
             volatility_lookback = 24  # volatility_regime uses 24-period lookback
             volume_lookback = 48  # volume_percentile_rank uses 48-period lookback
-            max_lookback = max(momentum_lookback, volatility_lookback, volume_lookback)
+            trend_lookback = 12  # trend_direction uses 12-period lookback
+            max_lookback = max(momentum_lookback, volatility_lookback, volume_lookback, trend_lookback)
             
             # Preserve original index and align properly
             if len(market_data) <= max_lookback:
@@ -808,7 +841,7 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             if len(momentum_features) != expected_length:
                 self.logger.warning(f"Feature length mismatch: expected {expected_length}, got {len(momentum_features)}")
             
-            min_length = min(len(momentum_features), len(volatility_features), len(volume_features), len(market_data_aligned))
+            min_length = min(len(momentum_features), len(volatility_features), len(volume_features), len(trend_features), len(market_data_aligned))
             
             # Ensure all arrays are the same length and preserve index alignment
             market_data_aligned = market_data_aligned.iloc[:min_length]
@@ -816,6 +849,7 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             momentum_assignments_aligned = momentum_assignments[:min_length]
             volatility_assignments_aligned = volatility_assignments[:min_length]
             volume_assignments_aligned = volume_assignments[:min_length]
+            trend_assignments_aligned = trend_assignments[:min_length]
             
             # Create regime dataframe with preserved index
             regime_dataframe = market_data_aligned.copy()
@@ -825,11 +859,12 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             regime_dataframe['momentum_state'] = momentum_assignments_aligned
             regime_dataframe['volatility_state'] = volatility_assignments_aligned
             regime_dataframe['volume_state'] = volume_assignments_aligned
+            regime_dataframe['trend_state'] = trend_assignments_aligned
             
             unique_regimes = len(set(regime_assignments))
-            total_possible = momentum_states * volatility_states * volume_states
-            self.logger.info(f"✅ 3D Regime discovery completed: {unique_regimes} unique regime combinations found")
-            self.logger.info(f"   Total possible combinations: {total_possible} ({momentum_states}×{volatility_states}×{volume_states})")
+            total_possible = momentum_states * volatility_states * volume_states * trend_states
+            self.logger.info(f"✅ 4D Regime discovery completed: {unique_regimes} unique regime combinations found")
+            self.logger.info(f"   Total possible combinations: {total_possible} ({momentum_states}×{volatility_states}×{volume_states}×{trend_states})")
             
             return regime_dataframe, optimization_results
             
@@ -838,61 +873,84 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             self.logger.error(error_msg)
             raise ValueError(error_msg)
 
-    def _prepare_grouped_features_for_regime_discovery(self, market_data) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    def _prepare_grouped_features_for_regime_discovery(self, market_data) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
         """
-        Prepare features grouped by dimension for 3D regime discovery.
+        Prepare features grouped by dimension for 4D regime discovery using standardized features.
         
-        This method implements the simplified 3D dimensional approach:
-        - Momentum dimension: 1h, 2h price changes (pure reactivity)
-        - Volatility dimension: intrabar volatility, 6h rolling std, 6h ATR
-        - Volume dimension: 3h volume momentum, 24h volume ratio baseline
-        
-        Features are optimized for regime detection without unnecessary complexity.
-        Features are designed to be compatible with HMM clustering expectations.
+        This method uses the centralized standardized features to ensure consistency:
+        - Momentum dimension: momentum_20, momentum_12 (standardized)
+        - Volatility dimension: volatility_20, volatility_12 (standardized)
+        - Volume dimension: volume_ratio_192m (standardized)
+        - Trend dimension: trend_score (standardized)
         
         Args:
             market_data: Market data DataFrame with OHLCV columns
             
         Returns:
-            tuple: (momentum_features, volatility_features, volume_features)
+            tuple: (momentum_features, volatility_features, volume_features, trend_features)
                   Each DataFrame contains clean, finite features ready for HMM training
         """
         try:
             import pandas as pd
             import numpy as np
+            from src.training.steps.market_analysis.hmm_clustering.standardized_features import StandardizedFeatureCalculator
             
-            # Momentum features (behavioral instead of temporal)
+            # Calculate all standardized features
+            standardized_calc = StandardizedFeatureCalculator()
+            standardized_features = standardized_calc.calculate_all_features(market_data)
+            
+            # Group features by dimension according to standardized feature mapping
+            primary_features = standardized_calc.get_primary_features()
+            
+            # Momentum features: momentum_20, momentum_12
             momentum_features = pd.DataFrame(index=market_data.index)
-            # Behavioral momentum indicators
-            momentum_features['momentum_strength'] = market_data['close'].pct_change(1).abs()  # Strength of movement
-            momentum_features['trend_persistence'] = (market_data['close'].pct_change(1) * market_data['close'].pct_change(2)).sign()  # Trend continuation
-            momentum_features['reversal_probability'] = -market_data['close'].pct_change(1) * market_data['close'].pct_change(2)  # Reversal signal  
+            for feature_name in primary_features['momentum']:
+                if feature_name in standardized_features.columns:
+                    momentum_features[feature_name] = standardized_features[feature_name]
+                else:
+                    self.logger.warning(f"⚠️ Missing momentum feature: {feature_name}")
             
-            # Volatility features (behavioral instead of temporal)
+            # Volatility features: volatility_20, volatility_12
             volatility_features = pd.DataFrame(index=market_data.index)
-            # Behavioral volatility indicators
-            volatility_features['realized_volatility'] = market_data['close'].pct_change(1).rolling(6).std()  # Realized volatility
-            volatility_features['volatility_regime'] = (market_data['close'].pct_change(1).rolling(6).std() > market_data['close'].pct_change(1).rolling(24).std()).astype(int)  # High vs low vol regime
-            volatility_features['price_efficiency'] = (market_data['close'].pct_change(1).abs() / ((market_data['high'] - market_data['low']) / market_data['close'] + 1e-8))  # Price efficiency
+            for feature_name in primary_features['volatility']:
+                if feature_name in standardized_features.columns:
+                    volatility_features[feature_name] = standardized_features[feature_name]
+                else:
+                    self.logger.warning(f"⚠️ Missing volatility feature: {feature_name}")
             
-            # Volume features (behavioral instead of temporal)
-            epsilon = 1e-8
+            # Volume features: volume_ratio_192m
             volume_features = pd.DataFrame(index=market_data.index)
-            # Behavioral volume indicators
-            volume_features['volume_percentile_rank'] = market_data['volume'].rolling(48).rank(pct=True)  # Volume percentile rank
-            volume_features['volume_ma_ratio'] = market_data['volume'] / (market_data['volume'].rolling(48).mean() + epsilon)  # Volume vs moving average
-            volume_features['volume_acceleration'] = market_data['volume'].pct_change(1)  # Volume momentum/acceleration
+            for feature_name in primary_features['volume']:
+                if feature_name in standardized_features.columns:
+                    volume_features[feature_name] = standardized_features[feature_name]
+                else:
+                    self.logger.warning(f"⚠️ Missing volume feature: {feature_name}")
+            
+            # Trend features: trend_score
+            trend_features = pd.DataFrame(index=market_data.index)
+            for feature_name in primary_features['trend']:
+                if feature_name in standardized_features.columns:
+                    trend_features[feature_name] = standardized_features[feature_name]
+                else:
+                    self.logger.warning(f"⚠️ Missing trend feature: {feature_name}")
+            
+            self.logger.info("✅ Using standardized features for regime discovery:")
+            self.logger.info(f"   • Momentum: {list(momentum_features.columns)}")
+            self.logger.info(f"   • Volatility: {list(volatility_features.columns)}")
+            self.logger.info(f"   • Volume: {list(volume_features.columns)}")
+            self.logger.info(f"   • Trend: {list(trend_features.columns)}")
             
             # Clean features and align indices
-            # Use the same max_lookback calculation as in _train_hmm_directly
-            momentum_lookback = 2  # reversal_probability uses 2-period lookback
-            volatility_lookback = 24  # volatility_regime uses 24-period lookback
-            volume_lookback = 48  # volume_percentile_rank uses 48-period lookback
-            max_lookback = max(momentum_lookback, volatility_lookback, volume_lookback)
+            # Use standardized feature lookbacks (based on standardized_features.py periods)
+            momentum_lookback = 20  # momentum_20 uses 20-period lookback
+            volatility_lookback = 20  # volatility_20 uses 20-period lookback  
+            volume_lookback = 192  # volume_ratio_192m uses 192-period lookback
+            trend_lookback = 20  # trend_score uses 20-period lookback (EMA20 + ADX20)
+            max_lookback = max(momentum_lookback, volatility_lookback, volume_lookback, trend_lookback)
             cleaned_features = []
             
-            for i, (features, feature_type) in enumerate(zip([momentum_features, volatility_features, volume_features], 
-                                                          ['momentum', 'volatility', 'volume'])):
+            for i, (features, feature_type) in enumerate(zip([momentum_features, volatility_features, volume_features, trend_features], 
+                                                          ['momentum', 'volatility', 'volume', 'trend'])):
                 # Skip rows based on max lookback
                 features = features.iloc[max_lookback:]
                 
@@ -906,18 +964,19 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
                 features = features.astype(np.float64)
                 cleaned_features.append(features)
             
-            momentum_clean, volatility_clean, volume_clean = cleaned_features
+            momentum_clean, volatility_clean, volume_clean, trend_clean = cleaned_features
             
             self.logger.info(f"📊 Prepared grouped features:")
             self.logger.info(f"   • Momentum: {momentum_clean.shape[1]} features")
             self.logger.info(f"   • Volatility: {volatility_clean.shape[1]} features")
             self.logger.info(f"   • Volume: {volume_clean.shape[1]} features")
+            self.logger.info(f"   • Trend: {trend_clean.shape[1]} features")
             
-            return momentum_clean, volatility_clean, volume_clean
+            return momentum_clean, volatility_clean, volume_clean, trend_clean
             
         except Exception as e:
             self.logger.error(f"Failed to prepare grouped features: {e}")
-            return None, None, None
+            return None, None, None, None
 
     def _handle_feature_nans(self, features: pd.DataFrame, feature_type: str) -> pd.DataFrame:
         """
@@ -957,6 +1016,13 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
                             features[col] = features[col].fillna(median_val if not pd.isna(median_val) else 0.0)
                         else:
                             # Other volume features (momentum) use 0
+                            features[col] = features[col].fillna(0.0)
+                    elif feature_type == 'trend':
+                        if 'direction' in col.lower():
+                            # Trend direction defaults to 0 (neutral/no trend)
+                            features[col] = features[col].fillna(0.0)
+                        else:
+                            # Trend strength and consistency use 0 (no trend)
                             features[col] = features[col].fillna(0.0)
                     else:
                         # Default: use median or 0
@@ -1111,16 +1177,28 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             except (ValueError, np.linalg.LinAlgError) as fit_error:
                 self.logger.warning(f"⚠️ {dimension_name} HMM fit failed with numerical error: {fit_error}")
                 # Retry with more conservative settings
-                model = hmm.GaussianHMM(
-                    n_components=n_states,
-                    covariance_type='diag',
-                    n_iter=50,  # Reduced iterations
-                    tol=1e-3,   # Relaxed tolerance
-                    random_state=42,
-                    init_params='stmc'
-                )
-                model.fit(X)
-                self._validate_and_fix_transition_matrix(model, n_states)
+                try:
+                    # Try with fewer states if we have too many
+                    retry_states = min(n_states, max(2, X.shape[0] // 20))  # At least 20 samples per state
+                    if retry_states != n_states:
+                        self.logger.warning(f"⚠️ Retrying {dimension_name} HMM with reduced states: {retry_states} (from {n_states})")
+                        n_states = retry_states
+                    
+                    model = hmm.GaussianHMM(
+                        n_components=n_states,
+                        covariance_type='diag',
+                        n_iter=50,  # Reduced iterations
+                        tol=1e-3,   # Relaxed tolerance
+                        random_state=42,
+                        init_params='stmc',
+                        verbose=False
+                    )
+                    model.fit(X)
+                    self._validate_and_fix_transition_matrix(model, n_states)
+                    
+                except Exception as retry_error:
+                    self.logger.error(f"❌ {dimension_name} HMM retry failed: {retry_error}")
+                    raise ValueError(f"HMM training failed for {dimension_name} after retry: {retry_error}") from retry_error
             except Exception as fit_error:
                 self.logger.error(f"❌ {dimension_name} HMM fit failed with unexpected error: {fit_error}")
                 raise ValueError(f"HMM training failed for {dimension_name}: {fit_error}") from fit_error
@@ -1145,8 +1223,9 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             return None, fallback_assignments
 
     def _combine_dimensional_assignments(self, momentum_assignments: List[int], volatility_assignments: List[int], 
-                                       volume_assignments: List[int], momentum_states: int, 
-                                       volatility_states: int, volume_states: int) -> List[int]:
+                                       volume_assignments: List[int], trend_assignments: List[int], 
+                                       momentum_states: int, volatility_states: int, volume_states: int, 
+                                       trend_states: int) -> List[int]:
         """
         Combine dimensional state assignments into composite regime IDs.
         
@@ -1154,9 +1233,11 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             momentum_assignments: Momentum state assignments
             volatility_assignments: Volatility state assignments  
             volume_assignments: Volume state assignments
+            trend_assignments: Trend state assignments
             momentum_states: Number of momentum states
             volatility_states: Number of volatility states
             volume_states: Number of volume states
+            trend_states: Number of trend states
             
         Returns:
             List of composite regime IDs
@@ -1165,18 +1246,20 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             composite_assignments = []
             
             for i in range(len(momentum_assignments)):
-                # Create composite regime ID: momentum + volatility*M + volume*M*V
+                # Create composite regime ID: momentum + volatility*M + volume*M*V + trend*M*V*Vol
                 regime_id = (momentum_assignments[i] + 
                            volatility_assignments[i] * momentum_states +
-                           volume_assignments[i] * momentum_states * volatility_states)
+                           volume_assignments[i] * momentum_states * volatility_states +
+                           trend_assignments[i] * momentum_states * volatility_states * volume_states)
                 composite_assignments.append(regime_id)
             
             unique_regimes = len(set(composite_assignments))
-            total_possible = momentum_states * volatility_states * volume_states
+            # Calculate total possible combinations for 4D regime space (trend IS used in regime discovery)
+            total_possible = momentum_states * volatility_states * volume_states * trend_states
             
             self.logger.info(f"📊 Combined dimensional assignments:")
             self.logger.info(f"   • Unique regimes found: {unique_regimes}")
-            self.logger.info(f"   • Total possible: {total_possible}")
+            self.logger.info(f"   • Total possible: {total_possible} ({momentum_states}×{volatility_states}×{volume_states}×{trend_states})")
             self.logger.info(f"   • Coverage: {unique_regimes/total_possible*100:.1f}%")
             
             return composite_assignments
@@ -1186,143 +1269,6 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             # Return fallback
             return [0] * len(momentum_assignments)
 
-    def _prepare_features_for_regime_discovery(self, market_data):
-        """
-        Prepare momentum, volatility, and volume features for regime discovery.
-        
-        Args:
-            market_data: Market data DataFrame
-            
-        Returns:
-            DataFrame: Feature matrix for HMM regime detection
-        """
-        try:
-            import pandas as pd
-            import numpy as np
-            
-            features = pd.DataFrame(index=market_data.index)
-            
-            # Momentum features (4-6 dimensions)
-            features['momentum_1h'] = market_data['close'].pct_change(1)
-            features['momentum_2h'] = market_data['close'].pct_change(2)
-            features['momentum_3h'] = market_data['close'].pct_change(3)
-            features['momentum_6h'] = market_data['close'].pct_change(6)
-            
-            # Volatility features (2-4 dimensions)
-            # Fix: volatility_1h should use intrabar volatility (high-low range) for meaningful variation
-            features['volatility_1h'] = (market_data['high'] - market_data['low']) / market_data['close']  # Intrabar volatility
-            features['volatility_3h'] = market_data['close'].rolling(3).std()
-            features['volatility_6h'] = market_data['close'].rolling(6).std()
-            
-            # Volume features (2-4 dimensions)
-            features['volume_momentum_1h'] = market_data['volume'].pct_change(1)
-            features['volume_momentum_3h'] = market_data['volume'].pct_change(3)
-            features['volume_momentum_6h'] = market_data['volume'].pct_change(6)
-            
-            # Price-volume interaction features (robust approach)
-            # Avoid division by zero by adding small epsilon
-            epsilon = 1e-8
-            features['price_volume_ratio'] = market_data['close'] / (market_data['volume'] + epsilon)
-            features['volume_weighted_price'] = market_data['close'] * market_data['volume']
-            
-            # Additional momentum features for more dimensions (removed 12h & 24h)
-            # Keeping only shorter lookbacks for more responsive regime detection
-            
-            # Additional volatility features (use existing momentum_1h, removed 12h & 24h)
-            # Keeping only shorter lookbacks for more responsive regime detection
-            
-            # Additional volume features (removed 12h & 24h)
-            # Keeping only shorter lookbacks for more responsive regime detection
-            
-            # Price pattern features (robust division)
-            features['price_range'] = (market_data['high'] - market_data['low']) / (market_data['close'] + epsilon)
-            features['body_size'] = abs(market_data['close'] - market_data['open']) / (market_data['close'] + epsilon)
-            features['upper_shadow'] = (market_data['high'] - market_data[['open', 'close']].max(axis=1)) / (market_data['close'] + epsilon)
-            features['lower_shadow'] = (market_data[['open', 'close']].min(axis=1) - market_data['low']) / (market_data['close'] + epsilon)
-            
-            # Additional robust features (reduced lookback periods)
-            features['volume_ratio'] = market_data['volume'] / (market_data['volume'].rolling(6).mean() + epsilon)
-            features['price_position'] = (market_data['close'] - market_data['low']) / (market_data['high'] - market_data['low'] + epsilon)
-            
-            # Remove NaN and infinite values - skip enough rows to allow all rolling calculations
-            # Skip first 7 rows to ensure all rolling calculations have enough data (max 6h + 1)
-            features = features.iloc[7:]
-            
-            # Robust cleaning: replace infinite values with finite alternatives
-            features = features.replace([np.inf, -np.inf], np.nan)
-            
-            # For each column, replace NaN values with median of that column
-            for col in features.columns:
-                if features[col].isnull().any():
-                    median_val = features[col].median()
-                    if pd.isna(median_val):
-                        # If median is also NaN, use a default value based on column type
-                        if 'momentum' in col or 'pct' in col:
-                            features[col] = features[col].fillna(0.0)
-                        elif 'volatility' in col or 'std' in col:
-                            # Use median for volatility features instead of constant 0.01
-                            median_val = features[col].median()
-                            if pd.isna(median_val) or median_val == 0:
-                                median_val = 0.01  # Only fallback to 0.01 if no valid data
-                            features[col] = features[col].fillna(median_val)
-                        elif 'ratio' in col or 'position' in col:
-                            features[col] = features[col].fillna(0.5)
-                        else:
-                            features[col] = features[col].fillna(0.0)
-                    else:
-                        features[col] = features[col].fillna(median_val)
-            
-            # Final safety check - clip extreme values
-            for col in features.columns:
-                # Clip extreme values to prevent overflow
-                q99 = features[col].quantile(0.99)
-                q01 = features[col].quantile(0.01)
-                features[col] = features[col].clip(lower=q01, upper=q99)
-                
-                # Ensure no infinite values remain
-                features[col] = features[col].replace([np.inf, -np.inf], 0.0)
-            
-            # If still empty, use a more conservative approach
-            if features.empty:
-                self.logger.warning("⚠️ Features still empty after NaN removal, using minimal feature set")
-                features = pd.DataFrame(index=market_data.index)
-                
-                # Use simple features that don't require rolling calculations
-                features['momentum_1h'] = market_data['close'].pct_change(1)
-                features['volume_momentum_1h'] = market_data['volume'].pct_change(1)
-                features['price_range'] = (market_data['high'] - market_data['low']) / market_data['close']
-                features['body_size'] = abs(market_data['close'] - market_data['open']) / market_data['close']
-                
-                # Remove NaN values and keep enough data
-                features = features.dropna()
-                features = features.iloc[1:]  # Skip first row after pct_change
-            
-            # Final validation for HMM training
-            self.logger.info(f"📊 Prepared {len(features.columns)} features for regime discovery")
-            self.logger.info(f"📊 Feature dimensions: {features.shape}")
-            
-            # Validate features are ready for HMM training
-            if not features.empty:
-                # Check for any remaining problematic values
-                has_inf = features.isin([np.inf, -np.inf]).any().any()
-                has_nan = features.isnull().any().any()
-                
-                if has_inf or has_nan:
-                    self.logger.warning(f"⚠️ Features still contain {'infinity' if has_inf else 'NaN'} values, applying final cleanup")
-                    features = features.replace([np.inf, -np.inf], 0.0)
-                    features = features.fillna(0.0)
-                
-                # Ensure all values are finite and numeric
-                features = features.astype(np.float64)
-                
-                self.logger.info(f"✅ Features validated: {features.shape[0]} samples, {features.shape[1]} features")
-                self.logger.info(f"📊 Features: {list(features.columns)}")
-            
-            return features
-            
-        except Exception as e:
-            self.logger.error(f"Failed to prepare features: {e}")
-            return None
     
     def _validate_and_fix_transition_matrix(self, model, n_components: int) -> None:
         """
@@ -1385,6 +1331,9 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
                 model.transmat_ = model.transmat_ / model.transmat_.sum(axis=1, keepdims=True)
                 self.logger.info("✅ Forced normalization of transition matrix")
             
+            # Validate and fix start probabilities
+            self._validate_and_fix_start_probabilities(model, n_components)
+            
             self.logger.debug(f"📊 Transition matrix validation completed - all rows sum to 1")
             
         except (ValueError, np.linalg.LinAlgError) as e:
@@ -1413,14 +1362,14 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             unique_regimes = set(regime_assignments)
             
             # Recreate features for characteristics calculation
-            momentum_features, volatility_features, volume_features = self._prepare_grouped_features_for_regime_discovery(market_data)
+            momentum_features, volatility_features, volume_features, trend_features = self._prepare_grouped_features_for_regime_discovery(market_data)
             
-            if momentum_features is None or volatility_features is None or volume_features is None:
+            if momentum_features is None or volatility_features is None or volume_features is None or trend_features is None:
                 self.logger.warning("⚠️ Failed to recreate features for regime characteristics")
                 return {}
             
             # Combine all features for comprehensive characteristics
-            all_features = pd.concat([momentum_features, volatility_features, volume_features], axis=1)
+            all_features = pd.concat([momentum_features, volatility_features, volume_features, trend_features], axis=1)
             
             for regime_id in unique_regimes:
                 # Get indices for this regime
@@ -1461,3 +1410,48 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
         except Exception as e:
             self.logger.error(f"❌ Failed to create regime characteristics for clustering: {e}")
             return {}
+    
+    def _validate_and_fix_start_probabilities(self, model, n_components: int) -> None:
+        """
+        Validate and fix start probabilities to prevent NaN values.
+        
+        Args:
+            model: Trained HMM model
+            n_components: Number of components in the model
+        """
+        try:
+            # Check if start probabilities are NaN or infinite
+            if np.any(np.isnan(model.startprob_)) or np.any(np.isinf(model.startprob_)):
+                self.logger.warning("⚠️ Found NaN or infinite values in start probabilities, applying regularization")
+                
+                # Replace with uniform distribution
+                uniform_startprob = np.full(n_components, 1.0 / n_components)
+                model.startprob_ = uniform_startprob.astype(np.float64)
+                
+                self.logger.info("✅ Applied uniform start probabilities")
+            
+            # Check if start probabilities sum to 1
+            startprob_sum = model.startprob_.sum()
+            if not np.allclose(startprob_sum, 1.0, atol=1e-6):
+                self.logger.warning(f"⚠️ Start probabilities do not sum to 1 (got {startprob_sum}), normalizing")
+                
+                # Normalize to ensure they sum to 1
+                model.startprob_ = model.startprob_ / model.startprob_.sum()
+                
+                self.logger.info("✅ Normalized start probabilities to sum to 1")
+            
+            # Final check for any remaining issues
+            if np.any(model.startprob_ < 0):
+                self.logger.warning("⚠️ Found negative start probabilities, applying absolute values and normalizing")
+                model.startprob_ = np.abs(model.startprob_)
+                model.startprob_ = model.startprob_ / model.startprob_.sum()
+                self.logger.info("✅ Fixed negative start probabilities")
+            
+            self.logger.debug(f"📊 Start probabilities validation completed - sum: {model.startprob_.sum():.6f}")
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error validating start probabilities: {e}")
+            # Emergency fallback: uniform start probabilities
+            uniform_startprob = np.full(n_components, 1.0 / n_components)
+            model.startprob_ = uniform_startprob.astype(np.float64)
+            self.logger.info("✅ Applied emergency fallback uniform start probabilities")

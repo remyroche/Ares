@@ -9,7 +9,7 @@ place to ensure consistency from regime discovery to merging.
 Optimized for ETH 15m timeframe with 4x more bars than 1h.
 
 Core Features (6 only):
-- volume_ratio_192h: Current volume / average 192h volume (48h * 4 for 15m)
+- volume_ratio_192m: Current volume / average 192m volume (192 minutes for 15m)
 - volatility_20: 20 period rolling volatility (5 * 4 for 15m)
 - volatility_12: 12 period rolling volatility (3 * 4 for 15m)  
 - momentum_20: 20 period price momentum (5 * 4 for 15m)
@@ -46,12 +46,12 @@ class StandardizedFeatureCalculator:
         
         features = pd.DataFrame(index=df.index)
         
-        # 1. Volume feature: current volume / average 192h volume (48h * 4 for 15m)
-        volume_192h_avg = df['volume'].rolling(window=192).mean()
-        volume_192h_safe = volume_192h_avg.replace(0, np.nan)
-        volume_192h_safe = volume_192h_safe.fillna(method='bfill').fillna(1.0)
-        features['volume_ratio_192h'] = df['volume'] / volume_192h_safe
-        features['volume_ratio_192h'] = features['volume_ratio_192h'].clip(-100, 100)
+        # 1. Volume feature: current volume / average 192m volume (192 minutes for 15m)
+        volume_192m_avg = df['volume'].rolling(window=192).mean()
+        volume_192m_safe = volume_192m_avg.replace(0, np.nan)
+        volume_192m_safe = volume_192m_safe.fillna(method='bfill').fillna(1.0)
+        features['volume_ratio_192m'] = df['volume'] / volume_192m_safe
+        features['volume_ratio_192m'] = features['volume_ratio_192m'].clip(-100, 100)
         
         # 2-3. Volatility features: 20 and 12 period rolling volatility (5*4 and 3*4 for 15m)
         price_returns = df['close'].pct_change().fillna(0)
@@ -144,7 +144,7 @@ class StandardizedFeatureCalculator:
             Dict mapping dimension names to feature names
         """
         return {
-            'volume': ['volume_ratio_192h'],
+            'volume': ['volume_ratio_192m'],
             'volatility': ['volatility_20', 'volatility_12'],
             'momentum': ['momentum_20', 'momentum_12'],
             'trend': ['trend_score']

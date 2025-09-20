@@ -192,7 +192,7 @@ class KlinesParquetManager:
         """
         try:
             # Auto-detect data type: use processed data for timeframes > 1m
-            if data_type == "raw" and interval in ["1h", "2h", "4h", "6h", "8h", "12h", "1d", "3d", "1w"]:
+            if data_type == "raw" and interval in ["1m", "5m", "15m", "30m", "1h", "2h", "4h", "6h", "8h", "12h", "1d", "3d", "1w"]:
                 self.logger.info(f"🔄 Auto-switching to processed data for {interval} timeframe")
                 data_type = "processed"
             
@@ -283,11 +283,29 @@ class KlinesParquetManager:
             combined_df = combined_df[~combined_df.index.duplicated(keep='last')]
             
             # Apply date filtering if specified
-            if start_date is not None:
-                combined_df = combined_df[combined_df.index >= start_date]
-            
-            if end_date is not None:
-                combined_df = combined_df[combined_df.index <= end_date]
+            if start_date is not None or end_date is not None:
+                # Convert timestamps to datetime for proper filtering
+                if 'timestamp' in combined_df.columns:
+                    # Use timestamp column for filtering
+                    timestamp_col = pd.to_datetime(combined_df['timestamp'], unit='s')
+                    if start_date is not None:
+                        combined_df = combined_df[timestamp_col >= start_date]
+                    if end_date is not None:
+                        combined_df = combined_df[timestamp_col <= end_date]
+                else:
+                    # Fallback to index-based filtering
+                    try:
+                        # Convert index to datetime if it's not already
+                        if not isinstance(combined_df.index, pd.DatetimeIndex):
+                            combined_df.index = pd.to_datetime(combined_df.index, unit='s')
+                        
+                        if start_date is not None:
+                            combined_df = combined_df[combined_df.index >= start_date]
+                        if end_date is not None:
+                            combined_df = combined_df[combined_df.index <= end_date]
+                    except Exception as e:
+                        self.logger.warning(f"Could not apply date filtering: {e}")
+                        # Continue without filtering if conversion fails
             
             self.logger.info(f"📊 Loaded {len(combined_df)} records for {symbol} {interval}")
             return combined_df

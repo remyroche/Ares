@@ -755,10 +755,10 @@ class FastFailValidator:
         self.artifact_manager = get_artifact_manager()
         self.pickup_utils = get_artifact_pickup_utils()
         self.version_manager = get_version_manager()
-    def validate_data_quality_fast_fail(self, df: pd.DataFrame, timeframe: str = '1h') -> bool:
+    def validate_data_quality_fast_fail(self, df: pd.DataFrame, timeframe: str = '15m') -> bool:
         """Fast-fail data quality validation with specific timestamp criteria using common operations."""
         # Check data size with dynamic minimum based on timeframe
-        min_rows = 50 if timeframe == '1m' else 100 if timeframe == '1h' else 20  # Dynamic minimum
+        min_rows = 50 if timeframe == '1m' else 100 if timeframe == '1h' else 75 if timeframe == '15m' else 20  # Dynamic minimum
         if len(df) < min_rows:
             raise ValidationError(f"Insufficient data: {len(df)} rows (minimum: {min_rows} for {timeframe})", error_code=ErrorCode.INVALID_INPUT)
         
@@ -847,9 +847,9 @@ class FastFailValidator:
         if n_components >= len(features) // 10:
             raise ValueError(f"Too many components ({n_components}) for data size ({len(features)})")
         
-        # Check feature count vs components (account for 3D regime space approach)
-        # For 3D regime space, we need features for each dimension separately
-        min_features_needed = max(3, n_components // 10)  # More lenient for 3D approach
+        # Check feature count vs components (account for 4D regime space approach)
+        # For 4D regime space, we need features for each dimension separately
+        min_features_needed = max(3, n_components // 10)  # More lenient for 4D approach
         if len(features.columns) < min_features_needed:
             raise ValueError(f"Insufficient features ({len(features.columns)}) for components ({n_components}), need at least {min_features_needed}")
         
@@ -1715,7 +1715,7 @@ class FinalRegimeClusteringStep:
         # Get data parameters from config
         symbol = self.config.get("SYMBOL", "ETHUSDT")
         exchange = self.config.get("EXCHANGE", "BINANCE")
-        timeframe = self.config.get("TIMEFRAME", "1m")
+        timeframe = self.config.get("TIMEFRAME", "15m")
         data_dir = str(self.artifacts.get_cache_dir())
         
         # Use optimized data manager
@@ -2953,7 +2953,7 @@ class FinalRegimeClusteringStep:
                 # Extract symbol, exchange, timeframe from config (assuming defaults if not available)
                 symbol = self.config.get('symbol', 'BTCUSDT')
                 exchange = self.config.get('exchange', 'BINANCE')
-                timeframe = self.config.get('timeframe', '1m')
+                timeframe = self.config.get('timeframe', '15m')
 
                 # Prepare HMM results from clustering and regime analysis
                 hmm_results = {
@@ -3432,7 +3432,7 @@ class FinalRegimeClusteringStep:
             
             # Get symbol and timeframe from config
             symbol = self.config.get('SYMBOL', 'UNKNOWN')
-            timeframe = self.config.get('TIMEFRAME', '1m')
+            timeframe = self.config.get('TIMEFRAME', '15m')
             exchange = self.config.get('EXCHANGE', 'UNKNOWN')
             
             # Save comprehensive reports using centralized system
@@ -5389,7 +5389,7 @@ if __name__ == "__main__":
     test_config = {
         "SYMBOL": "ETHUSDT",
         "EXCHANGE": "BINANCE",
-        "TIMEFRAME": "1m",
+        "TIMEFRAME": "15m",
         "DATA_DIR": "data_cache",
         "regime_clustering": {
             "enable_advanced_reporting": True,

@@ -66,6 +66,7 @@ class SubPipelineConfig:
     max_workers: int = 4
     validation_enabled: bool = True
     monitoring_enabled: bool = True
+    single_stage_only: bool = False
     custom_params: Dict[str, Any] = field(default_factory=dict)
 
 @dataclass

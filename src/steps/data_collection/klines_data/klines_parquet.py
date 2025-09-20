@@ -158,7 +158,7 @@ class KlinesParquetManager:
         """
         try:
             # Auto-detect data type: use processed data for timeframes > 1m
-            if data_type == "raw" and interval in ["1h", "2h", "4h", "6h", "8h", "12h", "1d", "3d", "1w"]:
+            if data_type == "raw" and interval in ["5m", "15m", "30m", "1h", "2h", "4h", "6h", "8h", "12h", "1d", "3d", "1w"]:
                 self.logger.info(f"🔄 Auto-switching to processed data for {interval} timeframe")
                 data_type = "processed"
             

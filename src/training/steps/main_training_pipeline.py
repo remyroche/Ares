@@ -163,7 +163,7 @@ class MainPipelineConfig:
             'sr_feature_integration'
         ],
         PipelineStage.MODEL_TRAINING: [
-            'hmm_training', 'hmm_models_training', 'analyst_models_training', 'analyst_ensemble_training',
+            'analyst_model_training', 'analyst_ensemble_training',
             'tactician_lookback_optimization', 'tactician_models_training', 'tactician_ensemble_training'
         ],
         PipelineStage.BACKTESTING: [
@@ -828,8 +828,8 @@ def get_full_pipeline_config(
                 'sr_feature_integration'
             ],
             PipelineStage.MODEL_TRAINING: [
-                'hmm_training', 'analyst_model_training', 'analyst_ensemble_training', 
-                'tactician_lookback_optimization', 'tactician_model_training', 'tactician_ensemble_training'
+                'analyst_model_training', 'analyst_ensemble_training', 
+                'tactician_lookback_optimization', 'tactician_models_training', 'tactician_ensemble_training'
             ],
             PipelineStage.BACKTESTING: [
                 'basic_backtesting_pre', 'final_parameters_optimization', 'basic_backtesting_post', 'walk_forward_validation', 'monte_carlo_simulation', 'ab_testing',
@@ -881,7 +881,7 @@ def get_light_pipeline_config(
                 'sr_detection', 'hmm_regime_discovery', 'multi_horizon_labeling'
             ],
             PipelineStage.MODEL_TRAINING: [
-                'hmm_training', 'analyst_models_training', 'model_validation'
+                'analyst_model_training', 'analyst_ensemble_training', 'tactician_lookback_optimization', 'tactician_models_training', 'tactician_ensemble_training'
             ],
             PipelineStage.BACKTESTING: [
                 'walk_forward_validation', 'performance_analytics'
@@ -926,7 +926,7 @@ def get_blank_pipeline_config(
         enabled_sub_pipelines={
             PipelineStage.DATA_COLLECTION: ['data_download', 'data_conversion'],
             PipelineStage.MARKET_ANALYSIS: ['sr_detection', 'hmm_regime_discovery'],
-            PipelineStage.MODEL_TRAINING: ['hmm_training'],
+            PipelineStage.MODEL_TRAINING: ['analyst_model_training'],
             PipelineStage.BACKTESTING: ['walk_forward_validation']
         }
     )

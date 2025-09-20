@@ -156,21 +156,21 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             if not unique_regimes:
                 raise ValueError("No unique regimes found in assignments")
             
-            # Create descriptive 4D regime model names
-            regime_models = []
+            # Create descriptive 4D regime model names - DISABLED for performance (not included in outcome)
+            # regime_models = []  # DISABLED - not needed for outcome
             momentum_states = optimization_results.get('best_params', {}).get('momentum_states', 6)
             volatility_states = optimization_results.get('best_params', {}).get('volatility_states', 5)
             volume_states = optimization_results.get('best_params', {}).get('volume_states', 5)
             
-            for regime_id in sorted(unique_regimes):
-                # Decompose composite regime ID back to dimensional states
-                momentum_state = regime_id % momentum_states
-                volatility_state = (regime_id // momentum_states) % volatility_states
-                volume_state = regime_id // (momentum_states * volatility_states)
-                
-                # Create descriptive name: "regime_M2_V1_Vol3" (Momentum=2, Volatility=1, Volume=3)
-                regime_name = f"regime_M{momentum_state}_V{volatility_state}_Vol{volume_state}"
-                regime_models.append(regime_name)
+            # for regime_id in sorted(unique_regimes):  # DISABLED - not needed for outcome
+            #     # Decompose composite regime ID back to dimensional states
+            #     momentum_state = regime_id % momentum_states
+            #     volatility_state = (regime_id // momentum_states) % volatility_states
+            #     volume_state = regime_id // (momentum_states * volatility_states)
+            #     
+            #     # Create descriptive name: "regime_M2_V1_Vol3" (Momentum=2, Volatility=1, Volume=3)
+            #     regime_name = f"regime_M{momentum_state}_V{volatility_state}_Vol{volume_state}"
+            #     regime_models.append(regime_name)
             regime_metrics = {
                 'total_regimes': len(unique_regimes),
                 'total_samples': len(regime_dataframe),
@@ -195,10 +195,8 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
 
             artifacts = {
                 'hmm_regime_discovery_result': {
-                    # Core regime data (backward compatible)
-                    'regime_models': regime_models,
-                    'regime_assignments': regime_assignments,
-                    'regime_count': len(regime_models),
+                    # Core regime data (backward compatible) - excluding raw data for performance
+                    'regime_count': len(unique_regimes),
                     'total_samples': len(regime_assignments),
                     'regime_distribution': regime_distribution,
                     'regime_characteristics': regime_characteristics,
@@ -212,21 +210,8 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
                             'trend_states': optimization_results.get('best_params', {}).get('trend_states', 5),
                             'max_lookback_hours': 6
                         },
-                        'dimensional_assignments': {
-                            'momentum_assignments': optimization_results.get('dimensional_assignments', {}).get('momentum_assignments', []),
-                            'volatility_assignments': optimization_results.get('dimensional_assignments', {}).get('volatility_assignments', []),  
-                            'volume_assignments': optimization_results.get('dimensional_assignments', {}).get('volume_assignments', []),
-                            'trend_assignments': optimization_results.get('dimensional_assignments', {}).get('trend_assignments', [])
-                        },
-                        'regime_decomposition': {
-                            regime_name: {
-                                'composite_id': regime_id,
-                                'momentum_state': regime_id % optimization_results.get('best_params', {}).get('momentum_states', 6),
-                                'volatility_state': (regime_id // optimization_results.get('best_params', {}).get('momentum_states', 6)) % optimization_results.get('best_params', {}).get('volatility_states', 5),
-                                'volume_state': (regime_id // (optimization_results.get('best_params', {}).get('momentum_states', 6) * optimization_results.get('best_params', {}).get('volatility_states', 5))) % optimization_results.get('best_params', {}).get('volume_states', 5),
-                                'trend_state': regime_id // (optimization_results.get('best_params', {}).get('momentum_states', 6) * optimization_results.get('best_params', {}).get('volatility_states', 5) * optimization_results.get('best_params', {}).get('volume_states', 5))
-                            } for regime_id, regime_name in zip(sorted(unique_regimes), regime_models)
-                        },
+                        # dimensional_assignments excluded for performance - raw assignment data removed
+                        # regime_decomposition excluded for performance - detailed regime mapping removed
                         'composite_mapping': 'regime_id = momentum + volatility*M + volume*M*V + trend*M*V*Vol',
                         'decomposition_formula': {
                             'momentum_state': 'regime_id % momentum_states',
@@ -264,7 +249,7 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
                 }
             }
             
-            self.logger.info(f'✅ HMM Regime Discovery completed: {len(regime_models)} regimes discovered (4D regime space: up to 10×10×10×10 states)')
+            self.logger.info(f'✅ HMM Regime Discovery completed: {len(unique_regimes)} regimes discovered (4D regime space: up to 10×10×10×10 states)')
             return ComponentResult(
                 success=True,
                 artifacts=artifacts,
@@ -272,7 +257,7 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
                     'symbol': symbol,
                     'timeframe': timeframe,
                     'data_points_processed': len(market_data),
-                    'regime_count': len(regime_models),
+                    'regime_count': len(unique_regimes),
                     'optimization_mode': 'fast_fixed_parameters',
                     'min_samples_per_regime': min_samples,
                     'execution_successful': True

@@ -64,7 +64,7 @@ from src.utils.logger import system_logger
 # USAGE: Change this single value to adjust both the ceiling and prevention logic together.
 # - Lower values (5.0-8.0): More conservative, better cluster quality, lower coverage
 # - Higher values (10.0-15.0): More aggressive, potentially higher coverage, risk of heterogeneous clusters
-MAX_CV_THRESHOLD = 15.0  # Increased to allow bigger steps (was 10.0)
+MAX_CV_THRESHOLD = 20.0  # Increased to allow bigger steps (was 15.0)
 
 # ============================================================================
 
@@ -241,13 +241,13 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             self.logger.info(f"🛑 STOPPING: Exceeded maximum cluster count ({cluster_count} > 25)")
             return True
         
-        # Stop if we reach minimum similarity threshold (75%)
-        if threshold < 0.75:
-            self.logger.info(f"🛑 STOPPING: Reached minimum similarity threshold (75%)")
+        # Stop if we reach minimum similarity threshold (65%)
+        if threshold < 0.65:
+            self.logger.info(f"🛑 STOPPING: Reached minimum similarity threshold (65%)")
             return True
         
         # Stop if we've reached the end of CV thresholds and coverage is good
-        if (previous_coverage > 0 and previous_coverage < 90.0 and 
+        if (previous_coverage > 0 and previous_coverage < 92.5 and 
             cv_threshold_idx < len(cv_thresholds) - 1):
             return False  # Continue with CV relaxation
         
@@ -266,7 +266,7 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
         Returns:
             True if CV threshold should be relaxed, False otherwise
         """
-        return (previous_coverage > 0 and previous_coverage < 90.0 and 
+        return (previous_coverage > 0 and previous_coverage < 92.5 and 
                 cv_threshold_idx < len(cv_thresholds) - 1)
     
     def _is_merge_blocked_by_size(self, cluster_1_size: int, cluster_2_size: int, 
@@ -278,14 +278,61 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             cluster_1_size: Size of first cluster
             cluster_2_size: Size of second cluster
             total_samples: Total number of samples
-            max_percentage: Maximum allowed percentage for combined cluster
+            max_percentage: Maximum allowed percentage for combined cluster (default: 15%)
             
         Returns:
             True if merge should be blocked, False otherwise
         """
         combined_size = cluster_1_size + cluster_2_size
         combined_percentage = (combined_size / total_samples) * 100 if total_samples > 0 else 0
-        return combined_percentage > max_percentage
+        
+        # Block merge if it would create an oversized cluster
+        if combined_percentage > max_percentage:
+            return True
+            
+        # Also block if either individual cluster is already oversized (>15%)
+        cluster_1_percentage = (cluster_1_size / total_samples) * 100 if total_samples > 0 else 0
+        cluster_2_percentage = (cluster_2_size / total_samples) * 100 if total_samples > 0 else 0
+        
+        return cluster_1_percentage > 15.0 or cluster_2_percentage > 15.0
+    
+    def _get_max_cluster_size(self, total_samples: int, max_fraction: float = 0.15) -> int:
+        """
+        Calculate the maximum allowed cluster size based on total samples and max fraction.
+        
+        Args:
+            total_samples: Total number of samples
+            max_fraction: Maximum fraction of total samples per cluster (default: 0.15 = 15%)
+            
+        Returns:
+            Maximum allowed cluster size
+        """
+        return int(np.floor(max_fraction * total_samples))
+    
+    def _calculate_size_penalized_merge_score(self, similarity: float, cluster_1_size: int, 
+                                            cluster_2_size: int, max_size: int, 
+                                            penalty_scale: float = 10.0) -> float:
+        """
+        Calculate a size-penalized merge score to discourage oversized clusters.
+        
+        Args:
+            similarity: Similarity score between clusters (higher is better)
+            cluster_1_size: Size of first cluster
+            cluster_2_size: Size of second cluster
+            max_size: Maximum allowed cluster size
+            penalty_scale: Scale factor for penalty (higher = more penalty)
+            
+        Returns:
+            Penalized merge score (higher is better, but oversized clusters get penalized)
+        """
+        combined_size = cluster_1_size + cluster_2_size
+        overflow = max(0, combined_size - max_size)
+        
+        # Calculate penalty based on overflow
+        penalty = penalty_scale * (overflow / max_size) if max_size > 0 else 0
+        
+        # Return penalized score (subtract penalty to make oversized merges worse)
+        return similarity - penalty
     
     def _get_cv_threshold_multiplier(self, combined_size: int, total_samples: int) -> float:
         """
@@ -446,7 +493,7 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                 regime_distribution = regime_metrics.get('regime_distribution', {})
                 if regime_distribution:
                     dist_summary = {f"regime_{k}": f"{v/total_samples*100:.1f}%" for k, v in regime_distribution.items()}
-                    self.logger.info(f"ℹ️ 🔍 Regime distribution: {dist_summary}")
+                    # Removed verbose regime distribution logging
             else:
                 self.logger.warning("⚠️ No HMM regime discovery results found in pipeline state")
             
@@ -612,98 +659,8 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                 # Build enhanced outcome with comprehensive metrics (no raw data)
                 artifacts = {
                     'hmm_clustering_result': {
-                        # Enhanced clustering summary with comprehensive metrics
-                        'clustering_summary': {
-                            'total_clusters': actual_n_clusters,
-                            'target_achieved': actual_n_clusters <= 25,  # Within 20-ish range
-                            'coverage_achieved': hierarchical_coverage_metrics.get('top_20_coverage', 0) >= 90.0,
-                            'quality_score': quality_metrics.get('overall_quality_score', 0.0),
-                            'regime_reduction': f"{original_n_clusters} → {actual_n_clusters}"
-                        },
-                        
-                        # Comprehensive metrics (statistical and economical)
-                        'comprehensive_metrics': {
-                            'coverage_metrics': {
-                                'top_5_coverage': self._calculate_top_n_coverage(hmm_models, 5).get('coverage_percentage', 0.0),
-                                'top_10_coverage': self._calculate_top_n_coverage(hmm_models, 10).get('coverage_percentage', 0.0),
-                                'top_20_coverage': self._calculate_top_n_coverage(hmm_models, 20).get('coverage_percentage', 0.0),
-                                'target_coverage': 90.0,
-                                'coverage_achieved': self._calculate_top_n_coverage(hmm_models, 20).get('coverage_percentage', 0) >= 90.0
-                            },
-                            'quality_metrics': {
-                                'overall_quality_score': quality_metrics.get('overall_quality_score', 0.0),
-                                'average_coherence': quality_metrics.get('avg_within_cluster_cv', 0.0),
-                                'size_balance': quality_metrics.get('size_balance', 0.0),
-                                'coherent_clusters': quality_metrics.get('coherent_clusters', 0),
-                                'coherence_ratio': quality_metrics.get('coherence_ratio', 0.0)
-                            },
-                            'coherence_metrics': {
-                                'overall_coherence': {
-                                    'mean_cv': quality_metrics.get('avg_within_cluster_cv', 0.0),
-                                    'low_cv_clusters': quality_metrics.get('low_cv_clusters', 0),
-                                    'high_cv_clusters': quality_metrics.get('high_cv_clusters', 0)
-                                }
-                            }
-                        },
-                        
-                        # Economical metrics
-                        'economical_metrics': {
-                            'market_state_diversity': {
-                                'unique_states': actual_n_clusters,
-                                'diversity_ratio': 1.0 if actual_n_clusters <= 25 else 0.8,
-                                'economical_relevance': {
-                                    'clusters_covering_90_percent': actual_n_clusters,
-                                    'market_state_coverage': 'comprehensive'
-                                }
-                            }
-                        },
-                        
-                        # Statistical metrics
-                        'statistical_metrics': {
-                            'cluster_validity': {
-                                'sufficient_samples': len([m for m in hmm_models if m.get('sample_count', 0) >= 10]),
-                                'balanced_distribution': quality_metrics.get('size_balance', 0.0) > 0.5
-                            },
-                            'dimensional_analysis': statistical_analysis.get('factor_impact_analysis', {}).get('aspect_ranking', [])
-                        },
-                        
-                        # Comprehensive cluster analysis (no raw data)
-                        'cluster_analysis': {
-                            'per_cluster_metrics': self._generate_comprehensive_cluster_metrics(hmm_models, cluster_assignments, market_data),
-                            'cluster_summary': {
-                                'total_clusters': len(hmm_models),
-                                'coherent_clusters': len([m for m in hmm_models if m.get('coherence_score', 0) > 0.7]),
-                                'average_coherence': quality_metrics.get('overall_quality_score', 0.0),
-                                'trainable_clusters': self._select_trainable_clusters_legacy(hmm_models, cluster_assignments)
-                            },
-                            'top_clusters_analysis': {
-                                'top_5_coverage': self._calculate_top_n_coverage(hmm_models, 5).get('coverage_percentage', 0.0),
-                                'top_10_coverage': self._calculate_top_n_coverage(hmm_models, 10).get('coverage_percentage', 0.0),
-                                'top_20_coverage': self._calculate_top_n_coverage(hmm_models, 20).get('coverage_percentage', 0.0),
-                                'differentiation_metrics': self._calculate_cluster_differentiation(hmm_models)
-                            }
-                        },
-                        
-                        # Recommendations for ML training
-                        'recommendations': self._generate_clustering_recommendations(
-                            len(hmm_models), 
-                            hierarchical_coverage_metrics.get('top_20_coverage', 0),
-                            quality_metrics.get('overall_quality_score', 0.0)
-                        ),
-                        
-                        # Cluster assignments summary (no raw data)
-                        'cluster_assignments_summary': {
-                            'total_assignments': len(cluster_assignments),
-                            'unique_clusters': len(set(cluster_assignments)),
-                            'cluster_distribution': self._calculate_cluster_distribution(cluster_assignments),
-                            'assignment_range': {
-                                'min_cluster_id': min(cluster_assignments) if cluster_assignments else 0,
-                                'max_cluster_id': max(cluster_assignments) if cluster_assignments else 0
-                            }
-                        },
-                        
-                        # Execution metadata (minimal, no raw data)
-                        'metadata': {
+                        # 1. EXECUTION METADATA
+                        'execution_metadata': {
                             'timestamp': datetime.now().isoformat(),
                             'symbol': getattr(self.config, 'symbol', 'ETHUSDT'),
                             'exchange': getattr(self.config, 'exchange', 'BINANCE'),
@@ -712,10 +669,79 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                             'execution_successful': True,
                             'clustering_method': 'enhanced_20_cluster_target',
                             'target_clusters': 20,
-                            'target_coverage': 90.0,
-                            'outcome_version': '2.0_enhanced_metrics_only',
+                            'target_coverage_min': 90.0,
+                            'target_coverage_max': 95.0,
+                            'outcome_version': '3.0_restructured_report',
                             'raw_data_excluded': True,
-                            'comprehensive_metrics_included': True
+                            'comprehensive_metrics_included': True,
+                            'regime_reduction': f"{original_n_clusters} → {actual_n_clusters}"
+                        },
+                        
+                        # 2. GENERAL METRICS (All clusters, top N analysis, overall statistics)
+                        'general_metrics': {
+                            # Cluster Assignments Summary
+                            'cluster_assignments_summary': {
+                                'total_assignments': len(cluster_assignments),
+                                'unique_clusters': len(set(cluster_assignments)),
+                                'cluster_distribution': self._calculate_cluster_distribution_filtered(cluster_assignments),
+                                'assignment_range': {
+                                    'min_cluster_id': min(cluster_assignments) if cluster_assignments else 0,
+                                    'max_cluster_id': max(cluster_assignments) if cluster_assignments else 0
+                                }
+                            },
+                            
+                            # Economical Metrics
+                            'economical_metrics': {
+                                'market_state_diversity': {
+                                    'unique_states': actual_n_clusters,
+                                    'diversity_ratio': 1.0 if actual_n_clusters <= 25 else 0.8,
+                                    'economical_relevance': {
+                                        'clusters_covering_90_percent': actual_n_clusters,
+                                        'market_state_coverage': 'comprehensive'
+                                    }
+                                }
+                            },
+                            
+                            # Comprehensive Metrics
+                            'comprehensive_metrics': {
+                                'coverage_metrics': {
+                                    'top_5_coverage': hierarchical_coverage_metrics.get('top_5_coverage', 0.0),
+                                    'top_10_coverage': hierarchical_coverage_metrics.get('top_10_coverage', 0.0),
+                                    'top_20_coverage': hierarchical_coverage_metrics.get('top_20_coverage', 0.0),
+                                    'target_coverage_min': 90.0,
+                                    'target_coverage_max': 95.0,
+                                    'coverage_achieved': hierarchical_coverage_metrics.get('top_20_coverage', 0) >= 90.0 and hierarchical_coverage_metrics.get('top_20_coverage', 0) <= 95.0
+                                },
+                                'quality_metrics': self._calculate_fixed_quality_metrics(cluster_assignments, cluster_detailed_metrics, quality_metrics, hmm_models, market_data),
+                                'coherence_metrics': self._calculate_fixed_coherence_metrics(cluster_assignments, cluster_detailed_metrics)
+                            },
+                            
+                            # Statistical Metrics
+                            'statistical_metrics': self._calculate_fixed_statistical_metrics(cluster_assignments, cluster_detailed_metrics, statistical_analysis),
+                            
+                            # Clustering Summary
+                            'clustering_summary': {
+                                'total_clusters': actual_n_clusters,
+                                'target_achieved': actual_n_clusters <= 25,  # Within 20-ish range
+                                'coverage_achieved': hierarchical_coverage_metrics.get('top_20_coverage', 0) >= 90.0 and hierarchical_coverage_metrics.get('top_20_coverage', 0) <= 95.0,
+                                'quality_score': quality_metrics.get('overall_quality_score', 0.0)
+                            },
+                            
+                            # Top Clusters Analysis
+                            'top_clusters_analysis': {
+                                'top_5_coverage': self._calculate_top_n_coverage(hmm_models, 5).get('coverage_percentage', 0.0),
+                                'top_10_coverage': self._calculate_top_n_coverage(hmm_models, 10).get('coverage_percentage', 0.0),
+                                'top_20_coverage': self._calculate_top_n_coverage(hmm_models, 20).get('coverage_percentage', 0.0),
+                                'differentiation_metrics': self._calculate_cluster_differentiation(hmm_models)
+                            }
+                        },
+                        
+                        # 3. PER-CLUSTER METRICS & INFORMATION (Top 30 only, no hmm_models)
+                        'per_cluster_metrics': {
+                            'cluster_analysis': {
+                                'per_cluster_metrics': self._generate_comprehensive_cluster_metrics_top30(hmm_models, cluster_assignments, market_data),
+                                'cluster_summary': self._calculate_cluster_summary_fixed(cluster_assignments, cluster_detailed_metrics)
+                            }
                         }
                     }
                 }
@@ -815,30 +841,9 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             
             max_clusters = config.get('max_clusters', 40)  # Reasonable maximum for regime clustering
             
-            # Check if enhanced clustering features should be used (force enhanced for testing)
-            use_enhanced_clustering = config.get('use_enhanced_clustering', True) 
-            use_multi_stage = config.get('use_multi_stage_clustering', False)
-            
-            # Respect user configuration for clustering mode
-            self.logger.info(f"🔧 Clustering mode selection: enhanced={use_enhanced_clustering}, multi_stage={use_multi_stage}")
-            if not use_multi_stage and not use_enhanced_clustering:
-                self.logger.info("🔧 Using standard clustering mode")
-            elif not use_multi_stage and use_enhanced_clustering:
-                self.logger.info("🔧 Using enhanced clustering mode")
-            
-            if use_multi_stage:
-                self.logger.info("🔄 Using Multi-Stage Hierarchical Clustering")
-                clustering_result = self._multi_stage_hierarchical_clustering(
-                    regime_characteristics, regime_assignments
-                )
-            elif use_enhanced_clustering:
-                self.logger.info("🔄 Using Enhanced Matrix-Based Clustering")
-                clustering_result = self._perform_enhanced_matrix_clustering(
-                    regime_characteristics, regime_assignments, max_clusters, market_data
-                )
-            else:
-                self.logger.info("🔄 Using Standard Matrix-Based Clustering")
-            clustering_result = self._perform_matrix_based_clustering(
+            # Always use Enhanced Matrix-Based Clustering (multi-stage removed as dead code)
+            self.logger.info("🔄 Using Enhanced Matrix-Based Clustering")
+            clustering_result = self._perform_enhanced_matrix_clustering(
                 regime_characteristics, regime_assignments, max_clusters, market_data
             )
             
@@ -895,8 +900,8 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             cv_thresholds = self._generate_adaptive_cv_thresholds(regime_characteristics)
             current_cv_threshold_idx = 0
             
-            # Calculate progressive similarity thresholds and enforce 0.75 minimum
-            similarity_thresholds = [t for t in self._calculate_progressive_similarity_thresholds() if t >= 0.75]
+            # Calculate progressive similarity thresholds and enforce 0.65 minimum
+            similarity_thresholds = [t for t in self._calculate_progressive_similarity_thresholds() if t >= 0.65]
             
             self.logger.info(f"🎯 Enhanced CV Thresholds: {[f'{t:.2f}' for t in cv_thresholds]}")
             
@@ -958,43 +963,69 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                     regime_sample_count = regime_characteristics[regime_id].get('sample_count', 1)
                     cluster_sample_counts[cluster_id] += regime_sample_count
                 
+                # Calculate maximum allowed cluster size (15% cap)
+                max_cluster_size = self._get_max_cluster_size(total_samples, max_fraction=0.15)
+                self.logger.debug(f"🔒 Max cluster size: {max_cluster_size} ({max_cluster_size/total_samples*100:.1f}%)")
+                
+                # Sort mergeable pairs by size-penalized score to prioritize better merges
+                scored_pairs = []
                 for similarity, cluster_1, cluster_2, regime_1, regime_2 in mergeable_pairs:
                     if regime_to_cluster[regime_1] != regime_to_cluster[regime_2]:
-                        # Enhanced quality checks with size-based relaxation for smaller clusters
                         cluster_1_size = cluster_sample_counts.get(cluster_1, 0)
                         cluster_2_size = cluster_sample_counts.get(cluster_2, 0)
-                        combined_size = cluster_1_size + cluster_2_size
                         
-                        # Check if merge should be blocked due to size constraints
-                        if self._is_merge_blocked_by_size(cluster_1_size, cluster_2_size, total_samples):
-                            combined_percentage = (combined_size / total_samples) * 100
-                            self.logger.info(f"🚫 Blocking merge: would create {combined_percentage:.1f}% cluster (>15% limit)")
-                            continue  # Skip this merge to prevent oversized clusters
+                        # Calculate size-penalized merge score
+                        penalized_score = self._calculate_size_penalized_merge_score(
+                            similarity, cluster_1_size, cluster_2_size, max_cluster_size, penalty_scale=10.0
+                        )
                         
-                        # Get CV threshold multiplier based on cluster size
-                        cv_threshold_multiplier = self._get_cv_threshold_multiplier(combined_size, total_samples)
+                        scored_pairs.append((penalized_score, similarity, cluster_1, cluster_2, regime_1, regime_2))
+                
+                # Sort by penalized score (higher is better)
+                scored_pairs.sort(key=lambda x: x[0], reverse=True)
+                
+                for penalized_score, similarity, cluster_1, cluster_2, regime_1, regime_2 in scored_pairs:
+                    # Enhanced quality checks with size-based relaxation for smaller clusters
+                    cluster_1_size = cluster_sample_counts.get(cluster_1, 0)
+                    cluster_2_size = cluster_sample_counts.get(cluster_2, 0)
+                    combined_size = cluster_1_size + cluster_2_size
+                    
+                    # Hard capacity enforcement: skip if merge would exceed max size
+                    if combined_size > max_cluster_size:
+                        combined_percentage = (combined_size / total_samples) * 100
+                        self.logger.info(f"🚫 Blocking merge: would create {combined_percentage:.1f}% cluster (>{max_cluster_size/total_samples*100:.1f}% limit)")
+                        continue  # Try next-best pair
+                    
+                    # Check if merge should be blocked due to size constraints (legacy check)
+                    if self._is_merge_blocked_by_size(cluster_1_size, cluster_2_size, total_samples):
+                        combined_percentage = (combined_size / total_samples) * 100
+                        self.logger.info(f"🚫 Blocking merge: would create {combined_percentage:.1f}% cluster (legacy check)")
+                        continue  # Skip this merge to prevent oversized clusters
+                    
+                    # Get CV threshold multiplier based on cluster size
+                    cv_threshold_multiplier = self._get_cv_threshold_multiplier(combined_size, total_samples)
+                    
+                    if (self._passes_cv_hard_constraint(
+                        regime_characteristics[regime_1], 
+                        regime_characteristics[regime_2],
+                        max_relative_diff=0.9 * cv_threshold_multiplier  # Size-adjusted threshold
+                    ) and self._check_cv_compatibility(
+                        regime_characteristics[regime_1],
+                        regime_characteristics[regime_2],
+                        min_cv_threshold=0.9 * cv_threshold_multiplier  # Size-adjusted threshold
+                    )):
+                        # Perform merge
+                        old_cluster = regime_to_cluster[regime_2]
+                        new_cluster = regime_to_cluster[regime_1]
                         
-                        if (self._passes_cv_hard_constraint(
-                            regime_characteristics[regime_1], 
-                            regime_characteristics[regime_2],
-                            max_relative_diff=0.9 * cv_threshold_multiplier  # Size-adjusted threshold
-                        ) and self._check_cv_compatibility(
-                            regime_characteristics[regime_1],
-                            regime_characteristics[regime_2],
-                            min_cv_threshold=0.9 * cv_threshold_multiplier  # Size-adjusted threshold
-                        )):
-                            # Perform merge
-                            old_cluster = regime_to_cluster[regime_2]
-                            new_cluster = regime_to_cluster[regime_1]
-                            
-                            # Update all regimes in old cluster
-                            for regime_id in regime_ids:
-                                if regime_to_cluster[regime_id] == old_cluster:
-                                    regime_to_cluster[regime_id] = new_cluster
-                            
-                            round_merges.append((old_cluster, new_cluster))
-                            merges_this_round += 1
-                            cluster_count -= 1
+                        # Update all regimes in old cluster
+                        for regime_id in regime_ids:
+                            if regime_to_cluster[regime_id] == old_cluster:
+                                regime_to_cluster[regime_id] = new_cluster
+                        
+                        round_merges.append((old_cluster, new_cluster))
+                        merges_this_round += 1
+                        cluster_count -= 1
                 
                 # Use incremental similarity updates instead of full recalculation
                 if round_merges:
@@ -1021,10 +1052,13 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                 
                 self.logger.info(f"   📊 Enhanced Progress: {cluster_count} clusters, top-20 coverage: {top_20_coverage:.1f}%")
                 
-                # Early stopping with enhanced criteria
-                if top_20_coverage >= 90.0:
-                    self.logger.info(f"✅ ENHANCED TARGET REACHED: {top_20_coverage:.1f}% coverage")
+                # Early stopping with enhanced criteria (target range 90-95%)
+                if top_20_coverage >= 90.0 and top_20_coverage <= 95.0:
+                    self.logger.info(f"✅ ENHANCED TARGET REACHED: {top_20_coverage:.1f}% coverage (within 90-95% range)")
                     break
+                elif top_20_coverage > 95.0:
+                    self.logger.info(f"⚠️ Coverage too high: {top_20_coverage:.1f}% (target: 90-95%), continuing to reduce clusters")
+                    # Continue to reduce clusters if coverage is too high
             
             # Calculate comprehensive quality score
             clusters_dict = {}
@@ -1053,7 +1087,7 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             trainable = self._select_trainable_clusters(
                 clusters_dict=clusters_dict,
                 regime_characteristics=regime_characteristics,
-                coverage_target=90.0,
+                coverage_target=92.5,  # Target middle of 90-95% range
                 min_clusters=18,
                 max_clusters=25,
                 max_avg_cv=0.35
@@ -1096,1083 +1130,15 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
         except Exception as e:
             self.logger.error(f"❌ Enhanced clustering failed: {e}")
             # Fallback to standard clustering
-            return self._perform_matrix_based_clustering(regime_characteristics, regime_assignments, max_clusters, market_data)
+            return 
 
-    def _perform_matrix_based_clustering(
-        self, 
-        regime_characteristics: Dict[str, Any], 
-        regime_assignments: List[int], 
-        max_clusters: int,
-        market_data: Any = None
-    ) -> Dict[str, Any]:
-        """Perform hierarchical matrix-based clustering with similarity thresholds."""
-        try:
-            import numpy as np
-            
-            # Calculate regime similarity matrix with memory optimization
-            similarity_matrix = self._calculate_memory_efficient_similarity_matrix(regime_characteristics)
-            if similarity_matrix.size == 0:
-                self.logger.error("❌ Empty similarity matrix - cannot perform clustering")
-                return self._create_single_cluster_result(regime_assignments, market_data)
-
-            regime_ids = list(regime_characteristics.keys())
-            n_regimes = len(regime_ids)
-            
-            # Check for insufficient regimes for clustering
-            if n_regimes <= 1:
-                self.logger.warning(f"⚠️ Insufficient regimes for clustering: {n_regimes} regimes (need at least 2)")
-                self.logger.info(f"🔄 Returning single cluster result for {n_regimes} regime(s)")
-                return self._create_single_cluster_result(regime_assignments, market_data)
-
-            # 🔍 DETAILED SIMILARITY ANALYSIS
-            import numpy as np
-            self.logger.info(f"🎯 Starting hierarchical matrix clustering: {n_regimes} regimes → target: 20-40 clusters")
-            self.logger.info(f"📊 Similarity Matrix Analysis:")
-            self.logger.info(f"   📈 Matrix shape: {similarity_matrix.shape}")
-            self.logger.info(f"   📈 Min similarity: {np.min(similarity_matrix):.4f}")
-            self.logger.info(f"   📈 Max similarity: {np.max(similarity_matrix):.4f}")
-            self.logger.info(f"   📈 Mean similarity: {np.mean(similarity_matrix):.4f}")
-            self.logger.info(f"   📈 Median similarity: {np.median(similarity_matrix):.4f}")
-            self.logger.info(f"   📈 Std similarity: {np.std(similarity_matrix):.4f}")
-            
-            # Analyze similarity distribution
-            high_sim_pairs = np.sum(similarity_matrix > 0.8)
-            med_sim_pairs = np.sum((similarity_matrix > 0.5) & (similarity_matrix <= 0.8))
-            low_sim_pairs = np.sum(similarity_matrix <= 0.5)
-            total_pairs = n_regimes * (n_regimes - 1) // 2  # Upper triangle excluding diagonal
-            
-            self.logger.info(f"   🎯 Similarity Distribution:")
-            if total_pairs > 0:
-                self.logger.info(f"      High similarity (>0.8): {high_sim_pairs} pairs ({high_sim_pairs/total_pairs*100:.1f}%)")
-                self.logger.info(f"      Medium similarity (0.5-0.8): {med_sim_pairs} pairs ({med_sim_pairs/total_pairs*100:.1f}%)")
-                self.logger.info(f"      Low similarity (≤0.5): {low_sim_pairs} pairs ({low_sim_pairs/total_pairs*100:.1f}%)")
-            else:
-                self.logger.warning(f"⚠️ No pairs to analyze - total_pairs = 0")
-                self.logger.info(f"      High similarity (>0.8): {high_sim_pairs} pairs")
-                self.logger.info(f"      Medium similarity (0.5-0.8): {med_sim_pairs} pairs")
-                self.logger.info(f"      Low similarity (≤0.5): {low_sim_pairs} pairs")
-            
-            # Initialize regime-to-cluster mapping (each regime starts as its own cluster)
-            regime_to_cluster = {regime_id: i for i, regime_id in enumerate(regime_ids)}
-            cluster_count = n_regimes
-            
-            # Intelligent hierarchical merging with adaptive similarity thresholds
-            # Automatically detect optimal stopping point based on regime dissimilarity
-            min_cv_threshold = 11.25  # Another 50% more relaxed for faster convergence (was 7.5)
-            # Note: Merging logic allows clusters >6% to merge as long as resulting cluster <12%
-            
-            # Calculate progressive similarity thresholds and enforce 0.75 minimum
-            similarity_thresholds = [t for t in self._calculate_progressive_similarity_thresholds() if t >= 0.75]
-            
-            # 🔍 DETAILED THRESHOLD ANALYSIS
-            self.logger.info(f"🎯 Adaptive Similarity Thresholds:")
-            for i, threshold in enumerate(similarity_thresholds):
-                eligible_pairs = np.sum(similarity_matrix >= threshold)
-                self.logger.info(f"   📊 Threshold {i+1}: {threshold:.4f} ({threshold*100:.1f}%) - {eligible_pairs} eligible pairs for merging")
-
-            # Diagnostics accumulators
-            threshold_quality_curve: List[Dict[str, Any]] = []
-            rejection_histogram_agg = {
-                'same_cluster': 0,
-                'excluded_cv': 0,
-                'size_constraint': 0,
-                'similarity_too_low': 0,
-                'cv_incompatible': 0,
-                'cv_hard_constraint': 0,
-                'accepted': 0
-            }
-
-            # Adaptive CV threshold generation based on data characteristics
-            cv_thresholds = self._generate_adaptive_cv_thresholds(regime_characteristics)
-            current_cv_threshold_idx = 0
-            
-            self.logger.info(f"🎯 PROGRESSIVE CV RELAXATION: Starting with CV threshold {cv_thresholds[0]:.1f} ({cv_thresholds[0]*100:.0f}%)")
-            self.logger.info(f"   📊 Progression: {' → '.join([f'{t:.1f}' for t in cv_thresholds])}")
-            self.logger.info(f"   📊 Target: 90% top-20 coverage for early stopping")
-            
-            # Track previous coverage to trigger CV relaxation
-            previous_top_20_coverage = 0.0
-            cv_relaxation_triggered = False
-            
-            # Track coverage stagnation to prevent infinite loops
-            coverage_history = []  # Track last few coverage values
-            stagnation_threshold = 0.5  # Stop if coverage doesn't improve by 0.5% in 2 iterations
-            
-            for threshold in similarity_thresholds:
-                if cluster_count <= 20:  # Stop when we reach lower bound of optimal range (20-40)
-                    self.logger.info(f"🎯 STOPPING: Reached optimal cluster count ({cluster_count} <= 20)")
-                    break
-                    
-                self.logger.info(f"🔄 Batch merging at {threshold*100:.1f}% similarity threshold ({threshold:.3f})...")
-                self.logger.info(f"   📊 Starting with {cluster_count} clusters")
-                
-                # Enforce hard merge floor at 75% similarity
-                if threshold < 0.75:
-                    self.logger.info(f"🛑 STOPPING: Reached minimum similarity threshold (75%)")
-                    break
-
-                # Check if we need to relax CV threshold based on previous iteration's coverage
-                if previous_top_20_coverage > 0 and previous_top_20_coverage < 90.0 and current_cv_threshold_idx < len(cv_thresholds) - 1:
-                    old_cv_threshold = cv_thresholds[current_cv_threshold_idx]
-                    current_cv_threshold_idx += 1
-                    new_cv_threshold = cv_thresholds[current_cv_threshold_idx]
-                    
-                    self.logger.info(f"📈 RELAXING CV THRESHOLD: {old_cv_threshold:.1f} → {new_cv_threshold:.1f} (Previous top-20: {previous_top_20_coverage:.1f}% < 90% target)")
-                    self.logger.info(f"   🔄 Progress: Step {current_cv_threshold_idx + 1}/{len(cv_thresholds)} in CV relaxation sequence")
-                    cv_relaxation_triggered = True
-                elif previous_top_20_coverage > 0 and previous_top_20_coverage < 90.0 and current_cv_threshold_idx >= len(cv_thresholds) - 1:
-                    current_cv_threshold = cv_thresholds[-1]  # Use max threshold
-                    self.logger.warning(f"⚠️ CV THRESHOLD MAXED OUT: At {current_cv_threshold:.1f} but only {previous_top_20_coverage:.1f}% coverage (target: 90%+)")
-                    self.logger.warning(f"   🔍 Consider other bottlenecks: similarity thresholds, hard constraints, or regime quality")
-                    self.logger.info(f"🛑 STOPPING: CV threshold exhausted - cannot achieve 90% target with current data")
-                    break
-
-                # Log CV and threshold analysis for information but don't stop
-                cv_analysis = self._analyze_cv_stopping_criteria(regime_characteristics, regime_to_cluster)
-                if cv_analysis['should_stop']:
-                    self.logger.info(f"⚠️ CV Analysis Warning: {cv_analysis['reason']} (continuing anyway)")
-                    self.logger.info(f"   📊 CV Stats: {cv_analysis['stats']}")
-
-                threshold_analysis = self._analyze_similarity_threshold(threshold, similarity_matrix, regime_to_cluster)
-                if threshold_analysis['too_low']:
-                    self.logger.info(f"⚠️ Threshold Warning: {threshold_analysis['reason']} (continuing anyway)")
-                    self.logger.info(f"   📊 Similarity Stats: {threshold_analysis['stats']}")
-                else:
-                    self.logger.info(f"✅ Threshold OK: {threshold_analysis['reason']}")
-                
-                # Use progressive CV threshold with debug logging
-                current_cv_threshold = cv_thresholds[min(current_cv_threshold_idx, len(cv_thresholds) - 1)]
-                self.logger.info(f"🔍 DEBUG: Using CV threshold {current_cv_threshold:.1f} (index {current_cv_threshold_idx}/{len(cv_thresholds)-1})")
-                
-                # Calculate total samples first
-                total_samples = len(regime_assignments)
-                
-                # Identify clusters that should be excluded from merging (only oversized clusters >12%)
-                excluded_clusters = self._get_excluded_clusters_due_to_size(regime_characteristics, regime_to_cluster, total_samples)
-
-                # Calculate cluster sample counts for logging
-                cluster_sample_counts = {}
-                for regime_id, cluster_id in regime_to_cluster.items():
-                    if cluster_id not in cluster_sample_counts:
-                        cluster_sample_counts[cluster_id] = 0
-                    regime_sample_count = regime_characteristics[regime_id].get('sample_count', 1)
-                    cluster_sample_counts[cluster_id] += regime_sample_count
-                
-                # Oversized cluster detection is now handled by _get_excluded_clusters_due_to_size
-                
-                # Log current cluster sizes with distribution statistics
-                sorted_clusters_debug = sorted(cluster_sample_counts.items(), key=lambda x: x[1], reverse=True)
-                top_5_debug = sorted_clusters_debug[:5]
-                top_10_debug = sorted_clusters_debug[:10]
-                top_20_debug = sorted_clusters_debug[:20]
-                top_30_debug = sorted_clusters_debug[:30]
-                
-                # Calculate cumulative distribution percentages
-                top_5_total = sum(size for _, size in top_5_debug)
-                top_10_total = sum(size for _, size in top_10_debug)
-                top_20_total = sum(size for _, size in top_20_debug)
-                top_30_total = sum(size for _, size in top_30_debug)
-                
-                top_5_pct = (top_5_total / total_samples) * 100 if total_samples > 0 else 0
-                top_10_pct = (top_10_total / total_samples) * 100 if total_samples > 0 else 0
-                top_20_pct = (top_20_total / total_samples) * 100 if total_samples > 0 else 0
-                top_30_pct = (top_30_total / total_samples) * 100 if total_samples > 0 else 0
-                
-                self.logger.info(f"   📊 Current cluster sizes (top 5): {[(f'C{cid}', size, f'{safe_divide(size, total_samples, 0.0)*100:.1f}%') for cid, size in top_5_debug]}")
-                self.logger.info(f"   📊 Distribution stats: Top 5 = {top_5_pct:.1f}%, Top 10 = {top_10_pct:.1f}%, Top 20 = {top_20_pct:.1f}%, Top 30 = {top_30_pct:.1f}%")
-                
-                # Check coverage-based stopping and CV threshold adjustment
-                self.logger.info(f"🔍 DEBUG CV PROGRESSION: Current threshold index={current_cv_threshold_idx}, threshold={current_cv_threshold:.1f}, top_20_pct={top_20_pct:.1f}%")
-                
-                if top_20_pct >= 90.0:
-                    self.logger.info(f"✅ TARGET REACHED: Top 20 clusters cover {top_20_pct:.1f}% >= 90% of samples")
-                    self.logger.info(f"🛑 EARLY STOPPING: Target achieved, terminating CV relaxation loop")
-                    break  # Stop processing further thresholds
-                elif cluster_count <= 20 and top_20_pct >= 85.0:
-                    self.logger.info(f"✅ ACCEPTABLE TARGET: {cluster_count} clusters with {top_20_pct:.1f}% coverage (≥85% acceptable)")
-                    self.logger.info(f"🛑 EARLY STOPPING: Acceptable coverage achieved with optimal cluster count")
-                    break
-                elif top_20_pct < 85.0:
-                    if current_cv_threshold_idx < len(cv_thresholds) - 1:
-                        self.logger.info(f"📈 COVERAGE INSUFFICIENT: {top_20_pct:.1f}% < 90% target - CV threshold will be relaxed in next iteration")
-                    else:
-                        self.logger.warning(f"⚠️ CV THRESHOLD MAXED OUT: At {current_cv_threshold:.1f} but only {top_20_pct:.1f}% coverage (target: 90%+)")
-                        self.logger.warning(f"   🔍 Consider other bottlenecks: similarity thresholds, hard constraints, or regime quality")
-                        self.logger.info(f"🛑 STOPPING: CV threshold exhausted - cannot achieve 85% target with current data")
-                        break
-
-                # (cluster_sample_counts already calculated above)
-                
-                # Compute within-cluster CV by aspect and derive soft penalties
-                cluster_cv_aspects = self._compute_cluster_cv_by_aspect(regime_characteristics, regime_to_cluster)
-                import numpy as np
-                # Build aspect thresholds: median + 0.5 * IQR per aspect
-                aspect_thresholds: Dict[str, float] = {}
-                for aspect in ['momentum', 'volatility', 'volume']:
-                    vals = [cv_map.get(aspect) for cv_map in cluster_cv_aspects.values() if isinstance(cv_map.get(aspect), (int, float))]
-                    vals = [float(v) for v in vals if v is not None and np.isfinite(v)]
-                    if len(vals) > 0:
-                        med = float(np.median(vals))
-                        iqr = float(np.percentile(vals, 75) - np.percentile(vals, 25))
-                        aspect_thresholds[aspect] = max(0.05, med + 0.5 * iqr)
-                    else:
-                        aspect_thresholds[aspect] = 0.2
-                # Penalty per cluster if dominant aspect exceeds its threshold
-                cluster_penalty: Dict[int, float] = {}
-                base_penalty = 0.002
-                penalized_clusters = []
-                for cid, cv_map in cluster_cv_aspects.items():
-                    # Determine dominant aspect
-                    items = [(k, v) for k, v in cv_map.items() if k in aspect_thresholds and isinstance(v, (int, float))]
-                    if not items:
-                        cluster_penalty[cid] = 0.0
-                        continue
-                    dom_aspect, dom_cv = max(items, key=lambda kv: kv[1])
-                    thr = aspect_thresholds.get(dom_aspect, 0.2)
-                    penalty = base_penalty if (dom_cv is not None and dom_cv >= thr) else 0.0
-                    if penalty > 0.0:
-                        penalized_clusters.append((cid, dom_aspect, dom_cv, thr))
-                    cluster_penalty[cid] = penalty
-                if len(penalized_clusters) > 0:
-                    self.logger.info(
-                        "   ⚖️ High-CV penalties: base=%.3f, aspect_thresholds=%s, penalized=%s" % (
-                            base_penalty,
-                            {k: round(v, 3) for k, v in aspect_thresholds.items()},
-                            [(cid, a, round(cv, 3), round(th, 3)) for cid, a, cv, th in penalized_clusters]
-                        )
-                    )
-                
-                # Smart merge candidate pre-filtering to avoid expensive checks
-                mergeable_pairs = self._get_smart_merge_candidates(
-                    similarity_matrix, regime_to_cluster, regime_ids, excluded_clusters, threshold
-                )
-                self.logger.info(f"🔍 POST-PREFILTERING: {len(mergeable_pairs)} candidates passed pre-filtering")
-                rejection_stats = {
-                    'same_cluster': 0,
-                    'excluded_cv': 0,
-                    'size_constraint': 0,
-                    'similarity_too_low': 0,
-                    'cv_incompatible': 0,
-                    'cv_hard_constraint': 0,
-                    'accepted': 0,
-                    'prefiltered': len(mergeable_pairs)
-                }
-                
-                # Process pre-filtered candidates (much more efficient than nested loops)
-                self.logger.debug(f"🔍 Processing {len(mergeable_pairs)} pre-filtered candidates")
-                
-                # If pre-filtering failed, fall back to original method
-                if not mergeable_pairs:
-                    self.logger.warning("⚠️ Pre-filtering returned no candidates, using fallback method")
-                    for i, regime_i in enumerate(regime_ids):
-                        for j, regime_j in enumerate(regime_ids[i+1:], i+1):
-                            similarity = similarity_matrix[i, j]
-                            cluster_i = regime_to_cluster[regime_i]
-                            cluster_j = regime_to_cluster[regime_j]
-                            
-                            # Skip if same cluster
-                            if cluster_i == cluster_j:
-                                rejection_stats['same_cluster'] += 1
-                                continue
-                            
-                            # Skip if either cluster is excluded due to high CV
-                            if cluster_i in excluded_clusters or cluster_j in excluded_clusters:
-                                rejection_stats['excluded_cv'] += 1
-                                continue
-                else:
-                    # Process only the pre-filtered high-potential candidates
-                    final_mergeable_pairs = []
-                    detailed_processing_count = 0
-                    for similarity, cluster_i, cluster_j, regime_i, regime_j in mergeable_pairs:
-                        detailed_processing_count += 1
-                        
-                        # Enforce STRICT 12% max cluster size constraint
-                        # Check if either cluster is already at or above 12%
-                        cluster_i_size = cluster_sample_counts.get(cluster_i, 0)
-                        cluster_j_size = cluster_sample_counts.get(cluster_j, 0)
-                        cluster_i_pct = (cluster_i_size / total_samples) * 100 if total_samples > 0 else 0
-                        cluster_j_pct = (cluster_j_size / total_samples) * 100 if total_samples > 0 else 0
-                        
-                        # Calculate combined CV to determine progressive size limits
-                        cv_i = cluster_cv_aspects.get(cluster_i, {})
-                        cv_j = cluster_cv_aspects.get(cluster_j, {})
-                        max_cv = 0.0
-                        
-                        if cv_i and cv_j:
-                            for aspect in ['momentum', 'volatility', 'volume']:
-                                cv_i_val = cv_i.get(aspect, 0.0) or 0.0
-                                cv_j_val = cv_j.get(aspect, 0.0) or 0.0
-                                if isinstance(cv_i_val, (int, float)) and isinstance(cv_j_val, (int, float)):
-                                    max_cv = max(max_cv, cv_i_val, cv_j_val)
-                        
-                        # GRADUATED SIZE PENALTIES: Replace hard cutoffs with penalty-based system
-                        merged_size = cluster_i_size + cluster_j_size
-                        merged_pct = (merged_size / total_samples) * 100 if total_samples > 0 else 0
-                        
-                        # Calculate size penalty (0.0 = no penalty, 1.0 = block merge)
-                        if merged_pct <= 12.0:
-                            size_penalty = 0.0  # No penalty for clusters ≤12%
-                            penalty_reason = "small cluster (≤12%)"
-                        elif merged_pct <= 15.0:
-                            size_penalty = (merged_pct - 12.0) / 3.0  # 0.0 at 12%, 1.0 at 15%
-                            penalty_reason = f"medium cluster ({merged_pct:.1f}%)"
-                        else:
-                            size_penalty = 1.0  # Hard block for clusters >15%
-                            penalty_reason = f"oversized cluster ({merged_pct:.1f}%)"
-                        
-                        # Apply graduated penalty based on coverage progress (use previous iteration's coverage)
-                        coverage_boost = 0.0
-                        current_coverage = previous_top_20_coverage  # Use available coverage variable
-                        if current_coverage < 70.0:  # Far from target, be more permissive
-                            coverage_boost = 0.3
-                        elif current_coverage < 80.0:  # Getting closer, moderate boost
-                            coverage_boost = 0.2
-                        elif current_coverage < 90.0:  # Close to target, small boost
-                            coverage_boost = 0.1
-                        
-                        effective_penalty = max(0.0, size_penalty - coverage_boost)
-                        
-                        # Block only if effective penalty is very high (>0.8)
-                        if effective_penalty > 0.8:
-                            self.logger.debug(f"   🚫 BLOCKED: C{cluster_i} ({cluster_i_pct:.1f}%) + C{cluster_j} ({cluster_j_pct:.1f}%) → {merged_pct:.1f}% (penalty: {effective_penalty:.2f} > 0.8, {penalty_reason})")
-                            rejection_stats['size_constraint'] += 1
-                            continue
-                        elif size_penalty > 0.0:
-                            self.logger.debug(f"   ⚠️ PENALTY: C{cluster_i} + C{cluster_j} → {merged_pct:.1f}% (penalty: {effective_penalty:.2f}, {penalty_reason})")
-                        
-                        # DEBUG: Track C122 constraint checks
-                        if cluster_i == 122 or cluster_j == 122:
-                            self.logger.warning(f"🔍 C122 CONSTRAINT CHECK: C{cluster_i} + C{cluster_j}")
-                        
-                        # Weighted similarity approach - 60% similarity, 30% CV, 10% size
-                        regime_1 = regime_characteristics[regime_i]
-                        regime_2 = regime_characteristics[regime_j]
-                        cluster_sizes = [
-                            len([rid for rid, cid in regime_to_cluster.items() if cid == cluster_i]),
-                            len([rid for rid, cid in regime_to_cluster.items() if cid == cluster_j])
-                        ]
-                        
-                        # Calculate weighted composite score with dynamic weights based on similarity threshold
-                        weighted_score = self._calculate_weighted_merge_score(
-                            similarity, regime_1, regime_2, cluster_i, cluster_j, regime_to_cluster, total_samples, threshold
-                        )
-                        
-                        # Debug logging for weighted scores (sample a few)
-                        if (cluster_i == 122 or cluster_j == 122) or (cluster_i < 5 and cluster_j < 5):
-                            combined_size_pct = (len([rid for rid, cid in regime_to_cluster.items() if cid == cluster_i]) + 
-                                               len([rid for rid, cid in regime_to_cluster.items() if cid == cluster_j])) / total_samples * 100
-                            self.logger.debug(f"   📊 WEIGHTED SCORE: C{cluster_i}+C{cluster_j} → {weighted_score:.3f} (sim:{similarity:.3f}, size:{combined_size_pct:.1f}%)")
-                        
-                        # Apply strict dimension compatibility check for final consolidation
-                        if threshold <= 0.75:  # Final consolidation phase (earlier transition)
-                            if not self._strict_dimension_compatibility_check(regime_1, regime_2):
-                                rejection_stats['dimension_incompatible'] = rejection_stats.get('dimension_incompatible', 0) + 1
-                            continue
-                                
-                        # Prevent problematic cluster formation (applies to all phases)
-                        if self._would_create_problematic_cluster(regime_1, regime_2, cluster_i, cluster_j, 
-                                                                regime_to_cluster, total_samples, current_cv_threshold):
-                            rejection_stats['problematic_cluster_prevented'] = rejection_stats.get('problematic_cluster_prevented', 0) + 1
-                            continue
-                        
-                        # Dynamic threshold based on clustering progress
-                        base_threshold = threshold
-                        if weighted_score < base_threshold:
-                            rejection_stats['similarity_too_low'] += 1
-                            continue
-
-                        rejection_stats['accepted'] += 1
-                        final_mergeable_pairs.append((similarity, cluster_i, cluster_j, regime_i, regime_j))
-                    
-                    # Update mergeable_pairs with validated candidates
-                    mergeable_pairs = final_mergeable_pairs
-                    self.logger.info(f"🔍 DETAILED PROCESSING: {detailed_processing_count} pairs processed through detailed checks")
-
-                # 🔍 DETAILED PAIR ANALYSIS WITH BOTTLENECK IDENTIFICATION
-                total_pairs_checked = sum(rejection_stats.values())
-                self.logger.info(f"   📊 Pair Analysis (out of {total_pairs_checked} pairs checked):")
-                if total_pairs_checked > 0:
-                    self.logger.info(f"      ✅ Accepted for merging: {rejection_stats['accepted']} ({safe_divide(rejection_stats['accepted'], total_pairs_checked, 0.0)*100:.1f}%)")
-                    self.logger.info(f"      ❌ Same cluster: {rejection_stats['same_cluster']} ({safe_divide(rejection_stats['same_cluster'], total_pairs_checked, 0.0)*100:.1f}%)")
-                    self.logger.info(f"      ❌ Excluded due to CV: {rejection_stats['excluded_cv']} ({safe_divide(rejection_stats['excluded_cv'], total_pairs_checked, 0.0)*100:.1f}%)")
-                    self.logger.info(f"      ❌ Size constraint (>12%): {rejection_stats['size_constraint']} ({safe_divide(rejection_stats['size_constraint'], total_pairs_checked, 0.0)*100:.1f}%)")
-                    self.logger.info(f"      ❌ Similarity too low: {rejection_stats['similarity_too_low']} ({safe_divide(rejection_stats['similarity_too_low'], total_pairs_checked, 0.0)*100:.1f}%)")
-                else:
-                    self.logger.info(f"      ⚠️ No pairs checked - no statistics to display")
-                if rejection_stats.get('dimension_incompatible', 0) > 0 and total_pairs_checked > 0:
-                    self.logger.info(f"      ❌ Dimension incompatible (final consolidation): {rejection_stats['dimension_incompatible']} ({safe_divide(rejection_stats['dimension_incompatible'], total_pairs_checked, 0.0)*100:.1f}%)")
-                if rejection_stats.get('problematic_cluster_prevented', 0) > 0 and total_pairs_checked > 0:
-                    self.logger.info(f"      ❌ Problematic cluster prevented (high CV prediction): {rejection_stats['problematic_cluster_prevented']} ({safe_divide(rejection_stats['problematic_cluster_prevented'], total_pairs_checked, 0.0)*100:.1f}%)")
-                if total_pairs_checked > 0:
-                    self.logger.info(f"      ❌ Weighted score too low (dynamic weights): {rejection_stats['cv_incompatible']} ({safe_divide(rejection_stats['cv_incompatible'], total_pairs_checked, 0.0)*100:.1f}%)")
-                    self.logger.info(f"      ❌ Hard constraints: {rejection_stats['cv_hard_constraint']} ({safe_divide(rejection_stats['cv_hard_constraint'], total_pairs_checked, 0.0)*100:.1f}%)")
-                
-                # Identify primary bottleneck
-                bottlenecks = [
-                    ('CV Exclusion', rejection_stats['excluded_cv']),
-                    ('Weighted Score Too Low', rejection_stats['cv_incompatible']),
-                    ('Basic Similarity Too Low', rejection_stats['similarity_too_low']),
-                    ('Size Constraint', rejection_stats['size_constraint']),
-                    ('Dimension Incompatible', rejection_stats.get('dimension_incompatible', 0)),
-                    ('Problematic Cluster Prevention', rejection_stats.get('problematic_cluster_prevented', 0))
-                ]
-                primary_bottleneck = max(bottlenecks, key=lambda x: x[1])
-                if total_pairs_checked > 0:
-                    self.logger.info(f"   🎯 PRIMARY BOTTLENECK: {primary_bottleneck[0]} blocking {primary_bottleneck[1]:,} pairs ({safe_divide(primary_bottleneck[1], total_pairs_checked, 0.0)*100:.1f}%)")
-                else:
-                    self.logger.info(f"   🎯 PRIMARY BOTTLENECK: {primary_bottleneck[0]} blocking {primary_bottleneck[1]:,} pairs (0.0%)")
-                
-                self.logger.info(f"   📊 Found {len(mergeable_pairs)} mergeable pairs")
-                
-                # Sort by similarity (highest first) and merge pairs
-                mergeable_pairs.sort(key=lambda x: x[0], reverse=True)
-                
-                merges_this_round = 0
-                merged_clusters = set()
-                merge_similarities = []
-                merge_cv_differences = []
-                merged_cluster_sizes = []
-                
-                for similarity, cluster_i, cluster_j, regime_i, regime_j in mergeable_pairs:
-                    # Skip if either cluster has already been merged this round
-                    if cluster_i in merged_clusters or cluster_j in merged_clusters:
-                        continue
-                    
-                    # DEBUG: Track merge that might create extreme CV
-                    if cluster_i == 122 or cluster_j == 122:
-                        self.logger.warning(f"🔍 TRACKING C122: Merging C{cluster_j} → C{cluster_i} (similarity: {similarity:.3f})")
-                        self.logger.warning(f"   📊 Pre-merge sizes: C{cluster_i}={cluster_sample_counts.get(cluster_i, 0)}, C{cluster_j}={cluster_sample_counts.get(cluster_j, 0)}")
-                    
-                    # Merge cluster_j into cluster_i
-                    for regime_id, cluster_id in regime_to_cluster.items():
-                        if cluster_id == cluster_j:
-                            regime_to_cluster[regime_id] = cluster_i
-                    
-                    # DEBUG: Check if this merge created extreme CV
-                    if cluster_i == 122:
-                        regimes_in_122 = [rid for rid, cid in regime_to_cluster.items() if cid == 122]
-                        self.logger.warning(f"🔍 C122 POST-MERGE: {len(regimes_in_122)} regimes = {regimes_in_122[:5]}{'...' if len(regimes_in_122) > 5 else ''}")
-                    
-                    # Calculate merged cluster size BEFORE updating counts
-                    merged_size = cluster_sample_counts.get(cluster_i, 0) + cluster_sample_counts.get(cluster_j, 0)
-                    merged_cluster_sizes.append(merged_size)
-                    
-                    # Update cluster sample counts after merge
-                    cluster_sample_counts[cluster_i] = merged_size
-                    if cluster_j in cluster_sample_counts:
-                        del cluster_sample_counts[cluster_j]
-                    
-                    # Track merge statistics
-                    merge_similarities.append(similarity)
-                    merged_clusters.add(cluster_j)
-                    merges_this_round += 1
-                    
-                    self.logger.debug(f"   ✅ Merged clusters {cluster_j} → {cluster_i} (similarity: {similarity:.3f})")
-                
-                # Update cluster count
-                cluster_count = len(set(regime_to_cluster.values()))
-                
-                # Calculate batch summary metrics
-                if merges_this_round > 0:
-                    avg_similarity = sum(merge_similarities) / len(merge_similarities)
-                    min_cluster_size = min(merged_cluster_sizes)
-                    max_cluster_size = max(merged_cluster_sizes)
-                    avg_cluster_size = sum(merged_cluster_sizes) / len(merged_cluster_sizes)
-                    
-                    self.logger.info(f"   📊 BATCH SUMMARY:")
-                    self.logger.info(f"      🔄 Merges: {merges_this_round} pairs merged")
-                    self.logger.info(f"      🎯 Clusters: {cluster_count} remaining")
-                    self.logger.info(f"      📈 Similarity: avg={avg_similarity:.3f} (range: {min(merge_similarities):.3f}-{max(merge_similarities):.3f})")
-                    self.logger.info(f"      📏 Cluster Sizes: avg={avg_cluster_size:.0f} samples (range: {min_cluster_size}-{max_cluster_size})")
-                    
-                    # Report current cluster size distribution with detailed statistics
-                    cluster_size_list = [(f'C{cluster_id}', size, f'{(size / total_samples * 100):.1f}%') 
-                                       for cluster_id, size in cluster_sample_counts.items()]
-                    cluster_size_list.sort(key=lambda x: x[1], reverse=True)  # Sort by size descending
-                    top_5_clusters = cluster_size_list[:5]
-                    top_10_clusters = cluster_size_list[:10] 
-                    top_20_clusters = cluster_size_list[:20]
-                    top_30_clusters = cluster_size_list[:30]
-                    
-                    # Calculate cumulative distribution percentages
-                    top_5_total = sum(int(cluster[1]) for cluster in top_5_clusters)
-                    top_10_total = sum(int(cluster[1]) for cluster in top_10_clusters)
-                    top_20_total = sum(int(cluster[1]) for cluster in top_20_clusters)
-                    top_30_total = sum(int(cluster[1]) for cluster in top_30_clusters)
-                    
-                    top_5_pct = (top_5_total / total_samples) * 100 if total_samples > 0 else 0
-                    top_10_pct = (top_10_total / total_samples) * 100 if total_samples > 0 else 0
-                    top_20_pct = (top_20_total / total_samples) * 100 if total_samples > 0 else 0
-                    top_30_pct = (top_30_total / total_samples) * 100 if total_samples > 0 else 0
-                    
-                    self.logger.info(f"   📊 Current cluster sizes (top 5): {top_5_clusters}")
-                    self.logger.info(f"   📊 Distribution stats: Top 5 = {top_5_pct:.1f}%, Top 10 = {top_10_pct:.1f}%, Top 20 = {top_20_pct:.1f}%, Top 30 = {top_30_pct:.1f}%")
-                    
-                    # Store coverage for CV threshold adjustment
-                    previous_top_20_coverage = top_20_pct
-                    
-                    # Check for coverage stagnation
-                    coverage_history.append(top_20_pct)
-                    if len(coverage_history) > 3:
-                        coverage_history.pop(0)  # Keep only last 3 values
-                    
-                    # Check if coverage has stagnated (no improvement in last 2 iterations)
-                    if len(coverage_history) >= 2:
-                        recent_improvement = coverage_history[-1] - coverage_history[-2]
-                        if recent_improvement < stagnation_threshold and top_20_pct < 90.0:
-                            self.logger.warning(f"⚠️ COVERAGE STAGNATION: Only {recent_improvement:.2f}% improvement (threshold: {stagnation_threshold}%)")
-                            self.logger.warning(f"🛑 STOPPING: Coverage stuck at {top_20_pct:.1f}% - no meaningful progress")
-                            break
-                    
-                    # Check coverage after merges
-                    if top_20_pct >= 90.0:
-                        self.logger.info(f"🎯 COVERAGE EXCEEDED: Top 20 clusters cover {top_20_pct:.1f}% >= 90% of samples")
-                    elif top_20_pct >= 85.0:
-                        self.logger.info(f"✅ TARGET REACHED: Top 20 clusters cover {top_20_pct:.1f}% >= 90% of samples")
-                    else:
-                        self.logger.info(f"📈 PROGRESS: Top 20 clusters cover {top_20_pct:.1f}% (target: 90%+)")
-                else:
-                    self.logger.info(f"   📊 Batch complete: {merges_this_round} merges → {cluster_count} clusters remaining")
-                    
-                    # Report current cluster size distribution with detailed statistics even when no merges occurred
-                    cluster_size_list = [(f'C{cluster_id}', size, f'{(size / total_samples * 100):.1f}%') 
-                                       for cluster_id, size in cluster_sample_counts.items()]
-                    cluster_size_list.sort(key=lambda x: x[1], reverse=True)  # Sort by size descending
-                    top_5_clusters = cluster_size_list[:5]
-                    top_10_clusters = cluster_size_list[:10] 
-                    top_20_clusters = cluster_size_list[:20]
-                    top_30_clusters = cluster_size_list[:30]
-                    
-                    # Calculate cumulative distribution percentages
-                    top_5_total = sum(int(cluster[1]) for cluster in top_5_clusters)
-                    top_10_total = sum(int(cluster[1]) for cluster in top_10_clusters)
-                    top_20_total = sum(int(cluster[1]) for cluster in top_20_clusters)
-                    top_30_total = sum(int(cluster[1]) for cluster in top_30_clusters)
-                    
-                    top_5_pct = (top_5_total / total_samples) * 100 if total_samples > 0 else 0
-                    top_10_pct = (top_10_total / total_samples) * 100 if total_samples > 0 else 0
-                    top_20_pct = (top_20_total / total_samples) * 100 if total_samples > 0 else 0
-                    top_30_pct = (top_30_total / total_samples) * 100 if total_samples > 0 else 0
-                    
-                    self.logger.info(f"   📊 Current cluster sizes (top 5): {top_5_clusters}")
-                    self.logger.info(f"   📊 Distribution stats: Top 5 = {top_5_pct:.1f}%, Top 10 = {top_10_pct:.1f}%, Top 20 = {top_20_pct:.1f}%, Top 30 = {top_30_pct:.1f}%")
-                    
-                    # Store coverage for CV threshold adjustment
-                    previous_top_20_coverage = top_20_pct
-                    
-                    # Check for coverage stagnation (same logic as above)
-                    coverage_history.append(top_20_pct)
-                    if len(coverage_history) > 3:
-                        coverage_history.pop(0)  # Keep only last 3 values
-                    
-                    # Check if coverage has stagnated (no improvement in last 2 iterations)
-                    if len(coverage_history) >= 2:
-                        recent_improvement = coverage_history[-1] - coverage_history[-2]
-                        if recent_improvement < stagnation_threshold and top_20_pct < 90.0:
-                            self.logger.warning(f"⚠️ COVERAGE STAGNATION: Only {recent_improvement:.2f}% improvement (threshold: {stagnation_threshold}%)")
-                            self.logger.warning(f"🛑 STOPPING: Coverage stuck at {top_20_pct:.1f}% - no meaningful progress")
-                            break
-                    
-                    # Check coverage when no merges occurred
-                    if top_20_pct >= 90.0:
-                        self.logger.info(f"🎯 COVERAGE EXCEEDED: Top 20 clusters cover {top_20_pct:.1f}% >= 90% of samples")
-                    elif top_20_pct >= 85.0:
-                        self.logger.info(f"✅ TARGET REACHED: Top 20 clusters cover {top_20_pct:.1f}% >= 90% of samples")
-                    else:
-                        self.logger.info(f"📈 PROGRESS: Top 20 clusters cover {top_20_pct:.1f}% (target: 90%+)")
-
-                # Record diagnostics per threshold
-                try:
-                    temp_assignments = self._map_regime_assignments_to_clusters(regime_assignments, regime_to_cluster, len(regime_assignments))
-                    quality_proxy = self._calculate_matrix_clustering_score(similarity_matrix, regime_to_cluster, temp_assignments)
-                except Exception:
-                    quality_proxy = 0.0
-                threshold_quality_curve.append({
-                    'threshold': float(threshold),
-                    'merges': int(merges_this_round),
-                    'cluster_count': int(cluster_count),
-                    'quality_proxy': float(quality_proxy),
-                    'rejections': {k: int(v) for k, v in rejection_stats.items() if k != 'accepted'}
-                })
-                for k in rejection_histogram_agg.keys():
-                    if k in rejection_stats:
-                        rejection_histogram_agg[k] += int(rejection_stats[k])
-                
-                # Recalculate similarity matrix with new cluster characteristics after merging
-                if merges_this_round > 0:
-                    self.logger.info(f"   🔄 Recalculating similarity matrix with {cluster_count} clusters...")
-                    
-                    # Update regime_ids to reflect current clusters
-                    current_regime_ids = list(regime_to_cluster.keys())
-                    
-                    # Recalculate similarity matrix with updated cluster characteristics (no feature weighting)
-                    similarity_matrix = self._calculate_regime_similarity_matrix(regime_characteristics, None)
-                    
-                    self.logger.info(f"   ✅ Updated similarity matrix for {cluster_count} clusters")
-                    # Recompute and log CV summaries to observe penalty relaxation opportunities
-                    cluster_cv_aspects_after = self._compute_cluster_cv_by_aspect(regime_characteristics, regime_to_cluster)
-                    for aspect in ['momentum', 'volatility', 'volume']:
-                        vals = [v.get(aspect) for v in cluster_cv_aspects_after.values() if isinstance(v.get(aspect), (int, float))]
-                        vals = [float(v) for v in vals if np.isfinite(v)]
-                        if len(vals) > 0:
-                            med = float(np.median(vals))
-                            iqr = float(np.percentile(vals, 75) - np.percentile(vals, 25))
-                            self.logger.info(f"   📉 Post-merge CV[{aspect}]: median={med:.3f}, IQR={iqr:.3f}")
-                
-                if cluster_count <= 20:  # Stop if we reach lower bound of optimal range
-                    break
-            
-            # Renumber clusters sequentially
-            unique_clusters = sorted(set(regime_to_cluster.values()))
-            cluster_remapping = {old_id: new_id for new_id, old_id in enumerate(unique_clusters)}
-            regime_to_cluster = {regime_id: cluster_remapping[cluster_id] for regime_id, cluster_id in regime_to_cluster.items()}
-            final_cluster_count = len(unique_clusters)
-            
-            # Create cluster assignments
-            cluster_assignments = self._create_cluster_assignments_from_mapping(
-                regime_assignments, regime_to_cluster, regime_ids
-            )
-            
-            # Ensure data alignment between cluster assignments and market data
-            if market_data is not None and hasattr(market_data, '__len__'):
-                alignment_result = self._align_data_lengths(market_data, cluster_assignments)
-                market_data = alignment_result.aligned_market_data
-                cluster_assignments = alignment_result.aligned_assignments
-
-            # Calculate final quality metrics
-            quality_score = self._calculate_matrix_clustering_score(
-                similarity_matrix, regime_to_cluster, cluster_assignments
-            )
-
-            # Calculate advanced cluster analytics BEFORE constraints are applied
-            cluster_analytics = self._calculate_advanced_cluster_analytics(
-                regime_characteristics, regime_to_cluster, cluster_assignments, final_cluster_count
-            )
-
-            # Create simple cluster models without complex representative models
-            cluster_models = []
-            for cluster_id in range(final_cluster_count):
-                cluster_models.append({
-                    'cluster_id': cluster_id,
-                    'model_type': 'simple_cluster',
-                    'regime_count': sum(1 for cid in regime_to_cluster.values() if cid == cluster_id)
-                })
-
-            # Prepare similarity diagnostics
-            similarity_histogram = self._calculate_similarity_histogram(similarity_matrix)
-            try:
-                sample_n = min(50, similarity_matrix.shape[0])
-                similarity_heatmap_sample = [list(map(float, row[:sample_n])) for row in similarity_matrix[:sample_n]]
-            except Exception:
-                similarity_heatmap_sample = None
-
-            # Compute per-cluster prototypes
-            cluster_prototypes = self._compute_cluster_prototypes(regime_ids, regime_to_cluster, similarity_matrix, regime_characteristics, top_n_features=5)
-
-            # Create result in expected format
-            result = {
-                'success': True,
-                'cluster_assignments': cluster_assignments,
-                'regime_to_cluster': regime_to_cluster,
-                'n_clusters': final_cluster_count,
-                'hmm_models': cluster_models,
-                'similarity_matrix': similarity_matrix,
-                'quality_score': quality_score,
-                'method': 'hierarchical_matrix_based',
-                'merging_thresholds_used': similarity_thresholds,
-                'cluster_analytics': cluster_analytics,
-                'diagnostics': {
-                    'threshold_quality_curve': threshold_quality_curve,
-                    'rejection_histogram': rejection_histogram_agg,
-                    'similarity_histogram': similarity_histogram,
-                    'similarity_heatmap_sample': similarity_heatmap_sample,
-                    'cluster_prototypes': cluster_prototypes
-                }
-            }
-
-            self.logger.info(f"✅ Hierarchical matrix clustering completed: {final_cluster_count} clusters created")
-            
-            # Log advanced analytics
-            self.logger.info(f"📊 Advanced Cluster Analytics (BEFORE constraints):")
-            self.logger.info(f"   📈 Average within-cluster CV: {cluster_analytics['avg_within_cluster_cv']:.4f}")
-            self.logger.info(f"   📊 Top 20 clusters coverage: {cluster_analytics['top_20_coverage']:.1f}% of samples")
-            self.logger.info(f"   🎯 Cluster concentration: {cluster_analytics['concentration_analysis']}")
-            self.logger.info(f"   📏 Actual cluster count: {final_cluster_count} clusters")
-            self.logger.info(f"   📊 Total samples: {cluster_analytics['total_samples']}")
-            
-            # Show top 10 cluster sizes
-            sorted_clusters = sorted(cluster_analytics['cluster_sizes'].items(), key=lambda x: x[1], reverse=True)
-            top_10 = sorted_clusters[:10]
-            total_samples = sum(cluster_analytics['cluster_sizes'].values())
-            top_10_with_pct = [(f'C{cid}', size, f'{(size/total_samples)*100:.1f}%') for cid, size in top_10]
-            self.logger.info(f"   🏆 Top 10 cluster sizes: {top_10_with_pct}")
-            
-            return result
-            
-        except Exception as e:
-            self.logger.error(f"❌ Hierarchical matrix clustering failed: {e}")
-            # Fast fail - raise the exception instead of falling back
-            raise RuntimeError(f"Hierarchical matrix clustering failed: {e}")
-
-    def _calculate_weighted_merge_score(self, similarity: float, regime_1: Dict[str, Any], regime_2: Dict[str, Any], 
-                                       cluster_i: int, cluster_j: int, regime_to_cluster: Dict[str, int], 
-                                       total_samples: int, similarity_threshold: float = 0.80) -> float:
-        """Calculate composite merge score with dynamic weights based on similarity threshold.
-        
-        Standard weights: 60% similarity + 30% CV + 10% size
-        Final consolidation (≤72%): 40% similarity + 50% CV + 10% size
-        """
-        try:
-            import numpy as np
-            from math import log
-            
-            # Dynamic weight adjustment based on similarity threshold
-            if similarity_threshold <= 0.75:  # Final consolidation phase (earlier transition)
-                similarity_weight = 0.40  # Reduced from 0.60
-                cv_weight = 0.50          # Increased from 0.30
-                size_weight = 0.10        # Unchanged
-                phase = "final_consolidation"
-            else:
-                similarity_weight = 0.60  # Standard weights
-                cv_weight = 0.30
-                size_weight = 0.10
-                phase = "standard"
-            
-            # 1. Similarity component - direct use
-            similarity_component = max(0.0, min(1.0, similarity))  # Ensure 0.0-1.0 range
-            
-            # 2. CV component - inverse log scaling (rewards low CV)
-            cv1 = regime_1.get('features', {}).get('mean_cv', 0.0)
-            cv2 = regime_2.get('features', {}).get('mean_cv', 0.0)
-            
-            # Use individual aspect CVs if mean_cv not available
-            if cv1 == 0.0:
-                cv1 = max(regime_1.get('features', {}).get('momentum_cv', 0.0),
-                         regime_1.get('features', {}).get('volatility_cv', 0.0),
-                         regime_1.get('features', {}).get('volume_cv', 0.0))
-            if cv2 == 0.0:
-                cv2 = max(regime_2.get('features', {}).get('momentum_cv', 0.0),
-                         regime_2.get('features', {}).get('volatility_cv', 0.0),
-                         regime_2.get('features', {}).get('volume_cv', 0.0))
-            
-            avg_cv = (cv1 + cv2) / 2.0
-            max_cv_threshold = 10.0
-            cv_component = max(0.0, 1.0 - log(1 + avg_cv) / log(1 + max_cv_threshold))
-            
-            # 3. Size component (10%) - inverse log scaling with penalty starting at 8%, very strong at 12%
-            regimes_i = [rid for rid, cid in regime_to_cluster.items() if cid == cluster_i]
-            regimes_j = [rid for rid, cid in regime_to_cluster.items() if cid == cluster_j]
-            combined_size_pct = (len(regimes_i) + len(regimes_j)) / total_samples * 100 if total_samples > 0 else 0.0
-            
-            if combined_size_pct <= 8.0:
-                # Boost for clusters ≤8%
-                size_component = 1.0 - log(1 + combined_size_pct) / log(9)  # Boost up to 8%
-            else:
-                # Strong penalty for clusters >8%, very strong at 12%
-                penalty_factor = (combined_size_pct - 8.0) / 4.0  # 0.0 at 8%, 1.0 at 12%
-                size_component = max(0.0, 1.0 - log(1 + penalty_factor * 10) / log(11))  # Strong log penalty
-            
-            # 4. Weighted composite score with dynamic weights
-            composite_score = (similarity_weight * similarity_component + 
-                             cv_weight * cv_component + 
-                             size_weight * size_component)
-            
-            # Log phase transition for debugging
-            if similarity_threshold <= 0.72 and hasattr(self, '_last_logged_phase') and self._last_logged_phase != "final_consolidation":
-                self.logger.info(f"🔄 PHASE TRANSITION: Entering final consolidation mode (weights: {similarity_weight:.0%} sim, {cv_weight:.0%} CV, {size_weight:.0%} size)")
-                self._last_logged_phase = "final_consolidation"
-            elif similarity_threshold > 0.72 and hasattr(self, '_last_logged_phase') and self._last_logged_phase != "standard":
-                self.logger.info(f"🔄 PHASE TRANSITION: Standard clustering mode (weights: {similarity_weight:.0%} sim, {cv_weight:.0%} CV, {size_weight:.0%} size)")
-                self._last_logged_phase = "standard"
-            elif not hasattr(self, '_last_logged_phase'):
-                self._last_logged_phase = phase
-            
-            return composite_score
-            
-        except Exception as e:
-            self.logger.warning(f"⚠️ Error calculating weighted merge score: {e}")
-            return similarity  # Fallback to basic similarity
-    
-    def _strict_dimension_compatibility_check(self, regime_1: Dict[str, Any], regime_2: Dict[str, Any]) -> bool:
-        """Strict dimension compatibility check for final consolidation phase.
-
-        Ensures regimes have compatible financial characteristics before merging at low similarity.
-        """
-        try:
-            features_1 = regime_1.get('features', {})
-            features_2 = regime_2.get('features', {})
-            
-            # 1. Momentum direction alignment (must be compatible)
-            momentum_1 = features_1.get('momentum_mean', 0.0)
-            momentum_2 = features_2.get('momentum_mean', 0.0)
-            
-            # Require same direction for significant momentum values (relaxed)
-            if (momentum_1 > 0 and momentum_2 < 0) or (momentum_1 < 0 and momentum_2 > 0):
-                if abs(momentum_1) > 10.0 and abs(momentum_2) > 10.0:  # Both very significant (relaxed from 1.0)
-                    self.logger.debug(f"🚫 Momentum direction mismatch: {momentum_1:.3f} vs {momentum_2:.3f}")
-                    return False
-            
-            # 2. Volatility magnitude compatibility (prevent extreme differences)
-            vol_1 = features_1.get('volatility_mean', 0.0)
-            vol_2 = features_2.get('volatility_mean', 0.0)
-            
-            if vol_1 > 0 and vol_2 > 0:
-                vol_ratio = max(vol_1, vol_2) / min(vol_1, vol_2)
-                if vol_ratio > 10.0:  # Max 10x difference in volatility (relaxed from 5.0)
-                    self.logger.debug(f"🚫 Volatility ratio too high: {vol_ratio:.2f}x")
-                    return False
-            
-            # 3. Volume pattern compatibility (similar relative activity)
-            volume_1 = features_1.get('volume_mean', 0.0)
-            volume_2 = features_2.get('volume_mean', 0.0)
-            
-            if volume_1 > 0 and volume_2 > 0:
-                volume_ratio = max(volume_1, volume_2) / min(volume_1, volume_2)
-                if volume_ratio > 10.0:  # Max 10x difference in volume (already at 10.0)
-                    self.logger.debug(f"🚫 Volume ratio too high: {volume_ratio:.2f}x")
-                    return False
-            
-            # 4. CV compatibility (prevent merging high-CV with low-CV)
-            cv_1 = max(features_1.get('momentum_cv', 0.0), features_1.get('volatility_cv', 0.0), features_1.get('volume_cv', 0.0))
-            cv_2 = max(features_2.get('momentum_cv', 0.0), features_2.get('volatility_cv', 0.0), features_2.get('volume_cv', 0.0))
-            
-            if cv_1 > 0 and cv_2 > 0:
-                cv_ratio = max(cv_1, cv_2) / min(cv_1, cv_2)
-                if cv_ratio > 4.0:  # Max 4x difference in CV (relaxed from 3.0)
-                    self.logger.debug(f"🚫 CV ratio too high: {cv_ratio:.2f}x")
-                    return False
-            
-            return True
-            
-        except Exception as e:
-            self.logger.warning(f"⚠️ Error in dimension compatibility check: {e}")
-            return True  # Default to allowing merge if check fails
-    
-    def _would_create_problematic_cluster(self, regime_1: Dict[str, Any], regime_2: Dict[str, Any], 
-                                         cluster_i: int, cluster_j: int, regime_to_cluster: Dict[str, int],
-                                         total_samples: int, cv_threshold: float = MAX_CV_THRESHOLD) -> bool:
-        """Predict if merging would create a problematic high-CV cluster.
-        
-        Prevents formation of clusters like C486 (CV=37.468) and C15 (CV=343.096) 
-        by predicting post-merge CV and rejecting dangerous combinations.
-        """
-        try:
-            import numpy as np
-            
-            # Get cluster sizes
-            regimes_i = [rid for rid, cid in regime_to_cluster.items() if cid == cluster_i]
-            regimes_j = [rid for rid, cid in regime_to_cluster.items() if cid == cluster_j]
-            combined_size_pct = (len(regimes_i) + len(regimes_j)) / total_samples * 100 if total_samples > 0 else 0.0
-            
-            # 1. Check individual regime CVs - prevent merging regimes with extreme CVs
-            features_1 = regime_1.get('features', {})
-            features_2 = regime_2.get('features', {})
-            
-            # Get max CV from each regime across all dimensions
-            cv_1 = max(
-                features_1.get('momentum_cv', 0.0),
-                features_1.get('volatility_cv', 0.0),
-                features_1.get('volume_cv', 0.0)
-            )
-            cv_2 = max(
-                features_2.get('momentum_cv', 0.0),
-                features_2.get('volatility_cv', 0.0),
-                features_2.get('volume_cv', 0.0)
-            )
-            
-            # 2. Extreme CV detection - reject if either regime has extreme CV
-            if cv_1 > 100.0 or cv_2 > 100.0:  # Prevent extreme outliers like CV=343 (relaxed from 50.0)
-                self.logger.debug(f"🚫 PROBLEMATIC: Extreme CV detected - regime CVs: {cv_1:.1f}, {cv_2:.1f}")
-                return True
-            
-            # 3. High CV combination check - prevent two high-CV regimes from merging
-            if cv_1 > MAX_CV_THRESHOLD and cv_2 > MAX_CV_THRESHOLD:
-                self.logger.debug(f"🚫 PROBLEMATIC: Both regimes have high CV - {cv_1:.1f}, {cv_2:.1f}")
-                return True
-            
-            # 4. Size-based CV limits - use current CV threshold with 2x multipliers (more permissive)
-            if combined_size_pct > 15.0:  # Very large clusters - be conservative
-                size_based_cv_limit = cv_threshold * 3.0  # 200% above current threshold (was 1.5)
-            elif combined_size_pct > 8.0:  # Medium clusters - moderate relaxation
-                size_based_cv_limit = cv_threshold * 4.0  # 300% above current threshold (was 2.0)
-            else:  # Small clusters - most permissive
-                size_based_cv_limit = cv_threshold * 6.0  # 500% above current threshold (was 3.0)
-            
-            # 5. Predict combined CV using weighted average
-            # This approximates what the post-merge CV would be
-            if cv_1 > 0 and cv_2 > 0:
-                # Weight by cluster sizes
-                weight_1 = len(regimes_i) / (len(regimes_i) + len(regimes_j))
-                weight_2 = len(regimes_j) / (len(regimes_i) + len(regimes_j))
-                
-                # Predict combined CV (minimal safety margin for bigger steps)
-                predicted_cv = (weight_1 * cv_1 + weight_2 * cv_2) * 1.05  # 5% safety margin (reduced from 10%)
-                
-                if predicted_cv > size_based_cv_limit:
-                    self.logger.debug(f"🚫 PROBLEMATIC: Predicted CV {predicted_cv:.1f} > limit {size_based_cv_limit:.1f} (size: {combined_size_pct:.1f}%)")
-                    return True
-            
-            # 6. Feature divergence check - prevent merging regimes with opposite patterns (relaxed)
-            momentum_1 = features_1.get('momentum_mean', 0.0)
-            momentum_2 = features_2.get('momentum_mean', 0.0)
-            
-            # Only block very strong opposite momentum patterns (relaxed from 2.0 to 5.0)
-            if abs(momentum_1) > 5.0 and abs(momentum_2) > 5.0 and (momentum_1 * momentum_2 < 0):
-                self.logger.debug(f"🚫 PROBLEMATIC: Very strong opposite momentum - {momentum_1:.2f} vs {momentum_2:.2f}")
-                return True
-            
-            return False
-            
-        except Exception as e:
-            self.logger.warning(f"⚠️ Error in problematic cluster detection: {e}")
-            return False  # Default to allowing merge if check fails
     
     
     
     
-    def _compute_cluster_cv(self, regime_characteristics: Dict[str, Any], regime_to_cluster: Dict[str, int]) -> Dict[int, float]:
-        """Compute robust within-cluster CV over feature values, not a weighted average of regime CVs.
+    
+    
 
-        For each cluster, we:
-        - Build the regime-by-feature matrix across all regimes
-        - For the subset of regimes in the cluster, compute per-feature robust CV:
-          robust_cv_feature = (1.4826 * MAD(feature_values)) / (abs(median(feature_values)) + eps)
-        - Aggregate the cluster's per-feature CVs using the median to reduce influence of outliers
-
-        Returns a mapping cluster_id -> robust_within_cv
-        """
-        import numpy as np
-        # Build matrix of original features (no scaling) for all regimes
-        regime_ids = list(regime_to_cluster.keys())
-        X, feature_order = self._build_feature_matrix(regime_characteristics, regime_ids)
-        if X.size == 0:
-            return {}
-        cluster_cv: Dict[int, float] = {}
-        # Precompute cluster indices
-        cluster_to_indices: Dict[int, list] = {}
-        for idx, regime_id in enumerate(regime_ids):
-            cid = regime_to_cluster.get(regime_id)
-            if cid is None:
-                continue
-            if cid not in cluster_to_indices:
-                cluster_to_indices[cid] = []
-            cluster_to_indices[cid].append(idx)
-        # Compute robust CV per cluster
-        eps = 1e-8
-        for cid, indices in cluster_to_indices.items():
-            if not indices or len(indices) < 2:
-                # Not enough regimes to assess variability meaningfully
-                cluster_cv[cid] = 0.0
-                continue
-            Xc = X[indices, :]
-            # Compute per-feature robust CV; skip all-NaN columns
-            cvs = []
-            for j in range(Xc.shape[1]):
-                col = Xc[:, j]
-                if np.all(np.isnan(col)):
-                    continue
-                # Robust center and scale
-                med = np.nanmedian(col)
-                mad = np.nanmedian(np.abs(col - med))
-                robust_scale = 1.4826 * mad
-                denom = max(abs(med), eps)
-                cvj = robust_scale / denom
-                if np.isfinite(cvj):
-                    # Cap extreme CV values to prevent outliers like 43.494
-                    cvj = min(cvj, 10.0)  # Cap at 10.0 like regime-level calculation
-                    cvs.append(cvj)
-            cluster_cv[cid] = float(np.nanmedian(cvs)) if len(cvs) > 0 else 0.0
-        return cluster_cv
-
-    def _compute_cluster_cv_by_aspect(self, regime_characteristics: Dict[str, Any], regime_to_cluster: Dict[str, int]) -> Dict[int, Dict[str, float]]:
-        """Compute robust within-cluster CV per aspect: momentum, volatility, volume.
-
-        For each aspect, we collect the corresponding feature values across regimes in the cluster and
-        compute robust CV = (1.4826 * MAD) / (abs(median) + eps). Cluster aspect CV is the median across
-        that aspect's features.
-        """
-        import numpy as np
-        # Define feature groups - updated to match standardized features from standardized_features.py
-        aspect_features = {
-            'momentum': [
-                'momentum_20',  # 20-period price momentum (standardized)
-                'momentum_12'   # 12-period price momentum (standardized)
-            ],
-            'volatility': [
-                'volatility_20',  # 20-period rolling volatility (standardized)
-                'volatility_12'   # 12-period rolling volatility (standardized)
-            ],
-            'volume': [
-                'volume_ratio_192m'  # Volume relative to 192-minute rolling mean (standardized)
-            ],
-            'trend': [
-                'trend_score'  # Directional Signal normalized × ADX (standardized)
-            ]
-        }
-        # Build map from regime_id -> raw feature dict
-        regime_ids = list(regime_to_cluster.keys())
-        # Extract per-regime features from provided characteristics (flat in regime['features'] if present),
-        # otherwise look into sub-dicts for consistency with prior code sections
-        regime_feature_maps: Dict[str, Dict[str, float]] = {}
-        total_features_found = 0
-        for regime_id in regime_ids:
-            reg = regime_characteristics.get(regime_id, {})
-            feats = dict(reg.get('features', {}))
-            # Also merge keys from known characteristic groups if present
-            for grp in ['momentum_characteristics', 'volatility_characteristics', 'volume_characteristics']:
-                sub = reg.get(grp, {})
-                for k, v in sub.items():
-                    if isinstance(v, (int, float)):
-                        feats.setdefault(k, float(v))
-            regime_feature_maps[regime_id] = feats
-            total_features_found += len(feats)
-        
-        # Debug: Log feature extraction summary
-        avg_features_per_regime = total_features_found / len(regime_ids) if regime_ids else 0
-        if avg_features_per_regime < 5:  # If very few features found
-            self.logger.warning(f"⚠️ CV Calculation Issue: Only {avg_features_per_regime:.1f} avg features per regime")
-            # Sample first regime to see what's available
-            if regime_ids:
-                sample_features = regime_feature_maps[regime_ids[0]]
-                self.logger.warning(f"   🔍 Sample regime features: {list(sample_features.keys())[:10]}")
-                self.logger.warning(f"   🔍 Sample feature values: {dict(list(sample_features.items())[:5])}")
-        # Group regimes by cluster
-        cluster_to_regimes: Dict[int, list] = {}
-        for regime_id, cid in regime_to_cluster.items():
-            cluster_to_regimes.setdefault(cid, []).append(regime_id)
-        # Compute robust CV per aspect per cluster
-        eps = 1e-8
-        cluster_cv_aspects: Dict[int, Dict[str, float]] = {}
-        for cid, rids in cluster_to_regimes.items():
-            aspect_cvs: Dict[str, float] = {}
-            for aspect, feat_list in aspect_features.items():
-                per_feature_cvs = []
-                for feat in feat_list:
-                    values = [regime_feature_maps[rid].get(feat, np.nan) for rid in rids]
-                    arr = np.array(values, dtype=float)
-                    if np.all(np.isnan(arr)):
-                        # Debug: Log when feature is all NaN
-                        if cid in [32, 213, 218] and aspect == 'momentum':  # Debug specific cases
-                            self.logger.warning(f"⚠️ Feature '{feat}' all NaN for cluster {cid}")
-                        continue
-                    med = np.nanmedian(arr)
-                    mad = np.nanmedian(np.abs(arr - med))
-                    robust_scale = 1.4826 * mad
-                    denom = max(abs(med), eps)
-                    cvj = robust_scale / denom
-                    if np.isfinite(cvj):
-                        per_feature_cvs.append(float(cvj))
-                if len(per_feature_cvs) > 0:
-                    aspect_cvs[aspect] = float(np.nanmedian(per_feature_cvs))
-                else:
-                    aspect_cvs[aspect] = 0.0
-                    # Debug: Log when no features found for CV calculation
-                    if cid in [32, 213, 218]:  # Debug specific problematic clusters
-                        self.logger.warning(f"⚠️ No {aspect} features found for cluster {cid}, defaulting CV to 0.0")
-                        self.logger.warning(f"   🔍 Available features: {list(regime_feature_maps[rids[0]].keys())[:10] if rids else 'none'}")
-                        self.logger.warning(f"   🔍 Expected {aspect} features: {feat_list}")
-            cluster_cv_aspects[cid] = aspect_cvs
-        return cluster_cv_aspects
 
     def _extract_regime_characteristics_from_discovery(self, regime_discovery: Dict[str, Any]) -> Dict[str, Any]:
         """Extract volume, volatility, and momentum characteristics from HMM regime discovery results."""
@@ -2328,29 +1294,6 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             self.logger.error(f"❌ Failed to extract regime characteristics: {e}")
             return {}
     
-    def _extract_volume_characteristics(self, feature_means: Dict[str, float], feature_stds: Dict[str, float]) -> Dict[str, Any]:
-        """Extract volume-related characteristics from regime features."""
-        volume_chars = {}
-        
-        # Volume momentum characteristics
-        volume_momentum_5 = feature_means.get('volume_momentum_5', 0.0)
-        volume_momentum_20 = feature_means.get('volume_momentum_20', 0.0)
-        volume_momentum_5_std = feature_stds.get('volume_momentum_5', 0.0)
-        
-        volume_chars['mean_volume_momentum_5'] = volume_momentum_5
-        volume_chars['mean_volume_momentum_20'] = volume_momentum_20
-        volume_chars['volume_momentum_volatility'] = volume_momentum_5_std
-        volume_chars['volume_trend'] = 'increasing' if volume_momentum_5 > 0.05 else 'decreasing' if volume_momentum_5 < -0.05 else 'stable'
-        
-        # Volume ratio characteristics
-        volume_ratio_20 = feature_means.get('volume_ratio_20', 1.0)
-        volume_ratio_std = feature_stds.get('volume_ratio_20', 0.0)
-        
-        volume_chars['mean_volume_ratio'] = volume_ratio_20
-        volume_chars['volume_ratio_volatility'] = volume_ratio_std
-        volume_chars['volume_level'] = 'high' if volume_ratio_20 > 1.5 else 'low' if volume_ratio_20 < 0.5 else 'normal'
-        
-        return volume_chars
 
     
     def _calculate_hmm_appropriate_metrics(self, market_data: pd.DataFrame, 
@@ -2467,6 +1410,102 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                 'validation_method': 'Error state'
             }
     
+    def _compute_efficient_distance_matrix(self, data: 'np.ndarray') -> 'np.ndarray':
+        """
+        Compute distance matrix efficiently using chunked processing to avoid O(n²) memory issues.
+        
+        This function uses a more memory-efficient approach than sklearn's pairwise_distances
+        by processing data in chunks and using optimized matrix operations.
+        """
+        try:
+            import numpy as np
+            from src.utils.matrix_operations import get_enhanced_matrix_operations
+            
+            n_samples, n_features = data.shape
+            self.logger.info(f"📊 Computing efficient distance matrix for {n_samples} samples with {n_features} features")
+            
+            # Use enhanced matrix operations for GPU acceleration
+            matrix_ops = get_enhanced_matrix_operations()
+            
+            # For small datasets, use direct computation
+            if n_samples <= 2000:
+                # Use efficient broadcasting instead of nested loops
+                # ||x - y||² = ||x||² + ||y||² - 2<x,y>
+                data_tensor = matrix_ops.to_tensor(data)
+                
+                # Compute squared norms
+                norms_sq = np.sum(data**2, axis=1, keepdims=True)
+                
+                # Compute dot product matrix
+                dot_product = matrix_ops.matrix_multiply(data, data.T)
+                
+                # Compute distance matrix using broadcasting
+                distance_matrix_sq = norms_sq + norms_sq.T - 2 * dot_product
+                distance_matrix = np.sqrt(np.maximum(distance_matrix_sq, 0))  # Ensure non-negative
+                
+                return distance_matrix
+            
+            # For larger datasets, use chunked processing
+            chunk_size = min(500, n_samples // 4)  # Adaptive chunk size
+            distance_matrix = np.zeros((n_samples, n_samples))
+            
+            self.logger.info(f"📊 Using chunked processing with chunk_size={chunk_size}")
+            
+            for i in range(0, n_samples, chunk_size):
+                end_i = min(i + chunk_size, n_samples)
+                chunk_i = data[i:end_i]
+                
+                for j in range(i, n_samples, chunk_size):  # Only compute upper triangle + diagonal
+                    end_j = min(j + chunk_size, n_samples)
+                    chunk_j = data[j:end_j]
+                    
+                    # Compute distance between chunks
+                    chunk_i_tensor = matrix_ops.to_tensor(chunk_i)
+                    chunk_j_tensor = matrix_ops.to_tensor(chunk_j)
+                    
+                    # Efficient distance computation for chunk
+                    norms_i_sq = np.sum(chunk_i**2, axis=1, keepdims=True)
+                    norms_j_sq = np.sum(chunk_j**2, axis=1, keepdims=True)
+                    dot_product_chunk = matrix_ops.matrix_multiply(chunk_i, chunk_j.T)
+                    
+                    distance_chunk_sq = norms_i_sq + norms_j_sq.T - 2 * dot_product_chunk
+                    distance_chunk = np.sqrt(np.maximum(distance_chunk_sq, 0))
+                    
+                    # Store in distance matrix
+                    distance_matrix[i:end_i, j:end_j] = distance_chunk
+                    
+                    # Mirror for lower triangle (symmetric matrix)
+                    if i != j:
+                        distance_matrix[j:end_j, i:end_i] = distance_chunk.T
+                
+                # Progress logging
+                if (i // chunk_size + 1) % 5 == 0:
+                    progress = (i + chunk_size) / n_samples * 100
+                    self.logger.info(f"📊 Distance matrix computation progress: {progress:.1f}%")
+            
+            self.logger.info(f"✅ Efficient distance matrix computed: {distance_matrix.shape}")
+            return distance_matrix
+            
+        except Exception as e:
+            self.logger.error(f"❌ Efficient distance matrix computation failed: {e}")
+            # Ultra-fallback: use simple euclidean distance with sampling
+            try:
+                from sklearn.metrics import pairwise_distances
+                self.logger.warning("⚠️ Using sklearn fallback with reduced sample size")
+                
+                # Reduce sample size dramatically for fallback
+                max_samples = min(1000, data.shape[0])
+                if data.shape[0] > max_samples:
+                    indices = np.random.choice(data.shape[0], size=max_samples, replace=False)
+                    data_reduced = data[indices]
+                else:
+                    data_reduced = data
+                
+                return pairwise_distances(data_reduced)
+            except Exception as fallback_error:
+                self.logger.error(f"❌ All distance matrix methods failed: {fallback_error}")
+                # Return identity matrix as last resort
+                return np.eye(min(100, data.shape[0]))
 
     def _calculate_within_cluster_coherence(self, distance_matrix: np.ndarray, cluster_labels: np.ndarray) -> float:
         """
@@ -2614,64 +1653,6 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             self.logger.warning(f"⚠️ 3D cluster coherence calculation failed: {e}")
             return 0.0
 
-    def _calculate_ari_stability(self, distance_matrix: np.ndarray, n_clusters: int, n_bootstrap: int = 10) -> float:
-        """Calculate ARI stability using bootstrap resampling."""
-        try:
-            from sklearn.cluster import AgglomerativeClustering
-            from sklearn.metrics import adjusted_rand_score
-            import numpy as np
-            
-            n_samples = distance_matrix.shape[0]
-            # Pre-allocate numpy array for better performance
-            ari_scores = np.zeros(n_bootstrap)
-            
-            # Original clustering with complete linkage for better performance
-            original_clustering = AgglomerativeClustering(
-                n_clusters=n_clusters,
-                metric='precomputed',
-                linkage='complete'
-            )
-            original_labels = original_clustering.fit_predict(distance_matrix)
-            
-            # Pre-compute all bootstrap indices for efficiency
-            all_bootstrap_indices = [np.random.choice(n_samples, size=n_samples, replace=True) 
-                                   for _ in range(n_bootstrap)]
-            
-            valid_ari_count = 0
-            
-            for bootstrap_idx, bootstrap_indices in enumerate(all_bootstrap_indices):
-                try:
-                    # Create bootstrap distance matrix using advanced indexing (more efficient)
-                    bootstrap_distance_matrix = distance_matrix[bootstrap_indices][:, bootstrap_indices]
-                    
-                    # Perform clustering on bootstrap sample with complete linkage
-                    bootstrap_clustering = AgglomerativeClustering(
-                        n_clusters=min(n_clusters, len(np.unique(bootstrap_indices))),
-                        metric='precomputed',
-                        linkage='complete'
-                    )
-                    bootstrap_labels = bootstrap_clustering.fit_predict(bootstrap_distance_matrix)
-                    
-                    # Map back to original indices and calculate ARI
-                    mapped_labels = np.full(n_samples, -1)
-                    for i, orig_idx in enumerate(bootstrap_indices):
-                        mapped_labels[orig_idx] = bootstrap_labels[i]
-                    
-                    # Only compare samples that were included in bootstrap
-                    valid_mask = mapped_labels != -1
-                    if np.sum(valid_mask) > 1:
-                        ari = adjusted_rand_score(original_labels[valid_mask], mapped_labels[valid_mask])
-                        ari_scores[valid_ari_count] = ari
-                        valid_ari_count += 1
-                        
-                except Exception:
-                    continue
-            
-            return float(np.mean(ari_scores[:valid_ari_count])) if valid_ari_count > 0 else 0.0
-            
-        except Exception as e:
-            self.logger.error(f"❌ ARI stability calculation failed: {e}")
-            return 0.0
 
 
 
@@ -3168,257 +2149,10 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             self.logger.warning(f"⚠️ Error calculating pairwise similarity: {e}")
             return 0.0
 
-    def _multi_stage_hierarchical_clustering(self, regime_characteristics: Dict[str, Any], 
-                                           regime_assignments: List[int]) -> Dict[str, Any]:
-        """Implement multi-stage clustering to handle diverse CV ranges more effectively.
-        
-        Args:
-            regime_characteristics: Regime characteristics dictionary
-            regime_assignments: List of regime assignments
-            
-        Returns:
-            Clustering result with improved handling of extreme CV values
-        """
-        try:
-            import numpy as np
-            
-            self.logger.info("🔄 Starting Multi-Stage Hierarchical Clustering")
-            
-            # Analyze CV distribution to determine stage thresholds
-            all_cvs = []
-            cv_aspects = ['momentum_cv', 'volatility_cv', 'volume_cv']
-            
-            for regime in regime_characteristics.values():
-                features = regime.get('features', {})
-                for aspect in cv_aspects:
-                    cv_val = features.get(aspect, 0.0)
-                    if cv_val is not None and isinstance(cv_val, (int, float)) and np.isfinite(cv_val) and cv_val > 0:
-                        all_cvs.append(cv_val)
-            
-            if not all_cvs:
-                self.logger.warning("⚠️ No CV data available for multi-stage clustering, using standard approach")
-                return self._perform_standard_clustering(regime_characteristics, regime_assignments)
-            
-            all_cvs = np.array(all_cvs)
-            cv_percentiles = np.percentile(all_cvs, [75, 90, 95])
-            
-            # Define stage thresholds based on data distribution
-            low_cv_threshold = cv_percentiles[0]     # 75th percentile
-            medium_cv_threshold = cv_percentiles[1]  # 90th percentile
-            high_cv_threshold = cv_percentiles[2]    # 95th percentile
-            
-            self.logger.info(f"   📊 Stage thresholds: Low≤{low_cv_threshold:.2f}, Medium≤{medium_cv_threshold:.2f}, High≤{high_cv_threshold:.2f}")
-            
-            # Stage 1: Cluster low-CV regimes aggressively
-            low_cv_regimes = self._filter_regimes_by_cv_range(
-                regime_characteristics, max_cv=low_cv_threshold
-            )
-            stage1_result = self._cluster_regime_stage(
-                low_cv_regimes, regime_assignments, stage="low_cv",
-                cv_threshold_multiplier=0.6, similarity_threshold_multiplier=1.1
-            )
-            
-            # Stage 2: Cluster medium-CV regimes moderately
-            medium_cv_regimes = self._filter_regimes_by_cv_range(
-                regime_characteristics, min_cv=low_cv_threshold, max_cv=medium_cv_threshold
-            )
-            stage2_result = self._cluster_regime_stage(
-                medium_cv_regimes, regime_assignments, stage="medium_cv",
-                cv_threshold_multiplier=1.0, similarity_threshold_multiplier=1.0
-            )
-            
-            # Stage 3: Cluster high-CV regimes conservatively
-            high_cv_regimes = self._filter_regimes_by_cv_range(
-                regime_characteristics, min_cv=medium_cv_threshold, max_cv=high_cv_threshold
-            )
-            stage3_result = self._cluster_regime_stage(
-                high_cv_regimes, regime_assignments, stage="high_cv",
-                cv_threshold_multiplier=1.8, similarity_threshold_multiplier=0.9
-            )
-            
-            # Stage 4: Handle extreme-CV regimes as singletons or small clusters
-            extreme_cv_regimes = self._filter_regimes_by_cv_range(
-                regime_characteristics, min_cv=high_cv_threshold
-            )
-            stage4_result = self._handle_extreme_cv_regimes(
-                extreme_cv_regimes, regime_assignments
-            )
-            
-            # Merge stage results
-            merged_result = self._merge_stage_results([
-                stage1_result, stage2_result, stage3_result, stage4_result
-            ], regime_characteristics)
-            
-            self.logger.info(f"✅ Multi-stage clustering completed: {merged_result['cluster_count']} final clusters")
-            return merged_result
-            
-        except Exception as e:
-            self.logger.error(f"❌ Multi-stage clustering failed: {e}")
-            return self._perform_standard_clustering(regime_characteristics, regime_assignments)
 
-    def _filter_regimes_by_cv_range(self, regime_characteristics: Dict[str, Any], 
-                                   min_cv: float = 0.0, max_cv: float = float('inf')) -> Dict[str, Any]:
-        """Filter regimes by CV range for stage-based clustering.
-        
-        Args:
-            regime_characteristics: Full regime characteristics
-            min_cv: Minimum CV threshold (inclusive)
-            max_cv: Maximum CV threshold (exclusive)
-            
-        Returns:
-            Filtered regime characteristics
-        """
-        filtered_regimes = {}
-        cv_aspects = ['momentum_cv', 'volatility_cv', 'volume_cv']
-        
-        for regime_id, characteristics in regime_characteristics.items():
-            features = characteristics.get('features', {})
-            
-            # Calculate max CV across all aspects for this regime
-            regime_max_cv = 0.0
-            for aspect in cv_aspects:
-                cv_val = features.get(aspect, 0.0)
-                if isinstance(cv_val, (int, float)) and np.isfinite(cv_val):
-                    regime_max_cv = max(regime_max_cv, cv_val)
-            
-            # Include regime if its max CV falls within the specified range
-            if min_cv <= regime_max_cv < max_cv:
-                filtered_regimes[regime_id] = characteristics
-        
-        return filtered_regimes
 
-    def _cluster_regime_stage(self, stage_regimes: Dict[str, Any], 
-                            regime_assignments: List[int], stage: str,
-                            cv_threshold_multiplier: float = 1.0,
-                            similarity_threshold_multiplier: float = 1.0) -> Dict[str, Any]:
-        """Cluster regimes within a specific CV stage.
-        
-        Args:
-            stage_regimes: Regimes for this stage
-            regime_assignments: Original regime assignments
-            stage: Stage name for logging
-            cv_threshold_multiplier: Multiplier for CV thresholds
-            similarity_threshold_multiplier: Multiplier for similarity thresholds
-            
-        Returns:
-            Stage clustering result
-        """
-        if not stage_regimes:
-            return {'clusters': {}, 'stage': stage, 'regime_count': 0}
-        
-        self.logger.info(f"   🔄 Stage '{stage}': Clustering {len(stage_regimes)} regimes")
-        
-        try:
-            # Calculate similarity matrix for this stage
-            similarity_matrix = self._calculate_regime_similarity_matrix(stage_regimes, None)
-            
-            # Adjust thresholds for this stage
-            base_cv_thresholds = self._generate_adaptive_cv_thresholds(stage_regimes)
-            adjusted_cv_thresholds = [t * cv_threshold_multiplier for t in base_cv_thresholds]
-            
-            base_similarity_thresholds = np.linspace(0.99, 0.75, 8)
-            adjusted_similarity_thresholds = base_similarity_thresholds * similarity_threshold_multiplier
-            adjusted_similarity_thresholds = np.clip(adjusted_similarity_thresholds, 0.1, 0.99)
-            
-            # Perform clustering with adjusted parameters
-            stage_clusters = self._perform_stage_clustering(
-                stage_regimes, similarity_matrix, 
-                adjusted_cv_thresholds, adjusted_similarity_thresholds
-            )
-            
-            self.logger.info(f"   ✅ Stage '{stage}': Created {len(stage_clusters)} clusters")
-            
-            return {
-                'clusters': stage_clusters,
-                'stage': stage,
-                'regime_count': len(stage_regimes),
-                'cluster_count': len(stage_clusters)
-            }
-            
-        except Exception as e:
-            self.logger.error(f"❌ Stage '{stage}' clustering failed: {e}")
-            return {'clusters': {}, 'stage': stage, 'regime_count': len(stage_regimes)}
 
-    def _handle_extreme_cv_regimes(self, extreme_regimes: Dict[str, Any], 
-                                  regime_assignments: List[int]) -> Dict[str, Any]:
-        """Handle extreme CV regimes by creating singleton clusters or small groups.
-        
-        Args:
-            extreme_regimes: Regimes with extreme CV values
-            regime_assignments: Original regime assignments
-            
-        Returns:
-            Extreme regime clustering result
-        """
-        if not extreme_regimes:
-            return {'clusters': {}, 'stage': 'extreme_cv', 'regime_count': 0}
-        
-        self.logger.info(f"   ⚠️ Handling {len(extreme_regimes)} extreme CV regimes")
-        
-        # Create singleton clusters for extreme regimes
-        extreme_clusters = {}
-        for i, regime_id in enumerate(extreme_regimes.keys()):
-            cluster_id = f"extreme_{i}"
-            extreme_clusters[cluster_id] = [regime_id]
-        
-        self.logger.info(f"   ✅ Created {len(extreme_clusters)} singleton clusters for extreme regimes")
-        
-        return {
-            'clusters': extreme_clusters,
-            'stage': 'extreme_cv',
-            'regime_count': len(extreme_regimes),
-            'cluster_count': len(extreme_clusters)
-        }
 
-    def _merge_stage_results(self, stage_results: List[Dict[str, Any]], 
-                           regime_characteristics: Dict[str, Any], market_data: Any = None) -> Dict[str, Any]:
-        """Merge results from multiple clustering stages.
-        
-        Args:
-            stage_results: List of stage clustering results
-            regime_characteristics: Original regime characteristics
-            
-        Returns:
-            Merged clustering result
-        """
-        try:
-            merged_clusters = {}
-            total_regimes = 0
-            cluster_counter = 0
-            
-            for stage_result in stage_results:
-                stage_clusters = stage_result.get('clusters', {})
-                stage_name = stage_result.get('stage', 'unknown')
-                
-                for stage_cluster_id, regime_list in stage_clusters.items():
-                    if regime_list:  # Only include non-empty clusters
-                        merged_cluster_id = f"merged_{cluster_counter}"
-                        merged_clusters[merged_cluster_id] = regime_list
-                        cluster_counter += 1
-                        total_regimes += len(regime_list)
-                
-                self.logger.info(f"   📊 Merged {len(stage_clusters)} clusters from stage '{stage_name}'")
-            
-            # Create regime-to-cluster mapping
-            regime_to_cluster = {}
-            for cluster_id, regime_list in merged_clusters.items():
-                for regime_id in regime_list:
-                    regime_to_cluster[regime_id] = cluster_id
-            
-            self.logger.info(f"✅ Multi-stage merge complete: {len(merged_clusters)} clusters, {total_regimes} regimes")
-            
-            return {
-                'clusters': merged_clusters,
-                'regime_to_cluster': regime_to_cluster,
-                'cluster_count': len(merged_clusters),
-                'total_regimes': total_regimes,
-                'multi_stage': True,
-                'aligned_market_data': market_data  # Include aligned market data
-            }
-            
-        except Exception as e:
-            self.logger.error(f"❌ Stage result merging failed: {e}")
-            return {'clusters': {}, 'regime_to_cluster': {}, 'cluster_count': 0}
 
     def _perform_stage_clustering(self, regimes: Dict[str, Any], similarity_matrix: np.ndarray,
                                 cv_thresholds: List[float], similarity_thresholds: np.ndarray) -> Dict[str, List[str]]:
@@ -3498,27 +2232,6 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             self.logger.error(f"❌ Stage clustering failed: {e}")
             return {}
 
-    def _perform_standard_clustering(self, regime_characteristics: Dict[str, Any], 
-                                   regime_assignments: List[int]) -> Dict[str, Any]:
-        """Fallback to standard clustering approach.
-        
-        Args:
-            regime_characteristics: Regime characteristics
-            regime_assignments: Regime assignments
-            
-        Returns:
-            Standard clustering result
-        """
-        self.logger.info("🔄 Falling back to standard clustering approach")
-        
-        # Use the existing clustering logic as fallback
-        try:
-            similarity_matrix = self._calculate_regime_similarity_matrix(regime_characteristics, None)
-            # ... implement standard clustering logic or call existing method
-            return {'clusters': {}, 'cluster_count': 0, 'fallback': True}
-        except Exception as e:
-            self.logger.error(f"❌ Standard clustering fallback failed: {e}")
-            return {'clusters': {}, 'cluster_count': 0, 'error': str(e)}
 
     def _calculate_comprehensive_cluster_quality(self, clusters: Dict[str, List[str]], 
                                                regime_characteristics: Dict[str, Any],
@@ -3892,7 +2605,7 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
         self,
         clusters_dict: Dict[str, List[str]],
         regime_characteristics: Dict[str, Any],
-        coverage_target: float = 90.0,
+        coverage_target: float = 92.5,  # Target middle of 90-95% range
         min_clusters: int = 18,
         max_clusters: int = 25,
         max_avg_cv: float = 0.35
@@ -4227,104 +2940,7 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             self.logger.debug(f"⚠️ Error checking CV hard constraint: {e}")
             return True  # Allow merge on error to avoid blocking everything
 
-    def _would_merge_exceed_cv_limit_fresh(self, cluster_cv_aspects: Dict[str, Any], cluster_i: int, cluster_j: int, regime_to_cluster: Dict[str, int], total_samples: int) -> bool:
-        """Check if merging two clusters would exceed adaptive CV limit using fresh cluster CV data.
-        
-        This version uses the fresh cluster_cv_aspects data instead of potentially stale regime_characteristics.
-        """
-        try:
-            import numpy as np
-            
-            # Get current CV for both clusters from fresh data
-            cv_i = cluster_cv_aspects.get(cluster_i, {})
-            cv_j = cluster_cv_aspects.get(cluster_j, {})
-            
-            if not cv_i or not cv_j:
-                return False  # Allow merge if no CV data available
-            
-            # Calculate merged cluster sample count for adaptive limit
-            regimes_i = [rid for rid, cid in regime_to_cluster.items() if cid == cluster_i]
-            regimes_j = [rid for rid, cid in regime_to_cluster.items() if cid == cluster_j]
-            merged_sample_count = len(regimes_i) + len(regimes_j)  # Simplified count
-            
-            # Determine adaptive CV limit based on merged cluster size - another 50% more relaxed for faster convergence
-            if total_samples and total_samples > 0:
-                merged_pct = (merged_sample_count / total_samples) * 100
-                if merged_pct < 1.0:
-                    cv_limit = 22.5  # 2250% - another 50% more relaxed for tiny clusters (was 15.0)
-                elif merged_pct < 3.0:
-                    cv_limit = 13.5  # 1350% - another 50% more relaxed for small clusters (was 9.0)
-                elif merged_pct < 12.0:
-                    cv_limit = 11.25 # 1125% - another 50% more relaxed for large clusters (was 7.5)
-                else:
-                    cv_limit = 2.0   # 200% - kept conservative for very large clusters (unchanged)
-            else:
-                cv_limit = 11.25  # Another 50% more relaxed default fallback (was 7.5)
-            
-            # Calculate combined CV for each aspect using fresh data
-            aspects = ['momentum', 'volatility', 'volume']
-            max_combined_cv = 0.0
-            
-            for aspect in aspects:
-                cv_i_val = cv_i.get(aspect, 0.0)
-                cv_j_val = cv_j.get(aspect, 0.0)
-                
-                # Simple weighted average of CVs (could be improved)
-                if cv_i_val is not None and cv_j_val is not None and np.isfinite(cv_i_val) and np.isfinite(cv_j_val):
-                    combined_cv = max(cv_i_val, cv_j_val)  # Conservative: use worst CV
-                    max_combined_cv = max(max_combined_cv, combined_cv)
-            
-            would_exceed = max_combined_cv > cv_limit
-            if would_exceed:
-                self.logger.debug(f"   🚫 FRESH CV LIMIT: C{cluster_i} + C{cluster_j} → CV={max_combined_cv:.3f} > {cv_limit:.3f} (size: {merged_pct:.1f}%)")
-            
-            return would_exceed
-            
-        except Exception as e:
-            self.logger.debug(f"⚠️ Error checking fresh CV limit: {e}")
-            return False
 
-    def _would_merge_create_extreme_cv_fresh(self, cluster_cv_aspects: Dict[str, Any], cluster_i: int, cluster_j: int, regime_to_cluster: Dict[str, int], cv_cap: float = 3.0) -> bool:
-        """Check if merging would create extreme CV using fresh cluster CV data."""
-        try:
-            import numpy as np
-            
-            # Get current CV for both clusters from fresh data
-            cv_i = cluster_cv_aspects.get(cluster_i, {})
-            cv_j = cluster_cv_aspects.get(cluster_j, {})
-            
-            if not cv_i or not cv_j:
-                return False  # Allow merge if no CV data available
-            
-            # Calculate worst-case combined CV for each aspect
-            aspects = ['momentum', 'volatility', 'volume']
-            max_combined_cv = 0.0
-            extreme_volume_detected = False
-            
-            for aspect in aspects:
-                cv_i_val = cv_i.get(aspect, 0.0)
-                cv_j_val = cv_j.get(aspect, 0.0)
-                
-                # Conservative: use worst CV as estimate for combined CV
-                if cv_i_val is not None and cv_j_val is not None and np.isfinite(cv_i_val) and np.isfinite(cv_j_val):
-                    combined_cv = max(cv_i_val, cv_j_val)
-                    max_combined_cv = max(max_combined_cv, combined_cv)
-            
-                    # EXTREME VOLUME CV PREVENTION: Block any merge that would create volume CV > 10 (1000%)
-                    if combined_cv > 10.0:
-                        extreme_volume_detected = True
-                        self.logger.warning(f"🚫 EXTREME CV BLOCKED: C{cluster_i} + C{cluster_j} → combined_cv={combined_cv:.1f} > 10.0 (1000%)")
-            
-            # Block if extreme volume CV detected OR standard CV cap exceeded
-            would_exceed = extreme_volume_detected or max_combined_cv > cv_cap
-            if would_exceed and not extreme_volume_detected:
-                self.logger.debug(f"   🚫 FRESH HARD CV CAP: C{cluster_i} + C{cluster_j} → CV={max_combined_cv:.3f} > {cv_cap:.1f}")
-            
-            return would_exceed
-            
-        except Exception as e:
-            self.logger.debug(f"⚠️ Error checking fresh hard CV cap: {e}")
-            return False
     
     def _calculate_regime_pair_similarity(self, regime_1: Dict[str, Any], regime_2: Dict[str, Any]) -> float:
         """Calculate similarity between two regimes using robust per-feature normalization.
@@ -5089,34 +3705,6 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
     
 
     
-    def _calculate_regime_characteristic_stats(self, characteristic_list: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """Calculate statistics for regime characteristics within a cluster."""
-        try:
-            if not characteristic_list:
-                return {}
-            
-            # Extract all keys from the first item
-            keys = list(characteristic_list[0].keys())
-            stats = {}
-            
-            for key in keys:
-                values = [item[key] for item in characteristic_list if key in item and isinstance(item[key], (int, float))]
-                
-                if values:
-                    stats[key] = {
-                        'mean': float(np.mean(values)),
-                        'std': float(np.std(values)),
-                        'min': float(np.min(values)),
-                        'max': float(np.max(values)),
-                        'median': float(np.median(values)),
-                        'q25': float(np.percentile(values, 25)),
-                        'q75': float(np.percentile(values, 75))
-                    }
-            
-            return stats
-            
-        except Exception as e:
-            return {'error': f'Characteristic stats calculation failed: {e}'}
     
     def _calculate_hmm_model_selection_criteria(self, hmm_models: List[Any], market_data: Any) -> Dict[str, Any]:
         """Calculate AIC, BIC, and other model selection criteria for HMM models."""
@@ -5555,13 +4143,21 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             detailed_metrics = {}
             unique_clusters = sorted(set(cluster_assignments))
             
-            self.logger.info(f"📊 Generating detailed metrics for {len(unique_clusters)} clusters")
+            # Select top 30 clusters based on sample count only
+            top_clusters = self._select_top_clusters_for_analysis(unique_clusters, cluster_assignments, hmm_models, top_n=30)
             
-            for cluster_id in unique_clusters:
+            self.logger.info(f"📊 Generating detailed metrics for top {len(top_clusters)} clusters (out of {len(unique_clusters)} total)")
+            
+            for i, cluster_id in enumerate(top_clusters):
+                if i % 10 == 0:  # Log progress every 10 clusters (since we're only doing 30)
+                    self.logger.info(f"📊 Processing cluster {i+1}/{len(top_clusters)} (cluster_id: {cluster_id})")
+                
                 cluster_metrics = self._analyze_single_cluster(
                     cluster_id, hmm_models, cluster_assignments, market_data
                 )
                 detailed_metrics[f'cluster_{cluster_id}'] = cluster_metrics
+            
+            self.logger.info(f"✅ Completed detailed metrics generation for top {len(top_clusters)} clusters")
             
             # Aggregate transition matrix rows and dwell-time distributions
             transition_rows = {}
@@ -5613,7 +4209,7 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             # Add within-cluster coherence metrics to report (3D-aware)
             try:
                 import numpy as np
-                from sklearn.metrics import pairwise_distances
+                from src.utils.matrix_operations import get_batch_matrix_processor, optimize_batch_size
                 
                 # Handle 3D cluster assignments for coherence calculation
                 if isinstance(cluster_assignments, (list, tuple)):
@@ -5641,13 +4237,44 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                     min_length = min(len(numeric_data), effective_length)
                     
                     if not numeric_data.empty and min_length > 0:
-                        # Calculate distance matrix with compatible length
-                        numeric_data_adj = numeric_data.iloc[:min_length]
-                        distance_matrix = pairwise_distances(numeric_data_adj.fillna(0))
+                        # For large datasets, sample to prevent memory issues
+                        max_sample_size = 10000  # Increased limit for better accuracy while maintaining performance
+                        if min_length > max_sample_size:
+                            self.logger.info(f"📊 Sampling {max_sample_size} points from {min_length} for coherence calculation (memory optimization)")
+                            # Use stratified sampling based on cluster assignments if possible
+                            sample_indices = np.random.choice(min_length, size=max_sample_size, replace=False)
+                            sample_indices = np.sort(sample_indices)  # Keep temporal order
+                            numeric_data_adj = numeric_data.iloc[sample_indices]
+                            # Also sample cluster assignments accordingly
+                            if isinstance(cluster_assignments_array, np.ndarray) and cluster_assignments_array.ndim == 1:
+                                cluster_assignments_sample = cluster_assignments_array[sample_indices]
+                            else:
+                                cluster_assignments_sample = cluster_assignments_array
+                        else:
+                            numeric_data_adj = numeric_data.iloc[:min_length]
+                            cluster_assignments_sample = cluster_assignments_array
+                        
+                        # Calculate distance matrix with optimized approach (avoid O(n²) sklearn pairwise_distances)
+                        self.logger.info(f"📊 Computing optimized distance matrix for {numeric_data_adj.shape} data")
+                        
+                        # Use batch matrix processor for efficient computation
+                        batch_processor = get_batch_matrix_processor(chunk_size_mb=256, enable_gpu=True)
+                        
+                        # For coherence analysis, we can use correlation-based distance which is more efficient
+                        # Distance = 1 - correlation, computed efficiently
+                        try:
+                            correlation_matrix = batch_processor.batch_correlation_analysis(numeric_data_adj.fillna(0))[0]
+                            distance_matrix = 1 - np.abs(correlation_matrix)  # Convert correlation to distance
+                            self.logger.info(f"📊 Correlation-based distance matrix computed: {distance_matrix.shape}")
+                        except Exception as e:
+                            self.logger.warning(f"⚠️ Correlation-based distance failed: {e}, using euclidean fallback")
+                            # Fallback: Use efficient euclidean distance with chunking
+                            distance_matrix = self._compute_efficient_distance_matrix(numeric_data_adj.fillna(0))
+                            self.logger.info(f"📊 Euclidean distance matrix computed: {distance_matrix.shape}")
                         
                         # Calculate within-cluster coherence (handles 3D internally)
                         coherence_score = self._calculate_within_cluster_coherence(
-                            distance_matrix, cluster_assignments_array
+                            distance_matrix, cluster_assignments_sample
                         )
                         
                         detailed_metrics['within_cluster_coherence'] = {
@@ -5727,20 +4354,18 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             import numpy as np
             
             # Data should already be aligned from the clustering process
-            # Use alignment method for consistency and error handling
-            alignment_result = self._align_data_lengths(market_data, cluster_assignments)
-            market_data = alignment_result.aligned_market_data
-            cluster_assignments = alignment_result.aligned_assignments
-            
-            if alignment_result.was_aligned:
-                self.logger.warning(f"⚠️ Data alignment was needed in _analyze_single_cluster - this indicates a bug in upstream alignment")
+            # Skip redundant alignment check for performance - data is pre-aligned
             
             # Get cluster data
             cluster_mask = np.array(cluster_assignments) == cluster_id
             cluster_data = market_data[cluster_mask]
             
             if len(cluster_data) < 2:
-                return {'error': f'Insufficient data for cluster {cluster_id}'}
+                return {
+                    'cluster_id': cluster_id,
+                    'error': f'Insufficient data for cluster {cluster_id}',
+                    'sample_count': len(cluster_data)
+                }
             
             cluster_metrics = {
                 'cluster_id': cluster_id,
@@ -5921,100 +4546,6 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
         except Exception:
             return {'count': 0, 'mean': 0.0, 'median': 0.0, 'min': 0, 'max': 0, 'p25': 0.0, 'p75': 0.0, 'std': 0.0}
 
-    def _passes_temporal_coherence_constraint(self, cluster_assignments: List[int], regime_to_cluster: Dict[str, int], cluster_i: int, cluster_j: int, max_entropy_increase_pct: float = 0.10, max_dwell_kl: float = 0.25) -> bool:
-        """Check that merging cluster_j into cluster_i does not break temporal coherence.
-
-        - Blocks if transition entropy increases by more than max_entropy_increase_pct
-        - Blocks if dwell-time distributions of the two clusters differ by KL > max_dwell_kl
-        """
-        try:
-            import numpy as np
-            from math import log
-
-            def transition_entropy(assignments: np.ndarray, n_clusters: int) -> float:
-                T = np.zeros((n_clusters, n_clusters), dtype=float)
-                for a, b in zip(assignments[:-1], assignments[1:]):
-                    if a < 0 or b < 0 or a >= n_clusters or b >= n_clusters:
-                        continue
-                    T[a, b] += 1.0
-                ent = 0.0
-                rows = 0
-                for r in range(n_clusters):
-                    row_sum = T[r].sum()
-                    if row_sum <= 0:
-                        continue
-                    p = T[r] / row_sum
-                    h = -float(np.nansum([pi * log(pi + 1e-12) for pi in p if pi > 0]))
-                    ent += h
-                    rows += 1
-                return ent / max(1, rows)
-
-            def dwell_hist(assignments: np.ndarray, cid: int) -> np.ndarray:
-                lengths = []
-                cur = None
-                count = 0
-                for v in assignments:
-                    if v == cid:
-                        if cur == cid:
-                            count += 1
-                        else:
-                            if cur == cid and count > 0:
-                                lengths.append(count)
-                            cur = cid
-                            count = 1
-                    else:
-                        if cur == cid and count > 0:
-                            lengths.append(count)
-                        cur = v
-                        count = 0
-                if cur == cid and count > 0:
-                    lengths.append(count)
-                if len(lengths) == 0:
-                    return np.array([1.0])
-                # 4-bin histogram: 1,2,3,4+
-                hist = [0, 0, 0, 0]
-                for L in lengths:
-                    if L <= 1:
-                        hist[0] += 1
-                    elif L == 2:
-                        hist[1] += 1
-                    elif L == 3:
-                        hist[2] += 1
-                    else:
-                        hist[3] += 1
-                s = float(sum(hist))
-                if s == 0:
-                    return np.array([1.0])
-                return np.array([h / s for h in hist], dtype=float)
-
-            def kl_div(p: np.ndarray, q: np.ndarray) -> float:
-                p = p / max(1e-12, p.sum())
-                q = q / max(1e-12, q.sum())
-                eps = 1e-8
-                p = p + eps
-                q = q + eps
-                return float(np.sum(p * np.log(p / q)))
-
-            arr = np.array(cluster_assignments, dtype=int)
-            n_before = int(np.max(arr)) + 1 if arr.size > 0 else 0
-            if n_before <= max(cluster_i, cluster_j):
-                return True
-            H_before = transition_entropy(arr, n_before)
-            merged = arr.copy()
-            merged[merged == cluster_j] = cluster_i
-            unique = sorted(set(merged.tolist()))
-            remap = {old: idx for idx, old in enumerate(unique)}
-            merged = np.array([remap[v] for v in merged], dtype=int)
-            H_after = transition_entropy(merged, len(unique))
-            if H_before > 0 and (H_after - H_before) / H_before > max_entropy_increase_pct:
-                return False
-            p = dwell_hist(arr, cluster_i)
-            q = dwell_hist(arr, cluster_j)
-            if kl_div(p, q) > max_dwell_kl:
-                return False
-            return True
-        except Exception:
-            return False
 
     def _compute_transition_row(self, cluster_assignments: List[int], cluster_id: int, n_clusters: int) -> Dict[str, float]:
         """Compute transition probabilities from a given cluster to others."""
@@ -6413,190 +4944,7 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
 
 
     
-    def _cluster_single_chunk(
-        self, 
-        hmm_manager: Any, 
-        chunk_data: Any, 
-        config: Dict[str, Any], 
-        chunk_idx: int
-    ) -> Dict[str, Any]:
-        """Cluster a single data chunk."""
-        try:
-            # Prepare chunk data
-            chunk_prepared = {
-                'market_data': chunk_data,
-                'regime_discovery': {},  # Empty for individual chunks
-                'chunk_index': chunk_idx
-            }
-            
-            # Perform clustering on chunk
-            # Use train_hmm_parallel method instead of non-existent perform_hmm_clustering
-            n_models = config.get('n_clusters', 3)
-            hmm_models = hmm_manager.train_hmm_parallel(
-                data=chunk_data,
-                n_models=n_models,
-                config=None
-            )
-            
-            # Create cluster assignments using HMM model predictions
-            cluster_assignments = []
-            if hmm_models and len(hmm_models) > 0:
-                # Use the first HMM model to predict cluster assignments
-                try:
-                    # Prepare data for HMM prediction
-                    if PANDAS_AVAILABLE and isinstance(chunk_data, pd.DataFrame):
-                        # Select numeric columns for HMM prediction
-                        numeric_cols = chunk_data.select_dtypes(include=[np.number]).columns
-                        if len(numeric_cols) > 0:
-                            hmm_data = chunk_data[numeric_cols].values
-                            # Handle NaN values by filling with forward fill then backward fill
-                            if PANDAS_AVAILABLE:
-                                hmm_df = pd.DataFrame(hmm_data, columns=numeric_cols)
-                                hmm_df = hmm_df.fillna(method='ffill').fillna(method='bfill')
-                                hmm_data = hmm_df.values
-                            else:
-                                # Simple NaN handling for numpy arrays
-                                hmm_data = np.nan_to_num(hmm_data, nan=0.0)
-                        else:
-                            # Fallback to simple round-robin if no numeric data
-                            cluster_assignments = [int(i % n_models) for i in range(len(chunk_data))]
-                    else:
-                        # Fallback to simple round-robin
-                        cluster_assignments = [int(i % n_models) for i in range(len(chunk_data))]
-                    
-                    if not cluster_assignments:  # If we haven't assigned yet
-                        # Use HMM model to predict states
-                        try:
-                            hmm_model = hmm_models[0]  # Use first model
-                            if hasattr(hmm_model, 'predict'):
-                                predicted_states = hmm_model.predict(hmm_data)
-                                # Map states to cluster assignments (0 to n_models-1)
-                                cluster_assignments = [int(state % n_models) for state in predicted_states]
-                            else:
-                                # Fallback to round-robin
-                                cluster_assignments = [i % n_models for i in range(len(chunk_data))]
-                        except Exception as e:
-                            self.logger.warning(f"⚠️ HMM prediction failed for chunk {chunk_idx}: {e}")
-                            # Fallback to round-robin
-                            cluster_assignments = [int(i % n_models) for i in range(len(chunk_data))]
-                except Exception as e:
-                    self.logger.warning(f"⚠️ Cluster assignment failed for chunk {chunk_idx}: {e}")
-                    # Fallback to round-robin
-                    cluster_assignments = [int(i % n_models) for i in range(len(chunk_data))]
-            else:
-                # Fallback to round-robin if no models
-                cluster_assignments = [int(i % n_models) for i in range(len(chunk_data))]
-            
-            # Return standardized format
-            result = STANDARD_CLUSTERING_RESULT.copy()
-            result.update({
-                'hmm_models': hmm_models,
-                'cluster_assignments': cluster_assignments,
-                'cluster_metrics': {
-                    'clustering_method': 'chunk_based',
-                    'chunk_size': len(chunk_data)
-                },
-                'success': True,
-                'error': None,
-                'chunk_index': chunk_idx
-            })
-            return result
-            
-        except Exception as e:
-            self.logger.error(f"❌ Chunk {chunk_idx} clustering failed: {e}")
-            # Return standardized error format
-            result = STANDARD_CLUSTERING_RESULT.copy()
-            result.update({
-                'success': False,
-                'error': str(e),
-                'chunk_index': chunk_idx
-            })
-            return result
     
-    def _merge_chunk_clustering_results(self, chunk_results: List[Tuple[int, Any]]) -> Dict[str, Any]:
-        """Merge results from multiple clustering chunks."""
-        try:
-            # Sort results by chunk index
-            chunk_results.sort(key=lambda x: x[0])
-            
-            # Merge HMM models
-            all_models = []
-            all_assignments = []
-            all_metrics = []
-            
-            for chunk_idx, result in chunk_results:
-                if result is None:
-                    continue
-                
-                models = result.get('hmm_models', [])
-                assignments = result.get('cluster_assignments', [])
-                metrics = result.get('cluster_metrics', {})
-                
-                # Keep original assignment indices (clusters should be consistent across chunks)
-                if assignments:
-                    all_assignments.extend(assignments)
-                
-                all_models.extend(models)
-                all_metrics.append(metrics)
-            
-            # Calculate merged metrics
-            merged_metrics = {
-                'clustering_method': 'parallel_chunked',
-                'total_chunks': len(chunk_results),
-                'successful_chunks': len([r for r in chunk_results if r[1] is not None]),
-                'total_models': len(all_models),
-                'total_assignments': len(all_assignments)
-            }
-            
-            self.logger.info(f"✅ Merged {len(chunk_results)} chunks: {len(all_models)} models, {len(all_assignments)} assignments")
-            
-            # Convert HMM models to JSON-serializable format
-            serializable_models = []
-            for model in all_models:
-                if hasattr(model, 'means_') and hasattr(model, 'covars_'):
-                    # Extract only the essential parameters that are JSON serializable
-                    serializable_model = {
-                        'n_components': int(model.n_components),
-                        'covariance_type': str(model.covariance_type),
-                        'means': model.means_.tolist() if hasattr(model.means_, 'tolist') else model.means_,
-                        'covars': model.covars_.tolist() if hasattr(model.covars_, 'tolist') else model.covars_,
-                        'transmat_': model.transmat_.tolist() if hasattr(model.transmat_, 'tolist') else model.transmat_,
-                        'startprob_': model.startprob_.tolist() if hasattr(model.startprob_, 'tolist') else model.startprob_
-                    }
-                    serializable_models.append(serializable_model)
-                else:
-                    # If model doesn't have expected attributes, create a minimal representation
-                    serializable_models.append({
-                        'n_components': int(model.n_components) if hasattr(model, 'n_components') else 2,
-                        'covariance_type': str(model.covariance_type) if hasattr(model, 'covariance_type') else 'diag',
-                        'means': [[0.0] * 2],  # Default means
-                        'covars': [[1.0, 1.0]],  # Default covariances
-                        'transmat_': [[0.5, 0.5], [0.5, 0.5]],  # Default transition matrix
-                        'startprob_': [0.5, 0.5]  # Default start probabilities
-                    })
-            
-            # Return standardized format
-            result = STANDARD_CLUSTERING_RESULT.copy()
-            result.update({
-                'hmm_models': serializable_models,
-                'cluster_assignments': all_assignments,
-                'cluster_metrics': merged_metrics,
-                'success': True,
-                'error': None
-            })
-            return result
-            
-        except Exception as e:
-            self.logger.error(f"❌ Failed to merge chunk results: {e}")
-            # Return standardized error format
-            result = STANDARD_CLUSTERING_RESULT.copy()
-            result.update({
-                'success': False,
-                'error': f'Merge failed: {e}'
-            })
-            return result
-
-    # ========== NEW REGIME-LEVEL STATISTICAL ANALYSIS FUNCTIONS ==========
     
     def _test_regime_volume_characteristics(self, regime_characteristics: Dict[str, Any], regime_to_cluster: Dict[str, int], unique_clusters: List[int]) -> Dict[str, Any]:
         """Test statistical differences in volume characteristics between clusters."""
@@ -7473,29 +5821,6 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
     
 
 
-    def _map_regime_assignments_to_clusters(self, regime_assignments: List[int], regime_to_cluster: Dict[str, int], data_length: int) -> List[int]:
-        """Map time series regime assignments to cluster assignments."""
-        try:
-            cluster_assignments = []
-            
-            for regime_id in regime_assignments:
-                # Convert regime number to regime string ID
-                regime_key = f"regime_{regime_id}"
-                
-                # Get cluster assignment for this regime
-                cluster_id = regime_to_cluster.get(regime_key, 0)  # Default to cluster 0
-                cluster_assignments.append(cluster_id)
-            
-            # Ensure we have the right length
-            while len(cluster_assignments) < data_length:
-                cluster_assignments.append(0)  # Pad with cluster 0
-            
-            return cluster_assignments[:data_length]  # Trim to exact length
-            
-        except Exception as e:
-            self.logger.error(f"❌ Regime to cluster mapping failed: {e}")
-            # Fallback: simple modulo assignment
-            return [i % len(set(regime_to_cluster.values())) if regime_to_cluster else 0 for i in range(data_length)]
 
 
 
@@ -7591,174 +5916,8 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             'cluster_distribution': {'cluster_0': 100.0}
         }
 
-    def _calculate_matrix_clustering_score(self, similarity_matrix: Any, regime_to_cluster: Dict[str, int], cluster_assignments: List[int]) -> float:
-        """Calculate clustering quality score based on within-cluster similarity."""
-        try:
-            import numpy as np
-            
-            if len(cluster_assignments) == 0:
-                return 0.0
-            
-            # Calculate silhouette-like score using similarity matrix
-            unique_clusters = list(set(cluster_assignments))
-            if len(unique_clusters) <= 1:
-                return 1.0  # Perfect score for single cluster
-            
-            total_score = 0.0
-            n_samples = len(cluster_assignments)
-            
-            for i in range(n_samples):
-                cluster_i = cluster_assignments[i]
-                
-                # Calculate within-cluster similarity (higher is better)
-                within_cluster_similarities = []
-                between_cluster_similarities = []
-                
-                for j in range(n_samples):
-                    if i != j:
-                        cluster_j = cluster_assignments[j]
-                        similarity = similarity_matrix[i, j] if hasattr(similarity_matrix, 'shape') else 0.0
-                        
-                        if cluster_i == cluster_j:
-                            within_cluster_similarities.append(similarity)
-                        else:
-                            between_cluster_similarities.append(similarity)
-                
-                # Calculate sample score (higher within-cluster, lower between-cluster is better)
-                avg_within = np.mean(within_cluster_similarities) if within_cluster_similarities else 0.0
-                avg_between = np.mean(between_cluster_similarities) if between_cluster_similarities else 0.0
-                
-                # Score: positive when within > between
-                sample_score = avg_within - avg_between
-                total_score += sample_score
-            
-            # Normalize by number of samples
-            final_score = total_score / n_samples
-            
-            self.logger.info(f"📊 Matrix clustering score: {final_score:.4f}")
-            return final_score
-            
-        except Exception as e:
-            self.logger.warning(f"⚠️ Failed to calculate matrix clustering score: {e}")
-            return 0.0
 
-    def _analyze_cv_stopping_criteria(self, regime_characteristics: Dict[str, Any], regime_to_cluster: Dict[str, int]) -> Dict[str, Any]:
-        """Analyze CV-based stopping criteria with detailed reasoning."""
-        try:
-            import numpy as np
-            
-            # Calculate CV statistics for current clusters
-            cluster_cv_stats = {}
-            for regime_id, cluster_id in regime_to_cluster.items():
-                regime = regime_characteristics.get(regime_id, {})
-                if cluster_id not in cluster_cv_stats:
-                    cluster_cv_stats[cluster_id] = {
-                        'momentum_cvs': [],
-                        'volatility_cvs': [],
-                        'volume_cvs': []
-                    }
-                
-                # Extract CV values
-                for aspect in ['momentum', 'volatility', 'volume']:
-                    cv_key = f'{aspect}_cv'
-                    cv_value = regime.get(cv_key, 0.0)
-                    if isinstance(cv_value, (int, float)) and np.isfinite(cv_value):
-                        cluster_cv_stats[cluster_id][f'{aspect}_cvs'].append(cv_value)
-            
-            # Analyze cluster CV diversity
-            high_cv_clusters = 0
-            total_clusters = len(cluster_cv_stats)
-            cv_diversity_stats = {}
-            
-            for cluster_id, stats in cluster_cv_stats.items():
-                cluster_analysis = {}
-                for aspect in ['momentum', 'volatility', 'volume']:
-                    cvs = stats[f'{aspect}_cvs']
-                    if cvs:
-                        cluster_analysis[aspect] = {
-                            'mean': np.mean(cvs),
-                            'std': np.std(cvs),
-                            'range': np.max(cvs) - np.min(cvs),
-                            'count': len(cvs)
-                        }
-                        # High CV if mean > 0.3 or range > 0.5
-                        if cluster_analysis[aspect]['mean'] > 0.3 or cluster_analysis[aspect]['range'] > 0.5:
-                            high_cv_clusters += 1
-                            break
-                cv_diversity_stats[cluster_id] = cluster_analysis
-            
-            # Stopping criteria
-            high_cv_ratio = high_cv_clusters / total_clusters if total_clusters > 0 else 0
-            should_stop = high_cv_ratio > 0.7  # Stop if >70% of clusters have high CV diversity
-            
-            return {
-                'should_stop': should_stop,
-                'reason': f"High CV diversity in {high_cv_clusters}/{total_clusters} clusters ({high_cv_ratio:.1%})" if should_stop else "CV diversity acceptable",
-                'stats': {
-                    'high_cv_clusters': high_cv_clusters,
-                    'total_clusters': total_clusters,
-                    'high_cv_ratio': high_cv_ratio,
-                    'threshold': 0.7
-                }
-            }
-            
-        except Exception as e:
-            return {
-                'should_stop': False,
-                'reason': f"CV analysis failed: {e}",
-                'stats': {}
-            }
 
-    def _analyze_similarity_threshold(self, threshold: float, similarity_matrix: Any, regime_to_cluster: Dict[str, int]) -> Dict[str, Any]:
-        """Analyze similarity threshold with detailed statistics."""
-        try:
-            import numpy as np
-            
-            # Calculate similarity statistics
-            sim_stats = {
-                'min': np.min(similarity_matrix),
-                'max': np.max(similarity_matrix),
-                'mean': np.mean(similarity_matrix),
-                'median': np.median(similarity_matrix),
-                'std': np.std(similarity_matrix)
-            }
-            
-            # Count pairs above threshold
-            pairs_above_threshold = np.sum(similarity_matrix >= threshold)
-            total_pairs = similarity_matrix.shape[0] * (similarity_matrix.shape[0] - 1) // 2
-            threshold_ratio = pairs_above_threshold / total_pairs if total_pairs > 0 else 0
-            
-            # Threshold is too low if:
-            # 1. Less than 1% of pairs meet the threshold, OR
-            # 2. Threshold is below 2 standard deviations from mean
-            too_low = (threshold_ratio < 0.01) or (threshold < sim_stats['mean'] - 2 * sim_stats['std'])
-            
-            reason = ""
-            if threshold_ratio < 0.01:
-                reason = f"Only {threshold_ratio:.1%} of pairs meet threshold"
-            elif threshold < sim_stats['mean'] - 2 * sim_stats['std']:
-                reason = f"Threshold {threshold:.4f} is too far below mean similarity {sim_stats['mean']:.4f}"
-            else:
-                reason = f"Threshold acceptable: {threshold_ratio:.1%} of pairs eligible"
-            
-            return {
-                'too_low': too_low,
-                'reason': reason,
-                'stats': {
-                    'threshold': threshold,
-                    'pairs_above_threshold': pairs_above_threshold,
-                    'total_pairs': total_pairs,
-                    'threshold_ratio': threshold_ratio,
-                    'similarity_stats': sim_stats
-                }
-            }
-            
-        except Exception as e:
-            return {
-                'too_low': False,
-                'reason': f"Threshold analysis failed: {e}",
-                'stats': {}
-            }
 
     def _calculate_progressive_similarity_thresholds(self) -> List[float]:
         """Calculate progressive similarity thresholds from 99% down to 45%."""
@@ -7771,279 +5930,9 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
         return thresholds
 
 
-    def _calculate_advanced_cluster_analytics(
-        self, 
-        regime_characteristics: Dict[str, Any], 
-        regime_to_cluster: Dict[str, int], 
-        cluster_assignments: List[int],
-        cluster_count: int
-    ) -> Dict[str, Any]:
-        """Calculate advanced cluster analytics including within-cluster CV and top cluster coverage."""
-        try:
-            import numpy as np
-            
-            # Group regimes by cluster
-            cluster_regimes = {}
-            for regime_id, cluster_id in regime_to_cluster.items():
-                if cluster_id not in cluster_regimes:
-                    cluster_regimes[cluster_id] = []
-                cluster_regimes[cluster_id].append(regime_id)
-            
-            # Calculate within-cluster CVs using sample-level data when available
-            cluster_cvs = {}
-            all_within_cluster_cvs = []
 
-            # Robust aspect-wise CV as fallback
-            robust_cv_by_aspect = self._compute_cluster_cv_by_aspect(regime_characteristics, regime_to_cluster)
 
-            # Attempt sample-level CV from market_data columns if available
-            sample_level_available = False
-            try:
-                # We expect to have cluster_assignments bound in the caller's context; if not, we fall back
-                # To keep this function pure, we only use regime_characteristics mapping here
-                sample_level_available = False
-            except Exception:
-                sample_level_available = False
 
-            for cluster_id, regime_ids in cluster_regimes.items():
-                aspect_map = robust_cv_by_aspect.get(cluster_id, {})
-                momentum_cv = float(aspect_map.get('momentum', 0.0))
-                volatility_cv = float(aspect_map.get('volatility', 0.0))
-                volume_cv = float(aspect_map.get('volume', 0.0))
-                avg_cv = float(np.mean([v for v in [momentum_cv, volatility_cv, volume_cv] if np.isfinite(v)])) if any(np.isfinite([momentum_cv, volatility_cv, volume_cv])) else 0.0
-                cluster_cvs[cluster_id] = {
-                    'momentum': momentum_cv,
-                    'volatility': volatility_cv,
-                    'volume': volume_cv,
-                    'avg': avg_cv
-                }
-                all_within_cluster_cvs.append(avg_cv)
-            
-            # Calculate overall average within-cluster CV
-            avg_within_cluster_cv = np.mean(all_within_cluster_cvs) if all_within_cluster_cvs else 0.0
-            
-            # Calculate cluster sizes and top 20 coverage using regime characteristics (before constraint reduction)
-            cluster_sizes = {}
-            total_samples = 0
-            
-            # Calculate cluster sizes from regime characteristics and regime_to_cluster mapping
-            for regime_id, cluster_id in regime_to_cluster.items():
-                regime = regime_characteristics.get(regime_id, {})
-                regime_sample_count = regime.get('sample_count', 0)
-                
-                if cluster_id not in cluster_sizes:
-                    cluster_sizes[cluster_id] = 0
-                cluster_sizes[cluster_id] += regime_sample_count
-                total_samples += regime_sample_count
-            
-            # Sort clusters by size (descending)
-            sorted_clusters = sorted(cluster_sizes.items(), key=lambda x: x[1], reverse=True)
-            
-            # Calculate top 20 cluster coverage
-            top_20_clusters = sorted_clusters[:20] if len(sorted_clusters) >= 20 else sorted_clusters
-            top_20_samples = sum(size for _, size in top_20_clusters)
-            top_20_coverage = (top_20_samples / total_samples * 100) if total_samples > 0 else 0.0
-            
-            # Concentration analysis
-            if len(sorted_clusters) > 0:
-                largest_cluster_pct = (sorted_clusters[0][1] / total_samples * 100) if total_samples > 0 else 0.0
-                top_5_samples = sum(size for _, size in sorted_clusters[:5])
-                top_5_coverage = (top_5_samples / total_samples * 100) if total_samples > 0 else 0.0
-                
-                concentration_analysis = {
-                    'largest_cluster_pct': largest_cluster_pct,
-                    'top_5_coverage': top_5_coverage,
-                    'top_20_coverage': top_20_coverage,
-                    'cluster_balance': 'balanced' if largest_cluster_pct < 20 else 'concentrated'
-                }
-            else:
-                concentration_analysis = {
-                    'largest_cluster_pct': 0.0,
-                    'top_5_coverage': 0.0,
-                    'top_20_coverage': 0.0,
-                    'cluster_balance': 'unknown'
-                }
-            
-            return {
-                'avg_within_cluster_cv': avg_within_cluster_cv,
-                'top_20_coverage': top_20_coverage,
-                'concentration_analysis': concentration_analysis,
-                'cluster_cvs': cluster_cvs,
-                'cluster_sizes': cluster_sizes,
-                'total_samples': total_samples
-            }
-            
-        except Exception as e:
-            self.logger.warning(f"⚠️ Failed to calculate advanced cluster analytics: {e}")
-            return {
-                'avg_within_cluster_cv': 0.0,
-                'top_20_coverage': 0.0,
-                'concentration_analysis': {'error': str(e)},
-                'cluster_cvs': {},
-                'cluster_sizes': {},
-                'total_samples': 0
-            }
-
-    def _calculate_similarity_histogram(self, similarity_matrix: Any) -> Dict[str, Any]:
-        """Return histogram bins for similarity values in the upper triangle (excluding diagonal)."""
-        try:
-            import numpy as np
-            if similarity_matrix is None:
-                return {'bins': [], 'counts': []}
-            # Upper triangle without diagonal
-            triu_indices = np.triu_indices(similarity_matrix.shape[0], k=1)
-            values = similarity_matrix[triu_indices].flatten()
-            # Clamp values to [-1, 1]
-            values = np.clip(values, -1.0, 1.0)
-            counts, bin_edges = np.histogram(values, bins=20, range=(-1.0, 1.0))
-            return {'bins': [float(b) for b in bin_edges.tolist()], 'counts': [int(c) for c in counts.tolist()]}
-        except Exception:
-            return {'bins': [], 'counts': []}
-
-    def _compute_cluster_prototypes(self, regime_ids: List[str], regime_to_cluster: Dict[str, int], similarity_matrix: Any, regime_characteristics: Dict[str, Any], top_n_features: int = 5) -> Dict[str, Any]:
-        """Compute per-cluster prototypes and top distinguishing features.
-
-        - Prototype: regime with highest average similarity to other regimes in its cluster
-        - Distinguishing features: features with highest between-cluster variance normalized by within-cluster variance
-        """
-        try:
-            import numpy as np
-            clusters: Dict[int, list] = {}
-            id_to_index: Dict[str, int] = {rid: idx for idx, rid in enumerate(regime_ids)}
-            for rid, cid in regime_to_cluster.items():
-                clusters.setdefault(cid, []).append(rid)
-
-            prototypes: Dict[str, Any] = {}
-            # Pre-extract feature dicts
-            regime_features: Dict[str, Dict[str, float]] = {}
-            for rid in regime_ids:
-                regime_features[rid] = dict(regime_characteristics.get(rid, {}).get('features', {}))
-
-            # Compute simple ANOVA-like score for features
-            # Build per-cluster feature means
-            all_features = set()
-            for feats in regime_features.values():
-                all_features.update([k for k, v in feats.items() if isinstance(v, (int, float))])
-            feature_scores: Dict[str, float] = {}
-            for feat in all_features:
-                # Between/within variances
-                cluster_means = []
-                cluster_vars = []
-                cluster_sizes = []
-                for cid, rids in clusters.items():
-                    vals = [float(regime_features[rid].get(feat, np.nan)) for rid in rids]
-                    arr = np.array(vals, dtype=float)
-                    arr = arr[np.isfinite(arr)]
-                    if arr.size == 0:
-                        continue
-                    cluster_means.append(float(np.mean(arr)))
-                    cluster_vars.append(float(np.var(arr)))
-                    cluster_sizes.append(int(arr.size))
-                if len(cluster_means) < 2:
-                    feature_scores[feat] = 0.0
-                    continue
-                grand_mean = float(np.average(cluster_means, weights=cluster_sizes)) if sum(cluster_sizes) > 0 else float(np.mean(cluster_means))
-                # Between variance (weighted)
-                between = 0.0
-                for m, n in zip(cluster_means, cluster_sizes):
-                    between += n * (m - grand_mean) ** 2
-                between /= max(1, sum(cluster_sizes))
-                within = float(np.mean(cluster_vars)) if len(cluster_vars) > 0 else 1e-8
-                score = between / max(within, 1e-8)
-                feature_scores[feat] = float(score)
-
-            # For each cluster, choose prototype and rank features
-            for cid, rids in clusters.items():
-                if not rids:
-                    continue
-                # Prototype = regime with max avg similarity inside cluster
-                avg_sims = []
-                for rid in rids:
-                    idx = id_to_index.get(rid)
-                    if idx is None:
-                        avg_sims.append((-np.inf, rid))
-                        continue
-                    intra_idxs = [id_to_index.get(r) for r in rids if id_to_index.get(r) is not None and r != rid]
-                    if not intra_idxs:
-                        avg_sims.append((0.0, rid))
-                        continue
-                    sims = [similarity_matrix[idx, j] for j in intra_idxs]
-                    avg_sims.append((float(np.mean(sims)), rid))
-                avg_sims.sort(reverse=True)
-                proto_id = avg_sims[0][1]
-
-                # Top distinguishing features (global ranking used; could be refined per cluster)
-                top_feats = sorted(feature_scores.items(), key=lambda kv: kv[1], reverse=True)[:top_n_features]
-                prototypes[f'cluster_{cid}'] = {
-                    'prototype_regime': proto_id,
-                    'top_features': [{'name': k, 'score': float(v)} for k, v in top_feats]
-                }
-            return prototypes
-        except Exception:
-            return {}
-
-    def _calculate_matrix_clustering_score(self, similarity_matrix: Any, regime_to_cluster: Dict[str, int], temp_assignments: List[int]) -> float:
-        """Calculate a clustering quality score based on the similarity matrix and cluster assignments."""
-        try:
-            import numpy as np
-            
-            if similarity_matrix is None or similarity_matrix.size == 0:
-                return 0.0
-            
-            # Ensure we don't access out of bounds indices
-            n_regimes = similarity_matrix.shape[0]
-            if n_regimes == 0:
-                return 0.0
-            
-            # Get unique cluster IDs from assignments
-            unique_clusters = list(set(temp_assignments))
-            n_clusters = len(unique_clusters)
-            
-            if n_clusters <= 1:
-                return 0.0
-            
-            # Calculate within-cluster similarity (higher is better)
-            within_cluster_sim = 0.0
-            total_within_pairs = 0
-            
-            for cluster_id in unique_clusters:
-                cluster_indices = [i for i, c in enumerate(temp_assignments) if c == cluster_id]
-                if len(cluster_indices) < 2:
-                    continue
-                
-                # Sum similarities within this cluster
-                for i in range(len(cluster_indices)):
-                    for j in range(i + 1, len(cluster_indices)):
-                        idx_i, idx_j = cluster_indices[i], cluster_indices[j]
-                        # Bounds check
-                        if idx_i < n_regimes and idx_j < n_regimes:
-                            within_cluster_sim += similarity_matrix[idx_i, idx_j]
-                            total_within_pairs += 1
-            
-            # Calculate between-cluster similarity (lower is better)
-            between_cluster_sim = 0.0
-            total_between_pairs = 0
-            
-            for i in range(len(temp_assignments)):
-                for j in range(i + 1, len(temp_assignments)):
-                    if temp_assignments[i] != temp_assignments[j]:
-                        # Different clusters - bounds check
-                        if i < n_regimes and j < n_regimes:
-                            between_cluster_sim += similarity_matrix[i, j]
-                            total_between_pairs += 1
-            
-            # Calculate averages
-            avg_within = within_cluster_sim / max(total_within_pairs, 1)
-            avg_between = between_cluster_sim / max(total_between_pairs, 1)
-            
-            # Score is the difference (higher within - lower between = better)
-            score = avg_within - avg_between
-            
-            return float(score)
-            
-        except Exception as e:
-            self.logger.warning(f"⚠️ Failed to calculate matrix clustering score: {e}")
-            return 0.0
     
     def apply_hierarchical_post_processing(self, clustering_result: Dict[str, Any], target_clusters: int = 20) -> Dict[str, Any]:
         """Apply hierarchical post-processing to group similar HMM clusters into super-clusters.
@@ -8095,9 +5984,6 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             super_cluster_mapping = self._create_super_cluster_mapping(
                 super_cluster_labels, cluster_metadata, clustering_result
             )
-            
-            # Split oversized clusters to ensure no cluster exceeds 15% of total samples
-            super_cluster_mapping = self._split_oversized_clusters(super_cluster_mapping, clustering_result, max_percentage=15.0)
             
             # Select top 20 clusters for 90-95% coverage
             super_cluster_mapping = self._select_top_clusters_for_coverage(super_cluster_mapping, clustering_result, target_coverage=65.0)
@@ -8552,7 +6438,7 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                 recommendations.append(
                     f"Top clusters cover only {coverage:.1f}% of data. Consider merging small clusters or improving feature engineering"
                 )
-            elif coverage >= 90.0:
+            elif coverage >= 90.0 and coverage <= 95.0:
                 recommendations.append(
                     f"Excellent coverage: {coverage:.1f}% of data covered by top clusters"
                 )
@@ -8687,15 +6573,15 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                     })
                     cumulative_coverage += sample_percentage
                     
-                    # Stop when we have enough clusters covering 90%
-                    if cumulative_coverage >= 90.0 and len(trainable_clusters) >= 15:
+                    # Stop when we have enough clusters covering 90-95%
+                    if cumulative_coverage >= 90.0 and cumulative_coverage <= 95.0 and len(trainable_clusters) >= 15:
                         break
             
             return {
                 'selected_clusters': trainable_clusters,
                 'total_trainable': len(trainable_clusters),
                 'cumulative_coverage': cumulative_coverage,
-                'target_achieved': cumulative_coverage >= 90.0 and len(trainable_clusters) <= 25
+                'target_achieved': cumulative_coverage >= 90.0 and cumulative_coverage <= 95.0 and len(trainable_clusters) <= 25
             }
             
         except Exception as e:
@@ -8725,7 +6611,7 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                 'total_samples': total_samples,
                 'top_n_samples': top_n_samples,
                 'coverage_percentage': coverage_percentage,
-                'target_met': coverage_percentage >= 90.0 if n == 20 else coverage_percentage >= 80.0
+                'target_met': (coverage_percentage >= 90.0 and coverage_percentage <= 95.0) if n == 20 else coverage_percentage >= 80.0
             }
             
         except Exception as e:
@@ -9074,41 +6960,1230 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             self.logger.error(f"❌ Error calculating cluster distribution: {e}")
             return {'total_clusters': 0, 'cluster_sizes': {}, 'size_statistics': {}}
     
-    def _generate_clustering_recommendations(self, n_clusters: int, coverage: float, quality_score: float) -> Dict[str, Any]:
-        """Generate recommendations based on clustering results."""
+    def _generate_comprehensive_cluster_metrics(self, hmm_models: List[Any], cluster_assignments: List[int], market_data: Any) -> Dict[str, Any]:
+        """Generate comprehensive metrics for each cluster."""
         try:
-            recommendations = {
-                'cluster_count_assessment': 'optimal' if 15 <= n_clusters <= 25 else 'suboptimal',
-                'coverage_assessment': 'excellent' if coverage >= 95 else 'good' if coverage >= 90 else 'poor',
-                'quality_assessment': 'high' if quality_score >= 0.8 else 'medium' if quality_score >= 0.6 else 'low',
-                'ml_training_readiness': 'ready' if coverage >= 90 and quality_score >= 0.6 else 'needs_improvement',
-                'suggested_actions': []
-            }
+            if not hmm_models or not cluster_assignments:
+                return {'error': 'No models or assignments available'}
             
-            # Generate specific recommendations
-            if n_clusters < 15:
-                recommendations['suggested_actions'].append('Consider reducing clustering parameters to increase cluster count')
-            elif n_clusters > 25:
-                recommendations['suggested_actions'].append('Consider increasing clustering parameters to reduce cluster count')
+            cluster_metrics = {}
+            for model in hmm_models:
+                cluster_id = model.get('cluster_id', 0)
+                cluster_metrics[f'cluster_{cluster_id}'] = {
+                    'cluster_id': cluster_id,
+                    'model_type': model.get('model_type', 'unknown'),
+                    'regime_count': model.get('regime_count', 0),
+                    'sample_count': model.get('sample_count', 0),
+                    'coherence_score': model.get('coherence_score', 0.0)
+                }
             
-            if coverage < 90:
-                recommendations['suggested_actions'].append('Improve feature engineering to increase market regime coverage')
-            
-            if quality_score < 0.6:
-                recommendations['suggested_actions'].append('Review clustering algorithm parameters for better cluster coherence')
-            
-            if not recommendations['suggested_actions']:
-                recommendations['suggested_actions'].append('Clustering results are satisfactory for ML training')
-            
-            return recommendations
+            return cluster_metrics
             
         except Exception as e:
-            self.logger.error(f"❌ Error generating clustering recommendations: {e}")
+            self.logger.error(f"❌ Error generating comprehensive cluster metrics: {e}")
+            return {'error': str(e)}
+    
+    def _calculate_top_n_coverage(self, hmm_models: List[Any], n: int) -> Dict[str, Any]:
+        """Calculate coverage for top N clusters."""
+        try:
+            if not hmm_models:
+                return {'coverage_percentage': 0.0, 'total_samples': 0, 'top_n_samples': 0}
+            
+            # Sort models by sample count (descending)
+            sorted_models = sorted(hmm_models, key=lambda x: x.get('sample_count', 0), reverse=True)
+            
+            total_samples = sum(model.get('sample_count', 0) for model in hmm_models)
+            top_n_samples = sum(model.get('sample_count', 0) for model in sorted_models[:n])
+            
+            coverage_percentage = (top_n_samples / total_samples * 100) if total_samples > 0 else 0.0
+            
             return {
-                'cluster_count_assessment': 'unknown',
-                'coverage_assessment': 'unknown', 
-                'quality_assessment': 'unknown',
-                'ml_training_readiness': 'unknown',
-                'suggested_actions': ['Unable to generate recommendations due to error']
+                'coverage_percentage': coverage_percentage,
+                'total_samples': total_samples,
+                'top_n_samples': top_n_samples,
+                'target_met': (coverage_percentage >= 90.0 and coverage_percentage <= 95.0) if n == 20 else coverage_percentage >= 80.0
             }
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error calculating top {n} coverage: {e}")
+            return {'coverage_percentage': 0.0, 'total_samples': 0, 'top_n_samples': 0}
+    
+    def _calculate_cluster_differentiation(self, hmm_models: List[Any]) -> Dict[str, Any]:
+        """Calculate cluster differentiation metrics."""
+        try:
+            if not hmm_models:
+                return {'differentiation_score': 0.0, 'cluster_diversity': 0.0}
+            
+            sample_counts = [model.get('sample_count', 0) for model in hmm_models]
+            
+            if len(sample_counts) < 2:
+                return {'differentiation_score': 1.0, 'cluster_diversity': 1.0}
+            
+            # Calculate coefficient of variation as differentiation measure
+            mean_samples = np.mean(sample_counts)
+            std_samples = np.std(sample_counts)
+            cv = std_samples / mean_samples if mean_samples > 0 else 0.0
+            
+            # Diversity based on unique sample counts
+            unique_counts = len(set(sample_counts))
+            total_clusters = len(sample_counts)
+            diversity = unique_counts / total_clusters if total_clusters > 0 else 0.0
+            
+            return {
+                'differentiation_score': 1.0 - min(cv, 1.0),  # Higher is better
+                'cluster_diversity': diversity,
+                'coefficient_of_variation': cv,
+                'unique_sample_counts': unique_counts
+            }
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error calculating cluster differentiation: {e}")
+            return {'differentiation_score': 0.0, 'cluster_diversity': 0.0}
+    
+    def _select_top_clusters_for_analysis(self, unique_clusters: List[int], cluster_assignments: List[int], hmm_models: List[Any], top_n: int = 30) -> List[int]:
+        """Select top N clusters for detailed analysis based on sample count only."""
+        try:
+            if not unique_clusters or not cluster_assignments:
+                return unique_clusters[:top_n] if unique_clusters else []
+            
+            # Calculate sample counts for each cluster
+            cluster_sample_counts = {}
+            for cluster_id in unique_clusters:
+                cluster_sample_counts[cluster_id] = cluster_assignments.count(cluster_id)
+            
+            # Sort clusters by sample count (descending)
+            cluster_scores = [(cluster_id, sample_count) for cluster_id, sample_count in cluster_sample_counts.items()]
+            cluster_scores.sort(key=lambda x: x[1], reverse=True)
+            
+            # Select top N clusters
+            top_clusters = [cluster_id for cluster_id, _ in cluster_scores[:top_n]]
+            
+            self.logger.info(f"📊 Selected top {len(top_clusters)} clusters by sample count for detailed analysis")
+            if cluster_scores:
+                best_count = cluster_scores[0][1]
+                worst_selected = cluster_scores[min(len(top_clusters)-1, len(cluster_scores)-1)][1]
+                self.logger.info(f"📊 Sample count range: {best_count} → {worst_selected}")
+            
+            return top_clusters
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error selecting top clusters for analysis: {e}")
+            # Fallback to first N clusters
+            return unique_clusters[:top_n] if unique_clusters else []
+
+    def _select_trainable_clusters_legacy(self, hmm_models: List[Any], cluster_assignments: List[int]) -> List[int]:
+        """Select clusters suitable for training (legacy method)."""
+        try:
+            if not hmm_models:
+                return []
+            
+            trainable_clusters = []
+            for model in hmm_models:
+                cluster_id = model.get('cluster_id', 0)
+                sample_count = model.get('sample_count', 0)
+                coherence_score = model.get('coherence_score', 0.0)
+                
+                # Select clusters with sufficient samples and good coherence
+                if sample_count >= 10 and coherence_score >= 0.5:
+                    trainable_clusters.append(cluster_id)
+            
+            return trainable_clusters
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error selecting trainable clusters: {e}")
+            return []
+
+    def _calculate_cluster_distribution_filtered(self, cluster_assignments: List[int]) -> Dict[str, Any]:
+        """Calculate cluster distribution with size filtering (only clusters with >10 samples)."""
+        try:
+            import numpy as np
+            from collections import Counter
+            
+            # Count cluster sizes
+            cluster_counts = Counter(cluster_assignments)
+            
+            # Filter clusters with size > 10
+            filtered_clusters = {f'cluster_{k}': v for k, v in cluster_counts.items() if v > 10}
+            
+            # Calculate total samples in filtered clusters
+            total_filtered_samples = sum(filtered_clusters.values())
+            
+            return {
+                'total_clusters': len(filtered_clusters),
+                'cluster_sizes': filtered_clusters,
+                'filtered_sample_count': total_filtered_samples,
+                'original_cluster_count': len(cluster_counts),
+                'filtered_percentage': (total_filtered_samples / len(cluster_assignments)) * 100 if cluster_assignments else 0
+            }
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error calculating filtered cluster distribution: {e}")
+            return {'error': str(e)}
+
+    def _generate_comprehensive_cluster_metrics_top30(
+        self, 
+        hmm_models: List[Any], 
+        cluster_assignments: List[int], 
+        market_data: Any
+    ) -> Dict[str, Any]:
+        """Generate comprehensive cluster metrics for top 30 clusters only."""
+        try:
+            import numpy as np
+            from collections import Counter
+            
+            # Get cluster counts and select top 30
+            cluster_counts = Counter(cluster_assignments)
+            top_30_clusters = dict(cluster_counts.most_common(30))
+            
+            metrics = {}
+            
+            for cluster_id, sample_count in top_30_clusters.items():
+                try:
+                    # Get cluster mask - handle data length alignment
+                    cluster_mask = np.array(cluster_assignments) == cluster_id
+                    
+                    # Fix data alignment issue: ensure market_data and cluster_assignments have same length
+                    if hasattr(market_data, '__len__') and len(market_data) != len(cluster_assignments):
+                        # Align market_data to cluster_assignments length (use the shorter length)
+                        min_length = min(len(market_data), len(cluster_assignments))
+                        if hasattr(market_data, 'iloc'):
+                            # DataFrame case
+                            aligned_market_data = market_data.iloc[:min_length]
+                            aligned_cluster_mask = cluster_mask[:min_length]
+                        else:
+                            # Array case
+                            aligned_market_data = market_data[:min_length]
+                            aligned_cluster_mask = cluster_mask[:min_length]
+                        
+                        cluster_data = aligned_market_data[aligned_cluster_mask] if hasattr(aligned_market_data, '__getitem__') else None
+                    else:
+                        cluster_data = market_data[cluster_mask] if hasattr(market_data, '__getitem__') else None
+                    
+                    # Calculate regime count (number of unique regimes that map to this cluster)
+                    regime_count = 1  # Default assumption: 1 regime per cluster
+                    
+                    # Calculate coherence score based on cluster data variability
+                    coherence_score = 0.0
+                    if cluster_data is not None and len(cluster_data) > 1:
+                        try:
+                            # Use coefficient of variation of returns as coherence proxy
+                            if hasattr(cluster_data, 'columns') and 'close_return' in cluster_data.columns:
+                                returns = cluster_data['close_return'].dropna()
+                                if len(returns) > 1:
+                                    cv = np.std(returns) / (np.abs(np.mean(returns)) + 1e-8)
+                                    coherence_score = max(0.0, min(1.0, 1.0 / (1.0 + cv)))
+                        except:
+                            coherence_score = 0.5  # Default moderate coherence
+                    
+                    # Calculate distribution percentage
+                    total_samples = len(cluster_assignments)
+                    distribution_percentage = (sample_count / total_samples * 100) if total_samples > 0 else 0.0
+                    
+                    metrics[f'cluster_{cluster_id}'] = {
+                        'cluster_id': cluster_id,
+                        'model_type': 'enhanced_cluster',
+                        'regime_count': regime_count,
+                        'sample_count': int(sample_count),
+                        'distribution_percentage': round(float(distribution_percentage), 2),
+                        'coherence_score': float(coherence_score)
+                    }
+                    
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Error processing cluster {cluster_id}: {e}")
+                    # Calculate distribution percentage even for error cases
+                    total_samples = len(cluster_assignments)
+                    distribution_percentage = (sample_count / total_samples * 100) if total_samples > 0 else 0.0
+                    
+                    metrics[f'cluster_{cluster_id}'] = {
+                        'cluster_id': cluster_id,
+                        'model_type': 'enhanced_cluster',
+                        'regime_count': 1,
+                        'sample_count': int(sample_count),
+                        'distribution_percentage': round(float(distribution_percentage), 2),
+                        'coherence_score': 0.0,
+                        'error': str(e)
+                    }
+            
+            return metrics
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error generating top 30 cluster metrics: {e}")
+            return {'error': str(e)}
+
+    def _calculate_cluster_summary_fixed(
+        self, 
+        cluster_assignments: List[int], 
+        cluster_detailed_metrics: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Calculate fixed cluster summary with correct calculations."""
+        try:
+            import numpy as np
+            from collections import Counter
+            
+            # Get basic cluster statistics
+            cluster_counts = Counter(cluster_assignments)
+            total_clusters = len(cluster_counts)
+            total_samples = len(cluster_assignments)
+            
+            # Extract coherence scores from detailed metrics
+            coherence_scores = []
+            coherent_clusters = 0
+            
+            # Check detailed metrics for coherence data
+            if isinstance(cluster_detailed_metrics, dict):
+                for key, metrics in cluster_detailed_metrics.items():
+                    if key.startswith('cluster_') and isinstance(metrics, dict):
+                        coherence = metrics.get('coherence_score', 0.0)
+                        if isinstance(coherence, (int, float)) and coherence > 0:
+                            coherence_scores.append(coherence)
+                            if coherence > 0.7:
+                                coherent_clusters += 1
+            
+            # Calculate average coherence
+            average_coherence = float(np.mean(coherence_scores)) if coherence_scores else 0.0
+            
+            # Calculate coherence ratio
+            coherence_ratio = (coherent_clusters / total_clusters) if total_clusters > 0 else 0.0
+            
+            # Calculate CV-related metrics
+            cluster_sizes = list(cluster_counts.values())
+            mean_cv = float(np.std(cluster_sizes) / (np.mean(cluster_sizes) + 1e-8)) if cluster_sizes else 0.0
+            
+            # Count clusters by CV thresholds
+            low_cv_clusters = sum(1 for size in cluster_sizes if size > np.mean(cluster_sizes) * 0.5)
+            high_cv_clusters = total_clusters - low_cv_clusters
+            
+            # Calculate coverage metrics
+            sorted_sizes = sorted(cluster_sizes, reverse=True)
+            top_5_coverage = (sum(sorted_sizes[:5]) / total_samples * 100) if len(sorted_sizes) >= 5 else 0.0
+            top_10_coverage = (sum(sorted_sizes[:10]) / total_samples * 100) if len(sorted_sizes) >= 10 else 0.0
+            top_20_coverage = (sum(sorted_sizes[:20]) / total_samples * 100) if len(sorted_sizes) >= 20 else 0.0
+            
+            # Calculate size balance (Gini coefficient approximation)
+            if cluster_sizes:
+                sorted_sizes_norm = sorted([s/total_samples for s in cluster_sizes])
+                n = len(sorted_sizes_norm)
+                cumsum = np.cumsum(sorted_sizes_norm)
+                size_balance = 1 - (2 * sum((n - i) * sorted_sizes_norm[i] for i in range(n))) / (n * sum(sorted_sizes_norm))
+                size_balance = max(0.0, min(1.0, size_balance))
+            else:
+                size_balance = 0.0
+            
+            # Count sufficient samples (>= 10)
+            sufficient_samples = sum(1 for size in cluster_sizes if size >= 10)
+            
+            return {
+                'total_clusters': total_clusters,
+                'coherent_clusters': coherent_clusters,
+                'average_coherence': average_coherence,
+                'coherence_ratio': coherence_ratio,
+                'mean_cv': mean_cv,
+                'low_cv_clusters': low_cv_clusters,
+                'high_cv_clusters': high_cv_clusters,
+                'sufficient_samples': sufficient_samples,
+                'size_balance': size_balance,
+                'top_5_coverage': top_5_coverage,
+                'top_10_coverage': top_10_coverage,
+                'top_20_coverage': top_20_coverage,
+                'trainable_clusters': []  # Will be calculated separately if needed
+            }
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error calculating cluster summary: {e}")
+            return {
+                'total_clusters': 0,
+                'coherent_clusters': 0,
+                'average_coherence': 0.0,
+                'coherence_ratio': 0.0,
+                'mean_cv': 0.0,
+                'low_cv_clusters': 0,
+                'high_cv_clusters': 0,
+                'sufficient_samples': 0,
+                'size_balance': 0.0,
+                'top_5_coverage': 0.0,
+                'top_10_coverage': 0.0,
+                'top_20_coverage': 0.0,
+                'trainable_clusters': [],
+                'error': str(e)
+            }
+
+    def _calculate_fixed_quality_metrics(
+        self, 
+        cluster_assignments: List[int], 
+        cluster_detailed_metrics: Dict[str, Any], 
+        original_quality_metrics: Dict[str, Any],
+        hmm_models: Optional[List[Any]] = None,
+        market_data: Optional[Any] = None
+    ) -> Dict[str, Any]:
+        """Calculate comprehensive quality metrics for top 20-30 clusters with advanced analysis."""
+        try:
+            import numpy as np
+            from collections import Counter
+            
+            # Use the fixed cluster summary calculations
+            summary = self._calculate_cluster_summary_fixed(cluster_assignments, cluster_detailed_metrics)
+            
+            # Get top 30 clusters by size for comprehensive analysis
+            cluster_counts = Counter(cluster_assignments)
+            top_clusters = [cluster_id for cluster_id, _ in cluster_counts.most_common(30)]
+            
+            # Basic metrics (existing)
+            basic_metrics = {
+                'overall_quality_score': original_quality_metrics.get('overall_quality_score', 0.0),
+                'average_coherence': summary['average_coherence'],
+                'size_balance': summary['size_balance'],
+                'coherent_clusters': summary['coherent_clusters'],
+                'coherence_ratio': summary['coherence_ratio']
+            }
+            
+            # Advanced comprehensive metrics for top clusters
+            advanced_metrics = self._calculate_comprehensive_cluster_quality_metrics(
+                cluster_assignments, cluster_detailed_metrics, top_clusters, 
+                hmm_models, market_data, original_quality_metrics
+            )
+            
+            # Combine all metrics
+            return {**basic_metrics, **advanced_metrics}
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error calculating fixed quality metrics: {e}")
+            return {
+                'overall_quality_score': 0.0,
+                'average_coherence': 0.0,
+                'size_balance': 0.0,
+                'coherent_clusters': 0,
+                'coherence_ratio': 0.0,
+                'error': str(e)
+            }
+
+    def _calculate_comprehensive_cluster_quality_metrics(
+        self,
+        cluster_assignments: List[int],
+        cluster_detailed_metrics: Dict[str, Any],
+        top_clusters: List[int],
+        hmm_models: Optional[List[Any]] = None,
+        market_data: Optional[Any] = None,
+        original_quality_metrics: Dict[str, Any] = None
+    ) -> Dict[str, Any]:
+        """Calculate comprehensive quality metrics for top clusters."""
+        try:
+            import numpy as np
+            from collections import Counter, defaultdict
+            
+            cluster_assignments_array = np.array(cluster_assignments)
+            cluster_counts = Counter(cluster_assignments)
+            total_samples = len(cluster_assignments)
+            
+            # Initialize results
+            metrics = {}
+            
+            # 1. TEMPORAL STABILITY METRICS
+            temporal_metrics = self._calculate_temporal_stability_metrics(
+                cluster_assignments_array, top_clusters, market_data
+            )
+            metrics['temporal_stability'] = temporal_metrics
+            
+            # 2. ECONOMIC DIFFERENTIATION METRICS  
+            economic_metrics = self._calculate_economic_differentiation_metrics(
+                cluster_assignments_array, top_clusters, cluster_detailed_metrics, market_data
+            )
+            metrics['economic_differentiation'] = economic_metrics
+            
+            # 3. INFORMATION & COVERAGE METRICS
+            coverage_metrics = self._calculate_information_coverage_metrics(
+                cluster_assignments_array, top_clusters, cluster_counts, total_samples
+            )
+            metrics['information_coverage'] = coverage_metrics
+            
+            # 4. STATISTICAL VALIDITY METRICS
+            statistical_metrics = self._calculate_statistical_validity_metrics(
+                cluster_assignments_array, top_clusters, cluster_detailed_metrics, market_data
+            )
+            metrics['statistical_validity'] = statistical_metrics
+            
+            # 5. ROBUSTNESS METRICS
+            robustness_metrics = self._calculate_robustness_metrics(
+                cluster_assignments_array, top_clusters, market_data
+            )
+            metrics['robustness'] = robustness_metrics
+            
+            # 6. TRADING ACTIONABILITY METRICS
+            trading_metrics = self._calculate_trading_actionability_metrics(
+                cluster_assignments_array, top_clusters, cluster_detailed_metrics, market_data
+            )
+            metrics['trading_actionability'] = trading_metrics
+            
+            # 7. HIERARCHICAL STRUCTURE METRICS
+            hierarchical_metrics = self._calculate_hierarchical_structure_metrics(
+                cluster_assignments_array, top_clusters, hmm_models, original_quality_metrics
+            )
+            metrics['hierarchical_structure'] = hierarchical_metrics
+            
+            return metrics
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error calculating comprehensive quality metrics: {e}")
+            return {'error': str(e)}
+
+    def _calculate_temporal_stability_metrics(
+        self, 
+        cluster_assignments: np.ndarray, 
+        top_clusters: List[int], 
+        market_data: Optional[Any] = None
+    ) -> Dict[str, Any]:
+        """Calculate temporal stability metrics including regime persistence and transition quality."""
+        try:
+            import numpy as np
+            from collections import defaultdict
+            
+            # Regime Persistence: Average duration clusters maintain their assignments
+            persistence_durations = []
+            current_cluster = None
+            current_duration = 0
+            
+            for assignment in cluster_assignments:
+                if assignment == current_cluster:
+                    current_duration += 1
+                else:
+                    if current_cluster is not None and current_cluster in top_clusters:
+                        persistence_durations.append(current_duration)
+                    current_cluster = assignment
+                    current_duration = 1
+            
+            # Add final duration if needed
+            if current_cluster is not None and current_cluster in top_clusters:
+                persistence_durations.append(current_duration)
+            
+            avg_persistence = float(np.mean(persistence_durations)) if persistence_durations else 0.0
+            
+            # Transition Smoothness: Quality of transitions between cluster states
+            transitions = []
+            transition_matrix = defaultdict(lambda: defaultdict(int))
+            
+            for i in range(1, len(cluster_assignments)):
+                prev_cluster = cluster_assignments[i-1]
+                curr_cluster = cluster_assignments[i]
+                if prev_cluster != curr_cluster:
+                    transitions.append((prev_cluster, curr_cluster))
+                    transition_matrix[prev_cluster][curr_cluster] += 1
+            
+            # Calculate transition smoothness (fewer unique transitions = smoother)
+            unique_transitions = len(set(transitions))
+            total_transitions = len(transitions)
+            transition_smoothness = 1.0 - (unique_transitions / max(total_transitions, 1)) if total_transitions > 0 else 1.0
+            
+            # Transition entropy (measure of transition randomness)
+            transition_entropy = 0.0
+            if total_transitions > 0:
+                for from_cluster in transition_matrix:
+                    from_total = sum(transition_matrix[from_cluster].values())
+                    for to_cluster in transition_matrix[from_cluster]:
+                        prob = transition_matrix[from_cluster][to_cluster] / from_total
+                        if prob > 0:
+                            transition_entropy -= prob * np.log2(prob)
+            
+            return {
+                'regime_persistence': {
+                    'average_duration': avg_persistence,
+                    'persistence_episodes': len(persistence_durations),
+                    'max_persistence': float(np.max(persistence_durations)) if persistence_durations else 0.0,
+                    'min_persistence': float(np.min(persistence_durations)) if persistence_durations else 0.0
+                },
+                'transition_smoothness': {
+                    'smoothness_score': transition_smoothness,
+                    'total_transitions': total_transitions,
+                    'unique_transitions': unique_transitions,
+                    'transition_entropy': transition_entropy,
+                    'transition_rate': total_transitions / len(cluster_assignments) if len(cluster_assignments) > 0 else 0.0
+                }
+            }
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Error calculating temporal stability metrics: {e}")
+            return {'error': str(e)}
+
+    def _calculate_economic_differentiation_metrics(
+        self,
+        cluster_assignments: np.ndarray,
+        top_clusters: List[int],
+        cluster_detailed_metrics: Dict[str, Any],
+        market_data: Optional[Any] = None
+    ) -> Dict[str, Any]:
+        """Calculate economic differentiation metrics for risk-return profile separation."""
+        try:
+            import numpy as np
+            
+            # Risk-Return Profile Separation
+            cluster_profiles = {}
+            
+            for cluster_id in top_clusters:
+                cluster_mask = cluster_assignments == cluster_id
+                cluster_size = np.sum(cluster_mask)
+                
+                if cluster_size == 0:
+                    continue
+                
+                # Extract economic characteristics from detailed metrics
+                cluster_key = f'cluster_{cluster_id}'
+                cluster_metrics = cluster_detailed_metrics.get(cluster_key, {})
+                
+                # Calculate risk-return characteristics
+                volatility = cluster_metrics.get('volatility', 0.0)
+                returns = cluster_metrics.get('mean_return', 0.0)
+                sharpe_ratio = safe_divide(returns, volatility) if volatility > 0 else 0.0
+                
+                cluster_profiles[cluster_id] = {
+                    'volatility': volatility,
+                    'returns': returns,
+                    'sharpe_ratio': sharpe_ratio,
+                    'size': cluster_size
+                }
+            
+            # Calculate separation metrics
+            if len(cluster_profiles) < 2:
+                return {
+                    'risk_return_separation': {
+                        'volatility_separation': 0.0,
+                        'return_separation': 0.0,
+                        'sharpe_separation': 0.0,
+                        'economic_distinctness': 0.0
+                    }
+                }
+            
+            # Volatility separation
+            volatilities = [p['volatility'] for p in cluster_profiles.values()]
+            vol_separation = float(np.std(volatilities) / (np.mean(volatilities) + 1e-8))
+            
+            # Return separation  
+            returns = [p['returns'] for p in cluster_profiles.values()]
+            return_separation = float(np.std(returns) / (np.abs(np.mean(returns)) + 1e-8))
+            
+            # Sharpe ratio separation
+            sharpes = [p['sharpe_ratio'] for p in cluster_profiles.values()]
+            sharpe_separation = float(np.std(sharpes) / (np.abs(np.mean(sharpes)) + 1e-8))
+            
+            # Economic distinctness (composite measure)
+            economic_distinctness = (vol_separation + return_separation + sharpe_separation) / 3.0
+            
+            return {
+                'risk_return_separation': {
+                    'volatility_separation': vol_separation,
+                    'return_separation': return_separation,
+                    'sharpe_separation': sharpe_separation,
+                    'economic_distinctness': economic_distinctness,
+                    'analyzed_clusters': len(cluster_profiles)
+                }
+            }
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Error calculating economic differentiation metrics: {e}")
+            return {'error': str(e)}
+
+    def _calculate_information_coverage_metrics(
+        self,
+        cluster_assignments: np.ndarray,
+        top_clusters: List[int],
+        cluster_counts: Any,  # Counter object
+        total_samples: int
+    ) -> Dict[str, Any]:
+        """Calculate information density, redundancy, and coverage metrics."""
+        try:
+            import numpy as np
+            
+            # Information Density: Amount of market information captured per cluster
+            top_cluster_sizes = [cluster_counts[cid] for cid in top_clusters if cid in cluster_counts]
+            
+            if not top_cluster_sizes:
+                return {'error': 'No valid cluster sizes'}
+            
+            # Calculate information density (inverse of entropy-based measure)
+            cluster_probs = np.array(top_cluster_sizes) / total_samples
+            entropy = -np.sum(cluster_probs * np.log2(cluster_probs + 1e-8))
+            max_entropy = np.log2(len(top_clusters))
+            information_density = 1.0 - (entropy / max_entropy) if max_entropy > 0 else 0.0
+            
+            # Redundancy Score: Overlap in cluster characteristics
+            size_cv = float(np.std(top_cluster_sizes) / (np.mean(top_cluster_sizes) + 1e-8))
+            redundancy_score = 1.0 / (1.0 + size_cv)  # Higher CV = more redundancy
+            
+            # Coverage Completeness: Percentage of market conditions represented
+            top_20_coverage = sum(sorted(top_cluster_sizes, reverse=True)[:20]) / total_samples * 100
+            top_10_coverage = sum(sorted(top_cluster_sizes, reverse=True)[:10]) / total_samples * 100
+            top_5_coverage = sum(sorted(top_cluster_sizes, reverse=True)[:5]) / total_samples * 100
+            
+            # Pareto Efficiency: 80/20 principle check
+            sorted_sizes = sorted(top_cluster_sizes, reverse=True)
+            cumulative_coverage = np.cumsum(sorted_sizes) / total_samples * 100
+            
+            # Find how many clusters needed for 80% coverage
+            clusters_for_80pct = np.argmax(cumulative_coverage >= 80.0) + 1 if np.any(cumulative_coverage >= 80.0) else len(top_clusters)
+            pareto_efficiency = 20.0 / max(clusters_for_80pct / len(top_clusters) * 100, 1.0)  # Ideal is 20% of clusters
+            pareto_efficiency = min(pareto_efficiency, 1.0)  # Cap at 1.0
+            
+            return {
+                'information_density': information_density,
+                'redundancy_score': redundancy_score,
+                'coverage_completeness': {
+                    'top_5_coverage': top_5_coverage,
+                    'top_10_coverage': top_10_coverage,
+                    'top_20_coverage': top_20_coverage,
+                    'total_clusters_analyzed': len(top_clusters)
+                },
+                'pareto_efficiency': {
+                    'efficiency_score': pareto_efficiency,
+                    'clusters_for_80pct': clusters_for_80pct,
+                    'total_clusters': len(top_clusters),
+                    'pareto_ratio': clusters_for_80pct / len(top_clusters) * 100
+                }
+            }
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Error calculating information coverage metrics: {e}")
+            return {'error': str(e)}
+
+    def _calculate_statistical_validity_metrics(
+        self,
+        cluster_assignments: np.ndarray,
+        top_clusters: List[int],
+        cluster_detailed_metrics: Dict[str, Any],
+        market_data: Optional[Any] = None
+    ) -> Dict[str, Any]:
+        """Calculate WCSS, BCSS, Pseudo F-Statistic, and Gap Statistic."""
+        try:
+            import numpy as np
+            
+            # Within-Cluster Sum of Squares (WCSS) - Compactness measure
+            wcss_total = 0.0
+            bcss_total = 0.0
+            
+            # Extract feature vectors from cluster metrics (simplified approach)
+            cluster_centroids = {}
+            global_centroid = np.array([0.0, 0.0, 0.0])  # volatility, returns, coherence
+            total_weight = 0.0
+            
+            for cluster_id in top_clusters:
+                cluster_mask = cluster_assignments == cluster_id
+                cluster_size = np.sum(cluster_mask)
+                
+                if cluster_size == 0:
+                    continue
+                
+                # Extract cluster characteristics
+                cluster_key = f'cluster_{cluster_id}'
+                cluster_metrics = cluster_detailed_metrics.get(cluster_key, {})
+                
+                volatility = cluster_metrics.get('volatility', 0.0)
+                returns = cluster_metrics.get('mean_return', 0.0) 
+                coherence = cluster_metrics.get('coherence_score', 0.0)
+                
+                centroid = np.array([volatility, returns, coherence])
+                cluster_centroids[cluster_id] = centroid
+                
+                # Update global centroid
+                global_centroid += centroid * cluster_size
+                total_weight += cluster_size
+            
+            if total_weight > 0:
+                global_centroid /= total_weight
+            
+            # Calculate WCSS and BCSS
+            for cluster_id in top_clusters:
+                cluster_size = np.sum(cluster_assignments == cluster_id)
+                if cluster_id not in cluster_centroids or cluster_size == 0:
+                    continue
+                
+                centroid = cluster_centroids[cluster_id]
+                
+                # WCSS: assume uniform spread within cluster (simplified)
+                cluster_key = f'cluster_{cluster_id}'
+                cluster_metrics = cluster_detailed_metrics.get(cluster_key, {})
+                within_variance = cluster_metrics.get('coherence_score', 0.5)  # Use coherence as proxy
+                wcss_total += cluster_size * (1.0 - within_variance)
+                
+                # BCSS: distance from global centroid
+                distance_sq = np.sum((centroid - global_centroid) ** 2)
+                bcss_total += cluster_size * distance_sq
+            
+            # Pseudo F-Statistic: Ratio of between to within cluster variance
+            n_clusters = len([cid for cid in top_clusters if np.sum(cluster_assignments == cid) > 0])
+            n_samples = len(cluster_assignments)
+            
+            if n_clusters > 1 and wcss_total > 0:
+                pseudo_f = (bcss_total / (n_clusters - 1)) / (wcss_total / max(n_samples - n_clusters, 1))
+            else:
+                pseudo_f = 0.0
+            
+            # Gap Statistic (simplified): Compare to random clustering
+            random_wcss = n_samples * 0.5  # Expected WCSS for random clustering
+            gap_statistic = np.log(random_wcss) - np.log(max(wcss_total, 1e-8))
+            
+            return {
+                'wcss': {
+                    'total_wcss': wcss_total,
+                    'average_wcss_per_cluster': wcss_total / max(n_clusters, 1),
+                    'compactness_score': 1.0 / (1.0 + wcss_total / max(n_samples, 1))
+                },
+                'bcss': {
+                    'total_bcss': bcss_total,
+                    'average_bcss_per_cluster': bcss_total / max(n_clusters, 1),
+                    'separation_score': bcss_total / max(n_samples, 1)
+                },
+                'pseudo_f_statistic': {
+                    'f_score': pseudo_f,
+                    'degrees_of_freedom_between': n_clusters - 1,
+                    'degrees_of_freedom_within': max(n_samples - n_clusters, 1)
+                },
+                'gap_statistic': {
+                    'gap_value': gap_statistic,
+                    'random_baseline': random_wcss,
+                    'clustering_improvement': gap_statistic > 0
+                }
+            }
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Error calculating statistical validity metrics: {e}")
+            return {'error': str(e)}
+
+    def _calculate_robustness_metrics(
+        self,
+        cluster_assignments: np.ndarray,
+        top_clusters: List[int],
+        market_data: Optional[Any] = None
+    ) -> Dict[str, Any]:
+        """Calculate sensitivity analysis and bootstrap consistency metrics."""
+        try:
+            import numpy as np
+            from collections import Counter
+            
+            # Sensitivity Analysis: Stability to small perturbations (simplified)
+            original_distribution = Counter(cluster_assignments)
+            
+            # Simulate small perturbations by randomly reassigning 5% of points
+            n_perturbations = 10
+            stability_scores = []
+            
+            for _ in range(n_perturbations):
+                perturbed_assignments = cluster_assignments.copy()
+                n_to_perturb = max(1, len(cluster_assignments) // 20)  # 5%
+                indices_to_perturb = np.random.choice(len(cluster_assignments), n_to_perturb, replace=False)
+                
+                for idx in indices_to_perturb:
+                    # Randomly reassign to another top cluster
+                    available_clusters = [c for c in top_clusters if c != perturbed_assignments[idx]]
+                    if available_clusters:
+                        perturbed_assignments[idx] = np.random.choice(available_clusters)
+                
+                # Calculate similarity to original
+                perturbed_distribution = Counter(perturbed_assignments)
+                
+                # Calculate distribution similarity (using chi-square-like measure)
+                similarity = 0.0
+                total_samples = len(cluster_assignments)
+                
+                for cluster_id in top_clusters:
+                    orig_prop = original_distribution[cluster_id] / total_samples
+                    pert_prop = perturbed_distribution[cluster_id] / total_samples
+                    similarity += min(orig_prop, pert_prop)
+                
+                stability_scores.append(similarity)
+            
+            avg_stability = float(np.mean(stability_scores))
+            
+            # Bootstrap Consistency (simplified): Subsample stability
+            bootstrap_scores = []
+            n_bootstrap = 10
+            
+            for _ in range(n_bootstrap):
+                # Bootstrap sample (with replacement)
+                bootstrap_indices = np.random.choice(len(cluster_assignments), 
+                                                   size=int(0.8 * len(cluster_assignments)), 
+                                                   replace=True)
+                bootstrap_assignments = cluster_assignments[bootstrap_indices]
+                bootstrap_distribution = Counter(bootstrap_assignments)
+                
+                # Calculate similarity to original distribution
+                consistency = 0.0
+                bootstrap_total = len(bootstrap_assignments)
+                
+                for cluster_id in top_clusters:
+                    orig_prop = original_distribution[cluster_id] / len(cluster_assignments)
+                    boot_prop = bootstrap_distribution[cluster_id] / bootstrap_total
+                    consistency += min(orig_prop, boot_prop)
+                
+                bootstrap_scores.append(consistency)
+            
+            avg_bootstrap_consistency = float(np.mean(bootstrap_scores))
+            
+            return {
+                'sensitivity_analysis': {
+                    'stability_score': avg_stability,
+                    'perturbation_tests': n_perturbations,
+                    'stability_std': float(np.std(stability_scores)),
+                    'min_stability': float(np.min(stability_scores)),
+                    'max_stability': float(np.max(stability_scores))
+                },
+                'bootstrap_consistency': {
+                    'consistency_score': avg_bootstrap_consistency,
+                    'bootstrap_tests': n_bootstrap,
+                    'consistency_std': float(np.std(bootstrap_scores)),
+                    'min_consistency': float(np.min(bootstrap_scores)),
+                    'max_consistency': float(np.max(bootstrap_scores))
+                }
+            }
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Error calculating robustness metrics: {e}")
+            return {'error': str(e)}
+
+    def _calculate_trading_actionability_metrics(
+        self,
+        cluster_assignments: np.ndarray,
+        top_clusters: List[int],
+        cluster_detailed_metrics: Dict[str, Any],
+        market_data: Optional[Any] = None
+    ) -> Dict[str, Any]:
+        """Calculate actionability score and signal-to-noise ratio for trading."""
+        try:
+            import numpy as np
+            
+            cluster_actionability = {}
+            signal_noise_ratios = {}
+            
+            for cluster_id in top_clusters:
+                cluster_mask = cluster_assignments == cluster_id
+                cluster_size = np.sum(cluster_mask)
+                
+                if cluster_size == 0:
+                    continue
+                
+                # Extract trading-relevant metrics
+                cluster_key = f'cluster_{cluster_id}'
+                cluster_metrics = cluster_detailed_metrics.get(cluster_key, {})
+                
+                # Actionability Score: How distinct the trading signals are
+                volatility = cluster_metrics.get('volatility', 0.0)
+                returns = cluster_metrics.get('mean_return', 0.0)
+                coherence = cluster_metrics.get('coherence_score', 0.0)
+                
+                # Higher volatility and coherence = more actionable
+                # Absolute returns matter more than direction for actionability
+                actionability = (abs(returns) * 0.3 + volatility * 0.4 + coherence * 0.3)
+                cluster_actionability[cluster_id] = actionability
+                
+                # Signal-to-Noise Ratio: Quality of trading signals
+                # Higher coherence and consistent returns = better signal quality
+                if volatility > 0:
+                    signal_strength = abs(returns) / volatility  # Similar to Sharpe but using absolute returns
+                    noise_level = 1.0 - coherence  # Lower coherence = more noise
+                    snr = signal_strength / max(noise_level, 0.1)  # Avoid division by zero
+                else:
+                    snr = 0.0
+                
+                signal_noise_ratios[cluster_id] = snr
+            
+            # Calculate aggregate metrics
+            if cluster_actionability:
+                avg_actionability = float(np.mean(list(cluster_actionability.values())))
+                max_actionability = float(np.max(list(cluster_actionability.values())))
+                actionability_std = float(np.std(list(cluster_actionability.values())))
+            else:
+                avg_actionability = max_actionability = actionability_std = 0.0
+            
+            if signal_noise_ratios:
+                avg_snr = float(np.mean(list(signal_noise_ratios.values())))
+                max_snr = float(np.max(list(signal_noise_ratios.values())))
+                snr_std = float(np.std(list(signal_noise_ratios.values())))
+            else:
+                avg_snr = max_snr = snr_std = 0.0
+            
+            return {
+                'actionability_score': {
+                    'average_actionability': avg_actionability,
+                    'max_actionability': max_actionability,
+                    'actionability_std': actionability_std,
+                    'highly_actionable_clusters': sum(1 for score in cluster_actionability.values() if score > 0.7),
+                    'total_analyzed_clusters': len(cluster_actionability)
+                },
+                'signal_to_noise_ratio': {
+                    'average_snr': avg_snr,
+                    'max_snr': max_snr,
+                    'snr_std': snr_std,
+                    'high_quality_signals': sum(1 for snr in signal_noise_ratios.values() if snr > 1.0),
+                    'total_analyzed_clusters': len(signal_noise_ratios)
+                }
+            }
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Error calculating trading actionability metrics: {e}")
+            return {'error': str(e)}
+
+    def _calculate_hierarchical_structure_metrics(
+        self,
+        cluster_assignments: np.ndarray,
+        top_clusters: List[int],
+        hmm_models: Optional[List[Any]] = None,
+        original_quality_metrics: Dict[str, Any] = None
+    ) -> Dict[str, Any]:
+        """Calculate hierarchical clustering quality metrics."""
+        try:
+            import numpy as np
+            from collections import Counter
+            
+            cluster_counts = Counter(cluster_assignments)
+            
+            # Dendrogram Quality: Quality of hierarchical cluster structure
+            # Measure size distribution balance as proxy for dendrogram quality
+            cluster_sizes = [cluster_counts[cid] for cid in top_clusters if cid in cluster_counts]
+            
+            if not cluster_sizes:
+                return {'error': 'No valid clusters for hierarchical analysis'}
+            
+            # Size balance as measure of dendrogram quality
+            size_balance = 1.0 - (np.std(cluster_sizes) / (np.mean(cluster_sizes) + 1e-8))
+            size_balance = max(0.0, min(1.0, size_balance))
+            
+            # Merge Quality: Quality of regime-to-cluster consolidation
+            # Use original quality metrics if available
+            original_score = original_quality_metrics.get('overall_quality_score', 0.5) if original_quality_metrics else 0.5
+            merge_quality = original_score  # Proxy measure
+            
+            # Level Consistency: Coherence across different hierarchical levels
+            # Calculate consistency based on size distribution patterns
+            sorted_sizes = sorted(cluster_sizes, reverse=True)
+            
+            # Check if follows power law (good hierarchical structure)
+            if len(sorted_sizes) > 3:
+                # Calculate ratio consistency
+                ratios = [sorted_sizes[i] / sorted_sizes[i+1] for i in range(len(sorted_sizes)-1) 
+                         if sorted_sizes[i+1] > 0]
+                level_consistency = 1.0 - (np.std(ratios) / (np.mean(ratios) + 1e-8)) if ratios else 0.0
+                level_consistency = max(0.0, min(1.0, level_consistency))
+            else:
+                level_consistency = 0.5  # Neutral score for small cluster sets
+            
+            # Pruning Effectiveness: Quality of cluster reduction process
+            # Measure how well the reduction preserved important information
+            total_clusters = len(top_clusters)
+            large_clusters = sum(1 for size in cluster_sizes if size >= np.mean(cluster_sizes))
+            pruning_effectiveness = large_clusters / max(total_clusters, 1)
+            
+            return {
+                'dendrogram_quality': {
+                    'structure_balance': size_balance,
+                    'size_distribution_cv': float(np.std(cluster_sizes) / (np.mean(cluster_sizes) + 1e-8)),
+                    'hierarchical_score': size_balance
+                },
+                'merge_quality': {
+                    'consolidation_score': merge_quality,
+                    'regime_reduction_quality': merge_quality,
+                    'information_preservation': merge_quality
+                },
+                'level_consistency': {
+                    'consistency_score': level_consistency,
+                    'hierarchy_levels_analyzed': len(sorted_sizes),
+                    'power_law_adherence': level_consistency
+                },
+                'pruning_effectiveness': {
+                    'effectiveness_score': pruning_effectiveness,
+                    'large_clusters_retained': large_clusters,
+                    'total_clusters': total_clusters,
+                    'retention_ratio': pruning_effectiveness
+                }
+            }
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Error calculating hierarchical structure metrics: {e}")
+            return {'error': str(e)}
+
+    def _calculate_fixed_coherence_metrics(
+        self, 
+        cluster_assignments: List[int], 
+        cluster_detailed_metrics: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Calculate fixed coherence metrics with correct calculations."""
+        try:
+            # Use the fixed cluster summary calculations
+            summary = self._calculate_cluster_summary_fixed(cluster_assignments, cluster_detailed_metrics)
+            
+            return {
+                'overall_coherence': {
+                    'mean_cv': summary['mean_cv'],
+                    'low_cv_clusters': summary['low_cv_clusters'],
+                    'high_cv_clusters': summary['high_cv_clusters']
+                }
+            }
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error calculating fixed coherence metrics: {e}")
+            return {
+                'overall_coherence': {
+                    'mean_cv': 0.0,
+                    'low_cv_clusters': 0,
+                    'high_cv_clusters': 0
+                },
+                'error': str(e)
+            }
+
+    def _calculate_fixed_statistical_metrics(
+        self, 
+        cluster_assignments: List[int], 
+        cluster_detailed_metrics: Dict[str, Any], 
+        statistical_analysis: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Calculate fixed statistical metrics with correct calculations."""
+        try:
+            # Use the fixed cluster summary calculations
+            summary = self._calculate_cluster_summary_fixed(cluster_assignments, cluster_detailed_metrics)
+            
+            return {
+                'cluster_validity': {
+                    'sufficient_samples': summary['sufficient_samples'],
+                    'balanced_distribution': summary['size_balance'] > 0.5
+                },
+                'dimensional_analysis': statistical_analysis.get('factor_impact_analysis', {}).get('aspect_ranking', [])
+            }
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error calculating fixed statistical metrics: {e}")
+            return {
+                'cluster_validity': {
+                    'sufficient_samples': 0,
+                    'balanced_distribution': False
+                },
+                'dimensional_analysis': [],
+                'error': str(e)
+            }
+
+    def _calculate_comprehensive_cluster_quality_metrics(
+        self,
+        cluster_assignments: List[int],
+        cluster_detailed_metrics: Dict[str, Any],
+        top_clusters: List[int],
+        hmm_models: Optional[List[Any]] = None,
+        market_data: Optional[Any] = None,
+        original_quality_metrics: Dict[str, Any] = None
+    ) -> Dict[str, Any]:
+        """Calculate comprehensive quality metrics for top clusters with advanced analysis."""
+        try:
+            import numpy as np
+            from collections import Counter
+            
+            # Analyze concentration and distribution
+            cluster_counts = Counter(cluster_assignments)
+            total_samples = len(cluster_assignments)
+            
+            # Calculate concentration metrics
+            largest_cluster_size = max(cluster_counts.values()) if cluster_counts else 0
+            largest_cluster_percentage = (largest_cluster_size / total_samples * 100) if total_samples > 0 else 0
+            
+            # Find dominant cluster info
+            dominant_cluster_id = max(cluster_counts, key=cluster_counts.get) if cluster_counts else None
+            
+            # Check if concentration exceeds typical thresholds
+            concentration_warning = largest_cluster_percentage > 35.0  # 35% threshold
+            concentration_critical = largest_cluster_percentage > 50.0  # 50% critical threshold
+            
+            # Calculate distribution entropy (diversity measure)
+            sizes = list(cluster_counts.values())
+            if sizes:
+                # Normalize to probabilities
+                probs = [s/total_samples for s in sizes]
+                entropy = -sum(p * np.log(p + 1e-8) for p in probs if p > 0)
+                max_entropy = np.log(len(sizes))
+                normalized_entropy = entropy / max_entropy if max_entropy > 0 else 0
+            else:
+                entropy = 0
+                normalized_entropy = 0
+            
+            # Analyze top clusters coverage
+            top_5_size = sum(cluster_counts[cid] for cid in list(cluster_counts.keys())[:5])
+            top_10_size = sum(cluster_counts[cid] for cid in list(cluster_counts.keys())[:10])
+            
+            top_5_coverage = (top_5_size / total_samples * 100) if total_samples > 0 else 0
+            top_10_coverage = (top_10_size / total_samples * 100) if total_samples > 0 else 0
+            
+            # Distribution quality assessment
+            gini_coefficient = self._calculate_gini_coefficient(sizes) if sizes else 0
+            
+            return {
+                'concentration_analysis': {
+                    'dominant_cluster_id': dominant_cluster_id,
+                    'dominant_cluster_size': largest_cluster_size,
+                    'dominant_cluster_percentage': round(largest_cluster_percentage, 2),
+                    'concentration_warning': concentration_warning,
+                    'concentration_critical': concentration_critical,
+                    'concentration_level': 'critical' if concentration_critical else ('high' if concentration_warning else 'normal')
+                },
+                'distribution_diversity': {
+                    'entropy': round(entropy, 3),
+                    'normalized_entropy': round(normalized_entropy, 3),
+                    'diversity_score': round(normalized_entropy, 3),  # Higher = more diverse
+                    'gini_coefficient': round(gini_coefficient, 3),  # Higher = more unequal
+                    'distribution_quality': 'poor' if gini_coefficient > 0.7 else ('fair' if gini_coefficient > 0.5 else 'good')
+                },
+                'coverage_analysis': {
+                    'top_5_coverage_percent': round(top_5_coverage, 2),
+                    'top_10_coverage_percent': round(top_10_coverage, 2),
+                    'coverage_efficiency': 'high' if top_5_coverage > 80 else ('medium' if top_5_coverage > 60 else 'low')
+                },
+                'regime_interpretation': {
+                    'market_regime_type': self._interpret_dominant_cluster(dominant_cluster_id, largest_cluster_percentage),
+                    'regime_stability': 'unstable' if concentration_critical else ('concentrated' if concentration_warning else 'balanced'),
+                    'trading_implications': self._get_trading_implications(largest_cluster_percentage, normalized_entropy)
+                }
+            }
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error calculating comprehensive cluster quality metrics: {e}")
+            return {
+                'concentration_analysis': {'error': str(e)},
+                'distribution_diversity': {'error': str(e)},
+                'coverage_analysis': {'error': str(e)},
+                'regime_interpretation': {'error': str(e)}
+            }
+
+    def _calculate_gini_coefficient(self, sizes: List[int]) -> float:
+        """Calculate Gini coefficient for cluster size distribution."""
+        try:
+            import numpy as np
+            
+            if not sizes or len(sizes) < 2:
+                return 0.0
+                
+            # Sort sizes
+            sorted_sizes = sorted(sizes)
+            n = len(sorted_sizes)
+            cumsum = np.cumsum(sorted_sizes)
+            
+            # Calculate Gini coefficient
+            gini = (2 * sum((i + 1) * sorted_sizes[i] for i in range(n))) / (n * sum(sorted_sizes)) - (n + 1) / n
+            return max(0.0, min(1.0, gini))
+            
+        except Exception:
+            return 0.0
+
+    def _interpret_dominant_cluster(self, cluster_id: Optional[int], percentage: float) -> str:
+        """Interpret what the dominant cluster represents."""
+        if cluster_id is None:
+            return "unknown"
+            
+        if percentage > 50:
+            return f"single_dominant_regime_cluster_{cluster_id}"
+        elif percentage > 35:
+            return f"major_regime_cluster_{cluster_id}"
+        elif percentage > 20:
+            return f"significant_regime_cluster_{cluster_id}"
+        else:
+            return f"balanced_regime_cluster_{cluster_id}"
+
+    def _get_trading_implications(self, concentration: float, diversity: float) -> str:
+        """Get trading strategy implications based on cluster distribution."""
+        if concentration > 50:
+            return "single_regime_strategy_recommended"
+        elif concentration > 35:
+            return "regime_focused_strategy_with_adaptability"
+        elif diversity > 0.7:
+            return "multi_regime_adaptive_strategy"
+        else:
+            return "balanced_regime_strategy"
     

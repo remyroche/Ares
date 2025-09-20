@@ -791,7 +791,7 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             # Get the maximum lookback period from all feature calculations
             momentum_lookback = 2  # momentum_2h
             volatility_lookback = 6  # volatility_6h and atr_6h
-            volume_lookback = 24  # volume_ratio_24h baseline
+            volume_lookback = 48  # volume_ratio_48h baseline
             max_lookback = max(momentum_lookback, volatility_lookback, volume_lookback)
             
             # Preserve original index and align properly
@@ -888,14 +888,14 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             # Volume features (enhanced sensitivity with multiple measures)
             epsilon = 1e-8
             volume_features = pd.DataFrame(index=market_data.index)
-            # Volume ratio - 24h baseline for stable comparison
-            volume_features['volume_ratio_24h'] = market_data['volume'] / (market_data['volume'].rolling(24).mean() + epsilon)
+            # Volume ratio - 48h baseline for stable comparison
+            volume_features['volume_ratio_48h'] = market_data['volume'] / (market_data['volume'].rolling(48).mean() + epsilon)
             
             # Clean features and align indices
             # Use the same max_lookback calculation as in _train_hmm_directly
             momentum_lookback = 2  # momentum_2h
             volatility_lookback = 6  # volatility_6h and atr_6h
-            volume_lookback = 24  # volume_ratio_24h baseline
+            volume_lookback = 48  # volume_ratio_48h baseline
             max_lookback = max(momentum_lookback, volatility_lookback, volume_lookback)
             cleaned_features = []
             

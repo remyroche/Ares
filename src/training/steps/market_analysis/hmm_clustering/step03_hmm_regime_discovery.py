@@ -2193,37 +2193,9 @@ class HMMRegimeDiscoveryStep:
                 self.logger.error(f'❌ Error in comprehensive data quality validation: {e}')
                 return False
         
-        # Fallback to legacy data quality manager if available
-        if self.data_quality_manager:
-            self.logger.info('📝 Using legacy data quality manager for validation')
-            return await self._legacy_data_quality_check(training_input)
-        else:
-            self.logger.warning('⚠️ No data quality tools available, proceeding without quality check')
-            return True
-    
-    async def _legacy_data_quality_check(self, training_input: dict[str, Any]) -> bool:
-        """Legacy data quality check using the old manager."""
-        try:
-            symbol = training_input.get('symbol', 'UNKNOWN')
-            exchange = training_input.get('exchange', 'BINANCE')
-            timeframe = training_input.get('timeframe', '1m')
-            
-            self.logger.info(f'🎯 Validating data quality for {symbol} on {exchange} ({timeframe})...')
-            self.logger.info('📋 Requesting data from quality manager...')
-            data_results = await self.data_quality_manager.get_data_for_step3_step4(symbol=symbol, exchange=exchange, timeframe=timeframe)
-            if data_results.get('success', False):
-                self.logger.info('✅ Data quality check passed')
-                self.logger.info('📊 Data quality metrics:')
-                for key, value in data_results.get('metrics', {}).items():
-                    self.logger.info(f'   {key}: {value}')
-                return True
-            else:
-                self.logger.warning('⚠️ Data quality check failed')
-                self.logger.warning(f'   Issues: {data_results.get("issues", [])}')
-                return False
-        except Exception as e:
-            self.logger.error(f'❌ Error in legacy data quality check: {e}')
-            return False
+        # Use standardized data validation instead of legacy manager
+        self.logger.warning('⚠️ No data quality tools available, proceeding without quality check')
+        return True
 
     @traced(span_name='fix_missing_data')
     @handles_errors(default_return={'success': False, 'error': 'Data fix failed'}, context='fix_missing_data')

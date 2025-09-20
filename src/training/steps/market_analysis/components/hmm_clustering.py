@@ -221,9 +221,14 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
         Returns:
             True if clustering should stop, False otherwise
         """
-        # Stop if we reach optimal cluster count (20 or below)
+        # Stop if we reach optimal cluster count (target: 20-ish clusters)
         if cluster_count <= 20:
             self.logger.info(f"🎯 STOPPING: Reached optimal cluster count ({cluster_count} <= 20)")
+            return True
+        
+        # Also stop if we exceed maximum clusters (prevent over-clustering)
+        if cluster_count > 25:
+            self.logger.info(f"🛑 STOPPING: Exceeded maximum cluster count ({cluster_count} > 25)")
             return True
         
         # Stop if we reach minimum similarity threshold (75%)
@@ -1229,6 +1234,10 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                     self.logger.info(f"✅ TARGET REACHED: Top 20 clusters cover {top_20_pct:.1f}% >= 90% of samples")
                     self.logger.info(f"🛑 EARLY STOPPING: Target achieved, terminating CV relaxation loop")
                     break  # Stop processing further thresholds
+                elif cluster_count <= 20 and top_20_pct >= 85.0:
+                    self.logger.info(f"✅ ACCEPTABLE TARGET: {cluster_count} clusters with {top_20_pct:.1f}% coverage (≥85% acceptable)")
+                    self.logger.info(f"🛑 EARLY STOPPING: Acceptable coverage achieved with optimal cluster count")
+                    break
                 elif top_20_pct < 85.0:
                     if current_cv_threshold_idx < len(cv_thresholds) - 1:
                         self.logger.info(f"📈 COVERAGE INSUFFICIENT: {top_20_pct:.1f}% < 90% target - CV threshold will be relaxed in next iteration")
@@ -2861,93 +2870,6 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             self.logger.warning(f"⚠️ Error identifying oversized clusters: {e}")
             return set()
 
-    def _get_excluded_clusters_due_to_cv_legacy(self, regime_characteristics: Dict[str, Any], regime_to_cluster: Dict[str, int], cv_threshold: float = 0.15) -> set:
-        """Identify clusters that should be excluded from future merging due to high internal CV.
-        
-        Args:
-            regime_characteristics: Dictionary of regime characteristics
-            regime_to_cluster: Current regime to cluster mapping
-            cv_threshold: CV threshold for exclusion (progressive: 0.15 → 0.2 → 0.25 → 0.3)
-            
-        Returns:
-            Set of cluster IDs that should be excluded from merging
-        """
-        try:
-            import numpy as np
-            
-            # Calculate current cluster CV metrics
-            cluster_cv_aspects = self._compute_cluster_cv_by_aspect(regime_characteristics, regime_to_cluster)
-            
-            if not cluster_cv_aspects:
-                return set()
-            
-            excluded_clusters = set()
-            
-            # Calculate cluster sample sizes and total samples
-            cluster_sample_counts = {}
-            total_samples = 0
-            
-            for regime_id, cluster_id in regime_to_cluster.items():
-                sample_count = regime_characteristics[regime_id].get('sample_count', 1)
-                total_samples += sample_count
-                if cluster_id not in cluster_sample_counts:
-                    cluster_sample_counts[cluster_id] = 0
-                cluster_sample_counts[cluster_id] += sample_count
-            
-            self.logger.info(f"🎯 CV Exclusion Threshold: {cv_threshold:.1f} ({cv_threshold*100:.0f}%)")
-            
-            excluded_count_by_threshold = {}
-            high_cv_explanations = []
-            
-            for cluster_id, cv_map in cluster_cv_aspects.items():
-                # Get maximum CV across all aspects for this cluster
-                cluster_cvs = [cv for cv in cv_map.values() if cv is not None and np.isfinite(cv)]
-                if not cluster_cvs:
-                    continue
-                
-                max_cv = max(cluster_cvs)
-                sample_count = cluster_sample_counts.get(cluster_id, 0)
-                sample_percentage = (sample_count / total_samples) * 100 if total_samples > 0 else 0
-                
-                if max_cv > cv_threshold:
-                    excluded_clusters.add(cluster_id)
-                    # Categorize exclusions by CV range for better logging
-                    if max_cv > 1.0:
-                        cv_category = "extreme"
-                    elif max_cv > 0.5:
-                        cv_category = "very_high"
-                    elif max_cv > 0.3:
-                        cv_category = "high"
-                    else:
-                        cv_category = "moderate"
-                    
-                    excluded_count_by_threshold[cv_category] = excluded_count_by_threshold.get(cv_category, 0) + 1
-                    
-                    # Find which aspect is causing the high CV
-                    worst_aspect = max(cv_map.items(), key=lambda x: x[1] if x[1] is not None and np.isfinite(x[1]) else 0)[0]
-                    worst_cv = cv_map[worst_aspect]
-                    
-                    self.logger.info(f"   🚫 Excluding cluster {cluster_id} from merging: CV={max_cv:.3f} > {cv_threshold:.3f} (samples: {sample_count}, {sample_percentage:.1f}%, worst: {worst_aspect}={worst_cv:.3f})")
-                    
-                    # Collect high CV explanations for summary
-                    if max_cv > 0.5:  # Focus on very high CV cases
-                        high_cv_explanations.append(f"C{cluster_id}: {worst_aspect}={worst_cv:.3f} ({sample_count} samples)")
-            
-            if excluded_clusters:
-                self.logger.info(f"📊 Excluded {len(excluded_clusters)} clusters from merging due to high internal CV")
-                self.logger.info(f"   📈 CV Categories: {excluded_count_by_threshold}")
-                
-                # Explain high CV origins for top cases
-                if high_cv_explanations:
-                    top_high_cv = sorted(high_cv_explanations, key=lambda x: float(x.split('=')[1].split(' ')[0]), reverse=True)[:5]
-                    self.logger.info(f"   🔍 TOP HIGH CV CASES: {', '.join(top_high_cv)}")
-                    self.logger.info(f"   💡 HIGH CV ORIGINS: Regime heterogeneity within clusters - different momentum/volatility/volume patterns merged together")
-            
-            return excluded_clusters
-            
-        except Exception as e:
-            self.logger.error(f"❌ Error identifying excluded clusters: {e}")
-            return set()
 
 
 

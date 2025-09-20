@@ -1718,11 +1718,8 @@ class FinalRegimeClusteringStep:
         timeframe = self.config.get("TIMEFRAME", "1m")
         data_dir = str(self.artifacts.get_cache_dir())
         
-        # Use optimized data manager if available
-        if self.data_manager:
-            return await self._load_and_prepare_data_optimized(symbol, exchange, timeframe, data_dir)
-        else:
-            return await self._load_and_prepare_data_legacy(symbol, exchange, timeframe, data_dir)
+        # Use optimized data manager
+        return await self._load_and_prepare_data_optimized(symbol, exchange, timeframe, data_dir)
 
     async def _load_and_prepare_data_optimized(self, symbol: str, exchange: str, timeframe: str, data_dir: str) -> dict[str, Any]:
         """Load and prepare data using optimized data manager with extensive utility integration."""
@@ -1985,62 +1982,6 @@ class FinalRegimeClusteringStep:
 
         return clustering_features
 
-    async def _load_and_prepare_data_legacy(self, symbol: str, exchange: str, timeframe: str, data_dir: str) -> dict[str, Any]:
-        """Legacy data loading method for fallback."""
-        self.logger.info("📊 Using legacy data loading method...")
-
-        # Load klines data
-        klines_path = Path(data_dir) / f"klines_{exchange}_{symbol}_{timeframe}_consolidated.parquet"
-
-        if not klines_path.exists():
-            self.logger.error(f"❌ Klines file not found: {klines_path}")
-            return {
-                "success": False,
-                "error": f"Klines file not found: {klines_path}"
-            }
-
-        # Load data
-        df = standardized_parquet_handler.read_parquet_standardized(klines_path)
-
-        if df.empty:
-            self.logger.error("❌ Data is empty")
-            return {
-                "success": False,
-                "error": "Data is empty"
-            }
-        
-        # Fast-fail validation
-        try:
-            self.logger.info("🔍 Performing fast-fail data validation...")
-            self.fast_fail_validator.validate_data_quality_fast_fail(df)
-            self.fast_fail_validator.validate_timestamp_quality(df, expected_interval_seconds=60.0)
-            self.fast_fail_validator.validate_ohlc_relationships(df)
-            self.logger.info("✅ Fast-fail validation passed")
-        except Exception as e:
-            self.logger.exception("❌ Fast-fail validation failed")
-            return {
-                "success": False,
-                "error": f"Data validation failed: {e}"
-            }
-
-        # Prepare features using optimized parameters
-        features = await self._prepare_features_with_optimized_params(df)
-
-        self.logger.info(f"✅ Data loaded and prepared: {len(df):,} rows, {len(features.columns)} features")
-
-        return {
-            "success": True,
-            "data": df,
-            "features": features,
-            "data_info": {
-                "rows": len(df),
-                "columns": list(df.columns),
-                "date_range": {
-                    "start": df["timestamp"].min().isoformat(),
-                    "end": df["timestamp"].max().isoformat()
-                }
-            }
-        }
 
     @handles_errors(
         exceptions=(Exception,),
@@ -2179,11 +2120,8 @@ class FinalRegimeClusteringStep:
             self.logger.error(f"❌ HMM parameter validation failed: {e}")
             raise ValueError(f"HMM parameter validation failed: {e}")
         
-        # Use enhanced matrix operations if available
-        if self.matrix_operations:
-            return await self._perform_hmm_with_enhanced_operations(features, n_components, covariance_type, n_iter, random_state)
-        else:
-            return await self._perform_hmm_legacy(features, n_components, covariance_type, n_iter, random_state)
+        # Use enhanced matrix operations
+        return await self._perform_hmm_with_enhanced_operations(features, n_components, covariance_type, n_iter, random_state)
 
     async def _perform_hmm_with_enhanced_operations(self, features: pd.DataFrame, n_components: int, covariance_type: str, n_iter: int, random_state: int) -> dict[str, Any]:
         """Perform HMM with enhanced matrix operations."""
@@ -2302,54 +2240,6 @@ class FinalRegimeClusteringStep:
             "optimization_applied": True
         }
 
-    async def _perform_hmm_legacy(self, features: pd.DataFrame, n_components: int, covariance_type: str, n_iter: int, random_state: int) -> dict[str, Any]:
-        """Legacy HMM training method."""
-        try:
-            from hmmlearn import hmm
-
-            # Scale features
-            scaler = StandardScaler()
-            features_scaled = scaler.fit_transform(features)
-
-            # Train HMM
-            hmm_model = hmm.GaussianHMM(
-                n_components=n_components,
-                covariance_type=covariance_type,
-                n_iter=n_iter,
-                random_state=random_state
-            )
-
-            hmm_model.fit(features_scaled)
-
-            # Get state sequence and probabilities
-            state_sequence = hmm_model.predict(features_scaled)
-            state_probs = hmm_model.predict_proba(features_scaled)
-
-            # Validate HMM convergence and quality
-            validation_result = self._validate_hmm_model(hmm_model, features_scaled, n_components)
-            
-            hmm_results = {
-                "model": hmm_model,
-                "scaler": scaler,
-                "state_sequence": state_sequence,
-                "state_probs": state_probs,
-                "n_components": n_components,
-                "score": hmm_model.score(features_scaled),
-                "used_gpu": False,
-                "optimization_applied": False,
-                "validation": validation_result
-            }
-
-            if validation_result["converged"]:
-                self.logger.info(f"✅ Legacy HMM regime discovery completed: {n_components} states")
-            else:
-                self.logger.warning(f"⚠️ HMM model did not converge properly: {validation_result['issues']}")
-            
-            return hmm_results
-
-        except ImportError:
-            self.logger.error("⚠️ hmmlearn not available")
-            raise
 
     def _validate_hmm_model(self, hmm_model, features: np.ndarray, n_components: int) -> dict[str, Any]:
         """Validate HMM model convergence and quality."""

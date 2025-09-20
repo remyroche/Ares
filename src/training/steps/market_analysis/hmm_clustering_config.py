@@ -81,10 +81,12 @@ class UnifiedHMMClusteringConfig:
     min_improvement: float = 0.001
     patience: int = 3
     
-    # Dimension-aware quality evaluation (optimized for ETH 15m with 4D clustering)
+    # Enhanced clustering configuration for 20-ish clusters covering 90% of ETH market states
     target_clusters: int = 20
-    cluster_range: List[int] = field(default_factory=lambda: [16, 18, 20, 22, 24])
+    cluster_range: List[int] = field(default_factory=lambda: [18, 20, 22, 24, 26])  # Focused around 20
     coverage_target: float = 0.90
+    max_clusters: int = 25  # Hard limit to prevent over-clustering
+    min_clusters: int = 15  # Minimum for meaningful market state representation
     cv_thresholds: Dict[str, float] = field(default_factory=lambda: {
         'volume': 1.0, 'volatility': 1.0, 'momentum': 1.0, 'trend': 1.0
     })

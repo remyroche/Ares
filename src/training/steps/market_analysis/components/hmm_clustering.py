@@ -444,13 +444,14 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             # Configure HMM clustering - Data-driven cluster selection with elbow method
             mode = pipeline_state.get('mode', 'light')  # Get mode from pipeline state
             
-            # Set maximum clusters based on mode
+            # Set maximum clusters based on mode and data characteristics
             if mode == 'full':
                 max_clusters = min(25, max(3, input_regimes // 2))  # Maximum 25 clusters in full mode
             elif mode == 'blank':
                 max_clusters = min(8, max(3, input_regimes // 4))   # Maximum 8 clusters in blank mode  
-            else:  # light mode
-                max_clusters = 3  # Maximum 3 clusters for light mode
+            else:  # light mode - use data-driven default instead of hard limit
+                # Data-driven clustering limit: use elbow method with upper bound
+                max_clusters = min(8, max(3, input_regimes // 3))  # More reasonable default for light mode
             
             clustering_config = {
                 'max_clusters': max_clusters,
@@ -594,7 +595,7 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                     'hmm_clustering_result': {
                         # Core clustering results
                         'hmm_models': hmm_models,
-                        # 'cluster_assignments': cluster_assignments,  # Excluded to reduce file size
+                        'cluster_assignments': cluster_assignments,
                         'cluster_metrics': cluster_metrics,
                         'cluster_quality_metrics': quality_metrics,
                         'cluster_detailed_metrics': cluster_detailed_metrics,
@@ -779,11 +780,12 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             use_enhanced_clustering = config.get('use_enhanced_clustering', True) 
             use_multi_stage = config.get('use_multi_stage_clustering', False)
             
-            # Force enhanced clustering for testing (temporarily disabled due to bugs)
+            # Respect user configuration for clustering mode
             self.logger.info(f"🔧 Clustering mode selection: enhanced={use_enhanced_clustering}, multi_stage={use_multi_stage}")
-            if not use_multi_stage:
-                use_enhanced_clustering = False  # Temporarily disable enhanced mode
-                self.logger.info("🔧 Using standard clustering with improvements applied")
+            if not use_multi_stage and not use_enhanced_clustering:
+                self.logger.info("🔧 Using standard clustering mode")
+            elif not use_multi_stage and use_enhanced_clustering:
+                self.logger.info("🔧 Using enhanced clustering mode")
             
             if use_multi_stage:
                 self.logger.info("🔄 Using Multi-Stage Hierarchical Clustering")

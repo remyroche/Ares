@@ -238,6 +238,7 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
                         }
                     },
                     
+                    'regime_metrics': regime_metrics,
                     'validation_metrics': {
                         'min_samples_per_regime': min_samples,
                         'sufficient_samples': min_samples >= hmm_config.min_regime_samples
@@ -517,8 +518,7 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
 
     def _calculate_dimensional_states(self, data_size: int) -> Tuple[int, int, int]:
         """
-        Calculate optimal states per dimension based on data size.
-        Enhanced to support up to 10x10x10 for superior regime granularity.
+        Calculate optimal states per dimension based on data size with parameter constraints.
         
         Args:
             data_size: Number of data points
@@ -527,31 +527,11 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             tuple: (momentum_states, volatility_states, volume_states)
         """
         try:
-            if data_size < 500:
-                # Small datasets: use enhanced states for better granularity
-                momentum_states, volatility_states, volume_states = 9, 9, 9
-                self.logger.info(f"📊 Small dataset ({data_size} points): using enhanced dimensional states")
-            elif data_size < 2000:
-                # Medium datasets: enhanced states
-                momentum_states, volatility_states, volume_states = 9, 9, 9
-                self.logger.info(f"📊 Medium dataset ({data_size} points): using enhanced dimensional states")
-            elif data_size < 5000:
-                # Large datasets: enhanced states
-                momentum_states, volatility_states, volume_states = 9, 9, 9
-                self.logger.info(f"📊 Large dataset ({data_size} points): using enhanced dimensional states")
-            elif data_size < 15000:
-                # Very large datasets: enhanced granularity
-                momentum_states, volatility_states, volume_states = 8, 7, 8
-                self.logger.info(f"📊 Very large dataset ({data_size} points): using enhanced dimensional granularity")
-            elif data_size < 30000:
-                # Extra large datasets: high precision states
-                momentum_states, volatility_states, volume_states = 9, 8, 9
-                self.logger.info(f"📊 Extra large dataset ({data_size} points): using high precision dimensional states")
-            else:
-                # Massive datasets: maximum dimensional granularity (10x10x10 = 1000 regimes)
-                momentum_states, volatility_states, volume_states = 10, 10, 10
-                self.logger.info(f"📊 Massive dataset ({data_size} points): using maximum dimensional granularity (10×10×10)")
-                self.logger.info(f"🎯 Superior regime precision: 1000 possible regime combinations vs previous 150")
+            # Calculate theoretical maximum for each dimension using parameter estimation theory
+            momentum_states, volatility_states, volume_states = self._calculate_constrained_dimensional_states(data_size)
+            
+            self.logger.info(f"📊 Dimensional states calculated: M={momentum_states}, V={volatility_states}, Vol={volume_states}")
+            self.logger.info(f"📊 Total combinations: {momentum_states * volatility_states * volume_states}")
             
             return momentum_states, volatility_states, volume_states
             
@@ -560,47 +540,18 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             # Fallback to moderate states
             return 5, 4, 5
 
-    def _calculate_optimal_component_count(self, data_size: int, pipeline_state: Dict[str, Any]) -> int:
+    def _calculate_constrained_dimensional_states(self, data_size: int) -> Tuple[int, int, int]:
         """
-        Calculate optimal number of HMM components based on data characteristics.
+        Calculate dimensional states with parameter constraints from _calculate_optimal_component_count.
         
         Args:
             data_size: Number of data points
-            pipeline_state: Current pipeline state (may contain user preferences)
             
         Returns:
-            int: Optimal number of components
+            tuple: (momentum_states, volatility_states, volume_states) with applied constraints
         """
         try:
-            # Check for user-specified component count in config or pipeline state
-            user_components = getattr(self.config, 'n_components', None)
-            if user_components is None:
-                user_components = pipeline_state.get('n_components', None)
-            
-            if user_components is not None:
-                self.logger.info(f"🎯 Using user-specified component count: {user_components}")
-                return max(3, min(user_components, 20))  # Clamp to reasonable range for 3D regime space
-            
-            # Data-driven calculation
-            # Rule of thumb: sqrt(data_size) with bounds based on statistical reliability
-            base_components = int(np.sqrt(data_size))
-            
-            # True 3D regime space: up to 10 momentum × 10 volatility × 10 volume = 1000 combinations
-            # But we'll use adaptive states per dimension based on data size
-            momentum_states, volatility_states, volume_states = self._calculate_dimensional_states(data_size)
-            
-            # Total regime combinations
-            optimal_components = momentum_states * volatility_states * volume_states
-            
-            self.logger.info(f"📊 3D Regime Space Configuration:")
-            self.logger.info(f"   • Momentum states: {momentum_states}")
-            self.logger.info(f"   • Volatility states: {volatility_states}")  
-            self.logger.info(f"   • Volume states: {volume_states}")
-            self.logger.info(f"   • Total combinations: {optimal_components} ({momentum_states}×{volatility_states}×{volume_states})")
-            
-            # Calculate theoretical maximum based on parameter estimation requirements
-            # For 3D regime space: separate HMMs for each dimension
-            # Total parameters = sum of parameters for each dimensional HMM (max 6h lookback)
+            # Feature counts for parameter estimation (same as in _calculate_optimal_component_count)
             momentum_features_count = 4  # momentum features per HMM (1h, 2h, 3h, 6h)
             volatility_features_count = 3  # volatility features per HMM (1h, 3h, 6h)
             volume_features_count = 5  # volume features per HMM (1h, 3h, 6h, ratio, weighted_price)
@@ -661,20 +612,83 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             
             # Calculate theoretical maximum for each dimension
             max_mom, max_vol, max_volume = max_dimensional_states_for_data(data_size)
-            theoretical_max = max_mom * max_vol * max_volume
             
-            # Debug logging for parameter calculations
-            mom_params = calculate_hmm_parameters(max_mom, momentum_features_count)
-            vol_params = calculate_hmm_parameters(max_vol, volatility_features_count)
-            volume_params = calculate_hmm_parameters(max_volume, volume_features_count)
-            self.logger.info(f"📊 Parameter calculation debug:")
-            self.logger.info(f"   • Max momentum states: {max_mom} (params: {mom_params})")
-            self.logger.info(f"   • Max volatility states: {max_vol} (params: {vol_params})")
-            self.logger.info(f"   • Max volume states: {max_volume} (params: {volume_params})")
-            self.logger.info(f"   • Theoretical max combinations: {theoretical_max}")
+            # Apply the same constraint logic as in _calculate_optimal_component_count
+            # Start with desired states based on data size
+            if data_size < 500:
+                desired_momentum, desired_volatility, desired_volume = 6, 6, 6
+            elif data_size < 2000:
+                desired_momentum, desired_volatility, desired_volume = 7, 7, 7
+            elif data_size < 5000:
+                desired_momentum, desired_volatility, desired_volume = 8, 7, 8
+            elif data_size < 15000:
+                desired_momentum, desired_volatility, desired_volume = 8, 7, 8
+            elif data_size < 30000:
+                desired_momentum, desired_volatility, desired_volume = 9, 8, 9
+            else:
+                desired_momentum, desired_volatility, desired_volume = 10, 10, 10
             
-            # Also ensure minimum samples per regime (complementary constraint)
-            # Use adaptive regime-based max based on data size
+            # Apply parameter constraints
+            momentum_states = min(desired_momentum, max_mom)
+            volatility_states = min(desired_volatility, max_vol)
+            volume_states = min(desired_volume, max_volume)
+            
+            # Ensure minimum viable states
+            momentum_states = max(3, momentum_states)
+            volatility_states = max(3, volatility_states)
+            volume_states = max(3, volume_states)
+            
+            self.logger.info(f"📊 Constrained dimensional states:")
+            self.logger.info(f"   • Desired: M={desired_momentum}, V={desired_volatility}, Vol={desired_volume}")
+            self.logger.info(f"   • Max allowed: M={max_mom}, V={max_vol}, Vol={max_volume}")
+            self.logger.info(f"   • Final: M={momentum_states}, V={volatility_states}, Vol={volume_states}")
+            
+            return momentum_states, volatility_states, volume_states
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error calculating constrained dimensional states: {e}")
+            # Fallback to safe defaults
+            return 5, 4, 5
+
+    def _calculate_optimal_component_count(self, data_size: int, pipeline_state: Dict[str, Any]) -> int:
+        """
+        Calculate optimal number of HMM components based on data characteristics.
+        
+        Args:
+            data_size: Number of data points
+            pipeline_state: Current pipeline state (may contain user preferences)
+            
+        Returns:
+            int: Optimal number of components
+        """
+        try:
+            # Check for user-specified component count in config or pipeline state
+            user_components = getattr(self.config, 'n_components', None)
+            if user_components is None:
+                user_components = pipeline_state.get('n_components', None)
+            
+            if user_components is not None:
+                self.logger.info(f"🎯 Using user-specified component count: {user_components}")
+                return max(3, min(user_components, 20))  # Clamp to reasonable range for 3D regime space
+            
+            # Data-driven calculation
+            # Rule of thumb: sqrt(data_size) with bounds based on statistical reliability
+            base_components = int(np.sqrt(data_size))
+            
+            # Use the shared helper that applies parameter constraints
+            momentum_states, volatility_states, volume_states = self._calculate_constrained_dimensional_states(data_size)
+            
+            # Total regime combinations
+            optimal_components = momentum_states * volatility_states * volume_states
+            
+            self.logger.info(f"📊 3D Regime Space Configuration:")
+            self.logger.info(f"   • Momentum states: {momentum_states}")
+            self.logger.info(f"   • Volatility states: {volatility_states}")  
+            self.logger.info(f"   • Volume states: {volume_states}")
+            self.logger.info(f"   • Total combinations: {optimal_components} ({momentum_states}×{volatility_states}×{volume_states})")
+            
+            # Constraint logic is now handled by _calculate_constrained_dimensional_states
+            # Additional validation: ensure minimum samples per regime
             if data_size < 200:
                 regime_based_max = max(9, data_size // 10)  # More lenient for small datasets
             elif data_size < 1000:
@@ -682,33 +696,10 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             else:
                 regime_based_max = data_size // 20  # Standard for large datasets
             
-            # Use the more restrictive constraint
-            max_supportable_components = min(theoretical_max, regime_based_max)
-            
-            if optimal_components > max_supportable_components:
-                # Calculate total parameters for all dimensional HMMs
-                mom_params = calculate_hmm_parameters(momentum_states, momentum_features_count)
-                vol_params = calculate_hmm_parameters(volatility_states, volatility_features_count)
-                volume_params = calculate_hmm_parameters(volume_states, volume_features_count)
-                total_params = mom_params + vol_params + volume_params
-                
-                optimal_components = max(5, max_supportable_components)
-                self.logger.warning(f"⚠️ Reduced components to {optimal_components} due to parameter constraints")
-                self.logger.warning(f"   Theoretical max: {theoretical_max}, Regime-based max: {regime_based_max}")
-                self.logger.info(f"   Would need {total_params * 15:,} samples for dimensional HMMs")
-            
-            # Apply theoretical constraints to dimensional states
-            if optimal_components > theoretical_max:
-                # Reduce dimensional states proportionally
-                scale_factor = (theoretical_max / optimal_components) ** (1/3)  # Cube root for 3D scaling
-                momentum_states = max(9, int(momentum_states * scale_factor))
-                volatility_states = max(9, int(volatility_states * scale_factor))
-                volume_states = max(9, int(volume_states * scale_factor))
-                optimal_components = momentum_states * volatility_states * volume_states
-                
-                self.logger.warning(f"⚠️ Reduced dimensional states due to parameter constraints:")
-                self.logger.warning(f"   New configuration: {momentum_states}×{volatility_states}×{volume_states} = {optimal_components}")
-                self.logger.warning(f"   Theoretical max: {theoretical_max}, Regime-based max: {regime_based_max}")
+            if optimal_components > regime_based_max:
+                optimal_components = max(5, regime_based_max)
+                self.logger.warning(f"⚠️ Reduced components to {optimal_components} due to regime-based constraints")
+                self.logger.warning(f"   Regime-based max: {regime_based_max}")
             
             # Final bounds check with enhanced maximum for 10x10x10 support
             optimal_components = max(9, min(optimal_components, 1000))  # At least 3x3x1, max 1000 (10x10x10)
@@ -743,9 +734,9 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             if momentum_features is None or volatility_features is None or volume_features is None:
                 raise ValueError("Failed to prepare grouped features for regime discovery")
             
-            # Get dimensional state counts
+            # Get dimensional state counts with parameter constraints
             data_size = len(market_data)
-            momentum_states, volatility_states, volume_states = self._calculate_dimensional_states(data_size)
+            momentum_states, volatility_states, volume_states = self._calculate_constrained_dimensional_states(data_size)
             n_components = momentum_states * volatility_states * volume_states
             
             self.logger.info(f"🎯 Using {n_components} components for fast regime discovery (intermediate features)")
@@ -800,7 +791,7 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             # Get the maximum lookback period from all feature calculations
             momentum_lookback = 2  # momentum_2h
             volatility_lookback = 6  # volatility_6h and atr_6h
-            volume_lookback = 24  # volume_ratio_48h baseline
+            volume_lookback = 24  # volume_ratio_24h baseline
             max_lookback = max(momentum_lookback, volatility_lookback, volume_lookback)
             
             # Preserve original index and align properly
@@ -898,13 +889,13 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             epsilon = 1e-8
             volume_features = pd.DataFrame(index=market_data.index)
             # Volume ratio - 24h baseline for stable comparison
-            volume_features['volume_ratio_48h'] = market_data['volume'] / (market_data['volume'].rolling(24).mean() + epsilon)
+            volume_features['volume_ratio_24h'] = market_data['volume'] / (market_data['volume'].rolling(24).mean() + epsilon)
             
             # Clean features and align indices
             # Use the same max_lookback calculation as in _train_hmm_directly
             momentum_lookback = 2  # momentum_2h
             volatility_lookback = 6  # volatility_6h and atr_6h
-            volume_lookback = 24  # volume_ratio_48h baseline
+            volume_lookback = 24  # volume_ratio_24h baseline
             max_lookback = max(momentum_lookback, volatility_lookback, volume_lookback)
             cleaned_features = []
             
@@ -1032,94 +1023,6 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             self.logger.warning(f"⚠️ Failed to standardize {feature_type} features: {e}, using original features")
             return features
 
-    def _initialize_hmm_parameters(self, model: Any, n_states: int, X: np.ndarray, conservative: bool = False) -> None:
-        """
-        Initialize HMM parameters properly to avoid race conditions.
-        
-        Args:
-            model: HMM model to initialize
-            n_states: Number of states
-            X: Training data
-            conservative: Whether to use conservative initialization
-        """
-        try:
-            # Initialize start probabilities (uniform distribution)
-            model.startprob_ = np.full(n_states, 1.0 / n_states, dtype=np.float64)
-            
-            if conservative:
-                # Conservative initialization: strong diagonal dominance
-                model.transmat_ = np.eye(n_states, dtype=np.float64) * 0.9
-                for i in range(n_states):
-                    remaining_prob = 0.1
-                    if n_states > 1:
-                        off_diagonal_prob = remaining_prob / (n_states - 1)
-                        for j in range(n_states):
-                            if i != j:
-                                model.transmat_[i, j] = off_diagonal_prob
-            else:
-                # Standard initialization with regularization
-                epsilon = 1e-3
-                model.transmat_ = np.full((n_states, n_states), epsilon, dtype=np.float64)
-                
-                # Set higher self-transition probabilities
-                diagonal_prob = 0.7
-                np.fill_diagonal(model.transmat_, diagonal_prob)
-                
-                # Distribute remaining probability to off-diagonal elements
-                for i in range(n_states):
-                    remaining_prob = 1.0 - model.transmat_[i, i]
-                    if n_states > 1:
-                        off_diagonal_prob = remaining_prob / (n_states - 1)
-                        for j in range(n_states):
-                            if i != j:
-                                model.transmat_[i, j] = off_diagonal_prob
-            
-            # Ensure exact normalization
-            model.transmat_ = model.transmat_ / model.transmat_.sum(axis=1, keepdims=True)
-            
-            # Initialize means by grouping data samples (no clustering, just grouping)
-            try:
-                if len(X) >= n_states:
-                    # Split data into n_states groups and use group means for initialization
-                    group_size = len(X) // n_states
-                    means = []
-                    for i in range(n_states):
-                        start_idx = i * group_size
-                        end_idx = (i + 1) * group_size if i < n_states - 1 else len(X)
-                        group_data = X[start_idx:end_idx]
-                        if len(group_data) > 0:
-                            means.append(np.mean(group_data, axis=0))
-                        else:
-                            # Fallback for empty groups
-                            means.append(X[i % len(X)])
-                    model.means_ = np.array(means, dtype=np.float64)
-                else:
-                    # Use available samples as means
-                    model.means_ = X[:n_states].astype(np.float64)
-            except Exception:
-                # Final fallback: use data statistics
-                model.means_ = np.random.randn(n_states, X.shape[1]).astype(np.float64) * X.std(axis=0) + X.mean(axis=0)
-            
-            # Initialize covariances (diagonal)
-            model.covars_ = np.tile(np.var(X, axis=0), (n_states, 1)).astype(np.float64)
-            # Ensure minimum variance to prevent numerical issues
-            model.covars_ = np.maximum(model.covars_, 1e-6)
-            
-            # Validate initialization
-            assert np.allclose(model.startprob_.sum(), 1.0, atol=1e-10), "Start probabilities don't sum to 1"
-            assert np.allclose(model.transmat_.sum(axis=1), 1.0, atol=1e-10), "Transition matrix rows don't sum to 1"
-            assert not np.any(np.isnan(model.startprob_)), "Start probabilities contain NaN"
-            assert not np.any(np.isnan(model.transmat_)), "Transition matrix contains NaN"
-            assert not np.any(np.isnan(model.means_)), "Means contain NaN"
-            assert not np.any(np.isnan(model.covars_)), "Covariances contain NaN"
-            
-        except Exception as e:
-            self.logger.error(f"Error initializing HMM parameters: {e}")
-            # Emergency fallback
-            model.startprob_ = np.ones(n_states, dtype=np.float64) / n_states
-            model.transmat_ = np.eye(n_states, dtype=np.float64) * 0.8 + 0.2 / n_states
-            model.means_ = np.random.randn(n_states, X.shape[1]).astype(np.float64)
-            model.covars_ = np.ones((n_states, X.shape[1]), dtype=np.float64)
 
     def _train_dimensional_hmm(self, features: pd.DataFrame, n_states: int, dimension_name: str) -> Tuple[Any, List[int]]:
         """

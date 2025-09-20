@@ -1,4 +1,4 @@
-THIS SHOULD BE A LINTER ERROR"""
+"""
 HMM Clustering Component.
 
 This component performs HMM-based regime clustering.

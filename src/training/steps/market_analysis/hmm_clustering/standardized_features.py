@@ -2,16 +2,19 @@
 """
 Standardized Feature Calculation Module for HMM Clustering
 
-This module provides centralized, consistent feature calculations for the 5 core features
+This module provides centralized, consistent feature calculations for the 6 core features
 used throughout the HMM regime discovery process. All features are calculated in a single 
 place to ensure consistency from regime discovery to merging.
 
-Core Features (5 only):
-- volume_ratio_48h: Current volume / average 48h volume
-- volatility_5: 5 period rolling volatility
-- volatility_3: 3 period rolling volatility  
-- momentum_5: 5 period price momentum
-- momentum_3: 3 period price momentum
+Optimized for ETH 15m timeframe with 4x more bars than 1h.
+
+Core Features (6 only):
+- volume_ratio_192h: Current volume / average 192h volume (48h * 4 for 15m)
+- volatility_20: 20 period rolling volatility (5 * 4 for 15m)
+- volatility_12: 12 period rolling volatility (3 * 4 for 15m)  
+- momentum_20: 20 period price momentum (5 * 4 for 15m)
+- momentum_12: 12 period price momentum (3 * 4 for 15m)
+- trend_score: Directional Signal normalized × ADX
 """
 
 import numpy as np
@@ -25,66 +28,132 @@ logger = logging.getLogger(__name__)
 class StandardizedFeatureCalculator:
     """
     Centralized feature calculator that ensures consistency across all HMM operations.
-    Only calculates the 5 core features specified.
+    Only calculates the 6 core features specified for 15m timeframe.
     """
     
     @staticmethod
     def calculate_all_features(df: pd.DataFrame) -> pd.DataFrame:
         """
-        Calculate the 5 core standardized features.
+        Calculate the 6 core standardized features for 15m timeframe.
         
         Args:
             df: DataFrame with OHLCV data
             
         Returns:
-            DataFrame with only the 5 core features
+            DataFrame with only the 6 core features
         """
-        logger.info("Calculating 5 core standardized features for HMM clustering...")
+        logger.info("Calculating 6 core standardized features for HMM clustering (15m timeframe)...")
         
         features = pd.DataFrame(index=df.index)
         
-        # 1. Volume feature: current volume / average 48h volume
-        volume_48h_avg = df['volume'].rolling(window=48).mean()
-        volume_48h_safe = volume_48h_avg.replace(0, np.nan)
-        volume_48h_safe = volume_48h_safe.fillna(method='bfill').fillna(1.0)
-        features['volume_ratio_48h'] = df['volume'] / volume_48h_safe
-        features['volume_ratio_48h'] = features['volume_ratio_48h'].clip(-100, 100)
+        # 1. Volume feature: current volume / average 192h volume (48h * 4 for 15m)
+        volume_192h_avg = df['volume'].rolling(window=192).mean()
+        volume_192h_safe = volume_192h_avg.replace(0, np.nan)
+        volume_192h_safe = volume_192h_safe.fillna(method='bfill').fillna(1.0)
+        features['volume_ratio_192h'] = df['volume'] / volume_192h_safe
+        features['volume_ratio_192h'] = features['volume_ratio_192h'].clip(-100, 100)
         
-        # 2-3. Volatility features: 5 and 3 period rolling volatility
+        # 2-3. Volatility features: 20 and 12 period rolling volatility (5*4 and 3*4 for 15m)
         price_returns = df['close'].pct_change().fillna(0)
-        features['volatility_5'] = price_returns.rolling(window=5).std()
-        features['volatility_3'] = price_returns.rolling(window=3).std()
+        features['volatility_20'] = price_returns.rolling(window=20).std()
+        features['volatility_12'] = price_returns.rolling(window=12).std()
         
-        # 4-5. Momentum features: 5 and 3 period price momentum
-        features['momentum_5'] = df['close'].pct_change(5)
-        features['momentum_3'] = df['close'].pct_change(3)
+        # 4-5. Momentum features: 20 and 12 period price momentum (5*4 and 3*4 for 15m)
+        features['momentum_20'] = df['close'].pct_change(20)
+        features['momentum_12'] = df['close'].pct_change(12)
+        
+        # 6. Trend feature: Directional Signal normalized × ADX
+        # EMA8 and EMA20 (8*4 and 20*4 for 15m timeframe)
+        ema_32 = df['close'].ewm(span=32).mean()  # 8*4
+        ema_80 = df['close'].ewm(span=80).mean()  # 20*4
+        
+        # Directional Signal: DS = EMA8 - EMA20
+        directional_signal = ema_32 - ema_80
+        
+        # Calculate ADX (Average Directional Index) with 4x periods
+        features['adx'] = StandardizedFeatureCalculator._calculate_adx(df, period=80)  # 20*4
+        
+        # Normalize DS using rolling z-score
+        ds_mean = directional_signal.rolling(window=80).mean()  # 20*4
+        ds_std = directional_signal.rolling(window=80).std()    # 20*4
+        ds_normalized = (directional_signal - ds_mean) / (ds_std + 1e-8)
+        
+        # Trend Score = DS_normalized × ADX
+        features['trend_score'] = ds_normalized * features['adx']
+        features['trend_score'] = features['trend_score'].clip(-1000, 1000)  # Prevent extreme values
         
         # Add timestamp if available
         if 'timestamp' in df.columns:
             features['timestamp'] = df['timestamp']
         
-        logger.info(f"Calculated 5 core standardized features: {list(features.columns)}")
+        logger.info(f"Calculated 6 core standardized features: {list(features.columns)}")
         
         return features
     
     @staticmethod
+    def _calculate_adx(df: pd.DataFrame, period: int = 80) -> pd.Series:
+        """
+        Calculate Average Directional Index (ADX) with specified period.
+        
+        Args:
+            df: DataFrame with OHLCV data
+            period: Period for ADX calculation (default 80 for 15m timeframe)
+            
+        Returns:
+            Series with ADX values
+        """
+        high = df['high']
+        low = df['low']
+        close = df['close']
+        
+        # Calculate True Range (TR)
+        tr1 = high - low
+        tr2 = abs(high - close.shift(1))
+        tr3 = abs(low - close.shift(1))
+        tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+        
+        # Calculate Directional Movement
+        dm_plus = high.diff()
+        dm_minus = -low.diff()
+        
+        # Set negative values to 0
+        dm_plus = dm_plus.where((dm_plus > dm_minus) & (dm_plus > 0), 0)
+        dm_minus = dm_minus.where((dm_minus > dm_plus) & (dm_minus > 0), 0)
+        
+        # Calculate smoothed averages
+        atr = tr.ewm(span=period).mean()
+        dm_plus_smooth = dm_plus.ewm(span=period).mean()
+        dm_minus_smooth = dm_minus.ewm(span=period).mean()
+        
+        # Calculate Directional Indicators
+        di_plus = 100 * (dm_plus_smooth / atr)
+        di_minus = 100 * (dm_minus_smooth / atr)
+        
+        # Calculate ADX
+        dx = 100 * abs(di_plus - di_minus) / (di_plus + di_minus)
+        adx = dx.ewm(span=period).mean()
+        
+        return adx.fillna(0)
+    
+    @staticmethod
     def get_primary_features() -> Dict[str, List[str]]:
         """
-        Get the 5 core features used for dimension-aware clustering.
+        Get the 6 core features used for 4D dimension-aware clustering.
         
         Returns:
             Dict mapping dimension names to feature names
         """
         return {
-            'volume': ['volume_ratio_48h'],
-            'volatility': ['volatility_5', 'volatility_3'],
-            'momentum': ['momentum_5', 'momentum_3']
+            'volume': ['volume_ratio_192h'],
+            'volatility': ['volatility_20', 'volatility_12'],
+            'momentum': ['momentum_20', 'momentum_12'],
+            'trend': ['trend_score']
         }
     
     @staticmethod
     def validate_features(df: pd.DataFrame) -> Dict[str, bool]:
         """
-        Validate that all 5 core features are present and non-null.
+        Validate that all 6 core features are present and non-null.
         
         Args:
             df: DataFrame with features
@@ -116,10 +185,10 @@ class StandardizedFeatureCalculator:
 
 # Convenience functions for direct import
 def calculate_all_features(df: pd.DataFrame) -> pd.DataFrame:
-    """Calculate the 5 core standardized features."""
+    """Calculate the 6 core standardized features for 15m timeframe."""
     return StandardizedFeatureCalculator.calculate_all_features(df)
 
 
 def get_primary_features() -> Dict[str, List[str]]:
-    """Get the 5 core features for dimension-aware clustering."""
+    """Get the 6 core features for 4D dimension-aware clustering."""
     return StandardizedFeatureCalculator.get_primary_features()

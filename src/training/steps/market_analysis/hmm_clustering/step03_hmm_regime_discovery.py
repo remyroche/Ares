@@ -345,15 +345,15 @@ class EnhancedFeatureEngineer:
     
     def create_comprehensive_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """
-        Create the 5 core features for regime detection using centralized feature calculation
+        Create the 6 core features for regime detection using centralized feature calculation
         
         Args:
             df: Input DataFrame with OHLCV data
             
         Returns:
-            DataFrame with the 5 core features only
+            DataFrame with the 6 core features only (4D: volume, volatility, momentum, trend)
         """
-        self.logger.info("🔧 Creating 5 core features using standardized feature calculator...")
+        self.logger.info("🔧 Creating 6 core features using standardized feature calculator (4D clustering for 15m timeframe)...")
         
         # Ensure we have the required columns
         required_cols = ['open', 'high', 'low', 'close', 'volume']
@@ -361,7 +361,7 @@ class EnhancedFeatureEngineer:
             if col not in df.columns:
                 raise ValueError(f"Missing required column: {col}")
         
-        # Use centralized feature calculator for the 5 core features only
+        # Use centralized feature calculator for the 6 core features only
         features = StandardizedFeatureCalculator.calculate_all_features(df)
         
         # Validate that we have all required features
@@ -370,7 +370,7 @@ class EnhancedFeatureEngineer:
         if missing_features:
             raise ValueError(f"Missing or invalid features: {missing_features}")
         
-        self.logger.info(f"✅ Created {len(features.columns)} core features: {list(features.columns)}")
+        self.logger.info(f"✅ Created {len(features.columns)} core features for 4D clustering: {list(features.columns)}")
         return features
     
     def _add_price_features(self, features: pd.DataFrame, df: pd.DataFrame) -> None:
@@ -2814,9 +2814,9 @@ class HMMRegimeDiscoveryStep:
             
             # Handle zero volume periods (data quality issue)
             df = await self._handle_zero_volume_periods(df)
-            self.logger.info('📊 Calculating 5 core features for HMM using standardized feature calculator...')
+            self.logger.info('📊 Calculating 6 core features for HMM using standardized feature calculator (4D clustering for 15m timeframe)...')
             
-            # Use centralized feature calculator for the 5 core features only
+            # Use centralized feature calculator for the 6 core features only
             features = StandardizedFeatureCalculator.calculate_all_features(df)
             
             # Validate features
@@ -2826,7 +2826,7 @@ class HMMRegimeDiscoveryStep:
                 self.logger.error(f"Missing or invalid features: {missing_features}")
                 raise ValueError(f"Missing or invalid features: {missing_features}")
             
-            self.logger.info(f"✅ Created {len(features.columns)} core features: {list(features.columns)}")
+            self.logger.info(f"✅ Created {len(features.columns)} core features for 4D clustering: {list(features.columns)}")
             
             # Clean features - remove timestamp column if present
             if 'timestamp' in features.columns:
@@ -5513,10 +5513,11 @@ class HMMRegimeDiscoveryStep:
                         else:
                             dimension_tiers[dimension] = 'High'
             
-            # Generate financial label
+            # Generate financial label for 4D clustering
             vol_tier = dimension_tiers.get('volatility', 'Med')
             mom_tier = dimension_tiers.get('momentum', 'Med')
             volm_tier = dimension_tiers.get('volume', 'Med')
+            trend_tier = dimension_tiers.get('trend', 'Med')
             
             # Map momentum to directional terms
             if mom_tier == 'Low':
@@ -5534,7 +5535,15 @@ class HMMRegimeDiscoveryStep:
             else:
                 volm_label = 'Normal'
             
-            financial_label = f"{vol_tier}Vol-{mom_label}-{volm_label}"
+            # Map trend to directional strength terms
+            if trend_tier == 'Low':
+                trend_label = 'WeakTrend'
+            elif trend_tier == 'High':
+                trend_label = 'StrongTrend'
+            else:
+                trend_label = 'ModTrend'
+            
+            financial_label = f"{vol_tier}Vol-{mom_label}-{volm_label}-{trend_label}"
             financial_labels[cluster_id] = financial_label
         
         return financial_labels

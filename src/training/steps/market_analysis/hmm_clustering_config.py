@@ -81,12 +81,12 @@ class UnifiedHMMClusteringConfig:
     min_improvement: float = 0.001
     patience: int = 3
     
-    # Dimension-aware quality evaluation (optimized for ETH 1h)
+    # Dimension-aware quality evaluation (optimized for ETH 15m with 4D clustering)
     target_clusters: int = 20
     cluster_range: List[int] = field(default_factory=lambda: [16, 18, 20, 22, 24])
     coverage_target: float = 0.90
     cv_thresholds: Dict[str, float] = field(default_factory=lambda: {
-        'volume': 1.0, 'volatility': 1.0, 'momentum': 1.0
+        'volume': 1.0, 'volatility': 1.0, 'momentum': 1.0, 'trend': 1.0
     })
     min_cluster_size_pct: float = 0.005
     separation_min_std: float = 0.5
@@ -94,9 +94,10 @@ class UnifiedHMMClusteringConfig:
     silhouette_min: float = 0.15
     max_silhouette_sample: int = 50000
     dimension_feature_map: Dict[str, List[str]] = field(default_factory=lambda: {
-        'volume': ['volume_ratio_48h'],  # Current volume / average 48h volume
-        'volatility': ['volatility_5', 'volatility_3'],  # 5 and 3 period volatility
-        'momentum': ['momentum_5', 'momentum_3']  # 5 and 3 period momentum
+        'volume': ['volume_ratio_192h'],  # Current volume / average 192h volume (48h * 4 for 15m)
+        'volatility': ['volatility_20', 'volatility_12'],  # 20 and 12 period volatility (5*4 and 3*4 for 15m)
+        'momentum': ['momentum_20', 'momentum_12'],  # 20 and 12 period momentum (5*4 and 3*4 for 15m)
+        'trend': ['trend_score']  # Directional Signal normalized × ADX
     })
     
     # Note: For consistency, use StandardizedFeatureCalculator.get_primary_features() 

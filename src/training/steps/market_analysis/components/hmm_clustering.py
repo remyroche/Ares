@@ -37,6 +37,14 @@ except ImportError:
         return numerator / denominator if denominator != 0 else default
     MATH_VALIDATION_AVAILABLE = False
 
+# Import standardized feature calculator
+try:
+    from src.training.steps.market_analysis.hmm_clustering.standardized_features import StandardizedFeatureCalculator
+    STANDARDIZED_FEATURES_AVAILABLE = True
+except ImportError:
+    STANDARDIZED_FEATURES_AVAILABLE = False
+    StandardizedFeatureCalculator = None
+
 
 # Hardware optimization imports
 try:
@@ -5719,6 +5727,36 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
         except Exception as e:
             return {'error': f'Factor impact analysis failed: {e}'}
     
+    def _get_standardized_features(self, market_data: Any) -> Optional[pd.DataFrame]:
+        """Get standardized features using StandardizedFeatureCalculator."""
+        if not STANDARDIZED_FEATURES_AVAILABLE or not PANDAS_AVAILABLE:
+            return None
+            
+        if not isinstance(market_data, pd.DataFrame):
+            return None
+            
+        try:
+            return StandardizedFeatureCalculator.calculate_all_features(market_data)
+        except Exception as e:
+            self.logger.warning(f"⚠️ Failed to calculate standardized features: {e}")
+            return None
+
+    def _get_expected_feature_names(self) -> Dict[str, List[str]]:
+        """Get expected feature names, preferring StandardizedFeatureCalculator if available."""
+        if STANDARDIZED_FEATURES_AVAILABLE:
+            try:
+                return StandardizedFeatureCalculator.get_primary_features()
+            except Exception as e:
+                self.logger.warning(f"⚠️ Failed to get primary features from StandardizedFeatureCalculator: {e}")
+        
+        # Fallback to hardcoded features (should match StandardizedFeatureCalculator)
+        return {
+            'volume': ['volume_ratio_192m'],
+            'volatility': ['volatility_20', 'volatility_12'],
+            'momentum': ['momentum_20', 'momentum_12'],
+            'trend': ['trend_score']
+        }
+
     def _validate_with_economic_indicators(self, cluster_assignments: List[int], regime_characteristics: Dict[str, Any], regime_to_cluster: Dict[str, int], market_data: Any) -> Dict[str, Any]:
         """Validate clustering against known economic indicators and market conditions."""
         try:
@@ -5727,31 +5765,31 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             
             economic_validation = {}
             
-            # 1. Volatility Regime Validation (Multiple volatility measures)
+            # 1. Volatility Regime Validation (Using standardized features)
             volatility_validation = {}
             if hasattr(market_data, 'columns') and 'close' in market_data.columns:
-                returns = market_data['close'].pct_change().dropna()
+                # Get standardized features
+                standardized_features = self._get_standardized_features(market_data)
                 
-                # Multiple volatility measures
-                rolling_vol_20 = returns.rolling(window=20).std() * np.sqrt(252)  # 20-day annualized
-                rolling_vol_5 = returns.rolling(window=5).std() * np.sqrt(252)   # 5-day annualized
-                
-                # High-low volatility (if available)
-                if 'high' in market_data.columns and 'low' in market_data.columns:
-                    hl_volatility = np.log(market_data['high'] / market_data['low'])
+                if standardized_features is not None:
+                    # Use standardized volatility features
+                    vol_measures = {
+                        'volatility_20': standardized_features.get('volatility_20'),
+                        'volatility_12': standardized_features.get('volatility_12')
+                    }
+                    # Remove None values
+                    vol_measures = {k: v for k, v in vol_measures.items() if v is not None}
                 else:
-                    hl_volatility = None
+                    # Fallback to custom calculations if standardized features unavailable
+                    returns = market_data['close'].pct_change().dropna()
+                    rolling_vol_20 = returns.rolling(window=20).std()
+                    rolling_vol_12 = returns.rolling(window=12).std()
+                    vol_measures = {
+                        'volatility_20': rolling_vol_20,
+                        'volatility_12': rolling_vol_12
+                    }
                 
                 unique_clusters = list(set(cluster_assignments))
-                
-                # Test different volatility measures
-                vol_measures = {
-                    'rolling_vol_20': rolling_vol_20,
-                    'rolling_vol_5': rolling_vol_5
-                }
-                
-                if hl_volatility is not None:
-                    vol_measures['hl_volatility'] = hl_volatility
                 
                 for vol_name, vol_data in vol_measures.items():
                     vol_groups = [vol_data[np.array(cluster_assignments) == cid].dropna() for cid in unique_clusters]
@@ -5767,26 +5805,29 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                 
                 economic_validation['volatility_regime_validation'] = volatility_validation
             
-            # 2. Momentum Regime Validation (Multiple momentum measures)
+            # 2. Momentum Regime Validation (Using standardized features)
             momentum_validation = {}
             if hasattr(market_data, 'columns') and 'close' in market_data.columns:
-                prices = market_data['close']
+                # Get standardized features
+                standardized_features = self._get_standardized_features(market_data)
                 
-                # Multiple momentum measures
-                momentum_5 = prices.pct_change(5)  # 5-day momentum
-                momentum_20 = prices.pct_change(20)  # 20-day momentum
-                
-                # Moving average momentum
-                ma_short = prices.rolling(10).mean()
-                ma_long = prices.rolling(30).mean()
-                ma_momentum = (ma_short - ma_long) / ma_long
-                
-                # Technical momentum (if available)
-                momentum_measures = {
-                    'momentum_5': momentum_5,
-                    'momentum_20': momentum_20,
-                    'ma_momentum': ma_momentum
-                }
+                if standardized_features is not None:
+                    # Use standardized momentum features
+                    momentum_measures = {
+                        'momentum_20': standardized_features.get('momentum_20'),
+                        'momentum_12': standardized_features.get('momentum_12')
+                    }
+                    # Remove None values
+                    momentum_measures = {k: v for k, v in momentum_measures.items() if v is not None}
+                else:
+                    # Fallback to custom calculations if standardized features unavailable
+                    prices = market_data['close']
+                    momentum_20 = prices.pct_change(20)
+                    momentum_12 = prices.pct_change(12)
+                    momentum_measures = {
+                        'momentum_20': momentum_20,
+                        'momentum_12': momentum_12
+                    }
                 
                 # Add RSI and MACD if available
                 if 'rsi' in market_data.columns:
@@ -5813,21 +5854,28 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                 
                 economic_validation['momentum_regime_validation'] = momentum_validation
             
-            # 3. Volume Regime Validation
+            # 3. Volume Regime Validation (Using standardized features)
             volume_validation = {}
             if hasattr(market_data, 'columns') and 'volume' in market_data.columns:
-                volume = market_data['volume']
+                # Get standardized features
+                standardized_features = self._get_standardized_features(market_data)
                 
-                # Multiple volume measures
-                volume_ma_ratio = volume / volume.rolling(20).mean()  # Volume relative to average
-                volume_momentum_5 = volume.pct_change(5)  # 5-day volume change
-                volume_volatility = volume.rolling(20).std() / volume.rolling(20).mean()  # Volume volatility
-                
-                volume_measures = {
-                    'volume_ma_ratio': volume_ma_ratio,
-                    'volume_momentum_5': volume_momentum_5,
-                    'volume_volatility': volume_volatility
-                }
+                if standardized_features is not None:
+                    # Use standardized volume features
+                    volume_measures = {
+                        'volume_ratio_192m': standardized_features.get('volume_ratio_192m')
+                    }
+                    # Remove None values
+                    volume_measures = {k: v for k, v in volume_measures.items() if v is not None}
+                else:
+                    # Fallback to custom calculations if standardized features unavailable
+                    volume = market_data['volume']
+                    volume_192m_avg = volume.rolling(window=192).mean()
+                    volume_192m_safe = volume_192m_avg.replace(0, np.nan).fillna(method='bfill').fillna(1.0)
+                    volume_ratio_192m = volume / volume_192m_safe
+                    volume_measures = {
+                        'volume_ratio_192m': volume_ratio_192m
+                    }
                 
                 unique_clusters = list(set(cluster_assignments))
                 

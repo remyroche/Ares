@@ -848,6 +848,76 @@ def safe_copy(src: Union[str, Path], dst: Union[str, Path]) -> bool:
         logger.error(f"❌ Error copying {src} to {dst}: {e}")
         return False
 
+def safe_deepcopy(obj: Any) -> Any:
+    """Safely create a deep copy of an object."""
+    try:
+        import copy
+        return copy.deepcopy(obj)
+    except Exception as e:
+        logger.warning(f"⚠️ Deep copy failed: {e}, returning original object")
+        return obj
+
+def safe_resample(df: pd.DataFrame, rule: str, agg_dict: Optional[Dict[str, str]] = None) -> pd.DataFrame:
+    """Safely resample a DataFrame with error handling."""
+    try:
+        if agg_dict is None:
+            # Default aggregation for time series data
+            agg_dict = {
+                'open': 'first',
+                'high': 'max',
+                'low': 'min',
+                'close': 'last',
+                'volume': 'sum'
+            }
+
+        resampled = df.resample(rule).agg(agg_dict)
+
+        # Remove any columns that are all NaN
+        resampled = resampled.dropna(axis=1, how='all')
+
+        logger.info(f"✅ Successfully resampled DataFrame from {len(df)} to {len(resampled)} rows")
+        return resampled
+
+    except Exception as e:
+        logger.error(f"❌ Error resampling DataFrame: {e}")
+        return df
+
+def align_dataframes(*dfs: pd.DataFrame, method: str = "inner") -> List[pd.DataFrame]:
+    """Align multiple DataFrames by index using specified join method."""
+    try:
+        if not dfs:
+            return []
+
+        if len(dfs) == 1:
+            return list(dfs)
+
+        # Use the first DataFrame as the reference
+        reference_df = dfs[0]
+
+        aligned_dfs = [reference_df]
+
+        for df in dfs[1:]:
+            if method == "inner":
+                aligned = reference_df.join(df, how="inner")
+            elif method == "outer":
+                aligned = reference_df.join(df, how="outer")
+            elif method == "left":
+                aligned = reference_df.join(df, how="left")
+            elif method == "right":
+                aligned = reference_df.join(df, how="right")
+            else:
+                logger.warning(f"⚠️ Unknown join method: {method}, using inner")
+                aligned = reference_df.join(df, how="inner")
+
+            aligned_dfs.append(aligned)
+
+        logger.info(f"✅ Successfully aligned {len(dfs)} DataFrames using {method} join")
+        return aligned_dfs
+
+    except Exception as e:
+        logger.error(f"❌ Error aligning DataFrames: {e}")
+        return list(dfs)
+
 def validate_dataframe_schema(df: pd.DataFrame, required_columns: List[str]) -> bool:
     """Validate that DataFrame has required columns."""
     try:

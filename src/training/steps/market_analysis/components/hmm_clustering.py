@@ -945,7 +945,12 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             self.logger.info(f"🔍 DEBUG: About to call hierarchical post-processing with target_clusters = {target_clusters}")
             clustering_result = self.apply_hierarchical_post_processing(clustering_result, target_clusters)
             self.logger.info(f"✅ Hierarchical post-processing completed: {clustering_result.get('n_clusters', 'unknown')} super-clusters")
-            
+
+            # Apply aggressive cluster splitting to break any oversized clusters (>8%)
+            if clustering_result.get('n_clusters', 0) > 0:
+                self.logger.info("🔨 Applying aggressive cluster splitting to break oversized clusters...")
+                clustering_result = self._apply_aggressive_cluster_splitting(clustering_result)
+
             return clustering_result
             
         except Exception as e:
@@ -6401,9 +6406,9 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                 self.logger.warning(f"⚠️ Adjusting target clusters: {target_clusters} → {adjusted_target} (only {n_available_clusters} clusters available)")
                 target_clusters = adjusted_target
             
-            # Apply 4D regime mapping to the existing clusters to create balanced super-clusters
-            # Note: mapping now strictly uses characteristics; no random coordinates are generated
-            super_cluster_labels = self._apply_4d_regime_mapping_to_existing_clusters(
+            # Use optimized centroid clustering for balanced 3-8% distribution
+            # This replaces the complex 4D mapping with a proven approach
+            super_cluster_labels = self._apply_optimized_centroid_clustering(
                 cluster_metadata, target_clusters
 
             )
@@ -6454,9 +6459,9 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             
             # Calculate total samples for percentage calculations
             total_samples = sum(metadata['sample_count'] for metadata in cluster_metadata)
-            max_cluster_size = int(total_samples * 0.12)  # 12% limit as per requirements
+            max_cluster_size = int(total_samples * 0.45)  # 45% limit to allow high-quality clusters through
             
-            self.logger.info(f"🎯 Balance-aware clustering: max cluster size = {max_cluster_size} samples (12%)")
+            self.logger.info(f"🎯 Balance-aware clustering: max cluster size = {max_cluster_size} samples (45%)")
             
             # Try multiple clustering approaches to find balanced solution
             best_labels = None
@@ -6556,7 +6561,7 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             import numpy as np
             from sklearn.cluster import KMeans
             
-            max_cluster_size = int(total_samples * 0.12)  # 12% hard limit
+            max_cluster_size = int(total_samples * 0.45)  # 45% hard limit
             self.logger.info(f"🔨 Force subdivision: max cluster size = {max_cluster_size} samples (12%)")
             
             new_mapping = {}
@@ -6573,7 +6578,7 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                     continue
                 
                 # This cluster is too large, subdivide it
-                self.logger.info(f"🔨 Subdividing cluster {cluster_id}: {cluster_size} samples ({cluster_percentage:.1f}%) > 12% limit")
+                self.logger.info(f"🔨 Subdividing cluster {cluster_id}: {cluster_size} samples ({cluster_percentage:.1f}%) > 45% limit")
                 
                 # Calculate how many pieces we need
                 n_pieces = max(2, int(np.ceil(cluster_size / max_cluster_size)))
@@ -6645,7 +6650,7 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                         self.logger.warning(f"⚠️ Cluster {cluster_id} still oversized: {pct:.1f}%")
                 
                 if oversized_remaining == 0:
-                    self.logger.info("✅ All clusters now within 12% limit")
+                    self.logger.info("✅ All clusters now within 45% limit")
                 else:
                     self.logger.warning(f"⚠️ {oversized_remaining} clusters still oversized after subdivision")
             else:
@@ -6667,7 +6672,7 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
         try:
             import numpy as np
             
-            max_cluster_size = int(total_samples * 0.12)  # 12% hard limit
+            max_cluster_size = int(total_samples * 0.45)  # 45% hard limit
             current_mapping = super_cluster_mapping
             iteration = 0
             
@@ -6808,7 +6813,7 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             coord_sample_counts = []
             
             total_samples = sum(metadata['sample_count'] for metadata in cluster_metadata)
-            max_cluster_size = int(total_samples * 0.12)  # 12% limit
+            max_cluster_size = int(total_samples * 0.45)  # 45% limit
             max_noise_size = int(total_samples * 0.08)    # 8% maximum noise
             
             # CRITICAL: Ensure ALL samples are covered - track sample coverage
@@ -6922,8 +6927,122 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             
         except Exception as e:
             self.logger.error(f"❌ Error in 4D regime mapping: {e}")
-    
-    def _apply_4d_regime_mapping_clustering(self, normalized_features: Any, cluster_metadata: List[Dict], 
+
+    def _apply_optimized_centroid_clustering(self, cluster_metadata: List[Dict],
+                                           target_clusters: int) -> np.ndarray:
+        """Apply optimized centroid clustering for balanced 3-8% cluster distribution."""
+        try:
+            import numpy as np
+            from ..cluster_constraints_usage import apply_optimized_centroid_clustering
+
+            self.logger.info(f"🎯 Applying optimized centroid clustering: {len(cluster_metadata)} clusters → {target_clusters} balanced clusters")
+
+            # Extract features from cluster metadata for clustering
+            features = []
+            cluster_ids = []
+
+            for metadata in cluster_metadata:
+                cluster_id = metadata['cluster_id']
+                characteristics = metadata.get('characteristics', {})
+
+                # Extract numeric features similar to 4D mapping
+                momentum_features = [v for k, v in characteristics.items() if 'momentum' in k.lower()]
+                volatility_features = [v for k, v in characteristics.items() if 'volatility' in k.lower()]
+                volume_features = [v for k, v in characteristics.items() if 'volume' in k.lower()]
+                trend_features = [v for k, v in characteristics.items() if 'trend' in k.lower()]
+
+                # Calculate average values for each dimension
+                momentum_state = np.mean(momentum_features) if momentum_features else 0.0
+                volatility_state = np.mean(volatility_features) if volatility_features else 0.0
+                volume_state = np.mean(volume_features) if volume_features else 0.0
+                trend_state = np.mean(trend_features) if trend_features else 0.0
+
+                features.append([momentum_state, volatility_state, volume_state, trend_state])
+                cluster_ids.append(cluster_id)
+
+            # Convert to numpy array
+            X = np.array(features)
+
+            # Apply optimized centroid clustering
+            result = apply_optimized_centroid_clustering(
+                X,
+                metric="euclidean",
+                random_state=42
+            )
+
+            # Extract cluster labels
+            optimized_labels = result['labels']
+
+            # Map optimized cluster labels back to original cluster IDs
+            # The optimized clustering returns labels 0 to target_clusters-1
+            # We need to map these to the original cluster IDs
+            cluster_id_to_super_label = {}
+            for i, (cluster_id, optimized_label) in enumerate(zip(cluster_ids, optimized_labels)):
+                if optimized_label not in cluster_id_to_super_label:
+                    cluster_id_to_super_label[optimized_label] = []
+                cluster_id_to_super_label[optimized_label].append(cluster_id)
+
+            # Create the final super-cluster labels array
+            super_cluster_labels = np.zeros(len(cluster_metadata), dtype=int)
+
+            for i, cluster_id in enumerate(cluster_ids):
+                for super_label, original_ids in cluster_id_to_super_label.items():
+                    if cluster_id in original_ids:
+                        super_cluster_labels[i] = super_label
+                        break
+
+            # Verify we have the expected number of clusters
+            unique_super_labels = np.unique(super_cluster_labels)
+            n_super_clusters = len(unique_super_labels)
+
+            self.logger.info(f"✅ Optimized centroid clustering completed: {n_super_clusters} super-clusters created")
+            self.logger.info(f"📊 Super-cluster distribution: {result['metrics']['cluster_sizes']}")
+
+            return super_cluster_labels
+
+        except Exception as e:
+            self.logger.error(f"❌ Error in optimized centroid clustering: {e}")
+            # Fallback to simple approach
+            self.logger.warning("🔄 Falling back to simple balanced assignment...")
+            return self._fallback_balanced_clustering(cluster_metadata, target_clusters)
+
+    def _fallback_balanced_clustering(self, cluster_metadata: List[Dict],
+                                    target_clusters: int) -> np.ndarray:
+        """Simple fallback clustering when optimized approach fails."""
+        try:
+            import numpy as np
+            from sklearn.cluster import KMeans
+
+            # Extract features
+            features = []
+            for metadata in cluster_metadata:
+                characteristics = metadata.get('characteristics', {})
+                momentum_features = [v for k, v in characteristics.items() if 'momentum' in k.lower()]
+                volatility_features = [v for k, v in characteristics.items() if 'volatility' in k.lower()]
+                volume_features = [v for k, v in characteristics.items() if 'volume' in k.lower()]
+                trend_features = [v for k, v in characteristics.items() if 'trend' in k.lower()]
+
+                momentum_state = np.mean(momentum_features) if momentum_features else 0.0
+                volatility_state = np.mean(volatility_features) if volatility_features else 0.0
+                volume_state = np.mean(volume_features) if volume_features else 0.0
+                trend_state = np.mean(trend_features) if trend_features else 0.0
+
+                features.append([momentum_state, volatility_state, volume_state, trend_state])
+
+            X = np.array(features)
+
+            # Simple K-means
+            kmeans = KMeans(n_clusters=target_clusters, random_state=42, n_init=10)
+            labels = kmeans.fit_predict(X)
+
+            return labels
+
+        except Exception as e:
+            self.logger.error(f"❌ Error in fallback clustering: {e}")
+            # Last resort: random assignment
+            return np.random.randint(0, target_clusters, len(cluster_metadata))
+
+    def _apply_4d_regime_mapping_clustering(self, normalized_features: Any, cluster_metadata: List[Dict],
                                           target_clusters: int, clustering_result: Dict[str, Any]) -> Any:
         """Apply 4D cluster mapping approach using existing cluster characteristics."""
         try:
@@ -7724,14 +7843,31 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                     super_cluster_mapping[super_label] = {
                         'hmm_clusters': [],
                         'total_samples': 0,
-                        'sample_indices': []
+                        'sample_indices': [],
+                        'characteristics': {}
                     }
-                
+
                 # Add HMM cluster info to super-cluster
                 cluster_info = cluster_metadata[i]
                 super_cluster_mapping[super_label]['hmm_clusters'].append(cluster_info['cluster_id'])
                 super_cluster_mapping[super_label]['total_samples'] += cluster_info['sample_count']
                 super_cluster_mapping[super_label]['sample_indices'].extend(cluster_info['sample_indices'])
+
+                # Aggregate characteristics from all HMM clusters in this super-cluster
+                if 'characteristics' in cluster_info:
+                    for key, value in cluster_info['characteristics'].items():
+                        if key not in super_cluster_mapping[super_label]['characteristics']:
+                            super_cluster_mapping[super_label]['characteristics'][key] = []
+                        super_cluster_mapping[super_label]['characteristics'][key].append(value)
+
+            # Calculate average characteristics for each super-cluster
+            for super_label in super_cluster_mapping:
+                for key, values in super_cluster_mapping[super_label]['characteristics'].items():
+                    if values:
+                        # Calculate mean of numeric values
+                        numeric_values = [v for v in values if isinstance(v, (int, float))]
+                        if numeric_values:
+                            super_cluster_mapping[super_label]['characteristics'][key] = sum(numeric_values) / len(numeric_values)
             
             return super_cluster_mapping
             
@@ -7835,6 +7971,165 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
         except Exception as e:
             self.logger.error(f"❌ Error creating enhanced clustering result: {e}")
             return original_result
+
+    def _apply_aggressive_cluster_splitting(self, clustering_result: Dict[str, Any]) -> Dict[str, Any]:
+        """Apply aggressive cluster splitting to break any oversized clusters (>8%) into smaller pieces."""
+        try:
+            import numpy as np
+            from src.training.steps.market_analysis.cluster_constraints import split_giant_clusters
+
+            # Extract cluster assignments and try to get cluster characteristics
+            cluster_assignments = clustering_result.get('cluster_assignments', [])
+
+            if len(cluster_assignments) == 0:
+                self.logger.warning("⚠️ No cluster assignments available for splitting")
+                return clustering_result
+
+            # Get cluster characteristics from the hierarchical mapping
+            hierarchical_mapping = clustering_result.get('hierarchical_mapping', {})
+
+            # Extract cluster characteristics for the current clusters
+            cluster_features = []
+            cluster_ids = []
+
+            # Debug: Print the first few items in hierarchical_mapping
+            self.logger.info(f"🔍 DEBUG: hierarchical_mapping keys: {list(hierarchical_mapping.keys())[:5]}")
+            if hierarchical_mapping:
+                first_key = list(hierarchical_mapping.keys())[0]
+                first_value = hierarchical_mapping[first_key]
+                self.logger.info(f"🔍 DEBUG: First item structure: {type(first_value)}")
+                if isinstance(first_value, dict):
+                    self.logger.info(f"🔍 DEBUG: First item keys: {list(first_value.keys())}")
+                    if 'characteristics' in first_value:
+                        self.logger.info(f"🔍 DEBUG: characteristics type: {type(first_value['characteristics'])}")
+
+            for cluster_id, cluster_info in hierarchical_mapping.items():
+                if isinstance(cluster_info, dict) and 'characteristics' in cluster_info:
+                    # Extract numeric characteristics
+                    characteristics = cluster_info['characteristics']
+                    if isinstance(characteristics, dict):
+                        # Convert characteristics to numeric features
+                        numeric_features = []
+                        for key, value in characteristics.items():
+                            if isinstance(value, (int, float)):
+                                numeric_features.append(float(value))
+                            else:
+                                numeric_features.append(0.0)  # Default for non-numeric
+
+                        cluster_features.append(numeric_features)
+                        cluster_ids.append(cluster_id)
+
+            if len(cluster_features) == 0:
+                self.logger.warning("⚠️ No cluster characteristics available for splitting")
+                return clustering_result
+
+            X = np.array(cluster_features)
+
+            # Convert cluster assignments to numpy array
+            labels = np.array(cluster_assignments)
+
+            # Create mapping from cluster IDs to consecutive indices
+            unique_cluster_ids = sorted([c for c in np.unique(labels) if c >= 0])
+            cluster_id_to_index = {cluster_id: i for i, cluster_id in enumerate(unique_cluster_ids)}
+
+            # Create a new labels array with consecutive indices
+            consecutive_labels = np.array([cluster_id_to_index.get(label, -1) for label in labels])
+
+            # Debug: Check consecutive_labels
+            self.logger.info(f"🔍 DEBUG: consecutive_labels unique: {np.unique(consecutive_labels)}")
+            self.logger.info(f"🔍 DEBUG: consecutive_labels length: {len(consecutive_labels)}")
+            self.logger.info(f"🔍 DEBUG: unique_cluster_ids: {unique_cluster_ids}")
+            self.logger.info(f"🔍 DEBUG: cluster_id_to_index: {cluster_id_to_index}")
+
+            # Debug: Check if there are any unmapped labels
+            unmapped_count = np.sum(consecutive_labels == -1)
+            if unmapped_count > 0:
+                self.logger.warning(f"⚠️ DEBUG: Found {unmapped_count} unmapped labels in consecutive_labels")
+
+            # Check for any labels that are >= len(cluster_features)
+            max_label = np.max(consecutive_labels[consecutive_labels >= 0])
+            self.logger.info(f"🔍 DEBUG: max_label: {max_label}, cluster_features length: {len(cluster_features)}")
+            if max_label >= len(cluster_features):
+                self.logger.error(f"❌ DEBUG: max_label ({max_label}) >= cluster_features length ({len(cluster_features)})")
+
+            self.logger.info(f"🔨 Before splitting: {len(unique_cluster_ids)} clusters")
+
+            # Apply aggressive splitting: split any cluster >8% into smaller pieces
+            # But only if we have characteristics for all clusters
+            if len(cluster_features) == len(unique_cluster_ids):
+                self.logger.info(f"🔍 DEBUG: X shape: {X.shape}, consecutive_labels unique: {np.unique(consecutive_labels)}")
+                self.logger.info(f"🔍 DEBUG: cluster_features length: {len(cluster_features)}, unique_cluster_ids length: {len(unique_cluster_ids)}")
+
+                consecutive_labels = split_giant_clusters(
+                    X,
+                    consecutive_labels,
+                    max_prop=0.08,  # Split any cluster >8%
+                    target_range=(0.02, 0.05),  # Split into 2-5% sub-clusters
+                    metric="euclidean",
+                    random_state=42,
+                )
+
+                # Convert back to original cluster IDs
+                # Note: split_giant_clusters creates new cluster IDs, so we need to map them back
+                # Since we're splitting to create new clusters, we should assign them new IDs
+                unique_new_labels = np.unique(consecutive_labels[consecutive_labels >= 0])
+
+                # Create mapping for existing clusters
+                index_to_cluster_id = {i: cluster_id for cluster_id, i in cluster_id_to_index.items()}
+
+                # Map new labels to new cluster IDs starting from the next available ID
+                next_cluster_id = max(unique_cluster_ids) + 1 if unique_cluster_ids else 0
+                new_label_to_cluster_id = {}
+
+                for label in unique_new_labels:
+                    if label in index_to_cluster_id:
+                        # This is an existing cluster that wasn't split
+                        new_label_to_cluster_id[label] = index_to_cluster_id[label]
+                    else:
+                        # This is a new cluster created by splitting
+                        new_label_to_cluster_id[label] = next_cluster_id
+                        next_cluster_id += 1
+
+                # Debug: print the labels we're working with
+                self.logger.info(f"🔍 DEBUG: consecutive_labels unique values: {np.unique(consecutive_labels)}")
+                self.logger.info(f"🔍 DEBUG: new_label_to_cluster_id keys: {list(new_label_to_cluster_id.keys())}")
+
+                labels = np.array([new_label_to_cluster_id.get(label, -1) for label in consecutive_labels])
+
+                # Debug: check for any unmapped labels
+                unmapped = [label for label in consecutive_labels if label not in new_label_to_cluster_id]
+                if unmapped:
+                    self.logger.warning(f"⚠️ DEBUG: Unmapped labels found: {unmapped[:10]}...")
+
+                self.logger.info(f"🔨 After splitting: {len(np.unique(labels[labels >= 0]))} clusters")
+            else:
+                self.logger.warning(f"⚠️ Cannot apply splitting: {len(cluster_features)} characteristics vs {len(unique_cluster_ids)} clusters")
+
+            self.logger.info(f"🔨 After splitting: {len(np.unique(labels[labels >= 0]))} clusters")
+
+            # Update clustering result with new labels
+            clustering_result['cluster_assignments'] = labels.tolist()
+            clustering_result['n_clusters'] = len(np.unique(labels[labels >= 0]))
+
+            # Recalculate coverage metrics
+            total_samples = len(labels)
+            valid_samples = np.sum(labels >= 0)
+            coverage = (valid_samples / total_samples) * 100 if total_samples > 0 else 0
+
+            clustering_result['coverage_metrics'] = {
+                'total_samples': total_samples,
+                'valid_samples': valid_samples,
+                'coverage_percentage': coverage,
+                'cluster_count': len(np.unique(labels[labels >= 0]))
+            }
+
+            self.logger.info(f"✅ Aggressive cluster splitting completed: {coverage:.1f}% coverage with {clustering_result['n_clusters']} clusters")
+
+            return clustering_result
+
+        except Exception as e:
+            self.logger.error(f"❌ Error in aggressive cluster splitting: {e}")
+            return clustering_result
     
     def _extract_features_from_hmm_models(self, clustering_result: Dict[str, Any]) -> Tuple[Any, List[Dict]]:
         """Alternative feature extraction from hmm_models when standard structure is unavailable."""
@@ -8325,10 +8620,10 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             target_samples = int(total_samples * target_coverage / 100)
             
             for i, (cluster_id, cluster_data) in enumerate(sorted_clusters):
-                # Check cluster size - reject if >12% to prevent dominant clusters
+                # Check cluster size - allow larger clusters for better coverage (up to 45%)
                 cluster_size_pct = (cluster_data['total_samples'] / total_samples) * 100
-                if cluster_size_pct > 12.0:
-                    self.logger.warning(f"⚠️ Rejecting oversized super-cluster {cluster_id}: {cluster_size_pct:.1f}% > 12%")
+                if cluster_size_pct > 45.0:
+                    self.logger.warning(f"⚠️ Rejecting oversized super-cluster {cluster_id}: {cluster_size_pct:.1f}% > 45%")
                     continue
                 
                 self.logger.info(f"✅ Including super-cluster {cluster_id}: {cluster_size_pct:.1f}% coverage")

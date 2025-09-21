@@ -137,6 +137,17 @@ def split_giant_clusters(
         upper = max(target_range[1], 1e-6)
         k = int(np.ceil(prop / upper))
         k = max(2, k)
+        # Make splitting extremely aggressive for large clusters
+        if prop > 0.30:  # If cluster is >30%, split very aggressively
+            k = max(k, int(prop * 40))  # Aim for ~2.5% per sub-cluster
+        elif prop > 0.20:  # If cluster is >20%, split aggressively
+            k = max(k, int(prop * 25))  # Aim for 4% per sub-cluster
+        elif prop > 0.15:  # If cluster is >15%, split aggressively
+            k = max(k, int(prop * 20))  # Aim for 5% per sub-cluster
+        elif prop > 0.10:  # If cluster is >10%, split moderately
+            k = max(k, int(prop * 15))  # Aim for ~6-7% per sub-cluster
+        elif prop > 0.08:  # If cluster is >8%, split into ~3-5 sub-clusters
+            k = max(k, int(prop * 12))  # Aim for ~8% per sub-cluster
         sub = _split_with_kmeans(X[idx], k=k, random_state=random_state)
         for sk in np.unique(sub):
             new_labels[idx[sub == sk]] = next_label

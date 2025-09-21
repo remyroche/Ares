@@ -7,7 +7,7 @@ to ML-ready cluster outputs with comprehensive validation and reporting.
 
 import numpy as np
 import pandas as pd
-from typing import Dict, List, Any, Optional, Union
+from typing import Dict, List, Any, Optional, Union, Tuple
 from pathlib import Path
 import json
 import warnings
@@ -39,21 +39,52 @@ def detect_latest_hmm_results(symbol: str = "ETHUSDT", exchange: str = "binance"
         tuple: (data_path, output_dir) or (None, None) if not found
     """
     try:
-        # Search for HMM cluster files in multiple locations
-        search_patterns = [
+        # First priority: Look for timeframe-specific HMM cluster files
+        timeframe_patterns = [
             f"historical_data/{exchange.lower()}/{symbol.lower()}/hmm_clusters/hmm_composite_clusters_{exchange}_{symbol}_{timeframe}.parquet",
-            f"data/hmm_clusters/hmm_composite_clusters_{exchange}_{symbol}_{timeframe}.parquet",
-            f"artifacts/hmm_regime_unified_artifacts.json",
             f"**/hmm_composite_clusters_{exchange}_{symbol}_{timeframe}.parquet"
         ]
 
         data_path = None
-        for pattern in search_patterns:
+        for pattern in timeframe_patterns:
             files = glob.glob(pattern, recursive=True)
             if files:
                 # Get the most recent file
                 data_path = max(files, key=lambda x: Path(x).stat().st_mtime)
                 break
+
+        # Second priority: Look for alternative timeframes if specific timeframe not found
+        if not data_path:
+            logger.info(f"⚠️ No {timeframe} HMM results found, searching for alternative timeframes...")
+            alt_timeframes = ["1h", "1m", "4h", "30m", "5m"]  # Order of preference
+            for alt_timeframe in alt_timeframes:
+                if alt_timeframe == timeframe:
+                    continue  # Skip the original timeframe we already searched
+                alt_patterns = [
+                    f"historical_data/{exchange.lower()}/{symbol.lower()}/hmm_clusters/hmm_composite_clusters_{exchange}_{symbol}_{alt_timeframe}.parquet",
+                    f"**/hmm_composite_clusters_{exchange}_{symbol}_{alt_timeframe}.parquet"
+                ]
+                for pattern in alt_patterns:
+                    files = glob.glob(pattern, recursive=True)
+                    if files:
+                        data_path = max(files, key=lambda x: Path(x).stat().st_mtime)
+                        logger.warning(f"⚠️ Using {alt_timeframe} data instead of requested {timeframe}")
+                        break
+                if data_path:
+                    break
+
+        # Third priority: Fallback to artifacts file (last resort)
+        if not data_path:
+            artifacts_patterns = [
+                f"artifacts/hmm_regime_unified_artifacts.json",
+                f"**/hmm_regime_unified_artifacts.json"
+            ]
+            for pattern in artifacts_patterns:
+                files = glob.glob(pattern, recursive=True)
+                if files:
+                    data_path = max(files, key=lambda x: Path(x).stat().st_mtime)
+                    logger.warning(f"⚠️ Using artifacts file as fallback (may contain different timeframe data)")
+                    break
 
         if data_path:
             # Determine output directory based on data path location
@@ -65,7 +96,7 @@ def detect_latest_hmm_results(symbol: str = "ETHUSDT", exchange: str = "binance"
                 # Use standard output location
                 output_dir = Path(f"optimal_clusters/{exchange}/{symbol}/{timeframe}")
 
-            logger.info(f"✅ Detected latest HMM results: {data_path}")
+            logger.info(f"✅ Detected HMM results: {data_path}")
             logger.info(f"📁 Output directory: {output_dir}")
             return str(data_path), str(output_dir)
         else:
@@ -199,6 +230,12 @@ class OptimalRegimeClusteringOrchestrator:
             self.logger.info("✅ Step 3: Validating clustering results...")
             validation_passed = self._validate_clustering_results(clustering_result)
 
+            # Step 3.5: Apply aggressive cluster splitting to enforce size constraints
+            if self.config.enable_aggressive_splitting and not validation_passed:
+                self.logger.info("🔧 Step 3.5: Applying aggressive cluster splitting to enforce size constraints...")
+                clustering_result = self._apply_aggressive_cluster_splitting(clustering_result)
+                validation_passed = self._validate_clustering_results(clustering_result)
+
             # Step 4: Optimize if needed
             if not validation_passed and self.config.adaptive_clustering:
                 self.logger.info("🔧 Step 4: Optimizing clustering parameters...")
@@ -261,35 +298,52 @@ class OptimalRegimeClusteringOrchestrator:
             Validated DataFrame
         """
         try:
-            # Try different data sources
+            # Import standardized_parquet_handler like HMM clustering does
+            from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
+
+            # Try to load data using standardized handler
             if Path(data_path).exists():
-                data = pd.read_parquet(data_path)
+                data = standardized_parquet_handler.read_parquet_standardized(data_path)
             else:
-                # Try to find HMM cluster data
-                possible_paths = [
-                    "historical_data/binance/ethusdt/hmm_clusters/hmm_composite_clusters_binance_ETHUSDT_1h.parquet",
-                    "artifacts/hmm_regime_unified_artifacts.json",
-                    "data/hmm_clusters/*.parquet"
-                ]
+                # Use same logic as HMM clustering for finding data
+                symbol = getattr(self.config, 'symbol', 'ETHUSDT')
+                exchange = getattr(self.config, 'exchange', 'BINANCE')
+                timeframe = getattr(self.config, 'timeframe', '15m')
 
-                data = None
-                for path in possible_paths:
-                    try:
-                        if path.endswith('.parquet'):
-                            data = pd.read_parquet(path)
-                            break
-                        elif path.endswith('.json'):
-                            with open(path, 'r') as f:
-                                json_data = json.load(f)
-                                # Extract cluster data from JSON
-                                if 'regime_statistics' in json_data:
-                                    data = pd.DataFrame(json_data['regime_statistics'])
+                # Try the standard HMM clustering data path
+                data_path = Path('historical_data') / f"{exchange.lower()}_{symbol.lower()}_{timeframe}_klines.parquet"
+
+                if data_path.exists():
+                    data = standardized_parquet_handler.read_parquet_standardized(data_path)
+                else:
+                    # Try to find HMM cluster data with multiple timeframes
+                    possible_paths = [
+                        f"historical_data/binance/ethusdt/hmm_clusters/hmm_composite_clusters_binance_ETHUSDT_{timeframe}.parquet",
+                        f"historical_data/binance/ethusdt/hmm_clusters/hmm_composite_clusters_binance_ETHUSDT_1h.parquet",
+                        f"historical_data/binance/ethusdt/hmm_clusters/hmm_composite_clusters_binance_ETHUSDT_1m.parquet",
+                        f"artifacts/hmm_regime_unified_artifacts.json"
+                    ]
+
+                    data = None
+                    for path in possible_paths:
+                        try:
+                            if path.endswith('.parquet'):
+                                if Path(path).exists():
+                                    data = standardized_parquet_handler.read_parquet_standardized(path)
                                     break
-                    except Exception:
-                        continue
+                            elif path.endswith('.json'):
+                                if Path(path).exists():
+                                    with open(path, 'r') as f:
+                                        json_data = json.load(f)
+                                        # Extract cluster data from JSON
+                                        if 'regime_statistics' in json_data:
+                                            data = pd.DataFrame(json_data['regime_statistics'])
+                                            break
+                        except Exception:
+                            continue
 
-                if data is None:
-                    raise FileNotFoundError(f"Could not load data from {data_path} or default locations")
+                    if data is None:
+                        raise FileNotFoundError(f"Could not load data from {data_path} or default locations")
 
             # Validate data has required features
             required_features = self.config.feature_dimensions
@@ -325,11 +379,11 @@ class OptimalRegimeClusteringOrchestrator:
                 return False
 
             if clustering_result.statistics.noise_percentage > self.config.max_noise_pct:
-                self.logger.warning(f"❌ Noise percentage {clustering_result.statistics.noise_percentage".3f"} exceeds limit")
+                self.logger.warning(f"❌ Noise percentage {clustering_result.statistics.noise_percentage:.3f} exceeds limit")
                 return False
 
             if clustering_result.statistics.coverage_percentage < self.config.target_coverage_pct:
-                self.logger.warning(f"❌ Coverage {clustering_result.statistics.coverage_percentage".3f"} below target")
+                self.logger.warning(f"❌ Coverage {clustering_result.statistics.coverage_percentage:.3f} below target")
                 return False
 
             # Check cluster size distribution
@@ -339,17 +393,17 @@ class OptimalRegimeClusteringOrchestrator:
                 max_size_pct = np.max(cluster_sizes) / (cluster_sizes.sum() + len(clustering_result.labels) * clustering_result.statistics.noise_percentage)
 
                 if min_size_pct < self.config.min_cluster_size_pct:
-                    self.logger.warning(f"❌ Smallest cluster {min_size_pct".3f"} below minimum")
+                    self.logger.warning(f"❌ Smallest cluster {min_size_pct:.3f} below minimum")
                     return False
 
                 if max_size_pct > self.config.max_cluster_size_pct:
-                    self.logger.warning(f"❌ Largest cluster {max_size_pct".3f"} exceeds maximum")
+                    self.logger.warning(f"❌ Largest cluster {max_size_pct:.3f} exceeds maximum")
                     return False
 
             # Check quality metrics
             quality = clustering_result.quality_metrics
             if quality.get('silhouette', 0.0) < self.config.min_silhouette_score:
-                self.logger.warning(f"❌ Silhouette score {quality.get('silhouette', 0.0)".3f"} below threshold")
+                self.logger.warning(f"❌ Silhouette score {quality.get('silhouette', 0.0):.3f} below threshold")
                 return False
 
             self.logger.info("✅ Clustering validation passed")
@@ -358,6 +412,59 @@ class OptimalRegimeClusteringOrchestrator:
         except Exception as e:
             self.logger.error(f"Error validating clustering results: {e}")
             return False
+
+    def _apply_aggressive_cluster_splitting(self, clustering_result: ClusteringResult) -> ClusteringResult:
+        """Apply aggressive cluster splitting to enforce size constraints.
+
+        Args:
+            clustering_result: Current clustering result
+
+        Returns:
+            ClusteringResult with size constraints enforced
+        """
+        try:
+            from src.training.steps.market_analysis.cluster_constraints import split_giant_clusters
+            import numpy as np
+
+            # Extract features from the clustering result metadata
+            features = clustering_result.metadata.get('features')
+            if features is None:
+                self.logger.warning("No features available for cluster splitting")
+                return clustering_result
+
+            # Get current labels
+            current_labels = clustering_result.labels
+
+            # Apply aggressive cluster splitting
+            max_prop = self.config.max_cluster_size_pct
+            target_range = (self.config.min_cluster_size_pct, self.config.max_cluster_size_pct)
+
+            new_labels = split_giant_clusters(
+                features,
+                current_labels,
+                max_prop=max_prop,
+                target_range=target_range,
+                metric="euclidean",
+                random_state=self.config.random_state
+            )
+
+            # Create new clustering result
+            new_result = ClusteringResult(
+                labels=new_labels,
+                cluster_centers=clustering_result.cluster_centers,
+                statistics=clustering_result.statistics,
+                quality_metrics=clustering_result.quality_metrics,
+                validation=clustering_result.validation,
+                metadata=clustering_result.metadata,
+                success=True
+            )
+
+            self.logger.info(f"✅ Applied aggressive cluster splitting: {len(np.unique(current_labels))} -> {len(np.unique(new_labels))} clusters")
+            return new_result
+
+        except Exception as e:
+            self.logger.warning(f"Error applying aggressive cluster splitting: {e}")
+            return clustering_result
 
     def _optimize_clustering(self, data: pd.DataFrame, current_result: ClusteringResult) -> ClusteringResult:
         """Optimize clustering parameters and re-run.

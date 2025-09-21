@@ -404,16 +404,34 @@ class VectorizedProcessingCore:
                     df[col] = df[col].astype('category')
 
             # Convert numeric columns to optimal dtypes
-            for col in df.select_dtypes(include=[np.number]):
-                if hasattr(df[col], 'dtype') and df[col].dtype == (np.float64 if np is not None else float if np is not None else float):
-                    # Check if float32 is sufficient
-                    if (df[col].max() < np.finfo if np is not None else lambda x: type("finfo", (), {"max": float("inf"), "min": float("-inf")})()(np.float32 if np is not None else float).max and
-                        df[col].min() > np.finfo if np is not None else lambda x: type("finfo", (), {"max": float("inf"), "min": float("-inf")})()(np.float32 if np is not None else float).min):
-                        df[col] = df[col].astype(np.float32 if np is not None else float)
-                elif hasattr(df[col], 'dtype') and df[col].dtype == (np.int64 if np is not None else int if np is not None else int):
-                    # Check if smaller integer type is sufficient
-                    if df[col].max() < np.iinfo if np is not None else lambda x: type("iinfo", (), {"max": 2147483647, "min": -2147483648})()(np.int32 if np is not None else int).max:
-                        df[col] = df[col].astype(np.int32 if np is not None else int)
+            for col in df.select_dtypes(include=[np.number if np is not None else 'number']):
+                if NUMPY_AVAILABLE and np is not None:
+                    if hasattr(df[col], 'dtype') and df[col].dtype == np.float64:
+                        # Check if float32 is sufficient
+                        if (df[col].max() < np.finfo(np.float32).max and
+                            df[col].min() > np.finfo(np.float32).min):
+                            df[col] = df[col].astype(np.float32)
+                    elif hasattr(df[col], 'dtype') and df[col].dtype == np.int64:
+                        # Check if smaller integer type is sufficient
+                        if df[col].max() < np.iinfo(np.int32).max:
+                            df[col] = df[col].astype(np.int32)
+                else:
+                    # Fallback when numpy is not available
+                    if hasattr(df[col], 'dtype'):
+                        if 'float64' in str(df[col].dtype):
+                            try:
+                                # Try to convert to float32 if values are within range
+                                if df[col].max() < 3.4e38 and df[col].min() > -3.4e38:
+                                    df[col] = df[col].astype('float32')
+                            except (ValueError, OverflowError):
+                                pass
+                        elif 'int64' in str(df[col].dtype):
+                            try:
+                                # Try to convert to int32 if values are within range
+                                if df[col].max() < 2147483647 and df[col].min() > -2147483648:
+                                    df[col] = df[col].astype('int32')
+                            except (ValueError, OverflowError):
+                                pass
 
             return df
 

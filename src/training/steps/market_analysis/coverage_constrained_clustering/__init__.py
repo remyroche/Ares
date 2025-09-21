@@ -12,7 +12,7 @@ Primary entrypoints:
 """
 
 from .config import CoverageClusteringConfig
-from .component import CoverageConstrainedClusteringComponent
+# from .component import CoverageConstrainedClusteringComponent  # Temporarily commented out due to import issue
 
 __all__ = [
 	"CoverageClusteringConfig",

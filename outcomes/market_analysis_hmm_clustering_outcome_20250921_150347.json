@@ -1,0 +1,739 @@
+{
+  "stage": "market_analysis",
+  "sub_pipeline": "hmm_clustering",
+  "timestamp": "2025-09-21T15:03:47.671540",
+  "status": "completed",
+  "output_files": [],
+  "metadata": {
+    "symbol": "ETHUSDT",
+    "exchange": "binance",
+    "timeframe": "15m",
+    "cluster_count": 483,
+    "regime_to_cluster_reduction": "0 \u2192 483"
+  },
+  "artifacts": {
+    "hmm_clustering_result": {
+      "execution_metadata": {
+        "timestamp": "2025-09-21T15:03:47.451631",
+        "symbol": "ETHUSDT",
+        "exchange": "binance",
+        "timeframe": "15m",
+        "data_points_processed": 69355,
+        "execution_successful": true,
+        "clustering_method": "enhanced_20_cluster_target",
+        "target_clusters": 20,
+        "target_coverage_min": 90.0,
+        "target_coverage_max": 95.0,
+        "outcome_version": "3.0_restructured_report",
+        "raw_data_excluded": true,
+        "comprehensive_metrics_included": true,
+        "regime_reduction": "0 \u2192 483"
+      },
+      "general_metrics": {
+        "cluster_assignments_summary": {
+          "total_assignments": 69163,
+          "unique_clusters": 483,
+          "cluster_distribution": {
+            "total_clusters": 227,
+            "cluster_sizes": {
+              "cluster_0": 29180,
+              "cluster_-1": 7810,
+              "cluster_187": 323,
+              "cluster_258": 1773,
+              "cluster_256": 4118,
+              "cluster_233": 1859,
+              "cluster_257": 186,
+              "cluster_259": 3735,
+              "cluster_1382": 20,
+              "cluster_128": 953,
+              "cluster_1301": 45,
+              "cluster_3726": 26,
+              "cluster_4279": 32,
+              "cluster_39": 2551,
+              "cluster_1037": 52,
+              "cluster_260": 2657,
+              "cluster_179": 362,
+              "cluster_1323": 20,
+              "cluster_2862": 32,
+              "cluster_253": 155,
+              "cluster_229": 328,
+              "cluster_1614": 17,
+              "cluster_91": 3228,
+              "cluster_972": 310,
+              "cluster_1368": 30,
+              "cluster_227": 469,
+              "cluster_3773": 71,
+              "cluster_3778": 134,
+              "cluster_2236": 55,
+              "cluster_1773": 25,
+              "cluster_3231": 19,
+              "cluster_1535": 19,
+              "cluster_3232": 66,
+              "cluster_2349": 13,
+              "cluster_185": 140,
+              "cluster_2311": 40,
+              "cluster_2293": 37,
+              "cluster_853": 15,
+              "cluster_2268": 61,
+              "cluster_420": 104,
+              "cluster_224": 215,
+              "cluster_2568": 18,
+              "cluster_4026": 14,
+              "cluster_223": 193,
+              "cluster_2917": 71,
+              "cluster_221": 152,
+              "cluster_1116": 96,
+              "cluster_3531": 31,
+              "cluster_1125": 49,
+              "cluster_1372": 22,
+              "cluster_595": 18,
+              "cluster_2250": 137,
+              "cluster_2898": 18,
+              "cluster_132": 49,
+              "cluster_93": 70,
+              "cluster_2204": 85,
+              "cluster_2447": 96,
+              "cluster_1052": 58,
+              "cluster_4293": 16,
+              "cluster_325": 24,
+              "cluster_1": 19,
+              "cluster_3969": 22,
+              "cluster_2982": 25,
+              "cluster_4018": 17,
+              "cluster_1309": 39,
+              "cluster_1307": 34,
+              "cluster_1370": 22,
+              "cluster_2585": 32,
+              "cluster_2263": 48,
+              "cluster_2476": 30,
+              "cluster_1017": 95,
+              "cluster_2025": 17,
+              "cluster_2821": 59,
+              "cluster_1120": 30,
+              "cluster_3240": 14,
+              "cluster_3070": 12,
+              "cluster_2507": 56,
+              "cluster_1118": 25,
+              "cluster_2317": 43,
+              "cluster_1526": 33,
+              "cluster_3227": 55,
+              "cluster_1305": 34,
+              "cluster_2522": 40,
+              "cluster_2603": 22,
+              "cluster_2326": 21,
+              "cluster_2810": 32,
+              "cluster_2812": 24,
+              "cluster_103": 171,
+              "cluster_2329": 118,
+              "cluster_447": 140,
+              "cluster_105": 84,
+              "cluster_123": 86,
+              "cluster_4193": 11,
+              "cluster_4148": 12,
+              "cluster_2520": 15,
+              "cluster_1100": 26,
+              "cluster_372": 34,
+              "cluster_48": 20,
+              "cluster_2962": 46,
+              "cluster_2591": 26,
+              "cluster_2497": 41,
+              "cluster_2574": 100,
+              "cluster_1035": 223,
+              "cluster_4036": 16,
+              "cluster_2495": 36,
+              "cluster_1352": 33,
+              "cluster_384": 16,
+              "cluster_2492": 89,
+              "cluster_2504": 64,
+              "cluster_1747": 30,
+              "cluster_2745": 32,
+              "cluster_2093": 23,
+              "cluster_4061": 25,
+              "cluster_2279": 51,
+              "cluster_2926": 37,
+              "cluster_2907": 17,
+              "cluster_2191": 38,
+              "cluster_210": 24,
+              "cluster_3968": 36,
+              "cluster_2498": 122,
+              "cluster_3313": 23,
+              "cluster_2803": 56,
+              "cluster_2270": 11,
+              "cluster_882": 15,
+              "cluster_803": 49,
+              "cluster_857": 14,
+              "cluster_3207": 21,
+              "cluster_1440": 42,
+              "cluster_3288": 25,
+              "cluster_2042": 17,
+              "cluster_2650": 11,
+              "cluster_863": 14,
+              "cluster_174": 11,
+              "cluster_2984": 45,
+              "cluster_45": 15,
+              "cluster_288": 11,
+              "cluster_1358": 46,
+              "cluster_618": 15,
+              "cluster_983": 80,
+              "cluster_776": 25,
+              "cluster_3054": 28,
+              "cluster_1097": 11,
+              "cluster_791": 71,
+              "cluster_1920": 13,
+              "cluster_3712": 18,
+              "cluster_3742": 171,
+              "cluster_3985": 29,
+              "cluster_3661": 23,
+              "cluster_2770": 68,
+              "cluster_1776": 18,
+              "cluster_2170": 11,
+              "cluster_856": 21,
+              "cluster_1764": 37,
+              "cluster_2756": 28,
+              "cluster_1133": 18,
+              "cluster_745": 30,
+              "cluster_2082": 30,
+              "cluster_2779": 40,
+              "cluster_2232": 40,
+              "cluster_1859": 17,
+              "cluster_2822": 35,
+              "cluster_1839": 24,
+              "cluster_1342": 12,
+              "cluster_3768": 14,
+              "cluster_4031": 17,
+              "cluster_2561": 12,
+              "cluster_1066": 28,
+              "cluster_3802": 23,
+              "cluster_98": 18,
+              "cluster_2285": 27,
+              "cluster_738": 56,
+              "cluster_4229": 23,
+              "cluster_4225": 22,
+              "cluster_3986": 27,
+              "cluster_399": 19,
+              "cluster_1022": 38,
+              "cluster_775": 19,
+              "cluster_1828": 18,
+              "cluster_582": 36,
+              "cluster_2515": 23,
+              "cluster_1506": 21,
+              "cluster_2816": 35,
+              "cluster_1115": 36,
+              "cluster_1064": 26,
+              "cluster_1710": 11,
+              "cluster_1312": 21,
+              "cluster_4268": 14,
+              "cluster_1109": 22,
+              "cluster_4291": 20,
+              "cluster_609": 18,
+              "cluster_2555": 20,
+              "cluster_3072": 16,
+              "cluster_462": 25,
+              "cluster_4112": 12,
+              "cluster_1781": 16,
+              "cluster_3300": 14,
+              "cluster_2737": 14,
+              "cluster_2248": 45,
+              "cluster_1794": 19,
+              "cluster_984": 17,
+              "cluster_3900": 21,
+              "cluster_2446": 29,
+              "cluster_2587": 31,
+              "cluster_1468": 26,
+              "cluster_386": 11,
+              "cluster_1026": 27,
+              "cluster_1224": 22,
+              "cluster_2778": 22,
+              "cluster_2796": 14,
+              "cluster_772": 26,
+              "cluster_336": 19,
+              "cluster_3039": 22,
+              "cluster_1226": 20,
+              "cluster_1228": 21,
+              "cluster_1232": 27,
+              "cluster_1388": 11,
+              "cluster_2243": 30,
+              "cluster_2749": 12,
+              "cluster_1110": 13,
+              "cluster_1350": 14,
+              "cluster_68": 14,
+              "cluster_2491": 29,
+              "cluster_311": 21,
+              "cluster_3722": 17,
+              "cluster_2735": 12,
+              "cluster_2321": 11,
+              "cluster_1887": 14
+            },
+            "filtered_sample_count": 67961,
+            "original_cluster_count": 483,
+            "filtered_percentage": 98.26207654381678
+          },
+          "assignment_range": {
+            "min_cluster_id": -1,
+            "max_cluster_id": 4365
+          }
+        },
+        "economical_metrics": {
+          "market_state_diversity": {
+            "unique_states": 483,
+            "diversity_ratio": 0.8,
+            "economical_relevance": {
+              "clusters_covering_90_percent": 483,
+              "market_state_coverage": "comprehensive"
+            }
+          }
+        },
+        "comprehensive_metrics": {
+          "coverage_metrics": {
+            "top_5_coverage": 69.50392550930411,
+            "top_10_coverage": 83.66323033992164,
+            "top_20_coverage": 87.68272052976303,
+            "target_coverage_min": 90.0,
+            "target_coverage_max": 95.0,
+            "coverage_achieved": false
+          },
+          "quality_metrics": {
+            "overall_quality_score": 0.7490029216194515,
+            "average_coherence": 0.0,
+            "size_balance": 0.9287438989881047,
+            "coherent_clusters": 0,
+            "coherence_ratio": 0.0,
+            "concentration_analysis": {
+              "dominant_cluster_id": 0,
+              "dominant_cluster_size": 29180,
+              "dominant_cluster_percentage": 42.19,
+              "concentration_warning": true,
+              "concentration_critical": false,
+              "concentration_level": "high"
+            },
+            "distribution_diversity": {
+              "entropy": 2.733,
+              "normalized_entropy": 0.442,
+              "diversity_score": 0.442,
+              "gini_coefficient": 0.931,
+              "distribution_quality": "poor"
+            },
+            "coverage_analysis": {
+              "top_5_coverage_percent": 62.47,
+              "top_10_coverage_percent": 72.23,
+              "coverage_efficiency": "medium"
+            },
+            "regime_interpretation": {
+              "market_regime_type": "major_regime_cluster_0",
+              "regime_stability": "concentrated",
+              "trading_implications": "regime_focused_strategy_with_adaptability"
+            }
+          },
+          "coherence_metrics": {
+            "overall_coherence": {
+              "mean_cv": 9.877573204838557,
+              "low_cv_clusters": 39,
+              "high_cv_clusters": 444
+            }
+          }
+        },
+        "statistical_metrics": {
+          "cluster_validity": {
+            "sufficient_samples": 243,
+            "balanced_distribution": true
+          },
+          "dimensional_analysis": []
+        },
+        "clustering_summary": {
+          "total_clusters": 483,
+          "target_achieved": false,
+          "coverage_achieved": false,
+          "quality_score": 0.7490029216194515
+        },
+        "top_clusters_analysis": {
+          "top_5_coverage": 69.50392550930411,
+          "top_10_coverage": 83.66323033992164,
+          "top_20_coverage": 87.68272052976303,
+          "differentiation_metrics": {
+            "differentiation_score": 1.0,
+            "cluster_diversity": 0.0002288329519450801,
+            "coefficient_of_variation": 0.0,
+            "unique_sample_counts": 1
+          }
+        }
+      },
+      "per_cluster_metrics": {
+        "cluster_analysis": {
+          "per_cluster_metrics": {
+            "cluster_0": {
+              "cluster_id": 0,
+              "model_type": "enhanced_cluster",
+              "regime_count": 1,
+              "sample_count": 29180,
+              "distribution_percentage": 42.19,
+              "coherence_score": 0.009698877240083762
+            },
+            "cluster_-1": {
+              "cluster_id": -1,
+              "model_type": "enhanced_cluster",
+              "regime_count": 1,
+              "sample_count": 7810,
+              "distribution_percentage": 11.29,
+              "coherence_score": 0.005061387853687906
+            },
+            "cluster_256": {
+              "cluster_id": 256,
+              "model_type": "enhanced_cluster",
+              "regime_count": 1,
+              "sample_count": 4118,
+              "distribution_percentage": 5.95,
+              "coherence_score": 0.008912641287100889
+            },
+            "cluster_259": {
+              "cluster_id": 259,
+              "model_type": "enhanced_cluster",
+              "regime_count": 1,
+              "sample_count": 3735,
+              "distribution_percentage": 5.4,
+              "coherence_score": 0.011693007874617847
+            },
+            "cluster_91": {
+              "cluster_id": 91,
+              "model_type": "enhanced_cluster",
+              "regime_count": 1,
+              "sample_count": 3228,
+              "distribution_percentage": 4.67,
+              "coherence_score": 0.02424067751054905
+            },
+            "cluster_260": {
+              "cluster_id": 260,
+              "model_type": "enhanced_cluster",
+              "regime_count": 1,
+              "sample_count": 2657,
+              "distribution_percentage": 3.84,
+              "coherence_score": 0.018271425580453055
+            },
+            "cluster_39": {
+              "cluster_id": 39,
+              "model_type": "enhanced_cluster",
+              "regime_count": 1,
+              "sample_count": 2551,
+              "distribution_percentage": 3.69,
+              "coherence_score": 0.03128094267973113
+            },
+            "cluster_233": {
+              "cluster_id": 233,
+              "model_type": "enhanced_cluster",
+              "regime_count": 1,
+              "sample_count": 1859,
+              "distribution_percentage": 2.69,
+              "coherence_score": 0.022720057894778205
+            },
+            "cluster_258": {
+              "cluster_id": 258,
+              "model_type": "enhanced_cluster",
+              "regime_count": 1,
+              "sample_count": 1773,
+              "distribution_percentage": 2.56,
+              "coherence_score": 0.0041181215160324665
+            },
+            "cluster_128": {
+              "cluster_id": 128,
+              "model_type": "enhanced_cluster",
+              "regime_count": 1,
+              "sample_count": 953,
+              "distribution_percentage": 1.38,
+              "coherence_score": 0.053613492178747904
+            },
+            "cluster_227": {
+              "cluster_id": 227,
+              "model_type": "enhanced_cluster",
+              "regime_count": 1,
+              "sample_count": 469,
+              "distribution_percentage": 0.68,
+              "coherence_score": 0.04501774514202805
+            },
+            "cluster_179": {
+              "cluster_id": 179,
+              "model_type": "enhanced_cluster",
+              "regime_count": 1,
+              "sample_count": 362,
+              "distribution_percentage": 0.52,
+              "coherence_score": 0.06287794283497009
+            },
+            "cluster_229": {
+              "cluster_id": 229,
+              "model_type": "enhanced_cluster",
+              "regime_count": 1,
+              "sample_count": 328,
+              "distribution_percentage": 0.47,
+              "coherence_score": 0.010440837749008943
+            },
+            "cluster_187": {
+              "cluster_id": 187,
+              "model_type": "enhanced_cluster",
+              "regime_count": 1,
+              "sample_count": 323,
+              "distribution_percentage": 0.47,
+              "coherence_score": 0.1642797352100868
+            },
+            "cluster_972": {
+              "cluster_id": 972,
+              "model_type": "enhanced_cluster",
+              "regime_count": 1,
+              "sample_count": 310,
+              "distribution_percentage": 0.45,
+              "coherence_score": 0.02558153855041993
+            },
+            "cluster_1035": {
+              "cluster_id": 1035,
+              "model_type": "enhanced_cluster",
+              "regime_count": 1,
+              "sample_count": 223,
+              "distribution_percentage": 0.32,
+              "coherence_score": 0.044786381043143635
+            },
+            "cluster_224": {
+              "cluster_id": 224,
+              "model_type": "enhanced_cluster",
+              "regime_count": 1,
+              "sample_count": 215,
+              "distribution_percentage": 0.31,
+              "coherence_score": 0.09446553381739377
+            },
+            "cluster_223": {
+              "cluster_id": 223,
+              "model_type": "enhanced_cluster",
+              "regime_count": 1,
+              "sample_count": 193,
+              "distribution_percentage": 0.28,
+              "coherence_score": 0.022068010539867504
+            },
+            "cluster_257": {
+              "cluster_id": 257,
+              "model_type": "enhanced_cluster",
+              "regime_count": 1,
+              "sample_count": 186,
+              "distribution_percentage": 0.27,
+              "coherence_score": 0.016543238549214162
+            },
+            "cluster_103": {
+              "cluster_id": 103,
+              "model_type": "enhanced_cluster",
+              "regime_count": 1,
+              "sample_count": 171,
+              "distribution_percentage": 0.25,
+              "coherence_score": 0.06143988227567937
+            },
+            "cluster_3742": {
+              "cluster_id": 3742,
+              "model_type": "enhanced_cluster",
+              "regime_count": 1,
+              "sample_count": 171,
+              "distribution_percentage": 0.25,
+              "coherence_score": 0.016530315223151463
+            },
+            "cluster_253": {
+              "cluster_id": 253,
+              "model_type": "enhanced_cluster",
+              "regime_count": 1,
+              "sample_count": 155,
+              "distribution_percentage": 0.22,
+              "coherence_score": 0.015038561454827489
+            },
+            "cluster_221": {
+              "cluster_id": 221,
+              "model_type": "enhanced_cluster",
+              "regime_count": 1,
+              "sample_count": 152,
+              "distribution_percentage": 0.22,
+              "coherence_score": 0.07071789048903335
+            },
+            "cluster_185": {
+              "cluster_id": 185,
+              "model_type": "enhanced_cluster",
+              "regime_count": 1,
+              "sample_count": 140,
+              "distribution_percentage": 0.2,
+              "coherence_score": 0.003352959203952353
+            },
+            "cluster_447": {
+              "cluster_id": 447,
+              "model_type": "enhanced_cluster",
+              "regime_count": 1,
+              "sample_count": 140,
+              "distribution_percentage": 0.2,
+              "coherence_score": 0.07018825528889715
+            },
+            "cluster_2250": {
+              "cluster_id": 2250,
+              "model_type": "enhanced_cluster",
+              "regime_count": 1,
+              "sample_count": 137,
+              "distribution_percentage": 0.2,
+              "coherence_score": 0.004255794637530435
+            },
+            "cluster_3778": {
+              "cluster_id": 3778,
+              "model_type": "enhanced_cluster",
+              "regime_count": 1,
+              "sample_count": 134,
+              "distribution_percentage": 0.19,
+              "coherence_score": 0.026584853790169404
+            },
+            "cluster_2498": {
+              "cluster_id": 2498,
+              "model_type": "enhanced_cluster",
+              "regime_count": 1,
+              "sample_count": 122,
+              "distribution_percentage": 0.18,
+              "coherence_score": 0.15014884014899876
+            },
+            "cluster_2329": {
+              "cluster_id": 2329,
+              "model_type": "enhanced_cluster",
+              "regime_count": 1,
+              "sample_count": 118,
+              "distribution_percentage": 0.17,
+              "coherence_score": 0.04278084899989066
+            },
+            "cluster_420": {
+              "cluster_id": 420,
+              "model_type": "enhanced_cluster",
+              "regime_count": 1,
+              "sample_count": 104,
+              "distribution_percentage": 0.15,
+              "coherence_score": 0.10614088873843286
+            }
+          },
+          "cluster_summary": {
+            "total_clusters": 483,
+            "coherent_clusters": 0,
+            "average_coherence": 0.0,
+            "coherence_ratio": 0.0,
+            "mean_cv": 9.877573204838557,
+            "low_cv_clusters": 39,
+            "high_cv_clusters": 444,
+            "sufficient_samples": 243,
+            "size_balance": 0.9287438989881047,
+            "top_5_coverage": 69.50392550930411,
+            "top_10_coverage": 83.66323033992164,
+            "top_20_coverage": 87.68272052976303,
+            "trainable_clusters": []
+          }
+        }
+      }
+    }
+  },
+  "config": {
+    "symbol": "ETHUSDT",
+    "exchange": "binance",
+    "timeframe": "15m",
+    "mode": "full",
+    "intensity_percentage": 1.0,
+    "training_mode_config": {
+      "description": "Production mode - Complete training with full dataset",
+      "lookback_days": 730,
+      "training_mode": "full",
+      "enable_blank_training_mode": false,
+      "enable_light_training_mode": false,
+      "enable_full_training_mode": true,
+      "data_collection": {
+        "enable_all_exchanges": true,
+        "enable_aggtrades": false,
+        "enable_futures": true,
+        "data_quality_checks": true
+      },
+      "feature_engineering": {
+        "enable_all_features": true,
+        "enable_advanced_features": true,
+        "enable_autoencoder_features": true,
+        "enable_microstructure_features": true,
+        "enable_multi_timeframe": true,
+        "timeframes": [
+          "15m"
+        ],
+        "max_interactions": 100,
+        "correlation_threshold": 0.8,
+        "max_features": null,
+        "feature_selection_samples": 100000,
+        "feature_selection_method": "full"
+      },
+      "model_training": {
+        "enable_all_models": true,
+        "max_trials": 200,
+        "n_trials": 100,
+        "enable_early_stopping": true,
+        "enable_parallelization": true,
+        "enable_caching": true,
+        "batch_size": 4096,
+        "epochs": 100,
+        "early_stopping_patience": 20,
+        "learning_rate": 0.001,
+        "validation_split": 0.2,
+        "cross_validation_folds": 5,
+        "nn_hidden_layers": [
+          512,
+          256,
+          128
+        ],
+        "nn_dropout": 0.3,
+        "nn_batch_norm": true,
+        "ensemble_models": 10,
+        "ensemble_method": "weighted",
+        "gb_max_depth": 8,
+        "gb_n_estimators": 200,
+        "rf_max_depth": 20,
+        "rf_n_estimators": 100
+      },
+      "validation": {
+        "enable_walk_forward": true,
+        "enable_monte_carlo": true,
+        "enable_ab_testing": true,
+        "validation_splits": 5,
+        "monte_carlo_samples": 10000,
+        "ab_test_rounds": 10
+      },
+      "optimization": {
+        "enable_hyperparameter_optimization": true,
+        "enable_feature_selection": true,
+        "enable_model_selection": true,
+        "max_optimization_time": 3600,
+        "optuna_trials": 200,
+        "optuna_timeout": 3600,
+        "optuna_n_jobs": 4,
+        "feature_selection_method": "recursive",
+        "feature_importance_threshold": 0.01
+      },
+      "computational_intensity": "medium",
+      "estimated_duration_minutes": 60,
+      "exclude_recent_days": 0,
+      "min_data_points": 1000,
+      "enable_advanced_model_training": true,
+      "enable_ensemble_training": true,
+      "enable_multi_timeframe_training": true,
+      "enable_adaptive_training": true
+    }
+  },
+  "next_stage_requirements": {
+    "required_files": [
+      "sr_levels.json",
+      "regime_assignments.parquet",
+      "labels.parquet",
+      "features.parquet"
+    ],
+    "required_artifacts": [
+      "sr_clusters",
+      "regime_model",
+      "feature_metadata"
+    ],
+    "data_dependencies": [],
+    "next_stage": "model_training",
+    "sub_pipelines": [
+      "sr_detection",
+      "sr_clustering",
+      "hmm_clustering",
+      "hmm_regime_discovery",
+      "multi_horizon_profit_labeler",
+      "triple_barrier_labeling",
+      "feature_lookback_optimization",
+      "pid_based_feature_generation",
+      "sr_feature_integration"
+    ]
+  }
+}

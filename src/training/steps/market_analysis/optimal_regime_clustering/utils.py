@@ -85,9 +85,20 @@ def prepare_clustering_features(data: pd.DataFrame, config: Dict[str, Any]) -> T
         Tuple of (features_array, feature_metadata)
     """
     try:
+        # Debug: Check what config contains
+        logger.info(f"Config received: {type(config)}, keys: {list(config.keys()) if isinstance(config, dict) else 'Not a dict'}")
+        logger.info(f"Feature dimensions in config: {config.get('feature_dimensions', 'NOT_FOUND')}, type: {type(config.get('feature_dimensions', 'NOT_FOUND'))}")
+
         # Select relevant features based on 4D dimensions
+        feature_dimensions = config.get('feature_dimensions', ['volume', 'volatility', 'momentum', 'trend'])
+
+        # Ensure feature_dimensions is iterable
+        if not hasattr(feature_dimensions, '__iter__') or isinstance(feature_dimensions, (str, int)):
+            logger.warning(f"Feature dimensions is not iterable: {feature_dimensions} (type: {type(feature_dimensions)}), using default")
+            feature_dimensions = ['volume', 'volatility', 'momentum', 'trend']
+
         feature_columns = []
-        for dim in config.get('feature_dimensions', ['volume', 'volatility', 'momentum', 'trend']):
+        for dim in feature_dimensions:
             # Find columns that contain the dimension name
             dim_cols = [col for col in data.columns if dim.lower() in col.lower()]
             feature_columns.extend(dim_cols)
@@ -114,6 +125,9 @@ def prepare_clustering_features(data: pd.DataFrame, config: Dict[str, Any]) -> T
         }
 
         logger.info(f"Prepared clustering features: {features_scaled.shape[1]} features, {features_scaled.shape[0]} samples")
+        logger.info(f"Features type: {type(features_scaled)}, shape: {features_scaled.shape}")
+        logger.info(f"Metadata type: {type(metadata)}, keys: {list(metadata.keys()) if hasattr(metadata, 'keys') else 'Not a dict'}")
+        logger.info(f"Feature columns type: {type(feature_columns)}, length: {len(feature_columns) if hasattr(feature_columns, '__len__') else 'Not len-able'}")
         return features_scaled, metadata
 
     except Exception as e:
@@ -164,7 +178,7 @@ def calculate_cluster_statistics(labels: np.ndarray, config: Dict[str, Any]) -> 
             max_cluster_size=np.max(cluster_sizes)
         )
 
-        logger.info(f"Cluster statistics: {stats.n_clusters} clusters, {noise_percentage".3f"} noise, {coverage_percentage".3f"} coverage")
+        logger.info(f"Cluster statistics: {stats.n_clusters} clusters, {noise_percentage:.3f} noise, {coverage_percentage:.3f} coverage")
         return stats
 
     except Exception as e:
@@ -233,12 +247,12 @@ def validate_cluster_quality(stats: ClusterStatistics, quality_metrics: Dict[str
 
         # Check coverage
         if stats.coverage_percentage < config.get('target_coverage_pct', 0.95):
-            warnings.append(f"Coverage {stats.coverage_percentage".3f"} below target {config.get('target_coverage_pct', 0.95)}")
+            warnings.append(f"Coverage {stats.coverage_percentage:.3f} below target {config.get('target_coverage_pct', 0.95)}")
             is_valid = False
 
         # Check noise percentage
         if stats.noise_percentage > config.get('max_noise_pct', 0.05):
-            warnings.append(f"Noise percentage {stats.noise_percentage".3f"} exceeds limit {config.get('max_noise_pct', 0.05)}")
+            warnings.append(f"Noise percentage {stats.noise_percentage:.3f} exceeds limit {config.get('max_noise_pct', 0.05)}")
             is_valid = False
 
         # Check cluster size distribution
@@ -246,11 +260,11 @@ def validate_cluster_quality(stats: ClusterStatistics, quality_metrics: Dict[str
         max_size_pct = config.get('max_cluster_size_pct', 0.08)
 
         if np.min(stats.cluster_percentages) < min_size_pct:
-            warnings.append(f"Smallest cluster {np.min(stats.cluster_percentages)".3f"} below minimum {min_size_pct}")
+            warnings.append(f"Smallest cluster {np.min(stats.cluster_percentages):.3f} below minimum {min_size_pct}")
             is_valid = False
 
         if np.max(stats.cluster_percentages) > max_size_pct:
-            warnings.append(f"Largest cluster {np.max(stats.cluster_percentages)".3f"} exceeds maximum {max_size_pct}")
+            warnings.append(f"Largest cluster {np.max(stats.cluster_percentages):.3f} exceeds maximum {max_size_pct}")
             is_valid = False
 
         # Check quality metrics
@@ -259,15 +273,15 @@ def validate_cluster_quality(stats: ClusterStatistics, quality_metrics: Dict[str
         max_db = config.get('min_davies_bouldin_score', 1.5)
 
         if quality_metrics.get('silhouette', 0.0) < min_silhouette:
-            warnings.append(f"Silhouette score {quality_metrics.get('silhouette', 0.0)".3f"} below threshold {min_silhouette}")
+            warnings.append(f"Silhouette score {quality_metrics.get('silhouette', 0.0):.3f} below threshold {min_silhouette}")
             is_valid = False
 
         if quality_metrics.get('calinski_harabasz', 0.0) < min_ch:
-            warnings.append(f"Calinski-Harabasz score {quality_metrics.get('calinski_harabasz', 0.0)".3f"} below threshold {min_ch}")
+            warnings.append(f"Calinski-Harabasz score {quality_metrics.get('calinski_harabasz', 0.0):.3f} below threshold {min_ch}")
             is_valid = False
 
         if quality_metrics.get('davies_bouldin', float('inf')) > max_db:
-            warnings.append(f"Davies-Bouldin score {quality_metrics.get('davies_bouldin', float('inf'))".3f"} above threshold {max_db}")
+            warnings.append(f"Davies-Bouldin score {quality_metrics.get('davies_bouldin', float('inf')):.3f} above threshold {max_db}")
             is_valid = False
 
         # Generate recommendations
@@ -373,7 +387,7 @@ def bootstrap_cluster_stability(features: np.ndarray, labels: np.ndarray, n_iter
         else:
             stability = 0.0
 
-        logger.info(f"Bootstrap stability score: {stability".3f"}")
+        logger.info(f"Bootstrap stability score: {stability:.3f}")
         return stability
 
     except Exception as e:

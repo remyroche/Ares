@@ -408,6 +408,31 @@ class EnhancedMatrixOperations:
                 return result.cpu().numpy()
             return result
 
+    def correlation_matrix(self, data: Union['pd.DataFrame', 'np.ndarray']) -> 'np.ndarray':
+        """Compute correlation matrix with GPU acceleration."""
+        with self.matrix_operation_context("correlation_matrix"):
+            # Convert to numpy array if needed
+            if isinstance(data, pd.DataFrame):
+                data_array = data.values
+            else:
+                data_array = data
+
+            # Compute correlation matrix
+            try:
+                # Use GPU acceleration if available
+                if self.use_gpu and self.gpu_manager:
+                    # Use numpy correlation for now (can be enhanced with GPU later)
+                    correlation = np.corrcoef(data_array.T)
+                else:
+                    correlation = np.corrcoef(data_array.T)
+
+                return correlation
+
+            except Exception as e:
+                self.logger.warning(f"GPU correlation failed: {e}, using CPU fallback")
+                # Fallback to numpy correlation
+                return np.corrcoef(data_array.T)
+
     def to_tensor(self, data: Union['np.ndarray', 'pd.DataFrame', List],
                  dtype: Optional['torch.dtype'] = None) -> 'torch.Tensor':
         """Convert data to tensor with optimization."""

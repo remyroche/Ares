@@ -17,6 +17,7 @@ import time
 
 from .config import OptimalClusteringConfig, get_clustering_config
 from .clustering import OptimalRegimeClusterer, ClusteringResult, create_optimal_clusterer
+from .optimized_clustering import MatrixOptimizedClusterer, OptimizedClusteringResult, create_matrix_optimized_clusterer
 from .utils import (
     create_cluster_summary_report, bootstrap_cluster_stability,
     optimize_cluster_parameters, ClusterStatistics
@@ -34,9 +35,67 @@ class OptimalRegimeClusteringOrchestrator:
             config: Clustering configuration
         """
         self.config = config or OptimalClusteringConfig()
-        self.clusterer = create_optimal_clusterer(self.config)
         self.logger = logging.getLogger(__name__)
         self.start_time = None
+
+        # Choose clustering method based on matrix operations availability
+        self.use_matrix_optimization = self._check_matrix_operations_availability()
+
+        if self.use_matrix_optimization:
+            self.clusterer = create_matrix_optimized_clusterer(self.config)
+            self.logger.info("✅ Using matrix-optimized clustering")
+        else:
+            self.clusterer = create_optimal_clusterer(self.config)
+            self.logger.info("⚠️ Using standard clustering (matrix operations not available)")
+
+    def _check_matrix_operations_availability(self) -> bool:
+        """Check if matrix operations are available.
+
+        Returns:
+            True if matrix operations are available
+        """
+        try:
+            from src.utils.matrix_operations import (
+                get_unified_matrix_operations,
+                get_vectorized_processing_core,
+                get_enhanced_matrix_operations,
+                get_batch_matrix_processor
+            )
+            return True
+        except ImportError:
+            return False
+
+    def _convert_optimized_to_standard_result(self, optimized_result: OptimizedClusteringResult) -> ClusteringResult:
+        """Convert optimized result to standard clustering result format.
+
+        Args:
+            optimized_result: Optimized clustering result
+
+        Returns:
+            Standard clustering result
+        """
+        class StandardClusteringResult:
+            def __init__(self, labels, centers, stats, quality, validation, metadata):
+                self.labels = labels
+                self.cluster_centers = centers
+                self.statistics = stats
+                self.quality_metrics = quality
+                self.validation = validation
+                self.metadata = metadata
+                self.success = True
+
+        return StandardClusteringResult(
+            labels=optimized_result.labels,
+            centers=optimized_result.cluster_centers,
+            stats=optimized_result.statistics,
+            quality=optimized_result.quality_metrics,
+            validation=optimized_result.validation,
+            metadata={
+                **optimized_result.metadata,
+                'matrix_optimization_used': True,
+                'performance_metrics': optimized_result.performance_metrics
+            }
+        )
 
     def run_clustering_pipeline(self, data_path: str, output_dir: str,
                               symbol: str = "UNKNOWN", exchange: str = "UNKNOWN",
@@ -68,10 +127,21 @@ class OptimalRegimeClusteringOrchestrator:
 
             # Step 2: Perform clustering
             self.logger.info("🎯 Step 2: Performing optimal clustering...")
-            clustering_result = self.clusterer.cluster(regime_data)
+            if self.use_matrix_optimization:
+                # Use optimized clustering
+                optimized_result = self.clusterer.cluster_optimized(regime_data)
 
-            if not clustering_result.success:
-                raise RuntimeError(f"Clustering failed: {clustering_result.error_message}")
+                if not optimized_result.success:
+                    raise RuntimeError(f"Optimized clustering failed: {optimized_result.error_message}")
+
+                # Convert optimized result to standard format for compatibility
+                clustering_result = self._convert_optimized_to_standard_result(optimized_result)
+            else:
+                # Use standard clustering
+                clustering_result = self.clusterer.cluster(regime_data)
+
+                if not clustering_result.success:
+                    raise RuntimeError(f"Clustering failed: {clustering_result.error_message}")
 
             # Step 3: Validate results
             self.logger.info("✅ Step 3: Validating clustering results...")
@@ -306,14 +376,16 @@ class OptimalRegimeClusteringOrchestrator:
                 clustering_result.validation
             )
 
-            # Add metadata
+            # Add metadata including matrix optimization info
             summary_report.update({
                 'symbol': symbol,
                 'exchange': exchange,
                 'timeframe': timeframe,
                 'execution_time': time.time() - self.start_time if self.start_time else 0,
                 'timestamp': datetime.now().isoformat(),
-                'config': self.config.to_dict()
+                'config': self.config.to_dict(),
+                'matrix_optimization_used': self.use_matrix_optimization,
+                'optimization_level': 'high' if self.use_matrix_optimization else 'standard'
             })
 
             # Calculate bootstrap stability
@@ -560,4 +632,38 @@ def run_fast_clustering(data_path: str, output_dir: str,
     """
     config = get_clustering_config("fast_processing")
     orchestrator = OptimalRegimeClusteringOrchestrator(config)
+    return orchestrator.run_clustering_pipeline(data_path, output_dir, symbol, exchange, timeframe, **kwargs)
+
+def run_matrix_optimized_clustering(data_path: str, output_dir: str,
+                                  symbol: str = "ETHUSDT", exchange: str = "binance", timeframe: str = "1h",
+                                  **kwargs) -> Dict[str, Any]:
+    """Run matrix-optimized clustering with maximum performance.
+
+    This function forces the use of matrix optimization when available,
+    falling back to standard clustering if matrix operations are not available.
+
+    Args:
+        data_path: Path to HMM regime data
+        output_dir: Output directory
+        symbol: Trading symbol
+        exchange: Exchange name
+        timeframe: Data timeframe
+        **kwargs: Additional parameters
+
+    Returns:
+        Pipeline results with matrix optimization
+    """
+    # Create high-performance configuration
+    config = OptimalClusteringConfig()
+    config.use_memory_optimization = True
+    config.max_iter = 500  # Allow more iterations for better results
+    config.min_silhouette_score = 0.4  # Stricter quality requirements
+    config.min_calinski_harabasz_score = 150.0
+    config.chunk_size = 100000  # Larger chunks for efficiency
+
+    orchestrator = OptimalRegimeClusteringOrchestrator(config)
+
+    # Add matrix optimization preference
+    kwargs['force_matrix_optimization'] = True
+
     return orchestrator.run_clustering_pipeline(data_path, output_dir, symbol, exchange, timeframe, **kwargs)

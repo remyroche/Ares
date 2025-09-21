@@ -18,8 +18,11 @@ from optimal_regime_clustering import (
     run_optimal_clustering,
     run_high_quality_clustering,
     run_fast_clustering,
+    run_matrix_optimized_clustering,
     OptimalClusteringConfig,
-    create_optimal_clusterer
+    create_optimal_clusterer,
+    create_matrix_optimized_clusterer,
+    MatrixOptimizedClusterer
 )
 
 # Configure logging
@@ -370,6 +373,57 @@ def example_hmm_integration():
     except Exception as e:
         print(f"❌ Error in HMM integration example: {e}")
 
+def example_matrix_optimization():
+    """Example 7: Matrix-optimized clustering for maximum performance."""
+    print("\n" + "="*60)
+    print("Example 7: Matrix-Optimized Clustering")
+    print("="*60)
+
+    try:
+        # Create sample data
+        n_samples = 10000
+        np.random.seed(42)
+
+        sample_data = pd.DataFrame({
+            'volume': np.random.exponential(100, n_samples),
+            'volatility': np.random.beta(2, 5, n_samples) * 0.1,
+            'momentum': np.random.normal(0, 0.02, n_samples),
+            'trend': np.random.normal(0, 0.05, n_samples),
+            'timestamp': pd.date_range(start='2020-01-01', periods=n_samples, freq='H')
+        })
+
+        # Run matrix-optimized clustering
+        results = run_matrix_optimized_clustering(
+            data_path=sample_data,
+            output_dir="matrix_optimized_example/",
+            symbol="MATRIX_TEST",
+            exchange="binance",
+            timeframe="1h"
+        )
+
+        if results['success']:
+            print("✅ Matrix-optimized clustering completed successfully!")
+            print(f"   Execution time: {results['execution_time']".3f"} seconds")
+            print(f"   Number of clusters: {results['clustering_result'].statistics.n_clusters}")
+            print(f"   Coverage: {results['clustering_result'].statistics.coverage_percentage".3f"}")
+            print(f"   Noise: {results['clustering_result'].statistics.noise_percentage".3f"}")
+            print(f"   Matrix optimization used: {results['matrix_optimization_used']}")
+
+            # Show performance metrics
+            perf_metrics = results.get('performance_metrics', {})
+            if perf_metrics:
+                print(f"   Performance metrics:")
+                print(f"     - Data loading: {perf_metrics.get('data_loading_time', 0)".3f"}s")
+                print(f"     - Feature preparation: {perf_metrics.get('feature_preparation_time', 0)".3f"}s")
+                print(f"     - Clustering: {perf_metrics.get('clustering_time', 0)".3f"}s")
+                print(f"     - Memory efficiency: {perf_metrics.get('memory_efficiency', 0)".1%"}")
+
+        else:
+            print(f"❌ Matrix-optimized clustering failed: {results['error']}")
+
+    except Exception as e:
+        print(f"❌ Error in matrix optimization example: {e}")
+
 def main():
     """Run all examples."""
     print("🚀 Optimal Regime Clustering Examples")
@@ -383,6 +437,7 @@ def main():
     example_custom_configuration()
     example_ml_integration()
     example_hmm_integration()
+    example_matrix_optimization()
 
     print("\n" + "="*60)
     print("📋 Summary")
@@ -405,7 +460,15 @@ def main():
     print("   • run_optimal_clustering(): Balanced performance")
     print("   • run_high_quality_clustering(): Enhanced quality")
     print("   • run_fast_clustering(): Quick processing")
+    print("   • run_matrix_optimized_clustering(): Maximum performance with matrix operations")
     print("   • Custom configuration for specific needs")
+
+    print("\n🚀 Matrix Optimization Features:")
+    print("   • GPU acceleration (Apple Silicon M1/M2/M3)")
+    print("   • Vectorized batch processing")
+    print("   • Enhanced memory efficiency")
+    print("   • Detailed performance metrics")
+    print("   • Adaptive parameter optimization")
 
 if __name__ == "__main__":
     main()

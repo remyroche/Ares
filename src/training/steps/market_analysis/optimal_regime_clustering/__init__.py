@@ -25,7 +25,8 @@ Example usage:
 
 from .config import OptimalClusteringConfig, get_clustering_config, DEFAULT_CONFIG, HIGH_QUALITY_CONFIG, FAST_CONFIG
 from .clustering import OptimalRegimeClusterer, ClusteringResult, create_optimal_clusterer, cluster_hmm_regimes
-from .orchestrator import OptimalRegimeClusteringOrchestrator, run_optimal_clustering, run_high_quality_clustering, run_fast_clustering
+from .optimized_clustering import MatrixOptimizedClusterer, OptimizedClusteringResult, create_matrix_optimized_clusterer, cluster_hmm_regimes_optimized
+from .orchestrator import OptimalRegimeClusteringOrchestrator, run_optimal_clustering, run_high_quality_clustering, run_fast_clustering, run_matrix_optimized_clustering
 from .utils import (
     load_hmm_regime_data, prepare_clustering_features, calculate_cluster_statistics,
     calculate_cluster_quality_metrics, validate_cluster_quality, create_cluster_summary_report,
@@ -51,11 +52,18 @@ __all__ = [
     "create_optimal_clusterer",
     "cluster_hmm_regimes",
 
+    # Matrix-optimized clustering
+    "MatrixOptimizedClusterer",
+    "OptimizedClusteringResult",
+    "create_matrix_optimized_clusterer",
+    "cluster_hmm_regimes_optimized",
+
     # Orchestration
     "OptimalRegimeClusteringOrchestrator",
     "run_optimal_clustering",
     "run_high_quality_clustering",
     "run_fast_clustering",
+    "run_matrix_optimized_clustering",
 
     # Utilities
     "load_hmm_regime_data",

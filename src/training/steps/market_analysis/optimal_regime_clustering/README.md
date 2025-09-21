@@ -5,10 +5,11 @@ This system creates 20 optimal clusters from HMM regime discovery output to capt
 ## Features
 
 - **Optimal Clustering**: Creates 20 high-quality clusters from HMM regime data
-- **Noise Reduction**: Hybrid approach using HDBSCAN/DBSCAN + K-means
-- **Quality Validation**: Comprehensive metrics and validation
-- **ML Integration**: Ready-to-use datasets for each cluster
-- **Flexible Configuration**: Multiple modes for different use cases
+- **Matrix Optimization**: GPU-accelerated operations using unified matrix operations system
+- **Noise Reduction**: Hybrid approach using HDBSCAN/DBSCAN + K-means with vectorized operations
+- **Quality Validation**: Comprehensive metrics and validation with performance tracking
+- **ML Integration**: Ready-to-use datasets for each cluster with memory optimization
+- **Flexible Configuration**: Multiple modes for different use cases (standard, high-quality, fast, matrix-optimized)
 
 ## Installation
 
@@ -16,6 +17,46 @@ The system is part of the training pipeline and requires:
 
 ```bash
 pip install scikit-learn numpy pandas hdbscan
+```
+
+For matrix optimization features (recommended):
+
+```bash
+# Matrix operations are already included in the codebase
+# The system automatically detects and uses matrix operations when available
+```
+
+## Matrix Optimization
+
+The system leverages the unified matrix operations system for maximum performance:
+
+### Features
+- **GPU Acceleration**: Apple Silicon M1/M2/M3 optimization
+- **Vectorized Operations**: Batch processing with optimized memory usage
+- **Enhanced Clustering**: Matrix-optimized HDBSCAN, DBSCAN, and K-means
+- **Performance Monitoring**: Detailed timing and memory efficiency tracking
+- **Adaptive Processing**: Automatic parameter optimization based on data characteristics
+
+### Automatic Detection
+The system automatically detects and uses matrix operations:
+
+```python
+from optimal_regime_clustering import OptimalRegimeClusteringOrchestrator
+
+orchestrator = OptimalRegimeClusteringOrchestrator()
+# Automatically uses matrix optimization if available
+```
+
+### Manual Matrix Optimization
+For maximum performance, use the dedicated matrix-optimized function:
+
+```python
+from optimal_regime_clustering import run_matrix_optimized_clustering
+
+results = run_matrix_optimized_clustering(
+    data_path="hmm_data.parquet",
+    output_dir="matrix_optimized_clusters/"
+)
 ```
 
 ## Quick Start
@@ -60,6 +101,26 @@ results = run_fast_clustering(
     exchange="binance",
     timeframe="1h"
 )
+```
+
+### Matrix-Optimized Clustering
+
+```python
+from optimal_regime_clustering import run_matrix_optimized_clustering
+
+results = run_matrix_optimized_clustering(
+    data_path="hmm_data.parquet",
+    output_dir="matrix_optimized_clusters/",
+    symbol="BTCUSDT",
+    exchange="binance",
+    timeframe="1h"
+)
+
+# Matrix optimization provides:
+# - GPU acceleration (if available)
+# - Vectorized batch processing
+# - Enhanced memory efficiency
+# - Detailed performance metrics
 ```
 
 ## Configuration
@@ -220,6 +281,7 @@ logging.basicConfig(level=logging.DEBUG)
 - **Default Mode**: ~1-2 minutes for 10k samples
 - **High-Quality Mode**: ~2-3 minutes for 10k samples
 - **Fast Mode**: ~30 seconds for 10k samples
+- **Matrix-Optimized Mode**: ~20-45 seconds for 10k samples (with GPU acceleration)
 
 ### Memory Usage
 
@@ -253,8 +315,15 @@ The system is designed to handle:
 - `run_optimal_clustering()`: Standard clustering pipeline
 - `run_high_quality_clustering()`: Enhanced quality clustering
 - `run_fast_clustering()`: Quick processing clustering
+- `run_matrix_optimized_clustering()`: Maximum performance clustering with matrix operations
 - `OptimalClusteringConfig()`: Configuration class
 - `OptimalRegimeClusteringOrchestrator()`: Full pipeline orchestration
+
+### Matrix-Optimized Functions
+
+- `MatrixOptimizedClusterer()`: Matrix-optimized clustering algorithm
+- `cluster_hmm_regimes_optimized()`: Optimized clustering with performance tracking
+- `create_matrix_optimized_clusterer()`: Factory for matrix-optimized clusterer
 
 ### Utility Functions
 

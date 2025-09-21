@@ -8102,24 +8102,23 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                 # Check if we've reached target coverage
                 current_coverage = (cumulative_samples / total_samples) * 100
                 
-                # Special check for top 5 coverage - ensure we get 90%+ with first 5 clusters
-                if len(selected_clusters) == 5:
-                    top5_coverage = current_coverage
-                    if top5_coverage < 90.0:
-                        self.logger.warning(f"⚠️ Top 5 coverage only {top5_coverage:.1f}% - need larger clusters")
-                        # Continue to get more clusters to compensate
+                # Special check for top 20 coverage - ensure we get 90-95% with all 20 clusters
+                if len(selected_clusters) == 20:
+                    top20_coverage = current_coverage
+                    if top20_coverage < 90.0:
+                        self.logger.warning(f"⚠️ Top 20 coverage only {top20_coverage:.1f}% - below 90% target")
+                    elif top20_coverage > 95.0:
+                        self.logger.warning(f"⚠️ Top 20 coverage {top20_coverage:.1f}% - above 95% target")
                     else:
-                        self.logger.info(f"✅ Top 5 coverage achieved: {top5_coverage:.1f}%")
+                        self.logger.info(f"✅ Top 20 coverage achieved: {top20_coverage:.1f}% (target: 90-95%)")
                 
                 # Continue until we have exactly 20 clusters or reach all available clusters
                 if len(selected_clusters) >= max_clusters:
                     self.logger.info(f"📊 Reached target cluster count: {max_clusters}")
                     break
                     
-                # If we have good coverage and enough clusters, we can stop
-                if current_coverage >= 95.0 and len(selected_clusters) >= 18:
-                    self.logger.info(f"📊 Excellent coverage achieved: {current_coverage:.1f}% with {len(selected_clusters)} clusters")
-                    break
+                # Only stop when we have exactly 20 clusters (our target)
+                # The coverage should naturally be 90-95% with proper cluster sizing
             
             # Log the selection results
             actual_coverage = (cumulative_samples / total_samples) * 100
@@ -8128,7 +8127,7 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             
             self.logger.info(f"🎯 Top cluster selection completed:")
             self.logger.info(f"   📊 Selected {n_selected} out of {n_original} super-clusters")
-            self.logger.info(f"   📈 Coverage: {actual_coverage:.1f}% (target: {target_coverage}%, range: 15-20 clusters)")
+            self.logger.info(f"   📈 Coverage: {actual_coverage:.1f}% (target: 90-95% with exactly 20 clusters)")
             self.logger.info(f"   📊 Samples: {cumulative_samples:,} out of {total_samples:,}")
             
             return selected_clusters

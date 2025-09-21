@@ -43,6 +43,34 @@ class OptimalClusteringConfig:
     max_iter: int = 500  # Maximum iterations for iterative algorithms
     random_state: int = 42  # Random state for reproducibility
 
+    # Stable KMeans parameters
+    kmeans_n_init: int = 50  # Increase restarts for stability (50–100)
+    kmeans_max_iter: int = 1000  # Higher max_iter for convergence
+    kmeans_num_seeds: int = 10  # Multiple seeds; pick best by size-penalized objective
+    size_penalty_weight: float = 0.25  # Weight for size imbalance penalty in selection
+    stable_selection_objective: str = "inertia_size_cv"  # Selection objective type
+
+    # Overcluster-then-merge parameters
+    overcluster_enabled: bool = True
+    overcluster_k_min: int = 30
+    overcluster_k_max: int = 40
+    overcluster_merge_linkage: str = "centroid"  # centroid or average
+
+    # Constrained KMeans parameters
+    constrained_kmeans_enabled: bool = True
+    constraint_backend: str = "kmeans_constrained"  # "kmeans_constrained" | "assignment"
+
+    # Split/Merge post-processing with percentile-based gating
+    split_merge_enabled: bool = True
+    split_merge_max_iters: int = 10
+    merge_similarity_metric: str = "cosine"  # cosine or euclidean
+    easy_merge_top_percentile: float = 0.75  # Pairs >= P75 similarity merge with relaxed criteria
+    strict_split_bottom_percentile: float = 0.25  # Sub-splits <= P25 similarity favored
+    use_internal_cv_for_split: bool = True  # Use per-cluster CV to prioritize splits
+
+    # Optional robust clustering candidate
+    use_kmedoids_candidate: bool = False  # Try K-Medoids as a candidate during stability selection
+
     # Advanced clustering parameters - CV-OPTIMIZED FOR PERFECT DISTRIBUTION
     weighted_4d_mapping: bool = True  # Use weighted 4D feature mapping
     equidistant_centroids: bool = True  # Find equidistant centroids with quality scoring

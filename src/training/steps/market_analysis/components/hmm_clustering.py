@@ -10072,4 +10072,371 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             return "multi_regime_adaptive_strategy"
         else:
             return "balanced_regime_strategy"
+
+    def _apply_graph_based_merging(
+        self,
+        cluster_metadata: List[Dict],
+        similarity_matrix: np.ndarray,
+        constraints: Dict[str, float]
+    ) -> List[Tuple[int, int]]:
+        """
+        Alternative merging using graph community detection
+
+        Key Differences from 4D Mapping:
+        - 4D: Distance-based clustering in geometric feature space
+        - Graph: Relationship-based clustering using similarity networks
+        - 4D: Finds geometrically similar clusters
+        - Graph: Finds functionally related clusters (even if geometrically distant)
+        """
+        import networkx as nx
+        from networkx.algorithms.community import greedy_modularity_communities
+
+        # Create similarity graph with enhanced node attributes
+        G = nx.Graph()
+
+        for i, metadata_i in enumerate(cluster_metadata):
+            G.add_node(i,
+                      size=metadata_i['sample_count'],
+                      cv=metadata_i.get('size_cv', 1.0),
+                      information_density=metadata_i.get('information_density', 0.0),
+                      statistical_validity=metadata_i.get('statistical_validity', 0.0))
+
+        # Add edges based on similarity with quality weighting
+        n_clusters = len(cluster_metadata)
+        for i in range(n_clusters):
+            for j in range(i+1, n_clusters):
+                similarity = similarity_matrix[i, j]
+
+                # Enhanced similarity calculation considering multiple factors
+                merge_quality = self._calculate_merge_compatibility(
+                    cluster_metadata[i], cluster_metadata[j], constraints
+                )
+
+                # Multi-objective edge weighting
+                edge_weight = (
+                    similarity * 0.4 +                    # Core similarity
+                    merge_quality * 0.3 +                 # Merge compatibility
+                    (1.0 - cluster_metadata[i].get('size_cv', 1.0)) * 0.15 +  # Size balance
+                    (1.0 - cluster_metadata[j].get('size_cv', 1.0)) * 0.15    # Size balance
+                )
+
+                if edge_weight > constraints.get('min_similarity', 0.3):
+                    G.add_edge(i, j, weight=edge_weight, similarity=similarity)
+
+        # Detect communities using modularity optimization
+        communities = list(greedy_modularity_communities(G))
+
+        # Convert communities to merge operations with Pareto consideration
+        merges = []
+        for community in communities:
+            if len(community) > 1:
+                # Find Pareto-optimal representative for each community
+                community_list = list(community)
+                representative = self._find_community_representative(
+                    community_list, cluster_metadata, similarity_matrix
+                )
+
+                for cluster_id in community_list:
+                    if cluster_id != representative:
+                        merges.append((cluster_id, representative))
+
+        return merges
+
+    def _calculate_merge_compatibility(
+        self,
+        cluster_1: Dict,
+        cluster_2: Dict,
+        constraints: Dict[str, float]
+    ) -> float:
+        """
+        Calculate merge compatibility considering CV and size constraints
+        """
+        import numpy as np
+
+        size_1 = cluster_1['sample_count']
+        size_2 = cluster_2['sample_count']
+        cv_1 = cluster_1.get('size_cv', 1.0)
+        cv_2 = cluster_2.get('size_cv', 1.0)
+
+        # Size compatibility (higher for similar sizes)
+        size_diff = abs(size_1 - size_2) / max(size_1 + size_2, 1)
+        size_compatibility = 1.0 - size_diff
+
+        # CV compatibility (lower CV = more compatible)
+        cv_compatibility = 1.0 - (cv_1 + cv_2) / 2.0
+
+        # Constraint compatibility
+        combined_size = size_1 + size_2
+        max_size = constraints.get('max_cluster_size', 0.45)
+        constraint_compatibility = 1.0 if combined_size <= max_size else 0.0
+
+        return (size_compatibility * 0.4 + cv_compatibility * 0.4 + constraint_compatibility * 0.2)
+
+    def _find_community_representative(
+        self,
+        community_list: List[int],
+        cluster_metadata: List[Dict],
+        similarity_matrix: np.ndarray
+    ) -> int:
+        """
+        Find the best representative for a community based on Pareto optimality
+        """
+        import numpy as np
+
+        if not community_list:
+            return 0
+
+        # Calculate Pareto scores for each cluster in community
+        pareto_scores = []
+        for cluster_idx in community_list:
+            metadata = cluster_metadata[cluster_idx]
+
+            # Multi-objective score: higher is better
+            score = (
+                1.0 - metadata.get('size_cv', 1.0) * 0.3 +        # Size balance
+                metadata.get('information_density', 0.0) * 0.3 +   # Information content
+                metadata.get('statistical_validity', 0.0) * 0.2 + # Statistical quality
+                metadata.get('similarity_score', 0.5) * 0.2       # Similarity preservation
+            )
+            pareto_scores.append(score)
+
+        # Return cluster with highest Pareto score
+        best_idx = community_list[np.argmax(pareto_scores)]
+        return best_idx
+
+    def compare_4d_vs_graph_approaches(
+        self,
+        cluster_metadata: List[Dict],
+        similarity_matrix: np.ndarray,
+        target_clusters: int
+    ) -> Dict[str, Any]:
+        """
+        Compare 4D mapping vs Graph-based community detection approaches
+
+        Returns comparison of:
+        - Cluster quality metrics
+        - Computational efficiency
+        - Constraint satisfaction
+        - Regime coherence
+        """
+        import time
+
+        results = {
+            '4d_approach': {},
+            'graph_approach': {},
+            'comparison': {}
+        }
+
+        # Test 4D approach
+        start_time = time.time()
+        try:
+            labels_4d = self._apply_4d_regime_mapping_to_existing_clusters(
+                cluster_metadata, target_clusters
+            )
+            results['4d_approach'] = {
+                'success': True,
+                'execution_time': time.time() - start_time,
+                'cluster_labels': labels_4d,
+                'quality_metrics': self._calculate_clustering_quality(
+                    labels_4d, cluster_metadata, similarity_matrix
+                )
+            }
+        except Exception as e:
+            results['4d_approach'] = {
+                'success': False,
+                'error': str(e),
+                'execution_time': time.time() - start_time
+            }
+
+        # Test Graph approach
+        start_time = time.time()
+        try:
+            # Create mock constraints for testing
+            constraints = {
+                'min_similarity': 0.3,
+                'max_cluster_size': 0.45,
+                'balance_threshold': 0.8
+            }
+
+            graph_merges = self._apply_graph_based_merging(
+                cluster_metadata, similarity_matrix, constraints
+            )
+
+            # Convert merges to cluster assignments
+            labels_graph = self._convert_merges_to_labels(
+                graph_merges, cluster_metadata, target_clusters
+            )
+
+            results['graph_approach'] = {
+                'success': True,
+                'execution_time': time.time() - start_time,
+                'merges_performed': len(graph_merges),
+                'cluster_labels': labels_graph,
+                'quality_metrics': self._calculate_clustering_quality(
+                    labels_graph, cluster_metadata, similarity_matrix
+                )
+            }
+        except Exception as e:
+            results['graph_approach'] = {
+                'success': False,
+                'error': str(e),
+                'execution_time': time.time() - start_time
+            }
+
+        # Generate comparison
+        results['comparison'] = self._compare_approach_results(
+            results['4d_approach'],
+            results['graph_approach']
+        )
+
+        return results
+
+    def _convert_merges_to_labels(
+        self,
+        merges: List[Tuple[int, int]],
+        cluster_metadata: List[Dict],
+        target_clusters: int
+    ) -> np.ndarray:
+        """
+        Convert merge operations to cluster label assignments
+        """
+        import numpy as np
+
+        # Initialize labels as cluster indices
+        labels = np.arange(len(cluster_metadata))
+
+        # Apply merges
+        for old_cluster, new_cluster in merges:
+            labels[labels == old_cluster] = new_cluster
+
+        # Renumber to consecutive integers
+        unique_labels = np.unique(labels)
+        label_mapping = {old_label: new_label for new_label, old_label in enumerate(unique_labels)}
+        labels = np.array([label_mapping[label] for label in labels])
+
+        return labels
+
+    def _calculate_clustering_quality(
+        self,
+        labels: np.ndarray,
+        cluster_metadata: List[Dict],
+        similarity_matrix: np.ndarray
+    ) -> Dict[str, float]:
+        """
+        Calculate quality metrics for clustering result
+        """
+        import numpy as np
+
+        n_clusters = len(np.unique(labels))
+        sizes = []
+
+        for i in range(n_clusters):
+            cluster_indices = np.where(labels == i)[0]
+            size = sum(cluster_metadata[idx]['sample_count'] for idx in cluster_indices)
+            sizes.append(size)
+
+        # Calculate metrics
+        cv = np.std(sizes) / (np.mean(sizes) + 1e-8) if sizes else 1.0
+        max_size_pct = max(sizes) / sum(sizes) * 100 if sizes else 0.0
+
+        # Silhouette-like score (simplified)
+        silhouette = 0.0
+        if n_clusters > 1:
+            # Calculate average intra-cluster similarity
+            intra_similarities = []
+            for i in range(n_clusters):
+                cluster_indices = np.where(labels == i)[0]
+                if len(cluster_indices) > 1:
+                    cluster_sims = []
+                    for j, idx1 in enumerate(cluster_indices):
+                        for k, idx2 in enumerate(cluster_indices[j+1:], j+1):
+                            cluster_sims.append(similarity_matrix[idx1, idx2])
+                    intra_similarities.append(np.mean(cluster_sims) if cluster_sims else 0.0)
+
+            silhouette = np.mean(intra_similarities) if intra_similarities else 0.0
+
+        return {
+            'n_clusters': n_clusters,
+            'size_cv': cv,
+            'max_cluster_percentage': max_size_pct,
+            'average_silhouette': silhouette,
+            'constraint_violations': max_size_pct > 45.0
+        }
+
+    def _compare_approach_results(
+        self,
+        result_4d: Dict,
+        result_graph: Dict
+    ) -> Dict[str, Any]:
+        """
+        Compare results from both approaches
+        """
+        comparison = {
+            'winner_by_metric': {},
+            'recommendations': []
+        }
+
+        if result_4d.get('success') and result_graph.get('success'):
+            metrics_4d = result_4d['quality_metrics']
+            metrics_graph = result_graph['quality_metrics']
+
+            # Compare metrics
+            if metrics_4d['size_cv'] < metrics_graph['size_cv']:
+                comparison['winner_by_metric']['size_balance'] = '4d'
+            else:
+                comparison['winner_by_metric']['size_balance'] = 'graph'
+
+            if metrics_4d['average_silhouette'] > metrics_graph['average_silhouette']:
+                comparison['winner_by_metric']['coherence'] = '4d'
+            else:
+                comparison['winner_by_metric']['coherence'] = 'graph'
+
+            if metrics_4d['constraint_violations'] < metrics_graph['constraint_violations']:
+                comparison['winner_by_metric']['constraints'] = '4d'
+            else:
+                comparison['winner_by_metric']['constraints'] = 'graph'
+
+            # Generate recommendations
+            if metrics_4d['execution_time'] < metrics_graph['execution_time']:
+                comparison['recommendations'].append("4D approach is faster")
+            else:
+                comparison['recommendations'].append("Graph approach may find better communities")
+
+            if metrics_graph['size_cv'] < metrics_4d['size_cv']:
+                comparison['recommendations'].append("Graph approach provides better size balance")
+            else:
+                comparison['recommendations'].append("4D approach provides adequate size balance")
+
+        return comparison
+
+    def demonstrate_approach_comparison(
+        self,
+        cluster_metadata: List[Dict],
+        similarity_matrix: np.ndarray,
+        target_clusters: int = 5
+    ) -> Dict[str, Any]:
+        """
+        Demonstrate the comparison between 4D mapping and Graph-based approaches
+
+        Usage Example:
+            # Get your cluster metadata and similarity matrix
+            # (normally these come from previous clustering steps)
+
+            comparison_results = self.compare_4d_vs_graph_approaches(
+                cluster_metadata, similarity_matrix, target_clusters=5
+            )
+
+            print("4D Approach Results:", comparison_results['4d_approach'])
+            print("Graph Approach Results:", comparison_results['graph_approach'])
+            print("Comparison Analysis:", comparison_results['comparison'])
+
+            # Choose the better approach based on your priorities
+            if comparison_results['comparison']['winner_by_metric'].get('size_balance') == 'graph':
+                print("Graph approach provides better size balance!")
+            elif comparison_results['comparison']['winner_by_metric'].get('coherence') == '4d':
+                print("4D approach provides better regime coherence!")
+        """
+        return self.compare_4d_vs_graph_approaches(
+            cluster_metadata, similarity_matrix, target_clusters
+        )
     

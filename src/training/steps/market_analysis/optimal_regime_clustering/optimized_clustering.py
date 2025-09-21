@@ -1182,15 +1182,26 @@ class MatrixOptimizedClusterer:
                 if len(unique) <= target_k:
                     break
 
-                # Compute centroids and sizes
-                centroids = []
-                sizes = []
-                for lab in unique:
-                    mask = current_labels == lab
-                    sizes.append(mask.sum())
-                    centroids.append(features[mask].mean(axis=0))
-                centroids = np.vstack(centroids)
-                sizes = np.asarray(sizes)
+                # Compute centroids and sizes (batched, using matrix ops where available)
+                k = len(unique)
+                idx_map = {lab: i for i, lab in enumerate(unique)}
+                label_idx = np.vectorize(idx_map.get)(current_labels)
+                onehot = np.zeros((n, k), dtype=np.float64)
+                onehot[np.arange(n), label_idx] = 1.0
+
+                try:
+                    if MATRIX_OPERATIONS_AVAILABLE and 'gpu_matrix_multiply' in globals() and gpu_matrix_multiply is not None:
+                        sums = gpu_matrix_multiply(onehot.T, features)
+                    elif MATRIX_OPERATIONS_AVAILABLE and 'batch_matrix_multiply' in globals() and batch_matrix_multiply is not None:
+                        sums = batch_matrix_multiply(onehot.T, features)
+                    else:
+                        sums = onehot.T @ features
+                except Exception:
+                    sums = onehot.T @ features
+
+                sizes = onehot.sum(axis=0)
+                with np.errstate(divide='ignore', invalid='ignore'):
+                    centroids = sums / np.maximum(sizes[:, None], 1.0)
 
                 # Pairwise Ward linkage costs
                 # cost = (n_i * n_j / (n_i + n_j)) * ||ci - cj||^2 + penalty_if_exceeds_upper
@@ -1212,7 +1223,16 @@ class MatrixOptimizedClusterer:
                         diff = centroids[i] - centroids[j]
                         dist_sq = float(np.dot(diff, diff))
                         ward = (sizes[i] * sizes[j]) / max(1.0, float(sizes[i] + sizes[j])) * dist_sq
-                        cost = ward + soft_penalty
+                        # Absorption modulation: favor merges that help undersized clusters move toward 5%
+                        undershoot_i = max(0.0, (target_size - sizes[i])) / max(1.0, target_size)
+                        undershoot_j = max(0.0, (target_size - sizes[j])) / max(1.0, target_size)
+                        overshoot_i = max(0.0, (sizes[i] - target_size)) / max(1.0, target_size)
+                        overshoot_j = max(0.0, (sizes[j] - target_size)) / max(1.0, target_size)
+                        attract = undershoot_i + undershoot_j
+                        repel = overshoot_i + overshoot_j
+                        gamma = 0.5
+                        size_modulator = (1.0 + gamma * repel) / (1.0 + gamma * attract)
+                        cost = (ward + soft_penalty) * size_modulator
                         if cost < best_cost:
                             best_cost = cost
                             best_pair = (unique[i], unique[j])
@@ -1252,11 +1272,25 @@ class MatrixOptimizedClusterer:
 
         def compute_centroids(lbls: np.ndarray) -> np.ndarray:
             uniq = np.unique(lbls)
-            centers = []
-            for lab in uniq:
-                mask = lbls == lab
-                centers.append(features[mask].mean(axis=0))
-            return np.vstack(centers)
+            k_local = len(uniq)
+            # Map labels to 0..k-1
+            idx_map = {lab: i for i, lab in enumerate(uniq)}
+            label_idx = np.vectorize(idx_map.get)(lbls)
+            onehot = np.zeros((n, k_local), dtype=np.float64)
+            onehot[np.arange(n), label_idx] = 1.0
+            try:
+                if MATRIX_OPERATIONS_AVAILABLE and 'gpu_matrix_multiply' in globals() and gpu_matrix_multiply is not None:
+                    sums = gpu_matrix_multiply(onehot.T, X)
+                elif MATRIX_OPERATIONS_AVAILABLE and 'batch_matrix_multiply' in globals() and batch_matrix_multiply is not None:
+                    sums = batch_matrix_multiply(onehot.T, X)
+                else:
+                    sums = onehot.T @ X
+            except Exception:
+                sums = onehot.T @ X
+            cnts_local = onehot.sum(axis=0)
+            with np.errstate(divide='ignore', invalid='ignore'):
+                centers = sums / np.maximum(cnts_local[:, None], 1.0)
+            return centers
 
         def reindex(lbls: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
             uniq = np.unique(lbls)
@@ -1268,26 +1302,54 @@ class MatrixOptimizedClusterer:
         current, orig_unique = reindex(current)
         k = len(np.unique(current))
 
-        # Precompute distances to centroids
-        centroids = compute_centroids(current)
         # Optional whitening
         X = features
         if whiten:
             mean = X.mean(axis=0, keepdims=True)
             std = X.std(axis=0, keepdims=True) + 1e-12
             X = (X - mean) / std
-            centroids = (centroids - mean) / std
-        # Compute full distance matrix (n x k)
-        dists = np.zeros((n, k), dtype=np.float64)
-        if distance_metric == "cosine":
-            Xn = X / (np.linalg.norm(X, axis=1, keepdims=True) + 1e-12)
-            Cn = centroids / (np.linalg.norm(centroids, axis=1, keepdims=True) + 1e-12)
-            sims = Xn @ Cn.T
-            dists = 1.0 - sims
-        else:
-            for c in range(k):
-                diff = X - centroids[c]
-                dists[:, c] = np.sqrt(np.sum(diff * diff, axis=1))
+
+        def compute_dists(lbls: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+            ctrs = compute_centroids(lbls)
+            # Apply whitening to centroids if used
+            ctrs_w = ctrs
+            if whiten:
+                ctrs_w = (ctrs - mean) / std
+
+            if distance_metric == "cosine":
+                # GPU cosine via matmul when available
+                Xn = X / (np.linalg.norm(X, axis=1, keepdims=True) + 1e-12)
+                Cn = ctrs_w / (np.linalg.norm(ctrs_w, axis=1, keepdims=True) + 1e-12)
+                try:
+                    if MATRIX_OPERATIONS_AVAILABLE and 'gpu_matrix_multiply' in globals() and gpu_matrix_multiply is not None:
+                        sims = gpu_matrix_multiply(Xn, Cn.T)
+                    elif MATRIX_OPERATIONS_AVAILABLE and 'batch_matrix_multiply' in globals() and batch_matrix_multiply is not None:
+                        sims = batch_matrix_multiply(Xn, Cn.T)
+                    else:
+                        sims = Xn @ Cn.T
+                except Exception:
+                    sims = Xn @ Cn.T
+                d = 1.0 - sims
+                return d, ctrs, ctrs_w
+            else:
+                # Euclidean via dot products
+                try:
+                    if MATRIX_OPERATIONS_AVAILABLE and 'gpu_matrix_multiply' in globals() and gpu_matrix_multiply is not None:
+                        dots = gpu_matrix_multiply(X, ctrs_w.T)
+                    elif MATRIX_OPERATIONS_AVAILABLE and 'batch_matrix_multiply' in globals() and batch_matrix_multiply is not None:
+                        dots = batch_matrix_multiply(X, ctrs_w.T)
+                    else:
+                        dots = X @ ctrs_w.T
+                except Exception:
+                    dots = X @ ctrs_w.T
+                x2 = np.sum(X * X, axis=1, keepdims=True)
+                c2 = np.sum(ctrs_w * ctrs_w, axis=1, keepdims=True).T
+                d2 = x2 + c2 - 2.0 * dots
+                np.maximum(d2, 0.0, out=d2)
+                d = np.sqrt(d2, where=(d2>=0))
+                return d, ctrs, ctrs_w
+
+        dists, centroids, centroids_w = compute_dists(current)
 
         # Precompute top-3 nearest clusters per sample
         topk = np.argsort(dists, axis=1)[:, :min(3, k)]
@@ -1353,6 +1415,9 @@ class MatrixOptimizedClusterer:
                             moved_any = True
             if not moved_any:
                 break
+            # Recompute distances/topk after changes
+            dists, centroids, centroids_w = compute_dists(current)
+            topk = np.argsort(dists, axis=1)[:, :min(3, k)]
 
         # Phase B: reduce clusters above upper bound
         for _ in range(max_rounds):
@@ -1407,6 +1472,9 @@ class MatrixOptimizedClusterer:
                     moved_any = True
             if not moved_any:
                 break
+            # Recompute distances/topk after changes
+            dists, centroids, centroids_w = compute_dists(current)
+            topk = np.argsort(dists, axis=1)[:, :min(3, k)]
 
         return current
 

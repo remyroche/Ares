@@ -1,9 +1,0 @@
-{
-  "model_name": "random_forest",
-  "model_type": "hmm_models_enhanced",
-  "symbol": "UNKNOWN",
-  "exchange": "UNKNOWN",
-  "timeframe": "1h",
-  "timestamp": "2025-09-18T12:59:23.572104",
-  "model_class": "RandomForestClassifier"
-}

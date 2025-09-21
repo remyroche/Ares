@@ -1,0 +1,3215 @@
+{
+  "metadata": {
+    "timestamp": "2025-09-21T22:01:17.698588",
+    "symbol": "ETHUSDT",
+    "exchange": "BINANCE",
+    "timeframe": "15m",
+    "time_period": "Approximately 3.0 years of 15m data",
+    "total_clusters": 19,
+    "total_samples": 105092,
+    "quality_metrics": {
+      "silhouette": 0.07925465703010559,
+      "calinski_harabasz": 8859.311393345726,
+      "davies_bouldin": 46.53123474121094,
+      "cluster_size_coefficient_of_variation": 0.3029273569130394
+    },
+    "cluster_statistics": {
+      "n_clusters": 19,
+      "noise_percentage": 0.0,
+      "coverage_percentage": 1.0,
+      "mean_cluster_size": 5531.1578947368425,
+      "std_cluster_size": 1675.5390417213232,
+      "cluster_size_distribution": {
+        "min_size": 3154,
+        "max_size": 8407,
+        "median_size": 5513,
+        "size_range": 5253,
+        "outliers_outside_3_8_percent": {
+          "clusters_outside_range": [],
+          "clusters_within_range": 19,
+          "outlier_percentage": 0.0
+        }
+      }
+    }
+  },
+  "grouped_analysis": {
+    "all_clusters": {
+      "group_summary": {
+        "n_clusters": 19,
+        "total_size": 105092,
+        "total_percentage": 1.0000000000000002,
+        "average_size": 5531.1578947368425,
+        "size_std": 1675.5390417213232
+      },
+      "aggregated_price_statistics": {
+        "mean_price": 2415.6693564967104,
+        "price_std": 75.74467933722502,
+        "min_price": 2266.88525390625,
+        "max_price": 2550.0234375
+      },
+      "aggregated_volume_statistics": {
+        "mean_volume": 5722.739405581826,
+        "volume_std": 4803.230784915847,
+        "min_volume": 1942.0999755859375,
+        "max_volume": 17994.06640625
+      },
+      "aggregated_return_statistics": {
+        "mean_return": 2.0079578514529011e-07,
+        "return_std": 7.900702179213428e-06,
+        "best_return": 1.4685108908452094e-05,
+        "worst_return": -1.9036157027585432e-05,
+        "mean_sharpe_ratio": 0.012805917958517488,
+        "mean_max_drawdown": NaN,
+        "mean_positive_return_pct": 0.5047392257920298
+      },
+      "cluster_ids": [
+        "cluster_0",
+        "cluster_1",
+        "cluster_2",
+        "cluster_3",
+        "cluster_4",
+        "cluster_5",
+        "cluster_6",
+        "cluster_7",
+        "cluster_8",
+        "cluster_9",
+        "cluster_10",
+        "cluster_11",
+        "cluster_12",
+        "cluster_13",
+        "cluster_14",
+        "cluster_15",
+        "cluster_16",
+        "cluster_17",
+        "cluster_18"
+      ]
+    },
+    "top_20_clusters": {},
+    "top_10_clusters": {
+      "group_summary": {
+        "n_clusters": 10,
+        "total_size": 68270,
+        "total_percentage": 0.6496212842081224,
+        "average_size": 6827.0,
+        "size_std": 1084.6511881706488
+      },
+      "aggregated_price_statistics": {
+        "mean_price": 2389.479736328125,
+        "price_std": 62.96678779138386,
+        "min_price": 2319.12939453125,
+        "max_price": 2540.454833984375
+      },
+      "aggregated_volume_statistics": {
+        "mean_volume": 3081.88134765625,
+        "volume_std": 1374.5878731069251,
+        "min_volume": 2036.697265625,
+        "max_volume": 7037.41796875
+      },
+      "aggregated_return_statistics": {
+        "mean_return": 2.158619033565401e-06,
+        "return_std": 2.7060429554439275e-06,
+        "best_return": 7.392261977656744e-06,
+        "worst_return": -2.1143018784641754e-06,
+        "mean_sharpe_ratio": 0.018624627789217474,
+        "mean_max_drawdown": NaN,
+        "mean_positive_return_pct": 0.5074837578340539
+      },
+      "cluster_ids": [
+        "cluster_0",
+        "cluster_2",
+        "cluster_4",
+        "cluster_8",
+        "cluster_15",
+        "cluster_11",
+        "cluster_12",
+        "cluster_14",
+        "cluster_6",
+        "cluster_17"
+      ]
+    },
+    "top_5_clusters": {
+      "group_summary": {
+        "n_clusters": 5,
+        "total_size": 38985,
+        "total_percentage": 0.3709606820690442,
+        "average_size": 7797.0,
+        "size_std": 617.8310448658274
+      },
+      "aggregated_price_statistics": {
+        "mean_price": 2378.13173828125,
+        "price_std": 42.82676840246976,
+        "min_price": 2320.702880859375,
+        "max_price": 2438.28369140625
+      },
+      "aggregated_volume_statistics": {
+        "mean_volume": 2575.420849609375,
+        "volume_std": 511.30374971018193,
+        "min_volume": 2036.697265625,
+        "max_volume": 3355.622314453125
+      },
+      "aggregated_return_statistics": {
+        "mean_return": 1.7165253794360069e-06,
+        "return_std": 1.3669809366018318e-06,
+        "best_return": 4.049152266816236e-06,
+        "worst_return": 6.421709741744053e-08,
+        "mean_sharpe_ratio": 0.015338128635517206,
+        "mean_max_drawdown": NaN,
+        "mean_positive_return_pct": 0.5058079485750848
+      },
+      "cluster_ids": [
+        "cluster_0",
+        "cluster_2",
+        "cluster_4",
+        "cluster_8",
+        "cluster_15"
+      ]
+    },
+    "top_1_cluster": {
+      "group_summary": {
+        "n_clusters": 1,
+        "total_size": 8407,
+        "total_percentage": 0.07999657443002321,
+        "average_size": 8407.0,
+        "size_std": 0.0
+      },
+      "aggregated_price_statistics": {
+        "mean_price": 2438.28369140625,
+        "price_std": 0.0,
+        "min_price": 2438.28369140625,
+        "max_price": 2438.28369140625
+      },
+      "aggregated_volume_statistics": {
+        "mean_volume": 3355.622314453125,
+        "volume_std": 0.0,
+        "min_volume": 3355.622314453125,
+        "max_volume": 3355.622314453125
+      },
+      "aggregated_return_statistics": {
+        "mean_return": 6.421709741744053e-08,
+        "return_std": 0.0,
+        "best_return": 6.421709741744053e-08,
+        "worst_return": 6.421709741744053e-08,
+        "mean_sharpe_ratio": 0.0004308978952634281,
+        "mean_max_drawdown": -0.016180407255887985,
+        "mean_positive_return_pct": 0.505887950517426
+      },
+      "cluster_ids": [
+        "cluster_0"
+      ]
+    }
+  },
+  "cluster_size_distribution_summary": {
+    "top_1_cluster": {
+      "cluster_ids": [
+        "cluster_0"
+      ],
+      "total_size": 8407,
+      "total_percentage": 0.07999657443002321,
+      "cumulative_coverage": 0.07999657443002321
+    },
+    "top_5_clusters": {
+      "cluster_ids": [
+        "cluster_0",
+        "cluster_2",
+        "cluster_4",
+        "cluster_8",
+        "cluster_15"
+      ],
+      "total_size": 38985,
+      "total_percentage": 0.3709606820690442,
+      "cumulative_coverage": 0.3709606820690442
+    },
+    "top_10_clusters": {
+      "cluster_ids": [
+        "cluster_0",
+        "cluster_2",
+        "cluster_4",
+        "cluster_8",
+        "cluster_15",
+        "cluster_11",
+        "cluster_12",
+        "cluster_14",
+        "cluster_6",
+        "cluster_17"
+      ],
+      "total_size": 68270,
+      "total_percentage": 0.6496212842081224,
+      "cumulative_coverage": 0.6496212842081224
+    },
+    "top_20_clusters": {
+      "cluster_ids": [
+        "cluster_0",
+        "cluster_2",
+        "cluster_4",
+        "cluster_8",
+        "cluster_15",
+        "cluster_11",
+        "cluster_12",
+        "cluster_14",
+        "cluster_6",
+        "cluster_17",
+        "cluster_18",
+        "cluster_10",
+        "cluster_13",
+        "cluster_16",
+        "cluster_7",
+        "cluster_3",
+        "cluster_1",
+        "cluster_5",
+        "cluster_9"
+      ],
+      "total_size": 105092,
+      "total_percentage": 1.0,
+      "cumulative_coverage": 1.0
+    }
+  },
+  "individual_analysis": {
+    "cluster_0": {
+      "detailed_metrics": {
+        "basic_stats": {
+          "size": 8407,
+          "percentage": 0.07999657443002321,
+          "rank_by_size": 20
+        },
+        "price_statistics": {
+          "mean": 2438.28369140625,
+          "std": 837.6992797851562,
+          "min": 1082.800048828125,
+          "max": 4798.31982421875,
+          "median": 2296.75,
+          "skewness": 0.5572357177734375,
+          "kurtosis": -0.685268759727478
+        },
+        "volume_statistics": {
+          "mean": 3355.622314453125,
+          "std": 2024.0858154296875,
+          "min": 189.3544921875,
+          "max": 15030.30078125,
+          "median": 2926.783935546875
+        },
+        "feature_statistics": {
+          "feature_means": [
+            -0.25288981199264526,
+            -0.25683918595314026,
+            -0.18331345915794373,
+            0.015177741646766663
+          ],
+          "feature_dimensions": {
+            "volume_dimension": -0.25288981199264526,
+            "volatility_dimension": -0.25683918595314026,
+            "trend_dimension": -0.18331345915794373,
+            "momentum_dimension": 0.015177741646766663
+          },
+          "feature_stds": [
+            0.2844257652759552,
+            0.2878935635089874,
+            0.47464150190353394,
+            0.5033335089683533
+          ],
+          "feature_ranges": [
+            2.014869213104248,
+            1.9111037254333496,
+            2.7474284172058105,
+            3.111056327819824
+          ]
+        },
+        "return_statistics": {
+          "mean_return": 6.421709741744053e-08,
+          "std_return": 0.00014903079136274755,
+          "sharpe_ratio": 0.0004308978952634281,
+          "max_drawdown": -0.016180407255887985,
+          "positive_returns_pct": 0.505887950517426
+        },
+        "cluster_characteristics": {
+          "center": [
+            -0.25288981199264526,
+            -0.25683918595314026,
+            -0.18331345915794373,
+            0.015177741646766663
+          ],
+          "dispersion": 0.38757359981536865
+        }
+      },
+      "quality_score": 0.6795361171323471,
+      "economic_value": 0.11760403946540506,
+      "stability_score": 0.752943975258713
+    },
+    "cluster_1": {
+      "detailed_metrics": {
+        "basic_stats": {
+          "size": 3231,
+          "percentage": 0.030744490541620675,
+          "rank_by_size": 4
+        },
+        "price_statistics": {
+          "mean": 2482.829345703125,
+          "std": 864.4242553710938,
+          "min": 1092.81005859375,
+          "max": 4872.169921875,
+          "median": 2378.7900390625,
+          "skewness": 0.48703110218048096,
+          "kurtosis": -0.7261949181556702
+        },
+        "volume_statistics": {
+          "mean": 10261.1162109375,
+          "std": 6008.31982421875,
+          "min": 1260.884765625,
+          "max": 81282.328125,
+          "median": 9628.3369140625
+        },
+        "feature_statistics": {
+          "feature_means": [
+            0.8914942741394043,
+            0.8928419351577759,
+            0.6963069438934326,
+            1.3760663270950317
+          ],
+          "feature_dimensions": {
+            "volume_dimension": 0.8914942741394043,
+            "volatility_dimension": 0.8928419351577759,
+            "trend_dimension": 0.6963069438934326,
+            "momentum_dimension": 1.3760663270950317
+          },
+          "feature_stds": [
+            0.8652729392051697,
+            0.8700728416442871,
+            0.9070460200309753,
+            0.8635202646255493
+          ],
+          "feature_ranges": [
+            10.581997871398926,
+            11.369363784790039,
+            7.404522895812988,
+            8.976795196533203
+          ]
+        },
+        "return_statistics": {
+          "mean_return": -1.9036157027585432e-05,
+          "std_return": 0.00042736719478853047,
+          "sharpe_ratio": -0.04454284934696486,
+          "max_drawdown": -0.07080316543579102,
+          "positive_returns_pct": 0.48467966573816157
+        },
+        "cluster_characteristics": {
+          "center": [
+            0.8914942741394043,
+            0.8928419351577759,
+            0.6963069438934326,
+            1.3760663270950317
+          ],
+          "dispersion": 0.8764780759811401
+        }
+      },
+      "quality_score": 0.5673701446001452,
+      "economic_value": 0.13370789761378699,
+      "stability_score": 0.7423398328690808
+    },
+    "cluster_2": {
+      "detailed_metrics": {
+        "basic_stats": {
+          "size": 8407,
+          "percentage": 0.07999657443002321,
+          "rank_by_size": 20
+        },
+        "price_statistics": {
+          "mean": 2412.090087890625,
+          "std": 832.759521484375,
+          "min": 1089.18994140625,
+          "max": 4788.93994140625,
+          "median": 2287.590087890625,
+          "skewness": 0.5601947903633118,
+          "kurtosis": -0.600599467754364
+        },
+        "volume_statistics": {
+          "mean": 3000.416015625,
+          "std": 1723.3756103515625,
+          "min": 299.70330810546875,
+          "max": 12835.052734375,
+          "median": 2668.304443359375
+        },
+        "feature_statistics": {
+          "feature_means": [
+            -0.28959527611732483,
+            -0.29160913825035095,
+            -0.03362489491701126,
+            1.1168118715286255
+          ],
+          "feature_dimensions": {
+            "volume_dimension": -0.28959527611732483,
+            "volatility_dimension": -0.29160913825035095,
+            "trend_dimension": -0.03362489491701126,
+            "momentum_dimension": 1.1168118715286255
+          },
+          "feature_stds": [
+            0.24410557746887207,
+            0.2518060505390167,
+            0.3249773681163788,
+            0.3523045480251312
+          ],
+          "feature_ranges": [
+            1.6840161085128784,
+            1.426828145980835,
+            1.722903847694397,
+            2.4106106758117676
+          ]
+        },
+        "return_statistics": {
+          "mean_return": 7.076587280607782e-07,
+          "std_return": 0.000165657140314579,
+          "sharpe_ratio": 0.004271824924265017,
+          "max_drawdown": -0.015510935336351395,
+          "positive_returns_pct": 0.5000594742476507
+        },
+        "cluster_characteristics": {
+          "center": [
+            -0.28959527611732483,
+            -0.29160913825035095,
+            -0.03362489491701126,
+            1.1168118715286255
+          ],
+          "dispersion": 0.2932983934879303
+        }
+      },
+      "quality_score": 0.6763880698820738,
+      "economic_value": 0.11664643263212254,
+      "stability_score": 0.7500297371238254
+    },
+    "cluster_3": {
+      "detailed_metrics": {
+        "basic_stats": {
+          "size": 3409,
+          "percentage": 0.032438244585696344,
+          "rank_by_size": 5
+        },
+        "price_statistics": {
+          "mean": 2479.58056640625,
+          "std": 865.03369140625,
+          "min": 1104.219970703125,
+          "max": 4941.14013671875,
+          "median": 2376.39990234375,
+          "skewness": 0.5269638895988464,
+          "kurtosis": -0.6401259899139404
+        },
+        "volume_statistics": {
+          "mean": 7712.86474609375,
+          "std": 3102.681396484375,
+          "min": 2397.119140625,
+          "max": 27132.705078125,
+          "median": 7163.798828125
+        },
+        "feature_statistics": {
+          "feature_means": [
+            0.45268872380256653,
+            0.4495026767253876,
+            0.8417056202888489,
+            0.11828994005918503
+          ],
+          "feature_dimensions": {
+            "volume_dimension": 0.45268872380256653,
+            "volatility_dimension": 0.4495026767253876,
+            "trend_dimension": 0.8417056202888489,
+            "momentum_dimension": 0.11828994005918503
+          },
+          "feature_stds": [
+            0.37133389711380005,
+            0.37187954783439636,
+            0.5796077251434326,
+            0.4715382754802704
+          ],
+          "feature_ranges": [
+            2.70742130279541,
+            2.7883400917053223,
+            6.694562911987305,
+            2.945873260498047
+          ]
+        },
+        "return_statistics": {
+          "mean_return": -6.241414212126983e-06,
+          "std_return": 0.00023511766630690545,
+          "sharpe_ratio": -0.026545906377742207,
+          "max_drawdown": -0.024074332788586617,
+          "positive_returns_pct": 0.4848929304781461
+        },
+        "cluster_characteristics": {
+          "center": [
+            0.45268872380256653,
+            0.4495026767253876,
+            0.8417056202888489,
+            0.11828994005918503
+          ],
+          "dispersion": 0.44858986139297485
+        }
+      },
+      "quality_score": 0.5644629384847467,
+      "economic_value": 0.12957573399111785,
+      "stability_score": 0.742446465239073
+    },
+    "cluster_4": {
+      "detailed_metrics": {
+        "basic_stats": {
+          "size": 7735,
+          "percentage": 0.07360217714002969,
+          "rank_by_size": 18
+        },
+        "price_statistics": {
+          "mean": 2320.702880859375,
+          "std": 822.362060546875,
+          "min": 1128.1400146484375,
+          "max": 4792.68994140625,
+          "median": 2027.27001953125,
+          "skewness": 0.7207859754562378,
+          "kurtosis": -0.356389582157135
+        },
+        "volume_statistics": {
+          "mean": 2036.697265625,
+          "std": 1121.0347900390625,
+          "min": 195.33859252929688,
+          "max": 7468.03759765625,
+          "median": 1797.81494140625
+        },
+        "feature_statistics": {
+          "feature_means": [
+            -0.4424183666706085,
+            -0.453662246465683,
+            0.7704885601997375,
+            0.26774662733078003
+          ],
+          "feature_dimensions": {
+            "volume_dimension": -0.4424183666706085,
+            "volatility_dimension": -0.453662246465683,
+            "trend_dimension": 0.7704885601997375,
+            "momentum_dimension": 0.26774662733078003
+          },
+          "feature_stds": [
+            0.15930262207984924,
+            0.15898168087005615,
+            0.34179458022117615,
+            0.3427603244781494
+          ],
+          "feature_ranges": [
+            0.9756209850311279,
+            0.9382925629615784,
+            1.7333006858825684,
+            1.5654702186584473
+          ]
+        },
+        "return_statistics": {
+          "mean_return": 1.657047619119112e-06,
+          "std_return": 0.00010315930558135733,
+          "sharpe_ratio": 0.01606298145846014,
+          "max_drawdown": -0.005371544510126114,
+          "positive_returns_pct": 0.5057530704589528
+        },
+        "cluster_characteristics": {
+          "center": [
+            -0.4424183666706085,
+            -0.453662246465683,
+            0.7704885601997375,
+            0.26774662733078003
+          ],
+          "dispersion": 0.25070980191230774
+        }
+      },
+      "quality_score": 0.6749892771754648,
+      "economic_value": 0.11303705391958165,
+      "stability_score": 0.7528765352294764
+    },
+    "cluster_5": {
+      "detailed_metrics": {
+        "basic_stats": {
+          "size": 3174,
+          "percentage": 0.030202108628630153,
+          "rank_by_size": 3
+        },
+        "price_statistics": {
+          "mean": 2550.0234375,
+          "std": 885.2091674804688,
+          "min": 1083.25,
+          "max": 4930.97021484375,
+          "median": 2471.64013671875,
+          "skewness": 0.3694409132003784,
+          "kurtosis": -0.8129376173019409
+        },
+        "volume_statistics": {
+          "mean": 15713.06640625,
+          "std": 12258.296875,
+          "min": 6205.6806640625,
+          "max": 219791.265625,
+          "median": 13898.95703125
+        },
+        "feature_statistics": {
+          "feature_means": [
+            1.7429295778274536,
+            1.7790018320083618,
+            -0.5471475124359131,
+            -0.1716330647468567
+          ],
+          "feature_dimensions": {
+            "volume_dimension": 1.7429295778274536,
+            "volatility_dimension": 1.7790018320083618,
+            "trend_dimension": -0.5471475124359131,
+            "momentum_dimension": -0.1716330647468567
+          },
+          "feature_stds": [
+            1.8256237506866455,
+            1.7934173345565796,
+            0.5796193480491638,
+            0.6900442242622375
+          ],
+          "feature_ranges": [
+            25.06126594543457,
+            24.73113441467285,
+            4.388230323791504,
+            6.693731784820557
+          ]
+        },
+        "return_statistics": {
+          "mean_return": 6.07345964453998e-06,
+          "std_return": 0.0004534371255431324,
+          "sharpe_ratio": 0.013394267833359114,
+          "max_drawdown": -0.029314886778593063,
+          "positive_returns_pct": 0.5069313169502205
+        },
+        "cluster_characteristics": {
+          "center": [
+            1.7429295778274536,
+            1.7790018320083618,
+            -0.5471475124359131,
+            -0.1716330647468567
+          ],
+          "dispersion": 1.222176194190979
+        }
+      },
+      "quality_score": 0.5752688534593994,
+      "economic_value": 0.14231111276380087,
+      "stability_score": 0.7534656584751103
+    },
+    "cluster_6": {
+      "detailed_metrics": {
+        "basic_stats": {
+          "size": 5718,
+          "percentage": 0.05440946979789137,
+          "rank_by_size": 12
+        },
+        "price_statistics": {
+          "mean": 2346.20068359375,
+          "std": 818.627197265625,
+          "min": 1091.3199462890625,
+          "max": 4804.52978515625,
+          "median": 2158.385009765625,
+          "skewness": 0.6898947358131409,
+          "kurtosis": -0.3737306594848633
+        },
+        "volume_statistics": {
+          "mean": 2916.105224609375,
+          "std": 1840.9453125,
+          "min": 210.8459930419922,
+          "max": 12093.0771484375,
+          "median": 2467.095703125
+        },
+        "feature_statistics": {
+          "feature_means": [
+            -0.3011823892593384,
+            -0.3127475380897522,
+            1.2108720541000366,
+            1.594692587852478
+          ],
+          "feature_dimensions": {
+            "volume_dimension": -0.3011823892593384,
+            "volatility_dimension": -0.3127475380897522,
+            "trend_dimension": 1.2108720541000366,
+            "momentum_dimension": 1.594692587852478
+          },
+          "feature_stds": [
+            0.2680583596229553,
+            0.26954570412635803,
+            0.4430803656578064,
+            0.5192089676856995
+          ],
+          "feature_ranges": [
+            1.5733885765075684,
+            1.505220890045166,
+            3.0999088287353516,
+            3.6136655807495117
+          ]
+        },
+        "return_statistics": {
+          "mean_return": 2.4114206098602153e-06,
+          "std_return": 0.00016735185636207461,
+          "sharpe_ratio": 0.014409276486992372,
+          "max_drawdown": -0.012650929391384125,
+          "positive_returns_pct": 0.5108429520811473
+        },
+        "cluster_characteristics": {
+          "center": [
+            -0.3011823892593384,
+            -0.3127475380897522,
+            1.2108720541000366,
+            1.594692587852478
+          ],
+          "dispersion": 0.3749733567237854
+        }
+      },
+      "quality_score": 0.6791100039393246,
+      "economic_value": 0.11798032993798234,
+      "stability_score": 0.7554214760405736
+    },
+    "cluster_7": {
+      "detailed_metrics": {
+        "basic_stats": {
+          "size": 4192,
+          "percentage": 0.03988885928519773,
+          "rank_by_size": 6
+        },
+        "price_statistics": {
+          "mean": 2266.88525390625,
+          "std": 818.6463012695312,
+          "min": 1129.47998046875,
+          "max": 4840.81982421875,
+          "median": 1906.8900146484375,
+          "skewness": 0.7924285531044006,
+          "kurtosis": -0.2109374701976776
+        },
+        "volume_statistics": {
+          "mean": 2331.028564453125,
+          "std": 1663.2265625,
+          "min": 194.31300354003906,
+          "max": 13044.8076171875,
+          "median": 1815.891845703125
+        },
+        "feature_statistics": {
+          "feature_means": [
+            -0.39128124713897705,
+            -0.4055507779121399,
+            1.0192540884017944,
+            -1.2172006368637085
+          ],
+          "feature_dimensions": {
+            "volume_dimension": -0.39128124713897705,
+            "volatility_dimension": -0.4055507779121399,
+            "trend_dimension": 1.0192540884017944,
+            "momentum_dimension": -1.2172006368637085
+          },
+          "feature_stds": [
+            0.2479935735464096,
+            0.24771107733249664,
+            0.5112115740776062,
+            0.5461580753326416
+          ],
+          "feature_ranges": [
+            1.912893533706665,
+            2.1971917152404785,
+            3.3480169773101807,
+            4.025022983551025
+          ]
+        },
+        "return_statistics": {
+          "mean_return": 6.240365451049001e-07,
+          "std_return": 9.702815441414714e-05,
+          "sharpe_ratio": 0.0064314930622302625,
+          "max_drawdown": -0.004509232472628355,
+          "positive_returns_pct": 0.5023854961832062
+        },
+        "cluster_characteristics": {
+          "center": [
+            -0.39128124713897705,
+            -0.4055507779121399,
+            1.0192540884017944,
+            -1.2172006368637085
+          ],
+          "dispersion": 0.3882685899734497
+        }
+      },
+      "quality_score": 0.6121690086534782,
+      "economic_value": 0.11335051225145816,
+      "stability_score": 0.7511927480916031
+    },
+    "cluster_8": {
+      "detailed_metrics": {
+        "basic_stats": {
+          "size": 7713,
+          "percentage": 0.07339283675255966,
+          "rank_by_size": 17
+        },
+        "price_statistics": {
+          "mean": 2345.155517578125,
+          "std": 826.6494750976562,
+          "min": 0.0,
+          "max": 4788.58984375,
+          "median": 2094.39990234375,
+          "skewness": 0.6471247673034668,
+          "kurtosis": -0.4520094394683838
+        },
+        "volume_statistics": {
+          "mean": 2189.714599609375,
+          "std": 1257.731689453125,
+          "min": 0.0,
+          "max": 8142.33349609375,
+          "median": 1917.046142578125
+        },
+        "feature_statistics": {
+          "feature_means": [
+            -0.41735973954200745,
+            -0.4254533350467682,
+            -0.03307488188147545,
+            -0.6476432085037231
+          ],
+          "feature_dimensions": {
+            "volume_dimension": -0.41735973954200745,
+            "volatility_dimension": -0.4254533350467682,
+            "trend_dimension": -0.03307488188147545,
+            "momentum_dimension": -0.6476432085037231
+          },
+          "feature_stds": [
+            0.18269789218902588,
+            0.18553446233272552,
+            0.2753846347332001,
+            0.3369540870189667
+          ],
+          "feature_ranges": [
+            1.1497395038604736,
+            1.2128087282180786,
+            1.2451972961425781,
+            1.5916627645492554
+          ]
+        },
+        "return_statistics": {
+          "mean_return": 2.104551185766468e-06,
+          "std_return": 0.00010199052485404536,
+          "sharpe_ratio": 0.020634751368355724,
+          "max_drawdown": NaN,
+          "positive_returns_pct": 0.5044729677168417
+        },
+        "cluster_characteristics": {
+          "center": [
+            -0.41735973954200745,
+            -0.4254533350467682,
+            -0.03307488188147545,
+            -0.6476432085037231
+          ],
+          "dispersion": 0.24514278769493103
+        }
+      },
+      "quality_score": 0.6748040995485485,
+      "economic_value": 0.11486213701864646,
+      "stability_score": 0.7522364838584208
+    },
+    "cluster_9": {
+      "detailed_metrics": {
+        "basic_stats": {
+          "size": 3154,
+          "percentage": 0.030011799185475585,
+          "rank_by_size": 2
+        },
+        "price_statistics": {
+          "mean": 2426.64599609375,
+          "std": 831.67236328125,
+          "min": 1093.31005859375,
+          "max": 4850.77978515625,
+          "median": 2294.02490234375,
+          "skewness": 0.5847073793411255,
+          "kurtosis": -0.5345175862312317
+        },
+        "volume_statistics": {
+          "mean": 17994.06640625,
+          "std": 20280.7109375,
+          "min": 2085.318115234375,
+          "max": 214477.171875,
+          "median": 6289.27978515625
+        },
+        "feature_statistics": {
+          "feature_means": [
+            2.1695218086242676,
+            2.1771979331970215,
+            -0.5392957329750061,
+            -0.15233252942562103
+          ],
+          "feature_dimensions": {
+            "volume_dimension": 2.1695218086242676,
+            "volatility_dimension": 2.1771979331970215,
+            "trend_dimension": -0.5392957329750061,
+            "momentum_dimension": -0.15233252942562103
+          },
+          "feature_stds": [
+            3.0995981693267822,
+            3.034586191177368,
+            0.6321386098861694,
+            0.7706133723258972
+          ],
+          "feature_ranges": [
+            33.42057418823242,
+            29.839155197143555,
+            5.212494373321533,
+            6.728872776031494
+          ]
+        },
+        "return_statistics": {
+          "mean_return": -1.8600312614580616e-05,
+          "std_return": 0.0005849719746038318,
+          "sharpe_ratio": -0.03179692402783081,
+          "max_drawdown": -0.06893836706876755,
+          "positive_returns_pct": 0.487000634115409
+        },
+        "cluster_characteristics": {
+          "center": [
+            2.1695218086242676,
+            2.1771979331970215,
+            -0.5392957329750061,
+            -0.15233252942562103
+          ],
+          "dispersion": 1.884234070777893
+        }
+      },
+      "quality_score": 0.5960249202682841,
+      "economic_value": 0.14183844845486807,
+      "stability_score": 0.7435003170577045
+    },
+    "cluster_10": {
+      "detailed_metrics": {
+        "basic_stats": {
+          "size": 5072,
+          "percentage": 0.04826247478399878,
+          "rank_by_size": 9
+        },
+        "price_statistics": {
+          "mean": 2514.14892578125,
+          "std": 859.2240600585938,
+          "min": 1087.5400390625,
+          "max": 4937.9501953125,
+          "median": 2425.945068359375,
+          "skewness": 0.4323711693286896,
+          "kurtosis": -0.7204843759536743
+        },
+        "volume_statistics": {
+          "mean": 7923.82666015625,
+          "std": 2879.33544921875,
+          "min": 2843.435546875,
+          "max": 26230.765625,
+          "median": 7508.2998046875
+        },
+        "feature_statistics": {
+          "feature_means": [
+            0.5071060657501221,
+            0.5308882594108582,
+            -0.9329743385314941,
+            -0.9772149324417114
+          ],
+          "feature_dimensions": {
+            "volume_dimension": 0.5071060657501221,
+            "volatility_dimension": 0.5308882594108582,
+            "trend_dimension": -0.9329743385314941,
+            "momentum_dimension": -0.9772149324417114
+          },
+          "feature_stds": [
+            0.33116766810417175,
+            0.33027219772338867,
+            0.38336890935897827,
+            0.48253169655799866
+          ],
+          "feature_ranges": [
+            2.352886199951172,
+            2.1138885021209717,
+            2.6464085578918457,
+            3.5526657104492188
+          ]
+        },
+        "return_statistics": {
+          "mean_return": 1.4685108908452094e-05,
+          "std_return": 0.00021959916921332479,
+          "sharpe_ratio": 0.06687230317777867,
+          "max_drawdown": -0.00478963740170002,
+          "positive_returns_pct": 0.5167586750788643
+        },
+        "cluster_characteristics": {
+          "center": [
+            0.5071060657501221,
+            0.5308882594108582,
+            -0.9329743385314941,
+            -0.9772149324417114
+          ],
+          "dispersion": 0.38183513283729553
+        }
+      },
+      "quality_score": 0.6677378193358998,
+      "economic_value": 0.14160121321539268,
+      "stability_score": 0.7583793375394321
+    },
+    "cluster_11": {
+      "detailed_metrics": {
+        "basic_stats": {
+          "size": 6404,
+          "percentage": 0.0609370836980931,
+          "rank_by_size": 15
+        },
+        "price_statistics": {
+          "mean": 2540.454833984375,
+          "std": 855.0257568359375,
+          "min": 1083.7099609375,
+          "max": 4922.009765625,
+          "median": 2457.340087890625,
+          "skewness": 0.3716173768043518,
+          "kurtosis": -0.7592889666557312
+        },
+        "volume_statistics": {
+          "mean": 7037.41796875,
+          "std": 2447.695556640625,
+          "min": 2643.540283203125,
+          "max": 17690.203125,
+          "median": 6745.44140625
+        },
+        "feature_statistics": {
+          "feature_means": [
+            0.3649686276912689,
+            0.396727055311203,
+            -0.5711781978607178,
+            0.31587308645248413
+          ],
+          "feature_dimensions": {
+            "volume_dimension": 0.3649686276912689,
+            "volatility_dimension": 0.396727055311203,
+            "trend_dimension": -0.5711781978607178,
+            "momentum_dimension": 0.31587308645248413
+          },
+          "feature_stds": [
+            0.26322314143180847,
+            0.26870304346084595,
+            0.3256556987762451,
+            0.39140793681144714
+          ],
+          "feature_ranges": [
+            1.415116310119629,
+            1.47053062915802,
+            1.5800491571426392,
+            2.225111961364746
+          ]
+        },
+        "return_statistics": {
+          "mean_return": -2.3224565381951834e-07,
+          "std_return": 0.0002511169877834618,
+          "sharpe_ratio": -0.0009248500604617704,
+          "max_drawdown": -0.034488510340452194,
+          "positive_returns_pct": 0.5024984384759525
+        },
+        "cluster_characteristics": {
+          "center": [
+            0.3649686276912689,
+            0.396727055311203,
+            -0.5711781978607178,
+            0.31587308645248413
+          ],
+          "dispersion": 0.31224745512008667
+        }
+      },
+      "quality_score": 0.6769912305227118,
+      "economic_value": 0.12824916844558623,
+      "stability_score": 0.7512492192379763
+    },
+    "cluster_12": {
+      "detailed_metrics": {
+        "basic_stats": {
+          "size": 5889,
+          "percentage": 0.05603661553686294,
+          "rank_by_size": 14
+        },
+        "price_statistics": {
+          "mean": 2319.12939453125,
+          "std": 837.8838500976562,
+          "min": 1119.1800537109375,
+          "max": 4812.31982421875,
+          "median": 2047.010009765625,
+          "skewness": 0.6838934421539307,
+          "kurtosis": -0.4098876714706421
+        },
+        "volume_statistics": {
+          "mean": 2841.22802734375,
+          "std": 2297.299072265625,
+          "min": 239.05450439453125,
+          "max": 21903.61328125,
+          "median": 2172.956298828125
+        },
+        "feature_statistics": {
+          "feature_means": [
+            -0.31815606355667114,
+            -0.3371049761772156,
+            2.426501512527466,
+            0.7429152131080627
+          ],
+          "feature_dimensions": {
+            "volume_dimension": -0.31815606355667114,
+            "volatility_dimension": -0.3371049761772156,
+            "trend_dimension": 2.426501512527466,
+            "momentum_dimension": 0.7429152131080627
+          },
+          "feature_stds": [
+            0.34151163697242737,
+            0.33506426215171814,
+            0.7600952982902527,
+            0.9793240427970886
+          ],
+          "feature_ranges": [
+            2.7087526321411133,
+            2.933476448059082,
+            5.230696678161621,
+            6.917705535888672
+          ]
+        },
+        "return_statistics": {
+          "mean_return": -2.1143018784641754e-06,
+          "std_return": 0.00014146561443340033,
+          "sharpe_ratio": -0.014945684096902171,
+          "max_drawdown": -0.01966317556798458,
+          "positive_returns_pct": 0.49600950925454235
+        },
+        "cluster_characteristics": {
+          "center": [
+            -0.31815606355667114,
+            -0.3371049761772156,
+            2.426501512527466,
+            0.7429152131080627
+          ],
+          "dispersion": 0.6039988398551941
+        }
+      },
+      "quality_score": 0.6867528127935918,
+      "economic_value": 0.11512196392436502,
+      "stability_score": 0.7480047546272712
+    },
+    "cluster_13": {
+      "detailed_metrics": {
+        "basic_stats": {
+          "size": 5006,
+          "percentage": 0.047634453621588704,
+          "rank_by_size": 8
+        },
+        "price_statistics": {
+          "mean": 2465.9013671875,
+          "std": 852.09130859375,
+          "min": 1081.18994140625,
+          "max": 4942.97998046875,
+          "median": 2341.81982421875,
+          "skewness": 0.5049532055854797,
+          "kurtosis": -0.6524412631988525
+        },
+        "volume_statistics": {
+          "mean": 11532.48828125,
+          "std": 9513.2607421875,
+          "min": 1887.8607177734375,
+          "max": 53147.8125,
+          "median": 6234.95166015625
+        },
+        "feature_statistics": {
+          "feature_means": [
+            1.0974071025848389,
+            1.1187424659729004,
+            -0.3768739104270935,
+            0.11051489412784576
+          ],
+          "feature_dimensions": {
+            "volume_dimension": 1.0974071025848389,
+            "volatility_dimension": 1.1187424659729004,
+            "trend_dimension": -0.3768739104270935,
+            "momentum_dimension": 0.11051489412784576
+          },
+          "feature_stds": [
+            1.4420756101608276,
+            1.4473636150360107,
+            0.7478766441345215,
+            0.7963134050369263
+          ],
+          "feature_ranges": [
+            6.04557991027832,
+            5.8405656814575195,
+            5.776526927947998,
+            6.9594597816467285
+          ]
+        },
+        "return_statistics": {
+          "mean_return": -4.70966506327386e-06,
+          "std_return": 0.000377407151972875,
+          "sharpe_ratio": -0.01247899990965821,
+          "max_drawdown": -0.04326869547367096,
+          "positive_returns_pct": 0.5055932880543348
+        },
+        "cluster_characteristics": {
+          "center": [
+            1.0974071025848389,
+            1.1187424659729004,
+            -0.3768739104270935,
+            0.11051489412784576
+          ],
+          "dispersion": 1.1084072589874268
+        }
+      },
+      "quality_score": 0.6877175111869888,
+      "economic_value": 0.1353986892896428,
+      "stability_score": 0.7527966440271674
+    },
+    "cluster_14": {
+      "detailed_metrics": {
+        "basic_stats": {
+          "size": 5761,
+          "percentage": 0.054818635100673696,
+          "rank_by_size": 13
+        },
+        "price_statistics": {
+          "mean": 2395.3154296875,
+          "std": 826.0437622070312,
+          "min": 1087.8299560546875,
+          "max": 4798.25,
+          "median": 2281.080078125,
+          "skewness": 0.594082236289978,
+          "kurtosis": -0.5097399353981018
+        },
+        "volume_statistics": {
+          "mean": 2741.76123046875,
+          "std": 1742.175048828125,
+          "min": 214.40040588378906,
+          "max": 17614.9453125,
+          "median": 2320.22802734375
+        },
+        "feature_statistics": {
+          "feature_means": [
+            -0.3333083987236023,
+            -0.34102410078048706,
+            -0.8152565360069275,
+            -1.8759351968765259
+          ],
+          "feature_dimensions": {
+            "volume_dimension": -0.3333083987236023,
+            "volatility_dimension": -0.34102410078048706,
+            "trend_dimension": -0.8152565360069275,
+            "momentum_dimension": -1.8759351968765259
+          },
+          "feature_stds": [
+            0.2612939178943634,
+            0.2611505091190338,
+            0.45515915751457214,
+            0.5094500780105591
+          ],
+          "feature_ranges": [
+            2.428628921508789,
+            2.1150519847869873,
+            2.7512760162353516,
+            7.972735404968262
+          ]
+        },
+        "return_statistics": {
+          "mean_return": 7.392261977656744e-06,
+          "std_return": 0.00012134946882724762,
+          "sharpe_ratio": 0.06091708482442419,
+          "max_drawdown": -0.003600101685151458,
+          "positive_returns_pct": 0.5164034021871203
+        },
+        "cluster_characteristics": {
+          "center": [
+            -0.3333083987236023,
+            -0.34102410078048706,
+            -0.8152565360069275,
+            -1.8759351968765259
+          ],
+          "dispersion": 0.3717634081840515
+        }
+      },
+      "quality_score": 0.6790183353578283,
+      "economic_value": 0.12500552293629316,
+      "stability_score": 0.7582017010935602
+    },
+    "cluster_15": {
+      "detailed_metrics": {
+        "basic_stats": {
+          "size": 6723,
+          "percentage": 0.06397251931640847,
+          "rank_by_size": 16
+        },
+        "price_statistics": {
+          "mean": 2374.426513671875,
+          "std": 825.59423828125,
+          "min": 1086.6300048828125,
+          "max": 4807.68994140625,
+          "median": 2237.409912109375,
+          "skewness": 0.6286923885345459,
+          "kurtosis": -0.47679150104522705
+        },
+        "volume_statistics": {
+          "mean": 2294.654052734375,
+          "std": 1053.46484375,
+          "min": 0.0,
+          "max": 6310.49365234375,
+          "median": 2145.921875
+        },
+        "feature_statistics": {
+          "feature_means": [
+            -0.40412575006484985,
+            -0.4079383611679077,
+            -0.7545564770698547,
+            0.2007005512714386
+          ],
+          "feature_dimensions": {
+            "volume_dimension": -0.40412575006484985,
+            "volatility_dimension": -0.4079383611679077,
+            "trend_dimension": -0.7545564770698547,
+            "momentum_dimension": 0.2007005512714386
+          },
+          "feature_stds": [
+            0.13418598473072052,
+            0.14046156406402588,
+            0.17838233709335327,
+            0.28562065958976746
+          ],
+          "feature_ranges": [
+            0.8801844120025635,
+            0.8606502413749695,
+            0.9698078632354736,
+            1.3590656518936157
+          ]
+        },
+        "return_statistics": {
+          "mean_return": 4.049152266816236e-06,
+          "std_return": 0.00011473865743028,
+          "sharpe_ratio": 0.035290187531241725,
+          "max_drawdown": -0.006148843560367823,
+          "positive_returns_pct": 0.512866279934553
+        },
+        "cluster_characteristics": {
+          "center": [
+            -0.40412575006484985,
+            -0.4079383611679077,
+            -0.7545564770698547,
+            0.2007005512714386
+          ],
+          "dispersion": 0.18466264009475708
+        }
+      },
+      "quality_score": 0.6727838461718315,
+      "economic_value": 0.11804688439589921,
+      "stability_score": 0.7564331399672766
+    },
+    "cluster_16": {
+      "detailed_metrics": {
+        "basic_stats": {
+          "size": 4339,
+          "percentage": 0.041287633692383814,
+          "rank_by_size": 7
+        },
+        "price_statistics": {
+          "mean": 2383.23583984375,
+          "std": 827.3600463867188,
+          "min": 1101.9000244140625,
+          "max": 4776.10986328125,
+          "median": 2255.419921875,
+          "skewness": 0.5492486357688904,
+          "kurtosis": -0.655825674533844
+        },
+        "volume_statistics": {
+          "mean": 1942.0999755859375,
+          "std": 947.2218627929688,
+          "min": 212.1968994140625,
+          "max": 5909.63671875,
+          "median": 1777.671875
+        },
+        "feature_statistics": {
+          "feature_means": [
+            -0.46287891268730164,
+            -0.46985068917274475,
+            -0.2151721864938736,
+            0.1846179962158203
+          ],
+          "feature_dimensions": {
+            "volume_dimension": -0.46287891268730164,
+            "volatility_dimension": -0.46985068917274475,
+            "trend_dimension": -0.2151721864938736,
+            "momentum_dimension": 0.1846179962158203
+          },
+          "feature_stds": [
+            0.1310078501701355,
+            0.13356663286685944,
+            0.20438887178897858,
+            0.23503701388835907
+          ],
+          "feature_ranges": [
+            0.7590325474739075,
+            0.7708317041397095,
+            0.9498844146728516,
+            1.135441541671753
+          ]
+        },
+        "return_statistics": {
+          "mean_return": 4.588530373439426e-06,
+          "std_return": 0.00010529375140322372,
+          "sharpe_ratio": 0.043578331614707574,
+          "max_drawdown": -0.003929742146283388,
+          "positive_returns_pct": 0.5192440654528693
+        },
+        "cluster_characteristics": {
+          "center": [
+            -0.46287891268730164,
+            -0.46985068917274475,
+            -0.2151721864938736,
+            0.1846179962158203
+          ],
+          "dispersion": 0.17600008845329285
+        }
+      },
+      "quality_score": 0.6144158000090697,
+      "economic_value": 0.1170325111587948,
+      "stability_score": 0.7596220327264347
+    },
+    "cluster_17": {
+      "detailed_metrics": {
+        "basic_stats": {
+          "size": 5513,
+          "percentage": 0.052458798005557035,
+          "rank_by_size": 11
+        },
+        "price_statistics": {
+          "mean": 2403.038330078125,
+          "std": 821.33984375,
+          "min": 1085.5899658203125,
+          "max": 4781.31982421875,
+          "median": 2276.409912109375,
+          "skewness": 0.5735902786254883,
+          "kurtosis": -0.5459526181221008
+        },
+        "volume_statistics": {
+          "mean": 2405.19677734375,
+          "std": 1159.728515625,
+          "min": 223.5928955078125,
+          "max": 7406.427734375,
+          "median": 2224.984619140625
+        },
+        "feature_statistics": {
+          "feature_means": [
+            -0.3884717524051666,
+            -0.3919323980808258,
+            -0.9265932440757751,
+            -0.46182939410209656
+          ],
+          "feature_dimensions": {
+            "volume_dimension": -0.3884717524051666,
+            "volatility_dimension": -0.3919323980808258,
+            "trend_dimension": -0.9265932440757751,
+            "momentum_dimension": -0.46182939410209656
+          },
+          "feature_stds": [
+            0.15509159862995148,
+            0.15912151336669922,
+            0.21349281072616577,
+            0.16032683849334717
+          ],
+          "feature_ranges": [
+            1.006920576095581,
+            1.0293577909469604,
+            1.1251800060272217,
+            0.7897872924804688
+          ]
+        },
+        "return_statistics": {
+          "mean_return": 5.546428383240709e-06,
+          "std_return": 0.0001107074785977602,
+          "sharpe_ratio": 0.050099807560536086,
+          "max_drawdown": -0.0033945543691515923,
+          "positive_returns_pct": 0.5200435334663522
+        },
+        "cluster_characteristics": {
+          "center": [
+            -0.3884717524051666,
+            -0.3919323980808258,
+            -0.9265932440757751,
+            -0.46182939410209656
+          ],
+          "dispersion": 0.1720081865787506
+        }
+      },
+      "quality_score": 0.6723633744780222,
+      "economic_value": 0.12124588689956477,
+      "stability_score": 0.7600217667331761
+    },
+    "cluster_18": {
+      "detailed_metrics": {
+        "basic_stats": {
+          "size": 5245,
+          "percentage": 0.049908651467285806,
+          "rank_by_size": 10
+        },
+        "price_statistics": {
+          "mean": 2433.669677734375,
+          "std": 836.2980346679688,
+          "min": 1099.6600341796875,
+          "max": 4832.06982421875,
+          "median": 2304.47998046875,
+          "skewness": 0.5525522232055664,
+          "kurtosis": -0.6206293106079102
+        },
+        "volume_statistics": {
+          "mean": 2502.677978515625,
+          "std": 1260.378173828125,
+          "min": 175.0540008544922,
+          "max": 7926.30712890625,
+          "median": 2294.310546875
+        },
+        "feature_statistics": {
+          "feature_means": [
+            -0.3767787516117096,
+            -0.3780202269554138,
+            -0.945763349533081,
+            -0.9960287809371948
+          ],
+          "feature_dimensions": {
+            "volume_dimension": -0.3767787516117096,
+            "volatility_dimension": -0.3780202269554138,
+            "trend_dimension": -0.945763349533081,
+            "momentum_dimension": -0.9960287809371948
+          },
+          "feature_stds": [
+            0.17418770492076874,
+            0.1801701933145523,
+            0.26000669598579407,
+            0.17132389545440674
+          ],
+          "feature_ranges": [
+            1.0542389154434204,
+            1.059384822845459,
+            1.3702280521392822,
+            0.8196659684181213
+          ]
+        },
+        "return_statistics": {
+          "mean_return": 4.845343028136995e-06,
+          "std_return": 0.00011494252976262942,
+          "sharpe_ratio": 0.04215444729377795,
+          "max_drawdown": -0.00469231978058815,
+          "positive_returns_pct": 0.507721639656816
+        },
+        "cluster_characteristics": {
+          "center": [
+            -0.3767787516117096,
+            -0.3780202269554138,
+            -0.945763349533081,
+            -0.9960287809371948
+          ],
+          "dispersion": 0.19642212986946106
+        }
+      },
+      "quality_score": 0.6725667710043887,
+      "economic_value": 0.12047320163148972,
+      "stability_score": 0.753860819828408
+    }
+  },
+  "economic_analysis": {
+    "market_coverage_analysis": {
+      "total_clusters": 19,
+      "covered_percentage": 1.0000000000000002,
+      "largest_cluster_percentage": 0.07999657443002321,
+      "coverage_efficiency": 0.05263157894736843,
+      "cluster_concentration_ratio": 0.23359532600007604,
+      "market_fragmentation_index": 18.999999998099995,
+      "diversification_potential": 4.280907572609884
+    },
+    "profitability_analysis": {
+      "profitability_summary": {
+        "positive_return_clusters": 13,
+        "negative_return_clusters": 6,
+        "profitable_clusters_percentage": 0.6842105263157895,
+        "profit_factor": 1.074903064620315,
+        "expectancy": 2.0079578514529011e-07,
+        "average_positive_return": 4.21147818212393e-06,
+        "average_negative_return": -8.489016074975098e-06
+      },
+      "return_distribution": {
+        "mean_return": 2.0079578514529011e-07,
+        "median_return": 1.657047619119112e-06,
+        "std_return": 7.900702179213428e-06,
+        "skewness": -1.1765448437296187,
+        "kurtosis": 0.0,
+        "percentiles": [
+          -1.1732737661418469e-06,
+          1.657047619119112e-06,
+          4.71693670078821e-06,
+          6.337220111163332e-06,
+          8.121546670736264e-06
+        ],
+        "best_return": 1.4685108908452094e-05,
+        "worst_return": -1.9036157027585432e-05
+      },
+      "performance_consistency": {
+        "consistency_ratio": 0.6842105263157895,
+        "return_stability_score": 0.9999920993602415
+      }
+    },
+    "risk_adjusted_returns": {
+      "sharpe_ratio_analysis": {
+        "average_sharpe_ratio": 0.012805917958517488,
+        "median_sharpe_ratio": 0.013394267833359114,
+        "best_sharpe_ratio": 0.06687230317777867,
+        "worst_sharpe_ratio": -0.04454284934696486
+      },
+      "sortino_ratio_analysis": {
+        "average_sortino_ratio": -10020.202710438387,
+        "median_sortino_ratio": 0.22182183379638762,
+        "best_sortino_ratio": 2.006092761289953,
+        "worst_sortino_ratio": -190361.57027585432
+      },
+      "calmar_ratio_analysis": {
+        "average_calmar_ratio": NaN,
+        "median_calmar_ratio": NaN,
+        "best_calmar_ratio": 0.0030660168352702032,
+        "worst_calmar_ratio": -0.00026981075133425186
+      },
+      "drawdown_analysis": {
+        "average_max_drawdown": NaN,
+        "median_max_drawdown": NaN,
+        "worst_drawdown": -0.07080316543579102,
+        "drawdown_recovery_ratio": NaN
+      }
+    },
+    "enhanced_risk_analysis": {
+      "value_at_risk_analysis": {
+        "historical_var": {
+          "var_95": -1.86438970558811e-05,
+          "var_99": -1.8957705033244566e-05,
+          "confidence_levels": {
+            "95%": -1.86438970558811e-05,
+            "99%": -1.8957705033244566e-05
+          }
+        },
+        "parametric_var": {
+          "var_95": -1.2795859299660797e-05,
+          "var_99": -1.8176237483705142e-05,
+          "confidence_levels": {
+            "95%": -1.2795859299660797e-05,
+            "99%": -1.8176237483705142e-05
+          }
+        },
+        "modified_var": {
+          "var_95": -8.687226507185597e-06,
+          "var_99": -1.2340014716598949e-05,
+          "confidence_levels": {
+            "95%": -8.687226507185597e-06,
+            "99%": -1.2340014716598949e-05
+          }
+        },
+        "var_interpretation": {
+          "worst_case_loss_95": 1.86438970558811e-05,
+          "worst_case_loss_99": 1.8957705033244566e-05,
+          "risk_category": "low"
+        }
+      },
+      "conditional_var_analysis": {
+        "conditional_var": {
+          "cvar_95": -1.9036157027585432e-05,
+          "cvar_99": -1.9036157027585432e-05,
+          "confidence_levels": {
+            "95%": -1.9036157027585432e-05,
+            "99%": -1.9036157027585432e-05
+          }
+        },
+        "expected_shortfall_analysis": {
+          "expected_shortfall_ratio": 1.0210395911610441,
+          "tail_risk_severity": "mild",
+          "tail_loss_magnitude_95": 3.9225997170433267e-07
+        },
+        "risk_assessment": {
+          "extreme_risk_potential": 0.05263157894736842,
+          "tail_heaviness_indicator": 0.0
+        }
+      },
+      "volatility_regime_analysis": {
+        "volatility_regime_classification": {
+          "low_volatility_clusters": 8,
+          "medium_volatility_clusters": 5,
+          "high_volatility_clusters": 6,
+          "regime_distribution": {
+            "low_vol_percentage": 0.42105263157894735,
+            "medium_vol_percentage": 0.2631578947368421,
+            "high_vol_percentage": 0.3157894736842105
+          }
+        },
+        "volatility_dynamics": {
+          "volatility_clustering_coefficient": -0.1838848049918471,
+          "regime_persistence_score": 0.844676775800739,
+          "volatility_regime_stability": "stable"
+        },
+        "risk_implications": {
+          "diversification_effectiveness": 0.05147032756014178,
+          "tail_risk_potential": "high",
+          "portfolio_stability_index": 45.535297259379114
+        }
+      },
+      "stress_testing_analysis": {
+        "historical_stress_scenarios": {
+          "worst_historical_performance": -1.9036157027585432e-05,
+          "worst_historical_drawdown": NaN,
+          "stress_scenario_impact": {
+            "moderate_market_crash": -0.15,
+            "severe_market_crash": -0.3,
+            "extreme_market_crash": -0.5,
+            "flash_crash": -0.19999999999999998,
+            "prolonged_bear_market": -0.25
+          }
+        },
+        "hypothetical_stress_scenarios": {
+          "moderate_market_crash": -0.15,
+          "severe_market_crash": -0.3,
+          "extreme_market_crash": -0.5,
+          "flash_crash": -0.19999999999999998,
+          "prolonged_bear_market": -0.25
+        },
+        "recovery_analysis": {
+          "recovery_scenarios": {
+            "quick_recovery": 1.0,
+            "moderate_recovery": 0.5,
+            "slow_recovery": 0.25,
+            "no_recovery": 0.0
+          },
+          "best_case_recovery": 0.0,
+          "worst_case_scenario": -1.9036157027585432e-05
+        },
+        "stress_test_recommendations": {
+          "risk_management_priority": "moderate",
+          "diversification_necessity": "optional",
+          "hedging_strategy": "optional"
+        }
+      },
+      "risk_factor_analysis": {
+        "primary_risk_factors": {
+          "size_factor": {
+            "size_volatility_ratio": 0.3029273569130394,
+            "size_stability_score": 0.767502497122518,
+            "concentration_risk": "low"
+          },
+          "return_factor": {
+            "extreme_return_ratio": 0.0,
+            "return_stability_score": 1.0,
+            "tail_risk_potential": "low"
+          },
+          "concentration_factor": {
+            "top_3_concentration": 0.2335953260000761,
+            "diversification_need": "optional",
+            "concentration_risk_level": "moderate"
+          },
+          "volatility_factor": {
+            "overall_volatility": 839.1549586245889,
+            "volatility_regime": "high",
+            "volatility_trend": "stable"
+          }
+        },
+        "risk_factor_interactions": {
+          "size_volatility_interaction": 254.20299365661765,
+          "concentration_extreme_interaction": 0.0,
+          "overall_risk_complexity": 0.5365226829131156
+        },
+        "risk_mitigation_priorities": {
+          "diversification": "medium",
+          "volatility_hedging": "high",
+          "tail_risk_protection": "low",
+          "size_stabilization": "low"
+        }
+      },
+      "downside_risk_measures": {
+        "downside_deviation_measures": {
+          "downside_deviation": 7.545715639403833e-06,
+          "downside_risk_ratio": 0.955068988583881
+        },
+        "asymmetric_risk_measures": {
+          "sortino_ratio": 0.02661056879704447,
+          "omega_ratio": 1.074903064620315,
+          "sortino_interpretation": "poor"
+        },
+        "drawdown_based_measures": {
+          "calmar_ratio": Infinity,
+          "sterling_ratio": Infinity,
+          "drawdown_efficiency": NaN
+        },
+        "risk_adjusted_performance": {
+          "downside_risk_score": 0.9999924543412979,
+          "asymmetric_performance_score": 0.013305284398522235,
+          "overall_downside_score": Infinity
+        }
+      },
+      "risk_summary": {
+        "overall_risk_assessment": {
+          "overall_risk_score": 0.33369673629879276,
+          "risk_category": "low",
+          "risk_rating": "good"
+        },
+        "key_risk_indicators": {
+          "volatility_indicator": 7.900702179213428e-06,
+          "maximum_drawdown": NaN,
+          "var_95_worst_case": 1.86438970558811e-05,
+          "risk_efficiency_ratio": 0.025414929026635048
+        },
+        "risk_management_recommendations": {
+          "stop_loss_suggestion": NaN,
+          "position_sizing_guidance": 0.2305758647238369,
+          "diversification_priority": "recommended"
+        }
+      }
+    },
+    "trading_economics": {
+      "volume_analysis": {
+        "average_cluster_volume": 5722.739405581826,
+        "volume_concentration_ratio": 0.165489996927171,
+        "volume_stability": 0.5436780935165514,
+        "volume_distribution_skewness": 1.4218604862148556
+      },
+      "liquidity_metrics": {
+        "liquidity_score": 0.5436780935165514,
+        "trading_feasibility_score": 0.8580082219808943,
+        "market_depth_indicator": 0.509564566536976
+      },
+      "transaction_costs": {
+        "estimated_market_impact": 1.0,
+        "estimated_slippage_bps": 10.000000000000002,
+        "execution_difficulty_score": 0.16565548692409815
+      }
+    },
+    "opportunity_cost_analysis": {
+      "opportunity_costs": {
+        "average_opportunity_cost": 1.4484313123306803e-05,
+        "maximum_regret": 3.3721265936037526e-05,
+        "opportunity_cost_distribution": [
+          1.4620891811034653e-05,
+          3.3721265936037526e-05,
+          1.3977450180391315e-05,
+          2.0926523120579077e-05,
+          1.3028061289332982e-05,
+          8.611649263912113e-06,
+          1.2273688298591878e-05,
+          1.4061072363347193e-05,
+          1.2580557722685626e-05,
+          3.328542152303271e-05,
+          0.0,
+          1.4917354562271612e-05,
+          1.679941078691627e-05,
+          1.9394773971725954e-05,
+          7.292846930795349e-06,
+          1.0635956641635858e-05,
+          1.0096578535012668e-05,
+          9.138680525211385e-06,
+          9.839765880315099e-06
+        ]
+      },
+      "missed_opportunities": {
+        "total_missed_return": 0.0,
+        "missed_return_percentage": 0.0,
+        "efficiency_ratio": 1.0
+      },
+      "strategic_implications": {
+        "best_cluster_premium": 73.13454760928556,
+        "diversification_benefit": 0.9999920993602415
+      }
+    },
+    "portfolio_construction_insights": {
+      "equal_weighted_portfolio": {
+        "expected_return": 2.0079578514529011e-07,
+        "expected_volatility": 7.900702179213428e-06,
+        "sharpe_ratio": 0.025414929026635048,
+        "diversification_ratio": 19.0
+      },
+      "risk_parity_weights": {
+        "weights": [
+          0.0017709653198057413,
+          -0.18306852343890237,
+          0.01755695229963966,
+          -0.10910213323054394,
+          0.06601792073786895,
+          0.055049662757268636,
+          0.05922128936451464,
+          0.026433062897227227,
+          0.08480762950543387,
+          -0.13068351075458504,
+          0.2748412816242242,
+          -0.003801080026387057,
+          -0.06142589348273477,
+          -0.05128796475636758,
+          0.2503656801149296,
+          0.1450406208391023,
+          0.17910441158562662,
+          0.20590729890757328,
+          0.1732523297363061
+        ],
+        "concentration_index": -1.5013027715600178
+      },
+      "sharpe_optimized_weights": {
+        "weights": [
+          0.0017709653198057413,
+          -0.18306852343890237,
+          0.01755695229963966,
+          -0.10910213323054394,
+          0.06601792073786895,
+          0.055049662757268636,
+          0.05922128936451464,
+          0.026433062897227227,
+          0.08480762950543387,
+          -0.13068351075458504,
+          0.2748412816242242,
+          -0.003801080026387057,
+          -0.06142589348273477,
+          -0.05128796475636758,
+          0.2503656801149296,
+          0.1450406208391023,
+          0.17910441158562662,
+          0.20590729890757328,
+          0.1732523297363061
+        ],
+        "concentration_index": -1.5013027715600178
+      },
+      "portfolio_recommendations": {
+        "optimal_strategy": "equal_weighted",
+        "diversification_potential": 0.024785019514744065
+      }
+    },
+    "market_efficiency_analysis": {
+      "efficiency_indicators": {
+        "information_ratio": 0.025414929026635048,
+        "market_predictability_index": 0.024785019514744065,
+        "cluster_diversity_index": 14.58254744532784,
+        "regime_complexity_score": 0.47091537078013723
+      },
+      "trading_opportunity_assessment": {
+        "alpha_generation_potential": 0.0,
+        "arbitrage_opportunity_score": 0.36142872300713175,
+        "market_inefficiency_index": 0.975214980485256
+      },
+      "strategy_implications": {
+        "recommended_approach": "passive",
+        "diversification_benefit": 14.58254744532784,
+        "risk_management_priority": "high"
+      }
+    },
+    "performance_attribution_analysis": {
+      "brinson_attribution_model": {
+        "allocation_effect": 8.68539643180679e-24,
+        "selection_effect": 8.6922205350352e-07,
+        "interaction_effect": 8.692220535035204e-07,
+        "total_attribution": 1.7384441070070403e-06,
+        "attribution_breakdown": {
+          "allocation_percentage": 8.116299082326718e-18,
+          "selection_percentage": 0.8122676046602939,
+          "interaction_percentage": 0.8122676046602941
+        }
+      },
+      "performance_decomposition": [
+        {
+          "cluster_id": "cluster_10",
+          "contribution_to_return": 7.08739698394445e-07,
+          "attribution_percentage": 0.6623006110143335,
+          "contribution_to_risk": 0.10227325594736891,
+          "risk_adjusted_contribution": 6.929863444126439e-06
+        },
+        {
+          "cluster_id": "cluster_14",
+          "contribution_to_return": 4.0523371192174956e-07,
+          "attribution_percentage": 0.3786813912320347,
+          "contribution_to_risk": 0.02943615414514808,
+          "risk_adjusted_contribution": 1.376653038800215e-05
+        },
+        {
+          "cluster_id": "cluster_17",
+          "contribution_to_return": 2.9095896620871264e-07,
+          "attribution_percentage": 0.2718943238775399,
+          "contribution_to_risk": 0.015857813494431952,
+          "risk_adjusted_contribution": 1.8347987537883224e-05
+        },
+        {
+          "cluster_id": "cluster_15",
+          "contribution_to_return": 2.5903447160398084e-07,
+          "attribution_percentage": 0.24206163307309408,
+          "contribution_to_risk": 0.010306704443545872,
+          "risk_adjusted_contribution": 2.5132618336885383e-05
+        },
+        {
+          "cluster_id": "cluster_18",
+          "contribution_to_return": 2.418245364307325e-07,
+          "attribution_percentage": 0.22597935264407276,
+          "contribution_to_risk": 0.011513915651587174,
+          "risk_adjusted_contribution": 2.1002805791539457e-05
+        },
+        {
+          "cluster_id": "cluster_16",
+          "contribution_to_return": 1.894495612449441e-07,
+          "attribution_percentage": 0.17703616779639292,
+          "contribution_to_risk": 0.008542114053072456,
+          "risk_adjusted_contribution": 2.2178298937482854e-05
+        },
+        {
+          "cluster_id": "cluster_5",
+          "contribution_to_return": 1.8343128793599796e-07,
+          "attribution_percentage": 0.17141223266365543,
+          "contribution_to_risk": 0.010947317569650825,
+          "risk_adjusted_contribution": 1.675582032706727e-05
+        },
+        {
+          "cluster_id": "cluster_8",
+          "contribution_to_return": 1.5445898161436422e-07,
+          "attribution_percentage": 0.1443382925093489,
+          "contribution_to_risk": 0.003194264030891149,
+          "risk_adjusted_contribution": 4.835510630464758e-05
+        },
+        {
+          "cluster_id": "cluster_6",
+          "contribution_to_return": 1.3120411684220217e-07,
+          "attribution_percentage": 0.12260716727035194,
+          "contribution_to_risk": 0.0031089846786935002,
+          "risk_adjusted_contribution": 4.2201595112774575e-05
+        },
+        {
+          "cluster_id": "cluster_4",
+          "contribution_to_return": 1.2196231239186932e-07,
+          "attribution_percentage": 0.11397091795597543,
+          "contribution_to_risk": 0.0019859064672976506,
+          "risk_adjusted_contribution": 6.141392268913799e-05
+        },
+        {
+          "cluster_id": "cluster_2",
+          "contribution_to_return": 5.66102741103696e-08,
+          "attribution_percentage": 0.052900972272220834,
+          "contribution_to_risk": 0.00039365636363145566,
+          "risk_adjusted_contribution": 0.00014380628629374824
+        },
+        {
+          "cluster_id": "cluster_7",
+          "contribution_to_return": 2.489210593651031e-08,
+          "attribution_percentage": 0.02326108867406645,
+          "contribution_to_risk": 0.00015264051248801158,
+          "risk_adjusted_contribution": 0.00016307655957856784
+        },
+        {
+          "cluster_id": "cluster_0",
+          "contribution_to_return": 5.137147813234332e-09,
+          "attribution_percentage": 0.004800544040757958,
+          "contribution_to_risk": 3.2416855485848423e-06,
+          "risk_adjusted_contribution": 0.0015846661465552172
+        },
+        {
+          "cluster_id": "cluster_11",
+          "contribution_to_return": -1.4152372845318345e-08,
+          "attribution_percentage": -0.013225060207563599,
+          "contribution_to_risk": 3.229795374082373e-05,
+          "risk_adjusted_contribution": -0.00043818036092466427
+        },
+        {
+          "cluster_id": "cluster_12",
+          "contribution_to_return": -1.1847832149236412e-07,
+          "attribution_percentage": -0.11071521024447305,
+          "contribution_to_risk": 0.0024615238019672467,
+          "risk_adjusted_contribution": -4.813210279927666e-05
+        },
+        {
+          "cluster_id": "cluster_3",
+          "contribution_to_return": -2.0246052077361632e-07,
+          "attribution_percentage": -0.18919460405337613,
+          "contribution_to_risk": 0.012417137957883668,
+          "risk_adjusted_contribution": -1.6304926290569325e-05
+        },
+        {
+          "cluster_id": "cluster_13",
+          "contribution_to_return": -2.2434232202973532e-07,
+          "attribution_percentage": -0.2096426336682718,
+          "contribution_to_risk": 0.010382438908724275,
+          "risk_adjusted_contribution": -2.160786322377838e-05
+        },
+        {
+          "cluster_id": "cluster_9",
+          "contribution_to_return": -5.582288469758618e-07,
+          "attribution_percentage": -0.5216517534935333,
+          "contribution_to_risk": 0.10203065386926428,
+          "risk_adjusted_contribution": -5.47118758195966e-06
+        },
+        {
+          "cluster_id": "cluster_1",
+          "contribution_to_return": -5.852569496834062e-07,
+          "attribution_percentage": -0.5469088810092017,
+          "contribution_to_risk": 0.10947728265000621,
+          "risk_adjusted_contribution": -5.345921409283179e-06
+        }
+      ],
+      "risk_attribution": {
+        "marginal_contribution_to_risk": [
+          3.2416855485848423e-06,
+          0.10947728265000621,
+          0.00039365636363145566,
+          0.012417137957883668,
+          0.0019859064672976506,
+          0.010947317569650825,
+          0.0031089846786935002,
+          0.00015264051248801158,
+          0.003194264030891149,
+          0.10203065386926428,
+          0.10227325594736891,
+          3.229795374082373e-05,
+          0.0024615238019672467,
+          0.010382438908724275,
+          0.02943615414514808,
+          0.010306704443545872,
+          0.008542114053072456,
+          0.015857813494431952,
+          0.011513915651587174
+        ],
+        "risk_concentration_analysis": {
+          "risk_concentration_index": 0.03469694763500048,
+          "concentration_level": "low",
+          "top_risk_contributors": [
+            "cluster_1",
+            "cluster_10",
+            "cluster_9"
+          ],
+          "risk_distribution": {
+            "q25": 0.0022237151346324487,
+            "q50": 0.010306704443545872,
+            "q75": 0.014137475726157811,
+            "q90": 0.10207917428488521
+          },
+          "diversification_potential": 28.820979024427263
+        },
+        "diversification_effectiveness": 0.9651585928950753
+      },
+      "factor_attribution": {
+        "factor_returns": {
+          "size_factor": 0.4368614545877931,
+          "momentum_factor": 6.246141387195991e-11,
+          "volatility_factor": 6.246141387195991e-11,
+          "quality_factor": 0.4537990990086024
+        },
+        "factor_exposure_analysis": {
+          "size_factor_exposure": 8.570034831498564,
+          "momentum_factor_exposure": 2.0079578514529011e-07,
+          "volatility_factor_exposure": 6.246141387195991e-11,
+          "quality_factor_exposure": 0.9999944377828385
+        },
+        "factor_attribution_summary": {
+          "dominant_factor": "quality",
+          "factor_diversification_score": 0.817831574787724
+        }
+      },
+      "attribution_insights": {
+        "key_drivers": {
+          "top_performers": [
+            "cluster_10",
+            "cluster_14",
+            "cluster_17"
+          ],
+          "bottom_performers": [
+            "cluster_13",
+            "cluster_9",
+            "cluster_1"
+          ],
+          "performance_concentration": 1.3128763261239091,
+          "concentration_assessment": "high"
+        },
+        "attribution_quality": {
+          "attribution_accuracy": 0.23097974373944305,
+          "data_quality_score": "poor",
+          "confidence_level": 0.7690202562605569
+        },
+        "strategic_recommendations": {
+          "focus_clusters": [
+            "cluster_10",
+            "cluster_14",
+            "cluster_17"
+          ],
+          "reduce_exposure": [
+            "cluster_13",
+            "cluster_9",
+            "cluster_1"
+          ],
+          "rebalancing_priority": "moderate",
+          "factor_tilt_recommendation": "size_focused"
+        }
+      }
+    },
+    "comparative_analysis": {
+      "relative_strength_analysis": {
+        "relative_strength_scores": {
+          "cluster_0": 0.49762380538147677,
+          "cluster_1": -2.8466461261320926,
+          "cluster_2": 0.5790638435001626,
+          "cluster_3": -1.19535252628828,
+          "cluster_4": 0.5789079626567651,
+          "cluster_5": 0.3212579825515061,
+          "cluster_6": 0.31325100786306515,
+          "cluster_7": -0.18620267249663372,
+          "cluster_8": 0.6316092015391506,
+          "cluster_9": -2.805268156799894,
+          "cluster_10": 1.7510604258179352,
+          "cluster_11": 0.10146982947941816,
+          "cluster_12": -0.2289500789453482,
+          "cluster_13": -0.7155420837237716,
+          "cluster_14": 0.9513722576945649,
+          "cluster_15": 0.7004798560613273,
+          "cluster_16": 0.34190092540978545,
+          "cluster_17": 0.673342537747208,
+          "cluster_18": 0.5366220086836533
+        },
+        "performance_tiers": {
+          "leaders": [
+            "cluster_2",
+            "cluster_4",
+            "cluster_8",
+            "cluster_10",
+            "cluster_14",
+            "cluster_15",
+            "cluster_17",
+            "cluster_18"
+          ],
+          "middle_performers": [
+            "cluster_0",
+            "cluster_5",
+            "cluster_6",
+            "cluster_7",
+            "cluster_11",
+            "cluster_12",
+            "cluster_16"
+          ],
+          "laggards": [
+            "cluster_1",
+            "cluster_3",
+            "cluster_9",
+            "cluster_13"
+          ],
+          "tier_distribution": {
+            "leader_percentage": 0.42105263157894735,
+            "middle_percentage": 0.3684210526315789,
+            "laggard_percentage": 0.21052631578947367
+          }
+        },
+        "strength_consistency": {
+          "score_variance": 1.3078822490432833,
+          "strength_dispersion": 1.1436267962247488,
+          "competitive_intensity": "high"
+        }
+      },
+      "performance_comparison_matrix": {
+        "performance_matrix_summary": {
+          "matrix_shape": [
+            19,
+            19
+          ],
+          "average_differential": 0.08323854973641072,
+          "maximum_differential": 0.18746444932562795,
+          "competitive_balance_score": 0.9489915527206877
+        },
+        "key_performance_comparisons": [],
+        "performance_distribution": {
+          "highly_superior": 0,
+          "moderately_superior": 0,
+          "slightly_superior": 0
+        }
+      },
+      "size_adjusted_performance_analysis": {
+        "size_adjusted_rankings": [
+          {
+            "cluster_id": "cluster_10",
+            "size_efficiency_score": 1.60145220966197e-05,
+            "size_adjusted_return": 1.788801332777597e-05,
+            "size_advantage_ratio": 0.9169870208959768
+          },
+          {
+            "cluster_id": "cluster_14",
+            "size_efficiency_score": 7.097338690796579e-06,
+            "size_adjusted_return": 8.811729715816036e-06,
+            "size_advantage_ratio": 1.0415540669128
+          },
+          {
+            "cluster_id": "cluster_5",
+            "size_efficiency_score": 1.0583889181242259e-05,
+            "size_adjusted_return": 8.190237480788365e-06,
+            "size_advantage_ratio": 0.5738400639439728
+          },
+          {
+            "cluster_id": "cluster_17",
+            "size_efficiency_score": 5.5646963793858785e-06,
+            "size_adjusted_return": 6.659367659117865e-06,
+            "size_advantage_ratio": 0.9967171621055836
+          },
+          {
+            "cluster_id": "cluster_18",
+            "size_efficiency_score": 5.109696347528705e-06,
+            "size_adjusted_return": 5.867282297642715e-06,
+            "size_advantage_ratio": 0.9482643778784302
+          },
+          {
+            "cluster_id": "cluster_16",
+            "size_efficiency_score": 5.849247753005134e-06,
+            "size_adjusted_return": 5.758379924040426e-06,
+            "size_advantage_ratio": 0.7844650401552924
+          },
+          {
+            "cluster_id": "cluster_15",
+            "size_efficiency_score": 3.3313253796805304e-06,
+            "size_adjusted_return": 4.715417342752332e-06,
+            "size_advantage_ratio": 1.215477867011761
+          },
+          {
+            "cluster_id": "cluster_6",
+            "size_efficiency_score": 2.332624719090497e-06,
+            "size_adjusted_return": 2.8779455536783065e-06,
+            "size_advantage_ratio": 1.033779926159936
+          },
+          {
+            "cluster_id": "cluster_8",
+            "size_efficiency_score": 1.5092188391067007e-06,
+            "size_adjusted_return": 2.406394953587804e-06,
+            "size_advantage_ratio": 1.3944638982986335
+          },
+          {
+            "cluster_id": "cluster_4",
+            "size_efficiency_score": 1.184924630956117e-06,
+            "size_adjusted_return": 1.8940325453103321e-06,
+            "size_advantage_ratio": 1.3984413656605639
+          },
+          {
+            "cluster_id": "cluster_2",
+            "size_efficiency_score": 4.6558488884177543e-07,
+            "size_adjusted_return": 8.007757058291323e-07,
+            "size_advantage_ratio": 1.519934914170441
+          },
+          {
+            "cluster_id": "cluster_7",
+            "size_efficiency_score": 8.233885169516394e-07,
+            "size_adjusted_return": 7.887142484952241e-07,
+            "size_advantage_ratio": 0.7578883264187568
+          },
+          {
+            "cluster_id": "cluster_0",
+            "size_efficiency_score": 4.224989953105282e-08,
+            "size_adjusted_return": 7.2667077323651e-08,
+            "size_advantage_ratio": 1.519934914170441
+          },
+          {
+            "cluster_id": "cluster_11",
+            "size_efficiency_score": -2.0059140875111626e-07,
+            "size_adjusted_return": -2.7236393556974095e-07,
+            "size_advantage_ratio": 1.1578045902637688
+          },
+          {
+            "cluster_id": "cluster_12",
+            "size_efficiency_score": -1.985827394621168e-06,
+            "size_adjusted_return": -2.511467357388402e-06,
+            "size_advantage_ratio": 1.0646956952003959
+          },
+          {
+            "cluster_id": "cluster_13",
+            "size_efficiency_score": -5.20373573637505e-06,
+            "size_adjusted_return": -5.7504122105488495e-06,
+            "size_advantage_ratio": 0.9050546188101853
+          },
+          {
+            "cluster_id": "cluster_3",
+            "size_efficiency_score": -1.0126795979386593e-05,
+            "size_adjusted_return": -8.266773408004242e-06,
+            "size_advantage_ratio": 0.6163266471282305
+          },
+          {
+            "cluster_id": "cluster_9",
+            "size_efficiency_score": -3.2619298022419426e-05,
+            "size_adjusted_return": -2.5124172219064295e-05,
+            "size_advantage_ratio": 0.570224184524036
+          },
+          {
+            "cluster_id": "cluster_1",
+            "size_efficiency_score": -3.258805021002148e-05,
+            "size_adjusted_return": -2.5553767069589526e-05,
+            "size_advantage_ratio": 0.5841453202907928
+          }
+        ],
+        "size_performance_relationship": {
+          "correlation_coefficient": 0.0,
+          "relationship_strength": "weak",
+          "relationship_type": "none"
+        },
+        "efficiency_analysis": {
+          "most_efficient_small_clusters": [
+            "cluster_5"
+          ],
+          "most_efficient_large_clusters": [],
+          "efficiency_distribution": {
+            "efficiency_tiers": {
+              "high_efficiency_clusters": [
+                "cluster_10",
+                "cluster_14",
+                "cluster_5",
+                "cluster_17",
+                "cluster_16"
+              ],
+              "medium_efficiency_clusters": [
+                "cluster_18",
+                "cluster_15",
+                "cluster_6",
+                "cluster_8",
+                "cluster_4",
+                "cluster_2",
+                "cluster_7",
+                "cluster_0",
+                "cluster_11"
+              ],
+              "low_efficiency_clusters": [
+                "cluster_12",
+                "cluster_13",
+                "cluster_3",
+                "cluster_9",
+                "cluster_1"
+              ]
+            },
+            "efficiency_distribution": {
+              "high_efficiency_percentage": 0.2631578947368421,
+              "medium_efficiency_percentage": 0.47368421052631576,
+              "low_efficiency_percentage": 0.2631578947368421
+            },
+            "efficiency_statistics": {
+              "average_efficiency": -1.2008206015178032e-06,
+              "efficiency_range": 4.863382011903913e-05,
+              "efficiency_volatility": 1.206010901969856e-05
+            }
+          }
+        }
+      },
+      "inter_cluster_correlations": {},
+      "cluster_ranking_analysis": {
+        "composite_rankings": [
+          {
+            "cluster_id": "cluster_2",
+            "composite_score": 0.3947371959346272,
+            "return_rank": 1,
+            "size_rank": 0,
+            "overall_rank": 1
+          },
+          {
+            "cluster_id": "cluster_14",
+            "composite_score": 0.3789510645520414,
+            "return_rank": 2,
+            "size_rank": 0,
+            "overall_rank": 2
+          },
+          {
+            "cluster_id": "cluster_15",
+            "composite_score": 0.3736862351024492,
+            "return_rank": 3,
+            "size_rank": 0,
+            "overall_rank": 3
+          },
+          {
+            "cluster_id": "cluster_4",
+            "composite_score": 0.37368503905012534,
+            "return_rank": 4,
+            "size_rank": 0,
+            "overall_rank": 4
+          },
+          {
+            "cluster_id": "cluster_0",
+            "composite_score": 0.3736842426348645,
+            "return_rank": 5,
+            "size_rank": 0,
+            "overall_rank": 5
+          },
+          {
+            "cluster_id": "cluster_8",
+            "composite_score": 0.3684221049071718,
+            "return_rank": 6,
+            "size_rank": 0,
+            "overall_rank": 6
+          },
+          {
+            "cluster_id": "cluster_10",
+            "composite_score": 0.32632313202813845,
+            "return_rank": 7,
+            "size_rank": 0,
+            "overall_rank": 7
+          },
+          {
+            "cluster_id": "cluster_17",
+            "composite_score": 0.32631856268787585,
+            "return_rank": 8,
+            "size_rank": 0,
+            "overall_rank": 8
+          },
+          {
+            "cluster_id": "cluster_18",
+            "composite_score": 0.3000024226715141,
+            "return_rank": 9,
+            "size_rank": 0,
+            "overall_rank": 9
+          },
+          {
+            "cluster_id": "cluster_6",
+            "composite_score": 0.300001205710305,
+            "return_rank": 10,
+            "size_rank": 0,
+            "overall_rank": 10
+          },
+          {
+            "cluster_id": "cluster_11",
+            "composite_score": 0.28421041019296256,
+            "return_rank": 11,
+            "size_rank": 0,
+            "overall_rank": 11
+          },
+          {
+            "cluster_id": "cluster_12",
+            "composite_score": 0.25789367969116606,
+            "return_rank": 12,
+            "size_rank": 0,
+            "overall_rank": 12
+          },
+          {
+            "cluster_id": "cluster_16",
+            "composite_score": 0.24210755742308143,
+            "return_rank": 13,
+            "size_rank": 0,
+            "overall_rank": 13
+          },
+          {
+            "cluster_id": "cluster_5",
+            "composite_score": 0.21052935251929594,
+            "return_rank": 14,
+            "size_rank": 0,
+            "overall_rank": 14
+          },
+          {
+            "cluster_id": "cluster_7",
+            "composite_score": 0.16315820675511467,
+            "return_rank": 15,
+            "size_rank": 0,
+            "overall_rank": 15
+          },
+          {
+            "cluster_id": "cluster_13",
+            "composite_score": 0.1526292241148368,
+            "return_rank": 16,
+            "size_rank": 0,
+            "overall_rank": 16
+          },
+          {
+            "cluster_id": "cluster_3",
+            "composite_score": 0.09473372139815708,
+            "return_rank": 17,
+            "size_rank": 0,
+            "overall_rank": 17
+          },
+          {
+            "cluster_id": "cluster_1",
+            "composite_score": 0.05788521876359146,
+            "return_rank": 18,
+            "size_rank": 0,
+            "overall_rank": 18
+          },
+          {
+            "cluster_id": "cluster_9",
+            "composite_score": 0.0368328051068506,
+            "return_rank": 19,
+            "size_rank": 0,
+            "overall_rank": 19
+          }
+        ],
+        "top_performers": [
+          "cluster_2",
+          "cluster_14",
+          "cluster_15"
+        ],
+        "bottom_performers": [
+          "cluster_3",
+          "cluster_1",
+          "cluster_9"
+        ],
+        "rank_stability_analysis": {
+          "rank_discrepancies": [],
+          "ranking_consistency_score": 1.0,
+          "most_consistent_clusters": [
+            "cluster_0",
+            "cluster_1",
+            "cluster_2",
+            "cluster_3",
+            "cluster_4",
+            "cluster_5",
+            "cluster_6",
+            "cluster_7",
+            "cluster_8",
+            "cluster_9",
+            "cluster_10",
+            "cluster_11",
+            "cluster_12",
+            "cluster_13",
+            "cluster_14",
+            "cluster_15",
+            "cluster_16",
+            "cluster_17",
+            "cluster_18"
+          ]
+        }
+      },
+      "comparative_insights": {
+        "competitive_landscape": {
+          "competitive_intensity_score": 0.9489915527206877,
+          "market_structure": "fragmented",
+          "leadership_stability": "contested",
+          "competitive_advantage": "sustainable"
+        },
+        "strategic_positioning_insights": {
+          "recommended_focus_areas": [
+            "cluster_2",
+            "cluster_4"
+          ],
+          "improvement_opportunities": [
+            "cluster_1",
+            "cluster_3"
+          ],
+          "competitive_threats": [
+            "cluster_2",
+            "cluster_4",
+            "cluster_8",
+            "cluster_10",
+            "cluster_14",
+            "cluster_15",
+            "cluster_17",
+            "cluster_18"
+          ],
+          "differentiation_opportunities": 19
+        },
+        "performance_benchmarks": {
+          "top_quartile_threshold": 4.71693670078821e-06,
+          "median_performance": 1.657047619119112e-06,
+          "bottom_quartile_threshold": -1.1732737661418469e-06,
+          "achievement_targets": {
+            "excellent": 6.337220111163332e-06,
+            "good": 4.71693670078821e-06,
+            "satisfactory": 1.657047619119112e-06
+          }
+        }
+      }
+    },
+    "economic_summary": {
+      "overall_economic_health": {
+        "economic_health_score": 0.23767396146504247,
+        "profitability_score": 0.6842105263157895,
+        "risk_adjusted_score": 0.02881135807933786,
+        "overall_rating": "poor"
+      },
+      "top_performing_clusters": [
+        {
+          "cluster_id": "cluster_10",
+          "return": 1.4685108908452094e-05,
+          "sharpe_ratio": 0.06687230317777867
+        },
+        {
+          "cluster_id": "cluster_14",
+          "return": 7.392261977656744e-06,
+          "sharpe_ratio": 0.06091708482442419
+        },
+        {
+          "cluster_id": "cluster_5",
+          "return": 6.07345964453998e-06,
+          "sharpe_ratio": 0.013394267833359114
+        },
+        {
+          "cluster_id": "cluster_17",
+          "return": 5.546428383240709e-06,
+          "sharpe_ratio": 0.050099807560536086
+        },
+        {
+          "cluster_id": "cluster_18",
+          "return": 4.845343028136995e-06,
+          "sharpe_ratio": 0.04215444729377795
+        }
+      ],
+      "key_insights": {
+        "alpha_potential": "low",
+        "risk_reward_balance": "poor",
+        "diversification_value": "high"
+      },
+      "strategic_recommendations": {
+        "primary_focus": "conservative",
+        "risk_management_level": "conservative"
+      }
+    }
+  },
+  "statistical_summary": {
+    "basic_descriptive_statistics": {
+      "sizes": {
+        "count": 19,
+        "mean": 5531.1578947368425,
+        "median": 5513.0,
+        "std": 1675.5390417213232,
+        "min": 3154.0,
+        "max": 8407.0,
+        "range": 5253.0,
+        "coefficient_of_variation": 0.3029273569130394,
+        "quartiles": {
+          "q25": 4265.5,
+          "q50": 5513.0,
+          "q75": 6563.5
+        },
+        "percentiles": {
+          "p5": 3172.0,
+          "p95": 8407.0,
+          "p99": 8407.0
+        }
+      },
+      "returns": {
+        "count": 19,
+        "mean": 2.0079578514529011e-07,
+        "median": 1.657047619119112e-06,
+        "std": 7.900702179213428e-06,
+        "min": -1.9036157027585432e-05,
+        "max": 1.4685108908452094e-05,
+        "range": 3.3721265936037526e-05,
+        "coefficient_of_variation": 39.346952295321856,
+        "quartiles": {
+          "q25": -1.1732737661418469e-06,
+          "q50": 1.657047619119112e-06,
+          "q75": 4.71693670078821e-06
+        },
+        "percentiles": {
+          "p5": -1.86438970558811e-05,
+          "p95": 8.121546670736264e-06,
+          "p99": 1.3372396460908933e-05
+        }
+      },
+      "drawdowns": {
+        "count": 19,
+        "mean": NaN,
+        "median": NaN,
+        "std": NaN,
+        "min": NaN,
+        "max": NaN,
+        "range": NaN,
+        "coefficient_of_variation": NaN,
+        "quartiles": {
+          "q25": NaN,
+          "q50": NaN,
+          "q75": NaN
+        },
+        "percentiles": {
+          "p5": NaN,
+          "p95": NaN,
+          "p99": NaN
+        }
+      },
+      "volumes": {
+        "count": 19,
+        "mean": 5722.739405581826,
+        "median": 2916.105224609375,
+        "std": 4803.230784915847,
+        "min": 1942.0999755859375,
+        "max": 17994.06640625,
+        "range": 16051.966430664062,
+        "coefficient_of_variation": 0.8393236952622529,
+        "quartiles": {
+          "q25": 2368.1126708984375,
+          "q50": 2916.105224609375,
+          "q75": 7818.345703125
+        },
+        "percentiles": {
+          "p5": 2027.2375366210938,
+          "p95": 15941.166406249995,
+          "p99": 17583.486406250002
+        }
+      },
+      "volatilities": {
+        "count": 19,
+        "mean": 839.1549586245889,
+        "median": 832.759521484375,
+        "std": 18.428669825959922,
+        "min": 818.627197265625,
+        "max": 885.2091674804688,
+        "range": 66.58197021484375,
+        "coefficient_of_variation": 0.021960985437260962,
+        "quartiles": {
+          "q25": 825.8190002441406,
+          "q50": 832.759521484375,
+          "q75": 853.5585327148438
+        },
+        "percentiles": {
+          "p5": 818.6443908691406,
+          "p95": 867.0512390136719,
+          "p99": 881.5775817871094
+        }
+      }
+    },
+    "distribution_analysis": {
+      "sizes": {
+        "normality_tests": {
+          "skewness": 0.2247406045739572,
+          "kurtosis": -0.9034153734583081,
+          "is_symmetric": "True",
+          "is_normal_like": "False"
+        },
+        "distribution_characteristics": {
+          "modality": "bimodal",
+          "outlier_count": 0,
+          "distribution_type": "platykurtic"
+        },
+        "concentration_measures": {
+          "gini_coefficient": 0.17218797765166166,
+          "herfindahl_index": 0.05746131492454316,
+          "concentration_ratio_top_3": 0.23359532600007613
+        }
+      },
+      "returns": {
+        "normality_tests": {
+          "skewness": -1.1765448437296187,
+          "kurtosis": 0.0,
+          "is_symmetric": "False",
+          "is_normal_like": "False"
+        },
+        "distribution_characteristics": {
+          "modality": "multimodal",
+          "outlier_count": 3,
+          "distribution_type": "skewed"
+        },
+        "concentration_measures": {
+          "gini_coefficient": 0.45622435199081524,
+          "herfindahl_index": 81.5359292068597,
+          "concentration_ratio_top_3": 7.378753784277755
+        }
+      },
+      "drawdowns": {
+        "normality_tests": {
+          "skewness": -1.4721698551115285,
+          "kurtosis": 1.3850443492408964,
+          "is_symmetric": "False",
+          "is_normal_like": "False"
+        },
+        "distribution_characteristics": {
+          "modality": "unknown",
+          "outlier_count": 0,
+          "distribution_type": "skewed"
+        },
+        "concentration_measures": {
+          "gini_coefficient": 0.0,
+          "herfindahl_index": NaN,
+          "concentration_ratio_top_3": 0.0
+        }
+      },
+      "volumes": {
+        "normality_tests": {
+          "skewness": 1.4218604862148556,
+          "kurtosis": 1.083292118179592,
+          "is_symmetric": "False",
+          "is_normal_like": "False"
+        },
+        "distribution_characteristics": {
+          "modality": "multimodal",
+          "outlier_count": 1,
+          "distribution_type": "skewed"
+        },
+        "concentration_measures": {
+          "gini_coefficient": 0.4175040118145656,
+          "herfindahl_index": 0.08970864554887807,
+          "concentration_ratio_top_3": 0.4160651954241239
+        }
+      },
+      "volatilities": {
+        "normality_tests": {
+          "skewness": 0.9941521023685479,
+          "kurtosis": 0.2043877087983672,
+          "is_symmetric": "False",
+          "is_normal_like": "False"
+        },
+        "distribution_characteristics": {
+          "modality": "multimodal",
+          "outlier_count": 0,
+          "distribution_type": "platykurtic"
+        },
+        "concentration_measures": {
+          "gini_coefficient": 0.011906548465959932,
+          "herfindahl_index": 0.05265696236217766,
+          "concentration_ratio_top_3": 0.16399123574351918
+        }
+      }
+    },
+    "correlation_and_relationships": {
+      "metric_correlations": {},
+      "cross_cluster_analysis": {
+        "average_inter_cluster_correlation": 0.0,
+        "maximum_inter_cluster_correlation": 0.0
+      },
+      "relationship_strengths": {
+        "size_return_relationship": "negligible",
+        "volume_return_relationship": "negligible",
+        "volatility_return_relationship": "negligible"
+      }
+    },
+    "temporal_stability_analysis": {
+      "metric_stability_scores": {
+        "sizes": {
+          "stability_score": 0.0005964668731921016,
+          "consistency_ratio": 3.3011214642032725,
+          "trend_stability": "stable",
+          "regime_persistence": 0.39302326848190994
+        },
+        "returns": {
+          "stability_score": 0.9999920993602415,
+          "consistency_ratio": 0.025414929026635048,
+          "trend_stability": "stable",
+          "regime_persistence": 0.4767801267103834
+        },
+        "drawdowns": {
+          "stability_score": NaN,
+          "consistency_ratio": NaN,
+          "trend_stability": "decreasing",
+          "regime_persistence": NaN
+        },
+        "volumes": {
+          "stability_score": 0.00020814986722531408,
+          "consistency_ratio": 1.1914354445665238,
+          "trend_stability": "stable",
+          "regime_persistence": 0.4598541963554021
+        },
+        "volatilities": {
+          "stability_score": 0.05147032756014178,
+          "consistency_ratio": 45.5352972596262,
+          "trend_stability": "stable",
+          "regime_persistence": 0.4608022196670128
+        }
+      },
+      "overall_stability_assessment": {
+        "average_stability": NaN,
+        "most_stable_metric": "returns",
+        "least_stable_metric": "volumes"
+      }
+    },
+    "advanced_statistical_measures": {
+      "sizes": {
+        "information_theory_measures": {
+          "entropy": 1.6489915882944808,
+          "information_content": 4.169925001442312
+        },
+        "robustness_measures": {
+          "trimmed_mean": 5463.333333333333,
+          "winsorized_mean": 5480.421052631579,
+          "median_absolute_deviation": 1210.0
+        },
+        "statistical_significance": {
+          "confidence_interval_95": {
+            "lower_bound": 4701.444241934744,
+            "upper_bound": 6360.871547538941,
+            "margin_of_error": 829.7136528020983
+          },
+          "standard_error": 384.39501888527514
+        }
+      },
+      "returns": {
+        "information_theory_measures": {
+          "entropy": 1.515780211745635,
+          "information_content": 4.247927513443585
+        },
+        "robustness_measures": {
+          "trimmed_mean": 1.2916145782545148e-06,
+          "winsorized_mean": 7.695932163636298e-07,
+          "median_absolute_deviation": 3.1882954090178828e-06
+        },
+        "statistical_significance": {
+          "confidence_interval_95": {
+            "lower_bound": -3.711569311452056e-06,
+            "upper_bound": 4.113160881742636e-06,
+            "margin_of_error": 3.912365096597346e-06
+          },
+          "standard_error": 1.8125453885369949e-06
+        }
+      },
+      "drawdowns": {
+        "information_theory_measures": {
+          "entropy": 0.0,
+          "information_content": 4.247927513443585
+        },
+        "robustness_measures": {
+          "trimmed_mean": NaN,
+          "winsorized_mean": NaN,
+          "median_absolute_deviation": NaN
+        },
+        "statistical_significance": {
+          "confidence_interval_95": {
+            "lower_bound": NaN,
+            "upper_bound": NaN,
+            "margin_of_error": NaN
+          },
+          "standard_error": NaN
+        }
+      },
+      "volumes": {
+        "information_theory_measures": {
+          "entropy": 1.1561356696498257,
+          "information_content": 4.247927513443585
+        },
+        "robustness_measures": {
+          "trimmed_mean": 4736.40791015625,
+          "winsorized_mean": 5268.502564761513,
+          "median_absolute_deviation": 726.390625
+        },
+        "statistical_significance": {
+          "confidence_interval_95": {
+            "lower_bound": 3344.2175922614924,
+            "upper_bound": 8101.261218902159,
+            "margin_of_error": 2378.5218133203334
+          },
+          "standard_error": 1101.9367154711433
+        }
+      },
+      "volatilities": {
+        "information_theory_measures": {
+          "entropy": 1.398920393759418,
+          "information_content": 4.247927513443585
+        },
+        "robustness_measures": {
+          "trimmed_mean": 837.0951904296875,
+          "winsorized_mean": 838.2696006373355,
+          "median_absolute_deviation": 10.3974609375
+        },
+        "statistical_significance": {
+          "confidence_interval_95": {
+            "lower_bound": 830.0292273961045,
+            "upper_bound": 848.2806898530732,
+            "margin_of_error": 9.12573122848437
+          },
+          "standard_error": 4.227826812380873
+        }
+      }
+    },
+    "cluster_characteristics_analysis": {
+      "cluster_type_distribution": {
+        "dominant": 0,
+        "significant": 10,
+        "moderate": 9,
+        "niche": 0
+      },
+      "cluster_classification": [
+        {
+          "cluster_id": "cluster_0",
+          "type": "significant",
+          "size": 8407,
+          "percentage": 0.07999657443002321
+        },
+        {
+          "cluster_id": "cluster_1",
+          "type": "moderate",
+          "size": 3231,
+          "percentage": 0.030744490541620675
+        },
+        {
+          "cluster_id": "cluster_2",
+          "type": "significant",
+          "size": 8407,
+          "percentage": 0.07999657443002321
+        },
+        {
+          "cluster_id": "cluster_3",
+          "type": "moderate",
+          "size": 3409,
+          "percentage": 0.032438244585696344
+        },
+        {
+          "cluster_id": "cluster_4",
+          "type": "significant",
+          "size": 7735,
+          "percentage": 0.07360217714002969
+        },
+        {
+          "cluster_id": "cluster_5",
+          "type": "moderate",
+          "size": 3174,
+          "percentage": 0.030202108628630153
+        },
+        {
+          "cluster_id": "cluster_6",
+          "type": "significant",
+          "size": 5718,
+          "percentage": 0.05440946979789137
+        },
+        {
+          "cluster_id": "cluster_7",
+          "type": "moderate",
+          "size": 4192,
+          "percentage": 0.03988885928519773
+        },
+        {
+          "cluster_id": "cluster_8",
+          "type": "significant",
+          "size": 7713,
+          "percentage": 0.07339283675255966
+        },
+        {
+          "cluster_id": "cluster_9",
+          "type": "moderate",
+          "size": 3154,
+          "percentage": 0.030011799185475585
+        },
+        {
+          "cluster_id": "cluster_10",
+          "type": "moderate",
+          "size": 5072,
+          "percentage": 0.04826247478399878
+        },
+        {
+          "cluster_id": "cluster_11",
+          "type": "significant",
+          "size": 6404,
+          "percentage": 0.0609370836980931
+        },
+        {
+          "cluster_id": "cluster_12",
+          "type": "significant",
+          "size": 5889,
+          "percentage": 0.05603661553686294
+        },
+        {
+          "cluster_id": "cluster_13",
+          "type": "moderate",
+          "size": 5006,
+          "percentage": 0.047634453621588704
+        },
+        {
+          "cluster_id": "cluster_14",
+          "type": "significant",
+          "size": 5761,
+          "percentage": 0.054818635100673696
+        },
+        {
+          "cluster_id": "cluster_15",
+          "type": "significant",
+          "size": 6723,
+          "percentage": 0.06397251931640847
+        },
+        {
+          "cluster_id": "cluster_16",
+          "type": "moderate",
+          "size": 4339,
+          "percentage": 0.041287633692383814
+        },
+        {
+          "cluster_id": "cluster_17",
+          "type": "significant",
+          "size": 5513,
+          "percentage": 0.052458798005557035
+        },
+        {
+          "cluster_id": "cluster_18",
+          "type": "moderate",
+          "size": 5245,
+          "percentage": 0.049908651467285806
+        }
+      ],
+      "market_structure_insights": {
+        "concentration_level": "moderate",
+        "diversity_index": 1.9,
+        "market_fragmentation_score": 0.1
+      }
+    },
+    "statistical_summary_insights": {
+      "data_quality_assessment": {
+        "completeness_score": 0.8571428571428571,
+        "consistency_score": 1.0,
+        "reliability_score": 0.95
+      },
+      "statistical_significance": {
+        "sample_size_adequacy": "adequate",
+        "statistical_power": 0.6333333333333333,
+        "confidence_level": "moderate"
+      },
+      "analytical_recommendations": {
+        "suggested_analysis_depth": "comprehensive",
+        "recommended_confidence_level": 0.9,
+        "analysis_complexity_rating": "intermediate"
+      }
+    }
+  }
+}

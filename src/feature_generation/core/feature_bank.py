@@ -89,11 +89,309 @@ class FeatureBank:
         # Cache for generated features
         self.feature_cache = {} if self.config.cache_results else None
         
+        # Auto-register default generators
+        self._auto_register_generators()
+
         self.logger.info("✅ FeatureBank initialized")
         self.logger.info(f"📊 Matrix ops: {self.config.enable_matrix_operations}, "
                         f"GPU: {self.config.enable_gpu_acceleration}, "
                         f"Lookback opt: {self.config.enable_lookback_optimization}")
-    
+
+    def _auto_register_generators(self) -> None:
+        """
+        Auto-register default feature generators from all categories.
+        """
+        try:
+            from .feature_generator import FeatureCategory
+
+            # List of categories to auto-register
+            categories_to_register = [
+                FeatureCategory.MOMENTUM,
+                FeatureCategory.VOLATILITY,
+                FeatureCategory.TREND,
+                FeatureCategory.VOLUME,
+                FeatureCategory.SUPPORT_RESISTANCE,
+                FeatureCategory.RETURNS,
+                FeatureCategory.OSCILLATOR,
+                FeatureCategory.CANDLESTICK_PATTERN
+            ]
+
+            registered_count = 0
+            for category in categories_to_register:
+                try:
+                    generators = self._create_default_generators_for_category(category)
+                    for generator in generators:
+                        self.register_generator(generator)
+                        registered_count += 1
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Failed to register {category.value} generators: {e}")
+
+            self.logger.info(f"✅ Auto-registered {registered_count} generators from {len(categories_to_register)} categories")
+
+        except Exception as e:
+            self.logger.warning(f"⚠️ Auto-registration failed: {e}")
+
+    def _create_default_generators_for_category(self, category: FeatureCategory) -> List[FeatureGenerator]:
+        """
+        Create default generators for a given category using existing factory functions.
+        """
+        try:
+            # Import all the factory functions from categories
+            from ..categories import (
+                create_acceleration_generators,
+                create_interaction_generators,
+                create_cross_timeframe_generators,
+                create_entropy_generators,
+                create_default_legacy_generators,
+                create_default_time_generators
+            )
+
+            # Map categories to their creation functions
+            category_creators = {
+                FeatureCategory.MOMENTUM: self._create_momentum_generators,
+                FeatureCategory.VOLATILITY: self._create_volatility_generators,
+                FeatureCategory.TREND: self._create_trend_generators,
+                FeatureCategory.VOLUME: self._create_volume_generators,
+                FeatureCategory.SUPPORT_RESISTANCE: self._create_sr_generators,
+                FeatureCategory.RETURNS: self._create_returns_generators,
+                FeatureCategory.OSCILLATOR: self._create_oscillator_generators,
+                FeatureCategory.CANDLESTICK_PATTERN: self._create_pattern_generators
+            }
+
+            creator_func = category_creators.get(category)
+            if creator_func:
+                generators = creator_func()
+                self.logger.info(f"✅ Created {len(generators)} generators for {category.value}")
+                return generators
+            else:
+                self.logger.warning(f"⚠️ No creator function available for category: {category.value}")
+                return []
+
+        except Exception as e:
+            self.logger.warning(f"⚠️ Failed to create generators for {category.value}: {e}")
+            return []
+
+    def _create_momentum_generators(self) -> List[FeatureGenerator]:
+        """Create momentum-specific feature generators."""
+        generators = []
+        try:
+            # First try to create advanced momentum generators
+            from ..categories.momentum import create_default_momentum_generators
+            advanced_generators = create_default_momentum_generators()
+            generators.extend(advanced_generators)
+
+            # Fallback to legacy generators if advanced ones fail
+            if not generators:
+                from ..categories.legacy import create_default_legacy_generators
+                legacy_generators = create_default_legacy_generators()
+
+                # Filter momentum-related generators from legacy set
+                momentum_names = ['rsi', 'macd', 'stochastic', 'williams_r']
+                for gen in legacy_generators:
+                    if any(name in gen.config.name for name in momentum_names):
+                        # Update the category to momentum
+                        gen.config.category = FeatureCategory.MOMENTUM
+                        generators.append(gen)
+
+        except Exception as e:
+            self.logger.warning(f"⚠️ Failed to create momentum generators: {e}")
+
+        return generators
+
+    def _create_volatility_generators(self) -> List[FeatureGenerator]:
+        """Create volatility-specific feature generators."""
+        generators = []
+        try:
+            # First try to create advanced volatility generators
+            from ..categories.volatility import create_default_volatility_generators
+            advanced_generators = create_default_volatility_generators()
+            generators.extend(advanced_generators)
+
+            # Fallback to legacy generators if advanced ones fail
+            if not generators:
+                from ..categories.legacy import create_default_legacy_generators
+                legacy_generators = create_default_legacy_generators()
+
+                # Filter volatility-related generators from legacy set
+                volatility_names = ['bollinger', 'atr']
+                for gen in legacy_generators:
+                    if any(name in gen.config.name for name in volatility_names):
+                        # Update the category to volatility
+                        gen.config.category = FeatureCategory.VOLATILITY
+                        generators.append(gen)
+
+        except Exception as e:
+            self.logger.warning(f"⚠️ Failed to create volatility generators: {e}")
+
+        return generators
+
+    def _create_trend_generators(self) -> List[FeatureGenerator]:
+        """Create trend-specific feature generators."""
+        generators = []
+        try:
+            # First try to create advanced trend generators
+            from ..categories.trend import create_default_trend_generators
+            advanced_generators = create_default_trend_generators()
+            generators.extend(advanced_generators)
+
+            # Fallback to legacy generators if advanced ones fail
+            if not generators:
+                from ..categories.legacy import create_default_legacy_generators
+                legacy_generators = create_default_legacy_generators()
+
+                # Filter trend-related generators from legacy set
+                trend_names = ['sma', 'ema']
+                for gen in legacy_generators:
+                    if any(name in gen.config.name for name in trend_names):
+                        # Update the category to trend
+                        gen.config.category = FeatureCategory.TREND
+                        generators.append(gen)
+
+        except Exception as e:
+            self.logger.warning(f"⚠️ Failed to create trend generators: {e}")
+
+        return generators
+
+    def _create_volume_generators(self) -> List[FeatureGenerator]:
+        """Create volume-specific feature generators."""
+        generators = []
+        try:
+            # First try to create advanced volume generators
+            from ..categories.volume import create_default_volume_generators
+            advanced_generators = create_default_volume_generators()
+            generators.extend(advanced_generators)
+
+            # Fallback to legacy generators if advanced ones fail
+            if not generators:
+                from ..categories.legacy import create_default_legacy_generators
+                legacy_generators = create_default_legacy_generators()
+
+                # Filter volume-related generators from legacy set
+                volume_names = ['obv']
+                for gen in legacy_generators:
+                    if any(name in gen.config.name for name in volume_names):
+                        # Update the category to volume
+                        gen.config.category = FeatureCategory.VOLUME
+                        generators.append(gen)
+
+        except Exception as e:
+            self.logger.warning(f"⚠️ Failed to create volume generators: {e}")
+
+        return generators
+
+    def _create_sr_generators(self) -> List[FeatureGenerator]:
+        """Create support/resistance-specific feature generators."""
+        generators = []
+        try:
+            # Try to create advanced support/resistance generators
+            from ..categories.support_resistance import create_default_support_resistance_generators
+            advanced_generators = create_default_support_resistance_generators()
+            generators.extend(advanced_generators)
+
+            # Fallback to legacy generators if advanced ones fail
+            if not generators:
+                from ..categories.legacy import create_default_legacy_generators
+                legacy_generators = create_default_legacy_generators()
+
+                # Filter support/resistance-related generators from legacy set
+                sr_names = ['pivot']  # Add more as needed
+                for gen in legacy_generators:
+                    if any(name in gen.config.name for name in sr_names):
+                        # Update the category to support_resistance
+                        gen.config.category = FeatureCategory.SUPPORT_RESISTANCE
+                        generators.append(gen)
+
+        except Exception as e:
+            self.logger.warning(f"⚠️ Failed to create support/resistance generators: {e}")
+
+        return generators
+
+    def _create_returns_generators(self) -> List[FeatureGenerator]:
+        """Create returns-specific feature generators."""
+        generators = []
+        try:
+            # Try to create advanced returns generators
+            from ..categories.returns import create_default_returns_generators
+            advanced_generators = create_default_returns_generators()
+            generators.extend(advanced_generators)
+
+            # Fallback to legacy generators if advanced ones fail
+            if not generators:
+                from ..categories.legacy import create_default_legacy_generators
+                legacy_generators = create_default_legacy_generators()
+
+                # Filter returns-related generators from legacy set
+                returns_names = ['returns', 'log_returns']
+                for gen in legacy_generators:
+                    if any(name in gen.config.name for name in returns_names):
+                        # Update the category to returns
+                        gen.config.category = FeatureCategory.RETURNS
+                        generators.append(gen)
+
+        except Exception as e:
+            self.logger.warning(f"⚠️ Failed to create returns generators: {e}")
+
+        return generators
+
+    def _create_oscillator_generators(self) -> List[FeatureGenerator]:
+        """Create oscillator-specific feature generators."""
+        generators = []
+        try:
+            # Try to create advanced oscillator generators
+            from ..categories.oscillator import create_default_oscillator_generators
+            advanced_generators = create_default_oscillator_generators()
+            generators.extend(advanced_generators)
+
+            # Fallback to legacy generators if advanced ones fail
+            if not generators:
+                from ..categories.legacy import create_default_legacy_generators
+                legacy_generators = create_default_legacy_generators()
+
+                # Filter oscillator-related generators from legacy set
+                oscillator_names = ['cci', 'mfi']
+                for gen in legacy_generators:
+                    if any(name in gen.config.name for name in oscillator_names):
+                        # Update the category to oscillator
+                        gen.config.category = FeatureCategory.OSCILLATOR
+                        generators.append(gen)
+
+        except Exception as e:
+            self.logger.warning(f"⚠️ Failed to create oscillator generators: {e}")
+
+        return generators
+
+    def _create_pattern_generators(self) -> List[FeatureGenerator]:
+        """Create candlestick pattern-specific feature generators."""
+        generators = []
+        try:
+            # Try to create advanced candlestick pattern generators
+            # Note: This might not exist yet, so we'll handle the exception
+            try:
+                from ..categories.candlestick import create_default_candlestick_generators
+                advanced_generators = create_default_candlestick_generators()
+                generators.extend(advanced_generators)
+            except ImportError:
+                # Candlestick patterns might not be implemented yet
+                pass
+
+            # Fallback to legacy generators if advanced ones fail or don't exist
+            if not generators:
+                from ..categories.legacy import create_default_legacy_generators
+                legacy_generators = create_default_legacy_generators()
+
+                # Filter pattern-related generators from legacy set
+                pattern_names = ['doji', 'hammer', 'pattern']
+                for gen in legacy_generators:
+                    if any(name in gen.config.name for name in pattern_names):
+                        # Update the category to candlestick_pattern
+                        gen.config.category = FeatureCategory.CANDLESTICK_PATTERN
+                        generators.append(gen)
+
+        except Exception as e:
+            self.logger.warning(f"⚠️ Failed to create pattern generators: {e}")
+
+        return generators
+
     def register_generator(self, generator: FeatureGenerator) -> None:
         """
         Register a feature generator.

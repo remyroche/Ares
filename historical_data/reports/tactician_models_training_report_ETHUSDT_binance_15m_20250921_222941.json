@@ -1,0 +1,24 @@
+{
+  "metadata": {
+    "sub_pipeline_name": "tactician_models_training",
+    "timestamp": "20250921_222941",
+    "execution_time_seconds": 0.000341,
+    "status": "FAILED",
+    "config": {
+      "symbol": "ETHUSDT",
+      "exchange": "binance",
+      "timeframe": "15m",
+      "mode": "full",
+      "data_dir": "historical_data"
+    }
+  },
+  "artifacts": {},
+  "summary": {
+    "total_artifacts": 0,
+    "artifact_types": [],
+    "models_generated": 0,
+    "reports_generated": 0,
+    "silent_failures_detected": 0,
+    "silent_failures": []
+  }
+}

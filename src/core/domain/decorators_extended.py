@@ -1,6 +1,5 @@
 from typing import Dict, List, Optional, Union, Any, Tuple
 from src.core.errors.base import ValidationError
-from ..core.decorators import handles_errors
 """
 Extended domain-specific decorators for specialized use cases.
 

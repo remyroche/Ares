@@ -774,25 +774,50 @@ class PIDBasedFeatureGenerationComponent(BaseMarketAnalysisComponent):
         }
     
     def _calculate_data_quality_score(self, data: Any) -> float:
-        """Calculate data quality score."""
+        """Calculate data quality score using enhanced utilities."""
         if not PANDAS_AVAILABLE or not isinstance(data, pd.DataFrame):
             return 0.0
-        
-        score = 1.0
-        
-        # Check for missing values
-        required_columns = ['open', 'high', 'low', 'close', 'volume']
-        for col in required_columns:
-            if col in data.columns:
-                nan_ratio = data[col].isna().sum() / len(data)
-                score *= (1.0 - nan_ratio)
-        
-        # Check for data types
-        for col in required_columns:
-            if col in data.columns and data[col].dtype == 'object':
-                score *= 0.5
-        
-        return max(0.0, score)
+
+        try:
+            # Use common operations for comprehensive quality assessment
+            if hasattr(self, 'orchestrator') and hasattr(self.orchestrator, 'utility_integration_status'):
+                if self.orchestrator.utility_integration_status.get('common_operations', False):
+                    # Enhanced quality assessment using common operations
+                    from src.utils.common_operations import calculate_data_quality_metrics
+                    quality_metrics = calculate_data_quality_metrics(data)
+
+                    # Calculate comprehensive score
+                    missing_ratio = quality_metrics.get('missing_percentage', 0) / 100
+                    duplicate_ratio = quality_metrics.get('duplicate_percentage', 0) / 100
+                    return max(0.0, 1.0 - missing_ratio - duplicate_ratio - 0.1 * (duplicate_ratio > 0.05))
+
+            # Fallback to basic calculation
+            score = 1.0
+
+            # Check for missing values
+            required_columns = ['open', 'high', 'low', 'close', 'volume']
+            for col in required_columns:
+                if col in data.columns:
+                    nan_ratio = data[col].isna().sum() / len(data)
+                    score *= (1.0 - nan_ratio)
+
+            # Check for data types
+            for col in required_columns:
+                if col in data.columns and data[col].dtype == 'object':
+                    score *= 0.5
+
+            return max(0.0, score)
+
+        except Exception as e:
+            self.logger.warning(f"Enhanced quality score calculation failed: {e}, using basic calculation")
+            # Basic fallback calculation
+            score = 1.0
+            required_columns = ['open', 'high', 'low', 'close', 'volume']
+            for col in required_columns:
+                if col in data.columns:
+                    nan_ratio = data[col].isna().sum() / len(data)
+                    score *= (1.0 - nan_ratio)
+            return max(0.0, score)
     
     async def _create_comprehensive_artifacts(
         self, 

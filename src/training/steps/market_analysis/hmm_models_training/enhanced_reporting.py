@@ -157,7 +157,7 @@ class HMMTrainingReporter:
                 "execution_context": {
                     "symbol": kwargs.get('symbol', getattr(config, 'symbol', 'UNKNOWN')),
                     "exchange": kwargs.get('exchange', getattr(config, 'exchange', 'UNKNOWN')),
-                    "timeframe": kwargs.get('timeframe', getattr(config, 'timeframe', '1h')),
+                    "timeframe": kwargs.get('timeframe', getattr(config, 'timeframe', '15m')),
                     "model_name": getattr(config, 'model_name', 'hmm_models'),
                     "config": asdict(config) if hasattr(config, '__dataclass_fields__') else str(config),
                     "circuit_breaker_state": kwargs.get('circuit_breaker_state', 'UNKNOWN'),
@@ -589,7 +589,7 @@ class HMMTrainingReporter:
         try:
             symbol = kwargs.get('symbol', 'UNKNOWN')
             exchange = kwargs.get('exchange', 'UNKNOWN')
-            timeframe = kwargs.get('timeframe', '1h')
+            timeframe = kwargs.get('timeframe', '15m')
             
             timestamp = pd.Timestamp.now().strftime("%Y%m%d_%H%M%S")
             filename = f"hmm_training_comprehensive_report_{symbol}_{exchange}_{timeframe}_{timestamp}.json"

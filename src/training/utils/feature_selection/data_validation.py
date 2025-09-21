@@ -64,8 +64,8 @@ class DataValidator:
         self.config = config or {}
         self.logger = logger.getChild('DataValidator')
         
-        # Validation thresholds
-        self.correlation_threshold = self.config.get('correlation_threshold', 0.99)
+        # Validation thresholds - adjusted to be less aggressive for moving averages
+        self.correlation_threshold = self.config.get('correlation_threshold', 0.95)
         self.mutual_info_threshold = self.config.get('mutual_info_threshold', 0.99)
         self.variance_threshold = self.config.get('variance_threshold', 1e-10)
         self.nan_threshold = self.config.get('nan_threshold', 0.1)  # Max 10% NaN values
@@ -212,21 +212,55 @@ class DataValidator:
             # Check for perfect correlations (suspicious)
             perfect_corr = self.detect_perfect_correlations(X)
             if perfect_corr:
+                # Filter out moving averages which are expected to be highly correlated
                 if feature_names:
-                    perfect_corr_pairs_names = []
+                    moving_average_patterns = ['sma_', 'ema_', 'wma_', 'vwma_', 'dema_', 'tema_', 'trima_', 'mama_']
+                    non_ma_perfect_corr = []
+                    ma_perfect_corr = []
+
                     for pair in perfect_corr:
                         if len(pair) >= 3:
                             feat1_name = feature_names[pair[0]] if pair[0] < len(feature_names) else f"feature_{pair[0]}"
                             feat2_name = feature_names[pair[1]] if pair[1] < len(feature_names) else f"feature_{pair[1]}"
-                            corr_val = pair[2]
-                            perfect_corr_pairs_names.append(f"{feat1_name}↔{feat2_name} ({corr_val:.3f})")
-                    warnings.append(f"Perfect correlations detected: {len(perfect_corr)} pairs - {', '.join(perfect_corr_pairs_names[:5])}{'...' if len(perfect_corr_pairs_names) > 5 else ''}")
-                    _LOGGER.warning(f"⚠️ Found {len(perfect_corr)} perfectly correlated feature pairs: {', '.join(perfect_corr_pairs_names[:10])}{'...' if len(perfect_corr_pairs_names) > 10 else ''}")
+
+                            # Check if both features are moving averages
+                            is_ma_pair = any(pattern in feat1_name.lower() for pattern in moving_average_patterns) and \
+                                        any(pattern in feat2_name.lower() for pattern in moving_average_patterns)
+
+                            if is_ma_pair:
+                                ma_perfect_corr.append(pair)
+                            else:
+                                non_ma_perfect_corr.append(pair)
+
+                    # Report non-moving-average perfect correlations as warnings
+                    if non_ma_perfect_corr:
+                        perfect_corr_pairs_names = []
+                        for pair in non_ma_perfect_corr:
+                            if len(pair) >= 3:
+                                feat1_name = feature_names[pair[0]] if pair[0] < len(feature_names) else f"feature_{pair[0]}"
+                                feat2_name = feature_names[pair[1]] if pair[1] < len(feature_names) else f"feature_{pair[1]}"
+                                corr_val = pair[2]
+                                perfect_corr_pairs_names.append(f"{feat1_name}↔{feat2_name} ({corr_val:.3f})")
+                        warnings.append(f"Perfect correlations detected (non-MA): {len(non_ma_perfect_corr)} pairs - {', '.join(perfect_corr_pairs_names[:5])}{'...' if len(perfect_corr_pairs_names) > 5 else ''}")
+                        _LOGGER.warning(f"⚠️ Found {len(non_ma_perfect_corr)} perfectly correlated feature pairs (non-MA): {', '.join(perfect_corr_pairs_names[:10])}{'...' if len(perfect_corr_pairs_names) > 10 else ''}")
+                        suspicious_features.extend([pair[0] for pair in non_ma_perfect_corr])
+                        suspicious_features.extend([pair[1] for pair in non_ma_perfect_corr])
+
+                    # Report moving average perfect correlations as info only
+                    if ma_perfect_corr:
+                        ma_corr_pairs_names = []
+                        for pair in ma_perfect_corr:
+                            if len(pair) >= 3:
+                                feat1_name = feature_names[pair[0]] if pair[0] < len(feature_names) else f"feature_{pair[0]}"
+                                feat2_name = feature_names[pair[1]] if pair[1] < len(feature_names) else f"feature_{pair[1]}"
+                                corr_val = pair[2]
+                                ma_corr_pairs_names.append(f"{feat1_name}↔{feat2_name} ({corr_val:.3f})")
+                        _LOGGER.info(f"ℹ️ Found {len(ma_perfect_corr)} highly correlated moving average pairs (expected): {', '.join(ma_corr_pairs_names[:10])}{'...' if len(ma_corr_pairs_names) > 10 else ''}")
                 else:
                     warnings.append(f"Perfect correlations detected: {len(perfect_corr)} pairs")
                     _LOGGER.warning(f"⚠️ Found {len(perfect_corr)} perfectly correlated feature pairs")
-                suspicious_features.extend([pair[0] for pair in perfect_corr])
-                suspicious_features.extend([pair[1] for pair in perfect_corr])
+                    suspicious_features.extend([pair[0] for pair in perfect_corr])
+                    suspicious_features.extend([pair[1] for pair in perfect_corr])
             
             # Check for suspicious mutual information
             if y is not None and SKLEARN_AVAILABLE:
@@ -395,7 +429,7 @@ class DataValidator:
             _LOGGER.warning(f"⚠️ Zero variance detection failed: {e}")
             return []
 
-    def detect_perfect_correlations(self, X: np.ndarray, threshold: float = 0.999) -> List[Tuple[int, int, float]]:
+    def detect_perfect_correlations(self, X: np.ndarray, threshold: float = 0.98) -> List[Tuple[int, int, float]]:
         """Detect perfectly correlated feature pairs."""
         return self.detect_high_correlation_features(X, threshold)
 

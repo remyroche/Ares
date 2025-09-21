@@ -42,39 +42,28 @@ def filter_raw_market_data_columns(feature_names: List[str]) -> Tuple[List[str],
     """
     # Raw market data columns that should be excluded from feature selection
     # These are exact column names or very specific patterns for raw OHLCV data
-    raw_data_patterns = [
-        # Exact timestamp columns
-        'timestamp', 'open_time', 'close_time', 'first_trade_time', 'last_trade_time',
+    # Note: These are now consolidated into raw_data_exact_patterns below for better organization
 
-        # Exact OHLC columns
-        'open', 'high', 'low', 'close',
-
-        # Exact volume columns (raw data)
-        'volume', 'quote_volume', 'taker_buy_volume', 'taker_buy_quote_volume',
-        'taker_sell_volume', 'taker_sell_quote_volume', 'total_volume',
-
-        # Exact trade count columns
-        'trades', 'taker_buy_trades', 'taker_sell_trades', 'total_trades',
-
-        # Exact price columns (raw data)
-        'price', 'avg_price', 'weighted_avg_price', 'last_price',
-
-        # Return columns (these are often perfectly correlated with close)
-        'close_return', 'close_log_return', 'open_return', 'high_return', 'low_return',
-
-        # Basic market data identifiers
-        'symbol', 'exchange', 'market', 'pair',
-
-        # Target/label columns that shouldn't be features
-        'target', 'label', 'y', 'model_score', 'prediction',
-
-        # Regime-related columns (to avoid circular dependency)
-        'regime', 'regime_label', 'hmm_regime', 'cluster_regime'
+    # Specific patterns for raw data columns - be more selective
+    # Only exclude truly raw columns, keep derived features
+    raw_data_specific_patterns = [
+        '_time'  # Only exclude time columns, keep derived features
     ]
 
-    # Specific patterns for raw data columns (more restrictive)
-    raw_data_specific_patterns = [
-        '_time', '_volume', '_trades', '_price', '_return', '_log_return'
+    # Raw data exact patterns that should be excluded - be more selective
+    # Only exclude truly raw market data, keep derived features
+    raw_data_exact_patterns = [
+        'timestamp', 'open_time', 'close_time', 'first_trade_time', 'last_trade_time',
+        'open', 'high', 'low', 'close', 'volume',  # Core OHLCV
+        'symbol', 'exchange', 'market', 'pair',  # Metadata
+        'target', 'label', 'y', 'model_score', 'prediction',  # Target/prediction columns
+        'regime', 'regime_label', 'hmm_regime', 'cluster_regime'  # Regime labels
+    ]
+
+    # Define what we want to keep - derived features that contain these patterns
+    keep_patterns = [
+        'ratio', 'position', 'trend', 'strength', 'momentum', 'volatility',
+        'return', 'log_return', 'range', 'size', 'pct', 'rolling', 'ma', 'sma', 'ema', 'wma'
     ]
 
     excluded_columns = []
@@ -84,24 +73,38 @@ def filter_raw_market_data_columns(feature_names: List[str]) -> Tuple[List[str],
         feature_lower = feature.lower()
 
         # Check for exact matches first (most restrictive)
-        is_raw_data = feature_lower in raw_data_patterns
+        is_raw_data = feature_lower in raw_data_exact_patterns
 
         # If not an exact match, check for specific patterns at the end of column names
+        # Be very selective - only exclude if it's clearly raw data
         if not is_raw_data:
             for pattern in raw_data_specific_patterns:
                 if feature_lower.endswith(pattern):
-                    # Only exclude if it's a raw data pattern (not derived features)
-                    # For example, exclude 'volume' but keep 'volume_ratio'
-                    if pattern in ['_time', '_volume', '_trades', '_price', '_return', '_log_return']:
-                        is_raw_data = True
-                        break
+                    # Only exclude time columns, keep derived features
+                    if pattern == '_time':
+                        # Only exclude if it's just 'timestamp' or similar raw time columns
+                        if feature_lower in ['timestamp', 'open_time', 'close_time']:
+                            is_raw_data = True
+                            break
 
         # Special handling for regime columns - exclude any column containing regime
         if not is_raw_data and 'regime' in feature_lower:
             is_raw_data = True
 
-        if is_raw_data:
+        # Check if this feature contains keep patterns (derived features)
+        is_derived_feature = False
+        for keep_pattern in keep_patterns:
+            if keep_pattern in feature_lower:
+                is_derived_feature = True
+                break
+
+        # If it's not raw data but contains derived feature patterns, definitely keep it
+        if not is_raw_data and is_derived_feature:
+            filtered_features.append(feature)
+        # If it's raw data, exclude it
+        elif is_raw_data:
             excluded_columns.append(feature)
+        # If it's not raw data and not obviously derived, be conservative and keep it
         else:
             filtered_features.append(feature)
 
@@ -239,7 +242,7 @@ class FeatureSelectionFramework(BaseFeatureSelectionFramework):
                         feature_names,
                         target_features=max_features
                     )
-                    if result and 'selected_features' in result:
+                    if result and 'selected_features' in result and result['selected_features']:
                         selected_features = result['selected_features']
                         _LOGGER.info(f"✅ Feature selection completed (comprehensive): {len(selected_features)} features selected")
                     else:
@@ -348,7 +351,7 @@ class FeatureSelectionFramework(BaseFeatureSelectionFramework):
             if enable_stability_analysis:
                 _LOGGER.info("📈 Step 5: Stability analysis...")
                 stability_results = self._perform_stability_analysis(
-                    X_filtered, y_filtered, filtered_feature_names, selection_results
+                    X_filtered, y_filtered, filtered_feature_names, selection_results, target_features
                 )
             
             # Step 6: Temporal analysis (if enabled)
@@ -391,7 +394,8 @@ class FeatureSelectionFramework(BaseFeatureSelectionFramework):
             
             # Compile comprehensive results
             result = {
-                'final_selected_features': final_selection['selected_features'],
+                'selected_features': final_selection['selected_features'],
+                'final_selected_features': final_selection['selected_features'],  # Keep for backward compatibility
                 'final_selected_indices': final_selection['selected_indices'],
                 'mrmr_prefilter_result': mrmr_prefilter_result,
                 'selection_results': selection_results,
@@ -436,6 +440,7 @@ class FeatureSelectionFramework(BaseFeatureSelectionFramework):
         except Exception as e:
             _LOGGER.error(f"❌ Comprehensive feature selection failed: {e}")
             return {
+                'selected_features': [],
                 'final_selected_features': [],
                 'final_selected_indices': [],
                 'selection_results': {},
@@ -560,9 +565,9 @@ class FeatureSelectionFramework(BaseFeatureSelectionFramework):
             _LOGGER.error(f"❌ Remaining selection methods application failed: {e}")
             return {'error': str(e)}
 
-    def _perform_stability_analysis(self, X: np.ndarray, y: np.ndarray, 
-                                  feature_names: List[str], 
-                                  selection_results: Dict[str, Any]) -> Dict[str, Any]:
+    def _perform_stability_analysis(self, X: np.ndarray, y: np.ndarray,
+                                  feature_names: List[str],
+                                  selection_results: Dict[str, Any], target_features: int) -> Dict[str, Any]:
         """Perform stability analysis."""
         try:
             stability_results = {}
@@ -577,15 +582,15 @@ class FeatureSelectionFramework(BaseFeatureSelectionFramework):
                         if method_name == 'elastic_net_stability':
                             return self.elastic_net_stability_selector.select_features(X_sub, y_sub, feature_names_sub)
                         elif method_name == 'feature_importance':
-                            return self.importance_ranker.select_features(X_sub, y_sub, feature_names_sub, kwargs.get('n_features', 50))
+                            return self.importance_ranker.select_features(X_sub, y_sub, feature_names_sub, kwargs.get('n_features', target_features))
                         elif method_name == 'rfe':
-                            return self.rfe_selector.select_features(X_sub, y_sub, feature_names_sub, kwargs.get('n_features', 50))
+                            return self.rfe_selector.select_features(X_sub, y_sub, feature_names_sub, kwargs.get('n_features', target_features))
                         else:
                             return {'selected_features': [], 'success': False}
                     
                     # Perform bootstrap stability analysis
                     bootstrap_result = self.stability_analyzer.analyze_bootstrap_stability(
-                        X, y, feature_names, selection_wrapper, {'n_features': 50}
+                        X, y, feature_names, selection_wrapper, {'n_features': target_features}
                     )
                     
                     stability_results[method_name] = bootstrap_result
@@ -1097,15 +1102,16 @@ Causal Analysis: {'Enabled' if results.get('pipeline_summary', {}).get('causal_a
             import csv
             import os
             from datetime import datetime
-            
-            # Create output directory if it doesn't exist
-            output_dir = "feature_selection_results"
-            os.makedirs(output_dir, exist_ok=True)
-            
-            # Generate filename with timestamp
+            from pathlib import Path
+
+            # Create outcomes directory if it doesn't exist
+            outcomes_dir = Path("outcomes")
+            outcomes_dir.mkdir(parents=True, exist_ok=True)
+
+            # Generate filename with timestamp following outcomes naming convention
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            csv_filename = f"feature_selection_results_{timestamp}.csv"
-            csv_path = os.path.join(output_dir, csv_filename)
+            csv_filename = f"market_analysis_feature_selection_outcome_{timestamp}.csv"
+            csv_path = outcomes_dir / csv_filename
             
             # Extract all scores
             final_scores = results.get('final_scores', {})
@@ -1189,7 +1195,7 @@ Causal Analysis: {'Enabled' if results.get('pipeline_summary', {}).get('causal_a
                     writer.writerow(row)
             
             # Also create a summary CSV with pipeline information
-            summary_csv_path = os.path.join(output_dir, f"feature_selection_summary_{timestamp}.csv")
+            summary_csv_path = outcomes_dir / f"feature_selection_summary_{timestamp}.csv"
             with open(summary_csv_path, 'w', newline='', encoding='utf-8') as csvfile:
                 fieldnames = ['metric', 'value']
                 writer = csv.DictWriter(csvfile, fieldnames=fieldnames)

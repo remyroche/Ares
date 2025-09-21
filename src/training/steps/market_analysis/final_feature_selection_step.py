@@ -21,7 +21,7 @@ from .final_feature_selection_pipeline import (
 
 # Import system utilities
 from src.utils.logger import get_logger
-from src.utils.comprehensive_function_logger import log_all_calls, log_step_progress
+from src.utils.comprehensive_function_logger import log_all_calls
 from src.core.decorators import handles_errors, traced, log_execution_time, validates
 
 class FinalFeatureSelectionStep:
@@ -48,7 +48,7 @@ class FinalFeatureSelectionStep:
     
     @log_all_calls
     @handles_errors(Exception, fallback=False)
-    @log_execution_time
+    @log_execution_time()
     async def execute_final_feature_selection(self, 
                                             symbol: str, 
                                             exchange: str, 
@@ -104,7 +104,6 @@ class FinalFeatureSelectionStep:
             self.logger.error(f"❌ Final feature selection failed: {e}")
             return False
     
-    @log_step_progress
     async def _load_feature_data(self, symbol: str, exchange: str, timeframe: str, data_dir: str) -> Optional[pd.DataFrame]:
         """Load feature data from previous pipeline steps."""
         
@@ -173,7 +172,6 @@ class FinalFeatureSelectionStep:
             self.logger.error(f"❌ Failed to load feature data: {e}")
             return None
     
-    @log_step_progress
     async def _load_target_data(self, symbol: str, exchange: str, timeframe: str, data_dir: str) -> Optional[pd.Series]:
         """Load target data if available."""
         
@@ -214,7 +212,6 @@ class FinalFeatureSelectionStep:
             self.logger.warning(f"⚠️ Failed to load target data: {e}")
             return None
     
-    @log_step_progress
     def _prepare_data(self, feature_data: pd.DataFrame, target_data: Optional[pd.Series]) -> Tuple[pd.DataFrame, Optional[pd.Series]]:
         """Prepare data for feature selection."""
         
@@ -248,8 +245,7 @@ class FinalFeatureSelectionStep:
         
         return X, y
     
-    @log_step_progress
-    async def _run_feature_selection(self, X: pd.DataFrame, y: Optional[pd.Series], 
+    async def _run_feature_selection(self, X: pd.DataFrame, y: Optional[pd.Series],
                                    symbol: str, exchange: str, timeframe: str) -> Any:
         """Run the multi-stage feature selection."""
         
@@ -291,8 +287,7 @@ class FinalFeatureSelectionStep:
         
         return result
     
-    @log_step_progress
-    async def _save_selection_results(self, selection_result: Any, symbol: str, exchange: str, 
+    async def _save_selection_results(self, selection_result: Any, symbol: str, exchange: str,
                                     timeframe: str, data_dir: str) -> None:
         """Save feature selection results."""
         
@@ -349,8 +344,7 @@ class FinalFeatureSelectionStep:
         except Exception as e:
             self.logger.error(f"❌ Failed to save selection results: {e}")
     
-    @log_step_progress
-    async def _generate_summary_report(self, selection_result: Any, symbol: str, 
+    async def _generate_summary_report(self, selection_result: Any, symbol: str,
                                      exchange: str, timeframe: str) -> None:
         """Generate summary report of feature selection."""
         

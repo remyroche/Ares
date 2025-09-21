@@ -16,10 +16,9 @@ from .sr_parameter_optimization import SRParameterOptimizationComponent
 from .sr_detection import SRDetectionComponent
 from .sr_clustering import SRClusteringComponent
 from .hmm_regime_discovery import HMMRegimeDiscoveryComponent
-from .hmm_clustering import HMMClusteringComponent
 # HMM training components moved to hmm_models_training module
 # from .hmm_models_training import HMMModelsTrainingComponent
-# from .hmm_ensemble_training import HMMEnsembleTrainingComponent
+from .hmm_ensemble_training_component import HMMEnsembleTrainingComponent
 # RegimeDataSplittingComponent imported lazily to avoid circular imports
 # TripleBarrierLabelingComponent moved to triple_barrier_labeling package
 from .feature_lookback_optimization import FeatureLookbackOptimizationComponent
@@ -35,9 +34,8 @@ __all__ = [
     'SRDetectionComponent',
     'SRClusteringComponent',
     'HMMRegimeDiscoveryComponent',
-    'HMMClusteringComponent',
     # 'HMMModelsTrainingComponent',  # Moved to hmm_models_training module
-    # 'HMMEnsembleTrainingComponent',  # Removed
+    'HMMEnsembleTrainingComponent'
     # 'RegimeDataSplittingComponent',  # Imported lazily to avoid circular imports
     # 'TripleBarrierLabelingComponent',  # Moved to triple_barrier_labeling package
     'FeatureLookbackOptimizationComponent',

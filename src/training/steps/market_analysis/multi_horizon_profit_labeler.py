@@ -22,12 +22,19 @@ from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass, field
 from datetime import datetime
 
+# Import utilities from src level
+import sys
+import os
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../../..'))
+
 from src.utils.tprint import tprint
 from src.utils.logger import get_logger
 from src.core.decorators import handles_errors, traced, validates, log_execution_time
 from src.utils.math_validation import safe_divide, validate_finite
 from src.utils.matrix_operations import UnifiedMatrixOperations
 from src.feature_generation.utils.enhanced_matrix_operations import EnhancedMatrixOperations
+from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer
+from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer
 
 # FIXED: Named constants to replace magic numbers
 class ScoringConstants:
@@ -89,6 +96,19 @@ class MultiHorizonConfig:
     leverage_aware: bool = True
     small_move_emphasis: float = 0.4  # Emphasize smaller moves for high leverage
 
+    # Memory optimization settings
+    memory_optimization: bool = True
+    enable_streaming: bool = True
+    max_memory_usage_gb: float = 8.0  # Maximum memory usage in GB
+    batch_size: int = 10000  # Processing batch size for large datasets
+    enable_m1_optimization: bool = True  # Enable M1-specific optimizations
+
+    # Quality validation settings
+    enable_quality_validation: bool = True
+    outlier_detection_enabled: bool = True
+    outlier_threshold: float = 3.0  # Standard deviations for outlier detection
+    min_sample_quality_score: float = 0.7  # Minimum quality score for samples
+
 class MultiHorizonProfitLabeler:
     """
     Multi-horizon profit probability labeler - superior alternative to triple barrier.
@@ -98,25 +118,45 @@ class MultiHorizonProfitLabeler:
     """
     
     def __init__(self, config: Optional[MultiHorizonConfig] = None):
-        """Initialize the multi-horizon profit labeler."""
+        """Initialize the multi-horizon profit labeler with memory optimization."""
         self.config = config or MultiHorizonConfig()
         self.logger = get_logger('MultiHorizonProfitLabeler')
-        
-        # FIXED: Initialize matrix operations for performance
+
+        # Initialize matrix operations for performance
         self.matrix_ops = UnifiedMatrixOperations()
         self.enhanced_ops = EnhancedMatrixOperations()
-        
+
+        # Initialize hardware optimizers
+        self.memory_optimizer = None
+        self.cpu_optimizer = None
+
+        if self.config.enable_m1_optimization:
+            self.memory_optimizer = get_m1_memory_optimizer()
+            self.cpu_optimizer = get_m1_cpu_optimizer()
+
+            # Set memory limits if specified
+            if self.config.max_memory_usage_gb and self.memory_optimizer:
+                self.memory_optimizer.set_memory_limit(self.config.max_memory_usage_gb)
+
+        # Optimize CPU for data processing
+        if self.cpu_optimizer:
+            self.cpu_optimizer.optimize_numpy_operations()
+            self.cpu_optimizer.optimize_pandas_operations()
+
         # Validate configuration
         self._validate_config()
-        
+
         # Pre-calculate combinations for efficiency
         self.target_horizon_combinations = self._generate_combinations()
-        
-        self.logger.info(f'🚀 Multi-Horizon Profit Labeler initialized (FIXED VERSION)')
+
+        self.logger.info(f'🚀 Multi-Horizon Profit Labeler initialized (ENHANCED VERSION)')
         self.logger.info(f'   → Profit targets: {list(self.config.profit_targets.keys())}')
         self.logger.info(f'   → Time horizons: {list(self.config.time_horizons.keys())}')
         self.logger.info(f'   → Total combinations: {len(self.target_horizon_combinations)}')
         self.logger.info(f'   → Matrix operations: Enabled')
+        self.logger.info(f'   → Memory optimization: {"Enabled" if self.config.memory_optimization else "Disabled"}')
+        self.logger.info(f'   → M1 optimization: {"Enabled" if self.config.enable_m1_optimization else "Disabled"}')
+        self.logger.info(f'   → Quality validation: {"Enabled" if self.config.enable_quality_validation else "Disabled"}')
         
     def _validate_config(self):
         """Validate configuration parameters."""
@@ -160,9 +200,25 @@ class MultiHorizonProfitLabeler:
         if len(data) < max(self.config.time_horizons.values()) + 1:
             self.logger.warning(f'⚠️ Insufficient data for labeling')
             return data.copy()
-        
-        # FIXED: Optimize DataFrame for matrix operations
-        labeled_data = self.enhanced_ops.optimize_dataframe(data.copy())
+
+        # ENHANCED: Comprehensive data quality validation and preprocessing
+        data_quality_result = self._validate_and_preprocess_data(data)
+        if not data_quality_result['is_valid']:
+            self.logger.error(f'❌ Data validation failed: {data_quality_result["errors"]}')
+            return data.copy()
+
+        # Apply data quality recommendations
+        data = data_quality_result['processed_data']
+        self.logger.info(f'✅ Data preprocessing completed: {len(data)} rows validated')
+
+        # ENHANCED: Memory optimization and data preparation
+        if self.config.memory_optimization and self.memory_optimizer:
+            # Optimize data for memory efficiency
+            labeled_data = self.memory_optimizer.optimize_dataframe_memory(data.copy())
+            self.logger.info(f'🧠 Memory optimization applied to {len(data)} rows')
+        else:
+            labeled_data = self.enhanced_ops.optimize_dataframe(data.copy())
+
         max_horizon = max(self.config.time_horizons.values())
         
         # Initialize all probability columns
@@ -171,16 +227,823 @@ class MultiHorizonProfitLabeler:
         # Generate labels for each valid sample
         valid_samples = len(data) - max_horizon
         self.logger.info(f'📊 Processing {valid_samples} valid samples with matrix operations')
+
+        # ENHANCED: Choose processing strategy based on dataset size and configuration
+        if len(data) > self.config.batch_size and self.config.enable_streaming:
+            self.logger.info(f'📦 Large dataset detected - using batch processing ({self.config.batch_size} samples per batch)')
+            self._generate_labels_batched(labeled_data, data, valid_samples, max_horizon)
+        else:
+            # FIXED: Use vectorized operations where possible
+            self._generate_labels_vectorized(labeled_data, data, valid_samples, max_horizon)
         
-        # FIXED: Use vectorized operations where possible
-        self._generate_labels_vectorized(labeled_data, data, valid_samples, max_horizon)
-        
+        # ENHANCED: Apply quality validation if enabled
+        if self.config.enable_quality_validation:
+            labeled_data = self._apply_quality_validation(labeled_data, data, valid_samples)
+            self.logger.info('✅ Quality validation completed')
+
         # Calculate summary statistics
         self._log_labeling_statistics(labeled_data, valid_samples)
-        
+
         return labeled_data
-    
-    def _generate_labels_vectorized(self, labeled_data: pd.DataFrame, data: pd.DataFrame, 
+
+    def _generate_labels_batched(self, labeled_data: pd.DataFrame, data: pd.DataFrame,
+                               valid_samples: int, max_horizon: int):
+        """
+        ENHANCED: Generate labels using memory-efficient batch processing.
+
+        This method processes data in batches to handle large datasets while
+        maintaining memory efficiency and quality validation.
+        """
+        try:
+            batch_size = self.config.batch_size
+            total_batches = (valid_samples + batch_size - 1) // batch_size
+
+            self.logger.info(f'🔄 Starting batch processing: {total_batches} batches of {batch_size} samples each')
+
+            # Pre-allocate numpy arrays for better memory efficiency
+            close_prices = data['close'].values
+            high_prices = data['high'].values
+            low_prices = data['low'].values
+
+            for batch_idx in range(total_batches):
+                start_idx = batch_idx * batch_size
+                end_idx = min(start_idx + batch_size, valid_samples)
+                batch_indices = range(start_idx, end_idx)
+
+                if batch_idx % 10 == 0 or batch_idx == total_batches - 1:
+                    progress = (batch_idx + 1) / total_batches * 100
+                    self.logger.info(f'   → Batch {batch_idx + 1}/{total_batches} ({progress:.1f}%) - Processing samples {start_idx} to {end_idx}')
+
+                # Process batch with memory monitoring
+                with self._memory_checkpoint(f'batch_{batch_idx}'):
+                    self._process_batch_vectorized(labeled_data, close_prices, high_prices, low_prices,
+                                                 batch_indices, max_horizon)
+
+                # Memory cleanup between batches if needed
+                if self.memory_optimizer and (batch_idx + 1) % 5 == 0:
+                    self.memory_optimizer.force_garbage_collection()
+
+            self.logger.info('✅ Batch processing completed successfully')
+
+        except Exception as e:
+            self.logger.error(f'❌ Error in batch processing: {e}')
+            # Fallback to regular vectorized processing
+            self.logger.info('🔄 Falling back to standard vectorized processing')
+            self._generate_labels_vectorized(labeled_data, data, valid_samples, max_horizon)
+
+    def _memory_checkpoint(self, checkpoint_name: str):
+        """
+        Context manager for memory checkpoint monitoring.
+        """
+        class MemoryCheckpoint:
+            def __init__(self, optimizer, name):
+                self.optimizer = optimizer
+                self.name = name
+
+            def __enter__(self):
+                if self.optimizer:
+                    self.optimizer.log_memory_usage(f'Before {self.name}')
+                return self
+
+            def __exit__(self, exc_type, exc_val, exc_tb):
+                if self.optimizer:
+                    self.optimizer.log_memory_usage(f'After {self.name}')
+
+        return MemoryCheckpoint(self.memory_optimizer, checkpoint_name)
+
+    def _apply_quality_validation(self, labeled_data: pd.DataFrame, original_data: pd.DataFrame,
+                                valid_samples: int) -> pd.DataFrame:
+        """
+        ENHANCED: Apply comprehensive quality validation to labeling results.
+
+        This method validates the quality of generated labels and applies corrections
+        for outliers and inconsistencies.
+        """
+        try:
+            self.logger.info('🔍 Starting quality validation of labeling results')
+
+            # Step 1: Detect and handle outliers in probability scores
+            if self.config.outlier_detection_enabled:
+                labeled_data = self._detect_and_handle_outliers(labeled_data, valid_samples)
+
+            # Step 2: Validate directional consistency
+            labeled_data = self._validate_directional_consistency(labeled_data, valid_samples)
+
+            # Step 3: Check for sample quality issues
+            labeled_data = self._validate_sample_quality(labeled_data, original_data, valid_samples)
+
+            # Step 4: Apply final quality corrections
+            labeled_data = self._apply_final_quality_corrections(labeled_data, valid_samples)
+
+            return labeled_data
+
+        except Exception as e:
+            self.logger.warning(f'⚠️ Error in quality validation: {e}')
+            return labeled_data  # Return original data on error
+
+    def _detect_and_handle_outliers(self, labeled_data: pd.DataFrame, valid_samples: int) -> pd.DataFrame:
+        """
+        Detect and handle outliers in probability scores using statistical methods.
+        """
+        try:
+            # Focus on key probability columns
+            prob_columns = [col for col in labeled_data.columns
+                          if col.endswith('_prob') and not col.endswith('_long_prob') and not col.endswith('_short_prob')]
+
+            if not prob_columns:
+                return labeled_data
+
+            # Apply outlier detection to each probability column
+            for col in prob_columns:
+                try:
+                    values = labeled_data[col].iloc[:valid_samples].dropna()
+
+                    if len(values) < 10:
+                        continue
+
+                    # Use IQR method for outlier detection
+                    Q1 = values.quantile(0.25)
+                    Q3 = values.quantile(0.75)
+                    IQR = Q3 - Q1
+                    lower_bound = Q1 - self.config.outlier_threshold * IQR
+                    upper_bound = Q3 + self.config.outlier_threshold * IQR
+
+                    # Identify outliers
+                    outlier_mask = (values < lower_bound) | (values > upper_bound)
+
+                    if outlier_mask.any():
+                        outlier_count = outlier_mask.sum()
+                        outlier_ratio = outlier_count / len(values)
+
+                        # Only handle if outliers are not excessive
+                        if outlier_ratio < 0.1:  # Less than 10% outliers
+                            # Replace outliers with median
+                            median_val = values.median()
+                            labeled_data.loc[labeled_data[col].iloc[:valid_samples][outlier_mask].index, col] = median_val
+
+                            self.logger.info(f'🧹 Corrected {outlier_count} outliers in {col} (median: {median_val:.3f})')
+                        else:
+                            self.logger.warning(f'⚠️ High outlier ratio in {col}: {outlier_ratio:.1%} - skipping correction')
+
+                except Exception as e:
+                    self.logger.warning(f'⚠️ Error processing outliers in {col}: {e}')
+                    continue
+
+            return labeled_data
+
+        except Exception as e:
+            self.logger.warning(f'⚠️ Error in outlier detection: {e}')
+            return labeled_data
+
+    def _validate_directional_consistency(self, labeled_data: pd.DataFrame, valid_samples: int) -> pd.DataFrame:
+        """
+        Validate directional consistency between long and short signals.
+        """
+        try:
+            # Find directional columns
+            long_cols = [col for col in labeled_data.columns if '_long_prob' in col]
+            short_cols = [col for col in labeled_data.columns if '_short_prob' in col]
+
+            if not long_cols or not short_cols:
+                return labeled_data
+
+            # Create a mapping between long and short columns
+            directional_pairs = {}
+            for long_col in long_cols:
+                # Find corresponding short column (same target and horizon)
+                base_name = long_col.replace('_long_prob', '')
+                short_col = base_name + '_short_prob'
+                if short_col in labeled_data.columns:
+                    directional_pairs[long_col] = short_col
+
+            # Check each pair for consistency
+            for long_col, short_col in directional_pairs.items():
+                try:
+                    long_values = labeled_data[long_col].iloc[:valid_samples]
+                    short_values = labeled_data[short_col].iloc[:valid_samples]
+
+                    # Calculate directional bias
+                    bias = long_values - short_values
+
+                    # Identify extreme inconsistencies (both high probability)
+                    extreme_bias_mask = (long_values > 0.8) & (short_values > 0.8)
+
+                    if extreme_bias_mask.any():
+                        # These are suspicious - both directions have high probability
+                        # Apply moderation: reduce both probabilities
+                        moderation_factor = 0.7
+                        labeled_data.loc[extreme_bias_mask[extreme_bias_mask].index, long_col] *= moderation_factor
+                        labeled_data.loc[extreme_bias_mask[extreme_bias_mask].index, short_col] *= moderation_factor
+
+                        self.logger.info(f'🔧 Moderated {extreme_bias_mask.sum()} extreme directional conflicts in {long_col}')
+
+                except Exception as e:
+                    self.logger.warning(f'⚠️ Error validating directional consistency for {long_col}: {e}')
+                    continue
+
+            return labeled_data
+
+        except Exception as e:
+            self.logger.warning(f'⚠️ Error in directional consistency validation: {e}')
+            return labeled_data
+
+    def _validate_sample_quality(self, labeled_data: pd.DataFrame, original_data: pd.DataFrame,
+                               valid_samples: int) -> pd.DataFrame:
+        """
+        Validate sample quality based on multiple criteria.
+        """
+        try:
+            # Calculate quality scores for each sample
+            quality_scores = self._calculate_sample_quality_scores_enhanced(labeled_data, original_data, valid_samples)
+
+            # Identify low-quality samples
+            low_quality_mask = quality_scores < self.config.min_sample_quality_score
+
+            if low_quality_mask.any():
+                low_quality_count = low_quality_mask.sum()
+
+                # Only apply correction if not too many samples are affected
+                if low_quality_count < valid_samples * 0.3:  # Less than 30% of samples
+                    self.logger.info(f'🛠️ Applying quality corrections to {low_quality_count} low-quality samples')
+
+                    # Apply quality-based corrections
+                    labeled_data = self._correct_low_quality_samples(labeled_data, quality_scores,
+                                                                  low_quality_mask, valid_samples)
+                else:
+                    self.logger.warning(f'⚠️ High number of low-quality samples ({low_quality_count}) - skipping corrections')
+
+            return labeled_data
+
+        except Exception as e:
+            self.logger.warning(f'⚠️ Error in sample quality validation: {e}')
+            return labeled_data
+
+    def _calculate_sample_quality_scores_enhanced(self, labeled_data: pd.DataFrame,
+                                                original_data: pd.DataFrame,
+                                                valid_samples: int) -> pd.Series:
+        """
+        Calculate enhanced quality scores for each sample based on multiple factors.
+        """
+        try:
+            quality_scores = pd.Series(1.0, index=labeled_data.index[:valid_samples])
+
+            # Factor 1: Probability distribution reasonableness
+            prob_cols = [col for col in labeled_data.columns if col.endswith('_prob')]
+            if prob_cols:
+                for idx in range(valid_samples):
+                    try:
+                        sample_probs = labeled_data[prob_cols].iloc[idx].dropna()
+
+                        if len(sample_probs) > 0:
+                            # Check for reasonable probability distribution
+                            prob_sum = sample_probs.sum()
+                            prob_variance = sample_probs.var()
+
+                            # High sum might indicate overconfident predictions
+                            if prob_sum > 2.0:
+                                quality_scores.iloc[idx] *= 0.8
+
+                            # Very low variance might indicate lack of discrimination
+                            if prob_variance < 0.01:
+                                quality_scores.iloc[idx] *= 0.9
+
+                    except Exception:
+                        continue
+
+            # Factor 2: Directional signal coherence
+            long_cols = [col for col in labeled_data.columns if '_long_prob' in col]
+            short_cols = [col for col in labeled_data.columns if '_short_prob' in col]
+
+            if long_cols and short_cols:
+                for idx in range(valid_samples):
+                    try:
+                        # Check if directional signals are reasonable
+                        long_avg = labeled_data[long_cols].iloc[idx].mean()
+                        short_avg = labeled_data[short_cols].iloc[idx].mean()
+
+                        # Extreme bias might indicate poor signal quality
+                        bias_ratio = abs(long_avg - short_avg) / (long_avg + short_avg + 0.001)
+                        if bias_ratio > 0.8:  # Very strong bias
+                            quality_scores.iloc[idx] *= 0.85
+
+                    except Exception:
+                        continue
+
+            # Factor 3: Price consistency with original data
+            for idx in range(valid_samples):
+                try:
+                    original_price = original_data.iloc[idx]['close']
+                    # Check if any calculated probabilities are based on inconsistent price data
+                    # (This would be detected by extreme probability values)
+
+                    max_prob = labeled_data[[col for col in prob_cols if col in labeled_data.columns]].iloc[idx].max()
+                    if max_prob > 0.95:  # Very confident prediction
+                        # This might be reasonable, but flag for review
+                        pass
+
+                except Exception:
+                    continue
+
+            return quality_scores
+
+        except Exception as e:
+            self.logger.warning(f'⚠️ Error calculating enhanced quality scores: {e}')
+            return pd.Series(1.0, index=labeled_data.index[:valid_samples])
+
+    def _correct_low_quality_samples(self, labeled_data: pd.DataFrame, quality_scores: pd.Series,
+                                   low_quality_mask: pd.Series, valid_samples: int) -> pd.DataFrame:
+        """
+        Apply corrections to low-quality samples.
+        """
+        try:
+            # Get indices of low-quality samples
+            low_quality_indices = quality_scores[low_quality_mask].index
+
+            # For low-quality samples, apply conservative corrections:
+            # 1. Reduce extreme probability values
+            prob_cols = [col for col in labeled_data.columns if col.endswith('_prob')]
+
+            if prob_cols:
+                for idx in low_quality_indices:
+                    try:
+                        # Reduce extreme probabilities (>0.8) by 20%
+                        for col in prob_cols:
+                            if col in labeled_data.columns:
+                                current_val = labeled_data.loc[idx, col]
+                                if current_val > 0.8:
+                                    labeled_data.loc[idx, col] = current_val * 0.8
+
+                    except Exception:
+                        continue
+
+            # 2. Adjust directional bias for better balance
+            long_cols = [col for col in labeled_data.columns if '_long_prob' in col]
+            short_cols = [col for col in labeled_data.columns if '_short_prob' in col]
+
+            if long_cols and short_cols:
+                for idx in low_quality_indices:
+                    try:
+                        # Calculate current directional bias
+                        long_avg = labeled_data[long_cols].iloc[idx].mean()
+                        short_avg = labeled_data[short_cols].iloc[idx].mean()
+
+                        # If bias is extreme, apply moderation
+                        if abs(long_avg - short_avg) > 0.5:
+                            # Reduce the stronger signal
+                            if long_avg > short_avg:
+                                labeled_data.loc[idx, long_cols] *= 0.9
+                            else:
+                                labeled_data.loc[idx, short_cols] *= 0.9
+
+                    except Exception:
+                        continue
+
+            self.logger.info(f'✅ Applied quality corrections to {len(low_quality_indices)} samples')
+            return labeled_data
+
+        except Exception as e:
+            self.logger.warning(f'⚠️ Error applying quality corrections: {e}')
+            return labeled_data
+
+    def _apply_final_quality_corrections(self, labeled_data: pd.DataFrame, valid_samples: int) -> pd.DataFrame:
+        """
+        Apply final quality corrections and normalization.
+        """
+        try:
+            # Ensure all probability values are within [0, 1] range
+            prob_cols = [col for col in labeled_data.columns if col.endswith('_prob')]
+
+            if prob_cols:
+                for col in prob_cols:
+                    if col in labeled_data.columns:
+                        # Clip values to valid range
+                        labeled_data[col] = np.clip(labeled_data[col], 0.0, 1.0)
+
+            # Normalize composite scores to prevent extreme values
+            composite_cols = [
+                'overall_opportunity', 'leverage_adjusted_score', 'immediate_opportunity',
+                'short_term_opportunity', 'long_overall_opportunity', 'short_overall_opportunity'
+            ]
+
+            for col in composite_cols:
+                if col in labeled_data.columns:
+                    # Clip to reasonable range
+                    labeled_data[col] = np.clip(labeled_data[col], 0.0, 2.0)
+
+            # Validate directional bias values
+            if 'directional_bias' in labeled_data.columns:
+                labeled_data['directional_bias'] = np.clip(labeled_data['directional_bias'], -1.0, 1.0)
+
+            self.logger.info('✅ Final quality corrections applied')
+            return labeled_data
+
+        except Exception as e:
+            self.logger.warning(f'⚠️ Error in final quality corrections: {e}')
+            return labeled_data
+
+    def _validate_and_preprocess_data(self, data: pd.DataFrame) -> Dict[str, Any]:
+        """
+        ENHANCED: Comprehensive data validation and preprocessing with quality metrics.
+
+        This method performs thorough validation and preprocessing of input data
+        including missing value handling, data consistency checks, and quality improvements.
+        """
+        try:
+            self.logger.info('🔍 Starting comprehensive data validation and preprocessing')
+
+            # Step 1: Basic validation
+            basic_validation = self._perform_basic_validation(data)
+            if not basic_validation['is_valid']:
+                return basic_validation
+
+            # Step 2: Advanced quality assessment
+            quality_assessment = self._perform_quality_assessment(data)
+            self.logger.info(f'📊 Data quality assessment: {quality_assessment["overall_score"]:.3f}')
+
+            # Step 3: Apply preprocessing corrections
+            processed_data = self._apply_preprocessing_corrections(data, quality_assessment)
+
+            # Step 4: Final validation
+            final_validation = self._perform_final_validation(processed_data)
+
+            return {
+                'is_valid': final_validation['is_valid'],
+                'processed_data': processed_data,
+                'quality_metrics': quality_assessment,
+                'validation_results': final_validation,
+                'errors': [] if final_validation['is_valid'] else final_validation['errors'],
+                'warnings': quality_assessment.get('warnings', [])
+            }
+
+        except Exception as e:
+            self.logger.error(f'❌ Error in data validation and preprocessing: {e}')
+            return {
+                'is_valid': False,
+                'processed_data': data,
+                'errors': [str(e)],
+                'warnings': []
+            }
+
+    def _perform_basic_validation(self, data: pd.DataFrame) -> Dict[str, Any]:
+        """
+        Perform basic validation checks on the input data.
+        """
+        try:
+            errors = []
+            warnings = []
+
+            # Check for empty data
+            if data is None or data.empty:
+                errors.append("DataFrame is None or empty")
+                return {'is_valid': False, 'errors': errors, 'warnings': warnings}
+
+            # Check for minimum required rows
+            min_required_rows = max(self.config.time_horizons.values()) + 1
+            if len(data) < min_required_rows:
+                errors.append(f"Insufficient data: {len(data)} rows, minimum {min_required_rows} required")
+                return {'is_valid': False, 'errors': errors, 'warnings': warnings}
+
+            # Check required columns
+            required_columns = ['open', 'high', 'low', 'close', 'volume']
+            missing_columns = [col for col in required_columns if col not in data.columns]
+
+            if missing_columns:
+                errors.append(f"Missing required columns: {missing_columns}")
+                return {'is_valid': False, 'errors': errors, 'warnings': warnings}
+
+            # Check for reasonable data types
+            for col in required_columns:
+                if col in data.columns:
+                    if not pd.api.types.is_numeric_dtype(data[col]):
+                        try:
+                            # Try to convert to numeric
+                            data[col] = pd.to_numeric(data[col], errors='coerce')
+                            warnings.append(f"Converted column {col} to numeric")
+                        except Exception:
+                            errors.append(f"Column {col} cannot be converted to numeric")
+                            return {'is_valid': False, 'errors': errors, 'warnings': warnings}
+
+            return {'is_valid': True, 'errors': errors, 'warnings': warnings}
+
+        except Exception as e:
+            return {'is_valid': False, 'errors': [str(e)], 'warnings': []}
+
+    def _perform_quality_assessment(self, data: pd.DataFrame) -> Dict[str, Any]:
+        """
+        Perform comprehensive quality assessment of the input data.
+        """
+        try:
+            quality_metrics = {
+                'total_rows': len(data),
+                'total_columns': len(data.columns),
+                'missing_values': 0,
+                'duplicate_rows': 0,
+                'price_consistency_score': 1.0,
+                'volume_quality_score': 1.0,
+                'data_completeness_score': 1.0,
+                'warnings': []
+            }
+
+            # Calculate missing values
+            quality_metrics['missing_values'] = data.isnull().sum().sum()
+
+            # Calculate duplicates
+            quality_metrics['duplicate_rows'] = data.duplicated().sum()
+
+            # Calculate data completeness
+            total_cells = len(data) * len(data.columns)
+            missing_ratio = quality_metrics['missing_values'] / total_cells if total_cells > 0 else 0
+            quality_metrics['data_completeness_score'] = max(0.0, 1.0 - missing_ratio * 2)
+
+            # Check price consistency
+            quality_metrics['price_consistency_score'] = self._calculate_price_consistency_score(data)
+
+            # Check volume quality
+            quality_metrics['volume_quality_score'] = self._calculate_volume_quality_score(data)
+
+            # Calculate overall quality score
+            weights = {
+                'completeness': 0.3,
+                'consistency': 0.4,
+                'volume': 0.2,
+                'duplicates': 0.1
+            }
+
+            duplicate_penalty = min(1.0, quality_metrics['duplicate_rows'] / len(data))
+            overall_score = (
+                quality_metrics['data_completeness_score'] * weights['completeness'] +
+                quality_metrics['price_consistency_score'] * weights['consistency'] +
+                quality_metrics['volume_quality_score'] * weights['volume'] +
+                (1.0 - duplicate_penalty) * weights['duplicates']
+            )
+
+            quality_metrics['overall_score'] = max(0.0, min(1.0, overall_score))
+
+            # Generate warnings based on quality scores
+            if quality_metrics['data_completeness_score'] < 0.8:
+                quality_metrics['warnings'].append("Low data completeness - consider data imputation")
+
+            if quality_metrics['price_consistency_score'] < 0.7:
+                quality_metrics['warnings'].append("Price consistency issues detected")
+
+            if quality_metrics['volume_quality_score'] < 0.7:
+                quality_metrics['warnings'].append("Volume data quality issues detected")
+
+            if quality_metrics['duplicate_rows'] > len(data) * 0.1:
+                quality_metrics['warnings'].append("High duplicate ratio detected")
+
+            return quality_metrics
+
+        except Exception as e:
+            self.logger.warning(f'⚠️ Error in quality assessment: {e}')
+            return {
+                'overall_score': 0.5,
+                'warnings': [f'Quality assessment failed: {e}']
+            }
+
+    def _calculate_price_consistency_score(self, data: pd.DataFrame) -> float:
+        """
+        Calculate price consistency score based on OHLC relationships.
+        """
+        try:
+            if len(data) < 10:
+                return 0.5
+
+            # Sample data for consistency checks (to avoid excessive computation)
+            sample_size = min(1000, len(data))
+            sample = data.tail(sample_size)
+
+            consistency_issues = 0
+            total_checks = 0
+
+            # Check OHLC logical relationships
+            total_checks += 1
+            high_issues = (sample['high'] < np.maximum(sample['open'], sample['close'])).sum()
+            consistency_issues += high_issues
+
+            total_checks += 1
+            low_issues = (sample['low'] > np.minimum(sample['open'], sample['close'])).sum()
+            consistency_issues += low_issues
+
+            # Check for extreme price changes
+            total_checks += 1
+            if len(sample) > 1:
+                returns = sample['close'].pct_change().dropna()
+                extreme_changes = (returns.abs() > 0.5).sum()  # More than 50% change
+                if extreme_changes > len(returns) * 0.1:  # More than 10% extreme changes
+                    consistency_issues += 1
+
+            # Check for price gaps (unusual)
+            total_checks += 1
+            if len(sample) > 1:
+                price_gaps = ((sample['high'].shift(1) < sample['low']) &
+                             (sample.index.to_series().diff().dt.total_seconds() <= 3600)).sum()  # Gaps within same hour
+                if price_gaps > len(sample) * 0.05:  # More than 5% gaps
+                    consistency_issues += 1
+
+            if total_checks > 0:
+                consistency_score = max(0.0, 1.0 - (consistency_issues / total_checks))
+            else:
+                consistency_score = 0.5
+
+            return consistency_score
+
+        except Exception as e:
+            self.logger.warning(f'⚠️ Error calculating price consistency: {e}')
+            return 0.5
+
+    def _calculate_volume_quality_score(self, data: pd.DataFrame) -> float:
+        """
+        Calculate volume data quality score.
+        """
+        try:
+            if 'volume' not in data.columns or len(data) < 10:
+                return 0.5
+
+            volume_data = data['volume'].dropna()
+
+            if len(volume_data) == 0:
+                return 0.0
+
+            # Check for zero/negative volumes
+            invalid_volumes = (volume_data <= 0).sum()
+            invalid_ratio = invalid_volumes / len(volume_data)
+
+            # Check for extreme volume spikes
+            volume_mean = volume_data.mean()
+            volume_std = volume_data.std()
+
+            if volume_std > 0:
+                extreme_volumes = (volume_data > volume_mean + 5 * volume_std).sum()
+                extreme_ratio = extreme_volumes / len(volume_data)
+            else:
+                extreme_ratio = 0
+
+            # Calculate volume quality score
+            quality_score = 1.0
+            quality_score *= max(0.0, 1.0 - invalid_ratio * 2)  # Penalize invalid volumes
+            quality_score *= max(0.0, 1.0 - extreme_ratio * 3)  # Penalize extreme volumes
+
+            return max(0.0, quality_score)
+
+        except Exception as e:
+            self.logger.warning(f'⚠️ Error calculating volume quality: {e}')
+            return 0.5
+
+    def _apply_preprocessing_corrections(self, data: pd.DataFrame, quality_metrics: Dict[str, Any]) -> pd.DataFrame:
+        """
+        Apply preprocessing corrections based on quality assessment.
+        """
+        try:
+            corrected_data = data.copy()
+
+            # Apply corrections based on quality issues
+            warnings = quality_metrics.get('warnings', [])
+
+            # Handle missing values
+            if 'completeness' in str(warnings).lower():
+                corrected_data = self._handle_missing_values(corrected_data)
+
+            # Handle volume issues
+            if 'volume' in str(warnings).lower():
+                corrected_data = self._correct_volume_issues(corrected_data)
+
+            # Handle price consistency issues
+            if quality_metrics.get('price_consistency_score', 1.0) < 0.8:
+                corrected_data = self._correct_price_consistency_issues(corrected_data)
+
+            # Remove excessive duplicates
+            duplicate_ratio = quality_metrics.get('duplicate_rows', 0) / len(data)
+            if duplicate_ratio > 0.05:  # More than 5% duplicates
+                corrected_data = corrected_data.drop_duplicates()
+
+            return corrected_data
+
+        except Exception as e:
+            self.logger.warning(f'⚠️ Error applying preprocessing corrections: {e}')
+            return data
+
+    def _handle_missing_values(self, data: pd.DataFrame) -> pd.DataFrame:
+        """
+        Handle missing values using appropriate strategies.
+        """
+        try:
+            # Forward fill for price data (maintains trend)
+            price_cols = ['open', 'high', 'low', 'close']
+            for col in price_cols:
+                if col in data.columns:
+                    data[col] = data[col].fillna(method='ffill')
+
+            # Backward fill for any remaining missing prices
+            for col in price_cols:
+                if col in data.columns:
+                    data[col] = data[col].fillna(method='bfill')
+
+            # For volume, use median of surrounding values
+            if 'volume' in data.columns:
+                data['volume'] = data['volume'].fillna(data['volume'].rolling(10, min_periods=1, center=True).median())
+
+            # Final fill for any remaining missing values
+            data = data.fillna(method='ffill').fillna(method='bfill')
+
+            self.logger.info('✅ Missing values handled using forward/backward fill and median')
+            return data
+
+        except Exception as e:
+            self.logger.warning(f'⚠️ Error handling missing values: {e}')
+            return data
+
+    def _correct_volume_issues(self, data: pd.DataFrame) -> pd.DataFrame:
+        """
+        Correct volume data issues.
+        """
+        try:
+            if 'volume' not in data.columns:
+                return data
+
+            # Replace negative/zero volumes with median
+            volume_median = data['volume'].median()
+            data['volume'] = data['volume'].clip(lower=volume_median * 0.1)  # Minimum 10% of median
+
+            # Smooth extreme volume spikes
+            volume_mean = data['volume'].mean()
+            volume_std = data['volume'].std()
+
+            if volume_std > 0:
+                upper_limit = volume_mean + 3 * volume_std
+                data['volume'] = data['volume'].clip(upper=upper_limit)
+
+            self.logger.info('✅ Volume data issues corrected')
+            return data
+
+        except Exception as e:
+            self.logger.warning(f'⚠️ Error correcting volume issues: {e}')
+            return data
+
+    def _correct_price_consistency_issues(self, data: pd.DataFrame) -> pd.DataFrame:
+        """
+        Correct price consistency issues.
+        """
+        try:
+            # Fix OHLC logical relationships
+            for idx in data.index:
+                try:
+                    row = data.loc[idx]
+
+                    # Ensure high is maximum of open/close
+                    if row['high'] < max(row['open'], row['close']):
+                        data.loc[idx, 'high'] = max(row['open'], row['close'])
+
+                    # Ensure low is minimum of open/close
+                    if row['low'] > min(row['open'], row['close']):
+                        data.loc[idx, 'low'] = min(row['open'], row['close'])
+
+                except Exception:
+                    continue
+
+            self.logger.info('✅ Price consistency issues corrected')
+            return data
+
+        except Exception as e:
+            self.logger.warning(f'⚠️ Error correcting price consistency: {e}')
+            return data
+
+    def _perform_final_validation(self, data: pd.DataFrame) -> Dict[str, Any]:
+        """
+        Perform final validation after preprocessing.
+        """
+        try:
+            errors = []
+            warnings = []
+
+            # Check for any remaining missing values
+            remaining_missing = data.isnull().sum().sum()
+            if remaining_missing > 0:
+                errors.append(f"Still has {remaining_missing} missing values after preprocessing")
+
+            # Check for any remaining duplicates
+            remaining_duplicates = data.duplicated().sum()
+            if remaining_duplicates > 0:
+                warnings.append(f"Still has {remaining_duplicates} duplicate rows")
+
+            # Final data size check
+            if len(data) < max(self.config.time_horizons.values()) + 1:
+                errors.append("Insufficient data after preprocessing")
+
+            return {
+                'is_valid': len(errors) == 0,
+                'errors': errors,
+                'warnings': warnings
+            }
+
+        except Exception as e:
+            return {
+                'is_valid': False,
+                'errors': [str(e)],
+                'warnings': []
+            }
+
+    def _generate_labels_vectorized(self, labeled_data: pd.DataFrame, data: pd.DataFrame,
                                   valid_samples: int, max_horizon: int):
         """
         FIXED: Vectorized label generation using matrix operations for performance.

@@ -169,44 +169,165 @@ The PID-based feature generation system integrates seamlessly with the existing 
 3. **Generates comprehensive feature sets** for downstream analysis
 4. **Provides detailed artifacts** for pipeline continuation
 
-## Usage Example
+## Enhanced Usage Example with All Utilities
 
 ```python
 from src.training.steps.market_analysis.pid_based_feature_generation import (
-    PIDBasedFeatureOrchestrator, 
+    PIDBasedFeatureOrchestrator,
     OrchestratorConfig,
     OptimizedLookbackIntegration
 )
+from src.utils.common_operations import get_m1_gpu_manager, get_m1_memory_optimizer
+from src.utils.data.klines_parquet import KlinesParquetManager
+from src.utils.data.processing.data_processing import DataProcessor
 
-# Configure orchestrator
+# Enhanced configuration with all utilities enabled
 config = OrchestratorConfig(
+    # Feature generation limits
     max_interaction_features=100,
     max_polynomial_features=50,
-    max_cross_timeframe_features=50
+    max_cross_timeframe_features=50,
+
+    # Utility integration flags
+    enable_common_operations=True,
+    enable_serialization=True,
+    enable_data_validation=True,
+    enable_data_optimization=True,
+    enable_m1_optimization=True,
+
+    # Data quality settings
+    min_data_quality_score=0.7,
+    max_missing_data_ratio=0.1,
+    enable_quality_reporting=True,
+
+    # Performance settings
+    enable_profiling=True,
+    enable_memory_monitoring=True,
+    enable_performance_logging=True,
+
+    # Serialization settings
+    save_intermediate_results=True,
+    serialization_format='parquet',
+    artifacts_directory='artifacts/pid_features'
 )
 
-# Initialize components
+# Initialize orchestrator with enhanced utilities
 orchestrator = PIDBasedFeatureOrchestrator(config)
 lookback_integration = OptimizedLookbackIntegration()
 
+# Optional: Load optimized historical data using klines parquet
+klines_manager = KlinesParquetManager()
+historical_data = klines_manager.load_data_range(
+    symbol="ETHUSDT",
+    interval="1h",
+    start_date="2024-01-01",
+    end_date="2024-12-31"
+)
+
+# Use data processing utilities for enhanced data preparation
+if historical_data is not None:
+    data_processor = DataProcessor()
+    market_data = data_processor.preprocess_for_feature_generation(historical_data)
+    feature_names = list(market_data.columns)
+else:
+    # Use standard data
+    market_data = your_standard_market_data
+    feature_names = your_feature_names
+
 # Integrate optimized lookback periods
 lookback_result = lookback_integration.integrate_optimized_lookback_periods(
-    feature_lookback_optimization_result, 
+    feature_lookback_optimization_result,
     feature_names
 )
 
-# Generate features
+# Generate features with comprehensive utility integration
 result = await orchestrator.orchestrate_feature_generation(
     market_data,
     feature_names,
     lookback_result.optimized_lookback_periods,
-    target_variable  # Now uses multi-horizon profit probabilities instead of triple barrier labels
+    target_variable  # Multi-horizon profit probabilities
 )
 
-# Access results
+# Access comprehensive results
 print(f"Generated {result.total_features_generated} features")
 print(f"Quality score: {result.overall_quality_score}")
 print(f"Feature names: {result.combined_feature_names}")
+print(f"Utility integrations used: {sum(result.utility_integration_status.values())}/{len(result.utility_integration_status)}")
+print(f"Memory usage: {result.memory_usage}")
+print(f"Artifacts saved: {result.artifact_paths}")
+
+# Access enhanced quality metrics if available
+if 'enhanced_metrics' in result.data_quality_report:
+    print(f"Enhanced metrics: {result.data_quality_report['enhanced_metrics']}")
+
+# Clean up M1 optimizers
+from src.utils.common_operations import cleanup_m1_optimizers
+cleanup_m1_optimizers()
+```
+
+## Advanced Usage with Specific Utility Modules
+
+### **Data Management with Klines Parquet**
+```python
+from src.utils.data.klines_parquet import KlinesParquetManager
+
+# Initialize manager
+klines_manager = KlinesParquetManager(data_dir="historical_data")
+
+# Get data information
+data_info = klines_manager.get_data_info("ETHUSDT", "1h")
+print(f"Available data: {data_info['total_records']} records")
+
+# Load optimized data
+data = klines_manager.load_data_range("ETHUSDT", "1h", "2024-01-01", "2024-12-31")
+```
+
+### **Enhanced Data Processing**
+```python
+from src.utils.data.processing.data_processing import DataProcessor
+
+# Initialize processor
+processor = DataProcessor()
+
+# Enhanced preprocessing
+processed_data = processor.preprocess_for_feature_generation(raw_data)
+quality_metrics = processor.calculate_enhanced_quality_metrics(processed_data)
+```
+
+### **Apple Silicon Optimization**
+```python
+from src.utils.hardware.m1_gpu_utils import M1GPUManager
+from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer
+from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer
+
+# Initialize M1 optimizers
+gpu_manager = M1GPUManager()
+memory_optimizer = get_m1_memory_optimizer()
+cpu_optimizer = get_m1_cpu_optimizer()
+
+# Get hardware information
+gpu_info = gpu_manager.get_gpu_info()
+memory_info = memory_optimizer.get_memory_info()
+```
+
+### **Safe Mathematical Operations**
+```python
+from src.utils.math_validation import safe_divide, safe_log, validate_finite
+
+# Safe operations with error handling
+result = safe_divide(numerator, denominator, default=0.0)
+log_value = safe_log(input_value, default=0.0)
+validated_result = validate_finite(calculation_result, "feature_score")
+```
+
+### **Advanced Serialization**
+```python
+from src.utils.serialization_utils import UniversalSerializer
+
+# Universal serialization with multiple format support
+serializer = UniversalSerializer()
+serializer.save(data, "features.parquet")  # Auto-detects format
+loaded_data = serializer.load("features.parquet")
 ```
 
 ## Performance Optimizations
@@ -246,9 +367,14 @@ The system requires:
 
 - `numpy` for numerical computations
 - `pandas` for data manipulation
-- `src.utils.matrix_operations` for optimized matrix operations
+- `src.utils.matrix_operations` for optimized matrix operations with GPU support
 - `src.training.utils.feature_selection.partial_information_decompositor` for PID analysis
 - `src.utils.logger` for logging
+- `src.utils.common_operations` for data validation and optimization
+- `src.utils.math_validation` for safe mathematical operations
+- `src.utils.serialization_utils` for artifact persistence
+- `src.utils.data/klines_parquet` for data management
+- `src.utils.hardware/m1_*` for Apple Silicon optimization
 
 ## Migration from Cross Timeframe Analysis
 

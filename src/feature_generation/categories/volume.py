@@ -116,19 +116,126 @@ class VolumeFeatureGenerator(VectorizedFeatureGenerator):
     def _generate_feature_with_lookback(self, data: pd.DataFrame, lookback: int, **kwargs) -> pd.Series:
         """
         Generate volume features with specific lookback period.
-        
+
         Args:
             data: Input data
             lookback: Lookback period
             **kwargs: Additional parameters
-            
+
         Returns:
             Volume features with specified lookback
         """
         volume = data['volume'].values
         volume_ma = self._calculate_volume_ma(volume, period=lookback)
-        
+
         return pd.Series(volume_ma, index=data.index, name=f'volume_ma_{lookback}')
+
+    def _generate_volume_ratio_features(self, data: pd.DataFrame, **kwargs) -> Dict[str, pd.Series]:
+        """
+        Generate volume ratio features comparing current volume to average volume over different periods.
+
+        Args:
+            data: Input data
+            **kwargs: Additional parameters
+
+        Returns:
+            Dictionary of volume ratio features
+        """
+        volume = data['volume'].values
+
+        # Define periods for volume ratios
+        ratio_periods = [10, 25, 50, 75, 100]
+
+        features = {}
+
+        for period in ratio_periods:
+            # Calculate average volume over the period
+            volume_avg = self._calculate_volume_ma(volume, period=period)
+
+            # Calculate volume ratio (avoid division by zero)
+            volume_ratio = np.divide(volume, volume_avg, out=np.full_like(volume, 1.0), where=volume_avg != 0)
+
+            # Create feature name
+            feature_name = f'volume_ratio_{period}'
+
+            # Create pandas Series with proper index
+            features[feature_name] = pd.Series(volume_ratio, index=data.index, name=feature_name)
+
+        return features
+
+class VolumeRatioGenerator(FeatureGenerator):
+    """Generator for Volume Ratio features comparing current volume to average volume over different periods."""
+
+    def __init__(self, periods: List[int] = None):
+        """
+        Initialize Volume Ratio generator.
+
+        Args:
+            periods: List of periods for volume ratios (default: [10, 25, 50, 75, 100, 250, 500, 1000, 2500])
+        """
+        if periods is None:
+            periods = [10, 25, 50, 75, 100, 250, 500, 1000, 2500]
+
+        self.periods = periods
+
+        config = FeatureConfig(
+            name=f"volume_ratios_{'_'.join(map(str, periods))}",
+            category=FeatureCategory.VOLUME,
+            description=f"Volume ratios comparing current volume to average volume over periods: {periods}",
+            required_columns=["volume"],
+            default_lookback=max(periods),
+            min_lookback=min(periods),
+            max_lookback=max(periods),
+            parameters={
+                'periods': periods
+            }
+        )
+        super().__init__(config)
+
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> Dict[str, pd.Series]:
+        """Generate volume ratio features for different periods."""
+        volume = data['volume'].values
+
+        features = {}
+
+        for period in self.periods:
+            # Calculate average volume over the period
+            volume_avg = self._calculate_volume_ma(volume, period=period)
+
+            # Calculate volume ratio (avoid division by zero)
+            volume_ratio = np.divide(volume, volume_avg, out=np.full_like(volume, 1.0), where=volume_avg != 0)
+
+            # Create feature name
+            feature_name = f'volume_ratio_{period}'
+
+            # Create pandas Series with proper index
+            features[feature_name] = pd.Series(volume_ratio, index=data.index, name=feature_name)
+
+        return features
+
+    def generate(self, data: pd.DataFrame, **kwargs) -> pd.DataFrame:
+        """
+        Generate volume ratio features and return as DataFrame.
+
+        Args:
+            data: Input DataFrame
+            **kwargs: Additional parameters
+
+        Returns:
+            DataFrame with volume ratio features
+        """
+        features_dict = self._generate_feature(data, **kwargs)
+        return pd.DataFrame(features_dict)
+
+    def _calculate_volume_ma(self, volume: np.ndarray, period: int = 20) -> np.ndarray:
+        """Calculate volume moving average."""
+        if len(volume) < period:
+            return np.full(len(volume), np.nan)
+
+        # Use vectorized rolling mean
+        volume_series = pd.Series(volume)
+        volume_ma = volume_series.rolling(window=period).mean()
+        return volume_ma.values
 
 class VolumeMAGenerator(FeatureGenerator):
     """Generator for Volume Moving Average with different base calculations."""
@@ -179,55 +286,6 @@ class VolumeMAGenerator(FeatureGenerator):
         
         return volume_ma
 
-class VolumeRatioGenerator(FeatureGenerator):
-    """Generator for Volume Ratio with different base calculations."""
-    
-    def __init__(self, 
-                 period: int = 20,
-                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.VOLUME_RETURNS,
-                 **base_kwargs):
-        """
-        Initialize Volume Ratio generator.
-        
-        Args:
-            period: Volume ratio period
-            base_calculation: Base calculation type (volume_returns, volume_weighted, etc.)
-            **base_kwargs: Additional parameters for base calculation
-        """
-        if isinstance(base_calculation, str):
-            base_calculation = BaseCalculationType(base_calculation)
-        
-        # Create base calculator
-        self.base_calculator = create_base_calculator(base_calculation, **base_kwargs)
-        
-        # Update required columns based on base calculation
-        required_columns = self.base_calculator.get_required_columns()
-        
-        config = FeatureConfig(
-            name=f"volume_ratio_{period}_{base_calculation.value}",
-            category=FeatureCategory.VOLUME,
-            description=f"Volume Ratio over {period} periods based on {base_calculation.value}",
-            required_columns=required_columns,
-            default_lookback=period,
-            min_lookback=1,
-            max_lookback=50,
-            parameters={
-                'period': period,
-                'base_calculation': base_calculation.value,
-                **base_kwargs
-            }
-        )
-        super().__init__(config)
-        self.period = period
-        self.base_calculation = base_calculation
-    
-    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
-        """Generate Volume Ratio based on the specified base calculation."""
-        base_values = self.base_calculator.calculate(data)
-        avg_base_values = base_values.rolling(window=self.period).mean()
-        volume_ratio = base_values / avg_base_values
-        
-        return volume_ratio
 
 class OBVGenerator(FeatureGenerator):
     """Generator for On-Balance Volume (OBV)."""
@@ -500,8 +558,8 @@ def create_volume_generators(periods: Dict[str, List[int]] = None) -> List[Featu
         generators.append(VolumeMAGenerator(period))
     
     # Volume Ratio generators
-    for period in periods.get('volume_ratio', [20]):
-        generators.append(VolumeRatioGenerator(period))
+    volume_ratio_periods = periods.get('volume_ratio', [10, 25, 50, 75, 100, 250, 500, 1000, 2500])
+    generators.append(VolumeRatioGenerator(volume_ratio_periods))
     
     # VWAP generators
     for period in periods.get('vwap', [20]):

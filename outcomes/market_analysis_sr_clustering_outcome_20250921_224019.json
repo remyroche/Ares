@@ -1,0 +1,916 @@
+{
+  "stage": "market_analysis",
+  "sub_pipeline": "sr_clustering",
+  "timestamp": "2025-09-21T22:40:19.934571",
+  "status": "completed",
+  "output_files": [],
+  "metadata": {
+    "symbol": "ETHUSDT",
+    "exchange": "binance",
+    "timeframe": "15m",
+    "original_levels": 95,
+    "clustered_levels": 95
+  },
+  "artifacts": {
+    "sr_clustering_result": {
+      "clustered_levels": [
+        {
+          "price": 1416.6592871603514,
+          "strength": 1.0,
+          "level_type": "support",
+          "touch_count": 2,
+          "first_touch": null,
+          "last_touch": null
+        },
+        {
+          "price": 1484.254267246974,
+          "strength": 1.0,
+          "level_type": "support",
+          "touch_count": 3,
+          "first_touch": null,
+          "last_touch": null
+        },
+        {
+          "price": 1562.107594753651,
+          "strength": 1.0,
+          "level_type": "support",
+          "touch_count": 35,
+          "first_touch": null,
+          "last_touch": null
+        },
+        {
+          "price": 1570.0100097656248,
+          "strength": 1.0,
+          "level_type": "support",
+          "touch_count": 36,
+          "first_touch": "2023-09-24 23:15:00",
+          "last_touch": "2023-09-24 23:15:00"
+        },
+        {
+          "price": "1578.19",
+          "strength": 1.0,
+          "level_type": "resistance",
+          "touch_count": 33,
+          "first_touch": "2023-09-24 23:15:00",
+          "last_touch": "2023-09-24 23:15:00"
+        },
+        {
+          "price": 1586.3500366210938,
+          "strength": 1.0,
+          "level_type": "resistance",
+          "touch_count": 64,
+          "first_touch": "2023-10-09 15:45:00",
+          "last_touch": "2023-10-10 10:30:00"
+        },
+        {
+          "price": "1607.04",
+          "strength": 1.0,
+          "level_type": "support",
+          "touch_count": 21,
+          "first_touch": "2023-09-28 02:15:00",
+          "last_touch": "2023-09-28 02:15:00"
+        },
+        {
+          "price": "1615.82",
+          "strength": 1.0,
+          "level_type": "resistance",
+          "touch_count": 23,
+          "first_touch": "2023-10-06 12:45:00",
+          "last_touch": "2023-10-06 12:45:00"
+        },
+        {
+          "price": "1624.64",
+          "strength": 1.0,
+          "level_type": "support",
+          "touch_count": 32,
+          "first_touch": "2023-10-08 09:45:00",
+          "last_touch": "2023-10-08 09:45:00"
+        },
+        {
+          "price": 1635.1924743652341,
+          "strength": 1.0,
+          "level_type": "support",
+          "touch_count": 36,
+          "first_touch": "2023-10-04 00:45:00",
+          "last_touch": "2023-10-07 18:45:00"
+        },
+        {
+          "price": 1646.3750000000002,
+          "strength": 1.0,
+          "level_type": "resistance",
+          "touch_count": 32,
+          "first_touch": "2023-10-05 14:15:00",
+          "last_touch": "2023-10-07 00:00:00"
+        },
+        {
+          "price": 1658.809997558594,
+          "strength": 1.0,
+          "level_type": "support",
+          "touch_count": 15,
+          "first_touch": "2023-09-28 17:15:00",
+          "last_touch": "2023-10-03 09:45:00"
+        },
+        {
+          "price": 1678.2491136633832,
+          "strength": 1.0,
+          "level_type": "support",
+          "touch_count": 18,
+          "first_touch": "2023-09-29 08:15:00",
+          "last_touch": "2023-10-01 16:30:00"
+        },
+        {
+          "price": "1707.594",
+          "strength": 1.0,
+          "level_type": "resistance",
+          "touch_count": 3,
+          "first_touch": "2023-10-20 10:30:00",
+          "last_touch": "2023-10-24 15:45:00"
+        },
+        {
+          "price": "1725.81",
+          "strength": 1.0,
+          "level_type": "support",
+          "touch_count": 5,
+          "first_touch": "2023-10-02 03:45:00",
+          "last_touch": "2023-10-02 03:45:00"
+        },
+        {
+          "price": 2022.1668472290037,
+          "strength": 1.0,
+          "level_type": "support",
+          "touch_count": 26,
+          "first_touch": "2023-11-13 15:45:00",
+          "last_touch": "2023-11-30 09:00:00"
+        },
+        {
+          "price": "2053.3025",
+          "strength": 1.0,
+          "level_type": "resistance",
+          "touch_count": 47,
+          "first_touch": "2023-11-27 21:00:00",
+          "last_touch": "2023-12-01 07:30:00"
+        },
+        {
+          "price": 3398.7900353633995,
+          "strength": 1.0,
+          "level_type": "support",
+          "touch_count": 138,
+          "first_touch": "2023-09-22 00:00:00",
+          "last_touch": "2025-09-13 10:30:00"
+        },
+        {
+          "price": 3465.048287235641,
+          "strength": 1.0,
+          "level_type": "support",
+          "touch_count": 139,
+          "first_touch": null,
+          "last_touch": null
+        },
+        {
+          "price": 3577.8693169487847,
+          "strength": 1.0,
+          "level_type": "support",
+          "touch_count": 227,
+          "first_touch": "2023-09-22 00:00:00",
+          "last_touch": "2025-09-13 10:30:00"
+        },
+        {
+          "price": 3613.6851732658615,
+          "strength": 1.0,
+          "level_type": "support",
+          "touch_count": 227,
+          "first_touch": "2023-09-22 00:00:00",
+          "last_touch": "2025-09-13 10:30:00"
+        },
+        {
+          "price": 3649.501029582939,
+          "strength": 1.0,
+          "level_type": "support",
+          "touch_count": 226,
+          "first_touch": "2023-09-22 00:00:00",
+          "last_touch": "2025-09-13 10:30:00"
+        },
+        {
+          "price": 3685.316885900016,
+          "strength": 1.0,
+          "level_type": "resistance",
+          "touch_count": 239,
+          "first_touch": "2023-09-22 00:00:00",
+          "last_touch": "2025-09-13 10:30:00"
+        },
+        {
+          "price": 3721.1327422170925,
+          "strength": 1.0,
+          "level_type": "resistance",
+          "touch_count": 241,
+          "first_touch": "2023-09-22 00:00:00",
+          "last_touch": "2025-09-13 10:30:00"
+        },
+        {
+          "price": 3756.94859853417,
+          "strength": 1.0,
+          "level_type": "resistance",
+          "touch_count": 290,
+          "first_touch": "2023-09-22 00:00:00",
+          "last_touch": "2025-09-13 10:30:00"
+        },
+        {
+          "price": 3792.764454851247,
+          "strength": 1.0,
+          "level_type": "resistance",
+          "touch_count": 259,
+          "first_touch": "2023-09-22 00:00:00",
+          "last_touch": "2025-09-13 10:30:00"
+        },
+        {
+          "price": 4258.370586973248,
+          "strength": 1.0,
+          "level_type": "resistance",
+          "touch_count": 172,
+          "first_touch": "2023-09-22 00:00:00",
+          "last_touch": "2025-09-13 10:30:00"
+        },
+        {
+          "price": 4294.186443290326,
+          "strength": 1.0,
+          "level_type": "resistance",
+          "touch_count": 585,
+          "first_touch": "2023-09-22 00:00:00",
+          "last_touch": "2025-09-13 10:30:00"
+        },
+        {
+          "price": 4330.002299607402,
+          "strength": 1.0,
+          "level_type": "resistance",
+          "touch_count": 552,
+          "first_touch": "2023-09-22 00:00:00",
+          "last_touch": "2025-09-13 10:30:00"
+        },
+        {
+          "price": 4365.818155924479,
+          "strength": 1.0,
+          "level_type": "resistance",
+          "touch_count": 336,
+          "first_touch": "2023-09-22 00:00:00",
+          "last_touch": "2025-09-13 10:30:00"
+        },
+        {
+          "price": 4401.634012241557,
+          "strength": 1.0,
+          "level_type": "resistance",
+          "touch_count": 320,
+          "first_touch": "2023-09-22 00:00:00",
+          "last_touch": "2025-09-13 10:30:00"
+        },
+        {
+          "price": 4437.449868558633,
+          "strength": 1.0,
+          "level_type": "resistance",
+          "touch_count": 290,
+          "first_touch": "2023-09-22 00:00:00",
+          "last_touch": "2025-09-13 10:30:00"
+        },
+        {
+          "price": 4473.26572487571,
+          "strength": 1.0,
+          "level_type": "resistance",
+          "touch_count": 288,
+          "first_touch": "2023-09-22 00:00:00",
+          "last_touch": "2025-09-13 10:30:00"
+        },
+        {
+          "price": 4544.897437509864,
+          "strength": 1.0,
+          "level_type": "resistance",
+          "touch_count": 164,
+          "first_touch": "2023-09-22 00:00:00",
+          "last_touch": "2025-09-13 10:30:00"
+        },
+        {
+          "price": 4580.713293826941,
+          "strength": 1.0,
+          "level_type": "resistance",
+          "touch_count": 156,
+          "first_touch": "2023-09-22 00:00:00",
+          "last_touch": "2025-09-13 10:30:00"
+        },
+        {
+          "price": 2009.8744049072266,
+          "strength": 0.9991379310344828,
+          "level_type": "support",
+          "touch_count": 29,
+          "first_touch": "2023-09-22 00:00:00",
+          "last_touch": "2023-09-22 00:00:00"
+        },
+        {
+          "price": 4639.4072578125,
+          "strength": 0.9623898734177214,
+          "level_type": "resistance",
+          "touch_count": 158,
+          "first_touch": "2023-09-22 00:00:00",
+          "last_touch": "2025-09-13 10:30:00"
+        },
+        {
+          "price": 4815.087982177734,
+          "strength": 0.9370967741935483,
+          "level_type": "resistance",
+          "touch_count": 62,
+          "first_touch": "2023-09-22 00:00:00",
+          "last_touch": "2023-09-22 00:00:00"
+        },
+        {
+          "price": 2179.39990234375,
+          "strength": 0.9333333333333333,
+          "level_type": "support",
+          "touch_count": 21,
+          "first_touch": "2024-01-08 03:00:00",
+          "last_touch": "2024-01-08 03:00:00"
+        },
+        {
+          "price": 3951.945343017578,
+          "strength": 0.8700000000000001,
+          "level_type": "resistance",
+          "touch_count": 40,
+          "first_touch": "2023-09-22 00:00:00",
+          "last_touch": "2023-09-22 00:00:00"
+        },
+        {
+          "price": 1762.2099609375,
+          "strength": 0.9294117647058824,
+          "level_type": "support",
+          "touch_count": 17,
+          "first_touch": "2023-10-26 16:30:00",
+          "last_touch": "2023-10-26 16:30:00"
+        },
+        {
+          "price": 2162.050048828125,
+          "strength": 0.9272727272727272,
+          "level_type": "support",
+          "touch_count": 22,
+          "first_touch": "2023-12-13 04:30:00",
+          "last_touch": "2023-12-13 04:30:00"
+        },
+        {
+          "price": 4746.888501831138,
+          "strength": 0.85124,
+          "level_type": "resistance",
+          "touch_count": 194,
+          "first_touch": "2023-09-22 00:00:00",
+          "last_touch": "2025-09-13 10:30:00"
+        },
+        {
+          "price": 1995.52001953125,
+          "strength": 0.9200000000000002,
+          "level_type": "support",
+          "touch_count": 20,
+          "first_touch": "2023-11-27 21:00:00",
+          "last_touch": "2023-11-27 21:00:00"
+        },
+        {
+          "price": 2873.017044067383,
+          "strength": 0.9118421052631578,
+          "level_type": "support",
+          "touch_count": 19,
+          "first_touch": "2023-09-22 00:00:00",
+          "last_touch": "2023-09-22 00:00:00"
+        },
+        {
+          "price": 2038.25,
+          "strength": 0.9030303030303031,
+          "level_type": "support",
+          "touch_count": 33,
+          "first_touch": "2023-11-12 02:15:00",
+          "last_touch": "2023-11-12 02:15:00"
+        },
+        {
+          "price": 2657.2313842773438,
+          "strength": 0.8987341772151898,
+          "level_type": "support",
+          "touch_count": 79,
+          "first_touch": "2023-09-22 00:00:00",
+          "last_touch": "2023-09-22 00:00:00"
+        },
+        {
+          "price": 4716.7900390625,
+          "strength": 0.7971830985915493,
+          "level_type": "resistance",
+          "touch_count": 142,
+          "first_touch": "2023-09-22 00:00:00",
+          "last_touch": "2025-09-13 10:30:00"
+        },
+        {
+          "price": 2240.669921875,
+          "strength": 0.8866666666666667,
+          "level_type": "support",
+          "touch_count": 60,
+          "first_touch": "2023-12-07 09:45:00",
+          "last_touch": "2023-12-07 09:45:00"
+        },
+        {
+          "price": 1944.5400390625,
+          "strength": 0.8857142857142857,
+          "level_type": "support",
+          "touch_count": 14,
+          "first_touch": "2023-11-21 22:30:00",
+          "last_touch": "2023-11-21 22:30:00"
+        },
+        {
+          "price": 2220.030029296875,
+          "strength": 0.8852459016393444,
+          "level_type": "support",
+          "touch_count": 61,
+          "first_touch": "2023-12-16 00:00:00",
+          "last_touch": "2023-12-16 00:00:00"
+        },
+        {
+          "price": 2191.0,
+          "strength": 0.8833333333333333,
+          "level_type": "support",
+          "touch_count": 24,
+          "first_touch": "2024-01-03 14:15:00",
+          "last_touch": "2024-01-03 14:15:00"
+        },
+        {
+          "price": 1875.0,
+          "strength": 0.8769230769230769,
+          "level_type": "support",
+          "touch_count": 26,
+          "first_touch": "2023-11-06 07:30:00",
+          "last_touch": "2023-11-06 07:30:00"
+        },
+        {
+          "price": 2138.3798828125,
+          "strength": 0.875,
+          "level_type": "support",
+          "touch_count": 8,
+          "first_touch": "2023-12-18 12:00:00",
+          "last_touch": "2023-12-18 12:00:00"
+        },
+        {
+          "price": 1546.47998046875,
+          "strength": 0.8666666666666667,
+          "level_type": "support",
+          "touch_count": 27,
+          "first_touch": "2023-10-14 12:00:00",
+          "last_touch": "2023-10-14 12:00:00"
+        },
+        {
+          "price": 1778.0,
+          "strength": 0.8666666666666667,
+          "level_type": "support",
+          "touch_count": 33,
+          "first_touch": "2023-10-25 10:30:00",
+          "last_touch": "2023-10-25 10:30:00"
+        },
+        {
+          "price": 1925.25,
+          "strength": 0.8666666666666667,
+          "level_type": "support",
+          "touch_count": 18,
+          "first_touch": "2023-11-17 17:15:00",
+          "last_touch": "2023-11-17 17:15:00"
+        },
+        {
+          "price": 1973.52001953125,
+          "strength": 0.8571428571428572,
+          "level_type": "support",
+          "touch_count": 21,
+          "first_touch": "2023-11-15 01:30:00",
+          "last_touch": "2023-11-15 01:30:00"
+        },
+        {
+          "price": "1667.6",
+          "strength": 0.8555555555555556,
+          "level_type": "support",
+          "touch_count": 18,
+          "first_touch": "2023-09-29 12:00:00",
+          "last_touch": "2023-09-29 12:00:00"
+        },
+        {
+          "price": 4499.999999999999,
+          "strength": 0.8305882352941176,
+          "level_type": "support",
+          "touch_count": 153,
+          "first_touch": "2023-09-22 00:00:00",
+          "last_touch": "2023-09-22 00:00:00"
+        },
+        {
+          "price": 1530.0999755859375,
+          "strength": 0.8300000000000001,
+          "level_type": "support",
+          "touch_count": 4,
+          "first_touch": "2023-10-12 18:45:00",
+          "last_touch": "2023-10-12 18:45:00"
+        },
+        {
+          "price": 3088.802703857422,
+          "strength": 0.8227272727272728,
+          "level_type": "support",
+          "touch_count": 77,
+          "first_touch": "2023-09-22 00:00:00",
+          "last_touch": "2023-09-22 00:00:00"
+        },
+        {
+          "price": 3304.588363647461,
+          "strength": 0.8201219512195121,
+          "level_type": "support",
+          "touch_count": 82,
+          "first_touch": "2023-09-22 00:00:00",
+          "last_touch": "2023-09-22 00:00:00"
+        },
+        {
+          "price": 4000.0,
+          "strength": 0.8080645161290323,
+          "level_type": "support",
+          "touch_count": 31,
+          "first_touch": "2023-09-22 00:00:00",
+          "last_touch": "2023-09-22 00:00:00"
+        },
+        {
+          "price": 4690.0,
+          "strength": 0.7470873786407766,
+          "level_type": "support",
+          "touch_count": 103,
+          "first_touch": "2023-09-22 00:00:00",
+          "last_touch": "2023-09-22 00:00:00"
+        },
+        {
+          "price": 3490.0,
+          "strength": 1.0,
+          "level_type": "resistance",
+          "touch_count": 172,
+          "first_touch": "2024-02-29 11:15:00",
+          "last_touch": "2024-02-29 11:15:00"
+        },
+        {
+          "price": 2420.0,
+          "strength": 1.0,
+          "level_type": "resistance",
+          "touch_count": 54,
+          "first_touch": "2024-01-02 08:15:00",
+          "last_touch": "2024-01-02 08:15:00"
+        },
+        {
+          "price": 2678.669921875,
+          "strength": 1.0,
+          "level_type": "resistance",
+          "touch_count": 63,
+          "first_touch": "2024-01-12 12:00:00",
+          "last_touch": "2024-01-12 12:00:00"
+        },
+        {
+          "price": 2378.72998046875,
+          "strength": 1.0,
+          "level_type": "resistance",
+          "touch_count": 51,
+          "first_touch": "2024-01-30 18:45:00",
+          "last_touch": "2024-01-30 18:45:00"
+        },
+        {
+          "price": 4077.760009765625,
+          "strength": 1.0,
+          "level_type": "resistance",
+          "touch_count": 12,
+          "first_touch": "2024-03-12 00:45:00",
+          "last_touch": "2024-03-12 00:45:00"
+        },
+        {
+          "price": 2441.0,
+          "strength": 1.0,
+          "level_type": "resistance",
+          "touch_count": 57,
+          "first_touch": "2023-12-28 00:45:00",
+          "last_touch": "2023-12-28 00:45:00"
+        },
+        {
+          "price": 3011.89990234375,
+          "strength": 1.0,
+          "level_type": "resistance",
+          "touch_count": 101,
+          "first_touch": "2024-02-22 10:30:00",
+          "last_touch": "2024-02-22 10:30:00"
+        },
+        {
+          "price": 1853.9000244140625,
+          "strength": 1.0,
+          "level_type": "resistance",
+          "touch_count": 16,
+          "first_touch": "2023-10-24 12:00:00",
+          "last_touch": "2023-10-24 12:00:00"
+        },
+        {
+          "price": 2845.590087890625,
+          "strength": 1.0,
+          "level_type": "resistance",
+          "touch_count": 12,
+          "first_touch": "2024-02-15 21:00:00",
+          "last_touch": "2024-02-15 21:00:00"
+        },
+        {
+          "price": 2592.06005859375,
+          "strength": 1.0,
+          "level_type": "resistance",
+          "touch_count": 59,
+          "first_touch": "2024-01-17 00:45:00",
+          "last_touch": "2024-01-17 00:45:00"
+        },
+        {
+          "price": 2107.419921875,
+          "strength": 1.0,
+          "level_type": "resistance",
+          "touch_count": 16,
+          "first_touch": "2023-11-13 15:45:00",
+          "last_touch": "2023-11-13 15:45:00"
+        },
+        {
+          "price": 1735.530029296875,
+          "strength": 1.0,
+          "level_type": "resistance",
+          "touch_count": 4,
+          "first_touch": "2023-10-02 00:00:00",
+          "last_touch": "2023-10-02 00:00:00"
+        },
+        {
+          "price": 2267.93994140625,
+          "strength": 1.0,
+          "level_type": "resistance",
+          "touch_count": 53,
+          "first_touch": "2023-12-04 10:30:00",
+          "last_touch": "2023-12-04 10:30:00"
+        },
+        {
+          "price": 2299.39990234375,
+          "strength": 1.0,
+          "level_type": "resistance",
+          "touch_count": 74,
+          "first_touch": "2023-12-06 00:00:00",
+          "last_touch": "2023-12-06 00:00:00"
+        },
+        {
+          "price": 2127.2900390625,
+          "strength": 1.0,
+          "level_type": "resistance",
+          "touch_count": 8,
+          "first_touch": "2023-11-24 10:30:00",
+          "last_touch": "2023-11-24 10:30:00"
+        },
+        {
+          "price": 1913.3299560546875,
+          "strength": 1.0,
+          "level_type": "resistance",
+          "touch_count": 23,
+          "first_touch": "2023-11-06 15:00:00",
+          "last_touch": "2023-11-06 15:00:00"
+        },
+        {
+          "price": 2068.419921875,
+          "strength": 1.0,
+          "level_type": "resistance",
+          "touch_count": 37,
+          "first_touch": "2023-11-28 19:30:00",
+          "last_touch": "2023-11-28 19:30:00"
+        },
+        {
+          "price": 2088.469970703125,
+          "strength": 1.0,
+          "level_type": "resistance",
+          "touch_count": 27,
+          "first_touch": "2023-11-22 21:00:00",
+          "last_touch": "2023-11-22 21:00:00"
+        },
+        {
+          "price": 2327.64990234375,
+          "strength": 1.0,
+          "level_type": "resistance",
+          "touch_count": 36,
+          "first_touch": "2024-02-03 01:30:00",
+          "last_touch": "2024-02-03 01:30:00"
+        },
+        {
+          "price": 4664.22021484375,
+          "strength": 0.925,
+          "level_type": "resistance",
+          "touch_count": 96,
+          "first_touch": "2023-09-22 00:00:00",
+          "last_touch": "2025-09-13 10:30:00"
+        },
+        {
+          "price": 4611.650390625,
+          "strength": 1.0,
+          "level_type": "resistance",
+          "touch_count": 172,
+          "first_touch": "2023-09-22 00:00:00",
+          "last_touch": "2025-09-13 10:30:00"
+        },
+        {
+          "price": 1826.6500244140625,
+          "strength": 1.0,
+          "level_type": "resistance",
+          "touch_count": 41,
+          "first_touch": "2023-10-30 14:15:00",
+          "last_touch": "2023-10-30 14:15:00"
+        },
+        {
+          "price": "1803.7786",
+          "strength": 1.0,
+          "level_type": "resistance",
+          "touch_count": 55,
+          "first_touch": "2023-10-30 14:15:00",
+          "last_touch": "2023-11-03 00:45:00"
+        },
+        {
+          "price": 1899.4300537109375,
+          "strength": 1.0,
+          "level_type": "resistance",
+          "touch_count": 33,
+          "first_touch": "2023-11-05 12:45:00",
+          "last_touch": "2023-11-05 12:45:00"
+        },
+        {
+          "price": 3828.580311168324,
+          "strength": 1.0,
+          "level_type": "resistance",
+          "touch_count": 221,
+          "first_touch": "2023-09-22 00:00:00",
+          "last_touch": "2025-09-13 10:30:00"
+        },
+        {
+          "price": 4167.731002807617,
+          "strength": 0.8529661016949153,
+          "level_type": "resistance",
+          "touch_count": 59,
+          "first_touch": "2023-09-22 00:00:00",
+          "last_touch": "2023-09-22 00:00:00"
+        },
+        {
+          "price": 2360.780029296875,
+          "strength": 1.0,
+          "level_type": "resistance",
+          "touch_count": 61,
+          "first_touch": "2023-12-10 20:15:00",
+          "last_touch": "2023-12-10 20:15:00"
+        },
+        {
+          "price": 1687.1099853515625,
+          "strength": 1.0,
+          "level_type": "resistance",
+          "touch_count": 10,
+          "first_touch": "2023-09-30 14:15:00",
+          "last_touch": "2023-09-30 14:15:00"
+        },
+        {
+          "price": 1791.219970703125,
+          "strength": 1.0,
+          "level_type": "resistance",
+          "touch_count": 53,
+          "first_touch": "2023-10-28 09:45:00",
+          "last_touch": "2023-10-28 09:45:00"
+        },
+        {
+          "price": 1594.7072864879262,
+          "strength": 1.0,
+          "level_type": "resistance",
+          "touch_count": 66,
+          "first_touch": "2023-09-22 18:45:00",
+          "last_touch": "2023-09-27 00:00:00"
+        }
+      ],
+      "cluster_metrics": {
+        "total_clusters": 95,
+        "original_levels": 95,
+        "reduction_ratio": 1.0
+      },
+      "clustering_summary": {
+        "total_clusters": 95,
+        "total_original_levels": 95,
+        "clustering_efficiency": 1.0,
+        "clustering_time": 0.000953
+      },
+      "metadata": {
+        "symbol": "ETHUSDT",
+        "exchange": "binance",
+        "timeframe": "15m",
+        "original_levels": 95,
+        "execution_timestamp": "2025-09-21T22:29:34.695246"
+      }
+    }
+  },
+  "config": {
+    "symbol": "ETHUSDT",
+    "exchange": "binance",
+    "timeframe": "15m",
+    "mode": "full",
+    "intensity_percentage": 1.0,
+    "training_mode_config": {
+      "description": "Production mode - Complete training with full dataset",
+      "lookback_days": 730,
+      "training_mode": "full",
+      "enable_blank_training_mode": false,
+      "enable_light_training_mode": false,
+      "enable_full_training_mode": true,
+      "data_collection": {
+        "enable_all_exchanges": true,
+        "enable_aggtrades": false,
+        "enable_futures": true,
+        "data_quality_checks": true
+      },
+      "feature_engineering": {
+        "enable_all_features": true,
+        "enable_advanced_features": true,
+        "enable_autoencoder_features": true,
+        "enable_microstructure_features": true,
+        "enable_multi_timeframe": true,
+        "timeframes": [
+          "15m"
+        ],
+        "max_interactions": 100,
+        "correlation_threshold": 0.8,
+        "max_features": null,
+        "feature_selection_samples": 100000,
+        "feature_selection_method": "full"
+      },
+      "model_training": {
+        "enable_all_models": true,
+        "max_trials": 200,
+        "n_trials": 100,
+        "enable_early_stopping": true,
+        "enable_parallelization": true,
+        "enable_caching": true,
+        "batch_size": 4096,
+        "epochs": 100,
+        "early_stopping_patience": 20,
+        "learning_rate": 0.001,
+        "validation_split": 0.2,
+        "cross_validation_folds": 5,
+        "nn_hidden_layers": [
+          512,
+          256,
+          128
+        ],
+        "nn_dropout": 0.3,
+        "nn_batch_norm": true,
+        "ensemble_models": 10,
+        "ensemble_method": "weighted",
+        "gb_max_depth": 8,
+        "gb_n_estimators": 200,
+        "rf_max_depth": 20,
+        "rf_n_estimators": 100
+      },
+      "validation": {
+        "enable_walk_forward": true,
+        "enable_monte_carlo": true,
+        "enable_ab_testing": true,
+        "validation_splits": 5,
+        "monte_carlo_samples": 10000,
+        "ab_test_rounds": 10
+      },
+      "optimization": {
+        "enable_hyperparameter_optimization": true,
+        "enable_feature_selection": true,
+        "enable_model_selection": true,
+        "max_optimization_time": 3600,
+        "optuna_trials": 200,
+        "optuna_timeout": 3600,
+        "optuna_n_jobs": 4,
+        "feature_selection_method": "recursive",
+        "feature_importance_threshold": 0.01
+      },
+      "computational_intensity": "medium",
+      "estimated_duration_minutes": 60,
+      "exclude_recent_days": 0,
+      "min_data_points": 1000,
+      "enable_advanced_model_training": true,
+      "enable_ensemble_training": true,
+      "enable_multi_timeframe_training": true,
+      "enable_adaptive_training": true
+    }
+  },
+  "next_stage_requirements": {
+    "required_files": [
+      "sr_levels.json",
+      "regime_assignments.parquet",
+      "labels.parquet",
+      "features.parquet"
+    ],
+    "required_artifacts": [
+      "sr_clusters",
+      "regime_model",
+      "feature_metadata"
+    ],
+    "data_dependencies": [],
+    "next_stage": "model_training",
+    "sub_pipelines": [
+      "sr_detection",
+      "sr_clustering",
+      "hmm_clustering",
+      "hmm_regime_discovery",
+      "hmm_models_training",
+      "hmm_ensemble_training",
+      "multi_horizon_profit_labeler",
+      "triple_barrier_labeling",
+      "feature_lookback_optimization",
+      "pid_based_feature_generation",
+      "sr_feature_integration"
+    ]
+  }
+}

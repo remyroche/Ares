@@ -63,7 +63,7 @@ class FeatureSelectionConfig:
     # Output settings
     save_models: bool = True
     save_analysis: bool = True
-    output_directory: str = "feature_selection_results"
+    output_directory: str = "outcomes"
     verbose: bool = True
 
 @dataclass
@@ -501,11 +501,14 @@ class MultiStageFeatureSelector:
     def _save_analysis(self):
         """Save analysis results."""
         try:
+            from datetime import datetime
+
             output_dir = Path(self.config.output_directory)
             output_dir.mkdir(parents=True, exist_ok=True)
-            
-            # Save results summary
-            results_file = output_dir / f"feature_selection_results_{int(time.time())}.json"
+
+            # Save results summary with proper outcomes naming convention
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            results_file = output_dir / f"market_analysis_feature_selection_outcome_{timestamp}.json"
             
             # Convert results to serializable format
             results_dict = {
@@ -535,7 +538,7 @@ class MultiStageFeatureSelector:
             
             # Save final model if requested
             if self.config.save_models and hasattr(self.results, 'model_performance'):
-                model_file = output_dir / f"final_feature_selection_model_{int(time.time())}.joblib"
+                model_file = output_dir / f"market_analysis_feature_selection_model_{timestamp}.joblib"
                 joblib.dump(self.results.model_performance['final_model'], model_file)
                 self.logger.info(f"💾 Final model saved to {model_file}")
                 

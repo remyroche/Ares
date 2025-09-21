@@ -177,10 +177,10 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
             operation="regime_data_splitting",
             component="RegimeDataSplittingComponent"
         )
-        self.error_handler = EnhancedErrorHandler(context=error_context, logger=self.logger)
+        self.error_handler = EnhancedErrorHandler(logger=self.logger)
         
         # Initialize hardware manager using existing utilities
-        self.hardware_manager = UnifiedHardwareManager(logger=self.logger)
+        self.hardware_manager = UnifiedHardwareManager()
         
         # Initialize data validation using existing utilities
         self.cross_step_validator = CrossStepValidator()
@@ -278,7 +278,11 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
         tprint('✂️ Starting Enhanced Regime Data Splitting')
         
         # Initialize report
-        report = RegimeSplittingReport(status=RegimeSplittingStatus.IN_PROGRESS)
+        metrics = RegimeSplittingMetrics()
+        report = RegimeSplittingReport(
+            status=RegimeSplittingStatus.IN_PROGRESS,
+            metrics=metrics
+        )
         tprint(f'📊 Initialized report with status: {report.status.value}')
         
         # Fast fail validation for critical inputs using existing error handler
@@ -540,28 +544,33 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
             return None
     
     def _get_regime_discovery_results(self, pipeline_state: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """Get regime discovery results from pipeline state."""
+        """Get regime discovery results from pipeline state or load from previous outcomes."""
         self.logger.info("🔍 Retrieving regime discovery results...")
-        
+
         try:
             # Try different possible keys for regime discovery results
             possible_keys = [
                 'hmm_regime_discovery_result',
                 'regime_discovery_result',
-                'hmm_clustering_result',
+                'optimal_regime_clustering_result',  # Updated to use optimal regime clustering
                 'regime_states',
                 'regime_probabilities'
             ]
-            
+
             regime_discovery = None
             for key in possible_keys:
                 if key in pipeline_state and pipeline_state[key]:
                     regime_discovery = pipeline_state[key]
                     self.logger.info(f"✅ Found regime discovery results under key: {key}")
                     break
-            
+
+            # If not found in pipeline state, try to load from previous outcomes
             if regime_discovery is None:
-                self.logger.error("❌ No regime discovery results found in pipeline state")
+                self.logger.info("📁 No regime discovery results in pipeline state, checking previous outcomes...")
+                regime_discovery = self._load_regime_discovery_from_outcomes()
+
+            if regime_discovery is None:
+                self.logger.error("❌ No regime discovery results found in pipeline state or outcomes")
                 return None
             
             # Validate regime discovery results
@@ -579,6 +588,81 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
         except Exception as e:
             self.logger.error(f"❌ Error retrieving regime discovery results: {e}")
             return None
+
+    def _load_regime_discovery_from_outcomes(self) -> Optional[Dict[str, Any]]:
+        """Load regime discovery results from previous successful outcomes."""
+        import os
+        import json
+        from pathlib import Path
+
+        try:
+            outcomes_dir = Path("/Users/remyroche/Documents/Ares/outcomes")
+
+            # Look for successful regime discovery outcomes
+            pattern = "market_analysis_hmm_regime_discovery_outcome_*.json"
+            outcome_files = list(outcomes_dir.glob(pattern))
+
+            if not outcome_files:
+                self.logger.info("📁 No regime discovery outcome files found")
+                return None
+
+            # Find the most recent successful outcome
+            successful_outcomes = []
+            for file_path in outcome_files:
+                try:
+                    with open(file_path, 'r') as f:
+                        outcome_data = json.load(f)
+
+                    # Check if the outcome was successful
+                    if outcome_data.get('status') == 'completed':
+                        successful_outcomes.append((file_path, outcome_data.get('timestamp', '')))
+                except Exception as e:
+                    self.logger.debug(f"⚠️ Error reading outcome file {file_path}: {e}")
+                    continue
+
+            if not successful_outcomes:
+                self.logger.info("📁 No successful regime discovery outcomes found")
+                return None
+
+            # Sort by timestamp and get the most recent
+            successful_outcomes.sort(key=lambda x: x[1], reverse=True)
+            latest_outcome_path, _ = successful_outcomes[0]
+
+            self.logger.info(f"📁 Loading regime discovery results from: {latest_outcome_path}")
+
+            # Load the outcome data
+            with open(latest_outcome_path, 'r') as f:
+                outcome_data = json.load(f)
+
+            # Extract regime discovery results from artifacts
+            artifacts = outcome_data.get('artifacts', {})
+            regime_discovery = None
+
+            # Try different possible keys for regime discovery results
+            possible_keys = [
+                'hmm_regime_discovery_result',
+                'regime_discovery_result',
+                'optimal_regime_clustering_result',
+                'regime_states',
+                'regime_probabilities'
+            ]
+
+            for key in possible_keys:
+                if key in artifacts and artifacts[key]:
+                    regime_discovery = artifacts[key]
+                    self.logger.info(f"✅ Found regime discovery results under key: {key}")
+                    break
+
+            if regime_discovery:
+                self.logger.info(f"✅ Successfully loaded regime discovery results from previous outcome")
+                return regime_discovery
+            else:
+                self.logger.warning("⚠️ No regime discovery results found in outcome artifacts")
+                return None
+
+        except Exception as e:
+            self.logger.error(f"❌ Error loading regime discovery from outcomes: {e}")
+            return None
     
     async def _perform_regime_splitting(
         self, 
@@ -590,115 +674,124 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
         self.logger.info("✂️ Performing regime data splitting...")
         
         # Use hardware manager for proper memory management
-        with self.hardware_manager.memory_context("regime_splitting"):
+        from src.utils.hardware.memory_optimization import memory_context
+        with memory_context("regime_splitting"):
             try:
                 # Extract regime states and probabilities using safe operations
                 regime_states = self._extract_regime_states(regime_discovery)
                 regime_probabilities = self._extract_regime_probabilities(regime_discovery)
-                
+
                 if regime_states is None:
                     return {
                         'success': False,
                         'errors': ['Failed to extract regime states'],
                         'data': None
                     }
-                
-            # Align data lengths with proper validation and temporal consistency checks
-            original_market_len = len(market_data)
-            original_regime_len = len(regime_states)
-            min_len = min(original_market_len, original_regime_len)
-            
-            # Validate data alignment impact
-            data_loss_percentage = ((max(original_market_len, original_regime_len) - min_len) / 
-                                  max(original_market_len, original_regime_len)) * 100
-            
-            # Use existing data quality framework for validation
-            if data_loss_percentage > 5.0:  # More than 5% data loss
-                warning_msg = f"Data alignment will lose {data_loss_percentage:.1f}% of data ({max(original_market_len, original_regime_len) - min_len} rows)"
-                self.logger.warning(f"⚠️ {warning_msg}")
-                tprint(f"⚠️ {warning_msg}")
-                report.warnings.append(warning_msg)
-                
-                if data_loss_percentage > 20.0:  # Critical data loss
-                    error_msg = f"Critical data loss during alignment: {data_loss_percentage:.1f}%"
-                    self.logger.error(f"❌ {error_msg}")
-                    tprint(f"❌ {error_msg}")
-                    report.errors.append(error_msg)
-            
-            if min_len == 0:
-                error_msg = "No overlapping data between market data and regime states. Action required: Ensure market data and regime states have compatible time ranges."
-                self.error_handler.handle_error(
-                    ValueError(error_msg),
-                    severity=ErrorSeverity.CRITICAL,
-                    category=ErrorCategory.DATA_QUALITY,
-                    recovery_action="Ensure market data and regime states have compatible time ranges"
-                )
-                return {
-                    'success': False,
-                    'errors': [error_msg],
-                    'data': None
-                }
-            
-            tprint(f"📊 Aligning data lengths: market_data={original_market_len}, regime_states={original_regime_len} -> {min_len}")
-            
-            # Validate temporal consistency if timestamp columns exist
-            temporal_validation_passed = True
-            if hasattr(market_data, 'index') and hasattr(market_data.index, 'name') and market_data.index.name == 'timestamp':
-                # DataFrame has timestamp index
-                market_timestamps = market_data.index[:min_len]
-                if len(market_timestamps) > 1:
-                    # Check for temporal consistency (monotonic increasing)
-                    if not market_timestamps.is_monotonic_increasing:
-                        warning_msg = "Market data timestamps are not monotonic increasing - temporal consistency may be compromised"
-                        self.logger.warning(f"⚠️ {warning_msg}")
-                        report.warnings.append(warning_msg)
+
+                # Align data lengths with proper validation and temporal consistency checks
+                original_market_len = len(market_data)
+                original_regime_len = len(regime_states)
+                min_len = min(original_market_len, original_regime_len)
+
+                # Validate data alignment impact
+                data_loss_percentage = ((max(original_market_len, original_regime_len) - min_len) /
+                                      max(original_market_len, original_regime_len)) * 100
+
+                # Use existing data quality framework for validation
+                if data_loss_percentage > 5.0:  # More than 5% data loss
+                    warning_msg = f"Data alignment will lose {data_loss_percentage:.1f}% of data ({max(original_market_len, original_regime_len) - min_len} rows)"
+                    self.logger.warning(f"⚠️ {warning_msg}")
+                    tprint(f"⚠️ {warning_msg}")
+                    report.warnings.append(warning_msg)
+
+                    if data_loss_percentage > 20.0:  # Critical data loss
+                        error_msg = f"Critical data loss during alignment: {data_loss_percentage:.1f}%"
+                        self.logger.error(f"❌ {error_msg}")
+                        tprint(f"❌ {error_msg}")
+                        report.errors.append(error_msg)
+
+                if min_len == 0:
+                    error_msg = "No overlapping data between market data and regime states. Action required: Ensure market data and regime states have compatible time ranges."
+                    self.error_handler.handle_error(
+                        ValueError(error_msg),
+                        severity=ErrorSeverity.CRITICAL,
+                        category=ErrorCategory.DATA_QUALITY,
+                        recovery_action="Ensure market data and regime states have compatible time ranges"
+                    )
+                    return {
+                        'success': False,
+                        'errors': [error_msg],
+                        'data': None
+                    }
+
+                tprint(f"📊 Aligning data lengths: market_data={original_market_len}, regime_states={original_regime_len} -> {min_len}")
+
+                # Validate temporal consistency if timestamp columns exist
+                temporal_validation_passed = True
+                if hasattr(market_data, 'index') and hasattr(market_data.index, 'name') and market_data.index.name == 'timestamp':
+                    # DataFrame has timestamp index
+                    market_timestamps = market_data.index[:min_len]
+                    if len(market_timestamps) > 1:
+                        # Check for temporal consistency (monotonic increasing)
+                        if not market_timestamps.is_monotonic_increasing:
+                            warning_msg = "Market data timestamps are not monotonic increasing - temporal consistency may be compromised"
+                            self.logger.warning(f"⚠️ {warning_msg}")
+                            report.warnings.append(warning_msg)
                         temporal_validation_passed = False
-            elif 'timestamp' in market_data.columns:
-                # DataFrame has timestamp column
-                market_timestamps = market_data['timestamp'].iloc[:min_len]
-                if len(market_timestamps) > 1:
-                    # Check for temporal consistency
-                    if not market_timestamps.is_monotonic_increasing:
-                        warning_msg = "Market data timestamps are not monotonic increasing - temporal consistency may be compromised"
-                        self.logger.warning(f"⚠️ {warning_msg}")
-                        report.warnings.append(warning_msg)
-                        temporal_validation_passed = False
-            
-            # Use safe DataFrame operations with proper error handling
-            try:
-                market_data_aligned = safe_dataframe_operation(
-                    market_data, lambda df: df.iloc[:min_len].copy()
-                )
-                if market_data_aligned is None:
-                    raise ValueError("Failed to align market data")
+                elif 'timestamp' in market_data.columns:
+                    # DataFrame has timestamp column
+                    market_timestamps = market_data['timestamp'].iloc[:min_len]
+                    if len(market_timestamps) > 1:
+                        # Check for temporal consistency
+                        if not market_timestamps.is_monotonic_increasing:
+                            warning_msg = "Market data timestamps are not monotonic increasing - temporal consistency may be compromised"
+                            self.logger.warning(f"⚠️ {warning_msg}")
+                            report.warnings.append(warning_msg)
+                            temporal_validation_passed = False
+
+                # Use safe DataFrame operations with proper error handling
+                try:
+                    market_data_aligned = safe_dataframe_operation(
+                        market_data, lambda df: df.iloc[:min_len].copy()
+                    )
+                    if market_data_aligned is None:
+                        raise ValueError("Failed to align market data")
+                except Exception as e:
+                    error = self.error_handler.handle_alignment_error(
+                        f"Failed to align market data: {str(e)}",
+                        "Check market data format and ensure it can be properly sliced",
+                        context={'exception': str(e), 'min_len': min_len},
+                        severity=ErrorSeverity.HIGH
+                    )
+                    return {
+                        'success': False,
+                        'errors': [error.to_string()],
+                        'data': None
+                    }
+
+                try:
+                    regime_states_aligned = regime_states[:min_len]
+                    # Validate regime states alignment
+                    if len(regime_states_aligned) != min_len:
+                        raise ValueError(f"Regime states alignment failed: expected {min_len}, got {len(regime_states_aligned)}")
+                except Exception as e:
+                    error = self.error_handler.handle_alignment_error(
+                        f"Failed to align regime states: {str(e)}",
+                        "Check regime states format and ensure it can be properly sliced",
+                        context={'exception': str(e), 'min_len': min_len},
+                        severity=ErrorSeverity.HIGH
+                    )
+                    return {
+                        'success': False,
+                        'errors': [error.to_string()],
+                        'data': None
+                    }
+
             except Exception as e:
-                error = self.error_handler.handle_alignment_error(
-                    f"Failed to align market data: {str(e)}",
-                    "Check market data format and ensure it can be properly sliced",
-                    context={'exception': str(e), 'min_len': min_len},
-                    severity=ErrorSeverity.HIGH
-                )
+                self.logger.error(f"❌ Error in regime splitting: {e}")
                 return {
                     'success': False,
-                    'errors': [error.to_string()],
-                    'data': None
-                }
-            
-            try:
-                regime_states_aligned = regime_states[:min_len]
-                # Validate regime states alignment
-                if len(regime_states_aligned) != min_len:
-                    raise ValueError(f"Regime states alignment failed: expected {min_len}, got {len(regime_states_aligned)}")
-            except Exception as e:
-                error = self.error_handler.handle_alignment_error(
-                    f"Failed to align regime states: {str(e)}",
-                    "Check regime states format and ensure it can be properly sliced",
-                    context={'exception': str(e), 'min_len': min_len},
-                    severity=ErrorSeverity.HIGH
-                )
-                return {
-                    'success': False,
-                    'errors': [error.to_string()],
+                    'errors': [f"Regime splitting failed: {str(e)}"],
                     'data': None
                 }
             
@@ -789,7 +882,7 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                     'regime_stats': regime_stats,
                     'errors': []
                 }
-                
+
             except Exception as e:
                 self.logger.error(f"❌ Error in regime splitting: {e}")
                 return {
@@ -1003,7 +1096,7 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
             if unique_regimes < 2:
                 validation_result['warnings'].append(f"Only {unique_regimes} regime(s) found - may indicate poor regime discovery")
             elif unique_regimes > 20:
-                validation_result['warnings'].append(f"Many regimes found ({unique_regimes}) - may indicate over-segmentation"
+                validation_result['warnings'].append(f"Many regimes found ({unique_regimes}) - may indicate over-segmentation")
             
             # Check data alignment
             if len(market_data) != len(regime_states):

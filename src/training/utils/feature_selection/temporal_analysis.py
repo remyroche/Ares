@@ -363,7 +363,8 @@ class TemporalAnalyzer:
                 # Use optimized operations for importance processing
                 importances = self.matrix_ops.normalize_vector(importances)
             
-            return {feature_names[i]: importances[i] for i in range(len(feature_names))}
+            # Ensure proper mapping between importances and feature names
+            return {feature_names[i]: importances[i] for i in range(min(len(feature_names), len(importances)))}
             
         except Exception as e:
             _LOGGER.debug(f"⚠️ Window importance calculation failed: {e}")
@@ -581,7 +582,8 @@ class TemporalAnalyzer:
             model.fit(X_regime, y_regime)
             importances = model.feature_importances_
             
-            return {feature_names[i]: importances[i] for i in range(len(feature_names))}
+            # Ensure proper mapping between importances and feature names
+            return {feature_names[i]: importances[i] for i in range(min(len(feature_names), len(importances)))}
             
         except Exception as e:
             _LOGGER.debug(f"⚠️ Regime importance calculation failed: {e}")

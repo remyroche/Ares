@@ -170,31 +170,31 @@ try:
         # Data validation and quality
         validate_dataframe, validate_dataframe_columns, calculate_data_quality_metrics,
         create_data_quality_report, get_dataframe_info, optimize_dataframe_dtypes,
-        
+
         # Safe operations
         safe_dataframe_operation, safe_fillna, safe_convert_dtypes, safe_merge_dataframes,
         safe_drop_columns, safe_rename_columns, safe_timestamp_conversion,
-        
+
         # Math operations
         safe_divide, safe_log, safe_sqrt, safe_power, safe_mean, safe_std,
         safe_float, safe_int, validate_finite, validate_positive, validate_range,
         safe_kelly_calculation, safe_weighted_average, safe_percentage_change,
-        
+
         # File operations
         safe_json_dump, safe_json_load, safe_to_parquet, safe_read_parquet,
         ensure_directory, safe_file_exists, safe_copy,
-        
+
         # Performance utilities
         timed_operation, format_bytes, chunked_iterable, parallel_map,
-        
+
         # M1 optimization
         get_m1_gpu_manager, get_m1_memory_optimizer, get_m1_cpu_optimizer,
         integrate_with_m1_optimizers, cleanup_m1_optimizers,
         memory_checkpoint, gpu_context, optimize_memory, get_memory_usage,
-        
+
         # Matrix utilities
         validate_correlation_matrix, safe_matrix_inverse, math_safe,
-        
+
         # Logging utilities
         get_logger, setup_basic_logging, safe_log_metric, safe_log_params, safe_log_artifact
     )
@@ -208,6 +208,28 @@ except ImportError as e:
     def safe_sqrt(x, default=0.0): return np.sqrt(x) if x >= 0 else default
     def safe_power(x, y, default=0.0): return x ** y if np.isfinite(x) and np.isfinite(y) else default
     def validate_finite(value, name="value"): return float(value) if np.isfinite(value) else 0.0
+
+# Import additional utilities for enhanced functionality
+try:
+    from src.utils.data.klines_parquet import KlinesParquetManager
+    KLINES_PARQUET_AVAILABLE = True
+except ImportError as e:
+    KLINES_PARQUET_AVAILABLE = False
+    logging.warning(f"Klines parquet utilities not available: {e}")
+
+try:
+    from src.utils.data.processing.data_processing import DataProcessor
+    DATA_PROCESSING_AVAILABLE = True
+except ImportError as e:
+    DATA_PROCESSING_AVAILABLE = False
+    logging.warning(f"Data processing utilities not available: {e}")
+
+try:
+    from src.utils.data.processing.transformers import DataTransformer
+    DATA_TRANSFORMER_AVAILABLE = True
+except ImportError as e:
+    DATA_TRANSFORMER_AVAILABLE = False
+    logging.warning(f"Data transformer utilities not available: {e}")
 
 # Import serialization utilities
 try:
@@ -405,7 +427,7 @@ class PIDBasedFeatureOrchestrator:
             self.memory_optimizer = None
             self.cpu_optimizer = None
         
-        # Initialize utility status tracking
+        # Initialize utility status tracking with comprehensive coverage
         self.utility_integration_status = {
             'common_operations': COMMON_OPERATIONS_AVAILABLE and self.config.enable_common_operations,
             'serialization': SERIALIZATION_AVAILABLE and self.config.enable_serialization,
@@ -413,7 +435,10 @@ class PIDBasedFeatureOrchestrator:
             'matrix_operations': MATRIX_OPS_AVAILABLE,
             'data_validation': self.config.enable_data_validation,
             'data_optimization': self.config.enable_data_optimization,
-            'm1_optimization': self.config.enable_m1_optimization
+            'm1_optimization': self.config.enable_m1_optimization,
+            'klines_parquet': KLINES_PARQUET_AVAILABLE,
+            'data_processing': DATA_PROCESSING_AVAILABLE,
+            'data_transformer': DATA_TRANSFORMER_AVAILABLE
         }
         
         tprint_info(f"Utility integration status: {self.utility_integration_status}")
@@ -1255,11 +1280,11 @@ class PIDBasedFeatureOrchestrator:
             return data, feature_names, optimization_info
     
     async def _assess_data_quality(
-        self, 
-        X: np.ndarray, 
+        self,
+        X: np.ndarray,
         feature_names: List[str]
     ) -> Dict[str, Any]:
-        """Assess data quality using common utilities."""
+        """Assess data quality using common utilities and enhanced data processing."""
         quality_report = {
             'overall_score': 0.0,
             'missing_data_ratio': 0.0,
@@ -1267,39 +1292,86 @@ class PIDBasedFeatureOrchestrator:
             'data_types': {},
             'statistics': {}
         }
-        
+
         try:
             if COMMON_OPERATIONS_AVAILABLE:
                 # Convert to DataFrame for quality assessment
                 df = pd.DataFrame(X, columns=feature_names)
-                
-                # Calculate data quality metrics
+
+                # Calculate data quality metrics using enhanced utilities
                 quality_metrics = calculate_data_quality_metrics(df)
-                
+
                 # Create comprehensive quality report
                 quality_report = create_data_quality_report(df)
-                
+
                 # Calculate overall score
                 missing_ratio = quality_metrics.get('missing_percentage', 0) / 100
                 duplicate_ratio = quality_metrics.get('duplicate_percentage', 0) / 100
-                
+
                 quality_report['overall_score'] = max(0.0, 1.0 - missing_ratio - duplicate_ratio)
                 quality_report['missing_data_ratio'] = missing_ratio
                 quality_report['duplicate_ratio'] = duplicate_ratio
-                
-                # Add basic statistics
+
+                # Add basic statistics using safe operations
                 quality_report['statistics'] = {
                     'mean': safe_mean(pd.Series(X.flatten())),
                     'std': safe_std(pd.Series(X.flatten())),
                     'min': float(np.min(X)),
                     'max': float(np.max(X))
                 }
-            
+
+                # Enhanced quality assessment using data processing utilities
+                if DATA_PROCESSING_AVAILABLE:
+                    try:
+                        data_processor = DataProcessor()
+                        enhanced_metrics = data_processor.calculate_enhanced_quality_metrics(df)
+                        quality_report['enhanced_metrics'] = enhanced_metrics
+                        tprint_info(f"Enhanced quality metrics calculated: {len(enhanced_metrics)} additional metrics")
+                    except Exception as e:
+                        tprint_warning(f"Enhanced quality metrics calculation failed: {e}")
+
             return quality_report
-            
+
         except Exception as e:
             tprint_warning(f"Data quality assessment failed: {e}")
             return quality_report
+
+    async def _load_optimized_historical_data(
+        self,
+        symbol: str,
+        interval: str,
+        start_date: str,
+        end_date: str
+    ) -> Optional[pd.DataFrame]:
+        """Load historical data using optimized klines parquet utilities."""
+        try:
+            if not KLINES_PARQUET_AVAILABLE:
+                tprint_warning("Klines parquet utilities not available, using standard data loading")
+                return None
+
+            # Initialize klines parquet manager
+            klines_manager = KlinesParquetManager()
+            tprint_info(f"Loading optimized historical data for {symbol} {interval}")
+
+            # Get data information first
+            data_info = klines_manager.get_data_info(symbol, interval)
+            if not data_info.get('available', False):
+                tprint_warning(f"No historical data available for {symbol} {interval}")
+                return None
+
+            # Load data using optimized parquet format
+            data = klines_manager.load_data_range(symbol, interval, start_date, end_date)
+
+            if data is not None and not data.empty:
+                tprint_info(f"Successfully loaded {len(data)} records from optimized parquet storage")
+                return data
+            else:
+                tprint_warning(f"No data found for {symbol} {interval} in specified date range")
+                return None
+
+        except Exception as e:
+            tprint_error(f"Failed to load optimized historical data: {e}")
+            return None
     
     async def _save_artifacts(
         self, 

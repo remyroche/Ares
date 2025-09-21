@@ -448,6 +448,29 @@ class M1MemoryOptimizer:
         
         return checkpoint_context()
 
+    def force_garbage_collection(self) -> None:
+        """Force garbage collection to free memory."""
+        import gc
+
+        # Get stats before cleanup
+        before_objects = len(gc.get_objects())
+        before_garbage = len(gc.garbage)
+
+        # Force garbage collection
+        gc.collect()
+        gc.collect()  # Double collection for better cleanup
+        gc.collect()  # Triple collection for thorough cleanup
+
+        # Get stats after cleanup
+        after_objects = len(gc.get_objects())
+        after_garbage = len(gc.garbage)
+
+        # Calculate cleanup stats
+        objects_freed = before_objects - after_objects
+        garbage_cleared = before_garbage - after_garbage
+
+        self.logger.debug(f"🧹 Forced garbage collection: freed {objects_freed} objects, cleared {garbage_cleared} garbage")
+
 
 # Global instance - lazy initialization to avoid circular import issues
 _m1_memory_optimizer_instance: Optional[M1MemoryOptimizer] = None

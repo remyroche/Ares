@@ -75,7 +75,7 @@ class ImprovedHMMTrainingManager(BaseTrainingStep):
         if config is None:
             config = HMMTrainingConfig(
                 model_name="improved_hmm_models",
-                timeframe="1h",
+                timeframe="15m",
                 n_features=50,
                 sequence_length=20,
                 n_regimes=3,

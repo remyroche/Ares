@@ -2726,28 +2726,25 @@ class RegimeDataSplittingStep:
 
     @comprehensive_function_monitor
     async def execute(self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
-        """Execute the regime data splitting step.
+        """Execute the regime data splitting step using streamlined implementation.
 
-        This method is called by the training manager and delegates to the main processing method.
+        This method delegates to the streamlined regime data splitting component
+        for improved performance and maintainability.
         """
         try:
-            symbol = training_input.get('symbol')
-            exchange = training_input.get('exchange')
-            timeframe = training_input.get('timeframe', '1m')
-            data_dir = training_input.get('data_dir')
+            # Import the streamlined component
+            from .streamlined_regime_splitting import create_streamlined_regime_splitting
 
-            if not all([symbol, exchange, timeframe, data_dir]):
-                return {
-                    'success': False,
-                    'step04_regime_data_splitting_completed': False,
-                    'error': 'Missing required parameters: symbol, exchange, timeframe, data_dir',
-                    'step_name': 'step04_regime_data_splitting'
-                }
+            # Create streamlined regime splitting instance
+            streamlined_splitting = create_streamlined_regime_splitting(self.config)
 
-            self.logger.info(f'🚀 Executing regime data splitting for {symbol} on {exchange} ({timeframe})')
+            self.logger.info('🚀 Executing streamlined regime data splitting')
 
-            # Call the main processing method
-            result = await self.split_data_by_regimes(symbol, exchange, timeframe, data_dir)
+            # Execute using the streamlined component
+            result = await streamlined_splitting.execute_regime_splitting(training_input, pipeline_state)
+
+            # Clean up resources
+            streamlined_splitting.cleanup_resources()
 
             if result.success:
                 return {
@@ -2756,16 +2753,22 @@ class RegimeDataSplittingStep:
                     'regime_data': result.data,
                     'regime_metadata': result.metadata,
                     'regime_splits': result.data,  # For compatibility with step 05 expectations
-                    'execution_time': result.execution_time,
-                    'step_name': 'step04_regime_data_splitting'
+                    'execution_time': result.metrics.processing_time_seconds,
+                    'step_name': 'step04_regime_data_splitting',
+                    'data_quality_score': result.metrics.data_quality_score,
+                    'regime_count': result.metrics.regime_count,
+                    'warnings': result.warnings,
+                    'errors': result.errors
                 }
             else:
                 return {
                     'success': False,
                     'step04_regime_data_splitting_completed': False,
-                    'error': result.error,
-                    'execution_time': result.execution_time,
-                    'step_name': 'step04_regime_data_splitting'
+                    'error': result.errors[0] if result.errors else 'Unknown error',
+                    'execution_time': result.metrics.processing_time_seconds,
+                    'step_name': 'step04_regime_data_splitting',
+                    'warnings': result.warnings,
+                    'errors': result.errors
                 }
 
         except Exception as e:

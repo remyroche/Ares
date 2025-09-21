@@ -9,6 +9,8 @@ Key features:
 - Maintains compatibility with existing sub-pipeline
 - Provides enhanced labeling with reversal capture
 - Optimized for short-term, high-frequency trading
+- Enhanced data filtering and quality validation
+- Memory optimization for large datasets
 """
 
 import pandas as pd
@@ -17,15 +19,438 @@ import functools
 import time
 from typing import Dict, List, Optional, Any, Tuple
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
+from enum import Enum
+from dataclasses import dataclass
+
+# Import utility modules for enhanced functionality
+from src.utils.common_utilities import (
+    validate_dataframe_columns, safe_dataframe_operation,
+    calculate_data_quality_metrics, safe_convert_dtypes
+)
+from src.utils.math_validation import safe_divide, validate_finite
+from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer
+from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer
 
 # Optimized imports using common utilities
 from src.utils.logger import get_logger
 from src.core.decorators import handles_errors, traced, validates, log_execution_time
-from src.utils.common_utilities import (
-    safe_dataframe_operation, validate_dataframe_columns, 
-    safe_convert_dtypes
-)
+
+class ExecutionMode(Enum):
+    """Enhanced execution modes with configurable parameters."""
+    FULL = "full"          # Complete execution with all data
+    LIGHT = "light"        # Lightweight execution with data filtering
+    BLANK = "blank"        # Minimal execution for testing/validation
+    ADAPTIVE = "adaptive"  # Dynamic filtering based on data characteristics
+
+@dataclass
+class DataFilterConfig:
+    """Configuration for data filtering operations."""
+    mode: ExecutionMode = ExecutionMode.FULL
+    timeframe: str = "5m"
+    max_rows_light: int = 14400     # 10 days for 1m data
+    max_rows_blank: int = 259200    # 180 days for 1m data
+    max_rows_adaptive: int = 50000  # Default adaptive limit
+    min_data_quality_score: float = 0.7
+    enable_outlier_filtering: bool = True
+    outlier_threshold: float = 3.0  # Standard deviations
+    preserve_recent_data: bool = True
+    memory_efficient: bool = True
+
+class DataFilteringManager:
+    """Enhanced data filtering manager with quality validation."""
+
+    def __init__(self, config: Optional[DataFilterConfig] = None):
+        """Initialize data filtering manager with hardware optimizations."""
+        self.config = config or DataFilterConfig()
+        self.logger = get_logger('DataFilteringManager')
+
+        # Initialize hardware optimizers
+        self.memory_optimizer = get_m1_memory_optimizer()
+        self.cpu_optimizer = get_m1_cpu_optimizer()
+
+        # Optimize CPU for data processing
+        if self.cpu_optimizer:
+            self.cpu_optimizer.optimize_numpy_operations()
+
+        self.logger.info('🔄 Data Filtering Manager initialized with M1 optimizations')
+
+    def filter_data(self, data: pd.DataFrame, mode: Optional[str] = None) -> pd.DataFrame:
+        """
+        Apply intelligent data filtering based on execution mode and data characteristics.
+
+        Args:
+            data: Input DataFrame to filter
+            mode: Execution mode override
+
+        Returns:
+            Filtered DataFrame with quality validation
+        """
+        if data is None or data.empty:
+            self.logger.warning("❌ No data provided for filtering")
+            return pd.DataFrame()
+
+        # Determine execution mode
+        exec_mode = mode or self.config.mode.value
+        self.logger.info(f"🔍 Applying {exec_mode} mode filtering to {len(data):,} rows")
+
+        try:
+            # Step 1: Data quality assessment
+            data_quality = self._assess_data_quality(data)
+            self.logger.info(f"📊 Data quality score: {data_quality['overall_score']:.3f}")
+
+            # Step 2: Apply execution mode filtering
+            filtered_data = self._apply_execution_mode_filtering(data, exec_mode)
+
+            # Step 3: Quality-based filtering if enabled
+            if self.config.min_data_quality_score > 0:
+                filtered_data = self._apply_quality_filtering(filtered_data, data_quality)
+
+            # Step 4: Outlier removal if enabled
+            if self.config.enable_outlier_filtering:
+                filtered_data = self._remove_outliers(filtered_data)
+
+            # Step 5: Memory optimization
+            if self.config.memory_efficient and self.memory_optimizer:
+                filtered_data = self.memory_optimizer.optimize_dataframe_memory(filtered_data)
+
+            # Step 6: Final validation
+            final_quality = self._assess_data_quality(filtered_data)
+            self.logger.info(f"✅ Filtering completed: {len(data):,} → {len(filtered_data):,} rows")
+            self.logger.info(f"📊 Final quality score: {final_quality['overall_score']:.3f}")
+
+            return filtered_data
+
+        except Exception as e:
+            self.logger.error(f"❌ Error in data filtering: {e}")
+            return data  # Return original data on error
+
+    def _assess_data_quality(self, data: pd.DataFrame) -> Dict[str, Any]:
+        """Assess data quality with comprehensive metrics."""
+        try:
+            # Use enhanced data quality metrics
+            quality_metrics = calculate_data_quality_metrics(data)
+
+            # Calculate additional quality indicators
+            quality_score = self._calculate_overall_quality_score(data, quality_metrics)
+
+            return {
+                'overall_score': quality_score,
+                'metrics': quality_metrics,
+                'recommendations': self._generate_quality_recommendations(quality_metrics)
+            }
+        except Exception as e:
+            self.logger.warning(f"⚠️ Error assessing data quality: {e}")
+            return {'overall_score': 0.0, 'metrics': {}, 'recommendations': []}
+
+    def _calculate_overall_quality_score(self, data: pd.DataFrame, metrics: Dict[str, Any]) -> float:
+        """Calculate overall data quality score based on multiple factors."""
+        try:
+            score = 1.0
+
+            # Factor 1: Missing data penalty
+            missing_ratio = metrics.get('missing_values', 0) / len(data) if len(data) > 0 else 0
+            score *= max(0.1, 1.0 - missing_ratio * 2)
+
+            # Factor 2: Duplicate data penalty
+            duplicate_ratio = metrics.get('duplicate_rows', 0) / len(data) if len(data) > 0 else 0
+            score *= max(0.5, 1.0 - duplicate_ratio * 5)
+
+            # Factor 3: Column completeness
+            total_columns = len(data.columns)
+            if total_columns > 0:
+                missing_cols = len([col for col in ['open', 'high', 'low', 'close', 'volume'] if col not in data.columns])
+                completeness = (total_columns - missing_cols) / total_columns
+                score *= completeness
+
+            # Factor 4: Data consistency (price relationships)
+            consistency_score = self._check_price_consistency(data)
+            score *= consistency_score
+
+            return max(0.0, min(1.0, score))
+        except Exception as e:
+            return 0.5  # Default score on error
+
+    def _check_price_consistency(self, data: pd.DataFrame) -> float:
+        """Check price consistency and OHLC relationships."""
+        try:
+            if len(data) == 0:
+                return 0.5
+
+            # Check for logical OHLC relationships
+            issues = 0
+            total_checks = 0
+
+            # High should be >= max(open, close)
+            total_checks += 1
+            high_issues = (data['high'] < np.maximum(data['open'], data['close'])).sum()
+            if high_issues > 0:
+                issues += 1
+
+            # Low should be <= min(open, close)
+            total_checks += 1
+            low_issues = (data['low'] > np.minimum(data['open'], data['close'])).sum()
+            if low_issues > 0:
+                issues += 1
+
+            # Volume should be positive
+            total_checks += 1
+            volume_issues = (data['volume'] <= 0).sum()
+            if volume_issues > 0:
+                issues += 1
+
+            # Price changes should be reasonable (not too extreme)
+            total_checks += 1
+            if len(data) > 1:
+                returns = data['close'].pct_change().dropna()
+                extreme_changes = (returns.abs() > 0.5).sum()  # More than 50% change
+                if extreme_changes > len(returns) * 0.1:  # More than 10% of data
+                    issues += 1
+
+            return max(0.0, 1.0 - (issues / total_checks)) if total_checks > 0 else 0.5
+        except Exception as e:
+            return 0.5
+
+    def _apply_execution_mode_filtering(self, data: pd.DataFrame, mode: str) -> pd.DataFrame:
+        """Apply execution mode specific filtering."""
+        try:
+            original_size = len(data)
+
+            if mode.lower() == 'light':
+                # Light mode: Keep recent data with quality preservation
+                filtered_data = self._apply_light_filtering(data)
+            elif mode.lower() == 'blank':
+                # Blank mode: Minimal data for testing
+                filtered_data = self._apply_blank_filtering(data)
+            elif mode.lower() == 'adaptive':
+                # Adaptive mode: Dynamic filtering based on data characteristics
+                filtered_data = self._apply_adaptive_filtering(data)
+            else:
+                # Full mode: Use all data with quality validation
+                filtered_data = self._apply_full_filtering(data)
+
+            filtered_size = len(filtered_data)
+            self.logger.info(f"📊 {mode.upper()} filtering: {original_size:,} → {filtered_size:,} rows ({filtered_size/original_size*100:.1f}%)")
+            return filtered_data
+
+        except Exception as e:
+            self.logger.error(f"❌ Error in execution mode filtering: {e}")
+            return data
+
+    def _apply_light_filtering(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Apply light mode filtering with intelligent data selection."""
+        try:
+            # Start with recent data
+            if self.config.preserve_recent_data and len(data) > self.config.max_rows_light:
+                data = data.tail(self.config.max_rows_light).copy()
+
+            # Apply quality-based subsampling if still too large
+            if len(data) > self.config.max_rows_light * 0.8:
+                return self._quality_based_subsampling(data, self.config.max_rows_light)
+
+            return data
+        except Exception as e:
+            self.logger.warning(f"⚠️ Error in light filtering: {e}")
+            return data.tail(self.config.max_rows_light).copy()
+
+    def _apply_blank_filtering(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Apply blank mode filtering for minimal testing."""
+        try:
+            # Use minimal data for testing
+            target_size = min(self.config.max_rows_blank, len(data))
+            return data.tail(target_size).copy()
+        except Exception as e:
+            self.logger.warning(f"⚠️ Error in blank filtering: {e}")
+            return data.tail(self.config.max_rows_blank).copy()
+
+    def _apply_adaptive_filtering(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Apply adaptive filtering based on data characteristics."""
+        try:
+            # Calculate optimal sample size based on data quality and characteristics
+            data_quality = self._assess_data_quality(data)
+
+            if data_quality['overall_score'] > 0.8:
+                # High quality data - can use larger sample
+                target_size = min(self.config.max_rows_adaptive, len(data))
+            elif data_quality['overall_score'] > 0.6:
+                # Medium quality - moderate sample
+                target_size = min(self.config.max_rows_adaptive // 2, len(data))
+            else:
+                # Low quality - smaller sample with quality filtering
+                target_size = min(self.config.max_rows_adaptive // 4, len(data))
+
+            return self._quality_based_subsampling(data, target_size)
+        except Exception as e:
+            self.logger.warning(f"⚠️ Error in adaptive filtering: {e}")
+            return data.tail(self.config.max_rows_adaptive).copy()
+
+    def _apply_full_filtering(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Apply full mode filtering with quality preservation."""
+        try:
+            # Apply quality-based filtering to remove problematic data
+            quality_data = self._assess_data_quality(data)
+
+            if quality_data['overall_score'] < self.config.min_data_quality_score:
+                self.logger.warning(f"⚠️ Low data quality ({quality_data['overall_score']:.3f}) - applying quality filtering")
+                return self._apply_quality_filtering(data, quality_data)
+
+            return data
+        except Exception as e:
+            self.logger.warning(f"⚠️ Error in full filtering: {e}")
+            return data
+
+    def _quality_based_subsampling(self, data: pd.DataFrame, target_size: int) -> pd.DataFrame:
+        """Apply quality-based subsampling to maintain data quality."""
+        try:
+            if len(data) <= target_size:
+                return data
+
+            # Calculate quality scores for each data point
+            quality_scores = self._calculate_sample_quality_scores(data)
+
+            # Sort by quality and select top samples
+            quality_df = pd.DataFrame({'quality': quality_scores}, index=data.index)
+            quality_df = quality_df.sort_values('quality', ascending=False)
+
+            # Ensure we keep recent data by weighting recent samples higher
+            if self.config.preserve_recent_data:
+                recency_weights = pd.Series(1.0, index=data.index)
+                if isinstance(data.index, pd.DatetimeIndex):
+                    # Higher weight for recent data
+                    max_date = data.index.max()
+                    recency_weights = 1.0 + (data.index - data.index.min()) / (max_date - data.index.min())
+
+                # Combine quality and recency scores
+                combined_scores = quality_df['quality'] * recency_weights
+                quality_df['combined'] = combined_scores
+
+                top_indices = combined_scores.nlargest(target_size).index
+            else:
+                top_indices = quality_df.index[:target_size]
+
+            return data.loc[top_indices].sort_index()
+
+        except Exception as e:
+            self.logger.warning(f"⚠️ Error in quality-based subsampling: {e}")
+            return data.tail(target_size).copy()
+
+    def _calculate_sample_quality_scores(self, data: pd.DataFrame) -> pd.Series:
+        """Calculate quality scores for each sample."""
+        try:
+            scores = pd.Series(0.5, index=data.index)  # Default score
+
+            # Quality based on price consistency
+            for idx in data.index:
+                try:
+                    sample = data.loc[idx]
+                    if pd.notna(sample['high']) and pd.notna(sample['low']) and pd.notna(sample['close']):
+                        # Check OHLC consistency
+                        ohlc_consistent = (sample['high'] >= max(sample['open'], sample['close']) and
+                                         sample['low'] <= min(sample['open'], sample['close']))
+                        volume_valid = pd.notna(sample['volume']) and sample['volume'] > 0
+
+                        if ohlc_consistent and volume_valid:
+                            scores[idx] = 1.0
+                        elif volume_valid:
+                            scores[idx] = 0.7
+                        else:
+                            scores[idx] = 0.3
+                except Exception:
+                    scores[idx] = 0.2
+
+            return scores
+        except Exception as e:
+            self.logger.warning(f"⚠️ Error calculating sample quality: {e}")
+            return pd.Series(0.5, index=data.index)
+
+    def _apply_quality_filtering(self, data: pd.DataFrame, quality_data: Dict[str, Any]) -> pd.DataFrame:
+        """Apply quality-based filtering to improve data quality."""
+        try:
+            if quality_data['overall_score'] >= self.config.min_data_quality_score:
+                return data
+
+            # Remove samples with quality issues
+            recommendations = quality_data.get('recommendations', [])
+            filtered_data = data.copy()
+
+            # Apply common recommendations
+            for rec in recommendations:
+                if 'missing_values' in rec.lower():
+                    # Remove rows with excessive missing values
+                    missing_per_row = filtered_data.isnull().sum(axis=1)
+                    max_missing = len(filtered_data.columns) // 2  # Allow up to 50% missing
+                    filtered_data = filtered_data[missing_per_row <= max_missing]
+
+            return filtered_data
+        except Exception as e:
+            self.logger.warning(f"⚠️ Error in quality filtering: {e}")
+            return data
+
+    def _remove_outliers(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Remove outliers using statistical methods."""
+        try:
+            if len(data) < 10:
+                return data  # Not enough data for outlier detection
+
+            # Use IQR method for outlier detection
+            numeric_cols = data.select_dtypes(include=[np.number]).columns
+
+            # Calculate bounds for each numeric column
+            outlier_mask = pd.Series(False, index=data.index)
+
+            for col in numeric_cols:
+                try:
+                    if col in data.columns:
+                        values = data[col].dropna()
+                        if len(values) > 10:
+                            Q1 = values.quantile(0.25)
+                            Q3 = values.quantile(0.75)
+                            IQR = Q3 - Q1
+                            lower_bound = Q1 - self.config.outlier_threshold * IQR
+                            upper_bound = Q3 + self.config.outlier_threshold * IQR
+
+                            col_outliers = (data[col] < lower_bound) | (data[col] > upper_bound)
+                            outlier_mask |= col_outliers
+                except Exception:
+                    continue
+
+            # Remove outlier rows
+            outlier_count = outlier_mask.sum()
+            if outlier_count > 0 and outlier_count < len(data) * 0.5:  # Don't remove more than 50%
+                filtered_data = data[~outlier_mask].copy()
+                self.logger.info(f"🧹 Removed {outlier_count} outlier rows ({outlier_count/len(data)*100:.1f}%)")
+                return filtered_data
+
+            return data
+        except Exception as e:
+            self.logger.warning(f"⚠️ Error in outlier removal: {e}")
+            return data
+
+    def _generate_quality_recommendations(self, metrics: Dict[str, Any]) -> List[str]:
+        """Generate recommendations based on data quality metrics."""
+        recommendations = []
+
+        try:
+            # Check missing values
+            if metrics.get('missing_values', 0) > 0:
+                missing_ratio = metrics['missing_values'] / (len(metrics.get('total_rows', 1)) * len(metrics.get('total_columns', 1)))
+                if missing_ratio > 0.1:
+                    recommendations.append("High missing value ratio - consider data imputation or filtering")
+                elif missing_ratio > 0.05:
+                    recommendations.append("Moderate missing values detected")
+
+            # Check duplicates
+            if metrics.get('duplicate_rows', 0) > 0:
+                recommendations.append(f"Found {metrics['duplicate_rows']} duplicate rows - consider removal")
+
+            # Check data consistency issues
+            if metrics.get('price_consistency_score', 1.0) < 0.9:
+                recommendations.append("Price consistency issues detected - check OHLC relationships")
+
+        except Exception as e:
+            self.logger.warning(f"⚠️ Error generating recommendations: {e}")
+
+        return recommendations
 try:
     from src.utils.math_validation import (
         safe_mean, safe_std, validate_finite, safe_percentage_change
@@ -159,12 +584,83 @@ class MultiHorizonSubPipelineAdapter:
         self.memory_optimizer = get_m1_memory_optimizer()
         self.cpu_optimizer = get_m1_cpu_optimizer()
         self.serializer = UniversalSerializer()
+
+        # Initialize data filtering manager
+        self.data_filter = DataFilteringManager()
         
         # Optimize CPU for data processing
         if self.cpu_optimizer:
             self.cpu_optimizer.optimize_numpy_operations()
         
         self.logger.info('🔄 Multi-Horizon Sub-Pipeline Adapter initialized with M1 optimizations')
+        self.logger.info('🔄 Data filtering manager initialized with quality validation')
+
+    def _validate_input_data(self, data: pd.DataFrame) -> bool:
+        """Enhanced data validation with quality checks."""
+        try:
+            # Basic validation
+            if data is None or data.empty:
+                return False
+
+            # Required column validation
+            required_cols = ['open', 'high', 'low', 'close', 'volume']
+            if not validate_dataframe_columns(data, required_cols):
+                self.logger.warning("⚠️ Missing required columns for OHLCV data")
+                return False
+
+            # Data quality assessment
+            quality_metrics = calculate_data_quality_metrics(data)
+
+            # Check for excessive missing values
+            total_cells = len(data) * len(data.columns)
+            missing_ratio = quality_metrics.get('missing_values', 0) / total_cells
+
+            if missing_ratio > 0.3:  # More than 30% missing
+                self.logger.warning(f"⚠️ High missing value ratio: {missing_ratio:.1%}")
+                return False
+
+            # Check for excessive duplicates
+            duplicate_ratio = quality_metrics.get('duplicate_rows', 0) / len(data)
+            if duplicate_ratio > 0.2:  # More than 20% duplicates
+                self.logger.warning(f"⚠️ High duplicate ratio: {duplicate_ratio:.1%}")
+                return False
+
+            # Price consistency check
+            if not self._check_price_data_consistency(data):
+                self.logger.warning("⚠️ Price data consistency issues detected")
+                return False
+
+            return True
+
+        except Exception as e:
+            self.logger.error(f"❌ Error in data validation: {e}")
+            return False
+
+    def _check_price_data_consistency(self, data: pd.DataFrame) -> bool:
+        """Check price data consistency and logical relationships."""
+        try:
+            # Check for logical OHLC relationships in a sample
+            sample_size = min(1000, len(data))
+            sample = data.tail(sample_size)
+
+            # High should be >= max(open, close)
+            high_issues = (sample['high'] < np.maximum(sample['open'], sample['close'])).sum()
+
+            # Low should be <= min(open, close)
+            low_issues = (sample['low'] > np.minimum(sample['open'], sample['close'])).sum()
+
+            # Volume should be positive
+            volume_issues = (sample['volume'] <= 0).sum()
+
+            # Allow some tolerance for data issues
+            total_issues = high_issues + low_issues + volume_issues
+            tolerance_ratio = total_issues / len(sample)
+
+            return tolerance_ratio < 0.1  # Less than 10% issues
+
+        except Exception as e:
+            self.logger.warning(f"⚠️ Error checking price consistency: {e}")
+            return True  # Assume OK if we can't check
     
     def execute_multi_horizon_labeling_step(self,
                                           data: pd.DataFrame,
@@ -196,9 +692,25 @@ class MultiHorizonSubPipelineAdapter:
         self.logger.info(f'📊 Input data shape: {data.shape if data is not None else "None"}')
         self.logger.info(f'🚨 EXECUTION MODE: {mode}')
         
-        # FORCE DATA FILTERING IMMEDIATELY
-        if data is not None and len(data) > 50000:  # Only filter large datasets
+        # ENHANCED DATA FILTERING WITH QUALITY VALIDATION
+        if data is not None and len(data) > 1000:  # Apply filtering for datasets larger than 1000 rows
             original_size = len(data)
+
+            # Use the enhanced data filtering manager
+            try:
+                filtered_data = self.data_filter.filter_data(data, mode)
+
+                # Only use filtered data if it's significantly smaller and maintains quality
+                if len(filtered_data) < original_size * 0.9:  # At least 10% reduction
+                    data = filtered_data
+                    self.logger.info(f'🔥 ENHANCED FILTERING: {original_size:,} → {len(data):,} rows')
+                    self.logger.info(f'📊 Data quality preserved during filtering')
+                else:
+                    self.logger.info(f'📊 Data quality sufficient - using original data: {original_size:,} rows')
+
+            except Exception as e:
+                self.logger.warning(f'⚠️ Enhanced filtering failed, using original approach: {e}')
+                # Fallback to original filtering logic
             if mode and mode.lower() == 'light':
                 data = data.tail(14400).copy()
                 self.logger.info(f'🔥 FORCED LIGHT FILTERING: {original_size:,} → {len(data):,} rows')
@@ -208,7 +720,7 @@ class MultiHorizonSubPipelineAdapter:
         
         try:
             # Validate input data with enhanced validation
-            if not validate_dataframe(data):
+            if not self._validate_input_data(data):
                 self.logger.error('❌ Data validation failed')
                 return {
                     'status': 'failed',

@@ -614,7 +614,7 @@ class BaseFeatureSelectionFramework:
             _LOGGER.warning(f"⚠️ Zero variance detection failed: {e}")
             return []
 
-    def _detect_perfect_correlations(self, X: np.ndarray, threshold: float = 0.999) -> List[Tuple[int, int, float]]:
+    def _detect_perfect_correlations(self, X: np.ndarray, threshold: float = 0.98) -> List[Tuple[int, int, float]]:
         """Detect perfectly correlated feature pairs."""
         return self._detect_high_correlation_features(X, threshold)
 

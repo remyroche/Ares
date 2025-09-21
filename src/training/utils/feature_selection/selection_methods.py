@@ -838,10 +838,14 @@ class RecursiveFeatureEliminator:
             # Get selected features
             selected_features = np.where(rfe.support_)[0].tolist()
             feature_rankings = rfe.ranking_
-            
-            # Prepare results
+
+            # Prepare results - ensure proper mapping between filtered data and original feature names
             selected_feature_names = [feature_names[i] for i in selected_features]
-            rankings_dict = {feature_names[i]: feature_rankings[i] for i in range(len(feature_names))}
+
+            # Create rankings dictionary with proper bounds checking
+            rankings_dict = {}
+            for i in range(min(len(feature_names), len(feature_rankings))):
+                rankings_dict[feature_names[i]] = feature_rankings[i]
             
             execution_time = time.time() - start_time
             

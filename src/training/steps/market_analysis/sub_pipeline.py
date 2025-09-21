@@ -1,7 +1,7 @@
 """
-Market Analysis Sub-Pipeline - Complete 11-Step Pipeline
+Market Analysis Sub-Pipeline - Complete 12-Step Pipeline
 
-This module provides the complete market analysis sub-pipeline with exactly 11 required steps:
+This module provides the complete market analysis sub-pipeline with exactly 12 required steps:
 
 1. sr_parameter_optimization - Optimize SR detection levels
 2. sr_detection - Detect Support/Resistance levels
@@ -14,6 +14,7 @@ This module provides the complete market analysis sub-pipeline with exactly 11 r
 9. multi_horizon_labeling - Apply multi-horizon profit labeling
 10. feature_lookback_optimization - Optimize feature lookback periods
 11. pid_based_feature_generation - PID-based feature generation with interaction, polynomial, and cross-timeframe features
+12. final_feature_selection - Final multi-stage feature selection (120→100→80→60)
 """
 
 from typing import Any, Dict, List, Optional, Tuple
@@ -115,13 +116,14 @@ class SubPipelineResult:
             'sr_detection': ['sr_detection_result'],
             'sr_clustering': ['sr_clustering_result'],
             'hmm_regime_discovery': ['hmm_regime_discovery_result'],
-            'hmm_clustering': ['hmm_clustering_result'],
+            'hmm_clustering': ['optimal_regime_clustering_result'],
             'hmm_models_training': ['hmm_models_training_result'],
             'hmm_ensemble_training': ['hmm_ensemble_training_result'],
             'regime_data_splitting': ['regime_data_splitting_result'],
             'multi_horizon_labeling': ['multi_horizon_labeling_result'],
             'feature_lookback_optimization': ['feature_lookback_optimization_result'],
-            'pid_based_feature_generation': ['pid_based_feature_generation_result']
+            'pid_based_feature_generation': ['pid_based_feature_generation_result'],
+            'final_feature_selection': ['final_feature_selection_result']
         }
         return artifact_requirements.get(self.sub_pipeline_name, [])
     
@@ -261,7 +263,7 @@ class MarketAnalysisSubPipeline:
         if config is None:
             config = self.config
             
-        self.logger.info('🚀 Starting automatic execution of all 11 market analysis steps')
+        self.logger.info('🚀 Starting automatic execution of all 12 market analysis steps')
         self.logger.info('=' * 80)
         self.logger.info('📋 Steps to be executed automatically:')
         self.logger.info('   1. sr_parameter_optimization - Optimize SR detection levels')
@@ -275,6 +277,7 @@ class MarketAnalysisSubPipeline:
         self.logger.info('   9. multi_horizon_profit_labeler - Apply triple barrier method')
         self.logger.info('   10. feature_lookback_optimization - Optimize feature lookback periods')
         self.logger.info('   11. pid_based_feature_generation - Cross timeframe interaction features')
+        self.logger.info('   12. final_feature_selection - Final feature selection (120→100→80→60)')
         self.logger.info('=' * 80)
         
         # Execute from the first step - this will automatically trigger all subsequent steps
@@ -298,23 +301,24 @@ class MarketAnalysisSubPipeline:
         Execute the complete market analysis sub-pipeline with backward compatible interface.
 
         This method orchestrates the complete market analysis pipeline with logical groupings:
-        
+
         SR Steps (1-3):
         1. SR parameter optimization
-        2. SR detection  
+        2. SR detection
         3. SR clustering
-        
+
         HMM Steps (4-7):
         4. HMM regime discovery
         5. HMM clustering
         6. HMM models training with HPO
         7. HMM ensemble training (meta-model)
-        
-        Data Processing Steps (8-11):
+
+        Data Processing Steps (8-12):
         8. Regime data splitting
         9. Triple barrier labeling
         10. Feature lookback optimization
         11. PID-based feature generation
+        12. Final feature selection (120→100→80→60)
         """
         self.logger.info('🎯 Starting Market Analysis Sub-Pipeline execution')
         
@@ -417,7 +421,7 @@ class MarketAnalysisSubPipeline:
                 return error_info
             
             # Extract data from consolidated artifact
-            hmm_clustering_data = hmm_clustering_result.artifacts.get('hmm_clustering_result', {})
+            hmm_clustering_data = hmm_clustering_result.artifacts.get('optimal_regime_clustering_result', {})
             results['hmm_clusters'] = hmm_clustering_data.get('hmm_clusters', {})
             results['hmm_clustering_metrics'] = hmm_clustering_data.get('hmm_clustering_metrics', {})
             
@@ -552,17 +556,16 @@ class MarketAnalysisSubPipeline:
                     mode=self.config.mode.value
                 )
                 
-                # Create a mock result object for compatibility
-                class MockResult:
-                    def __init__(self, result_dict):
-                        self.artifacts = result_dict.get('artifacts', {})
-                        self.status = result_dict.get('status', 'unknown')
-                        self.metadata = result_dict.get('metadata', {})
-                
-                multi_horizon_labeling_result = MockResult(multi_horizon_labeling_result)
-                
-                if multi_horizon_labeling_result.status != 'completed':
-                    return self._create_error_result("Multi-Horizon Labeling failed", multi_horizon_labeling_result.artifacts)
+                # Check if the result is already a dictionary (from multi_horizon adapter)
+                if isinstance(multi_horizon_labeling_result, dict):
+                    # It's already a dictionary result from the adapter
+                    result_status = multi_horizon_labeling_result.get('status', 'failed')
+                    if result_status != 'completed':
+                        return self._create_error_result("Multi-Horizon Labeling failed", multi_horizon_labeling_result)
+                else:
+                    # It's a MockResult object, use the status attribute
+                    if multi_horizon_labeling_result.status != 'completed':
+                        return self._create_error_result("Multi-Horizon Labeling failed", multi_horizon_labeling_result.artifacts)
                     
             except Exception as e:
                 self.logger.error(f"Multi-Horizon Labeling execution failed: {e}")
@@ -633,14 +636,44 @@ class MarketAnalysisSubPipeline:
                 'total_features_generated': pid_feature_data.get('total_features_generated', 0),
                 'generation_status': pid_feature_data.get('generation_status', 'unknown')
             }
-            
+
+            # ===== FINAL FEATURE SELECTION STEP =====
+            self.logger.info('🎯 ===== STARTING FINAL FEATURE SELECTION =====')
+
+            # Stage 12: Final Feature Selection
+            self.logger.info('🎯 Executing Stage 12: Final Feature Selection')
+            final_feature_selection_result = await self.execute_sub_pipeline('final_feature_selection', self.config)
+            is_success, error_info = self._validate_sub_pipeline_result(final_feature_selection_result, "Final Feature Selection")
+            if not is_success:
+                return error_info
+
+            # Extract data from consolidated artifact
+            final_selection_data = final_feature_selection_result.artifacts.get('final_feature_selection_result', {})
+
+            # Extract final feature selection results
+            results['final_feature_selection'] = {
+                'symbol': final_selection_data.get('symbol'),
+                'exchange': final_selection_data.get('exchange'),
+                'timeframe': final_selection_data.get('timeframe'),
+                'data_dir': final_selection_data.get('data_dir'),
+                'feature_selection_config': final_selection_data.get('feature_selection_config', {}),
+                'execution_mode': final_selection_data.get('execution_mode', 'component'),
+                'success': final_selection_data.get('success', True),
+                'stage_reduction': final_selection_data.get('stage_reduction', {
+                    'initial': 120,
+                    'stage_1': 100,
+                    'stage_2': 80,
+                    'stage_3': 60
+                })
+            }
+
             # Final success
             self.logger.info('🎉 Market Analysis Sub-Pipeline completed successfully')
             return {
                 'success': True,
                 'results': results,
                 'execution_time': sum(result.execution_time for result in self.results),
-                'total_stages': 11,
+                'total_stages': 12,
                 'completed_stages': len(self.results)
             }
             
@@ -731,6 +764,30 @@ class MarketAnalysisSubPipeline:
             # Prepare pipeline state with accumulated artifacts
             pipeline_state_with_artifacts = self._current_pipeline_state.copy()
             pipeline_state_with_artifacts['artifacts'] = self._accumulated_artifacts.copy()
+
+            # Ensure essential pipeline state parameters are present
+            # These are required by many components (e.g., optimal_regime_clustering)
+            essential_params = ['symbol', 'exchange', 'timeframe', 'data_dir']
+            for param in essential_params:
+                if param not in pipeline_state_with_artifacts:
+                    # Try to get from config
+                    if hasattr(config, param):
+                        pipeline_state_with_artifacts[param] = getattr(config, param)
+                    else:
+                        # Use defaults
+                        if param == 'data_dir':
+                            pipeline_state_with_artifacts[param] = 'historical_data'
+                        elif param == 'symbol':
+                            pipeline_state_with_artifacts[param] = 'BTCUSDT'
+                        elif param == 'exchange':
+                            pipeline_state_with_artifacts[param] = 'binance'
+                        elif param == 'timeframe':
+                            pipeline_state_with_artifacts[param] = '1m'
+
+            # Log missing parameters for debugging
+            missing_params = [param for param in essential_params if param not in pipeline_state_with_artifacts]
+            if missing_params:
+                self.logger.warning(f"⚠️ Some essential parameters were missing and added: {missing_params}")
             
             # Execute component
             component_result = await component.execute(self._current_data, pipeline_state_with_artifacts)
@@ -806,7 +863,7 @@ class MarketAnalysisSubPipeline:
         
         This method provides automatic sequential execution of all market analysis steps:
         1. sr_parameter_optimization - Optimize SR detection levels
-        2. sr_detection - Detect Support/Resistance levels  
+        2. sr_detection - Detect Support/Resistance levels
         3. sr_clustering - Generate SR clusters
         4. hmm_regime_discovery - Discover market regimes
         5. hmm_clustering - HMM-based regime clustering
@@ -816,7 +873,8 @@ class MarketAnalysisSubPipeline:
         9. multi_horizon_profit_labeler - Apply triple barrier method
         10. feature_lookback_optimization - Optimize feature lookback periods
         11. pid_based_feature_generation - Cross timeframe interaction features
-        
+        12. final_feature_selection - Final feature selection (120→100→80→60)
+
         When one step completes successfully, it automatically triggers the next step.
         
         Args:
@@ -862,7 +920,8 @@ class MarketAnalysisSubPipeline:
             'regime_data_splitting',
             'multi_horizon_profit_labeler',  # Updated from multi_horizon_labeling
             'feature_lookback_optimization',
-            'pid_based_feature_generation'
+            'pid_based_feature_generation',
+            'final_feature_selection'
         ]
         
         # Additional sub-pipelines that were missing

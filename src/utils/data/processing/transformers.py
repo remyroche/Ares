@@ -1,4 +1,4 @@
-"""Data streaming and chunking manager for handling large datasets efficiently."""
+"""Data streaming and transformation utilities for handling large datasets efficiently."""
 import pandas as pd
 
 from typing import Any, Dict, List, Optional, Tuple, Union, Iterator, Generator, Callable
@@ -48,6 +48,83 @@ class DataStreamingManager:
         self.performance_metrics = {'chunks_processed': 0, 'total_rows_processed': 0, 'memory_usage_peak': 0.0, 'processing_time_total': 0.0, 'compression_ratio': 0.0}
         self.logger.info(f'🚀 DataStreamingManager initialized (singleton): chunk_size={chunk_size}, memory_threshold={memory_threshold}')
         self._initialized = True
+
+
+class DataTransformer:
+    """Data transformation utilities for feature engineering."""
+
+    def __init__(self):
+        """Initialize the DataTransformer."""
+        self.logger = system_logger.getChild('DataTransformer')
+
+    def transform_features(self, data: pd.DataFrame, transformations: List[str] = None) -> pd.DataFrame:
+        """Apply transformations to features.
+
+        Args:
+            data: Input DataFrame
+            transformations: List of transformation types
+
+        Returns:
+            Transformed DataFrame
+        """
+        if transformations is None:
+            transformations = ['normalize', 'standardize']
+
+        transformed_data = data.copy()
+
+        for transformation in transformations:
+            try:
+                if transformation == 'normalize':
+                    transformed_data = self._normalize_features(transformed_data)
+                elif transformation == 'standardize':
+                    transformed_data = self._standardize_features(transformed_data)
+                elif transformation == 'log':
+                    transformed_data = self._log_transform_features(transformed_data)
+                elif transformation == 'sqrt':
+                    transformed_data = self._sqrt_transform_features(transformed_data)
+                else:
+                    self.logger.warning(f"Unknown transformation: {transformation}")
+            except Exception as e:
+                self.logger.warning(f"Failed to apply transformation {transformation}: {e}")
+
+        self.logger.info(f"Applied {len(transformations)} transformations to {len(data.columns)} features")
+        return transformed_data
+
+    def _normalize_features(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Normalize features to [0, 1] range."""
+        normalized_data = data.copy()
+        for col in data.select_dtypes(include=[np.number]).columns:
+            min_val = data[col].min()
+            max_val = data[col].max()
+            if max_val != min_val:
+                normalized_data[col] = (data[col] - min_val) / (max_val - min_val)
+        return normalized_data
+
+    def _standardize_features(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Standardize features to mean=0, std=1."""
+        standardized_data = data.copy()
+        for col in data.select_dtypes(include=[np.number]).columns:
+            mean_val = data[col].mean()
+            std_val = data[col].std()
+            if std_val > 0:
+                standardized_data[col] = (data[col] - mean_val) / std_val
+        return standardized_data
+
+    def _log_transform_features(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Apply log transformation to features."""
+        log_data = data.copy()
+        for col in data.select_dtypes(include=[np.number]).columns:
+            if (data[col] > 0).all():
+                log_data[col] = np.log(data[col])
+        return log_data
+
+    def _sqrt_transform_features(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Apply square root transformation to features."""
+        sqrt_data = data.copy()
+        for col in data.select_dtypes(include=[np.number]).columns:
+            if (data[col] >= 0).all():
+                sqrt_data[col] = np.sqrt(data[col])
+        return sqrt_data
 
     def get_memory_usage(self) -> float:
         """Get current memory usage as percentage."""

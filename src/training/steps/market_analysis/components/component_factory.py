@@ -10,14 +10,15 @@ from .sr_parameter_optimization import SRParameterOptimizationComponent
 from .sr_detection import SRDetectionComponent
 from .sr_clustering import SRClusteringComponent
 from .hmm_regime_discovery import HMMRegimeDiscoveryComponent
-from .hmm_clustering import HMMClusteringComponent
+from .optimal_regime_clustering import OptimalRegimeClusteringComponent
 # HMM training components moved to hmm_models_training module
 # from .hmm_models_training import HMMModelsTrainingComponent
-# from .hmm_ensemble_training import HMMEnsembleTrainingComponent
+from .hmm_ensemble_training_component import HMMEnsembleTrainingComponent
 # RegimeDataSplittingComponent imported lazily to avoid circular imports
 # TripleBarrierLabelingComponent moved to triple_barrier_labeling package
 from .feature_lookback_optimization import FeatureLookbackOptimizationComponent
 from .cross_timeframe_analysis import CrossTimeframeAnalysisComponent  # Now uses PID-based feature generation
+from .final_feature_selection import FinalFeatureSelectionComponent
 # Import the actual PID-based component for direct use
 try:
     from ..pid_based_feature_generation.pid_based_feature_generation_component import PIDBasedFeatureGenerationComponent
@@ -134,13 +135,23 @@ class HMMModelsTrainingComponentWrapper(BaseMarketAnalysisComponent):
             # Create training instance if not exists
             if self.training_instance is None:
                 self.training_instance = self.training_class()
-            
+
             # Extract required data from pipeline state
             X = pipeline_state.get('features')
             y = pipeline_state.get('targets')
             cluster_assignments = pipeline_state.get('cluster_assignments')
             feature_names = pipeline_state.get('feature_names')
-            
+            market_data = pipeline_state.get('market_data') or data  # Use data as fallback if market_data not in pipeline state
+
+            # Validate X and y alignment
+            if X is not None and y is not None and len(X) != len(y):
+                print(f"❌ X and y length mismatch: X={len(X)}, y={len(y)}")
+                return ComponentResult(
+                    success=False,
+                    artifacts={},
+                    error_message=f"X and y length mismatch: X={len(X)}, y={len(y)}"
+                )
+
             # If cluster_assignments is missing, try to get from hmm_clusters
             if cluster_assignments is None:
                 hmm_clusters = pipeline_state.get('hmm_clusters', {})
@@ -148,84 +159,38 @@ class HMMModelsTrainingComponentWrapper(BaseMarketAnalysisComponent):
                 if cluster_assignments is not None:
                     print(f"✅ Found cluster_assignments in hmm_clusters: {len(cluster_assignments)} samples")
             
-            # If still missing, try to load from artifacts (previous outcome files)
+            # Load cluster assignments directly from HMM training input file
             if cluster_assignments is None:
-                artifacts = pipeline_state.get('artifacts', {})
-                
-                # Check hmm_clustering artifacts
-                hmm_clustering_result = artifacts.get('hmm_clustering_result', {})
-                if hmm_clustering_result:
-                    cluster_assignments = hmm_clustering_result.get('cluster_assignments')
-                    if cluster_assignments is not None:
-                        print(f"✅ Found cluster_assignments in hmm_clustering artifacts: {len(cluster_assignments)} samples")
-                
-                # Check hmm_regime_discovery artifacts if still missing
-                if cluster_assignments is None:
-                    hmm_regime_result = artifacts.get('hmm_regime_discovery_result', {})
-                    if hmm_regime_result:
-                        # Try to get regime assignments as cluster assignments
-                        regime_assignments = hmm_regime_result.get('regime_assignments')
-                        if regime_assignments is not None:
-                            cluster_assignments = regime_assignments
-                            print(f"✅ Found regime_assignments as cluster_assignments: {len(cluster_assignments)} samples")
-                        
-                        # Also try direct cluster_assignments from regime discovery
-                        if cluster_assignments is None:
-                            cluster_assignments = hmm_regime_result.get('cluster_assignments')
-                            if cluster_assignments is not None:
-                                print(f"✅ Found cluster_assignments in hmm_regime_discovery artifacts: {len(cluster_assignments)} samples")
-            
-            # If still missing, try to load from the most recent outcome files
-            if cluster_assignments is None:
-                print("🔍 Attempting to load cluster_assignments from recent outcome files...")
                 try:
-                    from pathlib import Path
-                    import json
-                    
-                    outcome_dir = Path("outcomes")
-                    if outcome_dir.exists():
-                        # Look for the most recent hmm_clustering outcome
-                        clustering_files = list(outcome_dir.glob("market_analysis_hmm_clustering_outcome_*.json"))
-                        if clustering_files:
-                            latest_clustering = max(clustering_files, key=lambda f: f.stat().st_mtime)
-                            print(f"📂 Loading from: {latest_clustering}")
-                            
-                            with open(latest_clustering, 'r') as f:
-                                clustering_data = json.load(f)
-                            
-                            clustering_artifacts = clustering_data.get('artifacts', {})
-                            hmm_clustering_result = clustering_artifacts.get('hmm_clustering_result', {})
-                            cluster_assignments = hmm_clustering_result.get('cluster_assignments')
-                            
-                            if cluster_assignments is not None:
-                                print(f"✅ Loaded cluster_assignments from outcome file: {len(cluster_assignments)} samples")
-                        
-                        # If still missing, try hmm_regime_discovery outcomes
-                        if cluster_assignments is None:
-                            regime_files = list(outcome_dir.glob("market_analysis_hmm_regime_discovery_outcome_*.json"))
-                            if regime_files:
-                                latest_regime = max(regime_files, key=lambda f: f.stat().st_mtime)
-                                print(f"📂 Loading from: {latest_regime}")
-                                
-                                with open(latest_regime, 'r') as f:
-                                    regime_data = json.load(f)
-                                
-                                regime_artifacts = regime_data.get('artifacts', {})
-                                hmm_regime_result = regime_artifacts.get('hmm_regime_discovery_result', {})
-                                
-                                # Try regime assignments first
-                                regime_assignments = hmm_regime_result.get('regime_assignments')
-                                if regime_assignments is not None:
-                                    cluster_assignments = regime_assignments
-                                    print(f"✅ Loaded regime_assignments as cluster_assignments: {len(cluster_assignments)} samples")
-                                else:
-                                    # Try direct cluster assignments
-                                    cluster_assignments = hmm_regime_result.get('cluster_assignments')
-                                    if cluster_assignments is not None:
-                                        print(f"✅ Loaded cluster_assignments from regime discovery: {len(cluster_assignments)} samples")
-                                
+                    import glob
+                    import pickle
+
+                    # Find the latest HMM training input file
+                    hmm_input_pattern = "optimal_clusters/binance/ETHUSDT/15m/market_analysis_hmm_training_input_ETHUSDT_BINANCE_15m_*.pkl"
+                    hmm_input_files = glob.glob(hmm_input_pattern)
+
+                    if hmm_input_files:
+                        # Get the most recent file
+                        latest_file = max(hmm_input_files, key=lambda x: x.split('_')[-1].replace('.pkl', ''))
+                        print(f"🔍 Loading cluster assignments from latest HMM training input file: {latest_file}")
+
+                        with open(latest_file, 'rb') as f:
+                            hmm_input_data = pickle.load(f)
+
+                        if 'cluster_assignments' in hmm_input_data:
+                            cluster_assignments = hmm_input_data['cluster_assignments']
+                            print(f"✅ Loaded {len(cluster_assignments)} cluster assignments from HMM training input file")
+                            print(f"📊 Cluster assignments shape: {cluster_assignments.shape}, Unique clusters: {len(set(cluster_assignments))}")
+                        else:
+                            print(f"❌ No cluster_assignments found in HMM training input file")
+                            raise ValueError("No cluster_assignments found in HMM training input file")
+                    else:
+                        print(f"❌ No HMM training input files found matching pattern: {hmm_input_pattern}")
+                        raise ValueError("No HMM training input files found")
+
                 except Exception as e:
-                    print(f"⚠️ Failed to load from outcome files: {e}")
+                    print(f"❌ Error loading cluster assignments from HMM training input file: {e}")
+                    raise ValueError(f"Failed to load cluster assignments: {e}")
             
             # If we don't have features/targets, try to extract from dataframe
             if X is None or y is None:
@@ -236,26 +201,94 @@ class HMMModelsTrainingComponentWrapper(BaseMarketAnalysisComponent):
                     
                     # Create basic features and targets from OHLCV data
                     if 'close' in dataframe.columns:
-                        # Simple features: returns, volatility, etc.
-                        returns = dataframe['close'].pct_change().fillna(0)
-                        volatility = returns.rolling(20).std().fillna(0)
-                        # 30-day volume average (30 days * 96 15-min periods = 2880 periods)
-                        # Use available data for extrapolation when insufficient historical data
+                        # Create lagged features to avoid data leakage
+                        # Shift returns by 1 period to ensure features are from past, target is from future
+                        raw_returns = dataframe['close'].pct_change().fillna(0)
+
+                        # Features: lagged returns (past information only)
+                        returns_lag1 = raw_returns.shift(1).fillna(0)  # 1-period lagged returns
+                        returns_lag2 = raw_returns.shift(2).fillna(0)  # 2-period lagged returns
+                        returns_lag5 = raw_returns.shift(5).fillna(0)  # 5-period lagged returns
+
+                        # Volatility features (also lagged)
+                        volatility = raw_returns.rolling(20).std().fillna(0).shift(1).fillna(0)
+
+                        # Volume features
                         min_periods_30d = min(len(dataframe), 96)  # At least 1 day of data
                         volume_30d_avg = dataframe['volume'].rolling(window=2880, min_periods=min_periods_30d).mean()
-                        # Handle division by zero and missing values robustly
                         volume_ratio_30d = (dataframe['volume'] / volume_30d_avg.replace(0, dataframe['volume'].mean())).fillna(1) if 'volume' in dataframe.columns else pd.Series([1] * len(dataframe), index=dataframe.index)
+
+                        # Additional technical features - more diverse indicators
+                        sma_20 = dataframe['close'].rolling(20).mean().shift(1).fillna(dataframe['close'].iloc[0])
+                        sma_50 = dataframe['close'].rolling(50).mean().shift(1).fillna(dataframe['close'].iloc[0])
+                        price_position = (dataframe['close'] - sma_20) / sma_20.shift(1).fillna(1)
+
+                        # More technical indicators
+                        ema_12 = dataframe['close'].ewm(span=12).mean().shift(1).fillna(dataframe['close'].iloc[0])
+                        ema_26 = dataframe['close'].ewm(span=26).mean().shift(1).fillna(dataframe['close'].iloc[0])
+
+                        # RSI-like indicator
+                        price_changes = raw_returns
+                        gains = np.where(price_changes > 0, price_changes, 0)
+                        losses = np.where(price_changes < 0, -price_changes, 0)
+                        avg_gain = pd.Series(gains).rolling(14).mean().fillna(0).shift(1).fillna(0)
+                        avg_loss = pd.Series(losses).rolling(14).mean().fillna(0).shift(1).fillna(0)
+                        rs = avg_gain / avg_loss.replace(0, 1e-8)
+                        rsi = 100 - (100 / (1 + rs))
+
+                        # Bollinger Bands position
+                        bb_middle = sma_20
+                        bb_std = raw_returns.rolling(20).std().shift(1).fillna(0)
+                        bb_upper = bb_middle + (bb_std * 2)
+                        bb_lower = bb_middle - (bb_std * 2)
+                        bb_position = (dataframe['close'] - bb_middle) / (bb_upper - bb_lower).replace(0, 1)
+
+                        # Volume-weighted average price (VWAP) components
+                        typical_price = (dataframe['high'] + dataframe['low'] + dataframe['close']) / 3
+                        vwap = (typical_price * dataframe['volume']).rolling(20).sum() / dataframe['volume'].rolling(20).sum()
+                        vwap_position = (dataframe['close'] - vwap.shift(1).fillna(dataframe['close'].iloc[0])) / dataframe['close'].shift(1).fillna(dataframe['close'].iloc[0])
+
+                        # Price momentum indicators
+                        momentum_5 = dataframe['close'] / dataframe['close'].shift(5).fillna(1) - 1
+                        momentum_10 = dataframe['close'] / dataframe['close'].shift(10).fillna(1) - 1
+
+                        # Volatility ratios
+                        vol_short = raw_returns.rolling(5).std().shift(1).fillna(0)
+                        vol_long = raw_returns.rolling(20).std().shift(1).fillna(0)
+                        vol_ratio = vol_short / vol_long.replace(0, 1)
+
+                        X = np.column_stack([
+                            returns_lag1.values,    # Lagged returns (past info)
+                            returns_lag2.values,    # Lagged returns (past info)
+                            returns_lag5.values,    # Lagged returns (past info)
+                            volatility.values,      # Historical volatility
+                            volume_ratio_30d.values, # Volume ratio
+                            sma_20.values,          # Moving average
+                            sma_50.values,          # Moving average
+                            price_position.values,  # Price position
+                            ema_12.values,          # Exponential moving average
+                            ema_26.values,          # Exponential moving average
+                            rsi.values,             # RSI indicator
+                            bb_position.values,     # Bollinger Bands position
+                            vwap_position.values,   # VWAP position
+                            momentum_5.values,      # Short-term momentum
+                            momentum_10.values,     # Medium-term momentum
+                            vol_ratio.values        # Volatility ratio
+                        ])
+                        feature_names = [
+                            'returns_lag1', 'returns_lag2', 'returns_lag5',
+                            'volatility', 'volume_ratio_30d', 'sma_20', 'sma_50', 'price_position',
+                            'ema_12', 'ema_26', 'rsi', 'bb_position', 'vwap_position',
+                            'momentum_5', 'momentum_10', 'vol_ratio'
+                        ]
+
+                        # Create targets from future returns (not current returns) to avoid data leakage
+                        future_returns = raw_returns.shift(-1).fillna(0)  # Next period returns
                         
-                        X = np.column_stack([returns.values, volatility.values, volume_ratio_30d.values])
-                        feature_names = ['returns', 'volatility', 'volume_ratio_30d']
-                        
-                        # Create targets (current returns) - convert to discrete classes for on-the-spot classification
-                        current_returns = returns  # Use current returns, not future ones
-                        
-                        # Convert continuous returns to discrete classes for on-the-spot market condition
-                        # Class 0: Strong Down (< -2%), Class 1: Down (-2% to -0.5%), 
+                        # Convert continuous future returns to discrete classes for predictive modeling
+                        # Class 0: Strong Down (< -2%), Class 1: Down (-2% to -0.5%),
                         # Class 2: Sideways (-0.5% to 0.5%), Class 3: Up (0.5% to 2%), Class 4: Strong Up (> 2%)
-                        y_continuous = current_returns.values
+                        y_continuous = future_returns.values
                         y = np.zeros_like(y_continuous, dtype=int)
                         y[y_continuous < -0.02] = 0  # Strong Down
                         y[(y_continuous >= -0.02) & (y_continuous < -0.005)] = 1  # Down
@@ -289,8 +322,8 @@ class HMMModelsTrainingComponentWrapper(BaseMarketAnalysisComponent):
                   )
                   raise ValueError(error_msg)
             
-            # Execute training
-            results = self.training_instance.execute(X, y, cluster_assignments, feature_names)
+            # Execute training with comprehensive features
+            results = self.training_instance.execute(X, y, cluster_assignments, feature_names, market_data=market_data)
             
             # Create comprehensive artifact
             artifact = {
@@ -361,84 +394,38 @@ class HMMEnsembleTrainingComponentWrapper(BaseMarketAnalysisComponent):
                 if cluster_assignments is not None:
                     print(f"✅ Found cluster_assignments in hmm_clusters: {len(cluster_assignments)} samples")
             
-            # If still missing, try to load from artifacts (previous outcome files)
+            # Load cluster assignments directly from HMM training input file
             if cluster_assignments is None:
-                artifacts = pipeline_state.get('artifacts', {})
-                
-                # Check hmm_clustering artifacts
-                hmm_clustering_result = artifacts.get('hmm_clustering_result', {})
-                if hmm_clustering_result:
-                    cluster_assignments = hmm_clustering_result.get('cluster_assignments')
-                    if cluster_assignments is not None:
-                        print(f"✅ Found cluster_assignments in hmm_clustering artifacts: {len(cluster_assignments)} samples")
-                
-                # Check hmm_regime_discovery artifacts if still missing
-                if cluster_assignments is None:
-                    hmm_regime_result = artifacts.get('hmm_regime_discovery_result', {})
-                    if hmm_regime_result:
-                        # Try to get regime assignments as cluster assignments
-                        regime_assignments = hmm_regime_result.get('regime_assignments')
-                        if regime_assignments is not None:
-                            cluster_assignments = regime_assignments
-                            print(f"✅ Found regime_assignments as cluster_assignments: {len(cluster_assignments)} samples")
-                        
-                        # Also try direct cluster_assignments from regime discovery
-                        if cluster_assignments is None:
-                            cluster_assignments = hmm_regime_result.get('cluster_assignments')
-                            if cluster_assignments is not None:
-                                print(f"✅ Found cluster_assignments in hmm_regime_discovery artifacts: {len(cluster_assignments)} samples")
-            
-            # If still missing, try to load from the most recent outcome files
-            if cluster_assignments is None:
-                print("🔍 Attempting to load cluster_assignments from recent outcome files...")
                 try:
-                    from pathlib import Path
-                    import json
-                    
-                    outcome_dir = Path("outcomes")
-                    if outcome_dir.exists():
-                        # Look for the most recent hmm_clustering outcome
-                        clustering_files = list(outcome_dir.glob("market_analysis_hmm_clustering_outcome_*.json"))
-                        if clustering_files:
-                            latest_clustering = max(clustering_files, key=lambda f: f.stat().st_mtime)
-                            print(f"📂 Loading from: {latest_clustering}")
-                            
-                            with open(latest_clustering, 'r') as f:
-                                clustering_data = json.load(f)
-                            
-                            clustering_artifacts = clustering_data.get('artifacts', {})
-                            hmm_clustering_result = clustering_artifacts.get('hmm_clustering_result', {})
-                            cluster_assignments = hmm_clustering_result.get('cluster_assignments')
-                            
-                            if cluster_assignments is not None:
-                                print(f"✅ Loaded cluster_assignments from outcome file: {len(cluster_assignments)} samples")
-                        
-                        # If still missing, try hmm_regime_discovery outcomes
-                        if cluster_assignments is None:
-                            regime_files = list(outcome_dir.glob("market_analysis_hmm_regime_discovery_outcome_*.json"))
-                            if regime_files:
-                                latest_regime = max(regime_files, key=lambda f: f.stat().st_mtime)
-                                print(f"📂 Loading from: {latest_regime}")
-                                
-                                with open(latest_regime, 'r') as f:
-                                    regime_data = json.load(f)
-                                
-                                regime_artifacts = regime_data.get('artifacts', {})
-                                hmm_regime_result = regime_artifacts.get('hmm_regime_discovery_result', {})
-                                
-                                # Try regime assignments first
-                                regime_assignments = hmm_regime_result.get('regime_assignments')
-                                if regime_assignments is not None:
-                                    cluster_assignments = regime_assignments
-                                    print(f"✅ Loaded regime_assignments as cluster_assignments: {len(cluster_assignments)} samples")
-                                else:
-                                    # Try direct cluster assignments
-                                    cluster_assignments = hmm_regime_result.get('cluster_assignments')
-                                    if cluster_assignments is not None:
-                                        print(f"✅ Loaded cluster_assignments from regime discovery: {len(cluster_assignments)} samples")
-                                
+                    import glob
+                    import pickle
+
+                    # Find the latest HMM training input file
+                    hmm_input_pattern = "optimal_clusters/binance/ETHUSDT/15m/market_analysis_hmm_training_input_ETHUSDT_BINANCE_15m_*.pkl"
+                    hmm_input_files = glob.glob(hmm_input_pattern)
+
+                    if hmm_input_files:
+                        # Get the most recent file
+                        latest_file = max(hmm_input_files, key=lambda x: x.split('_')[-1].replace('.pkl', ''))
+                        print(f"🔍 Loading cluster assignments from latest HMM training input file: {latest_file}")
+
+                        with open(latest_file, 'rb') as f:
+                            hmm_input_data = pickle.load(f)
+
+                        if 'cluster_assignments' in hmm_input_data:
+                            cluster_assignments = hmm_input_data['cluster_assignments']
+                            print(f"✅ Loaded {len(cluster_assignments)} cluster assignments from HMM training input file")
+                            print(f"📊 Cluster assignments shape: {cluster_assignments.shape}, Unique clusters: {len(set(cluster_assignments))}")
+                        else:
+                            print(f"❌ No cluster_assignments found in HMM training input file")
+                            raise ValueError("No cluster_assignments found in HMM training input file")
+                    else:
+                        print(f"❌ No HMM training input files found matching pattern: {hmm_input_pattern}")
+                        raise ValueError("No HMM training input files found")
+
                 except Exception as e:
-                    print(f"⚠️ Failed to load from outcome files: {e}")
+                    print(f"❌ Error loading cluster assignments from HMM training input file: {e}")
+                    raise ValueError(f"Failed to load cluster assignments: {e}")
             
             # If we don't have features/targets, try to extract from dataframe
             if X is None or y is None:
@@ -449,26 +436,94 @@ class HMMEnsembleTrainingComponentWrapper(BaseMarketAnalysisComponent):
                     
                     # Create basic features and targets from OHLCV data
                     if 'close' in dataframe.columns:
-                        # Simple features: returns, volatility, etc.
-                        returns = dataframe['close'].pct_change().fillna(0)
-                        volatility = returns.rolling(20).std().fillna(0)
-                        # 30-day volume average (30 days * 96 15-min periods = 2880 periods)
-                        # Use available data for extrapolation when insufficient historical data
+                        # Create lagged features to avoid data leakage
+                        # Shift returns by 1 period to ensure features are from past, target is from future
+                        raw_returns = dataframe['close'].pct_change().fillna(0)
+
+                        # Features: lagged returns (past information only)
+                        returns_lag1 = raw_returns.shift(1).fillna(0)  # 1-period lagged returns
+                        returns_lag2 = raw_returns.shift(2).fillna(0)  # 2-period lagged returns
+                        returns_lag5 = raw_returns.shift(5).fillna(0)  # 5-period lagged returns
+
+                        # Volatility features (also lagged)
+                        volatility = raw_returns.rolling(20).std().fillna(0).shift(1).fillna(0)
+
+                        # Volume features
                         min_periods_30d = min(len(dataframe), 96)  # At least 1 day of data
                         volume_30d_avg = dataframe['volume'].rolling(window=2880, min_periods=min_periods_30d).mean()
-                        # Handle division by zero and missing values robustly
                         volume_ratio_30d = (dataframe['volume'] / volume_30d_avg.replace(0, dataframe['volume'].mean())).fillna(1) if 'volume' in dataframe.columns else pd.Series([1] * len(dataframe), index=dataframe.index)
+
+                        # Additional technical features - more diverse indicators
+                        sma_20 = dataframe['close'].rolling(20).mean().shift(1).fillna(dataframe['close'].iloc[0])
+                        sma_50 = dataframe['close'].rolling(50).mean().shift(1).fillna(dataframe['close'].iloc[0])
+                        price_position = (dataframe['close'] - sma_20) / sma_20.shift(1).fillna(1)
+
+                        # More technical indicators
+                        ema_12 = dataframe['close'].ewm(span=12).mean().shift(1).fillna(dataframe['close'].iloc[0])
+                        ema_26 = dataframe['close'].ewm(span=26).mean().shift(1).fillna(dataframe['close'].iloc[0])
+
+                        # RSI-like indicator
+                        price_changes = raw_returns
+                        gains = np.where(price_changes > 0, price_changes, 0)
+                        losses = np.where(price_changes < 0, -price_changes, 0)
+                        avg_gain = pd.Series(gains).rolling(14).mean().fillna(0).shift(1).fillna(0)
+                        avg_loss = pd.Series(losses).rolling(14).mean().fillna(0).shift(1).fillna(0)
+                        rs = avg_gain / avg_loss.replace(0, 1e-8)
+                        rsi = 100 - (100 / (1 + rs))
+
+                        # Bollinger Bands position
+                        bb_middle = sma_20
+                        bb_std = raw_returns.rolling(20).std().shift(1).fillna(0)
+                        bb_upper = bb_middle + (bb_std * 2)
+                        bb_lower = bb_middle - (bb_std * 2)
+                        bb_position = (dataframe['close'] - bb_middle) / (bb_upper - bb_lower).replace(0, 1)
+
+                        # Volume-weighted average price (VWAP) components
+                        typical_price = (dataframe['high'] + dataframe['low'] + dataframe['close']) / 3
+                        vwap = (typical_price * dataframe['volume']).rolling(20).sum() / dataframe['volume'].rolling(20).sum()
+                        vwap_position = (dataframe['close'] - vwap.shift(1).fillna(dataframe['close'].iloc[0])) / dataframe['close'].shift(1).fillna(dataframe['close'].iloc[0])
+
+                        # Price momentum indicators
+                        momentum_5 = dataframe['close'] / dataframe['close'].shift(5).fillna(1) - 1
+                        momentum_10 = dataframe['close'] / dataframe['close'].shift(10).fillna(1) - 1
+
+                        # Volatility ratios
+                        vol_short = raw_returns.rolling(5).std().shift(1).fillna(0)
+                        vol_long = raw_returns.rolling(20).std().shift(1).fillna(0)
+                        vol_ratio = vol_short / vol_long.replace(0, 1)
+
+                        X = np.column_stack([
+                            returns_lag1.values,    # Lagged returns (past info)
+                            returns_lag2.values,    # Lagged returns (past info)
+                            returns_lag5.values,    # Lagged returns (past info)
+                            volatility.values,      # Historical volatility
+                            volume_ratio_30d.values, # Volume ratio
+                            sma_20.values,          # Moving average
+                            sma_50.values,          # Moving average
+                            price_position.values,  # Price position
+                            ema_12.values,          # Exponential moving average
+                            ema_26.values,          # Exponential moving average
+                            rsi.values,             # RSI indicator
+                            bb_position.values,     # Bollinger Bands position
+                            vwap_position.values,   # VWAP position
+                            momentum_5.values,      # Short-term momentum
+                            momentum_10.values,     # Medium-term momentum
+                            vol_ratio.values        # Volatility ratio
+                        ])
+                        feature_names = [
+                            'returns_lag1', 'returns_lag2', 'returns_lag5',
+                            'volatility', 'volume_ratio_30d', 'sma_20', 'sma_50', 'price_position',
+                            'ema_12', 'ema_26', 'rsi', 'bb_position', 'vwap_position',
+                            'momentum_5', 'momentum_10', 'vol_ratio'
+                        ]
+
+                        # Create targets from future returns (not current returns) to avoid data leakage
+                        future_returns = raw_returns.shift(-1).fillna(0)  # Next period returns
                         
-                        X = np.column_stack([returns.values, volatility.values, volume_ratio_30d.values])
-                        feature_names = ['returns', 'volatility', 'volume_ratio_30d']
-                        
-                        # Create targets (current returns) - convert to discrete classes for on-the-spot classification
-                        current_returns = returns  # Use current returns, not future ones
-                        
-                        # Convert continuous returns to discrete classes for on-the-spot market condition
-                        # Class 0: Strong Down (< -2%), Class 1: Down (-2% to -0.5%), 
+                        # Convert continuous future returns to discrete classes for predictive modeling
+                        # Class 0: Strong Down (< -2%), Class 1: Down (-2% to -0.5%),
                         # Class 2: Sideways (-0.5% to 0.5%), Class 3: Up (0.5% to 2%), Class 4: Strong Up (> 2%)
-                        y_continuous = current_returns.values
+                        y_continuous = future_returns.values
                         y = np.zeros_like(y_continuous, dtype=int)
                         y[y_continuous < -0.02] = 0  # Strong Down
                         y[(y_continuous >= -0.02) & (y_continuous < -0.005)] = 1  # Down
@@ -540,14 +595,16 @@ class ComponentFactory:
         'sr_detection': SRDetectionComponent,
         'sr_clustering': SRClusteringComponent,
         'hmm_regime_discovery': HMMRegimeDiscoveryComponent,
-        'hmm_clustering': HMMClusteringComponent,
+        'hmm_clustering': OptimalRegimeClusteringComponent,  # Updated to use optimal regime clustering
+        'hmm_ensemble_training': HMMEnsembleTrainingComponent,
         # 'hmm_models_training': HMMModelsTrainingComponent,  # Moved to hmm_models_training module
         # 'hmm_ensemble_training': HMMEnsembleTrainingComponent,  # Removed
         # 'regime_data_splitting': RegimeDataSplittingComponent,  # Imported lazily to avoid circular imports
         # 'triple_barrier_labeling': TripleBarrierLabelingComponent,  # Moved to triple_barrier_labeling package
         'feature_lookback_optimization': FeatureLookbackOptimizationComponent,
         'cross_timeframe_analysis': CrossTimeframeAnalysisComponent,  # Now uses PID-based feature generation
-        'pid_based_feature_generation': PIDBasedFeatureGenerationComponent if PID_COMPONENT_AVAILABLE else CrossTimeframeAnalysisComponent  # Direct PID component or fallback
+        'pid_based_feature_generation': PIDBasedFeatureGenerationComponent if PID_COMPONENT_AVAILABLE else CrossTimeframeAnalysisComponent,  # Direct PID component or fallback
+        'final_feature_selection': FinalFeatureSelectionComponent  # Final feature selection step (120→100→80→60)
     }
     
     @classmethod
@@ -595,7 +652,7 @@ class ComponentFactory:
         
         if component_name == 'hmm_ensemble_training':
             try:
-                from ..hmm_models_training import HMMEnsembleTrainingComponent
+                from ..hmm_models_training.hmm_ensemble_training import HMMEnsembleTrainingComponent
                 return HMMEnsembleTrainingComponentWrapper(HMMEnsembleTrainingComponent, config)
             except ImportError as e:
                 raise ValueError(f"Failed to import HMMEnsembleTrainingComponent: {e}")

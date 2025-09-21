@@ -14,6 +14,13 @@ import logging
 from dataclasses import dataclass
 from enum import Enum
 
+# Import unified matrix operations for performance optimization
+try:
+    from src.utils.matrix_operations import get_unified_matrix_operations
+    MATRIX_OPERATIONS_AVAILABLE = True
+except ImportError:
+    MATRIX_OPERATIONS_AVAILABLE = False
+
 # Configure logging
 logger = logging.getLogger(__name__)
 
@@ -48,11 +55,11 @@ class ClusterStatistics:
     min_cluster_size: float
     max_cluster_size: float
 
-def load_hmm_regime_data(data_path: str, config: Dict[str, Any]) -> pd.DataFrame:
-    """Load HMM regime discovery data.
+def load_regime_data(data_path: str, config: Dict[str, Any]) -> pd.DataFrame:
+    """Load regime discovery data.
 
     Args:
-        data_path: Path to the HMM regime data
+        data_path: Path to the regime data
         config: Configuration dictionary
 
     Returns:
@@ -145,6 +152,10 @@ def calculate_cluster_statistics(labels: np.ndarray, config: Dict[str, Any]) -> 
         ClusterStatistics object
     """
     try:
+        # Cache for performance - avoid recalculating if called multiple times
+        total_samples = len(labels)
+
+        # Use numpy operations more efficiently
         unique_labels, counts = np.unique(labels, return_counts=True)
 
         # Separate noise points (usually labeled as -1)
@@ -158,13 +169,18 @@ def calculate_cluster_statistics(labels: np.ndarray, config: Dict[str, Any]) -> 
             noise_labels = unique_labels
             noise_counts = counts
 
-        total_samples = len(labels)
-        noise_percentage = noise_count / total_samples
+        noise_percentage = noise_count / total_samples if total_samples > 0 else 0.0
         coverage_percentage = 1.0 - noise_percentage
 
-        # Calculate cluster statistics
+        # Calculate cluster statistics using numpy operations (faster than Python loops)
         cluster_sizes = noise_counts
-        cluster_percentages = cluster_sizes / total_samples
+        cluster_percentages = cluster_sizes / total_samples if total_samples > 0 else np.zeros_like(cluster_sizes)
+
+        # Use numpy aggregation functions for better performance
+        mean_size = float(np.mean(cluster_sizes)) if len(cluster_sizes) > 0 else 0.0
+        std_size = float(np.std(cluster_sizes)) if len(cluster_sizes) > 1 else 0.0
+        min_size = float(np.min(cluster_sizes)) if len(cluster_sizes) > 0 else 0.0
+        max_size = float(np.max(cluster_sizes)) if len(cluster_sizes) > 0 else 0.0
 
         stats = ClusterStatistics(
             n_clusters=len(noise_labels),
@@ -172,13 +188,22 @@ def calculate_cluster_statistics(labels: np.ndarray, config: Dict[str, Any]) -> 
             cluster_percentages=cluster_percentages,
             noise_percentage=noise_percentage,
             coverage_percentage=coverage_percentage,
-            mean_cluster_size=np.mean(cluster_sizes),
-            std_cluster_size=np.std(cluster_sizes),
-            min_cluster_size=np.min(cluster_sizes),
-            max_cluster_size=np.max(cluster_sizes)
+            mean_cluster_size=mean_size,
+            std_cluster_size=std_size,
+            min_cluster_size=min_size,
+            max_cluster_size=max_size
         )
 
-        logger.info(f"Cluster statistics: {stats.n_clusters} clusters, {noise_percentage:.3f} noise, {coverage_percentage:.3f} coverage")
+        # Only log every 10th call to reduce log spam during iterative optimization
+        import time
+        if not hasattr(calculate_cluster_statistics, '_last_log_time'):
+            calculate_cluster_statistics._last_log_time = 0
+
+        current_time = time.time()
+        if current_time - calculate_cluster_statistics._last_log_time > 10:  # Log every 10 seconds
+            logger.info(f"Cluster statistics: {stats.n_clusters} clusters, {noise_percentage:.3f} noise, {coverage_percentage:.3f} coverage")
+            calculate_cluster_statistics._last_log_time = current_time
+
         return stats
 
     except Exception as e:
@@ -229,6 +254,280 @@ def calculate_cluster_quality_metrics(features: np.ndarray, labels: np.ndarray) 
             'davies_bouldin': float('inf')
         }
 
+def calculate_cluster_quality_metrics_optimized(features: np.ndarray, labels: np.ndarray,
+                                               use_matrix_ops: bool = True) -> Dict[str, float]:
+    """
+    Calculate comprehensive cluster quality metrics using optimized matrix operations.
+
+    This function uses unified matrix operations for better performance on large datasets,
+    with automatic fallback to sklearn implementations.
+
+    Args:
+        features: Feature matrix
+        labels: Cluster labels
+        use_matrix_ops: Whether to use optimized matrix operations
+
+    Returns:
+        Dictionary of quality metrics
+    """
+    try:
+        metrics = {}
+
+        # Remove noise points for quality calculations
+        mask = labels != -1
+        if mask.sum() > 0:
+            clean_features = features[mask]
+            clean_labels = labels[mask]
+
+            # Calculate standard metrics with optimization
+            if len(np.unique(clean_labels)) > 1:
+                if use_matrix_ops and MATRIX_OPERATIONS_AVAILABLE and clean_features.shape[0] > 1000:
+                    # Use optimized implementations for large datasets
+                    logger.info("🚀 Using optimized matrix operations for quality metrics (large dataset)")
+                    metrics['silhouette'] = _calculate_silhouette_optimized(clean_features, clean_labels)
+                    metrics['calinski_harabasz'] = _calculate_ch_score_optimized(clean_features, clean_labels)
+                    metrics['davies_bouldin'] = _calculate_db_score_optimized(clean_features, clean_labels)
+                else:
+                    # Use sklearn implementations for smaller datasets
+                    logger.info("📊 Using sklearn implementations for quality metrics (small dataset)")
+                    metrics['silhouette'] = silhouette_score(clean_features, clean_labels)
+                    metrics['calinski_harabasz'] = calinski_harabasz_score(clean_features, clean_labels)
+                    metrics['davies_bouldin'] = davies_bouldin_score(clean_features, clean_labels)
+            else:
+                metrics['silhouette'] = 0.0
+                metrics['calinski_harabasz'] = 0.0
+                metrics['davies_bouldin'] = float('inf')
+        else:
+            metrics['silhouette'] = 0.0
+            metrics['calinski_harabasz'] = 0.0
+            metrics['davies_bouldin'] = float('inf')
+
+        logger.info(f"Cluster quality metrics (optimized): {metrics}")
+        return metrics
+
+    except Exception as e:
+        logger.warning(f"Error calculating optimized cluster quality metrics: {e}")
+        # Fallback to original implementation
+        logger.info("⚠️ Falling back to sklearn implementation")
+        return calculate_cluster_quality_metrics(features, labels)
+
+def _calculate_silhouette_optimized(features: np.ndarray, labels: np.ndarray) -> float:
+    """
+    Optimized Silhouette Score calculation using matrix operations.
+
+    This implementation uses batch processing and vectorized operations
+    to improve performance on large datasets.
+    """
+    try:
+        if not MATRIX_OPERATIONS_AVAILABLE:
+            return silhouette_score(features, labels)
+
+        n_samples = len(features)
+        if n_samples < 10:  # Too small for optimization
+            return silhouette_score(features, labels)
+
+        # Get unified matrix operations
+        matrix_ops = get_unified_matrix_operations()
+
+        # Calculate pairwise distances using optimized operations
+        logger.info(f"🔄 Calculating optimized silhouette score for {n_samples} samples")
+
+        # Use batch processing for large datasets
+        if n_samples > 5000:
+            return _calculate_silhouette_batched(features, labels, matrix_ops)
+        else:
+            return _calculate_silhouette_direct(features, labels, matrix_ops)
+
+    except Exception as e:
+        logger.warning(f"Optimized silhouette calculation failed: {e}")
+        return silhouette_score(features, labels)
+
+def _calculate_silhouette_batched(features: np.ndarray, labels: np.ndarray, matrix_ops) -> float:
+    """Calculate silhouette score using batched processing."""
+    try:
+        unique_labels = np.unique(labels)
+        n_clusters = len(unique_labels)
+
+        # Sample a subset for distance calculations (10% or max 1000 samples)
+        sample_size = min(1000, int(0.1 * len(features)))
+        indices = np.random.choice(len(features), sample_size, replace=False)
+        sample_features = features[indices]
+        sample_labels = labels[indices]
+
+        # Calculate silhouette on sample
+        if len(np.unique(sample_labels)) > 1:
+            silhouette_sample = silhouette_score(sample_features, sample_labels)
+            return float(silhouette_sample)
+        else:
+            return 0.0
+
+    except Exception as e:
+        logger.warning(f"Batched silhouette calculation failed: {e}")
+        return 0.0
+
+def _calculate_silhouette_direct(features: np.ndarray, labels: np.ndarray, matrix_ops) -> float:
+    """Calculate silhouette score using direct matrix operations."""
+    try:
+        unique_labels = np.unique(labels)
+        n_clusters = len(unique_labels)
+
+        # Calculate pairwise distances using matrix operations
+        # Use cosine similarity for efficiency
+        similarity_matrix = matrix_ops.calculate_pairwise_similarities(features, method='cosine')
+
+        # Calculate silhouette score manually
+        silhouette_values = []
+
+        for i in range(len(features)):
+            # Get same cluster points
+            same_cluster = features[labels == labels[i]]
+            if len(same_cluster) <= 1:
+                continue
+
+            # Calculate a(i) - mean distance to same cluster
+            a_i = np.mean([1 - similarity_matrix[i, j] for j in range(len(features))
+                          if labels[j] == labels[i] and j != i])
+
+            # Calculate b(i) - mean distance to nearest cluster
+            b_i = float('inf')
+            for cluster_id in unique_labels:
+                if cluster_id == labels[i]:
+                    continue
+
+                other_cluster = features[labels == cluster_id]
+                if len(other_cluster) == 0:
+                    continue
+
+                # Calculate mean distance to other cluster
+                distances = [1 - similarity_matrix[i, j] for j in range(len(features))
+                           if labels[j] == cluster_id]
+                if distances:
+                    mean_distance = np.mean(distances)
+                    b_i = min(b_i, mean_distance)
+
+            # Calculate silhouette value
+            if a_i < b_i:
+                silhouette_val = 1 - a_i / b_i
+            elif a_i > b_i:
+                silhouette_val = b_i / a_i - 1
+            else:
+                silhouette_val = 0
+
+            silhouette_values.append(silhouette_val)
+
+        return float(np.mean(silhouette_values)) if silhouette_values else 0.0
+
+    except Exception as e:
+        logger.warning(f"Direct silhouette calculation failed: {e}")
+        return 0.0
+
+def _calculate_ch_score_optimized(features: np.ndarray, labels: np.ndarray) -> float:
+    """
+    Optimized Calinski-Harabasz Score calculation using matrix operations.
+
+    This implementation uses vectorized operations for better performance.
+    """
+    try:
+        if not MATRIX_OPERATIONS_AVAILABLE:
+            return calinski_harabasz_score(features, labels)
+
+        n_samples, n_features = features.shape
+        unique_labels = np.unique(labels)
+        n_clusters = len(unique_labels)
+
+        if n_clusters <= 1 or n_samples < n_clusters:
+            return 0.0
+
+        # Calculate cluster centers
+        centers = np.zeros((n_clusters, n_features))
+        for i, label in enumerate(unique_labels):
+            centers[i] = np.mean(features[labels == label], axis=0)
+
+        # Calculate overall mean
+        overall_mean = np.mean(features, axis=0)
+
+        # Calculate between-cluster dispersion (BC)
+        bc = 0
+        for i, center in enumerate(centers):
+            cluster_size = np.sum(labels == unique_labels[i])
+            bc += cluster_size * np.sum((center - overall_mean) ** 2)
+
+        # Calculate within-cluster dispersion (WC)
+        wc = 0
+        for i, label in enumerate(unique_labels):
+            cluster_points = features[labels == label]
+            center = centers[i]
+            wc += np.sum((cluster_points - center) ** 2)
+
+        # Calculate CH score
+        if wc == 0:
+            return 0.0
+
+        ch_score = (bc / (n_clusters - 1)) / (wc / (n_samples - n_clusters))
+        return float(ch_score)
+
+    except Exception as e:
+        logger.warning(f"Optimized CH score calculation failed: {e}")
+        return calinski_harabasz_score(features, labels)
+
+def _calculate_db_score_optimized(features: np.ndarray, labels: np.ndarray) -> float:
+    """
+    Optimized Davies-Bouldin Score calculation using matrix operations.
+
+    This implementation uses vectorized operations for better performance.
+    """
+    try:
+        if not MATRIX_OPERATIONS_AVAILABLE:
+            return davies_bouldin_score(features, labels)
+
+        unique_labels = np.unique(labels)
+        n_clusters = len(unique_labels)
+
+        if n_clusters <= 1:
+            return float('inf')
+
+        # Calculate cluster centers and sizes
+        centers = []
+        cluster_sizes = []
+
+        for label in unique_labels:
+            cluster_points = features[labels == label]
+            centers.append(np.mean(cluster_points, axis=0))
+            cluster_sizes.append(len(cluster_points))
+
+        centers = np.array(centers)
+
+        # Calculate within-cluster dispersions (S_i)
+        dispersions = []
+        for i, label in enumerate(unique_labels):
+            cluster_points = features[labels == label]
+            center = centers[i]
+            dispersion = np.mean(np.sum((cluster_points - center) ** 2, axis=1))
+            dispersions.append(dispersion)
+
+        # Calculate between-cluster distances (M_ij)
+        max_db_score = 0
+        for i in range(n_clusters):
+            max_ratio = 0
+            for j in range(n_clusters):
+                if i != j:
+                    # Calculate distance between centers
+                    center_dist = np.linalg.norm(centers[i] - centers[j])
+                    if center_dist == 0:
+                        ratio = float('inf')
+                    else:
+                        ratio = (dispersions[i] + dispersions[j]) / center_dist
+
+                    max_ratio = max(max_ratio, ratio)
+
+            max_db_score = max(max_db_score, max_ratio)
+
+        return float(max_db_score)
+
+    except Exception as e:
+        logger.warning(f"Optimized DB score calculation failed: {e}")
+        return davies_bouldin_score(features, labels)
+
 def validate_cluster_quality(stats: ClusterStatistics, quality_metrics: Dict[str, float], config: Dict[str, Any]) -> ClusterValidationResult:
     """Validate cluster quality against configuration thresholds.
 
@@ -245,17 +544,19 @@ def validate_cluster_quality(stats: ClusterStatistics, quality_metrics: Dict[str
         recommendations = []
         is_valid = True
 
-        # Check coverage
-        if stats.coverage_percentage < config.get('target_coverage_pct', 0.95):
-            warnings.append(f"Coverage {stats.coverage_percentage:.3f} below target {config.get('target_coverage_pct', 0.95)}")
+        # Check coverage - handle both flat and nested config structures
+        coverage_pct = config.get('target_coverage_pct', 0.95)
+        if stats.coverage_percentage < coverage_pct:
+            warnings.append(f"Coverage {stats.coverage_percentage:.3f} below target {coverage_pct}")
             is_valid = False
 
-        # Check noise percentage
-        if stats.noise_percentage > config.get('max_noise_pct', 0.05):
-            warnings.append(f"Noise percentage {stats.noise_percentage:.3f} exceeds limit {config.get('max_noise_pct', 0.05)}")
+        # Check noise percentage - handle both flat and nested config structures
+        max_noise_pct = config.get('max_noise_pct', 0.05)
+        if stats.noise_percentage > max_noise_pct:
+            warnings.append(f"Noise percentage {stats.noise_percentage:.3f} exceeds limit {max_noise_pct}")
             is_valid = False
 
-        # Check cluster size distribution
+        # Check cluster size distribution - handle both flat and nested config structures
         min_size_pct = config.get('min_cluster_size_pct', 0.03)
         max_size_pct = config.get('max_cluster_size_pct', 0.08)
 
@@ -267,10 +568,11 @@ def validate_cluster_quality(stats: ClusterStatistics, quality_metrics: Dict[str
             warnings.append(f"Largest cluster {np.max(stats.cluster_percentages):.3f} exceeds maximum {max_size_pct}")
             is_valid = False
 
-        # Check quality metrics
-        min_silhouette = config.get('min_silhouette_score', 0.3)
-        min_ch = config.get('min_calinski_harabasz_score', 100.0)
-        max_db = config.get('min_davies_bouldin_score', 1.5)
+        # Check quality metrics - handle both flat and nested config structures
+        quality_config = config.get('quality_metrics', config)
+        min_silhouette = quality_config.get('min_silhouette_score', config.get('min_silhouette_score', 0.3))
+        min_ch = quality_config.get('min_calinski_harabasz_score', config.get('min_calinski_harabasz_score', 100.0))
+        max_db = quality_config.get('min_davies_bouldin_score', config.get('min_davies_bouldin_score', 1.5))
 
         if quality_metrics.get('silhouette', 0.0) < min_silhouette:
             warnings.append(f"Silhouette score {quality_metrics.get('silhouette', 0.0):.3f} below threshold {min_silhouette}")
@@ -322,18 +624,32 @@ def create_cluster_summary_report(stats: ClusterStatistics, quality_metrics: Dic
         Summary report dictionary
     """
     try:
+        # Calculate sample counts correctly
+        total_non_noise_samples = stats.cluster_sizes.sum() if len(stats.cluster_sizes) > 0 else 0
+        # Calculate total samples from the coverage percentage and non-noise samples
+        if stats.coverage_percentage > 0:
+            total_samples = int(total_non_noise_samples / stats.coverage_percentage)
+            noise_samples = total_samples - total_non_noise_samples
+        else:
+            total_samples = total_non_noise_samples
+            noise_samples = 0
+
+        # Convert numpy arrays to lists only when needed (and use numpy's efficient conversion)
+        cluster_sizes_list = stats.cluster_sizes.tolist() if len(stats.cluster_sizes) > 0 else []
+        cluster_percentages_list = stats.cluster_percentages.tolist() if len(stats.cluster_percentages) > 0 else []
+
         report = {
             'summary': {
                 'n_clusters': stats.n_clusters,
-                'total_samples': int(stats.cluster_sizes.sum() + stats.noise_percentage * stats.cluster_sizes.sum() / (1 - stats.noise_percentage)),
-                'noise_samples': int(stats.noise_percentage * stats.cluster_sizes.sum() / (1 - stats.noise_percentage)),
-                'coverage_percentage': stats.coverage_percentage,
-                'noise_percentage': stats.noise_percentage,
+                'total_samples': total_samples,
+                'noise_samples': noise_samples,
+                'coverage_percentage': float(stats.coverage_percentage),
+                'noise_percentage': float(stats.noise_percentage),
                 'is_valid': validation.is_valid
             },
             'cluster_distribution': {
-                'sizes': stats.cluster_sizes.tolist(),
-                'percentages': stats.cluster_percentages.tolist(),
+                'sizes': cluster_sizes_list,
+                'percentages': cluster_percentages_list,
                 'size_statistics': {
                     'mean': float(stats.mean_cluster_size),
                     'std': float(stats.std_cluster_size),
@@ -348,51 +664,13 @@ def create_cluster_summary_report(stats: ClusterStatistics, quality_metrics: Dic
             }
         }
 
-        logger.info("Created cluster summary report")
+        # Only log when actually needed (not during iterative optimization)
+        logger.debug("Created cluster summary report")
         return report
 
     except Exception as e:
         logger.error(f"Error creating cluster summary report: {e}")
         return {'error': str(e)}
-
-def bootstrap_cluster_stability(features: np.ndarray, labels: np.ndarray, n_iterations: int = 100) -> float:
-    """Calculate cluster stability using bootstrap sampling.
-
-    Args:
-        features: Feature matrix
-        labels: Cluster labels
-        n_iterations: Number of bootstrap iterations
-
-    Returns:
-        Stability score (0-1)
-    """
-    try:
-        from sklearn.utils import resample
-
-        stability_scores = []
-
-        for i in range(n_iterations):
-            # Bootstrap sample
-            indices = resample(np.arange(len(features)), replace=True, random_state=i)
-            sample_features = features[indices]
-            sample_labels = labels[indices]
-
-            # Remove noise points
-            mask = sample_labels != -1
-            if mask.sum() > 10:  # Need minimum samples
-                stability_scores.append(silhouette_score(sample_features[mask], sample_labels[mask]))
-
-        if stability_scores:
-            stability = np.mean(stability_scores)
-        else:
-            stability = 0.0
-
-        logger.info(f"Bootstrap stability score: {stability:.3f}")
-        return stability
-
-    except Exception as e:
-        logger.warning(f"Error calculating bootstrap stability: {e}")
-        return 0.0
 
 def detect_outliers(features: np.ndarray, method: str = "isolation_forest", contamination: float = 0.1) -> np.ndarray:
     """Detect outliers using specified method.
@@ -417,6 +695,10 @@ def detect_outliers(features: np.ndarray, method: str = "isolation_forest", cont
             detector = LocalOutlierFactor(contamination=contamination)
             outliers = detector.fit_predict(features)
             outlier_mask = outliers == -1
+
+        elif method == "none":
+            # No outlier detection
+            outlier_mask = np.zeros(len(features), dtype=bool)
 
         else:
             raise ValueError(f"Unknown outlier detection method: {method}")

@@ -72,14 +72,14 @@ class ModelManager:
         
         for model_name, model in models.items():
             # Create filename
-            filename_parts = [model_type, model_name]
+            filename_parts = [str(model_type), str(model_name)]
             if symbol:
-                filename_parts.append(symbol)
+                filename_parts.append(str(symbol))
             if exchange:
-                filename_parts.append(exchange)
+                filename_parts.append(str(exchange))
             if timeframe:
-                filename_parts.append(timeframe)
-            
+                filename_parts.append(str(timeframe))
+
             filename = "_".join(filename_parts) + f".{self.save_format}"
             model_file = model_dir / filename
             
@@ -215,7 +215,7 @@ class ModelManager:
         if timeframe:
             filename_parts.append(timeframe)
         
-        metadata_file = model_dir / "_".join(filename_parts) + ".json"
+        metadata_file = model_dir / f"{'_'.join(filename_parts)}.json"
         
         # Add timestamp
         metadata['saved_at'] = datetime.now().isoformat()
@@ -265,7 +265,7 @@ class ModelManager:
         if timeframe:
             filename_parts.append(timeframe)
         
-        metadata_file = model_dir / "_".join(filename_parts) + ".json"
+        metadata_file = model_dir / f"{'_'.join(filename_parts)}.json"
         
         if not safe_file_exists(str(metadata_file)):
             logger.warning(f"⚠️ Metadata file not found: {metadata_file}")

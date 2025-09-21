@@ -63,9 +63,310 @@ class TrendFeatureGenerator(VectorizedFeatureGenerator):
     def _calculate_sma(self, prices: np.ndarray, period: int = 20) -> np.ndarray:
         if len(prices) < period:
             return np.full(len(prices), np.nan)
-        
+
         sma = pd.Series(prices).rolling(window=period).mean().values
         return sma
+
+    def _calculate_ema(self, prices: np.ndarray, period: int = 20) -> np.ndarray:
+        """Calculate Exponential Moving Average."""
+        if len(prices) < period:
+            return np.full(len(prices), np.nan)
+
+        ema = pd.Series(prices).ewm(span=period).mean().values
+        return ema
+
+    def _calculate_adx(self, high: np.ndarray, low: np.ndarray, close: np.ndarray, period: int = 14) -> np.ndarray:
+        """
+        Calculate Average Directional Index (ADX).
+
+        Args:
+            high: High prices
+            low: Low prices
+            close: Close prices
+            period: ADX period (default 14)
+
+        Returns:
+            ADX values
+        """
+        if len(high) < period or len(low) < period or len(close) < period:
+            return np.full(len(close), np.nan)
+
+        # Calculate True Range
+        tr = np.maximum.reduce([
+            high - low,
+            np.abs(high - np.roll(close, 1)),
+            np.abs(low - np.roll(close, 1))
+        ])
+        tr[0] = np.nan  # First value is NaN
+
+        # Calculate Directional Movement
+        dm_plus = np.maximum(high - np.roll(high, 1), 0)
+        dm_minus = np.maximum(np.roll(low, 1) - low, 0)
+
+        # Calculate Directional Indicators
+        di_plus = 100 * (dm_plus.rolling(period).mean() / tr.rolling(period).mean())
+        di_minus = 100 * (dm_minus.rolling(period).mean() / tr.rolling(period).mean())
+
+        # Calculate ADX
+        dx = 100 * np.abs(di_plus - di_minus) / (di_plus + di_minus)
+        adx = dx.rolling(period).mean()
+
+        return adx.values
+
+    def _calculate_directional_signal(self, prices: np.ndarray) -> np.ndarray:
+        """
+        Calculate directional signal as EMA_8 - EMA_20.
+
+        Args:
+            prices: Price data
+
+        Returns:
+            Directional signal values
+        """
+        ema_8 = self._calculate_ema(prices, period=8)
+        ema_20 = self._calculate_ema(prices, period=20)
+
+        # Calculate directional signal
+        directional_signal = ema_8 - ema_20
+
+        return directional_signal
+
+    def _calculate_trend_score(self, prices: np.ndarray, high: np.ndarray, low: np.ndarray, close: np.ndarray) -> np.ndarray:
+        """
+        Calculate trend score as normalized directional signal multiplied by ADX.
+
+        Args:
+            prices: Price data
+            high: High prices
+            low: Low prices
+            close: Close prices
+
+        Returns:
+            Trend score values
+        """
+        # Calculate directional signal
+        directional_signal = self._calculate_directional_signal(prices)
+
+        # Calculate ADX
+        adx = self._calculate_adx(high, low, close, period=14)
+
+        # Normalize directional signal to [-1, 1] range
+        signal_max = np.nanmax(np.abs(directional_signal))
+        if signal_max > 0:
+            normalized_signal = directional_signal / signal_max
+        else:
+            normalized_signal = directional_signal
+
+        # Calculate trend score
+        trend_score = normalized_signal * adx
+
+        return trend_score
+
+class ADXGenerator(FeatureGenerator):
+    """Generator for Average Directional Index (ADX)."""
+
+    def __init__(self, period: int = 14):
+        """
+        Initialize ADX generator.
+
+        Args:
+            period: ADX period (default 14)
+        """
+        config = FeatureConfig(
+            name=f"adx_{period}",
+            category=FeatureCategory.TREND,
+            description=f"Average Directional Index over {period} periods",
+            required_columns=["high", "low", "close"],
+            default_lookback=period * 2,  # Need more data for ADX calculation
+            min_lookback=period * 2,
+            max_lookback=period * 2,
+            parameters={
+                'period': period
+            }
+        )
+        super().__init__(config)
+        self.period = period
+
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate ADX values."""
+        high = data['high'].values
+        low = data['low'].values
+        close = data['close'].values
+
+        adx = self._calculate_adx(high, low, close, period=self.period)
+
+        return pd.Series(adx, index=data.index, name=f'adx_{self.period}')
+
+    def _calculate_adx(self, high: np.ndarray, low: np.ndarray, close: np.ndarray, period: int = 14) -> np.ndarray:
+        """Calculate Average Directional Index (ADX)."""
+        if len(high) < period or len(low) < period or len(close) < period:
+            return np.full(len(close), np.nan)
+
+        # Calculate True Range
+        tr = np.maximum.reduce([
+            high - low,
+            np.abs(high - np.roll(close, 1)),
+            np.abs(low - np.roll(close, 1))
+        ])
+        tr[0] = np.nan  # First value is NaN
+
+        # Calculate Directional Movement
+        dm_plus = np.maximum(high - np.roll(high, 1), 0)
+        dm_minus = np.maximum(np.roll(low, 1) - low, 0)
+
+        # Calculate Directional Indicators
+        di_plus = 100 * (dm_plus.rolling(period).mean() / tr.rolling(period).mean())
+        di_minus = 100 * (dm_minus.rolling(period).mean() / tr.rolling(period).mean())
+
+        # Calculate ADX
+        dx = 100 * np.abs(di_plus - di_minus) / (di_plus + di_minus)
+        adx = dx.rolling(period).mean()
+
+        return adx.values
+
+class DirectionalSignalGenerator(FeatureGenerator):
+    """Generator for Directional Signal (EMA_8 - EMA_20)."""
+
+    def __init__(self):
+        """Initialize Directional Signal generator."""
+        config = FeatureConfig(
+            name="directional_signal",
+            category=FeatureCategory.TREND,
+            description="Directional signal calculated as EMA_8 - EMA_20",
+            required_columns=["close"],
+            default_lookback=20,  # Need enough data for both EMAs
+            min_lookback=20,
+            max_lookback=20,
+            parameters={}
+        )
+        super().__init__(config)
+
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate directional signal values."""
+        prices = data['close'].values
+
+        directional_signal = self._calculate_directional_signal(prices)
+
+        return pd.Series(directional_signal, index=data.index, name='directional_signal')
+
+    def _calculate_ema(self, prices: np.ndarray, period: int = 20) -> np.ndarray:
+        """Calculate Exponential Moving Average."""
+        if len(prices) < period:
+            return np.full(len(prices), np.nan)
+
+        ema = pd.Series(prices).ewm(span=period).mean().values
+        return ema
+
+    def _calculate_directional_signal(self, prices: np.ndarray) -> np.ndarray:
+        """Calculate directional signal as EMA_8 - EMA_20."""
+        ema_8 = self._calculate_ema(prices, period=8)
+        ema_20 = self._calculate_ema(prices, period=20)
+
+        # Calculate directional signal
+        directional_signal = ema_8 - ema_20
+
+        return directional_signal
+
+class TrendScoreGenerator(FeatureGenerator):
+    """Generator for Trend Score (normalized directional signal * ADX)."""
+
+    def __init__(self, adx_period: int = 14):
+        """
+        Initialize Trend Score generator.
+
+        Args:
+            adx_period: ADX period (default 14)
+        """
+        config = FeatureConfig(
+            name=f"trend_score_{adx_period}",
+            category=FeatureCategory.TREND,
+            description=f"Trend score calculated as normalized directional signal multiplied by ADX ({adx_period})",
+            required_columns=["close", "high", "low"],
+            default_lookback=adx_period * 2,  # Need enough data for both calculations
+            min_lookback=adx_period * 2,
+            max_lookback=adx_period * 2,
+            parameters={
+                'adx_period': adx_period
+            }
+        )
+        super().__init__(config)
+        self.adx_period = adx_period
+
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate trend score values."""
+        prices = data['close'].values
+        high = data['high'].values
+        low = data['low'].values
+        close = data['close'].values
+
+        trend_score = self._calculate_trend_score(prices, high, low, close)
+
+        return pd.Series(trend_score, index=data.index, name=f'trend_score_{self.adx_period}')
+
+    def _calculate_ema(self, prices: np.ndarray, period: int = 20) -> np.ndarray:
+        """Calculate Exponential Moving Average."""
+        if len(prices) < period:
+            return np.full(len(prices), np.nan)
+
+        ema = pd.Series(prices).ewm(span=period).mean().values
+        return ema
+
+    def _calculate_adx(self, high: np.ndarray, low: np.ndarray, close: np.ndarray, period: int = 14) -> np.ndarray:
+        """Calculate Average Directional Index (ADX)."""
+        if len(high) < period or len(low) < period or len(close) < period:
+            return np.full(len(close), np.nan)
+
+        # Calculate True Range
+        tr = np.maximum.reduce([
+            high - low,
+            np.abs(high - np.roll(close, 1)),
+            np.abs(low - np.roll(close, 1))
+        ])
+        tr[0] = np.nan  # First value is NaN
+
+        # Calculate Directional Movement
+        dm_plus = np.maximum(high - np.roll(high, 1), 0)
+        dm_minus = np.maximum(np.roll(low, 1) - low, 0)
+
+        # Calculate Directional Indicators
+        di_plus = 100 * (dm_plus.rolling(period).mean() / tr.rolling(period).mean())
+        di_minus = 100 * (dm_minus.rolling(period).mean() / tr.rolling(period).mean())
+
+        # Calculate ADX
+        dx = 100 * np.abs(di_plus - di_minus) / (di_plus + di_minus)
+        adx = dx.rolling(period).mean()
+
+        return adx.values
+
+    def _calculate_directional_signal(self, prices: np.ndarray) -> np.ndarray:
+        """Calculate directional signal as EMA_8 - EMA_20."""
+        ema_8 = self._calculate_ema(prices, period=8)
+        ema_20 = self._calculate_ema(prices, period=20)
+
+        # Calculate directional signal
+        directional_signal = ema_8 - ema_20
+
+        return directional_signal
+
+    def _calculate_trend_score(self, prices: np.ndarray, high: np.ndarray, low: np.ndarray, close: np.ndarray) -> np.ndarray:
+        """Calculate trend score as normalized directional signal multiplied by ADX."""
+        # Calculate directional signal
+        directional_signal = self._calculate_directional_signal(prices)
+
+        # Calculate ADX
+        adx = self._calculate_adx(high, low, close, period=self.adx_period)
+
+        # Normalize directional signal to [-1, 1] range
+        signal_max = np.nanmax(np.abs(directional_signal))
+        if signal_max > 0:
+            normalized_signal = directional_signal / signal_max
+        else:
+            normalized_signal = directional_signal
+
+        # Calculate trend score
+        trend_score = normalized_signal * adx
+
+        return trend_score
 
 class SMAGenerator(FeatureGenerator):
     """Generator for Simple Moving Average with different base calculations."""
@@ -614,7 +915,9 @@ def create_trend_generators(periods: Dict[str, List[int]] = None) -> List[Featur
             'trima': [21],
             'mama': [0.5, 0.05],
             'vwma': [20],
-            'keltner_channels': [20]
+            'keltner_channels': [20],
+            'adx': [14],
+            'trend_score': [14]
         }
     
     generators = []
@@ -650,7 +953,18 @@ def create_trend_generators(periods: Dict[str, List[int]] = None) -> List[Featur
     # Keltner Channels generators
     for period in periods.get('keltner_channels', [20]):
         generators.append(KeltnerChannelsGenerator(period))
-    
+
+    # ADX generators
+    for period in periods.get('adx', [14]):
+        generators.append(ADXGenerator(period))
+
+    # Directional Signal generators
+    generators.append(DirectionalSignalGenerator())
+
+    # Trend Score generators
+    for period in periods.get('trend_score', [14]):
+        generators.append(TrendScoreGenerator(period))
+
     return generators
 
 

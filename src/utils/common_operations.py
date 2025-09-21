@@ -824,6 +824,66 @@ def list_parquet_files(directory: Union[str, Path]) -> List[Path]:
         logger.error(f"❌ Error listing parquet files in {directory}: {e}")
         return []
 
+
+def get_latest_outcome_file(pattern: str = "market_analysis_optimal_regime_clustering_outcome_*.json") -> Optional[Path]:
+    """Get the latest outcome file matching the given pattern from outcomes/ directory.
+
+    Args:
+        pattern: File pattern to search for (default: optimal regime clustering outcomes)
+
+    Returns:
+        Path to the latest file matching the pattern, or None if no files found
+    """
+    try:
+        outcomes_dir = Path("outcomes")
+        if not outcomes_dir.exists():
+            logger.warning(f"⚠️ Outcomes directory does not exist: {outcomes_dir}")
+            return None
+
+        # Find files matching the pattern
+        matching_files = list(outcomes_dir.glob(pattern))
+
+        if not matching_files:
+            logger.warning(f"⚠️ No files found matching pattern: {pattern}")
+            return None
+
+        # Sort by modification time (latest first)
+        matching_files.sort(key=lambda x: x.stat().st_mtime, reverse=True)
+
+        latest_file = matching_files[0]
+        logger.info(f"✅ Found latest outcome file: {latest_file}")
+        return latest_file
+
+    except Exception as e:
+        logger.error(f"❌ Error finding latest outcome file with pattern {pattern}: {e}")
+        return None
+
+
+def load_latest_optimal_regime_clustering_outcome() -> Optional[Dict[str, Any]]:
+    """Load the latest optimal regime clustering outcome file.
+
+    Returns:
+        Dictionary containing the outcome data, or None if loading fails
+    """
+    try:
+        latest_file = get_latest_outcome_file("market_analysis_optimal_regime_clustering_outcome_*.json")
+
+        if not latest_file:
+            logger.warning("⚠️ No optimal regime clustering outcome file found")
+            return None
+
+        outcome_data = safe_json_load(latest_file)
+        if outcome_data:
+            logger.info(f"✅ Loaded optimal regime clustering outcome from {latest_file}")
+            return outcome_data
+        else:
+            logger.warning(f"⚠️ Failed to load outcome data from {latest_file}")
+            return None
+
+    except Exception as e:
+        logger.error(f"❌ Error loading latest optimal regime clustering outcome: {e}")
+        return None
+
 def safe_copy(src: Union[str, Path], dst: Union[str, Path]) -> bool:
     """Safely copy a file from source to destination."""
     try:

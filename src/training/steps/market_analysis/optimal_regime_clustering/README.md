@@ -355,12 +355,12 @@ The system is designed to handle:
 ### Matrix-Optimized Functions
 
 - `MatrixOptimizedClusterer()`: Matrix-optimized clustering algorithm
-- `cluster_hmm_regimes_optimized()`: Optimized clustering with performance tracking
+- `cluster_regimes_optimized()`: Optimized clustering with performance tracking
 - `create_matrix_optimized_clusterer()`: Factory for matrix-optimized clusterer
 
 ### Utility Functions
 
-- `load_hmm_regime_data()`: Load HMM regime data
+- `load_regime_data()`: Load regime data
 - `calculate_cluster_statistics()`: Compute cluster statistics
 - `validate_cluster_quality()`: Validate clustering results
 - `create_cluster_summary_report()`: Generate reports

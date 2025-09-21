@@ -322,22 +322,22 @@ class MemoryEfficientTraining:
 
             # Create memory-mapped array for features
             if mode == 'c':  # Copy-on-write mode
-                X_mmap = np.memmap(file_path + '_X.npy', dtype=X.dtype, mode=mode, shape=X.shape)
+                X_mmap = np.memmap(str(file_path) + '_X.npy', dtype=X.dtype, mode=mode, shape=X.shape)
                 X_mmap[:] = X[:]
             else:
                 # Save array to disk first
-                np.save(file_path + '_X.npy', X)
-                X_mmap = np.load(file_path + '_X.npy', mmap_mode='r+')
+                np.save(str(file_path) + '_X.npy', X)
+                X_mmap = np.load(str(file_path) + '_X.npy', mmap_mode='r+')
 
             # Create memory-mapped array for targets
             y_mmap = None
             if y is not None:
                 if mode == 'c':
-                    y_mmap = np.memmap(file_path + '_y.npy', dtype=y.dtype, mode=mode, shape=y.shape)
+                    y_mmap = np.memmap(str(file_path) + '_y.npy', dtype=y.dtype, mode=mode, shape=y.shape)
                     y_mmap[:] = y[:]
                 else:
-                    np.save(file_path + '_y.npy', y)
-                    y_mmap = np.load(file_path + '_y.npy', mmap_mode='r+')
+                    np.save(str(file_path) + '_y.npy', y)
+                    y_mmap = np.load(str(file_path) + '_y.npy', mmap_mode='r+')
 
             self.logger.info(f"✅ Memory-mapped arrays created - X: {X_mmap.shape}, y: {y_mmap.shape if y_mmap is not None else None}")
             return X_mmap, y_mmap

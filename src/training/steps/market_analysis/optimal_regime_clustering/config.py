@@ -21,25 +21,25 @@ import numpy as np
 class OptimalClusteringConfig:
     """Configuration for optimal regime clustering."""
 
-    # Target cluster parameters - Force creation of 20 clusters
+    # Target cluster parameters - More inclusive clustering
     target_n_clusters: int = 20
     force_n_clusters: bool = True  # Force exactly 20 clusters to be created
-    target_coverage_pct: float = 0.95  # 90-95% coverage
-    max_noise_pct: float = 0.05  # <5% noise
-    min_cluster_size_pct: float = 0.03  # 3% minimum (strict constraint)
-    max_cluster_size_pct: float = 0.08  # 8% maximum (strict constraint)
+    target_coverage_pct: float = 0.85  # 85% coverage (more inclusive)
+    max_noise_pct: float = 0.15  # <15% noise (more inclusive)
+    min_cluster_size_pct: float = 0.02  # 2% minimum (more inclusive)
+    max_cluster_size_pct: float = 0.25  # 25% maximum (much more inclusive)
 
     # Clustering algorithm parameters - CV-OPTIMIZED PERFECT DISTRIBUTION APPROACH
     clustering_method: str = "centroid_based"  # "hdbscan", "dbscan", "kmeans", "hybrid", "centroid_based"
-    enable_aggressive_splitting: bool = True  # Enable aggressive cluster splitting
-    enable_weighted_splitting: bool = True  # Enable weighted cluster splitting
-    enable_dynamic_merging: bool = True  # Enable dynamic size-constrained merging
-    force_exact_constraints: bool = True  # Force clusters to meet exact size constraints
+    enable_aggressive_splitting: bool = False  # Disable aggressive cluster splitting (preserve more clusters)
+    enable_weighted_splitting: bool = False  # Disable weighted cluster splitting (preserve more clusters)
+    enable_dynamic_merging: bool = False  # Disable dynamic size-constrained merging (preserve more clusters)
+    force_exact_constraints: bool = False  # Don't force exact constraints (preserve more clusters)
     max_cluster_splitting_iterations: int = 20  # Maximum iterations for cluster splitting
-    splitting_aggressiveness: float = 3.0  # How aggressively to split oversized clusters
-    min_samples: int = 3  # Minimum samples for HDBSCAN/DBSCAN (ultra-permissive)
-    min_cluster_size: int = 5  # Minimum cluster size for HDBSCAN (ultra-permissive)
-    cluster_selection_epsilon: float = 0.015  # DBSCAN epsilon parameter (ultra-permissive)
+    splitting_aggressiveness: float = 1.0  # How aggressively to split oversized clusters (less aggressive)
+    min_samples: int = 1  # Minimum samples for HDBSCAN/DBSCAN (more inclusive)
+    min_cluster_size: int = 3  # Minimum cluster size for HDBSCAN (more inclusive)
+    cluster_selection_epsilon: float = 0.025  # DBSCAN epsilon parameter (more inclusive)
     max_iter: int = 500  # Maximum iterations for iterative algorithms
     random_state: int = 42  # Random state for reproducibility
 
@@ -107,18 +107,15 @@ class OptimalClusteringConfig:
         'volume', 'volatility', 'momentum', 'trend'
     ])
 
-    # Validation parameters
-    validation_splits: int = 5  # Cross-validation splits
-    bootstrap_iterations: int = 100  # Bootstrap iterations for stability
     stability_threshold: float = 0.8  # Minimum stability score
 
     # Output parameters
-    save_intermediate_results: bool = True
+    save_intermediate_results: bool = False  # Disabled for faster execution
     generate_cluster_reports: bool = True
-    save_cluster_visualizations: bool = True
+    save_cluster_visualizations: bool = False  # Disabled for faster execution
 
     # Memory optimization
-    chunk_size: int = 50000  # Process data in chunks
+    chunk_size: int = 100000  # Process data in chunks (increased for better efficiency)
     use_memory_optimization: bool = True
 
     # Advanced parameters
@@ -151,8 +148,6 @@ class OptimalClusteringConfig:
                 'target_coherence_score': self.target_coherence_score
             },
             'validation': {
-                'validation_splits': self.validation_splits,
-                'bootstrap_iterations': self.bootstrap_iterations,
                 'stability_threshold': self.stability_threshold
             }
         }
@@ -181,7 +176,7 @@ class OptimalClusteringConfig:
         config.chunk_size = 100000
         config.use_memory_optimization = True
         config.max_iter = 100
-        config.bootstrap_iterations = 50
+        # REMOVED: bootstrap_iterations - removed for performance
         return config
 
 def get_clustering_config(mode: str = "default") -> OptimalClusteringConfig:

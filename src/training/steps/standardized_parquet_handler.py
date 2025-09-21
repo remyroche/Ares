@@ -89,7 +89,7 @@ class StandardizedParquetHandler:
             'taker_buy_quote_asset_volume': 'float64',
         }
         
-        self.logger.info('✅ StandardizedParquetHandler initialized')
+        self.logger.debug('✅ StandardizedParquetHandler initialized')
     
     def add_partition_columns(self, df: 'pd.DataFrame') -> 'pd.DataFrame':
         """Add partition columns (year, month, day) to DataFrame based on timestamp.
@@ -121,7 +121,7 @@ class StandardizedParquetHandler:
         # Remove temporary datetime column
         df_copy = df_copy.drop('datetime', axis=1)
         
-        self.logger.info(f'✅ Added partition columns: year, month, day')
+        self.logger.debug(f'✅ Added partition columns: year, month, day')
         return df_copy
     
     def write_partitioned_parquet(
@@ -152,7 +152,7 @@ class StandardizedParquetHandler:
             # Check if partition columns exist, add them if not
             missing_cols = [col for col in partition_cols if col not in df.columns]
             if missing_cols:
-                self.logger.info(f'Adding missing partition columns: {missing_cols}')
+                self.logger.debug(f'Adding missing partition columns: {missing_cols}')
                 df = self.add_partition_columns(df)
             
             # Ensure directory exists
@@ -190,7 +190,7 @@ class StandardizedParquetHandler:
                         existing_data_behavior='overwrite_or_ignore'
                     )
                     
-                    self.logger.info(f'✅ Wrote partitioned dataset to {base_path}')
+                    self.logger.debug(f'✅ Wrote partitioned dataset to {base_path}')
                     return True
                 else:
                     # Fallback to single file
@@ -248,7 +248,7 @@ class StandardizedParquetHandler:
                 # Validate and standardize
                 df = self.standardize_dtypes(df, schema_name)
                 
-                self.logger.info(f'✅ Read partitioned dataset from {base_path}: {len(df)} rows')
+                self.logger.debug(f'✅ Read partitioned dataset from {base_path}: {len(df)} rows')
                 return df
                 
             except ImportError:
@@ -389,11 +389,49 @@ class StandardizedParquetHandler:
         if schema_name == 'aggtrades':
             if 'close' in df.columns and 'price' not in df.columns:
                 column_renames['close'] = 'price'
-                self.logger.info("🔄 Mapping 'close' to 'price' for aggtrades schema")
+                self.logger.debug("🔄 Mapping 'close' to 'price' for aggtrades schema")
 
         if column_renames:
             df = df.rename(columns=column_renames)
-            self.logger.info(f"Renamed columns: {column_renames}")
+            self.logger.debug(f"Renamed columns: {column_renames}")
+
+        # Validate required columns for unified schema
+        if schema_name == 'unified':
+            from src.utils.pipeline_standards import pipeline_standards
+            required_columns = pipeline_standards.SCHEMAS['unified']['required_columns']
+            missing_columns = [col for col in required_columns if col not in df.columns]
+
+            if missing_columns:
+                self.logger.warning(f"⚠️ Missing required columns for unified schema: {missing_columns}")
+                self.logger.debug(f"🔧 Attempting to add missing columns automatically...")
+
+                # Handle missing columns for processed data files
+                if 'timestamp' in missing_columns and 'open_time' in df.columns:
+                    # Convert open_time from milliseconds to datetime
+                    df['timestamp'] = pd.to_datetime(df['open_time'], unit='ms')
+                    missing_columns.remove('timestamp')
+                    self.logger.debug(f"✅ Added 'timestamp' column from 'open_time'")
+
+                if 'exchange' in missing_columns and 'symbol' in df.columns:
+                    # Extract exchange from symbol (e.g., 'ETHUSDT' -> 'binance')
+                    # This is a heuristic - in practice, exchange should be passed as a parameter
+                    df['exchange'] = 'binance'  # Default to binance for now
+                    missing_columns.remove('exchange')
+                    self.logger.debug(f"✅ Added 'exchange' column (default: binance)")
+
+                if 'timeframe' in missing_columns and 'interval' in df.columns:
+                    # Convert interval to timeframe format (e.g., '15m' -> '15m')
+                    df['timeframe'] = df['interval']
+                    missing_columns.remove('timeframe')
+                    self.logger.debug(f"✅ Added 'timeframe' column from 'interval'")
+
+                # Check if we still have missing columns
+                if missing_columns:
+                    error_msg = f"Could not automatically resolve missing columns: {missing_columns}"
+                    self.logger.error(f"❌ {error_msg}")
+                    raise ValueError(error_msg)
+                else:
+                    self.logger.debug(f"✅ Successfully added all missing columns automatically")
 
         return df
     
@@ -413,7 +451,7 @@ class StandardizedParquetHandler:
         try:
             # Use pipeline standards for schema enforcement
             df = self.standards.enforce_schema(df, schema_name)
-            self.logger.info(f"Applied schema enforcement for {schema_name}")
+            self.logger.debug(f"Applied schema enforcement for {schema_name}")
             return df
             
         except Exception as e:
@@ -455,7 +493,7 @@ class StandardizedParquetHandler:
         try:
             # Use pipeline standards for timestamp standardization
             df = self.standards.standardize_timestamp(df, column, 'int64')
-            self.logger.info(f"Standardized timestamp column: {column}")
+            self.logger.debug(f"Standardized timestamp column: {column}")
             return df
             
         except Exception as e:
@@ -547,9 +585,9 @@ class StandardizedParquetHandler:
                 if not validation_result['passed']:
                     self.logger.warning(f"Data quality issues in {file_path}: {validation_result['issues']}")
                 else:
-                    self.logger.info(f"Data quality validation passed for {file_path} (score: {validation_result['quality_score']:.2f})")
+                    self.logger.debug(f"Data quality validation passed for {file_path} (score: {validation_result['quality_score']:.2f})")
             
-            self.logger.info(f"Successfully read and standardized {len(df)} rows from {file_path}")
+            self.logger.debug(f"Successfully read and standardized {len(df)} rows from {file_path}")
             return df
             
         except Exception as e:
@@ -620,7 +658,7 @@ class StandardizedParquetHandler:
             if create_metadata:
                 self._create_metadata_file(df, file_path, schema_name)
             
-            self.logger.info(f"Successfully wrote {len(df)} rows to {file_path}")
+            self.logger.debug(f"Successfully wrote {len(df)} rows to {file_path}")
             return True
             
         except Exception as e:
@@ -665,7 +703,7 @@ class StandardizedParquetHandler:
             with open(metadata_path, 'w') as f:
                 json.dump(metadata, f, indent=2, default=str)
             
-            self.logger.info(f"Created metadata file: {metadata_path}")
+            self.logger.debug(f"Created metadata file: {metadata_path}")
             
         except Exception as e:
             self.logger.warning(f"Failed to create metadata file: {e}")
@@ -760,7 +798,7 @@ class StandardizedParquetHandler:
             # Sort by modification time (newest first)
             parquet_files.sort(key=lambda x: x.stat().st_mtime, reverse=True)
             
-            self.logger.info(f"Found {len(parquet_files)} Parquet files in {directory}")
+            self.logger.debug(f"Found {len(parquet_files)} Parquet files in {directory}")
             return parquet_files
             
         except Exception as e:

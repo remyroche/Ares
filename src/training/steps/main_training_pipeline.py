@@ -58,7 +58,7 @@ from src.core.decorators import handles_errors, traced, log_execution_time
 try:
     from .data_collection.sub_pipeline import (
         DataCollectionSubPipeline, SubPipelineConfig as DataCollectionConfig,
-        SubPipelineResult as DataCollectionResult, ExecutionMode, SubPipelineStatus
+        SubPipelineResult as DataCollectionResult
     )
     # Import base classes for general use
     from .data_collection.sub_pipeline import SubPipelineResult, SubPipelineConfig
@@ -68,12 +68,6 @@ except ImportError:
     DataCollectionSubPipeline = None
     DataCollectionConfig = None
     DataCollectionResult = None
-    # Don't override ExecutionMode if already defined
-    if 'ExecutionMode' not in locals():
-        ExecutionMode = None
-    # Don't override SubPipelineStatus if already defined
-    if 'SubPipelineStatus' not in locals():
-        SubPipelineStatus = None
     SubPipelineResult = None
     SubPipelineConfig = None
 
@@ -157,10 +151,10 @@ class MainPipelineConfig:
             'data_integration', 'data_export'
         ],
         PipelineStage.MARKET_ANALYSIS: [
-            'sr_detection', 'sr_clustering', 'hmm_clustering',
-            'hmm_regime_discovery', 'regime_data_splitting', 'multi_horizon_labeling',
-            'feature_lookback_optimization', 'cross_timeframe_analysis',
-            'sr_feature_integration'
+            'sr_parameter_optimization', 'sr_detection', 'sr_clustering',
+            'hmm_regime_discovery', 'hmm_clustering', 'hmm_models_training', 'hmm_ensemble_training',
+            'regime_data_splitting', 'multi_horizon_profit_labeler',
+            'feature_lookback_optimization', 'pid_based_feature_generation', 'final_feature_selection'
         ],
         PipelineStage.MODEL_TRAINING: [
             'analyst_model_training', 'analyst_ensemble_training',
@@ -822,10 +816,10 @@ def get_full_pipeline_config(
                 'feature_engineering', 'data_quality_check', 'data_storage', 'data_monitoring'
             ],
             PipelineStage.MARKET_ANALYSIS: [
-                'sr_detection', 'sr_clustering', 'hmm_clustering',
-                'hmm_regime_discovery', 'regime_data_splitting', 'multi_horizon_labeling',
-                'feature_lookback_optimization', 'cross_timeframe_analysis',
-                'sr_feature_integration'
+                'sr_parameter_optimization', 'sr_detection', 'sr_clustering',
+                'hmm_regime_discovery', 'hmm_clustering', 'hmm_models_training', 'hmm_ensemble_training',
+                'regime_data_splitting', 'multi_horizon_profit_labeler',
+                'feature_lookback_optimization', 'pid_based_feature_generation', 'final_feature_selection'
             ],
             PipelineStage.MODEL_TRAINING: [
                 'analyst_model_training', 'analyst_ensemble_training', 
@@ -878,7 +872,9 @@ def get_light_pipeline_config(
                 'data_download', 'data_conversion', 'data_validation'
             ],
             PipelineStage.MARKET_ANALYSIS: [
-                'sr_detection', 'hmm_regime_discovery', 'multi_horizon_labeling'
+                'sr_parameter_optimization', 'sr_detection', 'sr_clustering',
+                'hmm_regime_discovery', 'hmm_clustering', 'hmm_models_training', 'hmm_ensemble_training',
+                'regime_data_splitting', 'multi_horizon_profit_labeler'
             ],
             PipelineStage.MODEL_TRAINING: [
                 'analyst_model_training', 'analyst_ensemble_training', 'tactician_lookback_optimization', 'tactician_models_training', 'tactician_ensemble_training'
@@ -925,7 +921,7 @@ def get_blank_pipeline_config(
         ],
         enabled_sub_pipelines={
             PipelineStage.DATA_COLLECTION: ['data_download', 'data_conversion'],
-            PipelineStage.MARKET_ANALYSIS: ['sr_detection', 'hmm_regime_discovery'],
+            PipelineStage.MARKET_ANALYSIS: ['sr_parameter_optimization', 'sr_detection', 'hmm_regime_discovery', 'hmm_models_training', 'hmm_ensemble_training'],
             PipelineStage.MODEL_TRAINING: ['analyst_model_training'],
             PipelineStage.BACKTESTING: ['walk_forward_validation']
         }

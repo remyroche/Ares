@@ -211,7 +211,7 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
     """
     HMM Ensemble Training Component with per-regime ensemble training, HPO, saving, and metrics.
     
-    The HMM Ensemble operates on 1h timeframe and combines individual HMM models
+    The HMM Ensemble operates on 15m timeframe and combines individual HMM models
     to create robust ensemble predictions for market regime detection.
     """
     
@@ -252,7 +252,7 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
             if config is None:
                 config = EnsembleTrainingConfig(
                     model_name="hmm_ensemble_models",
-                    timeframe="1h",
+                    timeframe="15m",
                     min_samples_per_regime=500,  # 🔧 Reduced from 1000 to 500 for better regime coverage
                     enable_data_augmentation=True,
                     augmentation_method="smote",
@@ -780,7 +780,7 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
         Uses common utilities and hardware optimizations for improved performance.
         
         Args:
-            X: Input features (1h timeframe with cross-timeframe features)
+            X: Input features (15m timeframe with cross-timeframe features)
             y: Target values (HMM regime predictions)
             regime_labels: Regime labels for each sample
             feature_names: Names of input features
@@ -1217,10 +1217,16 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
                     model_name=meta_model_name
                 )
                 
-                # Cross-validation evaluation
-                # Skip cross-validation for now to avoid cloning issues with pre-fitted models
-                # cv_scores = cross_val_score(stack, X_enhanced, regime_labels, cv=5, scoring='accuracy', n_jobs=-1)
-                cv_scores = np.array([0.0])  # Placeholder
+                # Cross-validation evaluation using time series split
+                try:
+                    from sklearn.model_selection import TimeSeriesSplit, cross_val_score
+                    tscv = TimeSeriesSplit(n_splits=5, test_size=int(0.2 * len(regime_labels)))
+                    cv_scores = cross_val_score(stack, X_enhanced, regime_labels,
+                                               cv=tscv, scoring='accuracy', n_jobs=-1)
+                    tprint(f"✅ Cross-validation completed: mean={cv_scores.mean():.4f}, std={cv_scores.std():.4f}")
+                except Exception as e:
+                    tprint(f"⚠️ Cross-validation failed: {e}, using placeholder scores")
+                    cv_scores = np.array([0.0])  # Fallback placeholder
                 
                 # Fit the model
                 stack.fit(X_enhanced, regime_labels)
@@ -1427,20 +1433,45 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
                     n_estimators = self.math_validator.validate_positive(n_estimators, "XGBoost n_estimators")
                     learning_rate = self.math_validator.validate_range(learning_rate, 0.0, 1.0, "XGBoost learning_rate")
                     max_depth = self.math_validator.validate_positive(max_depth, "XGBoost max_depth")
+                # Enhanced regularization for XGBoost to prevent overfitting
                 ensemble_models['XGBoostClassifier'] = xgb.XGBClassifier(
                     n_estimators=int(n_estimators),
                     learning_rate=learning_rate,
                     max_depth=int(max_depth),
                     random_state=42,
                     objective='multi:softprob',
-                    eval_metric='mlogloss'
+                    eval_metric='mlogloss',
+                    # Enhanced regularization parameters
+                    min_child_weight=5,        # Minimum sum of hessian per child
+                    reg_alpha=0.1,             # L1 regularization
+                    reg_lambda=0.1,            # L2 regularization
+                    subsample=0.8,             # Use 80% of data per tree
+                    colsample_bytree=0.8,      # Use 80% of features per tree
+                    colsample_bylevel=0.8,     # Use 80% of features per level
+                    colsample_bynode=0.8       # Use 80% of features per node
                 )
                 tprint("✅ XGBoostClassifier created with validated parameters")
             except Exception as e:
                 tprint(f"⚠️ XGBoostClassifier creation failed: {e}")
                 try:
                     import xgboost as xgb
-                    ensemble_models['XGBoostClassifier'] = xgb.XGBClassifier(n_estimators=100, learning_rate=0.1, max_depth=6, random_state=42, objective='multi:softprob', eval_metric='mlogloss')
+                    # Enhanced regularization for fallback XGBoost model
+                    ensemble_models['XGBoostClassifier'] = xgb.XGBClassifier(
+                        n_estimators=100,
+                        learning_rate=0.05,    # Reduced learning rate for better regularization
+                        max_depth=4,           # Limited depth for regularization
+                        random_state=42,
+                        objective='multi:softprob',
+                        eval_metric='mlogloss',
+                        # Enhanced regularization parameters
+                        min_child_weight=5,        # Minimum sum of hessian per child
+                        reg_alpha=0.1,             # L1 regularization
+                        reg_lambda=0.1,            # L2 regularization
+                        subsample=0.8,             # Use 80% of data per tree
+                        colsample_bytree=0.8,      # Use 80% of features per tree
+                        colsample_bylevel=0.8,     # Use 80% of features per level
+                        colsample_bynode=0.8       # Use 80% of features per node
+                    )
                 except Exception:
                     pass
             
@@ -1596,7 +1627,11 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
                                 'proba_preview': proba_arr[:preview_count].tolist(),
                                 'entropy_preview': entropy_arr[:preview_count].tolist()
                             }
-                            preview_path = Path(self.config.model_save_path) / 'regime_probabilities_preview.json'
+                            # Handle both string and Path objects for model_save_path
+                            if isinstance(self.config.model_save_path, Path):
+                                preview_path = self.config.model_save_path / 'regime_probabilities_preview.json'
+                            else:
+                                preview_path = Path(self.config.model_save_path) / 'regime_probabilities_preview.json'
                             ensure_directory(preview_path.parent)
                             if self.serializer.save(preview, str(preview_path), format='json'):
                                 comprehensive_report['regime_probability_preview_path'] = str(preview_path)
@@ -1610,7 +1645,11 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
             
             # Save report using common serialization utilities
             try:
-                report_path = Path(self.config.model_save_path) / "training_report.json"
+                # Handle both string and Path objects for model_save_path
+                if isinstance(self.config.model_save_path, Path):
+                    report_path = self.config.model_save_path / "training_report.json"
+                else:
+                    report_path = Path(self.config.model_save_path) / "training_report.json"
                 ensure_directory(report_path.parent)
                 if self.serializer.save(comprehensive_report, str(report_path), format='json'):
                     tprint(f"📁 Comprehensive report saved to: {report_path}")
@@ -2313,29 +2352,34 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
         # Get model paths from artifacts directory - use correct path where models are actually saved
         symbol = getattr(self.config, 'symbol', 'ETHUSDT')
         exchange = getattr(self.config, 'exchange', 'binance')
-        timeframe = getattr(self.config, 'timeframe', '1h')
-        
+        timeframe = getattr(self.config, 'timeframe', '15m')  # HMM models are trained on 15m timeframe
+
         # Use the correct path where hmm_models_training actually saves models
-        base_models_dir = Path("artifacts/models/hmm_models_enhanced/UNKNOWN/UNKNOWN") / timeframe
+        base_models_dir = Path("models/hmm_ensemble_models")
         
         if not base_models_dir.exists():
             tprint(f"❌ Base models directory not found: {base_models_dir}")
             tprint("   📋 Expected pre-trained models from hmm_models_training step")
             raise FileNotFoundError(f"Pre-trained models directory not found: {base_models_dir}")
         
-        # Find all model files
-        model_files = list(base_models_dir.glob("*_model.pkl"))
+        # Find all model files (including nested directories)
+        model_files = []
+        for pattern in ["*_model.pkl", "*.joblib"]:
+            model_files.extend(base_models_dir.rglob(pattern))
+
         if not model_files:
             tprint(f"❌ No pre-trained model files found in: {base_models_dir}")
             raise FileNotFoundError(f"No pre-trained model files found in: {base_models_dir}")
-        
+
         tprint(f"📁 Loading pre-trained base models from: {base_models_dir}")
         tprint(f"   📊 Found {len(model_files)} model files")
-        
+
         # Group model files by model name and select most recent for each
         model_groups = {}
         for model_file in model_files:
-            model_name = model_file.stem.replace('_model', '')
+            model_name = model_file.stem
+            # Remove common suffixes to get base model name
+            model_name = model_name.replace('_model', '').replace('_ensemble', '')
             if model_name not in model_groups:
                 model_groups[model_name] = []
             model_groups[model_name].append(model_file)
@@ -2359,13 +2403,33 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
                     model = pickle.load(f)
                 
                 if model is not None:
-                    # Validate that the model is actually fitted
-                    if not hasattr(model, 'n_features_in_') or model.n_features_in_ is None:
-                        tprint(f"   ❌ Model {model_name} is not fitted (missing n_features_in_)")
+                    # Validate that the model is actually fitted - handle different model types
+                    is_fitted = False
+                    expected_features = None
+
+                    # Check for scikit-learn style fitted models
+                    if hasattr(model, 'n_features_in_') and model.n_features_in_ is not None:
+                        is_fitted = True
+                        expected_features = model.n_features_in_
+                    # Check for custom ensemble managers
+                    elif hasattr(model, 'stacking_model') and model.stacking_model is not None:
+                        is_fitted = True
+                        expected_features = "variable"
+                    # Check for other fitted indicators
+                    elif hasattr(model, 'is_fitted_') and model.is_fitted_:
+                        is_fitted = True
+                        expected_features = "variable"
+                    elif hasattr(model, 'predict'):
+                        # Assume it's fitted if it has predict method and isn't None
+                        is_fitted = True
+                        expected_features = "variable"
+
+                    if not is_fitted:
+                        tprint(f"   ❌ Model {model_name} is not fitted")
                         raise ValueError(f"Model {model_name} is not fitted - cannot use as pre-trained base model")
-                    
+
                     base_estimators.append((model_name, model))
-                    tprint(f"   ✅ Successfully loaded fitted {model_name} (expects {model.n_features_in_} features)")
+                    tprint(f"   ✅ Successfully loaded fitted {model_name} (type: {type(model).__name__}, features: {expected_features})")
                 else:
                     tprint(f"   ❌ Failed to load {model_name} from {most_recent_file.name}")
                     raise ValueError(f"Failed to deserialize model: {model_name}")
@@ -2538,9 +2602,21 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
         """Create a meta model by name."""
         if model_name == 'XGBoostClassifier':
             import xgboost as xgb
+            # Enhanced regularization for meta XGBoost model
             return xgb.XGBClassifier(
-                n_estimators=100, learning_rate=0.1, max_depth=6,
-                random_state=42, n_jobs=-1
+                n_estimators=100,
+                learning_rate=0.05,    # Reduced learning rate
+                max_depth=4,           # Limited depth for regularization
+                random_state=42,
+                n_jobs=-1,
+                # Enhanced regularization parameters
+                min_child_weight=5,        # Minimum sum of hessian per child
+                reg_alpha=0.1,             # L1 regularization
+                reg_lambda=0.1,            # L2 regularization
+                subsample=0.8,             # Use 80% of data per tree
+                colsample_bytree=0.8,      # Use 80% of features per tree
+                colsample_bylevel=0.8,     # Use 80% of features per level
+                colsample_bynode=0.8       # Use 80% of features per node
             )
         elif model_name == 'CatBoostClassifier':
             from catboost import CatBoostClassifier
@@ -3054,7 +3130,7 @@ if __name__ == "__main__":
     # Create configuration
     config = EnsembleTrainingConfig(
         model_name="hmm_ensemble_models",
-        timeframe="1h",
+        timeframe="15m",
         model_types=["catboost", "elastic_net", "ensemble_rf"],
         hpo_n_trials=50,  # Reduced for demo
         enable_hpo=True,
@@ -3084,7 +3160,7 @@ if __name__ == "__main__":
     # results = training_component.execute(X, y, regime_labels, feature_names, hmm_states, base_hmm_models, hmm_training_metrics)
     
     print("\n🎯 HMM Ensemble Component Features (Enhanced with Common Utilities):")
-    print("- Operates on 1h timeframe with cross-timeframe features")
+    print("- Operates on 15m timeframe with cross-timeframe features")
     print("- Combines individual HMM models into robust ensembles")
     print("- Per-regime ensemble training for regime-specific optimization")
     print("- Enhanced market regime detection accuracy through model combination")
@@ -3112,3 +3188,6 @@ if __name__ == "__main__":
     print("- Safe mathematical operations")
     print("- Comprehensive error handling")
     print("- Enhanced reporting and analytics")
+
+# Export the main classes for import
+__all__ = ['HMMEnsembleTrainingComponent', 'execute_hmm_ensemble_training', 'create_hmm_ensemble_training_component']

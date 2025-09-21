@@ -329,10 +329,10 @@ class RegimeDataSplittingEnhanced:
             operation="regime_data_splitting_enhanced",
             component="RegimeDataSplittingEnhanced"
         )
-        self.error_handler = EnhancedErrorHandler(context=error_context, logger=self.logger)
+        self.error_handler = EnhancedErrorHandler(logger=self.logger)
         
         # Initialize hardware manager using existing utilities
-        self.hardware_manager = UnifiedHardwareManager(logger=self.logger)
+        self.hardware_manager = UnifiedHardwareManager()
         
         # Initialize data validation using existing utilities
         self.cross_step_validator = CrossStepValidator()
@@ -777,7 +777,7 @@ class RegimeDataSplittingEnhanced:
             'regime_states',
             'hmm_regime_discovery_result',
             'regime_discovery_result',
-            'hmm_clustering_result'
+            'optimal_regime_clustering_result'  # Updated to use optimal regime clustering
         ]
         
         for key in possible_keys:
@@ -795,7 +795,7 @@ class RegimeDataSplittingEnhanced:
             'regime_probabilities',
             'hmm_regime_discovery_result',
             'regime_discovery_result',
-            'hmm_clustering_result'
+            'optimal_regime_clustering_result'  # Updated to use optimal regime clustering
         ]
         
         for key in possible_keys:

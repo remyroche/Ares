@@ -247,7 +247,8 @@ class AresLauncher:
                 'required_files': ['sr_levels.json', 'regime_assignments.parquet', 'labels.parquet', 'features.parquet'],
                 'required_artifacts': ['sr_clusters', 'regime_model', 'feature_metadata'],
                 'sub_pipelines': ['sr_detection', 'sr_clustering', 'hmm_clustering',
-                                'hmm_regime_discovery', 'multi_horizon_profit_labeler', 'triple_barrier_labeling',
+                                'hmm_regime_discovery', 'hmm_models_training', 'hmm_ensemble_training',
+                                'multi_horizon_profit_labeler', 'triple_barrier_labeling',
                                 'feature_lookback_optimization', 'pid_based_feature_generation',
                                 'sr_feature_integration']
             },
@@ -1183,8 +1184,8 @@ Examples:
     )
     
     parser.add_argument(
-        '--sub-pipeline',
-        help='Specific sub-pipeline to execute (for sub_pipeline mode). Available: data_download, sr_detection, hmm_regime_discovery, hmm_training, analyst_model_training, analyst_ensemble_training, tactician_model_training, tactician_ensemble_training, basic_backtesting_pre, basic_backtesting_post, walk_forward_validation, etc.'
+        '--sub-pipeline', '--sub_pipeline',
+        help='Specific sub-pipeline to execute (for sub_pipeline mode). Available: data_download, sr_detection, hmm_regime_discovery, hmm_models_training, hmm_ensemble_training, hmm_training, analyst_model_training, analyst_ensemble_training, tactician_model_training, tactician_ensemble_training, basic_backtesting_pre, basic_backtesting_post, walk_forward_validation, etc.'
     )
     
     parser.add_argument(

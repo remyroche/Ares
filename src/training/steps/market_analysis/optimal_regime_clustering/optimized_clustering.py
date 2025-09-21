@@ -23,10 +23,8 @@ try:
         get_enhanced_matrix_operations,
         get_batch_matrix_processor,
         safe_matrix_multiply,
-        correlation_matrix_gpu,
         optimize_dataframe,
         vectorized_rolling_features,
-        matrix_correlation_analysis,
         gpu_matrix_multiply,
         sparse_matrix_multiply,
         batch_matrix_multiply,
@@ -40,8 +38,8 @@ except ImportError:
 from .config import OptimalClusteringConfig
 from .utils import (
     calculate_cluster_statistics, calculate_cluster_quality_metrics,
-    validate_cluster_quality, bootstrap_cluster_stability, detect_outliers,
-    prepare_clustering_features, load_hmm_regime_data
+    calculate_cluster_quality_metrics_optimized, validate_cluster_quality,
+    detect_outliers, prepare_clustering_features, load_regime_data
 )
 
 logger = logging.getLogger(__name__)
@@ -60,7 +58,7 @@ class OptimizedClusteringResult:
     error_message: Optional[str] = None
 
 class MatrixOptimizedClusterer:
-    """Matrix-optimized clustering algorithm for HMM regime data."""
+    """Matrix-optimized clustering algorithm for regime data."""
 
     def __init__(self, config: OptimalClusteringConfig):
         """Initialize the optimized clusterer.
@@ -149,10 +147,24 @@ class MatrixOptimizedClusterer:
             clustering_result, clustering_time = self._perform_matrix_optimized_clustering(features)
             performance_metrics['clustering_time'] = clustering_time
 
-            # Step 5: Calculate quality metrics using vectorized operations
+            # Step 5: Calculate quality metrics using optimized matrix operations
             self.logger.info("📈 Step 5: Calculating quality metrics...")
             statistics = calculate_cluster_statistics(clustering_result.labels, self.config.to_dict())
-            raw_quality_metrics = calculate_cluster_quality_metrics(features, clustering_result.labels)
+
+            # Use optimized quality metrics calculation for better performance
+            # Check if we should use optimized metrics based on dataset size
+            use_optimized_metrics = (MATRIX_OPERATIONS_AVAILABLE and
+                                   features.shape[0] > 1000 and
+                                   hasattr(self, 'matrix_ops'))
+
+            if use_optimized_metrics:
+                self.logger.info(f"🚀 Using optimized quality metrics for {features.shape[0]} samples")
+                raw_quality_metrics = calculate_cluster_quality_metrics_optimized(
+                    features, clustering_result.labels, use_matrix_ops=True
+                )
+            else:
+                self.logger.info(f"📊 Using standard quality metrics for {features.shape[0]} samples")
+                raw_quality_metrics = calculate_cluster_quality_metrics(features, clustering_result.labels)
             quality_metrics = self._sanitize_quality_metrics(raw_quality_metrics)
             validation = validate_cluster_quality(statistics, quality_metrics, self.config.to_dict())
 
@@ -207,7 +219,7 @@ class MatrixOptimizedClusterer:
 
         try:
             if isinstance(data, str):
-                regime_data = load_hmm_regime_data(data, self.config.to_dict())
+                regime_data = load_regime_data(data, self.config.to_dict())
             else:
                 regime_data = data
 
@@ -245,11 +257,44 @@ class MatrixOptimizedClusterer:
 
             # Apply additional matrix optimizations
             if MATRIX_OPERATIONS_AVAILABLE:
-                # Skip correlation analysis for now to avoid potential issues
-                self.logger.info("⚠️ Skipping correlation analysis to avoid potential issues")
+                # Perform correlation analysis for feature optimization
+                try:
+                    from src.utils.matrix_operations import get_unified_matrix_operations
+                    matrix_ops = get_unified_matrix_operations()
+                    if features.shape[1] > 1:  # Only if we have multiple features
+                        corr_matrix = matrix_ops.safe_correlation_matrix(features)
+                        # Check for highly correlated features (>0.95)
+                        high_corr = np.where(np.abs(corr_matrix) > 0.95)
+                        if len(high_corr[0]) > len(corr_matrix):  # More correlations than expected
+                            self.logger.info("ℹ️ Found highly correlated features, correlation analysis completed")
+                    else:
+                        self.logger.info("ℹ️ Skipping correlation analysis - only one feature available")
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Correlation analysis failed: {e}")
 
-                # Skip feature scaling optimization for now
-                self.logger.info("⚠️ Skipping feature scaling optimization")
+                # Apply feature scaling optimization
+                try:
+                    from sklearn.preprocessing import StandardScaler
+                    scaler = StandardScaler()
+                    # Scale features in batches to handle memory efficiently
+                    n_samples = features.shape[0]
+                    batch_size = min(10000, n_samples // 10)  # Adaptive batch size
+
+                    if n_samples > batch_size:
+                        scaled_features = np.zeros_like(features)
+                        for i in range(0, n_samples, batch_size):
+                            end_idx = min(i + batch_size, n_samples)
+                            batch = features[i:end_idx]
+                            scaled_features[i:end_idx] = scaler.fit_transform(batch)
+                        features = scaled_features
+                        self.logger.info("✅ Feature scaling optimization applied using batch processing")
+                    else:
+                        features = scaler.fit_transform(features)
+                        self.logger.info("✅ Feature scaling optimization applied")
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Feature scaling optimization failed: {e}")
+            else:
+                self.logger.info("ℹ️ Matrix operations not available, using standard processing")
 
             preparation_time = time.time() - start_time
             self.logger.info(f"✅ Features prepared in {preparation_time:.3f} seconds")
@@ -310,7 +355,7 @@ class MatrixOptimizedClusterer:
                 outlier_mask = detect_outliers(
                     features,
                     method=self.config.outlier_detection_method,
-                    contamination=0.001  # Ultra-low contamination for zero noise regime clustering
+                    contamination=0.05  # Higher contamination to be more inclusive
                 )
 
                 # Apply matrix operations for efficient filtering
@@ -322,7 +367,7 @@ class MatrixOptimizedClusterer:
                 outlier_mask = detect_outliers(
                     features,
                     method=self.config.outlier_detection_method,
-                    contamination=0.001  # Ultra-low contamination for zero noise regime clustering
+                    contamination=0.05  # Higher contamination to be more inclusive
                 )
                 if outlier_mask.sum() > 0:
                     features = features[~outlier_mask]
@@ -336,7 +381,7 @@ class MatrixOptimizedClusterer:
             outlier_mask = detect_outliers(
                 features,
                 method=self.config.outlier_detection_method,
-                contamination=0.05
+                contamination=0.10  # Even higher contamination in fallback
             )
             if outlier_mask.sum() > 0:
                 features = features[~outlier_mask]
@@ -605,9 +650,20 @@ class MatrixOptimizedClusterer:
                 # Use GPU-accelerated Gaussian Mixture Model if needed
                 if stats.n_clusters > self.config.target_n_clusters:
                     try:
+                        # Separate noise points before GMM optimization
+                        noise_mask = labels == -1
+                        non_noise_features = features[~noise_mask]
+                        non_noise_labels = labels[~noise_mask]
+
                         gmm = self._create_optimized_gmm(self.config.target_n_clusters)
-                        gmm_labels = gmm.fit_predict(features)
-                        return gmm_labels
+                        gmm_labels = gmm.fit_predict(non_noise_features)
+
+                        # Reconstruct labels with preserved noise points
+                        optimized_labels = np.full(len(labels), -1, dtype=labels.dtype)
+                        optimized_labels[~noise_mask] = gmm_labels
+
+                        self.logger.info(f"Preserved {noise_mask.sum()} noise points during GMM optimization")
+                        return optimized_labels
                     except Exception as e:
                         self.logger.warning(f"GMM optimization failed: {e}")
 
@@ -673,7 +729,7 @@ class MatrixOptimizedClusterer:
             n_features = features.shape[1]
 
             # Use matrix operations to calculate optimal parameters - ULTRA PERMISSIVE FOR ZERO NOISE
-            min_cluster_size = max(1, int(n_samples * 0.00001))  # Ultra-small for maximum clustering
+            min_cluster_size = max(2, int(n_samples * 0.00001))  # Ultra-small for maximum clustering, min 2
             min_samples = max(1, int(n_samples * 0.000005))  # Ultra-small for maximum clustering
 
             return {
@@ -1443,6 +1499,10 @@ class MatrixOptimizedClusterer:
 
         current = labels.copy()
 
+        # Preserve noise points (-1) throughout the process
+        noise_mask = current == -1
+        original_noise_count = noise_mask.sum()
+
         def compute_centroids(lbls: np.ndarray) -> np.ndarray:
             uniq = np.unique(lbls)
             k_local = len(uniq)
@@ -1466,10 +1526,15 @@ class MatrixOptimizedClusterer:
             return centers
 
         def reindex(lbls: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-            uniq = np.unique(lbls)
-            remap = {old: idx for idx, old in enumerate(uniq)}
-            inv = np.array([remap[v] for v in uniq])
-            return np.vectorize(remap.get)(lbls), uniq
+            # Separate noise points from regular clusters
+            non_noise_labels = lbls[~noise_mask]
+            uniq_non_noise = np.unique(non_noise_labels)
+            # Create mapping for non-noise labels only
+            remap = {lab: idx for idx, lab in enumerate(uniq_non_noise)}
+            # Reindex non-noise points
+            reindexed = np.full(len(lbls), -1, dtype=lbls.dtype)  # Preserve noise as -1
+            reindexed[~noise_mask] = np.vectorize(remap.get)(non_noise_labels)
+            return reindexed, uniq_non_noise
 
         # Ensure labels are 0..k-1
         current, orig_unique = reindex(current)
@@ -1567,7 +1632,7 @@ class MatrixOptimizedClusterer:
         cnts = counts(current)
 
         # Phase A: raise clusters to lower bound
-        max_rounds = 5
+        max_rounds = 3  # Reduced from 5 to 3 for faster execution
         for _ in range(max_rounds):
             deficits = [(c, lower - cnts[c]) for c in range(k) if cnts[c] < lower]
             if not deficits:
@@ -1682,7 +1747,15 @@ class MatrixOptimizedClusterer:
             dists, centroids, centroids_w = compute_dists(current)
             topk = np.argsort(dists, axis=1)[:, :min(3, k)]
 
-        return current
+        # Ensure noise points are preserved in the final result
+        final_labels = current.copy()
+        final_labels[noise_mask] = -1
+        final_noise_count = (final_labels == -1).sum()
+
+        if final_noise_count != original_noise_count:
+            self.logger.warning(f"Noise point count changed: {original_noise_count} -> {final_noise_count}")
+
+        return final_labels
 
     def _update_labels_after_split(self, current_labels: np.ndarray,
                                    split_labels: np.ndarray, original_label: int) -> np.ndarray:
@@ -1810,14 +1883,13 @@ class MatrixOptimizedClusterer:
 
                 self.logger.info(f"✅ Comprehensive refinement completed with score: {self._evaluate_cluster_distribution(best_labels, n_samples, adjusted_target_clusters):.3f}")
 
-            return best_labels if best_labels is not None else self._fallback_clustering(features, target_clusters)
+            if best_labels is None:
+                raise ValueError("All clustering attempts failed - no valid cluster labels could be generated")
+            return best_labels
 
         except Exception as e:
-            self.logger.warning(f"Advanced centroid-based clustering failed: {e}")
-            # Fallback to standard K-means
-            from sklearn.cluster import KMeans
-            kmeans = KMeans(n_clusters=target_clusters, init='k-means++', n_init=10, random_state=self.config.random_state)
-            return kmeans.fit_predict(features)
+            self.logger.error(f"Advanced centroid-based clustering failed: {e}")
+            raise ValueError(f"Clustering failed - all attempts exhausted: {e}") from e
 
     def _create_weighted_4d_map(self, features: np.ndarray) -> np.ndarray:
         """Create a weighted 4D map based on cluster characteristics.
@@ -2105,7 +2177,7 @@ class MatrixOptimizedClusterer:
             cluster_stats = self._calculate_cluster_statistics(current_labels, features, n_samples)
 
             # Perform iterative merging rounds
-            max_rounds = 50  # Limit iterations to prevent infinite loops
+            max_rounds = 10  # Limit iterations to prevent infinite loops (reduced for speed)
             round_num = 0
 
             while len(cluster_stats) > target_clusters and round_num < max_rounds:
@@ -2481,7 +2553,7 @@ class MatrixOptimizedClusterer:
             cluster_stats = self._calculate_cluster_statistics(current_labels, features, n_samples)
 
             # Perform multiple rounds of strategic merging
-            for round_num in range(10):
+            for round_num in range(3):  # Reduced from 10 to 3 for faster execution
                 # Sort clusters by size
                 sorted_stats = sorted(cluster_stats, key=lambda x: x['size'])
 
@@ -2870,24 +2942,6 @@ class MatrixOptimizedClusterer:
             self.logger.warning(f"Smart cluster transfer failed: {e}")
             return labels
 
-    def _fallback_clustering(self, features: np.ndarray, target_clusters: int) -> np.ndarray:
-        """Fallback clustering method when advanced approaches fail.
-
-        Args:
-            features: Feature matrix
-            target_clusters: Target number of clusters
-
-        Returns:
-            Cluster labels
-        """
-        try:
-            from sklearn.cluster import KMeans
-            kmeans = KMeans(n_clusters=target_clusters, init='k-means++', n_init=10, random_state=self.config.random_state)
-            return kmeans.fit_predict(features)
-
-        except Exception as e:
-            self.logger.warning(f"Fallback clustering failed: {e}")
-            return np.zeros(features.shape[0], dtype=int)
 
     def _iterative_refinement(self, labels: np.ndarray, features: np.ndarray, target_clusters: int) -> np.ndarray:
         """Apply iterative refinement passes to problematic clusters.
@@ -3011,8 +3065,11 @@ class MatrixOptimizedClusterer:
                             # Reassign to new cluster labels
                             max_label = np.max(current_labels)
                             for i in range(n_subclusters):
-                                sub_mask = problem_mask & (sub_labels == i)
-                                current_labels[sub_mask] = max_label + 1 + i
+                                # Get indices where sub_labels == i (these are indices within the subset)
+                                sub_indices = np.where(sub_labels == i)[0]
+                                # Map these back to the original data indices using problem_mask
+                                original_indices = np.where(problem_mask)[0][sub_indices]
+                                current_labels[original_indices] = max_label + 1 + i
 
                             self.logger.info(f"✅ Targeted refinement: Split large cluster {problem_stat['label']} into {n_subclusters} subclusters")
 
@@ -3182,7 +3239,7 @@ class MatrixOptimizedClusterer:
                 # Use eigenvalue analysis for optimal clusters
                 try:
                     # Calculate correlation matrix
-                    corr_matrix = correlation_matrix_gpu(features)
+                    corr_matrix = self.matrix_ops.safe_correlation_matrix(features)
 
                     # Use SVD for dimensionality analysis
                     U, s, Vt = np.linalg.svd(corr_matrix, full_matrices=False)
@@ -3261,12 +3318,12 @@ def create_matrix_optimized_clusterer(config: Optional[OptimalClusteringConfig] 
 
     return MatrixOptimizedClusterer(config)
 
-def cluster_hmm_regimes_optimized(data_path: str, config: Optional[OptimalClusteringConfig] = None,
-                                 **kwargs) -> OptimizedClusteringResult:
-    """Optimized clustering of HMM regimes using matrix operations.
+def cluster_regimes_optimized(data_path: str, config: Optional[OptimalClusteringConfig] = None,
+                             **kwargs) -> OptimizedClusteringResult:
+    """Optimized clustering of regimes using matrix operations.
 
     Args:
-        data_path: Path to HMM regime data
+        data_path: Path to regime data
         config: Clustering configuration
         **kwargs: Additional parameters
 

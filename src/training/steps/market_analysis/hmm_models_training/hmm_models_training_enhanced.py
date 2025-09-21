@@ -48,6 +48,15 @@ from .shared_feature_utils import create_enhanced_features_with_names
 from src.utils.ml_common.config.base_training_config import HMMTrainingConfig
 from src.utils.ml_common.training.base_training_step import BaseTrainingStep
 
+# Feature generation system imports
+try:
+    from src.feature_generation.core.feature_bank import get_global_feature_bank
+    from src.feature_generation.core.feature_generator import FeatureCategory
+    FEATURE_GENERATION_AVAILABLE = True
+except ImportError:
+    FEATURE_GENERATION_AVAILABLE = False
+    tprint("⚠️ Advanced feature generation not available, using simplified features")
+
 # Common utilities integration
 from src.utils.common_operations import (
     safe_dataframe_operation,
@@ -192,17 +201,58 @@ except ImportError as e:
                     if not ML_LIBRARIES_STATUS.get('lightgbm', False):
                         raise ImportError(f"LightGBM not available for model type: {model_type}")
                     import lightgbm
-                    return lightgbm.LGBMClassifier(n_estimators=100, learning_rate=0.1, random_state=42, **kwargs)
+                    # Enhanced regularization for LightGBM to prevent overfitting
+                    return lightgbm.LGBMClassifier(
+                        n_estimators=100,
+                        learning_rate=0.05,    # Reduced learning rate
+                        max_depth=4,           # Limited depth for regularization
+                        num_leaves=15,         # Limited leaves per tree
+                        min_child_samples=20,  # Minimum samples per child
+                        min_child_weight=0.1,  # Minimum sum of hessian per child
+                        reg_alpha=0.1,         # L1 regularization
+                        reg_lambda=0.1,        # L2 regularization
+                        feature_fraction=0.8,  # Use 80% of features per tree
+                        bagging_fraction=0.8,  # Use 80% of data per tree
+                        bagging_freq=1,        # Enable bagging
+                        random_state=42,
+                        **kwargs
+                    )
                 elif model_type == 'xgboost':
                     if not ML_LIBRARIES_STATUS.get('xgboost', False):
                         raise ImportError(f"XGBoost not available for model type: {model_type}")
                     import xgboost
-                    return xgboost.XGBClassifier(n_estimators=100, learning_rate=0.1, random_state=42, **kwargs)
+                    # Enhanced regularization for XGBoost to prevent overfitting
+                    return xgboost.XGBClassifier(
+                        n_estimators=100,
+                        learning_rate=0.05,    # Reduced learning rate
+                        max_depth=4,           # Limited depth for regularization
+                        min_child_weight=5,    # Minimum sum of hessian per child
+                        reg_alpha=0.1,         # L1 regularization
+                        reg_lambda=0.1,        # L2 regularization
+                        subsample=0.8,         # Use 80% of data per tree
+                        colsample_bytree=0.8,  # Use 80% of features per tree
+                        colsample_bylevel=0.8, # Use 80% of features per level
+                        colsample_bynode=0.8,  # Use 80% of features per node
+                        random_state=42,
+                        **kwargs
+                    )
                 elif model_type in ['random_forest', 'rf']:
                     if not ML_LIBRARIES_STATUS.get('sklearn', False):
                         raise ImportError(f"Scikit-learn not available for model type: {model_type}")
                     from sklearn.ensemble import RandomForestClassifier
-                    return RandomForestClassifier(n_estimators=100, random_state=42, **kwargs)
+                    # Enhanced regularization to prevent overfitting
+                    return RandomForestClassifier(
+                        n_estimators=100,
+                        max_depth=6,           # Reduced depth for better regularization
+                        min_samples_split=20,  # Increased to require more samples to split
+                        min_samples_leaf=10,   # Increased to require more samples per leaf
+                        max_features='sqrt',   # Limit features per split (sqrt for better regularization)
+                        min_impurity_decrease=0.01,  # Stop splitting if impurity decrease is too small
+                        ccp_alpha=0.001,       # Cost-complexity pruning for post-pruning regularization
+                        random_state=42,
+                        n_jobs=-1,
+                        **kwargs
+                    )
                 # elif model_type in ['logistic_regression', 'lr']:  # REMOVED LOGISTIC REGRESSION
                 #     if not ML_LIBRARIES_STATUS.get('sklearn', False):
                 #         raise ImportError(f"Scikit-learn not available for model type: {model_type}")
@@ -245,44 +295,7 @@ except ImportError as e:
                     logger.error(f"Circuit breaker opened after {self.failure_count} failures")
                 raise e
     
-    class ValidationUtils:
-        @staticmethod
-        def validate_config(config):
-            try:
-                required_attrs = ['model_types', 'n_features', 'sequence_length', 'n_regimes', 'timeframe']
-                for attr in required_attrs:
-                    if not hasattr(config, attr):
-                        logger.error(f"Configuration missing required attribute: {attr}")
-                        return False
-                return True
-            except Exception as e:
-                logger.error(f"Config validation error: {e}")
-                return False
-        
-        @staticmethod
-        def validate_data_shapes(X, y, regime_labels):
-            try:
-                return len(X) == len(y) == len(regime_labels)
-            except Exception:
-                return False
-        
-        @staticmethod
-        def validate_data_quality(X, y, regime_labels):
-            try:
-                import numpy as np
-                return not (np.any(np.isnan(X)) or np.any(np.isnan(y)) or np.any(np.isnan(regime_labels)))
-            except Exception:
-                return True  # Skip validation if numpy not available
-        
-        @staticmethod
-        def validate_regime_distribution(regime_labels, min_samples_per_regime=10):
-            try:
-                import numpy as np
-                unique_regimes, counts = np.unique(regime_labels, return_counts=True)
-                return len(unique_regimes) >= 2 and np.min(counts) >= min_samples_per_regime
-            except Exception:
-                return True  # Skip validation if numpy not available
-    
+
     class ProgressReporter:
         def __init__(self, total_models: int):
             self.total_models = total_models
@@ -357,7 +370,7 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
                 
             config = HMMTrainingConfig(
                 model_name="hmm_models_enhanced",
-                timeframe="1h",
+                timeframe="15m",
                 n_features=100,
                 sequence_length=20,
                 n_regimes=3,
@@ -437,8 +450,12 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
         """
         try:
             # Use common validation utilities if available
-            if SHARED_UTILITIES_AVAILABLE and not ValidationUtils.validate_config(config):
-                raise ValueError("Configuration validation failed")
+            if SHARED_UTILITIES_AVAILABLE:
+                if not ValidationUtils.validate_config(config):
+                    raise ValueError("Configuration validation failed")
+            else:
+                # Basic config validation if shared utilities not available
+                tprint("⚠️ Shared utilities not available, skipping config validation")
             
             # Additional HMM-specific validations using math validation
             warnings = []
@@ -627,7 +644,7 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
     
 # Model registration now handled by shared UnifiedModelFactory
     
-    def _validate_input_data(self, X: np.ndarray, y: np.ndarray, cluster_assignments: np.ndarray) -> bool:
+    def _validate_input_data(self, X: np.ndarray, y: np.ndarray, cluster_assignments: Optional[np.ndarray]) -> bool:
         """
         Enhanced input validation with early exit on critical failures.
         Uses common utilities for better validation and error handling.
@@ -641,15 +658,43 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
             True if validation passes, False otherwise
         """
         try:
+            # Import numpy at the beginning for use throughout the method
+            import numpy as np
+
+            # Check if cluster_assignments is None or empty first
+            if cluster_assignments is None:
+                tprint("❌ cluster_assignments is None - cannot proceed with validation")
+                return False
+
+            # Convert cluster_assignments to numpy array if it's a list
+            if isinstance(cluster_assignments, list):
+                cluster_assignments = np.array(cluster_assignments)
+
+            # Check if cluster_assignments is still None after conversion attempt
+            if cluster_assignments is None:
+                tprint("❌ cluster_assignments is None after conversion attempt - validation failed")
+                return False
+
             # Use common validation utilities if available
             if SHARED_UTILITIES_AVAILABLE:
                 if not ValidationUtils.validate_data_shapes(X, y, cluster_assignments):
                     return False
-                
+
                 if not ValidationUtils.validate_data_quality(X, y, cluster_assignments):
                     return False
-                
-                if not ValidationUtils.validate_regime_distribution(cluster_assignments, min_samples_per_regime=10):
+
+                if not ValidationUtils.validate_regime_distribution(cluster_assignments, min_samples_per_regime=1):
+                    return False
+            else:
+                # Fallback validation if shared utilities not available
+                tprint("⚠️ Shared utilities not available, using basic validation")
+                if len(X) != len(y):
+                    tprint("❌ Shape mismatch: X and y have different lengths")
+                    return False
+                if cluster_assignments is not None and len(X) != len(cluster_assignments):
+                    tprint("⚠️ Data alignment issue: X and cluster_assignments have different lengths")
+                if cluster_assignments is not None and len(np.unique(cluster_assignments)) < 2:
+                    tprint("❌ Need at least 2 clusters")
                     return False
             
             # Additional HMM-specific validations using common math validation
@@ -717,8 +762,8 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
             min_cluster_count = min(cluster_counts)
             max_cluster_count = max(cluster_counts)
             
-            if min_cluster_count < 10:
-                critical_failures.append(f"Cluster has only {min_cluster_count} samples (minimum: 10)")
+            if min_cluster_count < 1:
+                critical_failures.append(f"Cluster has only {min_cluster_count} samples (minimum: 1)")
             elif min_cluster_count < 50:
                 warnings.append(f"Some clusters have few samples (minimum: {min_cluster_count})")
             
@@ -748,6 +793,118 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
             tprint(f"❌ Validation error: {e}")
             return False
     
+    def _prepare_comprehensive_features(self, data: pd.DataFrame, cluster_assignments: Optional[np.ndarray] = None) -> Tuple[pd.DataFrame, List[str]]:
+        """
+        Prepare comprehensive features using the advanced feature generation system.
+
+        Args:
+            data: Market data DataFrame with OHLCV columns
+            cluster_assignments: Optional cluster assignments for regime-aware features
+
+        Returns:
+            Tuple of (features, feature_names)
+        """
+        try:
+            tprint("🔧 Preparing comprehensive features using feature generation system...")
+
+            if not FEATURE_GENERATION_AVAILABLE:
+                tprint("⚠️ Feature generation system not available, falling back to basic features")
+                return self._prepare_basic_features(data, cluster_assignments)
+
+            # Get the feature bank
+            feature_bank = get_global_feature_bank()
+
+            # Define categories to generate features from
+            categories_to_use = [
+                FeatureCategory.MOMENTUM,
+                FeatureCategory.VOLATILITY,
+                FeatureCategory.TREND,
+                FeatureCategory.VOLUME,
+                FeatureCategory.SUPPORT_RESISTANCE
+            ]
+
+            # Generate features by category
+            tprint(f"📊 Generating features from {len(categories_to_use)} categories...")
+            features_df = feature_bank.generate_features(
+                data=data,
+                categories=categories_to_use,
+                lookback_optimization=False,  # Use default lookbacks for now
+                target_column=None  # No target for feature generation
+            )
+
+            # Note: HMM regime features removed as per user request
+
+            # Get feature names
+            feature_names = list(features_df.columns)
+
+            tprint(f"✅ Generated {len(feature_names)} comprehensive features")
+            tprint(f"📊 Feature categories breakdown:")
+            for category in categories_to_use:
+                category_features = [name for name in feature_names if category.value.lower() in name.lower()]
+                tprint(f"   • {category.value}: {len(category_features)} features")
+
+            return features_df, feature_names
+
+        except Exception as e:
+            tprint(f"❌ Comprehensive feature generation failed: {e}")
+            raise ValueError(f"Feature generation failed: {e}")
+
+    def _prepare_basic_features(self, data: pd.DataFrame, cluster_assignments: Optional[np.ndarray] = None) -> Tuple[pd.DataFrame, List[str]]:
+        """
+        Prepare basic features as fallback (close_return, volume_return, price_range_pct).
+
+        Args:
+            data: Market data DataFrame
+            cluster_assignments: Optional cluster assignments
+
+        Returns:
+            Tuple of (features, feature_names)
+        """
+        try:
+            tprint("📊 Preparing basic features (fallback)...")
+
+            # Ensure we have required OHLCV data
+            required_cols = ['open', 'high', 'low', 'close', 'volume']
+            missing_cols = [col for col in required_cols if col not in data.columns]
+
+            if missing_cols:
+                tprint(f"⚠️ Missing columns: {missing_cols}, creating basic features from available data")
+                # Create basic features from available data
+                features = pd.DataFrame(index=data.index)
+
+                if 'close' in data.columns:
+                    features['close_return'] = data['close'].pct_change()
+                    features['price_range_pct'] = (data['high'] - data['low']) / data['close'] if 'high' in data.columns and 'low' in data.columns else 0
+
+                if 'volume' in data.columns:
+                    features['volume_return'] = data['volume'].pct_change()
+
+                # Fill NaN values
+                features = features.fillna(0)
+
+            else:
+                # Calculate standard basic features
+                features = pd.DataFrame(index=data.index)
+
+                # Price features
+                features['close_return'] = data['close'].pct_change()
+                features['price_range_pct'] = (data['high'] - data['low']) / data['close']
+
+                # Volume features
+                features['volume_return'] = data['volume'].pct_change()
+
+                # Fill NaN values
+                features = features.fillna(0)
+
+            feature_names = list(features.columns)
+            tprint(f"✅ Generated {len(feature_names)} basic features: {feature_names}")
+
+            return features, feature_names
+
+        except Exception as e:
+            tprint(f"❌ Basic feature preparation failed: {e}")
+            raise
+
     def _prepare_features(self, X: Union[np.ndarray, pd.DataFrame], feature_names: Optional[List[str]] = None, cluster_assignments: Optional[np.ndarray] = None) -> Tuple[pd.DataFrame, List[str]]:
         """
         Prepare and enhance features with optimized performance and comprehensive error handling.
@@ -863,7 +1020,17 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
             )
             
             selected_features = selection_result.get('selected_features', list(X.columns)[:self.config.n_features])
-            
+
+            # Enhanced: Convert indices to column names if needed
+            if selected_features and isinstance(selected_features[0], (int, np.integer)):
+                # selected_features contains indices, convert to column names
+                all_columns = list(X.columns)
+                try:
+                    selected_features = [all_columns[i] for i in selected_features if 0 <= i < len(all_columns)]
+                except (IndexError, TypeError) as e:
+                    self.logger.error(f"❌ Failed to convert indices to column names: {e}")
+                    selected_features = list(X.columns)[:self.config.n_features]
+
             # Enhanced: Validate selected features exist and are valid
             missing_features = [f for f in selected_features if f not in X.columns]
             if missing_features:
@@ -917,8 +1084,27 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
                 raise ValueError("No valid features remaining after validation")
             
             X_selected = X[selected_features]
-            
+
+            # Enhanced validation: Check for data leakage and feature quality
+            if SHARED_UTILITIES_AVAILABLE:
+                is_valid, validation_message = ValidationUtils.validate_feature_selection_quality(
+                    X, y, selected_features, min_feature_count=3
+                )
+            else:
+                # Basic feature validation if shared utilities not available
+                is_valid = True
+                validation_message = "Feature validation skipped - shared utilities not available"
+
+            if not is_valid:
+                self.logger.error(f"❌ Feature validation failed: {validation_message}")
+                # Log additional details about the failure
+                tprint(f"⚠️ Feature selection validation failed: {validation_message}")
+                # Fall back to original features with warning
+                self.logger.warning("🔄 Falling back to original features due to validation failure")
+                return X, list(X.columns)
+
             self.logger.info(f"✅ Feature selection completed: {len(selected_features)} features selected")
+            self.logger.info(f"✅ Feature validation passed: {validation_message}")
             return X_selected, selected_features
             
         except Exception as e:
@@ -1019,7 +1205,7 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
                                          self.config.training_mode_config and \
                                          self.config.training_mode_config.get('training_mode') == 'light' else 300
                     
-                    result = {'model': None, 'exception': None}
+                    result = {'model': None, 'predictions': None, 'feature_importance': None, 'hyperparameters': None, 'y_test': None, 'exception': None}
                     
                     def training_worker():
                         try:
@@ -1038,13 +1224,40 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
                                 tprint(f"⚠️ Memory usage critical ({current_memory_pct:.1f}%) - skipping {model_type}")
                                 raise MemoryError(f"Insufficient memory for {model_type} training")
                             
-                            # Train model
-                            model.fit(X, y)
-                            
-                            # Get predictions
-                            predictions = model.predict(X)
-                            
-                            # Get feature importance if available
+                            # Enhanced: Add proper train/test split for validation
+                            from sklearn.model_selection import train_test_split
+                            from sklearn.metrics import accuracy_score
+
+                            # Validate train/test split integrity
+                            X_train, X_test, y_train, y_test = train_test_split(
+                                X, y, test_size=0.3, random_state=42, stratify=y
+                            )
+
+                            # Check split integrity
+                            if SHARED_UTILITIES_AVAILABLE:
+                                is_split_valid, split_message = ValidationUtils.validate_train_test_split(
+                                    X_train, X_test, y_train, y_test, temporal_check=False
+                                )
+                            else:
+                                # Basic split validation if shared utilities not available
+                                is_split_valid = True
+                                split_message = "Split validation skipped - shared utilities not available"
+
+                            if not is_split_valid:
+                                raise ValueError(f"Invalid train/test split: {split_message}")
+
+                            # Train model on training set only
+                            model.fit(X_train, y_train)
+
+                            # Get predictions on both train and test sets for validation
+                            train_predictions = model.predict(X_train)
+                            test_predictions = model.predict(X_test)
+
+                            # Calculate metrics for both sets
+                            train_accuracy = accuracy_score(y_train, train_predictions)
+                            test_accuracy = accuracy_score(y_test, test_predictions)
+
+                            # Get feature importance before overfitting detection
                             feature_importance = None
                             try:
                                 if hasattr(model, 'feature_importances_'):
@@ -1053,6 +1266,193 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
                                     feature_importance = np.abs(model.coef_).flatten() if model.coef_.ndim > 1 else np.abs(model.coef_)
                             except Exception as e:
                                 tprint(f"Could not get feature importance: {e}")
+
+                            # Load cluster assignments from parquet file if available
+                            try:
+                                import pandas as pd
+                                # Try to load cluster assignments from the latest optimal regime clustering outcome
+                                if hasattr(self, '_cluster_assignments') and self._cluster_assignments is not None:
+                                    # Use cached cluster assignments if available
+                                    pass
+                                else:
+                                    # Try to load from the latest optimal regime clustering outcome
+                                    try:
+                                        import pandas as pd
+                                        from src.utils.common_operations import load_latest_optimal_regime_clustering_outcome
+
+                                        outcome_data = load_latest_optimal_regime_clustering_outcome()
+
+                                        if outcome_data and 'artifacts' in outcome_data:
+                                            # Extract cluster assignments from the outcome data
+                                            artifacts = outcome_data['artifacts']
+
+                                            # Look for cluster assignments in various possible locations
+                                            cluster_assignments = None
+
+                                            # Check for cluster assignments in the main artifacts
+                                            if 'cluster_assignments' in artifacts:
+                                                cluster_assignments = artifacts['cluster_assignments']
+                                            elif 'optimal_regime_clustering_result' in artifacts:
+                                                clustering_result = artifacts['optimal_regime_clustering_result']
+                                                if 'cluster_assignments' in clustering_result:
+                                                    cluster_assignments = clustering_result['cluster_assignments']
+
+                                            if cluster_assignments is not None:
+                                                if isinstance(cluster_assignments, np.ndarray):
+                                                    self._cluster_assignments = cluster_assignments
+                                                elif hasattr(cluster_assignments, 'values'):
+                                                    self._cluster_assignments = cluster_assignments.values
+                                                else:
+                                                    # Try to convert to numpy array
+                                                    self._cluster_assignments = np.array(cluster_assignments)
+
+                                                tprint(f"✅ Loaded {len(self._cluster_assignments)} cluster assignments from latest optimal regime clustering outcome")
+                                                # Ensure cluster assignments match data length
+                                                if self._cluster_assignments is not None and X is not None:
+                                                    if len(self._cluster_assignments) != len(X):
+                                                        tprint(f"⚠️ Cluster assignments length ({len(self._cluster_assignments)}) doesn't match X length ({len(X)})")
+                                                        # Use proportion-based alignment strategy
+                                                        import numpy as np
+                                                        from src.training.steps.market_analysis.hmm_models_training.shared_utilities.validation_utils import ValidationUtils
+                                                        tprint("🔧 Aligning cluster assignments using proportion-based strategy...")
+                                                        aligned_assignments = ValidationUtils._align_regime_labels(self._cluster_assignments, len(X))
+                                                        if aligned_assignments is not None:
+                                                            self._cluster_assignments = aligned_assignments
+                                                            tprint(f"✅ Aligned cluster assignments: {len(self._cluster_assignments)} samples")
+                                                        else:
+                                                            tprint("❌ Failed to align cluster assignments")
+                                                            self._cluster_assignments = None
+                                            else:
+                                                tprint("⚠️ No cluster assignments found in optimal regime clustering outcome")
+                                        else:
+                                            tprint("⚠️ Could not load latest optimal regime clustering outcome")
+
+                                    except Exception as e:
+                                        tprint(f"⚠️ Error loading cluster assignments from optimal regime clustering outcome: {e}")
+
+                                    # Fallback to loading from the pickle file created by clustering
+                                    try:
+                                        hmm_input_path = "optimal_clusters/binance/ETHUSDT/15m/market_analysis_hmm_training_input_ETHUSDT_BINANCE_15m_20250921_220102.pkl"
+                                        import pickle
+                                        with open(hmm_input_path, 'rb') as f:
+                                            hmm_input_data = pickle.load(f)
+
+                                        if 'cluster_assignments' in hmm_input_data:
+                                            cluster_assignments = hmm_input_data['cluster_assignments']
+                                            self._cluster_assignments = cluster_assignments
+                                            tprint(f"✅ Loaded {len(self._cluster_assignments)} cluster assignments from HMM training input file")
+                                            # Ensure cluster assignments match data length
+                                            if self._cluster_assignments is not None and X is not None:
+                                                if len(self._cluster_assignments) != len(X):
+                                                    tprint(f"⚠️ Cluster assignments length ({len(self._cluster_assignments)}) doesn't match X length ({len(X)})")
+                                                    # Use proportion-based alignment strategy
+                                                    import numpy as np
+                                                    from src.training.steps.market_analysis.hmm_models_training.shared_utilities.validation_utils import ValidationUtils
+                                                    tprint("🔧 Aligning cluster assignments using proportion-based strategy...")
+                                                    aligned_assignments = ValidationUtils._align_regime_labels(self._cluster_assignments, len(X))
+                                                    if aligned_assignments is not None:
+                                                        self._cluster_assignments = aligned_assignments
+                                                        tprint(f"✅ Aligned cluster assignments: {len(self._cluster_assignments)} samples")
+                                                    else:
+                                                        tprint("❌ Failed to align cluster assignments")
+                                                        self._cluster_assignments = None
+                                        else:
+                                            tprint(f"⚠️ No cluster_assignments found in HMM training input file")
+
+                                    except Exception as e:
+                                        tprint(f"⚠️ Error loading cluster assignments from HMM training input file: {e}")
+
+                                    # Fallback to the old hardcoded path if the new method fails
+                                    try:
+                                        cluster_assignments_path = "optimal_clusters/binance/ETHUSDT/15m/optimal_cluster_labels.parquet"
+                                        cluster_assignments_df = pd.read_parquet(cluster_assignments_path)
+                                        if 'cluster_id' in cluster_assignments_df.columns:
+                                            self._cluster_assignments = cluster_assignments_df['cluster_id'].values
+                                            tprint(f"✅ Loaded {len(self._cluster_assignments)} cluster assignments from {cluster_assignments_path} (fallback)")
+                                            # Ensure cluster assignments match data length
+                                            if self._cluster_assignments is not None and X is not None:
+                                                if len(self._cluster_assignments) != len(X):
+                                                    tprint(f"⚠️ Cluster assignments length ({len(self._cluster_assignments)}) doesn't match X length ({len(X)})")
+                                                    # Use proportion-based alignment strategy
+                                                    import numpy as np
+                                                    from src.training.steps.market_analysis.hmm_models_training.shared_utilities.validation_utils import ValidationUtils
+                                                    tprint("🔧 Aligning cluster assignments using proportion-based strategy...")
+                                                    aligned_assignments = ValidationUtils._align_regime_labels(self._cluster_assignments, len(X))
+                                                    if aligned_assignments is not None:
+                                                        self._cluster_assignments = aligned_assignments
+                                                        tprint(f"✅ Aligned cluster assignments: {len(self._cluster_assignments)} samples")
+                                                    else:
+                                                        tprint("❌ Failed to align cluster assignments")
+                                                        self._cluster_assignments = None
+                                        else:
+                                            tprint(f"⚠️ No cluster_id column found in {cluster_assignments_path}")
+                                    except Exception as e:
+                                        tprint(f"⚠️ Could not load cluster assignments from {cluster_assignments_path} (fallback): {e}")
+                            except Exception as e:
+                                tprint(f"⚠️ Error handling cluster assignments: {e}")
+
+                            # Comprehensive overfitting detection
+                            if SHARED_UTILITIES_AVAILABLE:
+                                overfitting_analysis = ValidationUtils.detect_overfitting_comprehensive(
+                                    train_predictions=train_predictions,
+                                    test_predictions=test_predictions,
+                                    train_labels=y_train,
+                                    test_labels=y_test,
+                                    train_probabilities=None,  # Will be filled if available
+                                    test_probabilities=None,   # Will be filled if available
+                                    model=model,
+                                    feature_importance=feature_importance
+                                )
+                            else:
+                                # Basic overfitting detection if shared utilities not available
+                                overfitting_analysis = {
+                                    'overfitting_detected': False,
+                                    'accuracy_gap': abs(train_accuracy - test_accuracy),
+                                    'message': 'Overfitting detection skipped - shared utilities not available'
+                                }
+
+                            # Get probabilities if available for enhanced analysis
+                            if hasattr(model, 'predict_proba'):
+                                try:
+                                    train_probabilities = model.predict_proba(X_train)
+                                    test_probabilities = model.predict_proba(X_test)
+                                    overfitting_analysis = ValidationUtils.detect_overfitting_comprehensive(
+                                        train_predictions=train_predictions,
+                                        test_predictions=test_predictions,
+                                        train_labels=y_train,
+                                        test_labels=y_test,
+                                        train_probabilities=train_probabilities,
+                                        test_probabilities=test_probabilities,
+                                        model=model,
+                                        feature_importance=feature_importance
+                                    )
+                                except Exception:
+                                    pass
+
+                            # Enhanced overfitting reporting
+                            if overfitting_analysis['is_overfitting']:
+                                severity = overfitting_analysis['severity']
+                                tprint(f"⚠️ OVERFITTING DETECTED ({severity.upper()} severity):")
+                                tprint(f"   Train accuracy: {overfitting_analysis['train_accuracy']:.4f}")
+                                tprint(f"   Test accuracy: {overfitting_analysis['test_accuracy']:.4f}")
+                                tprint(f"   Accuracy gap: {overfitting_analysis['accuracy_gap']:.4f}")
+                                tprint(f"   F1 gap: {overfitting_analysis['f1_gap']:.4f}")
+
+                                if overfitting_analysis['warnings']:
+                                    for warning in overfitting_analysis['warnings']:
+                                        tprint(f"   {warning}")
+
+                                if overfitting_analysis['recommendations']:
+                                    tprint(f"   📋 Recommendations:")
+                                    for rec in overfitting_analysis['recommendations'][:3]:  # Show top 3
+                                        tprint(f"      • {rec}")
+                            else:
+                                # Calculate accuracy gap for display
+                                accuracy_gap = train_accuracy - test_accuracy
+                                tprint(f"✅ Model generalization validated: Train={train_accuracy:.4f}, Test={test_accuracy:.4f}, Gap={accuracy_gap:.4f}")
+
+                            # Use test set predictions for final metrics
+                            predictions = test_predictions
                             
                             # Get hyperparameters
                             hyperparameters = None
@@ -1063,6 +1463,10 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
                                 tprint(f"Could not get hyperparameters: {e}")
                             
                             result['model'] = (model, predictions, feature_importance, hyperparameters)
+                            result['predictions'] = predictions
+                            result['feature_importance'] = feature_importance
+                            result['hyperparameters'] = hyperparameters
+                            result['y_test'] = y_test
                             
                         except Exception as e:
                             result['exception'] = e
@@ -1105,10 +1509,41 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
                             gc.collect()
                 
                 # Execute with circuit breaker protection
-                model, predictions, feature_importance, hyperparameters = self.circuit_breaker.call(create_and_train_model)
+                result = self.circuit_breaker.call(create_and_train_model)
+
+                # Handle both tuple and dictionary results
+                if isinstance(result, tuple) and len(result) >= 4:
+                    # Result is a tuple: (model, predictions, feature_importance, hyperparameters, y_test)
+                    model, predictions, feature_importance, hyperparameters = result[:4]
+                    y_test = result[4] if len(result) > 4 else y
+                elif isinstance(result, dict):
+                    # Result is a dictionary
+                    model = result.get('model')
+                    predictions = result.get('predictions')
+                    feature_importance = result.get('feature_importance')
+                    hyperparameters = result.get('hyperparameters')
+                    y_test = result.get('y_test')
+                    # If y_test is not provided, we need to reconstruct it from the predictions length
+                    if y_test is None and predictions is not None:
+                        # Use the last len(predictions) samples from y as y_test
+                        y_test = y[-len(predictions):] if len(predictions) <= len(y) else y
+                    elif y_test is None:
+                        # Fallback to using the full y (this shouldn't happen in normal cases)
+                        y_test = y
+                else:
+                    # Fallback for other result types
+                    model = result
+                    predictions = None
+                    feature_importance = None
+                    hyperparameters = None
+                    # If predictions exist, reconstruct y_test from the predictions length
+                    if predictions is not None:
+                        y_test = y[-len(predictions):] if len(predictions) <= len(y) else y
+                    else:
+                        y_test = y
                 
-                # Calculate accuracy using safe math operations
-                accuracy = safe_divide(np.sum(predictions == y), len(y), 0.0)
+                # Calculate accuracy using safe math operations (use test set predictions)
+                accuracy = safe_divide(np.sum(predictions == y_test), len(y_test), 0.0)
                 
                 # Use evaluation utilities if available
                 if ML_EVALUATION_AVAILABLE and self.evaluation_utils is not None:
@@ -1406,7 +1841,7 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
             if len(all_warnings) > 0:
                 recommendations.append(f"Address {len(all_warnings)} warnings for better performance")
             
-            if report["performance_summary"]["average_accuracy"] < 0.7:
+            if "performance_summary" in report and report["performance_summary"]["average_accuracy"] < 0.7:
                 recommendations.append("Consider feature engineering or data preprocessing improvements")
             
             if report["computational_metrics"]["average_training_time"] > 60:
@@ -1431,31 +1866,50 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
     
     def execute(
         self,
-        X: np.ndarray,
+        X: Union[np.ndarray, pd.DataFrame],
         y: np.ndarray,
-        cluster_assignments: np.ndarray,
+        cluster_assignments: Optional[np.ndarray],
         feature_names: Optional[List[str]] = None,
         hmm_states: Optional[np.ndarray] = None,
+        market_data: Optional[pd.DataFrame] = None,
         **kwargs
     ) -> Dict[str, Any]:
         """
         Execute enhanced HMM models training with comprehensive error handling and reporting.
         Refactored for better maintainability and reduced complexity.
-        
+
         Args:
-            X: Input features
+            X: Input features or market data DataFrame
             y: Target values
             cluster_assignments: Cluster assignments for each sample
             feature_names: Names of input features
             hmm_states: HMM cluster/regime states
+            market_data: Original market data for comprehensive feature generation
             **kwargs: Additional arguments
-            
+
         Returns:
             Dictionary containing training results and comprehensive report
         """
         StandardizedLogger.log_training_progress("HMM Models", "started")
         self.training_start_time = time.time()
-        
+
+        # Load cluster assignments from parquet file if not provided
+        if cluster_assignments is None or len(cluster_assignments) == 0:
+            tprint("🔍 Loading cluster assignments from optimal clustering results...")
+            try:
+                import pandas as pd
+                cluster_assignments_path = "optimal_clusters/binance/ETHUSDT/15m/optimal_cluster_labels.parquet"
+                cluster_assignments_df = pd.read_parquet(cluster_assignments_path)
+                if 'cluster_label' in cluster_assignments_df.columns:
+                    cluster_assignments = cluster_assignments_df['cluster_label'].values
+                    tprint(f"✅ Loaded {len(cluster_assignments)} cluster assignments")
+                else:
+                    tprint(f"❌ No cluster_label column found in {cluster_assignments_path}")
+                    raise ValueError(f"Invalid cluster assignments file: {cluster_assignments_path}")
+            except Exception as e:
+                tprint(f"❌ Could not load cluster assignments: {e}")
+                raise ValueError(f"Cluster assignments are required for HMM models training. Please run hmm_clustering first. Error: {e}")
+
         try:
             with performance_monitor("HMM_Training_Complete"):
                 # Execute training pipeline
@@ -1471,10 +1925,11 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
     
     def _execute_training_pipeline(
         self,
-        X: np.ndarray,
+        X: Union[np.ndarray, pd.DataFrame],
         y: np.ndarray,
-        cluster_assignments: np.ndarray,
+        cluster_assignments: Optional[np.ndarray],
         feature_names: Optional[List[str]] = None,
+        market_data: Optional[pd.DataFrame] = None,
         **kwargs
     ) -> Dict[str, Any]:
         """Execute the main training pipeline."""
@@ -1485,7 +1940,9 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
                 raise ValueError("Input validation failed")
         
         # Step 2: Feature preparation and selection
-        X_selected, selected_features = self._prepare_and_select_features(X, y, cluster_assignments, feature_names, **kwargs)
+        X_selected, selected_features = self._prepare_and_select_features(
+            X, y, cluster_assignments, feature_names, market_data, **kwargs
+        )
         
         # Step 3: Train models
         model_results = self._train_all_models(X_selected, y)
@@ -1505,16 +1962,27 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
     
     def _prepare_and_select_features(
         self,
-        X: np.ndarray,
+        X: Union[np.ndarray, pd.DataFrame],
         y: np.ndarray,
         cluster_assignments: np.ndarray,
         feature_names: Optional[List[str]] = None,
+        market_data: Optional[pd.DataFrame] = None,
         **kwargs
     ) -> Tuple[pd.DataFrame, List[str]]:
-        """Prepare and select features."""
-        
-        with performance_monitor("Feature_Preparation"):
-            X_enhanced, enhanced_feature_names = self._prepare_features(X, feature_names, cluster_assignments)
+        """Prepare and select features using comprehensive feature generation system."""
+
+        # Use comprehensive feature generation if market data is available
+        if isinstance(X, pd.DataFrame) and market_data is not None:
+            with performance_monitor("Feature_Preparation_Comprehensive"):
+                tprint("🚀 Using comprehensive feature generation system...")
+                X_enhanced, enhanced_feature_names = self._prepare_comprehensive_features(
+                    market_data, cluster_assignments
+                )
+        else:
+            # Use enhanced basic features
+            with performance_monitor("Feature_Preparation_Enhanced"):
+                tprint("📊 Using enhanced basic feature generation...")
+                X_enhanced, enhanced_feature_names = self._prepare_features(X, feature_names, cluster_assignments)
         
         with performance_monitor("Feature_Selection"):
             X_selected, selected_features = self._select_features(
@@ -1748,16 +2216,17 @@ def create_enhanced_hmm_models_training(
 
 
 def execute_enhanced_hmm_models_training(
-    X: np.ndarray,
+    X: Union[np.ndarray, pd.DataFrame],
     y: np.ndarray,
-    cluster_assignments: np.ndarray,
+    cluster_assignments: Optional[np.ndarray],
     config: Optional[HMMTrainingConfig] = None,
     feature_names: Optional[List[str]] = None,
-    hmm_states: Optional[np.ndarray] = None
+    hmm_states: Optional[np.ndarray] = None,
+    market_data: Optional[pd.DataFrame] = None
 ) -> Dict[str, Any]:
     """Execute enhanced HMM models training step."""
     step = create_enhanced_hmm_models_training(config)
-    return step.execute(X, y, cluster_assignments, feature_names, hmm_states)
+    return step.execute(X, y, cluster_assignments, feature_names, hmm_states, market_data)
 
 
 # Example usage

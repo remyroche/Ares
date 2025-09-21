@@ -6795,96 +6795,125 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
         except Exception as e:
             self.logger.error(f"❌ Error in first round size check: {e}")
     
-    def _apply_4d_regime_mapping_to_existing_clusters(self, cluster_metadata: List[Dict], 
+    def _apply_4d_regime_mapping_to_existing_clusters(self, cluster_metadata: List[Dict],
                                                     target_clusters: int) -> np.ndarray:
-        """Apply 4D regime mapping to existing clusters to create balanced clusters covering 90-95%."""
+        """Apply Pareto-optimized 4D regime mapping to existing clusters."""
         try:
             import numpy as np
             from sklearn.cluster import KMeans
             from collections import Counter
-            
+
             NOISE_LABEL = -1  # Reserve -1 for noise to avoid collision with KMeans labels
-            
-            self.logger.info(f"🗺️ 4D mapping existing clusters: {len(cluster_metadata)} → {target_clusters} balanced clusters")
-            
-            # Extract 4D coordinates directly from cluster characteristics
+
+            self.logger.info(f"🗺️ Pareto-optimized 4D mapping: {len(cluster_metadata)} → {target_clusters} balanced clusters")
+
+            # Extract 4D coordinates with enhanced feature engineering
             coord_features = []
             coord_cluster_ids = []
             coord_sample_counts = []
-            
+            coord_metadata = []
+
             total_samples = sum(metadata['sample_count'] for metadata in cluster_metadata)
             max_cluster_size = int(total_samples * 0.45)  # 45% limit
             max_noise_size = int(total_samples * 0.08)    # 8% maximum noise
-            
+
             # CRITICAL: Ensure ALL samples are covered - track sample coverage
             total_input_samples = total_samples
             covered_samples = 0
             skipped_clusters = []
-            
-            # Use cluster characteristics to create 4D coordinates
+
+            # Enhanced 4D coordinate extraction with Pareto-aware features
             for metadata in cluster_metadata:
                 cluster_id = metadata['cluster_id']
                 sample_count = metadata['sample_count']
                 characteristics = metadata.get('characteristics', {})
-                
+
                 if sample_count > 0:
                     covered_samples += sample_count
-                    
+
                     if characteristics:
                         # Extract momentum, volatility, volume, and trend features
                         momentum_features = [v for k, v in characteristics.items() if 'momentum' in k.lower()]
                         volatility_features = [v for k, v in characteristics.items() if 'volatility' in k.lower()]
                         volume_features = [v for k, v in characteristics.items() if 'volume' in k.lower()]
                         trend_features = [v for k, v in characteristics.items() if 'trend' in k.lower()]
-                        
+
                         # Calculate average values for each dimension
                         momentum_state = np.mean(momentum_features) if momentum_features else 0.0
                         volatility_state = np.mean(volatility_features) if volatility_features else 0.0
                         volume_state = np.mean(volume_features) if volume_features else 0.0
                         trend_state = np.mean(trend_features) if trend_features else 0.0
-                        
-                        coord_features.append([momentum_state, volatility_state, volume_state, trend_state])
+
+                        # Apply Pareto-aware feature weighting
+                        cv = metadata.get('size_cv', 1.0)
+                        information_density = metadata.get('information_density', 0.0)
+                        statistical_validity = metadata.get('statistical_validity', 0.0)
+
+                        # Weight features based on cluster quality metrics
+                        weighted_features = [
+                            momentum_state * (1.0 + information_density * 0.2),      # Boost informative clusters
+                            volatility_state * (1.0 - cv * 0.3),                     # Penalize high-variance clusters
+                            volume_state * (1.0 + statistical_validity * 0.1),       # Boost statistically valid clusters
+                            trend_state * (1.0 - cv * 0.2)                          # Penalize trend-inconsistent clusters
+                        ]
+
+                        coord_features.append(weighted_features)
                         coord_cluster_ids.append(cluster_id)
                         coord_sample_counts.append(sample_count)
+                        coord_metadata.append(metadata)
                     else:
-                        # Derive deterministic proxy coords from available stats to avoid randomization
+                        # Derive deterministic proxy coords from available stats
                         self.logger.warning(f"⚠️ Cluster {cluster_id} has {sample_count} samples but no characteristics - deriving proxy 4D coords from stats")
-                        # Use statistical summary if present in metadata (filled by unified extractor)
                         price_mean = metadata.get('characteristics', {}).get('price_mean', 0.0)
                         return_std = metadata.get('characteristics', {}).get('return_std', 0.0)
                         volume_log_mean = metadata.get('characteristics', {}).get('volume_log_mean', 0.0)
                         trend_score = metadata.get('characteristics', {}).get('trend_score', price_mean)
-                        coord_features.append([
+
+                        # Apply same Pareto weighting to proxy coordinates
+                        cv = metadata.get('size_cv', 1.0)
+                        information_density = metadata.get('information_density', 0.0)
+
+                        proxy_features = [
                             float(metadata.get('characteristics', {}).get('momentum_20', metadata.get('characteristics', {}).get('return_mean', 0.0))),
                             float(metadata.get('characteristics', {}).get('volatility_20', return_std)),
                             float(metadata.get('characteristics', {}).get('volume_ratio_192m', volume_log_mean)),
                             float(trend_score)
-                        ])
+                        ]
+
+                        # Apply Pareto weighting to proxy features
+                        weighted_proxy = [
+                            proxy_features[0] * (1.0 + information_density * 0.2),
+                            proxy_features[1] * (1.0 - cv * 0.3),
+                            proxy_features[2] * (1.0 + information_density * 0.1),
+                            proxy_features[3] * (1.0 - cv * 0.2)
+                        ]
+
+                        coord_features.append(weighted_proxy)
                         coord_cluster_ids.append(cluster_id)
                         coord_sample_counts.append(sample_count)
+                        coord_metadata.append(metadata)
                 else:
                     self.logger.warning(f"⚠️ Cluster {cluster_id} has 0 samples - skipping")
-            
+
             # SAMPLE COVERAGE VALIDATION
             coverage_percentage = (covered_samples / total_input_samples) * 100 if total_input_samples > 0 else 0
-            self.logger.info(f"📊 Sample Coverage Check:")
+            self.logger.info(f"📊 Pareto-Optimized 4D Sample Coverage:")
             self.logger.info(f"   📊 Input samples: {total_input_samples}")
             self.logger.info(f"   📊 Covered samples: {covered_samples}")
             self.logger.info(f"   📊 Coverage: {coverage_percentage:.1f}%")
-            self.logger.info(f"   📊 Clusters with characteristics: {len(coord_features) - len(skipped_clusters)}")
-            self.logger.info(f"   📊 Clusters with default coords: {len(skipped_clusters)}")
-            
+            self.logger.info(f"   📊 Feature-weighted clusters: {len(coord_features)}")
+
             if coverage_percentage < 95.0:
                 self.logger.error(f"❌ CRITICAL: Only {coverage_percentage:.1f}% sample coverage - missing {total_input_samples - covered_samples} samples!")
             elif coverage_percentage < 100.0:
                 self.logger.warning(f"⚠️ Sample coverage: {coverage_percentage:.1f}% - missing {total_input_samples - covered_samples} samples")
             else:
                 self.logger.info(f"✅ Perfect sample coverage: {coverage_percentage:.1f}%")
-            
+
             if not coord_features:
                 self.logger.warning("⚠️ No valid cluster characteristics found, using fallback")
                 return self._fallback_clustering(cluster_metadata, target_clusters)
-            
+
             coord_features = np.array(coord_features)
             coord_sample_counts = np.array(coord_sample_counts)
             
@@ -7171,35 +7200,42 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             self.logger.error(f"❌ Error in size-constrained clustering: {e}")
             return np.arange(len(cluster_metadata)) % target_clusters
     
-    def _apply_gradual_expansion_clustering(self, coord_features: np.ndarray, cluster_ids: List[int], 
-                                          sample_counts: np.ndarray, target_clusters: int, 
+    def _apply_gradual_expansion_clustering(self, coord_features: np.ndarray, cluster_ids: List[int],
+                                          sample_counts: np.ndarray, target_clusters: int,
                                           total_samples: int, max_cluster_size: int, max_noise_size: int,
                                           cluster_metadata: List[Dict]) -> np.ndarray:
-        """Apply gradual expansion clustering starting from 4D regime coordinates."""
+        """Apply Pareto-optimized gradual expansion clustering with multi-objective constraints."""
         try:
             import numpy as np
             from sklearn.cluster import KMeans
-            
+
             NOISE_LABEL = -1  # Reserve -1 for noise
-            
-            self.logger.info(f"🌱 Gradual expansion: max cluster {max_cluster_size} samples (12%), max noise {max_noise_size} samples (8%)")
-            
+
+            self.logger.info(f"🌱 Pareto-optimized gradual expansion: max cluster {max_cluster_size} samples ({max_cluster_size/total_samples*100:.1f}%), max noise {max_noise_size} samples ({max_noise_size/total_samples*100:.1f}%)")
+
+            # Calculate Pareto weights for each cluster
+            pareto_weights = self._calculate_pareto_weights(cluster_metadata, sample_counts)
+            self.logger.info(f"📊 Pareto weights calculated: min={np.min(pareto_weights):.3f}, max={np.max(pareto_weights):.3f}, mean={np.mean(pareto_weights):.3f}")
+
             # Start with more clusters than target, then merge down
             initial_clusters = max(1, min(target_clusters * 3, len(coord_features)))
-            self.logger.info(f"🌱 Starting with {initial_clusters} initial clusters from 4D space")
-            
-            # Apply weighted K-means clustering (simulate weighting by repeating coordinates)
+            self.logger.info(f"🌱 Starting with {initial_clusters} initial clusters from Pareto-weighted 4D space")
+
+            # Apply Pareto-weighted K-means clustering
             weighted_features = []
             weighted_cluster_ids = []
-            
-            for i, (feature, cluster_id, count) in enumerate(zip(coord_features, cluster_ids, sample_counts)):
-                # Repeat coordinates based on sample count (capped for performance)
-                repeat_count = max(1, min(10, int(count / 100)))  # 1-10 repeats based on size
+            pareto_multipliers = []
+
+            for i, (feature, cluster_id, count, weight) in enumerate(zip(coord_features, cluster_ids, sample_counts, pareto_weights)):
+                # Repeat coordinates based on Pareto weight and sample count
+                repeat_count = max(1, min(15, int(count / 50 * weight)))  # 1-15 repeats based on size and Pareto weight
                 for _ in range(repeat_count):
                     weighted_features.append(feature)
                     weighted_cluster_ids.append(cluster_id)
-            
+                    pareto_multipliers.append(weight)
+
             weighted_features = np.array(weighted_features)
+            pareto_multipliers = np.array(pareto_multipliers)
             
             # Apply K-means clustering
             kmeans = KMeans(n_clusters=initial_clusters, random_state=42, n_init=10)
@@ -10408,6 +10444,68 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                 comparison['recommendations'].append("4D approach provides adequate size balance")
 
         return comparison
+
+    def _calculate_pareto_weights(
+        self,
+        cluster_metadata: List[Dict],
+        sample_counts: np.ndarray
+    ) -> np.ndarray:
+        """
+        Calculate Pareto weights for clusters based on multiple objectives:
+        - Size balance (lower CV = higher weight)
+        - Information density (higher = higher weight)
+        - Statistical validity (higher = higher weight)
+        - Similarity preservation (higher = higher weight)
+        """
+        import numpy as np
+
+        weights = []
+
+        for i, metadata in enumerate(cluster_metadata):
+            # Base weight from sample count (logarithmic to prevent dominance)
+            sample_count = sample_counts[i]
+            base_weight = np.log1p(sample_count) / np.log1p(sample_counts.max())
+
+            # Quality factors
+            cv = metadata.get('size_cv', 1.0)
+            information_density = metadata.get('information_density', 0.0)
+            statistical_validity = metadata.get('statistical_validity', 0.0)
+            similarity_score = metadata.get('similarity_score', 0.5)
+
+            # CV penalty (lower CV = better balance = higher weight)
+            cv_factor = 1.0 / (1.0 + cv)
+
+            # Information density boost
+            info_factor = 1.0 + information_density * 0.3
+
+            # Statistical validity boost
+            validity_factor = 1.0 + statistical_validity * 0.2
+
+            # Similarity preservation boost
+            similarity_factor = 1.0 + similarity_score * 0.1
+
+            # Combined Pareto weight
+            pareto_weight = (
+                base_weight * 0.4 +                # Sample count influence
+                cv_factor * 0.25 +                 # Size balance
+                info_factor * 0.15 +               # Information content
+                validity_factor * 0.1 +            # Statistical quality
+                similarity_factor * 0.1            # Similarity preservation
+            )
+
+            weights.append(pareto_weight)
+
+        # Normalize weights to [0.1, 2.0] range
+        weights = np.array(weights)
+        min_weight = weights.min()
+        max_weight = weights.max()
+
+        if max_weight > min_weight:
+            normalized_weights = 0.1 + 1.9 * (weights - min_weight) / (max_weight - min_weight)
+        else:
+            normalized_weights = np.ones_like(weights)
+
+        return normalized_weights
 
     def demonstrate_approach_comparison(
         self,

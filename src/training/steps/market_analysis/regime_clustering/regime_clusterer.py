@@ -3,8 +3,9 @@
 Regime Clusterer for HMM Regime Consolidation.
 
 This module clusters small HMM regimes into larger, coherent clusters suitable
-for ML model training. Uses hierarchical clustering with size constraints to
-create ~20 clusters of 3-8% each with <5% noise.
+for ML model training. The HMM regime discovery creates regimes based on 3D 
+features (Momentum, Volatility, Volume). This module uses hierarchical clustering 
+with size constraints to create ~20 clusters of 3-8% each with <5% noise.
 """
 
 import json
@@ -33,7 +34,7 @@ class RegimeClusterer:
     
     Strategy:
     1. Parse regime names to extract 3D coordinates (Momentum, Volatility, Volume)
-    2. Use hierarchical clustering with size constraints
+    2. Use hierarchical clustering with size constraints  
     3. Validate cluster quality and coherence
     4. Assign noise regimes to dedicated cluster
     """
@@ -111,7 +112,7 @@ class RegimeClusterer:
         coordinates = []
         regime_names = []
         
-        # Pattern to extract M, V, Vol values from regime names
+        # Pattern to extract M, V, Vol values from regime names (3D: Momentum, Volatility, Volume)
         pattern = r'regime_M(\d+)_V(\d+)_Vol(\d+)'
         
         for i, regime_name in enumerate(regime_models):

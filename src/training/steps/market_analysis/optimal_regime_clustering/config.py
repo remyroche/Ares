@@ -82,6 +82,12 @@ class OptimalClusteringConfig:
     adaptive_targets: bool = True  # Enable adaptive target adjustment
     smart_cluster_transfer: bool = True  # Enable smart transfer between adjacent clusters
 
+    # Pareto merge selection and adjacency gating
+    enable_pareto_merging: bool = True  # Use Pareto-based candidate selection when merging to target K
+    knn_adjacency_k: int = 3  # k-NN adjacency (on 4D/weighted centroids) for candidate merge gating
+    epsilon_cv_increase: float = 0.05  # Block merges that increase pooled CV beyond this fraction
+    enable_pareto_feature_weighting: bool = False  # Apply Pareto-aware feature weighting in weighted 4D map
+
     # Quality metrics thresholds - ULTRA-LENIENT FOR PERFECT DISTRIBUTION
     min_silhouette_score: float = 0.01  # Ultra-low minimum for regime clustering
     min_calinski_harabasz_score: float = 10.0  # Ultra-low minimum for regime clustering
@@ -135,6 +141,9 @@ class OptimalClusteringConfig:
             'max_cluster_size_pct': self.max_cluster_size_pct,
             'clustering_method': self.clustering_method,
             'feature_dimensions': self.feature_dimensions,
+            'enable_pareto_merging': self.enable_pareto_merging,
+            'knn_adjacency_k': self.knn_adjacency_k,
+            'epsilon_cv_increase': self.epsilon_cv_increase,
             'quality_metrics': {
                 'min_silhouette_score': self.min_silhouette_score,
                 'min_calinski_harabasz_score': self.min_calinski_harabasz_score,

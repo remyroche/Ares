@@ -499,8 +499,26 @@ class OptimalRegimeClusteringOrchestrator:
                     self.logger.warning(f"❌ Largest cluster {max_size_pct:.3f} exceeds maximum")
                     return False
 
-            # Check quality metrics
-            quality = clustering_result.quality_metrics
+            # Check quality metrics with sanitation
+            raw_quality = clustering_result.quality_metrics or {}
+            quality = {}
+            for k, v in raw_quality.items():
+                try:
+                    val = float(v)
+                except Exception:
+                    val = 0.0
+                if not np.isfinite(val):
+                    self.logger.warning(f"Non-finite quality metric {k} detected: {v}, coercing")
+                    if 'cv' in k.lower():
+                        val = 10.0
+                    elif 'davies' in k.lower():
+                        val = 10.0
+                    else:
+                        val = 0.0
+                if val < 0:
+                    self.logger.warning(f"Negative quality metric {k} detected: {val}, clamping")
+                    val = 0.0
+                quality[k] = val
             if quality.get('silhouette', 0.0) < self.config.min_silhouette_score:
                 self.logger.warning(f"❌ Silhouette score {quality.get('silhouette', 0.0):.3f} below threshold")
                 return False

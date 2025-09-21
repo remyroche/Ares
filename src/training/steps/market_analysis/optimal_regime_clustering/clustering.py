@@ -547,6 +547,35 @@ class OptimalRegimeClusterer:
                     sims = Xn @ Cn.T
                 d = 1.0 - sims
                 return d, ctrs
+            elif distance_metric == "mahalanobis":
+                # Regularized covariance inverse
+                try:
+                    cov = np.cov(X.T)
+                    eps = 1e-6
+                    cov.flat[:: cov.shape[0] + 1] += eps
+                    inv = np.linalg.inv(cov)
+                except Exception:
+                    inv = np.eye(X.shape[1], dtype=np.float64)
+                try:
+                    if MATRIX_OPS and gpu_matrix_multiply is not None:
+                        X_inv = gpu_matrix_multiply(X, inv)
+                        C_inv = gpu_matrix_multiply(ctrs_w, inv)
+                    elif MATRIX_OPS and batch_matrix_multiply is not None:
+                        X_inv = batch_matrix_multiply(X, inv)
+                        C_inv = batch_matrix_multiply(ctrs_w, inv)
+                    else:
+                        X_inv = X @ inv
+                        C_inv = ctrs_w @ inv
+                except Exception:
+                    X_inv = X @ inv
+                    C_inv = ctrs_w @ inv
+                x_term = np.sum(X * X_inv, axis=1, keepdims=True)
+                c_term = np.sum(ctrs_w * C_inv, axis=1, keepdims=True).T
+                cross = X @ C_inv.T
+                d2 = x_term + c_term - 2.0 * cross
+                np.maximum(d2, 0.0, out=d2)
+                d = np.sqrt(d2, where=(d2>=0))
+                return d, ctrs
             else:
                 try:
                     if MATRIX_OPS and gpu_matrix_multiply is not None:

@@ -627,7 +627,9 @@ class EnhancedHMMRegimeDetector:
                     tol=coarse_config['tol'],
                     random_state=42,  # Use fixed random state for reproducibility
                     init_params='mc',
-                    params='stmc'
+                    params='stmc',
+                    startprob_prior=1.0,
+                    transmat_prior=5.0
                 )
 
                 # Initialize start probabilities
@@ -648,7 +650,9 @@ class EnhancedHMMRegimeDetector:
                             tol=coarse_config['tol'],
                             random_state=42,
                             init_params='mc',
-                            params='stmc'
+                            params='stmc',
+                            startprob_prior=1.0,
+                            transmat_prior=5.0
                         )
                         if hasattr(temp_model, 'startprob_'):
                             temp_model.startprob_ = np.ones(coarse_config['n_components']) / coarse_config['n_components']
@@ -737,7 +741,9 @@ class EnhancedHMMRegimeDetector:
                     tol=fine_config['tol'],
                     random_state=42,  # Use fixed random state for reproducibility
                     init_params='mc',
-                    params='stmc'
+                    params='stmc',
+                    startprob_prior=1.0,
+                    transmat_prior=5.0
                 )
 
                 if hasattr(temp_model, 'startprob_'):
@@ -757,7 +763,9 @@ class EnhancedHMMRegimeDetector:
                             tol=fine_config['tol'],
                             random_state=42,
                             init_params='mc',
-                            params='stmc'
+                            params='stmc',
+                            startprob_prior=1.0,
+                            transmat_prior=5.0
                         )
                         if hasattr(temp_model, 'startprob_'):
                             temp_model.startprob_ = np.ones(fine_config['n_components']) / fine_config['n_components']
@@ -928,7 +936,9 @@ class EnhancedHMMRegimeDetector:
             tol=max(final_config['tol'], 1e-4),
             random_state=config.random_state,
             init_params='mc',
-            params='stmc'
+            params='stmc',
+            startprob_prior=1.0,
+            transmat_prior=5.0
         )
 
         # Better initialization for start probabilities
@@ -997,7 +1007,9 @@ class EnhancedHMMRegimeDetector:
                         tol=fallback_config.get('tol', 1e-3),
                         random_state=config.random_state,
                         init_params='mc',
-                        params='stmc'
+                        params='stmc',
+                        startprob_prior=1.0,
+                        transmat_prior=5.0
                     )
                     fallback_model.startprob_ = np.ones(fallback_config['n_components']) / fallback_config['n_components']
                     fallback_model.fit(numeric_data)

@@ -294,7 +294,7 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
         cluster_1_percentage = (cluster_1_size / total_samples) * 100 if total_samples > 0 else 0
         cluster_2_percentage = (cluster_2_size / total_samples) * 100 if total_samples > 0 else 0
         
-        return cluster_1_percentage > 15.0 or cluster_2_percentage > 15.0
+        return cluster_1_percentage > max_percentage or cluster_2_percentage > max_percentage
     
     def _get_max_cluster_size(self, total_samples: int, max_fraction: float = 0.15) -> int:
         """
@@ -311,7 +311,8 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
     
     def _calculate_size_penalized_merge_score(self, similarity: float, cluster_1_size: int, 
                                             cluster_2_size: int, max_size: int, 
-                                            penalty_scale: float = 10.0) -> float:
+                                            penalty_scale: float = 10.0,
+                                            balance_weight: float = 0.0) -> float:
         """
         Calculate a size-penalized merge score to discourage oversized clusters.
         
@@ -330,6 +331,12 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
         
         # Calculate penalty based on overflow
         penalty = penalty_scale * (overflow / max_size) if max_size > 0 else 0
+        
+        # Soft balance penalty: discourage merges when either cluster is already near the cap
+        if max_size > 0 and balance_weight > 0.0:
+            near_cap_1 = max(0.0, (cluster_1_size / max_size) - 1.0)
+            near_cap_2 = max(0.0, (cluster_2_size / max_size) - 1.0)
+            penalty += balance_weight * (near_cap_1 + near_cap_2)
         
         # Return penalized score (subtract penalty to make oversized merges worse)
         return similarity - penalty
@@ -705,12 +712,12 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                             # Comprehensive Metrics
                             'comprehensive_metrics': {
                                 'coverage_metrics': {
-                                    'top_5_coverage': hierarchical_coverage_metrics.get('top_5_coverage', 0.0),
-                                    'top_10_coverage': hierarchical_coverage_metrics.get('top_10_coverage', 0.0),
-                                    'top_20_coverage': hierarchical_coverage_metrics.get('top_20_coverage', 0.0),
+                                    'top_5_coverage': self._calculate_top_n_coverage_from_assignments(cluster_assignments, 5).get('coverage_percentage', 0.0),
+                                    'top_10_coverage': self._calculate_top_n_coverage_from_assignments(cluster_assignments, 10).get('coverage_percentage', 0.0),
+                                    'top_20_coverage': self._calculate_top_n_coverage_from_assignments(cluster_assignments, 20).get('coverage_percentage', 0.0),
                                     'target_coverage_min': 90.0,
                                     'target_coverage_max': 95.0,
-                                    'coverage_achieved': hierarchical_coverage_metrics.get('top_20_coverage', 0) >= 90.0 and hierarchical_coverage_metrics.get('top_20_coverage', 0) <= 95.0
+                                    'coverage_achieved': self._calculate_top_n_coverage_from_assignments(cluster_assignments, 20).get('coverage_percentage', 0.0) >= 90.0 and self._calculate_top_n_coverage_from_assignments(cluster_assignments, 20).get('coverage_percentage', 0.0) <= 95.0
                                 },
                                 'quality_metrics': self._calculate_fixed_quality_metrics(cluster_assignments, cluster_detailed_metrics, quality_metrics, hmm_models, market_data),
                                 'coherence_metrics': self._calculate_fixed_coherence_metrics(cluster_assignments, cluster_detailed_metrics)
@@ -729,9 +736,9 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                             
                             # Top Clusters Analysis
                             'top_clusters_analysis': {
-                                'top_5_coverage': self._calculate_top_n_coverage(hmm_models, 5).get('coverage_percentage', 0.0),
-                                'top_10_coverage': self._calculate_top_n_coverage(hmm_models, 10).get('coverage_percentage', 0.0),
-                                'top_20_coverage': self._calculate_top_n_coverage(hmm_models, 20).get('coverage_percentage', 0.0),
+                                'top_5_coverage': self._calculate_top_n_coverage_from_assignments(cluster_assignments, 5).get('coverage_percentage', 0.0),
+                                'top_10_coverage': self._calculate_top_n_coverage_from_assignments(cluster_assignments, 10).get('coverage_percentage', 0.0),
+                                'top_20_coverage': self._calculate_top_n_coverage_from_assignments(cluster_assignments, 20).get('coverage_percentage', 0.0),
                                 'differentiation_metrics': self._calculate_cluster_differentiation(hmm_models)
                             }
                         },
@@ -945,7 +952,8 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                 total_samples = len(regime_assignments) if regime_assignments else 0
                 
                 # Get merge candidates with enhanced filtering (only exclude oversized clusters)
-                excluded_clusters = self._get_excluded_clusters_due_to_size(regime_characteristics, regime_to_cluster, total_samples)
+                max_pct = float(clustering_config.get('max_cluster_percentage', 12.0))
+                excluded_clusters = self._get_excluded_clusters_due_to_size(regime_characteristics, regime_to_cluster, total_samples, max_percentage=max_pct)
                 mergeable_pairs = self._get_smart_merge_candidates(
                     similarity_matrix, regime_to_cluster, regime_ids, excluded_clusters, threshold
                 )
@@ -963,8 +971,9 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                     regime_sample_count = regime_characteristics[regime_id].get('sample_count', 1)
                     cluster_sample_counts[cluster_id] += regime_sample_count
                 
-                # Calculate maximum allowed cluster size (15% cap)
-                max_cluster_size = self._get_max_cluster_size(total_samples, max_fraction=0.15)
+                # Calculate maximum allowed cluster size (configurable cap)
+                max_pct = float(clustering_config.get('max_cluster_percentage', 12.0))
+                max_cluster_size = self._get_max_cluster_size(total_samples, max_fraction=max_pct / 100.0)
                 self.logger.debug(f"🔒 Max cluster size: {max_cluster_size} ({max_cluster_size/total_samples*100:.1f}%)")
                 
                 # Sort mergeable pairs by size-penalized score to prioritize better merges
@@ -976,7 +985,8 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                         
                         # Calculate size-penalized merge score
                         penalized_score = self._calculate_size_penalized_merge_score(
-                            similarity, cluster_1_size, cluster_2_size, max_cluster_size, penalty_scale=10.0
+                            similarity, cluster_1_size, cluster_2_size, max_cluster_size, penalty_scale=10.0,
+                            balance_weight=float(clustering_config.get('balance_weight', 0.5))
                         )
                         
                         scored_pairs.append((penalized_score, similarity, cluster_1, cluster_2, regime_1, regime_2))
@@ -997,7 +1007,7 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                         continue  # Try next-best pair
                     
                     # Check if merge should be blocked due to size constraints (legacy check)
-                    if self._is_merge_blocked_by_size(cluster_1_size, cluster_2_size, total_samples):
+                    if self._is_merge_blocked_by_size(cluster_1_size, cluster_2_size, total_samples, max_percentage=max_pct):
                         combined_percentage = (combined_size / total_samples) * 100
                         self.logger.info(f"🚫 Blocking merge: would create {combined_percentage:.1f}% cluster (legacy check)")
                         continue  # Skip this merge to prevent oversized clusters
@@ -1897,8 +1907,8 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
 
 
     
-    def _get_excluded_clusters_due_to_size(self, regime_characteristics: Dict[str, Any], regime_to_cluster: Dict[str, int], total_samples: int) -> set:
-        """Identify clusters that should be excluded from merging due to being oversized (>12%).
+    def _get_excluded_clusters_due_to_size(self, regime_characteristics: Dict[str, Any], regime_to_cluster: Dict[str, int], total_samples: int, max_percentage: float = 15.0) -> set:
+        """Identify clusters that should be excluded from merging due to being oversized (>max%).
         
         Args:
             regime_characteristics: Dictionary of regime characteristics
@@ -1924,12 +1934,12 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             for cluster_id, sample_count in cluster_sample_counts.items():
                 sample_percentage = (sample_count / total_samples) * 100 if total_samples > 0 else 0
                 
-                if sample_percentage > 15.0:  # Enforce 15% max cluster size
+                if sample_percentage > max_percentage:
                     excluded_clusters.add(cluster_id)
                     oversized_clusters.append((cluster_id, sample_count, sample_percentage))
             
             if oversized_clusters:
-                self.logger.warning(f"⚠️ Found {len(oversized_clusters)} oversized clusters (>15%), will prevent further merging:")
+                self.logger.warning(f"⚠️ Found {len(oversized_clusters)} oversized clusters (>{max_percentage}%), will prevent further merging:")
                 for cluster_id, size, pct in oversized_clusters:
                     self.logger.warning(f"   🚫 Cluster C{cluster_id}: {size} samples ({pct:.1f}%) - NO MERGE ALLOWED")
             
@@ -6617,6 +6627,26 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
         except Exception as e:
             self.logger.error(f"❌ Error calculating top {n} coverage: {e}")
             return {'top_n_clusters': n, 'coverage_percentage': 0.0, 'target_met': False}
+
+    def _calculate_top_n_coverage_from_assignments(self, cluster_assignments: List[int], n: int) -> Dict[str, Any]:
+        """Calculate top-N coverage based on actual cluster assignments (post-filter ordering)."""
+        try:
+            from collections import Counter
+            counts = Counter(cluster_assignments)
+            # Sort by size desc
+            sorted_items = sorted(counts.items(), key=lambda x: x[1], reverse=True)
+            total = sum(counts.values())
+            top_n = sum(v for _, v in sorted_items[:n])
+            pct = (top_n / total * 100) if total > 0 else 0.0
+            return {
+                'top_n_clusters': n,
+                'total_samples': total,
+                'top_n_samples': top_n,
+                'coverage_percentage': pct
+            }
+        except Exception as e:
+            self.logger.error(f"❌ Error calculating top {n} coverage from assignments: {e}")
+            return {'top_n_clusters': n, 'coverage_percentage': 0.0}
     
     def _calculate_cluster_differentiation(self, hmm_models: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Calculate differentiation metrics between clusters."""

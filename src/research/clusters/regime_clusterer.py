@@ -387,7 +387,7 @@ class HDBSCANClusterer(BaseClusterer):
         # Fit HDBSCAN
         clusterer = hdbscan.HDBSCAN(**self.config.hdbscan_params)
         labels = clusterer.fit_predict(data_scaled)
-        
+
         # Get cluster centers
         unique_labels = np.unique(labels[labels >= 0])
         cluster_centers = None

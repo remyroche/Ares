@@ -379,6 +379,7 @@ class HDBSCANClusterer(BaseClusterer):
             return DBSCANClusterer(self.config).fit_predict(data)
         
         from sklearn.preprocessing import StandardScaler
+        # Keep research module unchanged with respect to constraints
         
         # Standardize data
         scaler = StandardScaler()
@@ -388,6 +389,8 @@ class HDBSCANClusterer(BaseClusterer):
         clusterer = hdbscan.HDBSCAN(**self.config.hdbscan_params)
         labels = clusterer.fit_predict(data_scaled)
         
+        # No post-processing constraints in research variant
+
         # Get cluster centers
         unique_labels = np.unique(labels[labels >= 0])
         cluster_centers = None

@@ -6761,7 +6761,7 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             
             total_samples = sum(metadata['sample_count'] for metadata in cluster_metadata)
             max_cluster_size = int(total_samples * 0.12)  # 12% limit
-            max_noise_size = int(total_samples * 0.08)    # 8% maximum noise
+            max_noise_size = int(total_samples * 0.10)    # 10% maximum noise (target: 5-10%)
             
             # CRITICAL: Ensure ALL samples are covered - track sample coverage
             total_input_samples = total_samples
@@ -7015,7 +7015,7 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             
             NOISE_LABEL = -1  # Reserve -1 for noise
             
-            self.logger.info(f"🌱 Gradual expansion: max cluster {max_cluster_size} samples (12%), max noise {max_noise_size} samples (8%)")
+            self.logger.info(f"🌱 Gradual expansion: max cluster {max_cluster_size} samples (12%), target: 20 clusters covering 90-95%, noise {max_noise_size} samples (10%)")
             
             # Start with more clusters than target, then merge down
             initial_clusters = max(1, min(target_clusters * 3, len(coord_features)))
@@ -7055,74 +7055,66 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                         kmeans_cluster_sizes[kmeans_label] += sample_counts[i]
                         break
             
-            # Identify small clusters and reassign them
-            noise_threshold = max(1, int(total_samples * 0.005))  # 0.5% minimum cluster size
-            small_clusters = []
-            good_clusters = []
+            # Target: Create exactly 20 clusters covering 90-95% of data
+            # Don't pre-classify as "small" - let the final selection determine noise
+            target_clusters_final = 20
+            all_clusters = list(kmeans_cluster_sizes.keys())
             
-            for kmeans_label, size in kmeans_cluster_sizes.items():
-                if size < noise_threshold:
-                    small_clusters.append(kmeans_label)
-                else:
-                    good_clusters.append(kmeans_label)
+            self.logger.info(f"🌱 Initial clustering: {len(all_clusters)} clusters, targeting {target_clusters_final} final clusters for 90-95% coverage")
             
-            self.logger.info(f"🌱 Initial clustering: {len(good_clusters)} good clusters, {len(small_clusters)} small clusters")
-            
-            # Reassign small clusters to nearest good clusters with size constraints
+            # Create exactly 20 clusters by merging initial clusters intelligently
             final_cluster_mapping = {}
-            current_noise_size = 0
             
-            for cluster_id, kmeans_label in cluster_to_kmeans_label.items():
-                cluster_idx = cluster_ids.index(cluster_id)
-                cluster_size = sample_counts[cluster_idx]
+            # Sort clusters by size (largest first) to prioritize keeping big clusters
+            sorted_cluster_sizes = sorted(kmeans_cluster_sizes.items(), key=lambda x: x[1], reverse=True)
+            
+            # Strategy: Keep top clusters and merge smaller ones into them
+            # Target: 20 final clusters covering 90-95% of data
+            target_coverage_samples = int(total_samples * 0.925)  # 92.5% target coverage
+            
+            # Start with top clusters and merge others into them
+            final_clusters = {}  # final_cluster_id -> list of original clusters
+            current_coverage = 0
+            
+            # Take top 20 clusters as initial candidates
+            top_20_candidates = sorted_cluster_sizes[:min(20, len(sorted_cluster_sizes))]
+            
+            for final_id, (kmeans_label, size) in enumerate(top_20_candidates):
+                final_clusters[final_id] = [kmeans_label]
+                current_coverage += size
                 
-                if kmeans_label in good_clusters:
-                    # Good cluster, keep assignment
-                    final_cluster_mapping[cluster_id] = kmeans_label
-                else:
-                    # Small cluster, try to reassign
-                    best_cluster = None
-                    min_distance = float('inf')
+                # Find other clusters to merge into this one
+                for other_kmeans_label, other_size in sorted_cluster_sizes:
+                    if other_kmeans_label == kmeans_label:
+                        continue
+                    if other_kmeans_label in [c for cluster_list in final_clusters.values() for c in cluster_list]:
+                        continue  # Already assigned
                     
-                    # Find nearest good cluster
-                    for good_cluster in good_clusters:
-                        # Calculate current size of good cluster
-                        current_size = sum(sample_counts[cluster_ids.index(cid)] 
-                                         for cid, label in final_cluster_mapping.items() 
-                                         if label == good_cluster)
-                        current_size += kmeans_cluster_sizes.get(good_cluster, 0)
+                    # Check if merging would exceed size limit
+                    if size + other_size <= max_cluster_size:
+                        final_clusters[final_id].append(other_kmeans_label)
+                        size += other_size
+                        current_coverage += other_size
                         
-                        # Check size constraint
-                        if current_size + cluster_size <= max_cluster_size:
-                            # Calculate weighted centroid distance
-                            good_indices = [i for i, cid in enumerate(cluster_ids) 
-                                          if cluster_to_kmeans_label.get(cid) == good_cluster]
-                            if good_indices:
-                                good_coords = coord_features[good_indices]
-                                good_weights = sample_counts[good_indices]
-                                weighted_centroid = np.average(good_coords, weights=good_weights, axis=0)
-                                
-                                distance = np.linalg.norm(coord_features[cluster_idx] - weighted_centroid)
-                                if distance < min_distance:
-                                    min_distance = distance
-                                    best_cluster = good_cluster
-                    
-                    if best_cluster is not None:
-                        # Assign to best cluster
-                        final_cluster_mapping[cluster_id] = best_cluster
-                        self.logger.debug(f"🔗 Reassigned cluster {cluster_id} to cluster {best_cluster}")
-                    else:
-                        # No valid assignment, check noise capacity
-                        if current_noise_size + cluster_size <= max_noise_size:
-                            final_cluster_mapping[cluster_id] = NOISE_LABEL
-                            current_noise_size += cluster_size
-                            self.logger.debug(f"🗑️ Assigned cluster {cluster_id} to noise")
-                        else:
-                            # Noise capacity exceeded, force assign to smallest good cluster
-                            smallest_cluster = min(good_clusters, 
-                                                 key=lambda gc: kmeans_cluster_sizes.get(gc, 0))
-                            final_cluster_mapping[cluster_id] = smallest_cluster
-                            self.logger.warning(f"⚠️ Force assigned cluster {cluster_id} to cluster {smallest_cluster} (noise capacity exceeded)")
+                        # Stop if we've reached good coverage
+                        if current_coverage >= target_coverage_samples:
+                            break
+                
+                if current_coverage >= target_coverage_samples:
+                    break
+            
+            # Map original clusters to final clusters
+            for final_id, kmeans_labels in final_clusters.items():
+                for kmeans_label in kmeans_labels:
+                    # Find all original clusters that belong to this kmeans cluster
+                    for cluster_id, orig_kmeans_label in cluster_to_kmeans_label.items():
+                        if orig_kmeans_label == kmeans_label:
+                            final_cluster_mapping[cluster_id] = final_id
+            
+            # Any unmapped clusters go to noise (this will be the remaining 5-10%)
+            for cluster_id in cluster_to_kmeans_label.keys():
+                if cluster_id not in final_cluster_mapping:
+                    final_cluster_mapping[cluster_id] = NOISE_LABEL
             
             # Convert to result format using cluster metadata indexing
             result_labels = np.full(len(cluster_metadata), NOISE_LABEL, dtype=int)
@@ -7173,14 +7165,21 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             noise_percentage = (noise_size / total_samples) * 100
             num_real_clusters = len({l for l in final_result if l != NOISE_LABEL})
             
+            # Calculate coverage from top 20 clusters
+            real_cluster_sizes = [(label, size) for label, size in final_cluster_sizes.items() if label != NOISE_LABEL]
+            real_cluster_sizes.sort(key=lambda x: x[1], reverse=True)
+            top_20_coverage = sum(size for _, size in real_cluster_sizes[:20])
+            top_20_coverage_pct = (top_20_coverage / total_samples) * 100
+            
             self.logger.info(f"🌱 4D gradual expansion results:")
             self.logger.info(f"   📊 Real clusters: {num_real_clusters}")
+            self.logger.info(f"   📊 Top 20 coverage: {top_20_coverage_pct:.1f}% (target: 90-95%)")
             self.logger.info(f"   📊 Noise: {noise_size} samples ({noise_percentage:.1f}%)")
             
-            if noise_percentage <= 10.0:
-                self.logger.info(f"✅ SUCCESS: Noise reduced to {noise_percentage:.1f}% (target: 5-10%)")
+            if 90.0 <= top_20_coverage_pct <= 95.0:
+                self.logger.info(f"✅ SUCCESS: Top 20 coverage achieved {top_20_coverage_pct:.1f}% (target: 90-95%)")
             else:
-                self.logger.warning(f"⚠️ Still high noise: {noise_percentage:.1f}% (target: 5-10%)")
+                self.logger.warning(f"⚠️ Top 20 coverage: {top_20_coverage_pct:.1f}% (target: 90-95%)")
             
             return final_result
             

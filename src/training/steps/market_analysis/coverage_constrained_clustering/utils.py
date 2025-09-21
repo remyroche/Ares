@@ -1,8 +1,10 @@
 from __future__ import annotations
 
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Optional
 
 import numpy as np
+from pathlib import Path
+import json
 
 
 def compute_cluster_size_bounds(total_samples: int, min_frac: float, max_frac: float) -> Tuple[int, int]:
@@ -80,4 +82,71 @@ def map_regime_key_to_int(regime_key: str) -> int:
 		return int(regime_key.split("_")[-1])
 	except Exception:
 		return abs(hash(regime_key)) % (10 ** 9)
+
+
+def _load_json(path: Path) -> Optional[dict]:
+	try:
+		with open(path, "r") as f:
+			return json.load(f)
+	except Exception:
+		return None
+
+
+def find_latest_hmm_discovery_artifact_path(
+	base_dir: str = "artifacts",
+	symbol: Optional[str] = None,
+	exchange: Optional[str] = None,
+	timeframe: Optional[str] = None,
+) -> Optional[Path]:
+	"""Locate the latest saved HMM discovery artifact JSON via metadata files.
+
+	Matches by symbol/exchange/timeframe when provided; otherwise picks the latest overall.
+	"""
+	root = Path(base_dir)
+	if not root.exists():
+		return None
+	candidates: List[Tuple[float, Path]] = []
+	for session_dir in sorted([p for p in root.iterdir() if p.is_dir()]):
+		meta_files = list(session_dir.glob("hmmregimediscovery_metadata_*.json"))
+		if not meta_files:
+			continue
+		# Use the latest metadata file in this session
+		meta_files.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+		meta = _load_json(meta_files[0]) or {}
+		if str(meta.get("component_name", "")).lower() != "hmmregimediscovery":
+			continue
+		if symbol and str(meta.get("symbol", "")).upper() != symbol.upper():
+			continue
+		if exchange and str(meta.get("exchange", "")).lower() != exchange.lower():
+			continue
+		if timeframe and str(meta.get("timeframe", "")) != timeframe:
+			continue
+		artifact_files = list(session_dir.glob("hmmregimediscovery_hmm_regime_discovery_result_*.json"))
+		if not artifact_files:
+			continue
+		artifact_files.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+		latest = artifact_files[0]
+		candidates.append((latest.stat().st_mtime, latest))
+	if not candidates:
+		return None
+	candidates.sort(key=lambda x: x[0], reverse=True)
+	return candidates[0][1]
+
+
+def load_latest_hmm_discovery_artifact(
+	base_dir: str = "artifacts",
+	symbol: Optional[str] = None,
+	exchange: Optional[str] = None,
+	timeframe: Optional[str] = None,
+) -> Optional[dict]:
+	path = find_latest_hmm_discovery_artifact_path(base_dir, symbol, exchange, timeframe)
+	if path is None:
+		return None
+	data = _load_json(path)
+	if not isinstance(data, dict):
+		return None
+	# Some callers may save a wrapper dict; prefer direct artifact when present
+	if "hmm_regime_discovery_result" in data and isinstance(data["hmm_regime_discovery_result"], dict):
+		return data["hmm_regime_discovery_result"]
+	return data
 

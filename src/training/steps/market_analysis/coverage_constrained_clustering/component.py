@@ -12,6 +12,7 @@ from src.utils.logger import system_logger
 
 from .config import CoverageClusteringConfig
 from .clusterer import CoverageConstrainedClusterer
+from .utils import load_latest_hmm_discovery_artifact
 
 
 @dataclass
@@ -38,11 +39,21 @@ class CoverageConstrainedClusteringComponent(BaseMarketAnalysisComponent):
 			cfg = CoverageClusteringConfig(**cfg_dict) if cfg_dict else CoverageClusteringConfig()
 			clusterer = CoverageConstrainedClusterer(cfg)
 
-			# Find HMM artifact
+			# Load HMM artifact natively if not provided in memory
 			hmm_key = cfg.hmm_artifact_key
-			if hmm_key not in data:
-				raise ValueError(f"Missing required key in input data: {hmm_key}")
-			hmm_artifact = data[hmm_key]
+			if hmm_key in data and isinstance(data[hmm_key], dict):
+				hmm_artifact = data[hmm_key]
+			else:
+				# Attempt to auto-load the latest artifact from artifacts/<session>/
+				loaded = load_latest_hmm_discovery_artifact(
+					base_dir="artifacts",
+					symbol=getattr(self.config, "symbol", None),
+					exchange=getattr(self.config, "exchange", None),
+					timeframe=getattr(self.config, "timeframe", None),
+				)
+				if loaded is None:
+					raise ValueError("Could not locate latest hmm_regime_discovery_result artifact")
+				hmm_artifact = loaded
 
 			outputs = clusterer.cluster(hmm_artifact)
 

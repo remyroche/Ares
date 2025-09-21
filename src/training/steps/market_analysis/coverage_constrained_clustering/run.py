@@ -7,20 +7,28 @@ from typing import Any, Dict
 
 from .config import CoverageClusteringConfig
 from .clusterer import CoverageConstrainedClusterer
+from .utils import load_latest_hmm_discovery_artifact
 
 
-def load_hmm_artifact(input_path: str) -> Dict[str, Any]:
-	p = Path(input_path)
-	if not p.exists():
-		raise FileNotFoundError(f"Input artifact not found: {input_path}")
-	with open(p, "r") as f:
-		data = json.load(f)
-	return data
+def load_hmm_artifact(input_path: str | None) -> Dict[str, Any]:
+    if input_path:
+        p = Path(input_path)
+        if not p.exists():
+            raise FileNotFoundError(f"Input artifact not found: {input_path}")
+        with open(p, "r") as f:
+            data = json.load(f)
+        return data
+    # Fallback: load latest from artifacts
+    latest = load_latest_hmm_discovery_artifact()
+    if latest is None:
+        raise FileNotFoundError("Could not auto-detect latest hmm_regime_discovery_result artifact in artifacts/")
+    # Wrap to match expected shape
+    return {"hmm_regime_discovery_result": latest}
 
 
 def main() -> None:
 	parser = argparse.ArgumentParser(description="Coverage-Constrained Clustering for HMM regimes")
-	parser.add_argument("--input", required=True, help="Path to JSON artifact containing hmm_regime_discovery_result")
+    parser.add_argument("--input", required=False, default=None, help="Path to JSON artifact. If omitted, auto-detect latest in artifacts/")
 	parser.add_argument("--output", required=True, help="Output JSON path for clustering results")
 	parser.add_argument("--target_clusters", type=int, default=20)
 	parser.add_argument("--min_clusters", type=int, default=15)
@@ -31,7 +39,7 @@ def main() -> None:
 	parser.add_argument("--max_frac", type=float, default=0.08)
 	args = parser.parse_args()
 
-	artifact = load_hmm_artifact(args.input)
+    artifact = load_hmm_artifact(args.input)
 	cfg = CoverageClusteringConfig(
 		target_num_clusters=args.target_clusters,
 		min_num_clusters=args.min_clusters,

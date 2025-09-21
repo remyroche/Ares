@@ -671,7 +671,7 @@ class MatrixOptimizedClusterer:
         """
         try:
             current_labels = labels.copy()
-            # Normalize labels to consecutive ints
+            # Normalize labels to consecutive ints and initialize progress tracking
             unique = np.unique(current_labels)
             label_map = {old: new for new, old in enumerate(unique)}
             current_labels = np.vectorize(label_map.get)(current_labels)
@@ -679,6 +679,9 @@ class MatrixOptimizedClusterer:
             target_k = int(self.config.target_n_clusters)
             min_pct = float(self.config.min_cluster_size_pct)
             max_pct = float(self.config.max_cluster_size_pct)
+            prev_violations = float('inf')
+            stagnation_count = 0
+            max_stagnation = 3
 
             # Step 1: Merge (if needed) to reach exactly target_k
             k_now = len(np.unique(current_labels))
@@ -689,6 +692,18 @@ class MatrixOptimizedClusterer:
             # Step 2: Capacity-constrained assignment to meet 3–8% and 100% coverage
             self.logger.info("🔧 Enforcing 3–8% bounds with bounded assignment")
             current_labels = self._capacity_constrained_assignment(features, current_labels, min_pct, max_pct)
+
+            # Progress check (count violations). Stop early if stalled
+            _, counts = np.unique(current_labels, return_counts=True)
+            pct = counts / max(1, len(current_labels))
+            violations = int(np.sum((pct < min_pct) | (pct > max_pct)))
+            if violations >= prev_violations:
+                stagnation_count += 1
+            else:
+                stagnation_count = 0
+            prev_violations = violations
+            if stagnation_count >= max_stagnation:
+                self.logger.info("Stopping constraint enforcement due to stagnation")
 
             return current_labels
         except Exception as e:
@@ -902,18 +917,21 @@ class MatrixOptimizedClusterer:
             if len(unique_labels) != 2:
                 return float('inf')
 
-            # Calculate CV for each subcluster
+            # Calculate CV properly per feature and average across features
             cv_scores = []
             for label in unique_labels:
                 sub_features = features[labels == label]
                 if len(sub_features) > 1:
-                    cv = np.mean(np.std(sub_features, axis=0)) / (np.mean(np.mean(sub_features, axis=0)) + 1e-6)
-                    cv_scores.append(cv)
+                    means = np.mean(sub_features, axis=0)
+                    stds = np.std(sub_features, axis=0)
+                    vals = [abs(s / m) for m, s in zip(means, stds) if abs(m) > 1e-6]
+                    avg_cv = np.mean(vals) if vals else 0.0
+                    cv_scores.append(max(0.0, float(avg_cv)))
                 else:
                     cv_scores.append(0.0)
 
             # Return average CV (lower means more homogeneous subclusters)
-            return np.mean(cv_scores)
+            return float(np.mean(cv_scores)) if cv_scores else 0.0
 
         except Exception as e:
             self.logger.warning(f"CV score calculation failed: {e}")
@@ -1013,8 +1031,17 @@ class MatrixOptimizedClusterer:
             # Merge with best neighbor
             if best_neighbor is not None:
                 new_labels = labels.copy()
-                new_labels[new_labels == cluster_label] = best_neighbor
-                return new_labels
+                # Validate size constraints before merging
+                total_samples = len(new_labels)
+                size_a = int(np.sum(new_labels == cluster_label))
+                size_b = int(np.sum(new_labels == best_neighbor))
+                combined_pct = (size_a + size_b) / max(1, total_samples)
+                max_pct = float(getattr(self.config, 'max_cluster_size_pct', 0.08))
+                if combined_pct <= max_pct:
+                    new_labels[new_labels == cluster_label] = best_neighbor
+                    return new_labels
+                else:
+                    self.logger.info(f"Skipping merge {cluster_label}->{best_neighbor}: would exceed max_pct {max_pct:.3f}")
 
             return None
 
@@ -1039,7 +1066,10 @@ class MatrixOptimizedClusterer:
             cluster_features = features[cluster_mask]
 
             if cluster_features.shape[0] > 1:
-                cluster_cv = np.mean(np.std(cluster_features, axis=0)) / (np.mean(np.mean(cluster_features, axis=0)) + 1e-6)
+                means = np.mean(cluster_features, axis=0)
+                stds = np.std(cluster_features, axis=0)
+                vals = [abs(s / m) for m, s in zip(means, stds) if abs(m) > 1e-6]
+                cluster_cv = float(np.mean(vals)) if vals else 0.0
             else:
                 cluster_cv = 0.0
 
@@ -1056,7 +1086,10 @@ class MatrixOptimizedClusterer:
                 other_features = features[other_mask]
 
                 if other_features.shape[0] > 1:
-                    other_cv = np.mean(np.std(other_features, axis=0)) / (np.mean(np.mean(other_features, axis=0)) + 1e-6)
+                    o_means = np.mean(other_features, axis=0)
+                    o_stds = np.std(other_features, axis=0)
+                    o_vals = [abs(s / m) for m, s in zip(o_means, o_stds) if abs(m) > 1e-6]
+                    other_cv = float(np.mean(o_vals)) if o_vals else 0.0
                 else:
                     other_cv = 0.0
 
@@ -1070,9 +1103,18 @@ class MatrixOptimizedClusterer:
             # Merge with most similar cluster
             if best_neighbor is not None and best_similarity > 0.5:  # Only merge if reasonably similar
                 new_labels = labels.copy()
-                new_labels[new_labels == cluster_label] = best_neighbor
-                self.logger.info(f"✅ Merged cluster {cluster_label} with most similar cluster {best_neighbor} (CV similarity: {best_similarity:.3f})")
-                return new_labels
+                # Validate size constraints before merging
+                total_samples = len(new_labels)
+                size_a = int(np.sum(new_labels == cluster_label))
+                size_b = int(np.sum(new_labels == best_neighbor))
+                combined_pct = (size_a + size_b) / max(1, total_samples)
+                max_pct = float(getattr(self.config, 'max_cluster_size_pct', 0.08))
+                if combined_pct <= max_pct:
+                    new_labels[new_labels == cluster_label] = best_neighbor
+                    self.logger.info(f"✅ Merged cluster {cluster_label} with most similar cluster {best_neighbor} (CV similarity: {best_similarity:.3f})")
+                    return new_labels
+                else:
+                    self.logger.info(f"Skipping similar-merge {cluster_label}->{best_neighbor}: would exceed max_pct {max_pct:.3f}")
 
             return None
 
@@ -1096,7 +1138,9 @@ class MatrixOptimizedClusterer:
             percentages = counts / n_samples
 
             # Check final distribution
-            violations = [(i, pct) for i, pct in enumerate(percentages) if pct < 0.03 or pct > 0.08]
+            min_pct = float(getattr(self.config, 'min_cluster_size_pct', 0.03))
+            max_pct = float(getattr(self.config, 'max_cluster_size_pct', 0.08))
+            violations = [(i, pct) for i, pct in enumerate(percentages) if pct < min_pct or pct > max_pct]
 
             if not violations:
                 return labels
@@ -1110,7 +1154,9 @@ class MatrixOptimizedClusterer:
             unique_labels, counts = np.unique(final_labels, return_counts=True)
             percentages = counts / n_samples
 
-            final_violations = sum(1 for pct in percentages if pct < 0.03 or pct > 0.08)
+            min_pct = float(getattr(self.config, 'min_cluster_size_pct', 0.03))
+            max_pct = float(getattr(self.config, 'max_cluster_size_pct', 0.08))
+            final_violations = sum(1 for pct in percentages if pct < min_pct or pct > max_pct)
             self.logger.info(f"✅ Final cleanup completed: {final_violations} violations remaining")
 
             return final_labels
@@ -1150,17 +1196,23 @@ class MatrixOptimizedClusterer:
                 # cost = (n_i * n_j / (n_i + n_j)) * ||ci - cj||^2 + penalty_if_exceeds_upper
                 best_pair = None
                 best_cost = float('inf')
+                target_pct = 0.05
+                target_size = int(round(target_pct * n))
                 for i in range(len(unique)):
                     for j in range(i + 1, len(unique)):
                         merged_size = sizes[i] + sizes[j]
-                        size_penalty = 0.0
-                        if merged_size > upper:
-                            # Penalize exceeding the upper size bound
-                            size_penalty = 1e6 * (merged_size - upper)
+                        # Soft size penalty that starts increasing beyond target, steeper beyond upper
+                        soft_penalty = 0.0
+                        if merged_size > target_size:
+                            # Quadratic penalty beyond target size, scaled; stronger beyond upper
+                            over_target = merged_size - target_size
+                            scale = 1.0 if merged_size <= upper else 50.0
+                            soft_penalty = scale * (over_target ** 2)
+                        # Ward cost for merge quality
                         diff = centroids[i] - centroids[j]
                         dist_sq = float(np.dot(diff, diff))
                         ward = (sizes[i] * sizes[j]) / max(1.0, float(sizes[i] + sizes[j])) * dist_sq
-                        cost = ward + size_penalty
+                        cost = ward + soft_penalty
                         if cost < best_cost:
                             best_cost = cost
                             best_pair = (unique[i], unique[j])
@@ -1182,7 +1234,9 @@ class MatrixOptimizedClusterer:
             return labels
 
     def _capacity_constrained_assignment(self, features: np.ndarray, labels: np.ndarray,
-                                         min_pct: float, max_pct: float) -> np.ndarray:
+                                         min_pct: float, max_pct: float,
+                                         *, distance_metric: str = "euclidean",
+                                         whiten: bool = False) -> np.ndarray:
         """Greedy bounded assignment to enforce cluster size bounds and full coverage.
 
         - Start from current labels
@@ -1216,12 +1270,24 @@ class MatrixOptimizedClusterer:
 
         # Precompute distances to centroids
         centroids = compute_centroids(current)
+        # Optional whitening
+        X = features
+        if whiten:
+            mean = X.mean(axis=0, keepdims=True)
+            std = X.std(axis=0, keepdims=True) + 1e-12
+            X = (X - mean) / std
+            centroids = (centroids - mean) / std
         # Compute full distance matrix (n x k)
-        # Note: k is small (<= 20), so this is fine
         dists = np.zeros((n, k), dtype=np.float64)
-        for c in range(k):
-            diff = features - centroids[c]
-            dists[:, c] = np.sqrt(np.sum(diff * diff, axis=1))
+        if distance_metric == "cosine":
+            Xn = X / (np.linalg.norm(X, axis=1, keepdims=True) + 1e-12)
+            Cn = centroids / (np.linalg.norm(centroids, axis=1, keepdims=True) + 1e-12)
+            sims = Xn @ Cn.T
+            dists = 1.0 - sims
+        else:
+            for c in range(k):
+                diff = X - centroids[c]
+                dists[:, c] = np.sqrt(np.sum(diff * diff, axis=1))
 
         # Precompute top-3 nearest clusters per sample
         topk = np.argsort(dists, axis=1)[:, :min(3, k)]
@@ -1253,7 +1319,7 @@ class MatrixOptimizedClusterer:
                     donor_ok = candidates
                 if donor_ok.size == 0:
                     continue
-                # Sort by minimal regret for moving into c
+                # Sort by minimal regret for moving into c (optionally add CV/silhouette-aware small penalty)
                 deltas = dists[donor_ok, c] - dists[donor_ok, current[donor_ok]]
                 order = np.argsort(deltas)
                 to_move = donor_ok[order][:need]
@@ -1413,8 +1479,8 @@ class MatrixOptimizedClusterer:
         try:
             n_samples = features.shape[0]
             target_clusters = 20
-            min_samples_per_cluster = int(n_samples * 0.03)  # 3% minimum
-            max_samples_per_cluster = int(n_samples * 0.08)  # 8% maximum
+            min_samples_per_cluster = int(n_samples * float(getattr(self.config, 'min_cluster_size_pct', 0.03)))
+            max_samples_per_cluster = int(n_samples * float(getattr(self.config, 'max_cluster_size_pct', 0.08)))
 
             # Use iterative approach: start with target clusters, then refine
             best_labels = None
@@ -1509,7 +1575,10 @@ class MatrixOptimizedClusterer:
 
                 # Calculate CV for the cluster
                 if cluster_features.shape[0] > 1:
-                    cv = np.mean(np.std(cluster_features, axis=0)) / (np.mean(np.mean(cluster_features, axis=0)) + 1e-6)
+                    means = np.mean(cluster_features, axis=0)
+                    stds = np.std(cluster_features, axis=0)
+                    vals = [abs(s / m) for m, s in zip(means, stds) if abs(m) > 1e-6]
+                    cv = float(np.mean(vals)) if vals else 0.0
                 else:
                     cv = 0.0
 
@@ -1752,7 +1821,10 @@ class MatrixOptimizedClusterer:
 
                 # Calculate CV for internal variance
                 if cluster_features.shape[0] > 1:
-                    cv = np.mean(np.std(cluster_features, axis=0)) / (np.mean(np.mean(cluster_features, axis=0)) + 1e-6)
+                    means = np.mean(cluster_features, axis=0)
+                    stds = np.std(cluster_features, axis=0)
+                    vals = [abs(s / m) for m, s in zip(means, stds) if abs(m) > 1e-6]
+                    cv = float(np.mean(vals)) if vals else 0.0
                 else:
                     cv = 0.0
 
@@ -2204,7 +2276,9 @@ class MatrixOptimizedClusterer:
             percentages = counts / n_samples
 
             # Score based on how many clusters are in 3-8% range
-            in_range = sum(1 for pct in percentages if 0.03 <= pct <= 0.08)
+            min_pct = float(getattr(self.config, 'min_cluster_size_pct', 0.03))
+            max_pct = float(getattr(self.config, 'max_cluster_size_pct', 0.08))
+            in_range = sum(1 for pct in percentages if min_pct <= pct <= max_pct)
             range_score = in_range / target_clusters
 
             # Score based on how close we are to target cluster count

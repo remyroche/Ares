@@ -499,11 +499,24 @@ class OptimalRegimeClusteringOrchestrator:
                     self.logger.warning(f"❌ Largest cluster {max_size_pct:.3f} exceeds maximum")
                     return False
 
-            # Check quality metrics
+            # Check quality metrics with additional safeguards
             quality = clustering_result.quality_metrics
+
+            # Ensure CV scores are non-negative
+            if 'cv_score' in quality and quality['cv_score'] < 0:
+                self.logger.warning(f"❌ Negative CV score detected: {quality.get('cv_score', 0.0):.3f}")
+                return False
+
+            # Check silhouette score
             if quality.get('silhouette', 0.0) < self.config.min_silhouette_score:
                 self.logger.warning(f"❌ Silhouette score {quality.get('silhouette', 0.0):.3f} below threshold")
                 return False
+
+            # Check for any infinite values
+            for metric_name, metric_value in quality.items():
+                if isinstance(metric_value, (int, float)) and np.isinf(metric_value):
+                    self.logger.warning(f"❌ Infinite value detected in {metric_name}: {metric_value}")
+                    return False
 
             self.logger.info("✅ Clustering validation passed")
             return True
@@ -588,7 +601,10 @@ class OptimalRegimeClusteringOrchestrator:
             self.config.cluster_selection_epsilon = optimized_params.get('cluster_selection_epsilon', self.config.cluster_selection_epsilon)
 
             # Re-run clustering with optimized parameters
-            new_result = self.clusterer.cluster(data)
+            if hasattr(self.clusterer, 'cluster_optimized'):
+                new_result = self.clusterer.cluster_optimized(data)
+            else:
+                new_result = self.clusterer.cluster(data)
 
             self.logger.info("✅ Clustering optimization completed")
             return new_result

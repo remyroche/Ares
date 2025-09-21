@@ -245,7 +245,10 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
                         'data_points_processed': len(market_data),
                         'success': True,
                         'discovery_time': discovery_time
-                    }
+                    },
+                    
+                    # Time-series regime assignments for clustering pipeline
+                    'regime_assignments': regime_assignments
                 }
             }
             

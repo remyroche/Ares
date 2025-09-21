@@ -732,6 +732,65 @@ class MatrixOptimizedClusterer:
             self.logger.warning(f"Constraint enforcement fallback due to error: {e}")
             return labels
 
+    # ----------------------------
+    # Pareto/adjacency helpers
+    # ----------------------------
+
+    def _non_dominated_mask(self, F: np.ndarray, senses: Tuple[str, ...]) -> np.ndarray:
+        """Compute non-dominated mask for objective matrix F.
+
+        Args:
+            F: Objective matrix (m candidates, d objectives)
+            senses: Tuple of 'min'/'max' per objective
+
+        Returns:
+            Boolean mask of length m where True indicates non-dominated rows
+        """
+        try:
+            if F.size == 0:
+                return np.zeros((0,), dtype=bool)
+            S = F.copy().astype(float)
+            for j, s in enumerate(senses):
+                if s == 'max':
+                    S[:, j] = -S[:, j]
+            m = S.shape[0]
+            nd = np.ones(m, dtype=bool)
+            for i in range(m):
+                if not nd[i]:
+                    continue
+                # A candidate i is dominated if there exists k != i with S[k] <= S[i] in all dims and < in at least one
+                le_all = (S <= S[i] + 1e-12).all(axis=1)
+                lt_any = (S < S[i] - 1e-12).any(axis=1)
+                dominated_by_any = le_all & lt_any
+                dominated_by_any[i] = False
+                if dominated_by_any.any():
+                    nd[i] = False
+            return nd
+        except Exception:
+            # In case of numerical issues, return all as non-dominated
+            return np.ones(F.shape[0], dtype=bool)
+
+    def _pooled_cv_for_merge(self, features: np.ndarray, labels: np.ndarray, a: int, b: int) -> float:
+        """Compute pooled CV for the union of clusters a and b across feature dimensions.
+
+        Uses mean of per-feature CVs with safe guards.
+        """
+        try:
+            mask = (labels == a) | (labels == b)
+            X = features[mask]
+            if X.shape[0] <= 1:
+                return 0.0
+            means = np.mean(X, axis=0)
+            stds = np.std(X, axis=0)
+            # Avoid division by near-zero means
+            denom = np.clip(np.abs(means), 1e-8, None)
+            cvs = np.abs(stds) / denom
+            if not np.all(np.isfinite(cvs)):
+                cvs = np.nan_to_num(cvs, nan=0.0, posinf=1e6, neginf=1e6)
+            return float(np.mean(cvs))
+        except Exception:
+            return 0.0
+
     def _find_nearest_undersized_cluster(self, features: np.ndarray, labels: np.ndarray,
                                         source_cluster: int, undersized_clusters: List,
                                         unique_labels: np.ndarray) -> Optional[int]:
@@ -1225,45 +1284,137 @@ class MatrixOptimizedClusterer:
                 with np.errstate(divide='ignore', invalid='ignore'):
                     centroids = sums / np.maximum(sizes[:, None], 1.0)
 
-                # Pairwise Ward linkage costs
-                # cost = (n_i * n_j / (n_i + n_j)) * ||ci - cj||^2 + penalty_if_exceeds_upper
+                # Build candidate pairs with optional 4D k-NN adjacency gating and Pareto objectives
                 best_pair = None
-                best_cost = float('inf')
                 target_pct = 0.05
                 target_size = int(round(target_pct * n))
-                for i in range(len(unique)):
-                    for j in range(i + 1, len(unique)):
-                        merged_size = sizes[i] + sizes[j]
-                        # Soft size penalty that starts increasing beyond target, steeper beyond upper
-                        soft_penalty = 0.0
-                        if merged_size > target_size:
-                            # Quadratic penalty beyond target size, scaled; stronger beyond upper
-                            over_target = merged_size - target_size
-                            scale = 1.0 if merged_size <= upper else 50.0
-                            soft_penalty = scale * (over_target ** 2)
-                        # Ward cost for merge quality
-                        diff = centroids[i] - centroids[j]
-                        dist_sq = float(np.dot(diff, diff))
-                        ward = (sizes[i] * sizes[j]) / max(1.0, float(sizes[i] + sizes[j])) * dist_sq
-                        # Absorption modulation: favor merges that help undersized clusters move toward 5%
-                        undershoot_i = max(0.0, (target_size - sizes[i])) / max(1.0, target_size)
-                        undershoot_j = max(0.0, (target_size - sizes[j])) / max(1.0, target_size)
-                        overshoot_i = max(0.0, (sizes[i] - target_size)) / max(1.0, target_size)
-                        overshoot_j = max(0.0, (sizes[j] - target_size)) / max(1.0, target_size)
-                        attract = undershoot_i + undershoot_j
-                        repel = overshoot_i + overshoot_j
-                        gamma = 0.5
-                        size_modulator = (1.0 + gamma * repel) / (1.0 + gamma * attract)
-                        cost = (ward + soft_penalty) * size_modulator
-                        if cost < best_cost:
-                            best_cost = cost
-                            best_pair = (unique[i], unique[j])
 
-                if best_pair is None:
-                    # Nothing to merge
-                    break
+                use_pareto = bool(getattr(self.config, 'enable_pareto_merging', False))
+                candidate_pairs: List[Tuple[int, int]] = []
 
-                a, b = best_pair
+                if use_pareto:
+                    # Create weighted 4D map and cluster centroids in that space for adjacency
+                    try:
+                        weighted_features = self._create_weighted_4d_map(features)
+                    except Exception:
+                        weighted_features = features
+
+                    # Compute 4D centroids per current cluster
+                    C4 = np.zeros((k, weighted_features.shape[1]), dtype=float)
+                    for ui, lab in enumerate(unique):
+                        mask = current_labels == lab
+                        if np.any(mask):
+                            C4[ui] = weighted_features[mask].mean(axis=0)
+                        else:
+                            C4[ui] = 0.0
+
+                    # k-NN adjacency on 4D centroids
+                    try:
+                        from sklearn.neighbors import NearestNeighbors
+                        kn = max(1, min(k - 1, int(getattr(self.config, 'knn_adjacency_k', 3))))
+                        nbrs = NearestNeighbors(n_neighbors=kn).fit(C4)
+                        neigh = nbrs.kneighbors(return_distance=False)
+                        pairs = set()
+                        for i in range(k):
+                            for j in neigh[i]:
+                                if i == j:
+                                    continue
+                                a_lab = int(unique[min(i, j)])
+                                b_lab = int(unique[max(i, j)])
+                                pairs.add((a_lab, b_lab))
+                        candidate_pairs = sorted(list(pairs))
+                    except Exception:
+                        # Fall back to all pairs
+                        candidate_pairs = [(int(unique[i]), int(unique[j])) for i in range(k) for j in range(i + 1, k)]
+                else:
+                    # Greedy fallback: all pairs
+                    candidate_pairs = [(int(unique[i]), int(unique[j])) for i in range(k) for j in range(i + 1, k)]
+
+                chosen_pair = None
+                if use_pareto and candidate_pairs:
+                    # Evaluate objectives per candidate
+                    objs = []
+                    pairs_kept = []
+                    eps_cv = float(getattr(self.config, 'epsilon_cv_increase', 0.05))
+                    for (lab_a, lab_b) in candidate_pairs:
+                        ia = idx_map[lab_a]
+                        ib = idx_map[lab_b]
+                        merged_size = sizes[ia] + sizes[ib]
+                        # Enforce hard size constraint
+                        if merged_size > upper:
+                            continue
+                        # J_size_over: normalized overflow (should be 0 here, but keep soft term)
+                        j_size_over = max(0.0, (merged_size - upper)) / max(1.0, n)
+                        # J_cv: pooled CV on original feature space (stable)
+                        j_cv = self._pooled_cv_for_merge(features, current_labels, lab_a, lab_b)
+                        # approximate baseline cv to guard against large increase (optional)
+                        cv_a = self._pooled_cv_for_merge(features, current_labels, lab_a, lab_a)
+                        cv_b = self._pooled_cv_for_merge(features, current_labels, lab_b, lab_b)
+                        base_cv = 0.5 * (cv_a + cv_b)
+                        if (j_cv - base_cv) > eps_cv:
+                            continue
+                        # J_dist: centroid distance in weighted 4D (or default space on failure)
+                        try:
+                            ca = C4[idx_map[lab_a]]
+                            cb = C4[idx_map[lab_b]]
+                            j_dist = float(np.linalg.norm(ca - cb))
+                        except Exception:
+                            diff = centroids[ia] - centroids[ib]
+                            j_dist = float(np.linalg.norm(diff))
+                        objs.append([j_size_over, j_cv, j_dist])
+                        pairs_kept.append((lab_a, lab_b))
+
+                    if objs:
+                        F = np.array(objs, dtype=float)
+                        # Normalize objectives (min-max)
+                        with np.errstate(divide='ignore', invalid='ignore'):
+                            minv = np.nanmin(F, axis=0)
+                            maxv = np.nanmax(F, axis=0)
+                            rng = np.clip(maxv - minv, 1e-12, None)
+                            F_norm = (F - minv) / rng
+                        nd_mask = self._non_dominated_mask(F_norm, senses=("min", "min", "min"))
+                        nd_idx = np.where(nd_mask)[0]
+                        # Knee: pick the row minimizing L2 to ideal (0,0,0)
+                        nd_rows = F_norm[nd_idx]
+                        dists = np.linalg.norm(nd_rows, axis=1)
+                        pick = int(nd_idx[int(np.argmin(dists))])
+                        chosen_pair = pairs_kept[pick]
+
+                if chosen_pair is None:
+                    # Fallback to previous greedy: Ward-like cost + size modulation
+                    best_cost = float('inf')
+                    best_pair_greedy = None
+                    for i in range(len(unique)):
+                        for j in range(i + 1, len(unique)):
+                            merged_size = sizes[i] + sizes[j]
+                            if merged_size > upper:
+                                continue
+                            soft_penalty = 0.0
+                            if merged_size > target_size:
+                                over_target = merged_size - target_size
+                                scale = 1.0 if merged_size <= upper else 50.0
+                                soft_penalty = scale * (over_target ** 2)
+                            diff = centroids[i] - centroids[j]
+                            dist_sq = float(np.dot(diff, diff))
+                            ward = (sizes[i] * sizes[j]) / max(1.0, float(sizes[i] + sizes[j])) * dist_sq
+                            undershoot_i = max(0.0, (target_size - sizes[i])) / max(1.0, target_size)
+                            undershoot_j = max(0.0, (target_size - sizes[j])) / max(1.0, target_size)
+                            overshoot_i = max(0.0, (sizes[i] - target_size)) / max(1.0, target_size)
+                            overshoot_j = max(0.0, (sizes[j] - target_size)) / max(1.0, target_size)
+                            attract = undershoot_i + undershoot_j
+                            repel = overshoot_i + overshoot_j
+                            gamma = 0.5
+                            size_modulator = (1.0 + gamma * repel) / (1.0 + gamma * attract)
+                            cost = (ward + soft_penalty) * size_modulator
+                            if cost < best_cost:
+                                best_cost = cost
+                                best_pair_greedy = (unique[i], unique[j])
+                    if best_pair_greedy is None:
+                        break
+                    a, b = best_pair_greedy
+                else:
+                    a, b = chosen_pair
+
                 # Merge b into a
                 current_labels[current_labels == b] = a
                 # Reindex to keep labels compact
@@ -1689,6 +1840,9 @@ class MatrixOptimizedClusterer:
             unique_labels, counts = np.unique(initial_labels, return_counts=True)
             n_samples = len(features)
 
+            # Optional Pareto-aware feature weighting
+            use_pareto_fw = bool(getattr(self.config, 'enable_pareto_feature_weighting', False))
+
             for label, count in zip(unique_labels, counts):
                 if label == -1:
                     continue
@@ -1706,17 +1860,97 @@ class MatrixOptimizedClusterer:
                     cv = 0.0
 
                 # Calculate inverse size weight
-                inv_size_weight = 1.0 / (count / n_samples)
+                inv_size_weight = 1.0 / max(1e-6, (count / n_samples))
 
-                # Apply weights to cluster points
-                total_weight = cv * inv_size_weight
-                weighted_features[cluster_mask] *= (1.0 + total_weight)
+                if use_pareto_fw:
+                    # Derive simple proxies for information_density and statistical_validity
+                    information_density = 1.0 / (1.0 + cv)  # lower cv => higher information density
+                    statistical_validity = min(1.0, count / max(1.0, np.median(counts)))
+
+                    # Assume feature columns loosely map to 4D: momentum, volatility, volume, trend
+                    # Compute scalar weights per dimension following provided formulas
+                    w_momentum = (1.0 + information_density * 0.2)
+                    w_volatility = max(0.1, (1.0 - cv * 0.3))
+                    w_volume = (1.0 + statistical_validity * 0.1)
+                    w_trend = max(0.1, (1.0 - cv * 0.2))
+
+                    # Build a per-feature weight vector by cycling these four weights
+                    four_w = np.array([w_momentum, w_volatility, w_volume, w_trend], dtype=float)
+                    reps = int(np.ceil(cluster_features.shape[1] / 4))
+                    weight_vec = np.tile(four_w, reps)[:cluster_features.shape[1]]
+
+                    # Also incorporate inverse size weight mildly to encourage small, informative clusters
+                    weight_vec *= (1.0 + 0.1 * inv_size_weight)
+                    weighted_features[cluster_mask] = cluster_features * weight_vec
+                else:
+                    # Legacy weighting: cv * inverse size
+                    total_weight = cv * inv_size_weight
+                    weighted_features[cluster_mask] = cluster_features * (1.0 + total_weight)
 
             return weighted_features
 
         except Exception as e:
             self.logger.warning(f"Weighted 4D map creation failed: {e}")
             return features
+
+    def _calculate_pareto_weights(self, cluster_metadata: Dict[str, Any], sample_counts: Dict[int, int]) -> Dict[str, float]:
+        """Calculate multi-objective Pareto weights for clusters.
+
+        Balances multiple objectives:
+        - Size balance (lower CV = higher weight)
+        - Information density (higher = higher weight)
+        - Statistical validity (higher = higher weight)
+        - Similarity preservation (higher = higher weight)
+
+        Args:
+            cluster_metadata: Dict with per-cluster stats (e.g., {'label': {'cv': ..., 'centroid': ...}})
+            sample_counts: Dict mapping cluster label -> count
+
+        Returns:
+            Dict mapping cluster label -> weight
+        """
+        try:
+            weights: Dict[str, float] = {}
+            # Normalize helpers
+            cvs = np.array([float(v.get('cv', 0.0)) for v in cluster_metadata.values()]) if cluster_metadata else np.array([0.0])
+            if not np.all(np.isfinite(cvs)):
+                cvs = np.nan_to_num(cvs, nan=0.0, posinf=1.0)
+            cv_max = max(1e-6, float(np.max(cvs)))
+
+            counts = np.array([float(sample_counts.get(int(k), 0)) for k in cluster_metadata.keys()]) if cluster_metadata else np.array([1.0])
+            cnt_med = max(1.0, float(np.median(counts)))
+
+            # Build a simple similarity preservation proxy from centroid norms (more concentrated => higher)
+            centroids = [np.asarray(v.get('centroid')) for v in cluster_metadata.values()] if cluster_metadata else []
+            sim_scores = []
+            for c in centroids:
+                if c is None or c.size == 0:
+                    sim_scores.append(0.0)
+                else:
+                    sim_scores.append(1.0 / (1.0 + float(np.std(c))))
+            sim_scores = np.array(sim_scores) if sim_scores else np.array([0.0])
+            sim_max = max(1e-6, float(np.max(sim_scores)))
+
+            for (lab, meta), cv_val, cnt_val, sim_val in zip(cluster_metadata.items(), cvs, counts, sim_scores):
+                # Objectives -> weights
+                size_balance = 1.0 - (cv_val / cv_max)  # lower cv => higher weight
+                information_density = 1.0 / (1.0 + cv_val)  # proxy
+                statistical_validity = min(1.0, cnt_val / cnt_med)
+                similarity_preservation = sim_val / sim_max
+
+                # Aggregate with mild emphasis on size balance and info density
+                w = (
+                    0.35 * size_balance +
+                    0.30 * information_density +
+                    0.20 * statistical_validity +
+                    0.15 * similarity_preservation
+                )
+                # Ensure positive small floor
+                weights[str(lab)] = float(max(1e-3, w))
+            return weights
+        except Exception:
+            # Fallback: equal weights
+            return {str(k): 1.0 for k in cluster_metadata.keys()} if cluster_metadata else {}
 
     def _find_weighted_equidistant_centroids(self, features: np.ndarray, n_centroids: int) -> np.ndarray:
         """Find optimally distributed centroids using advanced initialization.

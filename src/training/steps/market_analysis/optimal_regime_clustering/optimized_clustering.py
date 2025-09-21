@@ -85,6 +85,27 @@ class MatrixOptimizedClusterer:
             self.batch_processor = None
             self.logger.warning("⚠️ Matrix operations not available, using fallback mode")
 
+    def _sanitize_quality_metrics(self, quality: Dict[str, float]) -> Dict[str, float]:
+        """Clamp negative or infinite quality values to safe defaults and log issues."""
+        safe = {}
+        for k, v in quality.items():
+            if v is None:
+                continue
+            val = float(v)
+            if not np.isfinite(val):
+                self.logger.warning(f"Quality metric {k} is non-finite: {val}, coercing")
+                if 'cv' in k.lower():
+                    val = 10.0
+                elif 'davies' in k.lower():
+                    val = 10.0
+                else:
+                    val = 0.0
+            if val < 0:
+                self.logger.warning(f"Quality metric {k} negative: {val}, clamping to 0")
+                val = 0.0
+            safe[k] = val
+        return safe
+
     def cluster(self, data: Union[str, pd.DataFrame], **kwargs) -> OptimizedClusteringResult:
         """Compatibility alias used by orchestrators expecting a standard `cluster` method.
 
@@ -131,7 +152,8 @@ class MatrixOptimizedClusterer:
             # Step 5: Calculate quality metrics using vectorized operations
             self.logger.info("📈 Step 5: Calculating quality metrics...")
             statistics = calculate_cluster_statistics(clustering_result.labels, self.config.to_dict())
-            quality_metrics = calculate_cluster_quality_metrics(features, clustering_result.labels)
+            raw_quality_metrics = calculate_cluster_quality_metrics(features, clustering_result.labels)
+            quality_metrics = self._sanitize_quality_metrics(raw_quality_metrics)
             validation = validate_cluster_quality(statistics, quality_metrics, self.config.to_dict())
 
             # Step 6: Generate performance report
@@ -1330,6 +1352,39 @@ class MatrixOptimizedClusterer:
                 except Exception:
                     sims = Xn @ Cn.T
                 d = 1.0 - sims
+                return d, ctrs, ctrs_w
+            elif distance_metric == "mahalanobis":
+                # Mahalanobis with regularized covariance for stability
+                try:
+                    cov = np.cov(X.T)
+                    # Regularize
+                    eps = 1e-6
+                    cov.flat[:: cov.shape[0] + 1] += eps
+                    inv = np.linalg.inv(cov)
+                except Exception:
+                    # Fallback to identity if ill-conditioned
+                    inv = np.eye(X.shape[1], dtype=np.float64)
+                # Compute (x - c)^T inv (x - c) for all c via batched products
+                # d2 = x^T inv x - 2 x^T inv c + c^T inv c
+                try:
+                    if MATRIX_OPERATIONS_AVAILABLE and 'gpu_matrix_multiply' in globals() and gpu_matrix_multiply is not None:
+                        X_inv = gpu_matrix_multiply(X, inv)
+                        C_inv = gpu_matrix_multiply(ctrs_w, inv)
+                    elif MATRIX_OPERATIONS_AVAILABLE and 'batch_matrix_multiply' in globals() and batch_matrix_multiply is not None:
+                        X_inv = batch_matrix_multiply(X, inv)
+                        C_inv = batch_matrix_multiply(ctrs_w, inv)
+                    else:
+                        X_inv = X @ inv
+                        C_inv = ctrs_w @ inv
+                except Exception:
+                    X_inv = X @ inv
+                    C_inv = ctrs_w @ inv
+                x_term = np.sum(X * X_inv, axis=1, keepdims=True)
+                c_term = np.sum(ctrs_w * C_inv, axis=1, keepdims=True).T
+                cross = X @ C_inv.T
+                d2 = x_term + c_term - 2.0 * cross
+                np.maximum(d2, 0.0, out=d2)
+                d = np.sqrt(d2, where=(d2>=0))
                 return d, ctrs, ctrs_w
             else:
                 # Euclidean via dot products

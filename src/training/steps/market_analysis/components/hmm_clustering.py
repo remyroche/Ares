@@ -6098,83 +6098,131 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
 
 
     
-    def _extract_cluster_features_for_hierarchical(self, clustering_result: Dict[str, Any]) -> tuple:
-        """Extract cluster features and metadata for hierarchical clustering."""
+    def _extract_cluster_features_for_hierarchical_unified(self, clustering_result: Dict[str, Any]) -> Tuple[Any, List[Dict]]:
+        """Extract numerical features and metadata (incl. characteristics) per cluster.
+
+        Unified implementation that derives per-cluster characteristics using
+        available structures in the result, avoiding O(N×R) scans.
+        """
         try:
             import numpy as np
             
-            self.logger.info("🔍 DEBUG EXTRACTION: Extracting cluster features for hierarchical clustering")
-            
-            # Get regime characteristics and cluster assignments
-            regime_discovery = self._get_regime_discovery_results()
-            if not regime_discovery:
-                self.logger.warning("⚠️ No regime discovery results available")
-                return None, None
-            
-            regime_characteristics = regime_discovery.get('regime_characteristics', {})
             cluster_assignments = clustering_result.get('cluster_assignments', [])
+            aligned_market_data = clustering_result.get('aligned_market_data', [])
+            regime_to_cluster = clustering_result.get('regime_to_cluster', {})
+            regime_characteristics = {}
             
-            if not regime_characteristics or not cluster_assignments:
-                self.logger.warning("⚠️ Missing regime characteristics or cluster assignments")
-                return None, None
+            # Prefer regime discovery artifact for richer characteristics
+            regime_discovery = self._get_regime_discovery_results()
+            if regime_discovery:
+                regime_characteristics = regime_discovery.get('regime_characteristics', {}) or {}
             
-            self.logger.info(f"🔍 DEBUG EXTRACTION: cluster_assignments={len(cluster_assignments)}, regime_characteristics={len(regime_characteristics)}")
+            # Log what we have
+            self.logger.info(
+                f"🔍 DEBUG EXTRACTION: assignments={len(cluster_assignments)}, aligned_data={len(aligned_market_data) if hasattr(aligned_market_data,'__len__') else 'n/a'}, "
+                f"regimes={len(regime_characteristics)}, regime_to_cluster={len(regime_to_cluster)}"
+            )
             
-            # Group samples by cluster
-            cluster_to_regimes = {}
-            cluster_sample_counts = {}
+            # Validate data availability
+            if not cluster_assignments:
+                # Try fallback via hmm_models
+                if 'hmm_models' in clustering_result:
+                    self.logger.info("🔄 Using alternative data extraction from hmm_models (no assignments)")
+                    return self._extract_features_from_hmm_models(clustering_result)
+                self.logger.warning("⚠️ No cluster assignments available")
+                return None, []
             
-            for sample_idx, cluster_id in enumerate(cluster_assignments):
-                if cluster_id not in cluster_to_regimes:
-                    cluster_to_regimes[cluster_id] = []
-                    cluster_sample_counts[cluster_id] = 0
-                cluster_sample_counts[cluster_id] += 1
+            # Build per-cluster sample indices
+            unique_clusters = sorted(set(cluster_assignments))
+            cluster_to_indices: Dict[int, List[int]] = {cid: [] for cid in unique_clusters}
+            for idx, cid in enumerate(cluster_assignments):
+                cluster_to_indices[cid].append(idx)
+            
+            # If we have regime_characteristics with sample_indices, aggregate regimes per cluster via indices
+            regime_id_to_samples: Dict[str, set] = {}
+            if regime_characteristics:
+                for rid, rdata in regime_characteristics.items():
+                    sample_idx_list = rdata.get('sample_indices') or rdata.get('indices') or []
+                    if isinstance(sample_idx_list, list) and sample_idx_list:
+                        regime_id_to_samples[rid] = set(sample_idx_list)
+            
+            feature_matrix: List[List[float]] = []
+            cluster_metadata: List[Dict] = []
+            
+            for cid in unique_clusters:
+                sample_indices = cluster_to_indices[cid]
+                if not sample_indices:
+                    continue
+                sample_count = len(sample_indices)
                 
-                # Find which regime this sample belongs to
-                for regime_id, regime_data in regime_characteristics.items():
-                    sample_indices = regime_data.get('sample_indices', [])
-                    if sample_idx in sample_indices:
-                        cluster_to_regimes[cluster_id].append(regime_id)
-                        break
-            
-            self.logger.info(f"📊 Extracting features for {len(cluster_to_regimes)} clusters from {len(cluster_assignments)} samples")
-            
-            # Extract features for each cluster
-            cluster_features = []
-            cluster_metadata = []
-            
-            for cluster_id, regime_list in cluster_to_regimes.items():
-                sample_count = cluster_sample_counts[cluster_id]
+                # Derive regimes contributing to this cluster using set intersections (fast)
+                contributing_regimes: List[str] = []
+                if regime_id_to_samples:
+                    sample_set = set(sample_indices)
+                    for rid, rset in regime_id_to_samples.items():
+                        if rset & sample_set:
+                            contributing_regimes.append(rid)
                 
-                if regime_list and sample_count > 0:
-                    # Calculate cluster characteristics from constituent regimes
-                    cluster_characteristics = self._calculate_cluster_characteristics_from_regimes(
-                        regime_list, regime_characteristics
+                # Aggregate characteristics from regimes when available
+                characteristics: Dict[str, float] = {}
+                if contributing_regimes:
+                    characteristics = self._calculate_cluster_characteristics_from_regimes(
+                        contributing_regimes, regime_characteristics
                     )
-                    
-                    # Convert characteristics to feature vector
-                    feature_vector = self._characteristics_to_feature_vector(cluster_characteristics)
-                    
-                    cluster_features.append(feature_vector)
-                    cluster_metadata.append({
-                        'cluster_id': cluster_id,
-                        'sample_count': sample_count,
-                        'characteristics': cluster_characteristics,
-                        'sample_indices': list(range(len(cluster_assignments)))  # Placeholder
-                    })
+                
+                # If no regime-level characteristics, compute statistical features from aligned data
+                if not characteristics:
+                    cluster_rows = None
+                    if hasattr(aligned_market_data, 'iloc'):
+                        try:
+                            cluster_rows = [aligned_market_data.iloc[i] for i in sample_indices]
+                        except Exception:
+                            cluster_rows = []
+                    elif isinstance(aligned_market_data, list):
+                        cluster_rows = [aligned_market_data[i] for i in sample_indices if i < len(aligned_market_data)]
+                    else:
+                        cluster_rows = []
+                    # Calculate statistical vector and mirror to characteristic keys
+                    stat_vec = self._calculate_cluster_statistical_features(cluster_rows, cid)
+                    if stat_vec is None:
+                        stat_vec = []
+                    # Map first dims to generic keys to later 4D mapping
+                    # mean_price, std_price, median_price, p25_price, p75_price,
+                    # mean_volume, std_volume, log_mean_volume,
+                    # mean_range, std_range,
+                    # mean_return, std_return, skew_return, kurt_return,
+                    # sample_count
+                    keys = [
+                        'price_mean','price_std','price_median','price_p25','price_p75',
+                        'volume_mean','volume_std','volume_log_mean',
+                        'range_mean','range_std',
+                        'return_mean','return_std','return_skew','return_kurt',
+                        'sample_count'
+                    ]
+                    for k, v in zip(keys, stat_vec):
+                        characteristics[k] = float(v)
+                    # Derive proxy 4D dims
+                    characteristics.setdefault('momentum_20', characteristics.get('return_mean', 0.0))
+                    characteristics.setdefault('volatility_20', characteristics.get('return_std', 0.0))
+                    characteristics.setdefault('volume_ratio_192m', characteristics.get('volume_log_mean', 0.0))
+                    characteristics.setdefault('trend_score', characteristics.get('price_mean', 0.0))
+                
+                # Build feature vector in stable order
+                feature_vector = self._characteristics_to_feature_vector(characteristics)
+                feature_matrix.append(feature_vector)
+                cluster_metadata.append({
+                    'cluster_id': cid,
+                    'sample_count': sample_count,
+                    'characteristics': characteristics,
+                    'sample_indices': sample_indices
+                })
             
-            if not cluster_features:
-                self.logger.warning("⚠️ No valid cluster features extracted")
-                return None, None
-            
-            cluster_features = np.array(cluster_features)
-            self.logger.info(f"✅ Extracted {len(cluster_features)} cluster feature vectors with {cluster_features.shape[1]} dimensions")
-            
-            return cluster_features, cluster_metadata
-            
+            if not feature_matrix:
+                return None, []
+            return np.array(feature_matrix), cluster_metadata
         except Exception as e:
             self.logger.error(f"❌ Error extracting cluster features: {e}")
-            return None, None
+            return None, []
     
     def _calculate_cluster_characteristics_from_regimes(self, regime_list: list, regime_characteristics: dict) -> dict:
         """Calculate cluster characteristics by aggregating regime characteristics."""
@@ -6245,8 +6293,8 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             
             self.logger.info(f"🔄 Starting hierarchical post-processing: {clustering_result.get('n_clusters', 'unknown')} → {target_clusters} super-clusters (less aggressive jump)")
             
-            # Extract cluster characteristics for hierarchical clustering
-            cluster_features, cluster_metadata = self._extract_cluster_features_for_hierarchical(clustering_result)
+            # Extract cluster characteristics for hierarchical clustering (unified extractor)
+            cluster_features, cluster_metadata = self._extract_cluster_features_for_hierarchical_unified(clustering_result)
             
             if cluster_features is None or len(cluster_features) == 0:
                 self.logger.warning("⚠️ No cluster features available for hierarchical post-processing")
@@ -6266,6 +6314,7 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                 target_clusters = adjusted_target
             
             # Apply 4D regime mapping to the existing clusters to create balanced super-clusters
+            # Note: mapping now strictly uses characteristics; no random coordinates are generated
             super_cluster_labels = self._apply_4d_regime_mapping_to_existing_clusters(
                 cluster_metadata, target_clusters
             )
@@ -6276,8 +6325,13 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             )
             
             
-            # Select top 20 clusters for 90-95% coverage (primary goal) from 100 super-clusters
-            super_cluster_mapping = self._select_top_clusters_for_coverage(super_cluster_mapping, clustering_result, target_coverage=92.5, max_clusters=20)
+            # Select top 20 clusters for 90-95% coverage (primary goal)
+            super_cluster_mapping = self._select_top_clusters_for_coverage(
+                super_cluster_mapping,
+                clustering_result,
+                target_coverage=92.5,
+                max_clusters=20
+            )
             
             # Calculate coverage metrics
             coverage_metrics = self._calculate_super_cluster_coverage(super_cluster_mapping, clustering_result)
@@ -6691,26 +6745,21 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                         coord_cluster_ids.append(cluster_id)
                         coord_sample_counts.append(sample_count)
                     else:
-                        # CRITICAL: Create diverse coordinates even without characteristics to avoid clustering collapse
-                        self.logger.warning(f"⚠️ Cluster {cluster_id} has {sample_count} samples but no characteristics - generating diverse 4D coords")
-                        
-                        # Generate diverse coordinates based on cluster_id and sample_count to avoid identical coordinates
-                        import hashlib
-                        
-                        # Create pseudo-random but deterministic coordinates based on cluster properties
-                        seed = int(hashlib.md5(f"{cluster_id}_{sample_count}".encode()).hexdigest()[:8], 16)
-                        np.random.seed(seed % (2**31))  # Ensure positive seed
-                        
-                        # Generate coordinates in different ranges to create diversity
-                        momentum_coord = np.random.uniform(-1.0, 1.0)  # Momentum range
-                        volatility_coord = np.random.uniform(0.0, 2.0)  # Volatility range  
-                        volume_coord = np.random.uniform(-0.5, 0.5)    # Volume range
-                        trend_coord = np.random.uniform(-1.5, 1.5)     # Trend range
-                        
-                        coord_features.append([momentum_coord, volatility_coord, volume_coord, trend_coord])
+                        # Derive deterministic proxy coords from available stats to avoid randomization
+                        self.logger.warning(f"⚠️ Cluster {cluster_id} has {sample_count} samples but no characteristics - deriving proxy 4D coords from stats")
+                        # Use statistical summary if present in metadata (filled by unified extractor)
+                        price_mean = metadata.get('characteristics', {}).get('price_mean', 0.0)
+                        return_std = metadata.get('characteristics', {}).get('return_std', 0.0)
+                        volume_log_mean = metadata.get('characteristics', {}).get('volume_log_mean', 0.0)
+                        trend_score = metadata.get('characteristics', {}).get('trend_score', price_mean)
+                        coord_features.append([
+                            float(metadata.get('characteristics', {}).get('momentum_20', metadata.get('characteristics', {}).get('return_mean', 0.0))),
+                            float(metadata.get('characteristics', {}).get('volatility_20', return_std)),
+                            float(metadata.get('characteristics', {}).get('volume_ratio_192m', volume_log_mean)),
+                            float(trend_score)
+                        ])
                         coord_cluster_ids.append(cluster_id)
                         coord_sample_counts.append(sample_count)
-                        skipped_clusters.append(cluster_id)
                 else:
                     self.logger.warning(f"⚠️ Cluster {cluster_id} has 0 samples - skipping")
             
@@ -7018,13 +7067,18 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             # Remap labels to 0..K-1 range (excluding noise)
             unique_labels = sorted({label for label in result_labels if label != NOISE_LABEL})
             label_remap = {old_label: new_idx for new_idx, old_label in enumerate(unique_labels)}
-            
             final_result = np.full(len(cluster_metadata), NOISE_LABEL, dtype=int)
             for i, label in enumerate(result_labels):
                 if label != NOISE_LABEL:
                     final_result[i] = label_remap[label]
                 else:
                     final_result[i] = NOISE_LABEL
+
+            # Enforce final constraints: ≤12% per cluster and 15–20 clusters
+            final_result = self._enforce_cluster_constraints_on_labels(
+                final_result, cluster_metadata, total_samples, max_cluster_size,
+                min_clusters=15, max_clusters=20, noise_label=NOISE_LABEL
+            )
             
             # Calculate and log final statistics
             final_cluster_sizes = {}
@@ -7052,6 +7106,132 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             self.logger.error(f"❌ Error in gradual expansion clustering: {e}")
             # Safe fallback
             return np.arange(len(cluster_metadata), dtype=int) % target_clusters
+
+    def _enforce_cluster_constraints_on_labels(self, labels: np.ndarray, cluster_metadata: List[Dict],
+                                              total_samples: int, max_cluster_size: int,
+                                              min_clusters: int = 15, max_clusters: int = 20,
+                                              noise_label: int = -1) -> np.ndarray:
+        """Post-process labels to satisfy size and count constraints.
+
+        - Splits oversized clusters into buckets not exceeding max_cluster_size
+        - Ensures the number of real clusters is within [min_clusters, max_clusters]
+        """
+        try:
+            import numpy as np
+            from math import ceil
+
+            n = len(labels)
+            if n == 0:
+                return labels
+
+            # Build mapping from label -> indices
+            label_to_indices: Dict[int, List[int]] = {}
+            for i, lbl in enumerate(labels):
+                label_to_indices.setdefault(int(lbl), []).append(i)
+
+            # Remove noise from real labels
+            real_labels = [l for l in label_to_indices.keys() if l != noise_label]
+
+            # Compute sizes
+            def cluster_size(indices: List[int]) -> int:
+                return sum(cluster_metadata[i]['sample_count'] for i in indices)
+
+            # Split oversized clusters
+            new_buckets: List[List[int]] = []
+            for lbl in real_labels:
+                indices = label_to_indices.get(lbl, [])
+                if not indices:
+                    continue
+                # Sort indices by sample count descending to pack efficiently
+                indices_sorted = sorted(indices, key=lambda i: cluster_metadata[i]['sample_count'], reverse=True)
+                current_bucket: List[int] = []
+                current_size = 0
+                for idx in indices_sorted:
+                    s = cluster_metadata[idx]['sample_count']
+                    if current_size + s <= max_cluster_size or not current_bucket:
+                        current_bucket.append(idx)
+                        current_size += s
+                    else:
+                        # Close current bucket and start a new one
+                        new_buckets.append(current_bucket)
+                        current_bucket = [idx]
+                        current_size = s
+                if current_bucket:
+                    new_buckets.append(current_bucket)
+
+            # If we ended up with no buckets (should not happen), keep original
+            if not new_buckets:
+                return labels
+
+            # If too few clusters, split largest buckets until min_clusters (but ≤ max_clusters)
+            def total_real_clusters() -> int:
+                return len([b for b in new_buckets if b])
+
+            while total_real_clusters() < min_clusters and total_real_clusters() < max_clusters:
+                # Find largest bucket by size
+                largest_idx = max(range(len(new_buckets)), key=lambda k: cluster_size(new_buckets[k]))
+                largest_bucket = new_buckets[largest_idx]
+                if len(largest_bucket) <= 1:
+                    break  # cannot split further
+                # Split into two by alternating items to balance size
+                bucket_a: List[int] = []
+                bucket_b: List[int] = []
+                size_a = 0
+                size_b = 0
+                for idx in sorted(largest_bucket, key=lambda i: cluster_metadata[i]['sample_count'], reverse=True):
+                    s = cluster_metadata[idx]['sample_count']
+                    if size_a <= size_b:
+                        if size_a + s <= max_cluster_size or not bucket_a:
+                            bucket_a.append(idx)
+                            size_a += s
+                        else:
+                            bucket_b.append(idx)
+                            size_b += s
+                    else:
+                        if size_b + s <= max_cluster_size or not bucket_b:
+                            bucket_b.append(idx)
+                            size_b += s
+                        else:
+                            bucket_a.append(idx)
+                            size_a += s
+                # Replace the largest bucket with two smaller ones
+                new_buckets[largest_idx] = bucket_a
+                new_buckets.insert(largest_idx + 1, bucket_b)
+
+            # If too many clusters, merge smallest buckets without breaching max size
+            while total_real_clusters() > max_clusters:
+                # Sort buckets by size ascending
+                new_buckets.sort(key=lambda b: cluster_size(b))
+                merged = False
+                for i in range(len(new_buckets) - 1):
+                    a = new_buckets[i]
+                    b = new_buckets[i + 1]
+                    if cluster_size(a) + cluster_size(b) <= max_cluster_size:
+                        new_buckets[i] = a + b
+                        del new_buckets[i + 1]
+                        merged = True
+                        break
+                if not merged:
+                    break  # cannot merge without violating size cap
+
+            # Build new labels array
+            new_labels = np.full(n, noise_label, dtype=int)
+            for new_lbl, bucket in enumerate(new_buckets):
+                for idx in bucket:
+                    new_labels[idx] = new_lbl
+
+            # Log distribution
+            sizes = [cluster_size(b) for b in new_buckets]
+            total = sum(sizes) if sizes else 0
+            if total > 0:
+                self.logger.info("📊 Final post-processed cluster size distribution (after constraints):")
+                for i, s in enumerate(sorted(sizes, reverse=True)[:10]):
+                    self.logger.info(f"   Cluster {i}: {s} samples ({(s/total)*100:.1f}%)")
+
+            return new_labels
+        except Exception as e:
+            self.logger.warning(f"⚠️ Constraint enforcement failed: {e}")
+            return labels
     
     def _size_constrained_clustering(self, normalized_features: Any, cluster_metadata: List[Dict], 
                                    target_clusters: int, max_cluster_size: int) -> Any:
@@ -7497,10 +7677,19 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                     enhanced_assignments[i] = cluster_to_super_cluster.get(original_cluster, original_cluster)
             
             # Create enhanced result with JSON-serializable types
+            actual_n_clusters = int(len(super_cluster_mapping))
+            # If we have assignments, also cross-check the unique label count
+            if enhanced_assignments:
+                try:
+                    import numpy as np
+                    actual_n_clusters = int(len(set([a for a in enhanced_assignments if a is not None])))
+                except Exception:
+                    pass
+
             enhanced_result = original_result.copy()
             enhanced_result.update({
                 'cluster_assignments': self._convert_to_json_serializable(enhanced_assignments),
-                'n_clusters': int(target_clusters),  # Ensure native Python int
+                'n_clusters': actual_n_clusters,
                 'hierarchical_mapping': self._convert_to_json_serializable(super_cluster_mapping),
                 'original_n_clusters': int(original_result.get('n_clusters', 0)),
                 'coverage_metrics': self._convert_to_json_serializable(coverage_metrics),

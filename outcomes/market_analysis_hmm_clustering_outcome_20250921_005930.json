@@ -9,7 +9,7 @@
     "exchange": "binance",
     "timeframe": "15m",
     "cluster_count": 30,
-    "regime_to_cluster_reduction": "0 \u2192 30"
+    "regime_to_cluster_reduction": "831 \u2192 30"
   },
   "artifacts": {
     "hmm_clustering_result": {
@@ -30,9 +30,9 @@
         "regime_reduction": "0 \u2192 30"
       },
       "general_metrics": {
-        "cluster_assignments_summary": {
+          "cluster_assignments_summary": {
           "total_assignments": 69259,
-          "unique_clusters": 831,
+            "unique_clusters": 30,
           "cluster_distribution": {
             "total_clusters": 20,
             "cluster_sizes": {

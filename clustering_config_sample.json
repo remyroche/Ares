@@ -1,0 +1,29 @@
+{
+  "clustering_config": {
+    "target_clusters": 20,
+    "min_cluster_size_pct": 0.03,
+    "max_cluster_size_pct": 0.08,
+    "coverage_target": 0.95,
+    "merge_similarity_threshold": 0.9,
+    "assignment_similarity_threshold": 0.7
+  },
+  "output_config": {
+    "output_dir": "training/steps/market_analysis/clustering",
+    "save_detailed_results": true,
+    "validate_coverage": true,
+    "validate_balance": true
+  },
+  "ml_config": {
+    "min_samples_required": 1000,
+    "feature_names": [
+      "momentum",
+      "volatility",
+      "volume",
+      "trend"
+    ],
+    "target_models": [
+      "RandomForestClassifier",
+      "GradientBoostingClassifier"
+    ]
+  }
+}

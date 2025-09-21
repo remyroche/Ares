@@ -11,6 +11,7 @@ from typing import Dict, List, Any, Optional, Tuple, Union
 from sklearn.cluster import KMeans, DBSCAN
 from sklearn.preprocessing import StandardScaler
 from sklearn.mixture import GaussianMixture
+from sklearn.metrics import silhouette_score, davies_bouldin_score
 import warnings
 import logging
 from dataclasses import dataclass
@@ -75,6 +76,327 @@ class OptimalRegimeClusterer:
             self.vectorized_core = None
             self.enhanced_ops = None
             self.batch_processor = None
+
+    # ----------------------------
+    # Internal helpers
+    # ----------------------------
+
+    def _compute_centroids(self, X: np.ndarray, labels: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+        unique_labels = np.array([l for l in np.unique(labels) if l >= 0], dtype=int)
+        if unique_labels.size == 0:
+            return np.array([]), unique_labels
+        centroids = []
+        for lab in unique_labels:
+            idx = labels == lab
+            if not np.any(idx):
+                centroids.append(np.zeros((X.shape[1],), dtype=float))
+            else:
+                centroids.append(np.mean(X[idx], axis=0))
+        return np.vstack(centroids), unique_labels
+
+    def _size_cv(self, labels: np.ndarray) -> float:
+        counts = [np.sum(labels == l) for l in np.unique(labels) if l >= 0]
+        if len(counts) == 0:
+            return 0.0
+        mean = float(np.mean(counts))
+        std = float(np.std(counts))
+        return float(std / (mean + 1e-12))
+
+    def _stable_kmeans_selection(self, X: np.ndarray, n_clusters: int) -> Tuple[np.ndarray, KMeans]:
+        """Run multiple seeds and pick the best KMeans by size-penalized objective."""
+        best_obj = np.inf
+        best_labels: Optional[np.ndarray] = None
+        best_model: Optional[KMeans] = None
+        base_seed = int(self.config.random_state)
+        seeds = [base_seed + i for i in range(int(self.config.kmeans_num_seeds))]
+        for seed in seeds:
+            model = KMeans(
+                n_clusters=n_clusters,
+                init='k-means++',
+                n_init=int(self.config.kmeans_n_init),
+                max_iter=int(self.config.kmeans_max_iter),
+                random_state=seed,
+            )
+            labels = model.fit_predict(X)
+            inertia = float(getattr(model, 'inertia_', 0.0))
+            size_pen = self._size_cv(labels)
+            obj = inertia * 1.0 + float(self.config.size_penalty_weight) * size_pen * X.shape[0]
+            if obj < best_obj:
+                best_obj = obj
+                best_labels = labels
+                best_model = model
+        # Fallback single run if something went wrong
+        if best_labels is None or best_model is None:
+            best_model = KMeans(
+                n_clusters=n_clusters,
+                init='k-means++',
+                n_init=int(max(10, self.config.kmeans_n_init)),
+                max_iter=int(self.config.kmeans_max_iter),
+                random_state=base_seed,
+            )
+            best_labels = best_model.fit_predict(X)
+        return best_labels, best_model
+
+    def _constrained_kmeans(self, X: np.ndarray, n_clusters: int) -> np.ndarray:
+        """Constrained K-Means using k-means-constrained if available, else fallback to assignment."""
+        n = X.shape[0]
+        size_min = max(1, int(np.floor(self.config.min_cluster_size_pct * n)))
+        size_max = max(1, int(np.ceil(self.config.max_cluster_size_pct * n)))
+        labels: Optional[np.ndarray] = None
+        if bool(self.config.constrained_kmeans_enabled):
+            try:
+                from k_means_constrained import KMeansConstrained  # type: ignore
+                model = KMeansConstrained(
+                    n_clusters=n_clusters,
+                    size_min=size_min,
+                    size_max=size_max,
+                    init='k-means++',
+                    n_init=int(self.config.kmeans_n_init),
+                    max_iter=int(self.config.kmeans_max_iter),
+                    random_state=int(self.config.random_state),
+                )
+                labels = model.fit_predict(X)
+            except Exception:
+                labels = None
+        if labels is None:
+            # Fallback: stable KMeans then bounded reassignment
+            labels, _ = self._stable_kmeans_selection(X, n_clusters)
+            labels = self._capacity_constrained_assignment(
+                X, labels, float(self.config.min_cluster_size_pct), float(self.config.max_cluster_size_pct)
+            )
+        return labels
+
+    def _merge_two_clusters(self, labels: np.ndarray, a: int, b: int) -> np.ndarray:
+        new_labels = labels.copy()
+        new_labels[labels == b] = a
+        # Reindex to compact [0..k-1]
+        uniq = [l for l in np.unique(new_labels) if l >= 0]
+        remap = {lab: i for i, lab in enumerate(sorted(uniq))}
+        mapped = np.array([remap[l] if l in remap else l for l in new_labels], dtype=int)
+        return mapped
+
+    def _pairwise_centroid_similarities(self, C: np.ndarray, metric: str = 'cosine') -> np.ndarray:
+        if C.size == 0 or C.shape[0] < 2:
+            return np.array([])
+        if metric == 'cosine':
+            Cn = C / (np.linalg.norm(C, axis=1, keepdims=True) + 1e-12)
+            sims = Cn @ Cn.T
+            mask = ~np.eye(C.shape[0], dtype=bool)
+            return sims[mask]
+        # euclidean -> convert to negative distance similarity surrogate
+        dists = np.linalg.norm(C[:, None, :] - C[None, :, :], axis=2)
+        mask = ~np.eye(C.shape[0], dtype=bool)
+        return -dists[mask]
+
+    def _overcluster_then_merge(self, X: np.ndarray, target_k: int) -> np.ndarray:
+        k_min = int(self.config.overcluster_k_min)
+        k_max = int(self.config.overcluster_k_max)
+        best_obj = np.inf
+        best_labels: Optional[np.ndarray] = None
+        best_centers: Optional[np.ndarray] = None
+        # Try several k values and pick best by size-penalized inertia
+        for k in range(k_min, k_max + 1):
+            labels_k, model_k = self._stable_kmeans_selection(X, k)
+            inertia = float(getattr(model_k, 'inertia_', 0.0))
+            size_pen = self._size_cv(labels_k)
+            obj = inertia * 1.0 + float(self.config.size_penalty_weight) * size_pen * X.shape[0]
+            if obj < best_obj:
+                best_obj = obj
+                best_labels = labels_k
+                best_centers = getattr(model_k, 'cluster_centers_', None)
+        if best_labels is None:
+            # Fallback: single run at k_max
+            best_labels, model = self._stable_kmeans_selection(X, k_max)
+            best_centers = getattr(model, 'cluster_centers_', None)
+
+        labels = best_labels
+        if best_centers is None:
+            C, labs = self._compute_centroids(X, labels)
+        else:
+            C = best_centers
+            labs = np.arange(C.shape[0])
+
+        # Pre-compute similarity distribution for gating
+        sims = self._pairwise_centroid_similarities(C, metric=getattr(self.config, 'merge_similarity_metric', 'cosine'))
+        easy_thr = np.quantile(sims, float(self.config.easy_merge_top_percentile)) if sims.size > 0 else 0.0
+
+        n = X.shape[0]
+        lower = float(self.config.min_cluster_size_pct) * n
+        upper = float(self.config.max_cluster_size_pct) * n
+
+        while len(np.unique(labels)) > target_k:
+            C, uniq = self._compute_centroids(X, labels)
+            if C.size == 0:
+                break
+            # choose nearest pair (max similarity for cosine)
+            metric = getattr(self.config, 'merge_similarity_metric', 'cosine')
+            if metric == 'cosine':
+                Cn = C / (np.linalg.norm(C, axis=1, keepdims=True) + 1e-12)
+                sims_mat = Cn @ Cn.T
+                np.fill_diagonal(sims_mat, -np.inf)
+                i, j = np.unravel_index(np.argmax(sims_mat), sims_mat.shape)
+                pair_sim = float(sims_mat[i, j])
+            else:
+                dists = np.linalg.norm(C[:, None, :] - C[None, :, :], axis=2)
+                np.fill_diagonal(dists, np.inf)
+                i, j = np.unravel_index(np.argmin(dists), dists.shape)
+                pair_sim = float(-dists[i, j])
+
+            # size check
+            counts = {int(l): int(np.sum(labels == l)) for l in uniq}
+            a, b = int(uniq[i]), int(uniq[j])
+            merged_size = counts[a] + counts[b]
+            size_ok = merged_size <= max(upper, 1.0)
+
+            # gating based on similarity percentile
+            easy_pair = pair_sim >= easy_thr
+
+            # Merge acceptance criterion: if size_ok or if easy_pair, else try to find next best pair by masking and retry
+            attempts = 0
+            attempted_pairs = set()
+            while not size_ok and attempts < len(uniq) * 2:
+                attempted_pairs.add((i, j))
+                if metric == 'cosine':
+                    sims_mat[i, j] = -np.inf
+                    sims_mat[j, i] = -np.inf
+                    i, j = np.unravel_index(np.argmax(sims_mat), sims_mat.shape)
+                    pair_sim = float(sims_mat[i, j])
+                else:
+                    dists[i, j] = np.inf
+                    dists[j, i] = np.inf
+                    i, j = np.unravel_index(np.argmin(dists), dists.shape)
+                    pair_sim = float(-dists[i, j])
+                a, b = int(uniq[i]), int(uniq[j])
+                merged_size = counts[a] + counts[b]
+                size_ok = merged_size <= max(upper, 1.0)
+                easy_pair = pair_sim >= easy_thr
+                attempts += 1
+
+            # If still not size_ok, accept the best available pair only if easy_pair (high similarity) to avoid poor merges
+            if size_ok or easy_pair:
+                new_labels = self._merge_two_clusters(labels, a, b)
+                # silhouette-based guardrail: avoid severe degradation
+                try:
+                    sil_before = silhouette_score(X, labels) if len(np.unique(labels)) > 1 else -1.0
+                    sil_after = silhouette_score(X, new_labels) if len(np.unique(new_labels)) > 1 else -1.0
+                    degrade = sil_after - sil_before
+                    if easy_pair or degrade >= -0.01:
+                        labels = new_labels
+                    else:
+                        # mask this pair and continue
+                        if metric == 'cosine':
+                            sims_mat[i, j] = -np.inf
+                            sims_mat[j, i] = -np.inf
+                        else:
+                            dists[i, j] = np.inf
+                            dists[j, i] = np.inf
+                        continue
+                except Exception:
+                    labels = new_labels
+            else:
+                break
+
+        # Final size enforcement
+        labels = self._capacity_constrained_assignment(
+            X, labels, float(self.config.min_cluster_size_pct), float(self.config.max_cluster_size_pct)
+        )
+        return labels
+
+    def _postprocess_split_merge(self, X: np.ndarray, labels: np.ndarray) -> np.ndarray:
+        """Split oversized, merge undersized with percentile-gated criteria and silhouette/DB checks."""
+        n = X.shape[0]
+        min_pct = float(self.config.min_cluster_size_pct)
+        max_pct = float(self.config.max_cluster_size_pct)
+        lower = min_pct * n
+        upper = max_pct * n
+        metric = getattr(self.config, 'merge_similarity_metric', 'cosine')
+        try:
+            sil_global_before = silhouette_score(X, labels) if len(np.unique(labels)) > 1 else -1.0
+        except Exception:
+            sil_global_before = -1.0
+
+        for _ in range(int(self.config.split_merge_max_iters)):
+            changed = False
+            # Recompute
+            uniq = [l for l in np.unique(labels) if l >= 0]
+            if not uniq:
+                break
+            C, uniq_arr = self._compute_centroids(X, labels)
+            sims = self._pairwise_centroid_similarities(C, metric=metric)
+            easy_thr = np.quantile(sims, float(self.config.easy_merge_top_percentile)) if sims.size > 0 else 0.0
+            strict_thr = np.quantile(sims, float(self.config.strict_split_bottom_percentile)) if sims.size > 0 else 0.0
+
+            counts = {int(c): int(np.sum(labels == c)) for c in uniq}
+
+            # Oversized -> try split
+            for c in list(uniq):
+                if counts[c] > upper and counts[c] >= 4:
+                    idx = np.where(labels == c)[0]
+                    try:
+                        sub_labels, _ = self._stable_kmeans_selection(X[idx], 2)
+                    except Exception:
+                        km = KMeans(n_clusters=2, init='k-means++', n_init=10, max_iter=300, random_state=self.config.random_state)
+                        sub_labels = km.fit_predict(X[idx])
+                    # Compute sub-centroid similarity
+                    subC0 = np.mean(X[idx][sub_labels == 0], axis=0)
+                    subC1 = np.mean(X[idx][sub_labels == 1], axis=0)
+                    if metric == 'cosine':
+                        s = float(np.dot(subC0, subC1) / ((np.linalg.norm(subC0) + 1e-12) * (np.linalg.norm(subC1) + 1e-12)))
+                    else:
+                        s = float(-np.linalg.norm(subC0 - subC1))
+                    # Build candidate labels
+                    new_labels = labels.copy()
+                    new_id = max(uniq) + 1
+                    new_labels[idx[sub_labels == 1]] = new_id
+                    try:
+                        sil_after = silhouette_score(X, new_labels) if len(np.unique(new_labels)) > 1 else sil_global_before
+                    except Exception:
+                        sil_after = sil_global_before
+                    # Accept if subclusters are sufficiently distinct (s <= strict_thr for euclidean surrogate negative) or if silhouette doesn't degrade
+                    accept = (metric == 'cosine' and s <= strict_thr) or (metric != 'cosine' and s >= strict_thr) or (sil_after >= sil_global_before - 0.005)
+                    if accept:
+                        labels = new_labels
+                        sil_global_before = sil_after
+                        changed = True
+            if changed:
+                continue
+
+            # Undersized -> try merge to nearest neighbor
+            C, uniq_arr = self._compute_centroids(X, labels)
+            counts = {int(c): int(np.sum(labels == c)) for c in [int(u) for u in uniq_arr]}
+            for i, c in enumerate(uniq_arr):
+                if counts[int(c)] < lower:
+                    # choose most similar neighbor
+                    if metric == 'cosine':
+                        Cn = C / (np.linalg.norm(C, axis=1, keepdims=True) + 1e-12)
+                        sims_mat = Cn @ Cn.T
+                        sims_mat[i, i] = -np.inf
+                        j = int(np.argmax(sims_mat[i]))
+                        pair_sim = float(sims_mat[i, j])
+                    else:
+                        d = np.linalg.norm(C - C[i], axis=1)
+                        d[i] = np.inf
+                        j = int(np.argmin(d))
+                        pair_sim = float(-d[j])
+                    a = int(uniq_arr[i])
+                    b = int(uniq_arr[j])
+                    new_labels = self._merge_two_clusters(labels, a, b)
+                    try:
+                        sil_after = silhouette_score(X, new_labels) if len(np.unique(new_labels)) > 1 else sil_global_before
+                    except Exception:
+                        sil_after = sil_global_before
+                    easy_pair = pair_sim >= easy_thr
+                    # Accept if easy pair or global silhouette doesn't degrade materially
+                    if easy_pair or (sil_after >= sil_global_before - 0.01):
+                        labels = new_labels
+                        sil_global_before = sil_after
+                        changed = True
+            if not changed:
+                break
+
+        # Final size enforcement pass
+        labels = self._capacity_constrained_assignment(X, labels, min_pct, max_pct)
+        return labels
 
     def cluster(self, data: Union[str, pd.DataFrame], **kwargs) -> ClusteringResult:
         """Perform optimal clustering on HMM regime data.
@@ -288,17 +610,16 @@ class OptimalRegimeClusterer:
         try:
             self.logger.info("Performing main clustering...")
 
-            # Use K-means with target number of clusters
-            kmeans = KMeans(
-                n_clusters=self.config.target_n_clusters,
-                n_init=10,
-                max_iter=self.config.max_iter,
-                random_state=self.config.random_state,
-                init='k-means++'
-            )
-
-            labels = kmeans.fit_predict(features)
-            self.logger.info(f"K-means created {len(np.unique(labels))} clusters")
+            # Constrained path preferred if enabled
+            if bool(self.config.constrained_kmeans_enabled):
+                labels = self._constrained_kmeans(features, int(self.config.target_n_clusters))
+            # Else overcluster and merge if enabled
+            elif bool(self.config.overcluster_enabled):
+                labels = self._overcluster_then_merge(features, int(self.config.target_n_clusters))
+            else:
+                # Stable KMeans selection
+                labels, _ = self._stable_kmeans_selection(features, int(self.config.target_n_clusters))
+            self.logger.info(f"Main clustering produced {len(np.unique(labels))} clusters")
             return labels
 
         except Exception as e:
@@ -355,27 +676,9 @@ class OptimalRegimeClusterer:
             raise
 
     def _kmeans_clustering(self, features: np.ndarray) -> np.ndarray:
-        """Perform K-means clustering.
-
-        Args:
-            features: Feature matrix
-
-        Returns:
-            Cluster labels
-        """
+        """Perform K-means clustering using the stable selection/constraints pipeline."""
         try:
-            kmeans = KMeans(
-                n_clusters=self.config.target_n_clusters,
-                n_init=10,
-                max_iter=self.config.max_iter,
-                random_state=self.config.random_state,
-                init='k-means++'
-            )
-
-            labels = kmeans.fit_predict(features)
-            self.logger.info(f"K-means created {len(np.unique(labels))} clusters")
-            return labels
-
+            return self._main_clustering(features)
         except Exception as e:
             self.logger.error(f"Error in K-means clustering: {e}")
             raise
@@ -444,6 +747,9 @@ class OptimalRegimeClusterer:
             # Optimize cluster sizes if needed
             if self.config.adaptive_clustering:
                 final_labels = self._optimize_cluster_sizes(features, final_labels)
+            # Postprocess split-merge with percentile gating
+            if bool(self.config.split_merge_enabled):
+                final_labels = self._postprocess_split_merge(features, final_labels)
 
             self.logger.info(f"Final clustering: {len(np.unique(final_labels[final_labels != -1]))} clusters")
             return final_labels

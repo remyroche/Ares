@@ -486,8 +486,14 @@ class MatrixOptimizedClusterer:
             Cluster labels
         """
         try:
-            # Use centroid-based clustering for better 3-8% distribution
-            if self.config.force_n_clusters and self.config.target_n_clusters == 20:
+            # Select clustering method based on configuration
+            if self.config.clustering_method == "ensemble":
+                self.logger.info("🎯 Using ensemble clustering for robust 3-8% distribution")
+                labels = self._ensemble_clustering_approach(features, self.config.target_n_clusters)
+            elif self.config.clustering_method == "hybrid":
+                self.logger.info("🎯 Using hybrid clustering (hierarchical + K-means) for 3-8% distribution")
+                labels = self._hybrid_clustering_approach(features, self.config.target_n_clusters)
+            elif self.config.force_n_clusters and self.config.target_n_clusters == 20:
                 self.logger.info("🎯 Using centroid-based clustering for 20-cluster 3-8% distribution")
                 labels = self._calculate_centroid_based_clusters(features)
             else:
@@ -2512,6 +2518,476 @@ class MatrixOptimizedClusterer:
         except Exception as e:
             self.logger.warning(f"Enhanced redistribution failed: {e}")
             return labels
+
+    def _improved_redistribution(self, labels: np.ndarray, features: np.ndarray, target_clusters: int) -> np.ndarray:
+        """Improved redistribution strategy that better handles the 3-8% range constraints.
+
+        Args:
+            labels: Current cluster labels
+            features: Feature matrix
+            target_clusters: Target number of clusters
+
+        Returns:
+            Improved redistributed cluster labels
+        """
+        try:
+            n_samples = len(labels)
+            current_labels = labels.copy()
+            cluster_stats = self._calculate_cluster_statistics(current_labels, features, n_samples)
+
+            # Define target ranges (3-8%)
+            target_min_pct = 0.03
+            target_max_pct = 0.08
+            target_min_samples = int(n_samples * target_min_pct)
+            target_max_samples = int(n_samples * target_max_pct)
+
+            # Strategy 1: Handle extremely problematic clusters first
+            sorted_stats = sorted(cluster_stats, key=lambda x: x['size'])
+
+            # Identify clusters that need immediate attention
+            very_small = [s for s in sorted_stats if s['size'] < target_min_samples * 0.5]  # <1.5%
+            very_large = [s for s in sorted_stats if s['size'] > target_max_samples * 1.5]  # >12%
+
+            # Handle very small clusters by merging or redistributing
+            for small_cluster in very_small:
+                # Find the closest cluster with capacity
+                closest_cluster = self._find_nearest_cluster_with_capacity(
+                    features, current_labels, small_cluster['label'],
+                    target_max_samples, target_min_samples
+                )
+                if closest_cluster is not None:
+                    # Merge the small cluster into the closest one
+                    current_labels = self._merge_clusters(
+                        current_labels, small_cluster['label'], closest_cluster
+                    )
+                    self.logger.info(f"   Merged tiny cluster {small_cluster['label']} into {closest_cluster}")
+
+            # Handle very large clusters by splitting more aggressively
+            for large_cluster in very_large:
+                excess_samples = large_cluster['size'] - target_max_samples
+                if excess_samples > 0:
+                    # Split into more pieces than usual
+                    n_splits = max(2, min(4, int(np.ceil(large_cluster['size'] / target_max_samples))))
+                    current_labels = self._split_cluster_aggressively(
+                        current_labels, features, large_cluster['label'], n_splits
+                    )
+                    self.logger.info(f"   Split large cluster {large_cluster['label']} into {n_splits} pieces")
+
+            # Strategy 2: Fine-tune remaining clusters
+            for iteration in range(10):  # Limit iterations to prevent infinite loops
+                cluster_stats = self._calculate_cluster_statistics(current_labels, features, n_samples)
+
+                # Check if we've achieved good distribution
+                violations = sum(1 for stat in cluster_stats
+                              if not (target_min_pct <= stat['percentage'] <= target_max_pct))
+                if violations <= 2:  # Allow up to 2 minor violations
+                    break
+
+                # Find the most problematic cluster
+                most_problematic = min(cluster_stats, key=lambda x: abs(x['percentage'] - 0.055))  # Target 5.5%
+
+                if most_problematic['percentage'] < target_min_pct:
+                    # Need to add samples
+                    deficit = target_min_samples - most_problematic['size']
+                    donor = self._find_best_donor_cluster(current_labels, cluster_stats, most_problematic['label'])
+                    if donor is not None:
+                        transfer_amount = min(deficit, int(donor['size'] * 0.15))
+                        current_labels = self._transfer_samples_to_cluster(
+                            current_labels, donor['label'], most_problematic['label'], transfer_amount
+                        )
+
+                elif most_problematic['percentage'] > target_max_pct:
+                    # Need to remove samples
+                    excess = most_problematic['size'] - target_max_samples
+                    # Split this cluster
+                    current_labels = self._split_cluster_into_two(current_labels, features, most_problematic['label'])
+
+                self.logger.info(f"   Iteration {iteration + 1}: {violations} violations remaining")
+
+            return current_labels
+
+        except Exception as e:
+            self.logger.warning(f"Improved redistribution failed: {e}")
+            return labels
+
+    def _find_nearest_cluster_with_capacity(self, features: np.ndarray, labels: np.ndarray,
+                                          target_cluster: int, max_size: int, min_size: int) -> Optional[int]:
+        """Find nearest cluster that has capacity to accept more samples."""
+        unique_labels = np.unique(labels)
+        target_mask = labels == target_cluster
+        target_features = features[target_mask]
+        target_centroid = np.mean(target_features, axis=0)
+
+        candidates = []
+        for label in unique_labels:
+            if label == target_cluster or label == -1:
+                continue
+
+            cluster_mask = labels == label
+            cluster_size = np.sum(cluster_mask)
+
+            # Check if cluster has capacity
+            if cluster_size >= max_size:
+                continue
+
+            # Check if cluster meets minimum size requirement
+            if cluster_size < min_size:
+                continue
+
+            cluster_features = features[cluster_mask]
+            cluster_centroid = np.mean(cluster_features, axis=0)
+            distance = np.linalg.norm(target_centroid - cluster_centroid)
+
+            candidates.append((label, distance, cluster_size))
+
+        if not candidates:
+            return None
+
+        # Return the closest cluster with capacity
+        candidates.sort(key=lambda x: x[1])
+        return candidates[0][0]
+
+    def _find_best_donor_cluster(self, labels: np.ndarray, cluster_stats: list, exclude_label: int) -> Optional[dict]:
+        """Find the best cluster to donate samples to a small cluster."""
+        candidates = [stat for stat in cluster_stats
+                     if stat['label'] != exclude_label and stat['percentage'] > 0.05]  # >5%
+
+        if not candidates:
+            return None
+
+        # Return the largest cluster that can donate
+        return max(candidates, key=lambda x: x['size'])
+
+    def _merge_clusters(self, labels: np.ndarray, from_label: int, to_label: int) -> np.ndarray:
+        """Merge one cluster into another."""
+        labels = labels.copy()
+        labels[labels == from_label] = to_label
+        return labels
+
+    def _split_cluster_aggressively(self, labels: np.ndarray, features: np.ndarray,
+                                   cluster_label: int, n_splits: int) -> np.ndarray:
+        """Split a cluster more aggressively into multiple pieces."""
+        labels = labels.copy()
+        cluster_mask = labels == cluster_label
+        cluster_features = features[cluster_mask]
+
+        if len(cluster_features) < n_splits * 10:  # Need minimum samples
+            return self._split_cluster_into_two(labels, features, cluster_label)
+
+        # Use K-means with more clusters
+        from sklearn.cluster import KMeans
+        kmeans = KMeans(n_clusters=n_splits, n_init=5, random_state=self.config.random_state)
+        sub_labels = kmeans.fit_predict(cluster_features)
+
+        # Create new labels for the split clusters
+        max_label = np.max(labels)
+        new_cluster_base = max_label + 1
+
+        labels[cluster_mask] = sub_labels + new_cluster_base
+
+        return labels
+
+    def _centroid_aware_split(self, features: np.ndarray, min_size: int, max_size: int) -> Optional[np.ndarray]:
+        """Split cluster using centroid-aware approach with size constraints."""
+        try:
+            n_samples = len(features)
+            if n_samples < min_size * 2:
+                return None
+
+            # Calculate initial centroids using a balanced approach
+            from sklearn.cluster import KMeans
+            kmeans = KMeans(n_clusters=2, n_init=1, random_state=42)
+            centroids = kmeans.cluster_centers_
+
+            # Assign points to centroids with size constraints
+            distances = np.linalg.norm(features[:, np.newaxis] - centroids[np.newaxis, :], axis=2)
+            labels = np.argmin(distances, axis=1)
+
+            # Check if sizes are within constraints
+            sizes = np.bincount(labels)
+            if min(sizes) >= min_size and max(sizes) <= max_size:
+                return labels
+
+            return None
+        except Exception:
+            return None
+
+    def _variance_based_split(self, features: np.ndarray, min_size: int = 20, max_size: int = 1000) -> Optional[np.ndarray]:
+        """Split cluster using variance-based approach."""
+        try:
+            n_samples = len(features)
+            if n_samples < min_size * 2:
+                return None
+
+            # Find the dimension with highest variance
+            variances = np.var(features, axis=0)
+            split_dim = np.argmax(variances)
+
+            # Sort by the split dimension
+            sorted_indices = np.argsort(features[:, split_dim])
+
+            # Create balanced split
+            mid_point = n_samples // 2
+            labels = np.zeros(n_samples, dtype=int)
+            labels[sorted_indices[mid_point:]] = 1
+
+            # Check if sizes are within constraints
+            sizes = np.bincount(labels)
+            if min(sizes) >= min_size and max(sizes) <= max_size:
+                return labels
+
+            return None
+        except Exception:
+            return None
+
+    def _calculate_split_cv_score(self, features: np.ndarray, labels: np.ndarray) -> float:
+        """Calculate coefficient of variation score for split quality."""
+        try:
+            # Calculate within-cluster variance for each dimension
+            unique_labels = np.unique(labels)
+            if len(unique_labels) != 2:
+                return float('inf')
+
+            cv_scores = []
+            for label in unique_labels:
+                cluster_features = features[labels == label]
+                if len(cluster_features) > 1:
+                    # Calculate CV for each dimension
+                    means = np.mean(cluster_features, axis=0)
+                    stds = np.std(cluster_features, axis=0)
+                    cv = np.mean(stds / (means + 1e-6))  # Add small epsilon to avoid division by zero
+                    cv_scores.append(cv)
+
+            return np.mean(cv_scores) if cv_scores else float('inf')
+        except Exception:
+            return float('inf')
+
+    def _hierarchical_initial_clustering(self, features: np.ndarray, target_clusters: int) -> np.ndarray:
+        """Perform hierarchical clustering for better initial distribution.
+
+        Args:
+            features: Feature matrix
+            target_clusters: Target number of clusters
+
+        Returns:
+            Initial cluster labels
+        """
+        try:
+            from scipy.cluster.hierarchy import linkage, fcluster
+            from scipy.spatial.distance import pdist
+
+            # Calculate distance matrix
+            distance_matrix = pdist(features)
+
+            # Perform hierarchical clustering
+            linkage_matrix = linkage(distance_matrix, method='ward')
+
+            # Cut the dendrogram to get target number of clusters
+            labels = fcluster(linkage_matrix, target_clusters, criterion='maxclust')
+
+            # Adjust labels to start from 0
+            labels = labels - 1
+
+            self.logger.info(f"✅ Hierarchical clustering completed: {len(np.unique(labels))} clusters")
+            return labels
+
+        except Exception as e:
+            self.logger.warning(f"Hierarchical clustering failed: {e}")
+            # Fallback to K-means
+            from sklearn.cluster import KMeans
+            kmeans = KMeans(n_clusters=target_clusters, n_init=10, random_state=self.config.random_state)
+            return kmeans.fit_predict(features)
+
+    def _hybrid_clustering_approach(self, features: np.ndarray, target_clusters: int) -> np.ndarray:
+        """Combine hierarchical and K-means clustering for better results.
+
+        Args:
+            features: Feature matrix
+            target_clusters: Target number of clusters
+
+        Returns:
+            Optimized cluster labels
+        """
+        try:
+            # Step 1: Use hierarchical clustering for initial structure
+            initial_labels = self._hierarchical_initial_clustering(features, target_clusters)
+
+            # Step 2: Refine with K-means++
+            from sklearn.cluster import KMeans
+            kmeans = KMeans(
+                n_clusters=target_clusters,
+                init='k-means++',
+                n_init=20,
+                max_iter=300,
+                random_state=self.config.random_state
+            )
+            refined_labels = kmeans.fit_predict(features)
+
+            # Step 3: Compare quality and choose the better one
+            initial_quality = self._calculate_cluster_quality_score(features, initial_labels)
+            refined_quality = self._calculate_cluster_quality_score(features, refined_labels)
+
+            if refined_quality > initial_quality:
+                self.logger.info(f"✅ Hybrid clustering: K-means++ quality ({refined_quality:.3f}) > hierarchical ({initial_quality:.3f})")
+                return refined_labels
+            else:
+                self.logger.info(f"✅ Hybrid clustering: Hierarchical quality ({initial_quality:.3f}) > K-means++ ({refined_quality:.3f})")
+                return initial_labels
+
+        except Exception as e:
+            self.logger.warning(f"Hybrid clustering failed: {e}")
+            # Final fallback
+            from sklearn.cluster import KMeans
+            kmeans = KMeans(n_clusters=target_clusters, n_init=10, random_state=self.config.random_state)
+            return kmeans.fit_predict(features)
+
+    def _calculate_cluster_quality_score(self, features: np.ndarray, labels: np.ndarray) -> float:
+        """Calculate overall cluster quality score (higher is better)."""
+        try:
+            from sklearn.metrics import silhouette_score, calinski_harabasz_score
+
+            # Silhouette score (higher is better)
+            silhouette = silhouette_score(features, labels)
+
+            # Calinski-Harabasz score (higher is better)
+            ch_score = calinski_harabasz_score(features, labels)
+
+            # Combine scores (normalize to 0-1 range)
+            combined_score = (silhouette + 0.1) / 1.1 + (ch_score / 1000)  # Simple normalization
+
+            return combined_score
+        except Exception:
+            return 0.0
+
+    def _ensemble_clustering_approach(self, features: np.ndarray, target_clusters: int) -> np.ndarray:
+        """Use ensemble of clustering methods for more robust results.
+
+        Args:
+            features: Feature matrix
+            target_clusters: Target number of clusters
+
+        Returns:
+            Ensemble-based cluster labels
+        """
+        try:
+            ensemble_results = []
+            ensemble_scores = []
+
+            # Method 1: K-means with multiple initializations
+            try:
+                from sklearn.cluster import KMeans
+                kmeans = KMeans(n_clusters=target_clusters, n_init=50, max_iter=500, random_state=self.config.random_state)
+                labels1 = kmeans.fit_predict(features)
+                score1 = self._calculate_cluster_quality_score(features, labels1)
+                ensemble_results.append(labels1)
+                ensemble_scores.append(score1)
+                self.logger.info(f"   K-means score: {score1:.3f}")
+            except Exception as e:
+                self.logger.warning(f"K-means failed: {e}")
+
+            # Method 2: K-means++ with different random states
+            try:
+                kmeans_pp = KMeans(n_clusters=target_clusters, init='k-means++', n_init=50, max_iter=500, random_state=self.config.random_state + 1)
+                labels2 = kmeans_pp.fit_predict(features)
+                score2 = self._calculate_cluster_quality_score(features, labels2)
+                ensemble_results.append(labels2)
+                ensemble_scores.append(score2)
+                self.logger.info(f"   K-means++ score: {score2:.3f}")
+            except Exception as e:
+                self.logger.warning(f"K-means++ failed: {e}")
+
+            # Method 3: Hierarchical clustering
+            try:
+                labels3 = self._hierarchical_initial_clustering(features, target_clusters)
+                score3 = self._calculate_cluster_quality_score(features, labels3)
+                ensemble_results.append(labels3)
+                ensemble_scores.append(score3)
+                self.logger.info(f"   Hierarchical score: {score3:.3f}")
+            except Exception as e:
+                self.logger.warning(f"Hierarchical failed: {e}")
+
+            # Method 4: Gaussian Mixture Model
+            try:
+                from sklearn.mixture import GaussianMixture
+                gmm = GaussianMixture(n_components=target_clusters, n_init=10, random_state=self.config.random_state)
+                labels4 = gmm.fit_predict(features)
+                score4 = self._calculate_cluster_quality_score(features, labels4)
+                ensemble_results.append(labels4)
+                ensemble_scores.append(score4)
+                self.logger.info(f"   GMM score: {score4:.3f}")
+            except Exception as e:
+                self.logger.warning(f"GMM failed: {e}")
+
+            if not ensemble_results:
+                # Fallback to simple K-means
+                kmeans = KMeans(n_clusters=target_clusters, n_init=10, random_state=self.config.random_state)
+                return kmeans.fit_predict(features)
+
+            # Select the best result
+            best_index = np.argmax(ensemble_scores)
+            best_labels = ensemble_results[best_index]
+            best_score = ensemble_scores[best_index]
+
+            self.logger.info(f"✅ Ensemble clustering: Selected method {best_index + 1} with score {best_score:.3f}")
+
+            # Check if we have multiple good results, try to combine them
+            good_results = [ensemble_results[i] for i in range(len(ensemble_scores)) if ensemble_scores[i] > best_score * 0.9]
+
+            if len(good_results) > 1:
+                # Use majority voting for final labels
+                final_labels = self._ensemble_majority_vote(good_results, target_clusters)
+                self.logger.info(f"✅ Ensemble clustering: Used majority voting from {len(good_results)} methods")
+                return final_labels
+
+            return best_labels
+
+        except Exception as e:
+            self.logger.warning(f"Ensemble clustering failed: {e}")
+            # Final fallback
+            from sklearn.cluster import KMeans
+            kmeans = KMeans(n_clusters=target_clusters, n_init=10, random_state=self.config.random_state)
+            return kmeans.fit_predict(features)
+
+    def _ensemble_majority_vote(self, label_sets: list, target_clusters: int) -> np.ndarray:
+        """Combine multiple clustering results using majority voting.
+
+        Args:
+            label_sets: List of clustering results
+            target_clusters: Target number of clusters
+
+        Returns:
+            Consensus cluster labels
+        """
+        try:
+            n_samples = len(label_sets[0])
+            n_methods = len(label_sets)
+
+            # Create consensus matrix
+            consensus_matrix = np.zeros((n_samples, n_samples))
+
+            for labels in label_sets:
+                for i in range(n_samples):
+                    for j in range(n_samples):
+                        if labels[i] == labels[j]:
+                            consensus_matrix[i, j] += 1
+
+            # Normalize consensus matrix
+            consensus_matrix = consensus_matrix / n_methods
+
+            # Use spectral clustering on consensus matrix
+            from sklearn.cluster import SpectralClustering
+            spectral = SpectralClustering(
+                n_clusters=target_clusters,
+                affinity='precomputed',
+                random_state=self.config.random_state
+            )
+            final_labels = spectral.fit_predict(consensus_matrix)
+
+            return final_labels
+
+        except Exception:
+            # Fallback to the first result
+            return label_sets[0]
 
     def _aggressive_outlier_redistribution(self, labels: np.ndarray, features: np.ndarray, target_clusters: int,
                                          extreme_small: list, extreme_large: list) -> np.ndarray:

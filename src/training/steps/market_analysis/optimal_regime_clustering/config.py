@@ -138,6 +138,67 @@ class OptimalClusteringConfig:
         return config
 
     @classmethod
+    def create_size_optimized(cls) -> 'OptimalClusteringConfig':
+        """Create configuration optimized for 3-8% cluster size distribution."""
+        config = cls()
+
+        # Use ensemble clustering for better initial distribution
+        config.clustering_method = "ensemble"
+        config.target_n_clusters = 20
+        config.force_n_clusters = True
+
+        # Enhanced constraint enforcement
+        config.min_cluster_size_pct = 0.03
+        config.max_cluster_size_pct = 0.08
+        config.perfect_distribution_threshold = 0.95  # Require 95% of clusters in 3-8% range
+
+        # More aggressive redistribution
+        config.enable_aggressive_splitting = True
+        config.enable_weighted_splitting = True
+        config.enable_dynamic_merging = True
+        config.force_exact_constraints = True
+        config.max_cluster_splitting_iterations = 30  # More iterations
+        config.splitting_aggressiveness = 4.0  # More aggressive
+        config.outlier_redistribution_rounds = 15  # More rounds
+
+        # Better quality thresholds
+        config.min_silhouette_score = 0.3
+        config.min_calinski_harabasz_score = 100.0
+        config.target_coherence_score = 0.7
+
+        # Enhanced refinement
+        config.enhanced_redistribution = True
+        config.iterative_refinement = True
+        config.adaptive_targets = True
+        config.smart_cluster_transfer = True
+        config.refinement_passes = 10  # More refinement passes
+
+        return config
+
+    @classmethod
+    def create_ultra_precision(cls) -> 'OptimalClusteringConfig':
+        """Create ultra-precision configuration for maximum constraint satisfaction."""
+        config = cls.create_size_optimized()
+
+        # Even more aggressive parameters
+        config.perfect_distribution_threshold = 0.98  # Require 98% of clusters in 3-8% range
+        config.max_cluster_splitting_iterations = 50
+        config.splitting_aggressiveness = 5.0
+        config.outlier_redistribution_rounds = 25
+        config.refinement_passes = 15
+
+        # Ultra-precise quality thresholds
+        config.min_silhouette_score = 0.4
+        config.min_calinski_harabasz_score = 200.0
+        config.target_coherence_score = 0.8
+
+        # Use hierarchical + ensemble approach
+        config.multi_stage_clustering = True
+        config.adaptive_clustering = True
+
+        return config
+
+    @classmethod
     def create_fast_processing(cls) -> 'OptimalClusteringConfig':
         """Create fast processing configuration."""
         config = cls()
@@ -151,12 +212,18 @@ def get_clustering_config(mode: str = "default") -> OptimalClusteringConfig:
     """Get clustering configuration based on mode."""
     if mode == "high_quality":
         return OptimalClusteringConfig.create_high_quality()
+    elif mode == "size_optimized":
+        return OptimalClusteringConfig.create_size_optimized()
+    elif mode == "ultra_precision":
+        return OptimalClusteringConfig.create_ultra_precision()
     elif mode == "fast_processing":
         return OptimalClusteringConfig.create_fast_processing()
     else:
         return OptimalClusteringConfig.create_default()
 
-# Default configuration instance
+# Default configuration instances
 DEFAULT_CONFIG = get_clustering_config("default")
 HIGH_QUALITY_CONFIG = get_clustering_config("high_quality")
+SIZE_OPTIMIZED_CONFIG = get_clustering_config("size_optimized")
+ULTRA_PRECISION_CONFIG = get_clustering_config("ultra_precision")
 FAST_CONFIG = get_clustering_config("fast_processing")

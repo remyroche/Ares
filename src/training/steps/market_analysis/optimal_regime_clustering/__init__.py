@@ -23,7 +23,7 @@ Example usage:
     )
 """
 
-from .config import OptimalClusteringConfig, get_clustering_config, DEFAULT_CONFIG, HIGH_QUALITY_CONFIG, FAST_CONFIG
+from .config import OptimalClusteringConfig, get_clustering_config, DEFAULT_CONFIG, HIGH_QUALITY_CONFIG, SIZE_OPTIMIZED_CONFIG, ULTRA_PRECISION_CONFIG, FAST_CONFIG
 from .clustering import OptimalRegimeClusterer, ClusteringResult, create_optimal_clusterer, cluster_hmm_regimes
 from .optimized_clustering import MatrixOptimizedClusterer, OptimizedClusteringResult, create_matrix_optimized_clusterer, cluster_hmm_regimes_optimized
 from .orchestrator import OptimalRegimeClusteringOrchestrator, run_optimal_clustering, run_high_quality_clustering, run_fast_clustering, run_matrix_optimized_clustering
@@ -44,6 +44,8 @@ __all__ = [
     "get_clustering_config",
     "DEFAULT_CONFIG",
     "HIGH_QUALITY_CONFIG",
+    "SIZE_OPTIMIZED_CONFIG",
+    "ULTRA_PRECISION_CONFIG",
     "FAST_CONFIG",
 
     # Core clustering

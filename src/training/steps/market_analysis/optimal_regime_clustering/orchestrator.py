@@ -499,8 +499,26 @@ class OptimalRegimeClusteringOrchestrator:
                     self.logger.warning(f"❌ Largest cluster {max_size_pct:.3f} exceeds maximum")
                     return False
 
-            # Check quality metrics
-            quality = clustering_result.quality_metrics
+            # Check quality metrics with sanitation
+            raw_quality = clustering_result.quality_metrics or {}
+            quality = {}
+            for k, v in raw_quality.items():
+                try:
+                    val = float(v)
+                except Exception:
+                    val = 0.0
+                if not np.isfinite(val):
+                    self.logger.warning(f"Non-finite quality metric {k} detected: {v}, coercing")
+                    if 'cv' in k.lower():
+                        val = 10.0
+                    elif 'davies' in k.lower():
+                        val = 10.0
+                    else:
+                        val = 0.0
+                if val < 0:
+                    self.logger.warning(f"Negative quality metric {k} detected: {val}, clamping")
+                    val = 0.0
+                quality[k] = val
             if quality.get('silhouette', 0.0) < self.config.min_silhouette_score:
                 self.logger.warning(f"❌ Silhouette score {quality.get('silhouette', 0.0):.3f} below threshold")
                 return False
@@ -522,7 +540,11 @@ class OptimalRegimeClusteringOrchestrator:
             ClusteringResult with size constraints enforced
         """
         try:
-            from src.training.steps.market_analysis.cluster_constraints import split_giant_clusters
+            from src.training.steps.market_analysis.cluster_constraints import (
+                split_giant_clusters,
+                merge_tail_into_topk,
+                balance_topk_range,
+            )
             import numpy as np
 
             # Extract features from the clustering result metadata
@@ -545,6 +567,23 @@ class OptimalRegimeClusteringOrchestrator:
                 target_range=target_range,
                 metric="euclidean",
                 random_state=self.config.random_state
+            )
+
+            # Keep cluster count and distribution aligned with goals
+            new_labels = merge_tail_into_topk(
+                features,
+                new_labels,
+                k=self.config.target_n_clusters,
+                coverage_target=(self.config.target_coverage_pct - 0.05, self.config.target_coverage_pct),
+                metric="euclidean",
+            )
+            new_labels = balance_topk_range(
+                features,
+                new_labels,
+                k=self.config.target_n_clusters,
+                target_range=(self.config.min_cluster_size_pct, self.config.max_cluster_size_pct),
+                metric="euclidean",
+                random_state=self.config.random_state,
             )
 
             # Create new clustering result

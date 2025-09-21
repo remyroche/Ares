@@ -85,6 +85,34 @@ class MatrixOptimizedClusterer:
             self.batch_processor = None
             self.logger.warning("⚠️ Matrix operations not available, using fallback mode")
 
+    def _sanitize_quality_metrics(self, quality: Dict[str, float]) -> Dict[str, float]:
+        """Clamp negative or infinite quality values to safe defaults and log issues."""
+        safe = {}
+        for k, v in quality.items():
+            if v is None:
+                continue
+            val = float(v)
+            if not np.isfinite(val):
+                self.logger.warning(f"Quality metric {k} is non-finite: {val}, coercing")
+                if 'cv' in k.lower():
+                    val = 10.0
+                elif 'davies' in k.lower():
+                    val = 10.0
+                else:
+                    val = 0.0
+            if val < 0:
+                self.logger.warning(f"Quality metric {k} negative: {val}, clamping to 0")
+                val = 0.0
+            safe[k] = val
+        return safe
+
+    def cluster(self, data: Union[str, pd.DataFrame], **kwargs) -> OptimizedClusteringResult:
+        """Compatibility alias used by orchestrators expecting a standard `cluster` method.
+
+        Delegates to `cluster_optimized` and returns the same result structure.
+        """
+        return self.cluster_optimized(data, **kwargs)
+
     def cluster_optimized(self, data: Union[str, pd.DataFrame], **kwargs) -> OptimizedClusteringResult:
         """Perform optimized clustering with matrix operations.
 
@@ -124,7 +152,8 @@ class MatrixOptimizedClusterer:
             # Step 5: Calculate quality metrics using vectorized operations
             self.logger.info("📈 Step 5: Calculating quality metrics...")
             statistics = calculate_cluster_statistics(clustering_result.labels, self.config.to_dict())
-            quality_metrics = calculate_cluster_quality_metrics(features, clustering_result.labels)
+            raw_quality_metrics = calculate_cluster_quality_metrics(features, clustering_result.labels)
+            quality_metrics = self._sanitize_quality_metrics(raw_quality_metrics)
             validation = validate_cluster_quality(statistics, quality_metrics, self.config.to_dict())
 
             # Step 6: Generate performance report
@@ -656,126 +685,52 @@ class MatrixOptimizedClusterer:
             return {}
 
     def _iterative_constraint_enforcement(self, labels: np.ndarray, features: np.ndarray) -> np.ndarray:
-        """Iteratively enforce 3-8% constraints through smart transfer, splitting and merging.
+        """Enforce constraints via merge-to-target and bounded assignment (3–8% per cluster, 100% coverage).
 
-        This method will repeatedly:
-        1. Try smart transfer from oversized to undersized clusters first
-        2. Split only clusters that couldn't be handled by transfer
-        3. Merge clusters that are too small (<1%) with most similar neighbors
-        4. Apply smart redistribution to balance cluster sizes
-        5. Repeat until all constraints are met or max iterations reached
-
-        Args:
-            labels: Initial cluster labels
-            features: Feature matrix
-
-        Returns:
-            Labels after iterative constraint enforcement
+        This replaces heuristic transfer/split loops with:
+        1) quality-aware merges to reach exactly `target_n_clusters`, then
+        2) a capacity-constrained assignment to satisfy size bounds and full coverage.
         """
-        max_iterations = self.config.max_cluster_splitting_iterations or 15
-        n_samples = len(labels)
+        try:
+            current_labels = labels.copy()
+            # Normalize labels to consecutive ints and initialize progress tracking
+            unique = np.unique(current_labels)
+            label_map = {old: new for new, old in enumerate(unique)}
+            current_labels = np.vectorize(label_map.get)(current_labels)
 
-        new_labels = labels.copy()
+            target_k = int(self.config.target_n_clusters)
+            min_pct = float(self.config.min_cluster_size_pct)
+            max_pct = float(self.config.max_cluster_size_pct)
+            prev_violations = float('inf')
+            stagnation_count = 0
+            max_stagnation = 3
 
-        for iteration in range(max_iterations):
-            unique_labels, counts = np.unique(new_labels, return_counts=True)
-            percentages = counts / n_samples
+            # Step 1: Merge (if needed) to reach exactly target_k
+            k_now = len(np.unique(current_labels))
+            if k_now != target_k:
+                self.logger.info(f"🔧 Adjusting cluster count: {k_now} -> {target_k} via quality-aware merges")
+                current_labels = self._merge_to_target_k(features, current_labels, target_k, min_pct, max_pct)
 
-            # Check if all constraints are met
-            violations = sum(1 for pct in percentages if pct < 0.03 or pct > 0.08)
-            if violations == 0:
-                self.logger.info(f"✅ All constraints met after {iteration + 1} iterations")
-                break
+            # Step 2: Capacity-constrained assignment to meet 3–8% and 100% coverage
+            self.logger.info("🔧 Enforcing 3–8% bounds with bounded assignment")
+            current_labels = self._capacity_constrained_assignment(features, current_labels, min_pct, max_pct)
 
-            self.logger.info(f"🔄 Iteration {iteration + 1}: {violations} violations remaining")
+            # Progress check (count violations). Stop early if stalled
+            _, counts = np.unique(current_labels, return_counts=True)
+            pct = counts / max(1, len(current_labels))
+            violations = int(np.sum((pct < min_pct) | (pct > max_pct)))
+            if violations >= prev_violations:
+                stagnation_count += 1
+            else:
+                stagnation_count = 0
+            prev_violations = violations
+            if stagnation_count >= max_stagnation:
+                self.logger.info("Stopping constraint enforcement due to stagnation")
 
-            # Step 1: Try smart transfer first for oversized clusters
-            oversized = [(i, pct) for i, pct in enumerate(percentages) if pct > 0.08]
-            undersized = [(i, pct) for i, pct in enumerate(percentages) if pct < 0.03]
-
-            if oversized and undersized and self.config.smart_cluster_transfer:
-                self.logger.info(f"🔄 Attempting smart transfer for {len(oversized)} oversized clusters")
-                transfers_made = False
-
-                for cluster_idx, pct in oversized:
-                    cluster_label = unique_labels[cluster_idx]
-                    # Find nearest undersized cluster that can accept transfer
-                    nearest_undersized = self._find_nearest_undersized_cluster(
-                        features, new_labels, cluster_label, undersized, unique_labels
-                    )
-
-                    if nearest_undersized is not None:
-                        # Calculate transfer amount (up to 25% of oversized cluster)
-                        transfer_amount = min(
-                            int(counts[cluster_idx] * self.config.smart_transfer_percentage),
-                            counts[cluster_idx] - 20  # Leave at least 20 samples
-                        )
-
-                        if transfer_amount > 0:
-                            # Transfer samples
-                            new_labels = self._transfer_samples_to_cluster(
-                                new_labels, cluster_label, nearest_undersized, transfer_amount
-                            )
-                            transfers_made = True
-                            self.logger.info(f"✅ Transferred {transfer_amount} samples from cluster {cluster_label} to {nearest_undersized}")
-
-                if transfers_made:
-                    # Re-evaluate after transfers
-                    unique_labels, counts = np.unique(new_labels, return_counts=True)
-                    percentages = counts / n_samples
-                    oversized = [(i, pct) for i, pct in enumerate(percentages) if pct > 0.08]
-                    undersized = [(i, pct) for i, pct in enumerate(percentages) if pct < 0.03]
-
-            # Step 2: Split only remaining oversized clusters (>8%) that couldn't be handled by transfer
-            still_oversized = [(i, pct) for i, pct in enumerate(percentages) if pct > 0.08]
-            if still_oversized:
-                self.logger.info(f"📊 Need to split {len(still_oversized)} remaining oversized clusters")
-                for cluster_idx, pct in still_oversized:
-                    cluster_label = unique_labels[cluster_idx]
-                    self.logger.info(f"🔧 Splitting oversized cluster {cluster_label} ({pct*100:.1f}%) into 2 subclusters")
-
-                    # Split into exactly 2 subclusters to get 5-7% each
-                    split_labels = self._split_cluster_into_two(
-                        new_labels, features, cluster_label
-                    )
-
-                    # Update labels
-                    new_labels = self._update_labels_after_split(
-                        new_labels, split_labels, cluster_label
-                    )
-
-            # Step 3: Merge undersized clusters (<3%) with most similar neighbors
-            undersized = [(i, pct) for i, pct in enumerate(percentages) if pct < 0.01]
-            if undersized:
-                for cluster_idx, pct in undersized:
-                    cluster_label = unique_labels[cluster_idx]
-                    self.logger.info(f"🔧 Merging undersized cluster {cluster_label} ({pct*100:.1f}%)")
-
-                    # Find most similar cluster based on CV
-                    merged_labels = self._merge_with_most_similar(
-                        new_labels, features, cluster_label
-                    )
-
-                    if merged_labels is not None:
-                        new_labels = merged_labels
-
-            # Step 4: Apply enhanced redistribution if still needed
-            if iteration > 5 and violations > 0:
-                new_labels = self._enhanced_redistribution(new_labels, features, len(unique_labels))
-
-            # Recalculate for next iteration
-            unique_labels, counts = np.unique(new_labels, return_counts=True)
-            percentages = counts / n_samples
-
-            # Break if no progress made
-            if len(unique_labels) > 25:  # Too many clusters
-                self.logger.warning(f"⚠️ Too many clusters ({len(unique_labels)}), stopping iterations")
-                break
-
-        # Final cleanup pass
-        final_labels = self._final_cleanup_pass(new_labels, features)
-
-        return final_labels
+            return current_labels
+        except Exception as e:
+            self.logger.warning(f"Constraint enforcement fallback due to error: {e}")
+            return labels
 
     def _find_nearest_undersized_cluster(self, features: np.ndarray, labels: np.ndarray,
                                         source_cluster: int, undersized_clusters: List,
@@ -984,18 +939,21 @@ class MatrixOptimizedClusterer:
             if len(unique_labels) != 2:
                 return float('inf')
 
-            # Calculate CV for each subcluster
+            # Calculate CV properly per feature and average across features
             cv_scores = []
             for label in unique_labels:
                 sub_features = features[labels == label]
                 if len(sub_features) > 1:
-                    cv = np.mean(np.std(sub_features, axis=0)) / (np.mean(np.mean(sub_features, axis=0)) + 1e-6)
-                    cv_scores.append(cv)
+                    means = np.mean(sub_features, axis=0)
+                    stds = np.std(sub_features, axis=0)
+                    vals = [abs(s / m) for m, s in zip(means, stds) if abs(m) > 1e-6]
+                    avg_cv = np.mean(vals) if vals else 0.0
+                    cv_scores.append(max(0.0, float(avg_cv)))
                 else:
                     cv_scores.append(0.0)
 
             # Return average CV (lower means more homogeneous subclusters)
-            return np.mean(cv_scores)
+            return float(np.mean(cv_scores)) if cv_scores else 0.0
 
         except Exception as e:
             self.logger.warning(f"CV score calculation failed: {e}")
@@ -1095,8 +1053,17 @@ class MatrixOptimizedClusterer:
             # Merge with best neighbor
             if best_neighbor is not None:
                 new_labels = labels.copy()
-                new_labels[new_labels == cluster_label] = best_neighbor
-                return new_labels
+                # Validate size constraints before merging
+                total_samples = len(new_labels)
+                size_a = int(np.sum(new_labels == cluster_label))
+                size_b = int(np.sum(new_labels == best_neighbor))
+                combined_pct = (size_a + size_b) / max(1, total_samples)
+                max_pct = float(getattr(self.config, 'max_cluster_size_pct', 0.08))
+                if combined_pct <= max_pct:
+                    new_labels[new_labels == cluster_label] = best_neighbor
+                    return new_labels
+                else:
+                    self.logger.info(f"Skipping merge {cluster_label}->{best_neighbor}: would exceed max_pct {max_pct:.3f}")
 
             return None
 
@@ -1121,7 +1088,10 @@ class MatrixOptimizedClusterer:
             cluster_features = features[cluster_mask]
 
             if cluster_features.shape[0] > 1:
-                cluster_cv = np.mean(np.std(cluster_features, axis=0)) / (np.mean(np.mean(cluster_features, axis=0)) + 1e-6)
+                means = np.mean(cluster_features, axis=0)
+                stds = np.std(cluster_features, axis=0)
+                vals = [abs(s / m) for m, s in zip(means, stds) if abs(m) > 1e-6]
+                cluster_cv = float(np.mean(vals)) if vals else 0.0
             else:
                 cluster_cv = 0.0
 
@@ -1138,7 +1108,10 @@ class MatrixOptimizedClusterer:
                 other_features = features[other_mask]
 
                 if other_features.shape[0] > 1:
-                    other_cv = np.mean(np.std(other_features, axis=0)) / (np.mean(np.mean(other_features, axis=0)) + 1e-6)
+                    o_means = np.mean(other_features, axis=0)
+                    o_stds = np.std(other_features, axis=0)
+                    o_vals = [abs(s / m) for m, s in zip(o_means, o_stds) if abs(m) > 1e-6]
+                    other_cv = float(np.mean(o_vals)) if o_vals else 0.0
                 else:
                     other_cv = 0.0
 
@@ -1152,9 +1125,18 @@ class MatrixOptimizedClusterer:
             # Merge with most similar cluster
             if best_neighbor is not None and best_similarity > 0.5:  # Only merge if reasonably similar
                 new_labels = labels.copy()
-                new_labels[new_labels == cluster_label] = best_neighbor
-                self.logger.info(f"✅ Merged cluster {cluster_label} with most similar cluster {best_neighbor} (CV similarity: {best_similarity:.3f})")
-                return new_labels
+                # Validate size constraints before merging
+                total_samples = len(new_labels)
+                size_a = int(np.sum(new_labels == cluster_label))
+                size_b = int(np.sum(new_labels == best_neighbor))
+                combined_pct = (size_a + size_b) / max(1, total_samples)
+                max_pct = float(getattr(self.config, 'max_cluster_size_pct', 0.08))
+                if combined_pct <= max_pct:
+                    new_labels[new_labels == cluster_label] = best_neighbor
+                    self.logger.info(f"✅ Merged cluster {cluster_label} with most similar cluster {best_neighbor} (CV similarity: {best_similarity:.3f})")
+                    return new_labels
+                else:
+                    self.logger.info(f"Skipping similar-merge {cluster_label}->{best_neighbor}: would exceed max_pct {max_pct:.3f}")
 
             return None
 
@@ -1178,7 +1160,9 @@ class MatrixOptimizedClusterer:
             percentages = counts / n_samples
 
             # Check final distribution
-            violations = [(i, pct) for i, pct in enumerate(percentages) if pct < 0.03 or pct > 0.08]
+            min_pct = float(getattr(self.config, 'min_cluster_size_pct', 0.03))
+            max_pct = float(getattr(self.config, 'max_cluster_size_pct', 0.08))
+            violations = [(i, pct) for i, pct in enumerate(percentages) if pct < min_pct or pct > max_pct]
 
             if not violations:
                 return labels
@@ -1192,7 +1176,9 @@ class MatrixOptimizedClusterer:
             unique_labels, counts = np.unique(final_labels, return_counts=True)
             percentages = counts / n_samples
 
-            final_violations = sum(1 for pct in percentages if pct < 0.03 or pct > 0.08)
+            min_pct = float(getattr(self.config, 'min_cluster_size_pct', 0.03))
+            max_pct = float(getattr(self.config, 'max_cluster_size_pct', 0.08))
+            final_violations = sum(1 for pct in percentages if pct < min_pct or pct > max_pct)
             self.logger.info(f"✅ Final cleanup completed: {final_violations} violations remaining")
 
             return final_labels
@@ -1200,6 +1186,352 @@ class MatrixOptimizedClusterer:
         except Exception as e:
             self.logger.warning(f"Final cleanup pass failed: {e}")
             return labels
+
+    def _merge_to_target_k(self, features: np.ndarray, labels: np.ndarray, target_k: int,
+                           min_pct: float, max_pct: float) -> np.ndarray:
+        """Reduce number of clusters to `target_k` using a quality-aware greedy merge.
+
+        Merge cost favors small centroid distances and penalizes size overflow beyond max_pct.
+        """
+        try:
+            n = labels.shape[0]
+            lower = max(1, int(np.ceil(min_pct * n)))
+            upper = max(1, int(np.floor(max_pct * n)))
+
+            current_labels = labels.copy()
+            while True:
+                unique = np.unique(current_labels)
+                if len(unique) <= target_k:
+                    break
+
+                # Compute centroids and sizes (batched, using matrix ops where available)
+                k = len(unique)
+                idx_map = {lab: i for i, lab in enumerate(unique)}
+                label_idx = np.vectorize(idx_map.get)(current_labels)
+                onehot = np.zeros((n, k), dtype=np.float64)
+                onehot[np.arange(n), label_idx] = 1.0
+
+                try:
+                    if MATRIX_OPERATIONS_AVAILABLE and 'gpu_matrix_multiply' in globals() and gpu_matrix_multiply is not None:
+                        sums = gpu_matrix_multiply(onehot.T, features)
+                    elif MATRIX_OPERATIONS_AVAILABLE and 'batch_matrix_multiply' in globals() and batch_matrix_multiply is not None:
+                        sums = batch_matrix_multiply(onehot.T, features)
+                    else:
+                        sums = onehot.T @ features
+                except Exception:
+                    sums = onehot.T @ features
+
+                sizes = onehot.sum(axis=0)
+                with np.errstate(divide='ignore', invalid='ignore'):
+                    centroids = sums / np.maximum(sizes[:, None], 1.0)
+
+                # Pairwise Ward linkage costs
+                # cost = (n_i * n_j / (n_i + n_j)) * ||ci - cj||^2 + penalty_if_exceeds_upper
+                best_pair = None
+                best_cost = float('inf')
+                target_pct = 0.05
+                target_size = int(round(target_pct * n))
+                for i in range(len(unique)):
+                    for j in range(i + 1, len(unique)):
+                        merged_size = sizes[i] + sizes[j]
+                        # Soft size penalty that starts increasing beyond target, steeper beyond upper
+                        soft_penalty = 0.0
+                        if merged_size > target_size:
+                            # Quadratic penalty beyond target size, scaled; stronger beyond upper
+                            over_target = merged_size - target_size
+                            scale = 1.0 if merged_size <= upper else 50.0
+                            soft_penalty = scale * (over_target ** 2)
+                        # Ward cost for merge quality
+                        diff = centroids[i] - centroids[j]
+                        dist_sq = float(np.dot(diff, diff))
+                        ward = (sizes[i] * sizes[j]) / max(1.0, float(sizes[i] + sizes[j])) * dist_sq
+                        # Absorption modulation: favor merges that help undersized clusters move toward 5%
+                        undershoot_i = max(0.0, (target_size - sizes[i])) / max(1.0, target_size)
+                        undershoot_j = max(0.0, (target_size - sizes[j])) / max(1.0, target_size)
+                        overshoot_i = max(0.0, (sizes[i] - target_size)) / max(1.0, target_size)
+                        overshoot_j = max(0.0, (sizes[j] - target_size)) / max(1.0, target_size)
+                        attract = undershoot_i + undershoot_j
+                        repel = overshoot_i + overshoot_j
+                        gamma = 0.5
+                        size_modulator = (1.0 + gamma * repel) / (1.0 + gamma * attract)
+                        cost = (ward + soft_penalty) * size_modulator
+                        if cost < best_cost:
+                            best_cost = cost
+                            best_pair = (unique[i], unique[j])
+
+                if best_pair is None:
+                    # Nothing to merge
+                    break
+
+                a, b = best_pair
+                # Merge b into a
+                current_labels[current_labels == b] = a
+                # Reindex to keep labels compact
+                uniq2 = np.unique(current_labels)
+                remap = {old: idx for idx, old in enumerate(uniq2)}
+                current_labels = np.vectorize(remap.get)(current_labels)
+
+            return current_labels
+        except Exception:
+            return labels
+
+    def _capacity_constrained_assignment(self, features: np.ndarray, labels: np.ndarray,
+                                         min_pct: float, max_pct: float,
+                                         *, distance_metric: str = "euclidean",
+                                         whiten: bool = False) -> np.ndarray:
+        """Greedy bounded assignment to enforce cluster size bounds and full coverage.
+
+        - Start from current labels
+        - Compute centroid distances
+        - Fill clusters below lower bound with nearest feasible samples
+        - Reduce clusters above upper bound by moving lowest-regret samples
+        """
+        n = labels.shape[0]
+        lower = max(1, int(np.ceil(min_pct * n)))
+        upper = max(1, int(np.floor(max_pct * n)))
+
+        current = labels.copy()
+
+        def compute_centroids(lbls: np.ndarray) -> np.ndarray:
+            uniq = np.unique(lbls)
+            k_local = len(uniq)
+            # Map labels to 0..k-1
+            idx_map = {lab: i for i, lab in enumerate(uniq)}
+            label_idx = np.vectorize(idx_map.get)(lbls)
+            onehot = np.zeros((n, k_local), dtype=np.float64)
+            onehot[np.arange(n), label_idx] = 1.0
+            try:
+                if MATRIX_OPERATIONS_AVAILABLE and 'gpu_matrix_multiply' in globals() and gpu_matrix_multiply is not None:
+                    sums = gpu_matrix_multiply(onehot.T, X)
+                elif MATRIX_OPERATIONS_AVAILABLE and 'batch_matrix_multiply' in globals() and batch_matrix_multiply is not None:
+                    sums = batch_matrix_multiply(onehot.T, X)
+                else:
+                    sums = onehot.T @ X
+            except Exception:
+                sums = onehot.T @ X
+            cnts_local = onehot.sum(axis=0)
+            with np.errstate(divide='ignore', invalid='ignore'):
+                centers = sums / np.maximum(cnts_local[:, None], 1.0)
+            return centers
+
+        def reindex(lbls: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+            uniq = np.unique(lbls)
+            remap = {old: idx for idx, old in enumerate(uniq)}
+            inv = np.array([remap[v] for v in uniq])
+            return np.vectorize(remap.get)(lbls), uniq
+
+        # Ensure labels are 0..k-1
+        current, orig_unique = reindex(current)
+        k = len(np.unique(current))
+
+        # Optional whitening
+        X = features
+        if whiten:
+            mean = X.mean(axis=0, keepdims=True)
+            std = X.std(axis=0, keepdims=True) + 1e-12
+            X = (X - mean) / std
+
+        def compute_dists(lbls: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+            ctrs = compute_centroids(lbls)
+            # Apply whitening to centroids if used
+            ctrs_w = ctrs
+            if whiten:
+                ctrs_w = (ctrs - mean) / std
+
+            if distance_metric == "cosine":
+                # GPU cosine via matmul when available
+                Xn = X / (np.linalg.norm(X, axis=1, keepdims=True) + 1e-12)
+                Cn = ctrs_w / (np.linalg.norm(ctrs_w, axis=1, keepdims=True) + 1e-12)
+                try:
+                    if MATRIX_OPERATIONS_AVAILABLE and 'gpu_matrix_multiply' in globals() and gpu_matrix_multiply is not None:
+                        sims = gpu_matrix_multiply(Xn, Cn.T)
+                    elif MATRIX_OPERATIONS_AVAILABLE and 'batch_matrix_multiply' in globals() and batch_matrix_multiply is not None:
+                        sims = batch_matrix_multiply(Xn, Cn.T)
+                    else:
+                        sims = Xn @ Cn.T
+                except Exception:
+                    sims = Xn @ Cn.T
+                d = 1.0 - sims
+                return d, ctrs, ctrs_w
+            elif distance_metric == "mahalanobis":
+                # Mahalanobis with regularized covariance for stability
+                try:
+                    cov = np.cov(X.T)
+                    # Regularize
+                    eps = 1e-6
+                    cov.flat[:: cov.shape[0] + 1] += eps
+                    inv = np.linalg.inv(cov)
+                except Exception:
+                    # Fallback to identity if ill-conditioned
+                    inv = np.eye(X.shape[1], dtype=np.float64)
+                # Compute (x - c)^T inv (x - c) for all c via batched products
+                # d2 = x^T inv x - 2 x^T inv c + c^T inv c
+                try:
+                    if MATRIX_OPERATIONS_AVAILABLE and 'gpu_matrix_multiply' in globals() and gpu_matrix_multiply is not None:
+                        X_inv = gpu_matrix_multiply(X, inv)
+                        C_inv = gpu_matrix_multiply(ctrs_w, inv)
+                    elif MATRIX_OPERATIONS_AVAILABLE and 'batch_matrix_multiply' in globals() and batch_matrix_multiply is not None:
+                        X_inv = batch_matrix_multiply(X, inv)
+                        C_inv = batch_matrix_multiply(ctrs_w, inv)
+                    else:
+                        X_inv = X @ inv
+                        C_inv = ctrs_w @ inv
+                except Exception:
+                    X_inv = X @ inv
+                    C_inv = ctrs_w @ inv
+                x_term = np.sum(X * X_inv, axis=1, keepdims=True)
+                c_term = np.sum(ctrs_w * C_inv, axis=1, keepdims=True).T
+                cross = X @ C_inv.T
+                d2 = x_term + c_term - 2.0 * cross
+                np.maximum(d2, 0.0, out=d2)
+                d = np.sqrt(d2, where=(d2>=0))
+                return d, ctrs, ctrs_w
+            else:
+                # Euclidean via dot products
+                try:
+                    if MATRIX_OPERATIONS_AVAILABLE and 'gpu_matrix_multiply' in globals() and gpu_matrix_multiply is not None:
+                        dots = gpu_matrix_multiply(X, ctrs_w.T)
+                    elif MATRIX_OPERATIONS_AVAILABLE and 'batch_matrix_multiply' in globals() and batch_matrix_multiply is not None:
+                        dots = batch_matrix_multiply(X, ctrs_w.T)
+                    else:
+                        dots = X @ ctrs_w.T
+                except Exception:
+                    dots = X @ ctrs_w.T
+                x2 = np.sum(X * X, axis=1, keepdims=True)
+                c2 = np.sum(ctrs_w * ctrs_w, axis=1, keepdims=True).T
+                d2 = x2 + c2 - 2.0 * dots
+                np.maximum(d2, 0.0, out=d2)
+                d = np.sqrt(d2, where=(d2>=0))
+                return d, ctrs, ctrs_w
+
+        dists, centroids, centroids_w = compute_dists(current)
+
+        # Precompute top-3 nearest clusters per sample
+        topk = np.argsort(dists, axis=1)[:, :min(3, k)]
+
+        def counts(lbls: np.ndarray) -> np.ndarray:
+            cnt = np.bincount(lbls, minlength=k)
+            return cnt
+
+        cnts = counts(current)
+
+        # Phase A: raise clusters to lower bound
+        max_rounds = 5
+        for _ in range(max_rounds):
+            deficits = [(c, lower - cnts[c]) for c in range(k) if cnts[c] < lower]
+            if not deficits:
+                break
+            # Fill largest deficits first
+            deficits.sort(key=lambda x: x[1], reverse=True)
+            moved_any = False
+            for c, need in deficits:
+                if need <= 0:
+                    continue
+                # Candidate donors: samples not in c where c is among their top-3
+                candidates = np.where((current != c) & ((topk[:, 0] == c) | (topk[:, 1] == c) | (topk[:, 2] == c) if topk.shape[1] >= 3 else (topk[:, 0] == c)))[0]
+                # Filter donors whose current cluster has surplus above lower
+                donor_ok = candidates[cnts[current[candidates]] > lower]
+                if donor_ok.size == 0:
+                    # Relax: allow any candidate as last resort
+                    donor_ok = candidates
+                if donor_ok.size == 0:
+                    continue
+                # Sort by minimal regret for moving into c (optionally add CV/silhouette-aware small penalty)
+                deltas = dists[donor_ok, c] - dists[donor_ok, current[donor_ok]]
+                order = np.argsort(deltas)
+                to_move = donor_ok[order][:need]
+                # Apply moves
+                for idx in to_move:
+                    old = current[idx]
+                    if cnts[old] <= lower:
+                        continue
+                    current[idx] = c
+                    cnts[old] -= 1
+                    cnts[c] += 1
+                    moved_any = True
+                if cnts[c] < lower:
+                    # Try again with relaxed candidates if still short
+                    remain = lower - cnts[c]
+                    others = np.where(current != c)[0]
+                    # Prefer donors from clusters with largest surplus
+                    surplus = cnts[current[others]] - lower
+                    donor2 = others[surplus > 0]
+                    if donor2.size > 0:
+                        deltas2 = dists[donor2, c] - dists[donor2, current[donor2]]
+                        order2 = np.argsort(deltas2)
+                        to_move2 = donor2[order2][:remain]
+                        for idx in to_move2:
+                            old = current[idx]
+                            if cnts[old] <= lower:
+                                continue
+                            current[idx] = c
+                            cnts[old] -= 1
+                            cnts[c] += 1
+                            moved_any = True
+            if not moved_any:
+                break
+            # Recompute distances/topk after changes
+            dists, centroids, centroids_w = compute_dists(current)
+            topk = np.argsort(dists, axis=1)[:, :min(3, k)]
+
+        # Phase B: reduce clusters above upper bound
+        for _ in range(max_rounds):
+            overs = [(c, cnts[c] - upper) for c in range(k) if cnts[c] > upper]
+            if not overs:
+                break
+            moved_any = False
+            # Process the most oversized first
+            overs.sort(key=lambda x: x[1], reverse=True)
+            for c, excess in overs:
+                if excess <= 0:
+                    continue
+                indices = np.where(current == c)[0]
+                if indices.size == 0:
+                    continue
+                # For each sample, find best alternative cluster with capacity
+                best_alt = np.full(indices.shape[0], -1, dtype=int)
+                alt_cost = np.full(indices.shape[0], np.inf, dtype=float)
+                for idx_i, i in enumerate(indices):
+                    # Prefer among top-3 nearest clusters
+                    for alt in topk[i]:
+                        if alt == c:
+                            continue
+                        if cnts[alt] >= upper:
+                            continue
+                        cost = dists[i, alt]
+                        if cost < alt_cost[idx_i]:
+                            alt_cost[idx_i] = cost
+                            best_alt[idx_i] = alt
+                # Compute regret vs staying in c
+                stay_cost = dists[indices, c]
+                regret = alt_cost - stay_cost
+                # Sort candidates by minimal regret (most negative first)
+                order = np.argsort(regret)
+                moved = 0
+                for idx in order:
+                    if moved >= excess:
+                        break
+                    i = indices[idx]
+                    alt = best_alt[idx]
+                    if alt == -1:
+                        continue
+                    if cnts[alt] >= upper:
+                        continue
+                    # Ensure donor won't violate lower bound
+                    if cnts[c] - 1 < lower:
+                        break
+                    current[i] = alt
+                    cnts[c] -= 1
+                    cnts[alt] += 1
+                    moved += 1
+                    moved_any = True
+            if not moved_any:
+                break
+            # Recompute distances/topk after changes
+            dists, centroids, centroids_w = compute_dists(current)
+            topk = np.argsort(dists, axis=1)[:, :min(3, k)]
+
+        return current
 
     def _update_labels_after_split(self, current_labels: np.ndarray,
                                    split_labels: np.ndarray, original_label: int) -> np.ndarray:
@@ -1270,8 +1602,8 @@ class MatrixOptimizedClusterer:
         try:
             n_samples = features.shape[0]
             target_clusters = 20
-            min_samples_per_cluster = int(n_samples * 0.03)  # 3% minimum
-            max_samples_per_cluster = int(n_samples * 0.08)  # 8% maximum
+            min_samples_per_cluster = int(n_samples * float(getattr(self.config, 'min_cluster_size_pct', 0.03)))
+            max_samples_per_cluster = int(n_samples * float(getattr(self.config, 'max_cluster_size_pct', 0.08)))
 
             # Use iterative approach: start with target clusters, then refine
             best_labels = None
@@ -1366,7 +1698,10 @@ class MatrixOptimizedClusterer:
 
                 # Calculate CV for the cluster
                 if cluster_features.shape[0] > 1:
-                    cv = np.mean(np.std(cluster_features, axis=0)) / (np.mean(np.mean(cluster_features, axis=0)) + 1e-6)
+                    means = np.mean(cluster_features, axis=0)
+                    stds = np.std(cluster_features, axis=0)
+                    vals = [abs(s / m) for m, s in zip(means, stds) if abs(m) > 1e-6]
+                    cv = float(np.mean(vals)) if vals else 0.0
                 else:
                     cv = 0.0
 
@@ -1609,7 +1944,10 @@ class MatrixOptimizedClusterer:
 
                 # Calculate CV for internal variance
                 if cluster_features.shape[0] > 1:
-                    cv = np.mean(np.std(cluster_features, axis=0)) / (np.mean(np.mean(cluster_features, axis=0)) + 1e-6)
+                    means = np.mean(cluster_features, axis=0)
+                    stds = np.std(cluster_features, axis=0)
+                    vals = [abs(s / m) for m, s in zip(means, stds) if abs(m) > 1e-6]
+                    cv = float(np.mean(vals)) if vals else 0.0
                 else:
                     cv = 0.0
 
@@ -2061,7 +2399,9 @@ class MatrixOptimizedClusterer:
             percentages = counts / n_samples
 
             # Score based on how many clusters are in 3-8% range
-            in_range = sum(1 for pct in percentages if 0.03 <= pct <= 0.08)
+            min_pct = float(getattr(self.config, 'min_cluster_size_pct', 0.03))
+            max_pct = float(getattr(self.config, 'max_cluster_size_pct', 0.08))
+            in_range = sum(1 for pct in percentages if min_pct <= pct <= max_pct)
             range_score = in_range / target_clusters
 
             # Score based on how close we are to target cluster count

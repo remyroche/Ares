@@ -20,6 +20,18 @@ from .utils import (
     validate_cluster_quality, bootstrap_cluster_stability, detect_outliers,
     prepare_clustering_features, load_hmm_regime_data
 )
+try:
+    from src.utils.matrix_operations import (
+        get_unified_matrix_operations,
+        get_vectorized_processing_core,
+        get_enhanced_matrix_operations,
+        get_batch_matrix_processor,
+        gpu_matrix_multiply,
+        batch_matrix_multiply,
+    )
+    MATRIX_OPS = True
+except Exception:
+    MATRIX_OPS = False
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +58,23 @@ class OptimalRegimeClusterer:
         """
         self.config = config
         self.logger = logging.getLogger(__name__)
+        # optional matrix ops for performance
+        if MATRIX_OPS:
+            try:
+                self.matrix_ops = get_unified_matrix_operations()
+                self.vectorized_core = get_vectorized_processing_core()
+                self.enhanced_ops = get_enhanced_matrix_operations()
+                self.batch_processor = get_batch_matrix_processor()
+            except Exception:
+                self.matrix_ops = None
+                self.vectorized_core = None
+                self.enhanced_ops = None
+                self.batch_processor = None
+        else:
+            self.matrix_ops = None
+            self.vectorized_core = None
+            self.enhanced_ops = None
+            self.batch_processor = None
 
     def cluster(self, data: Union[str, pd.DataFrame], **kwargs) -> ClusteringResult:
         """Perform optimal clustering on HMM regime data.
@@ -439,28 +468,210 @@ class OptimalRegimeClusterer:
             # Calculate current cluster statistics
             stats = calculate_cluster_statistics(labels, self.config.to_dict())
 
-            # If we're close to target, return as-is
             target_clusters = self.config.target_n_clusters
-            if abs(stats.n_clusters - target_clusters) <= 2 and stats.noise_percentage <= self.config.max_noise_pct:
-                return labels
+            min_pct = float(getattr(self.config, 'min_cluster_size_pct', 0.03))
+            max_pct = float(getattr(self.config, 'max_cluster_size_pct', 0.08))
 
-            # Use Gaussian Mixture Model to optimize
-            if stats.n_clusters > target_clusters:
-                # Merge similar clusters
+            # Adjust k if needed
+            if len(np.unique(labels)) != target_clusters:
+                # quick GMM to reach k, then bounded assignment
                 gmm = GaussianMixture(
                     n_components=target_clusters,
                     random_state=self.config.random_state,
                     max_iter=self.config.max_iter
                 )
                 gmm_labels = gmm.fit_predict(features)
-                return gmm_labels
-            else:
-                # Split large clusters if needed
-                return self._split_large_clusters(features, labels)
+                return self._capacity_constrained_assignment(features, gmm_labels, min_pct, max_pct)
+
+            # Already at k; balance sizes via assignment
+            return self._capacity_constrained_assignment(features, labels, min_pct, max_pct)
 
         except Exception as e:
             self.logger.warning(f"Error optimizing cluster sizes: {e}")
             return labels
+
+    def _capacity_constrained_assignment(self, features: np.ndarray, labels: np.ndarray,
+                                         min_pct: float, max_pct: float,
+                                         *, distance_metric: str = "euclidean",
+                                         whiten: bool = False) -> np.ndarray:
+        """Greedy bounded assignment to enforce cluster size bounds and full coverage."""
+        n = labels.shape[0]
+        lower = max(1, int(np.ceil(min_pct * n)))
+        upper = max(1, int(np.floor(max_pct * n)))
+        current = labels.copy()
+
+        # optional whitening
+        X = features
+        if whiten:
+            mean = X.mean(axis=0, keepdims=True)
+            std = X.std(axis=0, keepdims=True) + 1e-12
+            X = (X - mean) / std
+
+        def compute_centroids(lbls: np.ndarray) -> np.ndarray:
+            uniq = np.unique(lbls)
+            k = len(uniq)
+            idx_map = {lab: i for i, lab in enumerate(uniq)}
+            lid = np.vectorize(idx_map.get)(lbls)
+            onehot = np.zeros((n, k), dtype=np.float64)
+            onehot[np.arange(n), lid] = 1.0
+            try:
+                if MATRIX_OPS and gpu_matrix_multiply is not None:
+                    sums = gpu_matrix_multiply(onehot.T, X)
+                elif MATRIX_OPS and batch_matrix_multiply is not None:
+                    sums = batch_matrix_multiply(onehot.T, X)
+                else:
+                    sums = onehot.T @ X
+            except Exception:
+                sums = onehot.T @ X
+            cnts_local = onehot.sum(axis=0)
+            with np.errstate(divide='ignore', invalid='ignore'):
+                centers = sums / np.maximum(cnts_local[:, None], 1.0)
+            return centers
+
+        def compute_dists(lbls: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+            ctrs = compute_centroids(lbls)
+            ctrs_w = ctrs
+            if whiten:
+                ctrs_w = (ctrs - mean) / std
+            if distance_metric == "cosine":
+                Xn = X / (np.linalg.norm(X, axis=1, keepdims=True) + 1e-12)
+                Cn = ctrs_w / (np.linalg.norm(ctrs_w, axis=1, keepdims=True) + 1e-12)
+                try:
+                    if MATRIX_OPS and gpu_matrix_multiply is not None:
+                        sims = gpu_matrix_multiply(Xn, Cn.T)
+                    elif MATRIX_OPS and batch_matrix_multiply is not None:
+                        sims = batch_matrix_multiply(Xn, Cn.T)
+                    else:
+                        sims = Xn @ Cn.T
+                except Exception:
+                    sims = Xn @ Cn.T
+                d = 1.0 - sims
+                return d, ctrs
+            elif distance_metric == "mahalanobis":
+                # Regularized covariance inverse
+                try:
+                    cov = np.cov(X.T)
+                    eps = 1e-6
+                    cov.flat[:: cov.shape[0] + 1] += eps
+                    inv = np.linalg.inv(cov)
+                except Exception:
+                    inv = np.eye(X.shape[1], dtype=np.float64)
+                try:
+                    if MATRIX_OPS and gpu_matrix_multiply is not None:
+                        X_inv = gpu_matrix_multiply(X, inv)
+                        C_inv = gpu_matrix_multiply(ctrs_w, inv)
+                    elif MATRIX_OPS and batch_matrix_multiply is not None:
+                        X_inv = batch_matrix_multiply(X, inv)
+                        C_inv = batch_matrix_multiply(ctrs_w, inv)
+                    else:
+                        X_inv = X @ inv
+                        C_inv = ctrs_w @ inv
+                except Exception:
+                    X_inv = X @ inv
+                    C_inv = ctrs_w @ inv
+                x_term = np.sum(X * X_inv, axis=1, keepdims=True)
+                c_term = np.sum(ctrs_w * C_inv, axis=1, keepdims=True).T
+                cross = X @ C_inv.T
+                d2 = x_term + c_term - 2.0 * cross
+                np.maximum(d2, 0.0, out=d2)
+                d = np.sqrt(d2, where=(d2>=0))
+                return d, ctrs
+            else:
+                try:
+                    if MATRIX_OPS and gpu_matrix_multiply is not None:
+                        dots = gpu_matrix_multiply(X, ctrs_w.T)
+                    elif MATRIX_OPS and batch_matrix_multiply is not None:
+                        dots = batch_matrix_multiply(X, ctrs_w.T)
+                    else:
+                        dots = X @ ctrs_w.T
+                except Exception:
+                    dots = X @ ctrs_w.T
+                x2 = np.sum(X * X, axis=1, keepdims=True)
+                c2 = np.sum(ctrs_w * ctrs_w, axis=1, keepdims=True).T
+                d2 = x2 + c2 - 2.0 * dots
+                np.maximum(d2, 0.0, out=d2)
+                d = np.sqrt(d2, where=(d2>=0))
+                return d, ctrs
+
+        dists, centroids = compute_dists(current)
+        uniq = np.unique(current)
+        k = len(uniq)
+        topk = np.argsort(dists, axis=1)[:, :min(3, k)]
+        cnts = np.bincount(current, minlength=k)
+
+        # Phase A: raise to lower bound
+        for _ in range(5):
+            deficits = [(c, lower - cnts[c]) for c in range(k) if cnts[c] < lower]
+            if not deficits:
+                break
+            deficits.sort(key=lambda x: x[1], reverse=True)
+            moved_any = False
+            for c, need in deficits:
+                candidates = np.where((current != c) & ((topk[:, 0] == c) | (topk[:, 1] == c) | (topk[:, 2] == c) if topk.shape[1] >= 3 else (topk[:, 0] == c)))[0]
+                donor_ok = candidates[cnts[current[candidates]] > lower]
+                if donor_ok.size == 0:
+                    donor_ok = candidates
+                if donor_ok.size == 0:
+                    continue
+                deltas = dists[donor_ok, c] - dists[donor_ok, current[donor_ok]]
+                order = np.argsort(deltas)
+                to_move = donor_ok[order][:need]
+                for idx in to_move:
+                    old = current[idx]
+                    if cnts[old] <= lower:
+                        continue
+                    current[idx] = c
+                    cnts[old] -= 1
+                    cnts[c] += 1
+                    moved_any = True
+            if not moved_any:
+                break
+            dists, centroids = compute_dists(current)
+            topk = np.argsort(dists, axis=1)[:, :min(3, k)]
+
+        # Phase B: reduce above upper
+        for _ in range(5):
+            overs = [(c, cnts[c] - upper) for c in range(k) if cnts[c] > upper]
+            if not overs:
+                break
+            moved_any = False
+            overs.sort(key=lambda x: x[1], reverse=True)
+            for c, excess in overs:
+                indices = np.where(current == c)[0]
+                if indices.size == 0:
+                    continue
+                best_alt = np.full(indices.shape[0], -1, dtype=int)
+                alt_cost = np.full(indices.shape[0], np.inf, dtype=float)
+                for idx_i, i in enumerate(indices):
+                    for alt in topk[i]:
+                        if alt == c or cnts[alt] >= upper:
+                            continue
+                        cost = dists[i, alt]
+                        if cost < alt_cost[idx_i]:
+                            alt_cost[idx_i] = cost
+                            best_alt[idx_i] = alt
+                stay_cost = dists[indices, c]
+                regret = alt_cost - stay_cost
+                order = np.argsort(regret)
+                moved = 0
+                for idx in order:
+                    if moved >= excess:
+                        break
+                    i = indices[idx]
+                    alt = best_alt[idx]
+                    if alt == -1 or cnts[alt] >= upper or cnts[c] - 1 < lower:
+                        continue
+                    current[i] = alt
+                    cnts[c] -= 1
+                    cnts[alt] += 1
+                    moved += 1
+                    moved_any = True
+            if not moved_any:
+                break
+            dists, centroids = compute_dists(current)
+            topk = np.argsort(dists, axis=1)[:, :min(3, k)]
+
+        return current
 
     def _split_large_clusters(self, features: np.ndarray, labels: np.ndarray) -> np.ndarray:
         """Split large clusters to achieve better size distribution.
@@ -508,7 +719,7 @@ class OptimalRegimeClusterer:
             return labels
 
     def _calculate_cluster_centers(self, features: np.ndarray, labels: np.ndarray) -> np.ndarray:
-        """Calculate cluster centers.
+        """Calculate cluster centers efficiently (batched; uses matrix ops if available).
 
         Args:
             features: Feature matrix
@@ -521,15 +732,29 @@ class OptimalRegimeClusterer:
             unique_labels = np.unique(labels)
             if -1 in unique_labels:
                 unique_labels = unique_labels[unique_labels != -1]
-
-            centers = []
-            for label in unique_labels:
-                mask = labels == label
-                if mask.sum() > 0:
-                    center = features[mask].mean(axis=0)
-                    centers.append(center)
-
-            return np.array(centers)
+            if len(unique_labels) == 0:
+                return np.array([])
+            # Map labels to 0..k-1
+            n = features.shape[0]
+            k = len(unique_labels)
+            idx_map = {lab: i for i, lab in enumerate(unique_labels)}
+            lid = np.vectorize(idx_map.get)(labels)
+            onehot = np.zeros((n, k), dtype=np.float64)
+            onehot[np.arange(n), lid] = 1.0
+            # Sums via matrix ops when available
+            try:
+                if MATRIX_OPS and gpu_matrix_multiply is not None:
+                    sums = gpu_matrix_multiply(onehot.T, features)
+                elif MATRIX_OPS and batch_matrix_multiply is not None:
+                    sums = batch_matrix_multiply(onehot.T, features)
+                else:
+                    sums = onehot.T @ features
+            except Exception:
+                sums = onehot.T @ features
+            cnts = onehot.sum(axis=0)
+            with np.errstate(divide='ignore', invalid='ignore'):
+                ctrs = sums / np.maximum(cnts[:, None], 1.0)
+            return ctrs
 
         except Exception as e:
             self.logger.warning(f"Error calculating cluster centers: {e}")

@@ -66,6 +66,17 @@ from src.utils.logger import system_logger
 # - Higher values (10.0-15.0): More aggressive, potentially higher coverage, risk of heterogeneous clusters
 MAX_CV_THRESHOLD = 20.0  # Increased to allow bigger steps (was 15.0)
 
+# CLUSTERING DISTRIBUTION CONTROL PARAMETERS
+MAX_CLUSTER_SIZE_PCT = 12.0  # Maximum percentage any single cluster can have (12% hard limit)
+MIN_TOP_CLUSTER_SIZE_PCT = 3.0  # Minimum size for top clusters (3%)
+MAX_TOP_CLUSTER_SIZE_PCT = 8.0  # Maximum size for top clusters (8%)
+TARGET_TOP20_COVERAGE_MIN = 90.0  # Minimum coverage by top 20 clusters (90%)
+TARGET_TOP20_COVERAGE_MAX = 95.0  # Maximum coverage by top 20 clusters (95%)
+TARGET_NOISE_MIN = 5.0  # Minimum acceptable noise level (5%)
+TARGET_NOISE_MAX = 10.0  # Maximum acceptable noise level (10%)
+ENABLE_BALANCED_DISTRIBUTION = True  # Enable balanced distribution enforcement
+ENABLE_NOISE_OPTIMIZATION = True  # Enable noise level optimization
+
 # ============================================================================
 
 # Validation result classes for simplified error handling
@@ -6406,7 +6417,7 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             
             # Calculate total samples for percentage calculations
             total_samples = sum(metadata['sample_count'] for metadata in cluster_metadata)
-            max_cluster_size = int(total_samples * 0.12)  # 12% limit as per requirements
+            max_cluster_size = int(total_samples * (MAX_CLUSTER_SIZE_PCT / 100))  # Configurable limit
             
             self.logger.info(f"🎯 Balance-aware clustering: max cluster size = {max_cluster_size} samples (12%)")
             
@@ -6459,6 +6470,52 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             self.logger.warning(f"⚠️ Size-constrained clustering completed with {standard_balance['oversized_count']} oversized clusters")
             self.logger.info(f"📊 Balance score: {standard_balance['balance_score']:.3f}")
             
+            # CRITICAL FIX: Force subdivision if any clusters are still oversized
+            if standard_balance['oversized_count'] > 0:
+                self.logger.warning(f"🔨 ENFORCING 12% LIMIT: Force subdividing {standard_balance['oversized_count']} oversized clusters")
+                
+                # Apply recursive subdivision to ensure no cluster exceeds 12%
+                total_samples = sum(metadata['sample_count'] for metadata in cluster_metadata)
+                
+                # Create a mapping from the current labels
+                super_cluster_mapping = {}
+                for i, label in enumerate(standard_labels):
+                    if label not in super_cluster_mapping:
+                        super_cluster_mapping[label] = {
+                            'hmm_clusters': [],
+                            'total_samples': 0,
+                            'sample_indices': []
+                        }
+                    super_cluster_mapping[label]['total_samples'] += cluster_metadata[i]['sample_count']
+                    super_cluster_mapping[label]['hmm_clusters'].append(cluster_metadata[i]['cluster_id'])
+                    super_cluster_mapping[label]['sample_indices'].extend(cluster_metadata[i]['sample_indices'])
+                
+                # Apply recursive subdivision to enforce 12% limit
+                subdivision_mapping = self._recursive_subdivide_oversized_clusters(
+                    super_cluster_mapping, cluster_metadata, normalized_features, 
+                    standard_labels, total_samples
+                )
+                
+                # Apply balanced distribution to ensure 3-8% per top cluster
+                final_mapping = self._ensure_balanced_distribution(
+                    subdivision_mapping, cluster_metadata, normalized_features,
+                    standard_labels, total_samples
+                )
+                
+                # Convert back to labels array
+                new_labels = np.copy(standard_labels)
+                next_label = max(standard_labels) + 1
+                
+                for new_cluster_id, cluster_data in final_mapping.items():
+                    if new_cluster_id not in super_cluster_mapping:
+                        # This is a new subdivided cluster
+                        for sample_idx in cluster_data['sample_indices']:
+                            new_labels[sample_idx] = next_label
+                        next_label += 1
+                
+                self.logger.info(f"✅ SUBDIVISION COMPLETE: {len(final_mapping)} clusters, max size enforced")
+                return new_labels
+            
             return standard_labels
             
         except Exception as e:
@@ -6508,7 +6565,7 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             import numpy as np
             from sklearn.cluster import KMeans
             
-            max_cluster_size = int(total_samples * 0.12)  # 12% hard limit
+            max_cluster_size = int(total_samples * (MAX_CLUSTER_SIZE_PCT / 100))  # Configurable hard limit
             self.logger.info(f"🔨 Force subdivision: max cluster size = {max_cluster_size} samples (12%)")
             
             new_mapping = {}
@@ -6609,6 +6666,239 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             self.logger.error(f"❌ Error in forced subdivision: {e}")
             return super_cluster_mapping
     
+    def _ensure_balanced_distribution(self, super_cluster_mapping: Dict[int, Dict], 
+                                    cluster_metadata: List[Dict], 
+                                    normalized_features: Any,
+                                    original_labels: Any,
+                                    total_samples: int) -> Dict[int, Dict]:
+        """
+        Ensure balanced distribution where top 20 clusters have 3-8% each and cover 90-95% total.
+        
+        This function will:
+        1. Split clusters larger than 8% into smaller pieces
+        2. Merge clusters smaller than 3% with similar neighbors
+        3. Ensure top 20 clusters cover 90-95% of samples
+        """
+        try:
+            import numpy as np
+            from sklearn.cluster import KMeans
+            
+            min_cluster_pct = MIN_TOP_CLUSTER_SIZE_PCT  # Configurable minimum for top clusters
+            max_cluster_pct = MAX_TOP_CLUSTER_SIZE_PCT  # Configurable maximum for top clusters
+            target_coverage = (TARGET_TOP20_COVERAGE_MIN + TARGET_TOP20_COVERAGE_MAX) / 2  # Target coverage with top 20
+            
+            min_cluster_size = int(total_samples * min_cluster_pct / 100)
+            max_cluster_size = int(total_samples * max_cluster_pct / 100)
+            
+            self.logger.info(f"🎯 BALANCING DISTRIBUTION: Target 3-8% per cluster ({min_cluster_size}-{max_cluster_size} samples)")
+            
+            new_mapping = {}
+            next_cluster_id = max(super_cluster_mapping.keys()) + 1 if super_cluster_mapping else 0
+            
+            # Step 1: Split oversized clusters (>8%)
+            for cluster_id, cluster_data in super_cluster_mapping.items():
+                cluster_size = cluster_data['total_samples']
+                cluster_pct = (cluster_size / total_samples) * 100
+                
+                if cluster_size <= max_cluster_size:
+                    # Cluster is acceptable size, keep as-is
+                    new_mapping[cluster_id] = cluster_data
+                    continue
+                
+                # Split this cluster
+                n_pieces = max(2, int(np.ceil(cluster_size / max_cluster_size)))
+                self.logger.info(f"🔨 Splitting cluster {cluster_id}: {cluster_pct:.1f}% → {n_pieces} pieces")
+                
+                # Get cluster features for K-means splitting
+                cluster_indices = []
+                for i, metadata in enumerate(cluster_metadata):
+                    if original_labels[i] == cluster_id:
+                        cluster_indices.append(i)
+                
+                if len(cluster_indices) >= n_pieces:
+                    # Use K-means on cluster features
+                    cluster_features = normalized_features[cluster_indices]
+                    kmeans = KMeans(n_clusters=n_pieces, random_state=42, n_init=10)
+                    sub_labels = kmeans.fit_predict(cluster_features)
+                    
+                    # Create balanced pieces
+                    for sub_id in range(n_pieces):
+                        sub_indices = [cluster_indices[i] for i in range(len(cluster_indices)) if sub_labels[i] == sub_id]
+                        sub_samples = []
+                        sub_hmm_clusters = []
+                        
+                        for idx in sub_indices:
+                            sub_samples.extend(cluster_metadata[idx]['sample_indices'])
+                            sub_hmm_clusters.append(cluster_metadata[idx]['cluster_id'])
+                        
+                        new_mapping[next_cluster_id] = {
+                            'hmm_clusters': sub_hmm_clusters,
+                            'total_samples': len(sub_samples),
+                            'sample_indices': sub_samples
+                        }
+                        
+                        sub_pct = (len(sub_samples) / total_samples) * 100
+                        self.logger.info(f"✅ Created balanced piece {next_cluster_id}: {sub_pct:.1f}%")
+                        next_cluster_id += 1
+                else:
+                    # Simple division by samples
+                    piece_size = cluster_size // n_pieces
+                    sample_indices = cluster_data['sample_indices']
+                    
+                    for piece_idx in range(n_pieces):
+                        start_idx = piece_idx * piece_size
+                        end_idx = start_idx + piece_size if piece_idx < n_pieces - 1 else len(sample_indices)
+                        piece_samples = sample_indices[start_idx:end_idx]
+                        
+                        new_mapping[next_cluster_id] = {
+                            'hmm_clusters': [f"balanced_{cluster_id}_{piece_idx}"],
+                            'total_samples': len(piece_samples),
+                            'sample_indices': piece_samples
+                        }
+                        
+                        piece_pct = (len(piece_samples) / total_samples) * 100
+                        self.logger.info(f"✅ Created balanced piece {next_cluster_id}: {piece_pct:.1f}%")
+                        next_cluster_id += 1
+            
+            # Step 2: Check if we have enough clusters in the 3-8% range for 90-95% coverage
+            sorted_clusters = sorted(new_mapping.items(), key=lambda x: x[1]['total_samples'], reverse=True)
+            top_20_coverage = 0
+            valid_clusters = 0
+            
+            for i, (cluster_id, cluster_data) in enumerate(sorted_clusters[:20]):
+                cluster_pct = (cluster_data['total_samples'] / total_samples) * 100
+                if min_cluster_pct <= cluster_pct <= max_cluster_pct:
+                    top_20_coverage += cluster_pct
+                    valid_clusters += 1
+            
+            self.logger.info(f"📊 BALANCE RESULTS: Top 20 coverage = {top_20_coverage:.1f}%, {valid_clusters} valid clusters")
+            
+            if top_20_coverage >= 90.0 and valid_clusters >= 15:
+                self.logger.info("✅ BALANCED DISTRIBUTION ACHIEVED!")
+            else:
+                self.logger.warning(f"⚠️ Distribution not optimal: {top_20_coverage:.1f}% coverage, {valid_clusters} valid clusters")
+            
+            return new_mapping
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error in balanced distribution: {e}")
+            return super_cluster_mapping
+
+    def _optimize_noise_level(self, cluster_assignments: List[int], 
+                             cluster_metadata: List[Dict], 
+                             total_samples: int,
+                             target_noise_min: float = TARGET_NOISE_MIN,
+                             target_noise_max: float = TARGET_NOISE_MAX) -> List[int]:
+        """
+        Optimize noise level to stay between 5-10% by adjusting noise cluster (typically cluster -1 or 0).
+        
+        Args:
+            cluster_assignments: Current cluster assignments
+            cluster_metadata: Metadata for each cluster
+            total_samples: Total number of samples
+            target_noise_min: Minimum acceptable noise percentage (default 5%)
+            target_noise_max: Maximum acceptable noise percentage (default 10%)
+            
+        Returns:
+            Optimized cluster assignments with noise level in target range
+        """
+        try:
+            import numpy as np
+            from collections import Counter
+            
+            # Count cluster sizes
+            cluster_counts = Counter(cluster_assignments)
+            
+            # Identify noise cluster (usually -1 or the largest cluster if it's >20%)
+            noise_cluster_id = -1
+            if noise_cluster_id not in cluster_counts:
+                # Find potential noise cluster (largest cluster >20% or cluster 0)
+                sorted_clusters = sorted(cluster_counts.items(), key=lambda x: x[1], reverse=True)
+                largest_cluster_id, largest_size = sorted_clusters[0]
+                largest_pct = (largest_size / total_samples) * 100
+                
+                if largest_pct > 20.0:  # Likely a noise cluster
+                    noise_cluster_id = largest_cluster_id
+                elif 0 in cluster_counts:
+                    noise_cluster_id = 0
+                else:
+                    # No clear noise cluster, create one from smallest clusters
+                    self.logger.info("🔧 No clear noise cluster found, optimizing smallest clusters")
+                    return cluster_assignments
+            
+            noise_size = cluster_counts.get(noise_cluster_id, 0)
+            noise_pct = (noise_size / total_samples) * 100
+            
+            self.logger.info(f"🔍 NOISE ANALYSIS: Cluster {noise_cluster_id} = {noise_pct:.1f}% (target: {target_noise_min}-{target_noise_max}%)")
+            
+            if target_noise_min <= noise_pct <= target_noise_max:
+                self.logger.info("✅ Noise level already optimal!")
+                return cluster_assignments
+            
+            optimized_assignments = cluster_assignments.copy()
+            
+            if noise_pct > target_noise_max:
+                # Too much noise - convert some noise samples to legitimate clusters
+                excess_noise = noise_pct - target_noise_max
+                samples_to_convert = int((excess_noise / 100) * total_samples)
+                
+                self.logger.info(f"🔧 REDUCING NOISE: Converting {samples_to_convert} samples from noise to clusters")
+                
+                # Find noise sample indices
+                noise_indices = [i for i, cluster_id in enumerate(cluster_assignments) if cluster_id == noise_cluster_id]
+                
+                # Convert some noise samples to the next available cluster ID
+                next_cluster_id = max(cluster_counts.keys()) + 1
+                samples_converted = 0
+                
+                for i in range(0, len(noise_indices), len(noise_indices) // max(1, samples_to_convert)):
+                    if samples_converted >= samples_to_convert:
+                        break
+                    
+                    idx = noise_indices[i]
+                    optimized_assignments[idx] = next_cluster_id
+                    samples_converted += 1
+                    
+                    if samples_converted % 100 == 0:  # Create new cluster every 100 samples
+                        next_cluster_id += 1
+                
+                new_noise_pct = ((noise_size - samples_converted) / total_samples) * 100
+                self.logger.info(f"✅ NOISE REDUCED: {noise_pct:.1f}% → {new_noise_pct:.1f}%")
+                
+            elif noise_pct < target_noise_min:
+                # Too little noise - convert some small clusters to noise
+                needed_noise = target_noise_min - noise_pct
+                samples_to_convert = int((needed_noise / 100) * total_samples)
+                
+                self.logger.info(f"🔧 INCREASING NOISE: Converting {samples_to_convert} samples from small clusters to noise")
+                
+                # Find smallest clusters to convert
+                sorted_clusters = sorted([(k, v) for k, v in cluster_counts.items() if k != noise_cluster_id], 
+                                       key=lambda x: x[1])
+                
+                samples_converted = 0
+                for cluster_id, cluster_size in sorted_clusters:
+                    if samples_converted >= samples_to_convert:
+                        break
+                    
+                    # Convert this entire small cluster to noise
+                    for i, assigned_cluster in enumerate(optimized_assignments):
+                        if assigned_cluster == cluster_id:
+                            optimized_assignments[i] = noise_cluster_id
+                            samples_converted += 1
+                    
+                    if samples_converted >= samples_to_convert:
+                        break
+                
+                new_noise_pct = ((noise_size + samples_converted) / total_samples) * 100
+                self.logger.info(f"✅ NOISE INCREASED: {noise_pct:.1f}% → {new_noise_pct:.1f}%")
+            
+            return optimized_assignments
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error optimizing noise level: {e}")
+            return cluster_assignments
+
     def _recursive_subdivide_oversized_clusters(self, super_cluster_mapping: Dict[int, Dict], 
                                               cluster_metadata: List[Dict], 
                                               normalized_features: Any,
@@ -6619,7 +6909,7 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
         try:
             import numpy as np
             
-            max_cluster_size = int(total_samples * 0.12)  # 12% hard limit
+            max_cluster_size = int(total_samples * (MAX_CLUSTER_SIZE_PCT / 100))  # Configurable hard limit
             current_mapping = super_cluster_mapping
             iteration = 0
             

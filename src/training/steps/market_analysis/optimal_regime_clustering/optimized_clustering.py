@@ -85,6 +85,13 @@ class MatrixOptimizedClusterer:
             self.batch_processor = None
             self.logger.warning("⚠️ Matrix operations not available, using fallback mode")
 
+    def cluster(self, data: Union[str, pd.DataFrame], **kwargs) -> OptimizedClusteringResult:
+        """Compatibility alias used by orchestrators expecting a standard `cluster` method.
+
+        Delegates to `cluster_optimized` and returns the same result structure.
+        """
+        return self.cluster_optimized(data, **kwargs)
+
     def cluster_optimized(self, data: Union[str, pd.DataFrame], **kwargs) -> OptimizedClusteringResult:
         """Perform optimized clustering with matrix operations.
 
@@ -656,126 +663,37 @@ class MatrixOptimizedClusterer:
             return {}
 
     def _iterative_constraint_enforcement(self, labels: np.ndarray, features: np.ndarray) -> np.ndarray:
-        """Iteratively enforce 3-8% constraints through smart transfer, splitting and merging.
+        """Enforce constraints via merge-to-target and bounded assignment (3–8% per cluster, 100% coverage).
 
-        This method will repeatedly:
-        1. Try smart transfer from oversized to undersized clusters first
-        2. Split only clusters that couldn't be handled by transfer
-        3. Merge clusters that are too small (<1%) with most similar neighbors
-        4. Apply smart redistribution to balance cluster sizes
-        5. Repeat until all constraints are met or max iterations reached
-
-        Args:
-            labels: Initial cluster labels
-            features: Feature matrix
-
-        Returns:
-            Labels after iterative constraint enforcement
+        This replaces heuristic transfer/split loops with:
+        1) quality-aware merges to reach exactly `target_n_clusters`, then
+        2) a capacity-constrained assignment to satisfy size bounds and full coverage.
         """
-        max_iterations = self.config.max_cluster_splitting_iterations or 15
-        n_samples = len(labels)
+        try:
+            current_labels = labels.copy()
+            # Normalize labels to consecutive ints
+            unique = np.unique(current_labels)
+            label_map = {old: new for new, old in enumerate(unique)}
+            current_labels = np.vectorize(label_map.get)(current_labels)
 
-        new_labels = labels.copy()
+            target_k = int(self.config.target_n_clusters)
+            min_pct = float(self.config.min_cluster_size_pct)
+            max_pct = float(self.config.max_cluster_size_pct)
 
-        for iteration in range(max_iterations):
-            unique_labels, counts = np.unique(new_labels, return_counts=True)
-            percentages = counts / n_samples
+            # Step 1: Merge (if needed) to reach exactly target_k
+            k_now = len(np.unique(current_labels))
+            if k_now != target_k:
+                self.logger.info(f"🔧 Adjusting cluster count: {k_now} -> {target_k} via quality-aware merges")
+                current_labels = self._merge_to_target_k(features, current_labels, target_k, min_pct, max_pct)
 
-            # Check if all constraints are met
-            violations = sum(1 for pct in percentages if pct < 0.03 or pct > 0.08)
-            if violations == 0:
-                self.logger.info(f"✅ All constraints met after {iteration + 1} iterations")
-                break
+            # Step 2: Capacity-constrained assignment to meet 3–8% and 100% coverage
+            self.logger.info("🔧 Enforcing 3–8% bounds with bounded assignment")
+            current_labels = self._capacity_constrained_assignment(features, current_labels, min_pct, max_pct)
 
-            self.logger.info(f"🔄 Iteration {iteration + 1}: {violations} violations remaining")
-
-            # Step 1: Try smart transfer first for oversized clusters
-            oversized = [(i, pct) for i, pct in enumerate(percentages) if pct > 0.08]
-            undersized = [(i, pct) for i, pct in enumerate(percentages) if pct < 0.03]
-
-            if oversized and undersized and self.config.smart_cluster_transfer:
-                self.logger.info(f"🔄 Attempting smart transfer for {len(oversized)} oversized clusters")
-                transfers_made = False
-
-                for cluster_idx, pct in oversized:
-                    cluster_label = unique_labels[cluster_idx]
-                    # Find nearest undersized cluster that can accept transfer
-                    nearest_undersized = self._find_nearest_undersized_cluster(
-                        features, new_labels, cluster_label, undersized, unique_labels
-                    )
-
-                    if nearest_undersized is not None:
-                        # Calculate transfer amount (up to 25% of oversized cluster)
-                        transfer_amount = min(
-                            int(counts[cluster_idx] * self.config.smart_transfer_percentage),
-                            counts[cluster_idx] - 20  # Leave at least 20 samples
-                        )
-
-                        if transfer_amount > 0:
-                            # Transfer samples
-                            new_labels = self._transfer_samples_to_cluster(
-                                new_labels, cluster_label, nearest_undersized, transfer_amount
-                            )
-                            transfers_made = True
-                            self.logger.info(f"✅ Transferred {transfer_amount} samples from cluster {cluster_label} to {nearest_undersized}")
-
-                if transfers_made:
-                    # Re-evaluate after transfers
-                    unique_labels, counts = np.unique(new_labels, return_counts=True)
-                    percentages = counts / n_samples
-                    oversized = [(i, pct) for i, pct in enumerate(percentages) if pct > 0.08]
-                    undersized = [(i, pct) for i, pct in enumerate(percentages) if pct < 0.03]
-
-            # Step 2: Split only remaining oversized clusters (>8%) that couldn't be handled by transfer
-            still_oversized = [(i, pct) for i, pct in enumerate(percentages) if pct > 0.08]
-            if still_oversized:
-                self.logger.info(f"📊 Need to split {len(still_oversized)} remaining oversized clusters")
-                for cluster_idx, pct in still_oversized:
-                    cluster_label = unique_labels[cluster_idx]
-                    self.logger.info(f"🔧 Splitting oversized cluster {cluster_label} ({pct*100:.1f}%) into 2 subclusters")
-
-                    # Split into exactly 2 subclusters to get 5-7% each
-                    split_labels = self._split_cluster_into_two(
-                        new_labels, features, cluster_label
-                    )
-
-                    # Update labels
-                    new_labels = self._update_labels_after_split(
-                        new_labels, split_labels, cluster_label
-                    )
-
-            # Step 3: Merge undersized clusters (<3%) with most similar neighbors
-            undersized = [(i, pct) for i, pct in enumerate(percentages) if pct < 0.01]
-            if undersized:
-                for cluster_idx, pct in undersized:
-                    cluster_label = unique_labels[cluster_idx]
-                    self.logger.info(f"🔧 Merging undersized cluster {cluster_label} ({pct*100:.1f}%)")
-
-                    # Find most similar cluster based on CV
-                    merged_labels = self._merge_with_most_similar(
-                        new_labels, features, cluster_label
-                    )
-
-                    if merged_labels is not None:
-                        new_labels = merged_labels
-
-            # Step 4: Apply enhanced redistribution if still needed
-            if iteration > 5 and violations > 0:
-                new_labels = self._enhanced_redistribution(new_labels, features, len(unique_labels))
-
-            # Recalculate for next iteration
-            unique_labels, counts = np.unique(new_labels, return_counts=True)
-            percentages = counts / n_samples
-
-            # Break if no progress made
-            if len(unique_labels) > 25:  # Too many clusters
-                self.logger.warning(f"⚠️ Too many clusters ({len(unique_labels)}), stopping iterations")
-                break
-
-        # Final cleanup pass
-        final_labels = self._final_cleanup_pass(new_labels, features)
-
-        return final_labels
+            return current_labels
+        except Exception as e:
+            self.logger.warning(f"Constraint enforcement fallback due to error: {e}")
+            return labels
 
     def _find_nearest_undersized_cluster(self, features: np.ndarray, labels: np.ndarray,
                                         source_cluster: int, undersized_clusters: List,
@@ -1200,6 +1118,231 @@ class MatrixOptimizedClusterer:
         except Exception as e:
             self.logger.warning(f"Final cleanup pass failed: {e}")
             return labels
+
+    def _merge_to_target_k(self, features: np.ndarray, labels: np.ndarray, target_k: int,
+                           min_pct: float, max_pct: float) -> np.ndarray:
+        """Reduce number of clusters to `target_k` using a quality-aware greedy merge.
+
+        Merge cost favors small centroid distances and penalizes size overflow beyond max_pct.
+        """
+        try:
+            n = labels.shape[0]
+            lower = max(1, int(np.ceil(min_pct * n)))
+            upper = max(1, int(np.floor(max_pct * n)))
+
+            current_labels = labels.copy()
+            while True:
+                unique = np.unique(current_labels)
+                if len(unique) <= target_k:
+                    break
+
+                # Compute centroids and sizes
+                centroids = []
+                sizes = []
+                for lab in unique:
+                    mask = current_labels == lab
+                    sizes.append(mask.sum())
+                    centroids.append(features[mask].mean(axis=0))
+                centroids = np.vstack(centroids)
+                sizes = np.asarray(sizes)
+
+                # Pairwise Ward linkage costs
+                # cost = (n_i * n_j / (n_i + n_j)) * ||ci - cj||^2 + penalty_if_exceeds_upper
+                best_pair = None
+                best_cost = float('inf')
+                for i in range(len(unique)):
+                    for j in range(i + 1, len(unique)):
+                        merged_size = sizes[i] + sizes[j]
+                        size_penalty = 0.0
+                        if merged_size > upper:
+                            # Penalize exceeding the upper size bound
+                            size_penalty = 1e6 * (merged_size - upper)
+                        diff = centroids[i] - centroids[j]
+                        dist_sq = float(np.dot(diff, diff))
+                        ward = (sizes[i] * sizes[j]) / max(1.0, float(sizes[i] + sizes[j])) * dist_sq
+                        cost = ward + size_penalty
+                        if cost < best_cost:
+                            best_cost = cost
+                            best_pair = (unique[i], unique[j])
+
+                if best_pair is None:
+                    # Nothing to merge
+                    break
+
+                a, b = best_pair
+                # Merge b into a
+                current_labels[current_labels == b] = a
+                # Reindex to keep labels compact
+                uniq2 = np.unique(current_labels)
+                remap = {old: idx for idx, old in enumerate(uniq2)}
+                current_labels = np.vectorize(remap.get)(current_labels)
+
+            return current_labels
+        except Exception:
+            return labels
+
+    def _capacity_constrained_assignment(self, features: np.ndarray, labels: np.ndarray,
+                                         min_pct: float, max_pct: float) -> np.ndarray:
+        """Greedy bounded assignment to enforce cluster size bounds and full coverage.
+
+        - Start from current labels
+        - Compute centroid distances
+        - Fill clusters below lower bound with nearest feasible samples
+        - Reduce clusters above upper bound by moving lowest-regret samples
+        """
+        n = labels.shape[0]
+        lower = max(1, int(np.ceil(min_pct * n)))
+        upper = max(1, int(np.floor(max_pct * n)))
+
+        current = labels.copy()
+
+        def compute_centroids(lbls: np.ndarray) -> np.ndarray:
+            uniq = np.unique(lbls)
+            centers = []
+            for lab in uniq:
+                mask = lbls == lab
+                centers.append(features[mask].mean(axis=0))
+            return np.vstack(centers)
+
+        def reindex(lbls: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+            uniq = np.unique(lbls)
+            remap = {old: idx for idx, old in enumerate(uniq)}
+            inv = np.array([remap[v] for v in uniq])
+            return np.vectorize(remap.get)(lbls), uniq
+
+        # Ensure labels are 0..k-1
+        current, orig_unique = reindex(current)
+        k = len(np.unique(current))
+
+        # Precompute distances to centroids
+        centroids = compute_centroids(current)
+        # Compute full distance matrix (n x k)
+        # Note: k is small (<= 20), so this is fine
+        dists = np.zeros((n, k), dtype=np.float64)
+        for c in range(k):
+            diff = features - centroids[c]
+            dists[:, c] = np.sqrt(np.sum(diff * diff, axis=1))
+
+        # Precompute top-3 nearest clusters per sample
+        topk = np.argsort(dists, axis=1)[:, :min(3, k)]
+
+        def counts(lbls: np.ndarray) -> np.ndarray:
+            cnt = np.bincount(lbls, minlength=k)
+            return cnt
+
+        cnts = counts(current)
+
+        # Phase A: raise clusters to lower bound
+        max_rounds = 5
+        for _ in range(max_rounds):
+            deficits = [(c, lower - cnts[c]) for c in range(k) if cnts[c] < lower]
+            if not deficits:
+                break
+            # Fill largest deficits first
+            deficits.sort(key=lambda x: x[1], reverse=True)
+            moved_any = False
+            for c, need in deficits:
+                if need <= 0:
+                    continue
+                # Candidate donors: samples not in c where c is among their top-3
+                candidates = np.where((current != c) & ((topk[:, 0] == c) | (topk[:, 1] == c) | (topk[:, 2] == c) if topk.shape[1] >= 3 else (topk[:, 0] == c)))[0]
+                # Filter donors whose current cluster has surplus above lower
+                donor_ok = candidates[cnts[current[candidates]] > lower]
+                if donor_ok.size == 0:
+                    # Relax: allow any candidate as last resort
+                    donor_ok = candidates
+                if donor_ok.size == 0:
+                    continue
+                # Sort by minimal regret for moving into c
+                deltas = dists[donor_ok, c] - dists[donor_ok, current[donor_ok]]
+                order = np.argsort(deltas)
+                to_move = donor_ok[order][:need]
+                # Apply moves
+                for idx in to_move:
+                    old = current[idx]
+                    if cnts[old] <= lower:
+                        continue
+                    current[idx] = c
+                    cnts[old] -= 1
+                    cnts[c] += 1
+                    moved_any = True
+                if cnts[c] < lower:
+                    # Try again with relaxed candidates if still short
+                    remain = lower - cnts[c]
+                    others = np.where(current != c)[0]
+                    # Prefer donors from clusters with largest surplus
+                    surplus = cnts[current[others]] - lower
+                    donor2 = others[surplus > 0]
+                    if donor2.size > 0:
+                        deltas2 = dists[donor2, c] - dists[donor2, current[donor2]]
+                        order2 = np.argsort(deltas2)
+                        to_move2 = donor2[order2][:remain]
+                        for idx in to_move2:
+                            old = current[idx]
+                            if cnts[old] <= lower:
+                                continue
+                            current[idx] = c
+                            cnts[old] -= 1
+                            cnts[c] += 1
+                            moved_any = True
+            if not moved_any:
+                break
+
+        # Phase B: reduce clusters above upper bound
+        for _ in range(max_rounds):
+            overs = [(c, cnts[c] - upper) for c in range(k) if cnts[c] > upper]
+            if not overs:
+                break
+            moved_any = False
+            # Process the most oversized first
+            overs.sort(key=lambda x: x[1], reverse=True)
+            for c, excess in overs:
+                if excess <= 0:
+                    continue
+                indices = np.where(current == c)[0]
+                if indices.size == 0:
+                    continue
+                # For each sample, find best alternative cluster with capacity
+                best_alt = np.full(indices.shape[0], -1, dtype=int)
+                alt_cost = np.full(indices.shape[0], np.inf, dtype=float)
+                for idx_i, i in enumerate(indices):
+                    # Prefer among top-3 nearest clusters
+                    for alt in topk[i]:
+                        if alt == c:
+                            continue
+                        if cnts[alt] >= upper:
+                            continue
+                        cost = dists[i, alt]
+                        if cost < alt_cost[idx_i]:
+                            alt_cost[idx_i] = cost
+                            best_alt[idx_i] = alt
+                # Compute regret vs staying in c
+                stay_cost = dists[indices, c]
+                regret = alt_cost - stay_cost
+                # Sort candidates by minimal regret (most negative first)
+                order = np.argsort(regret)
+                moved = 0
+                for idx in order:
+                    if moved >= excess:
+                        break
+                    i = indices[idx]
+                    alt = best_alt[idx]
+                    if alt == -1:
+                        continue
+                    if cnts[alt] >= upper:
+                        continue
+                    # Ensure donor won't violate lower bound
+                    if cnts[c] - 1 < lower:
+                        break
+                    current[i] = alt
+                    cnts[c] -= 1
+                    cnts[alt] += 1
+                    moved += 1
+                    moved_any = True
+            if not moved_any:
+                break
+
+        return current
 
     def _update_labels_after_split(self, current_labels: np.ndarray,
                                    split_labels: np.ndarray, original_label: int) -> np.ndarray:

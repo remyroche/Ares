@@ -522,7 +522,11 @@ class OptimalRegimeClusteringOrchestrator:
             ClusteringResult with size constraints enforced
         """
         try:
-            from src.training.steps.market_analysis.cluster_constraints import split_giant_clusters
+            from src.training.steps.market_analysis.cluster_constraints import (
+                split_giant_clusters,
+                merge_tail_into_topk,
+                balance_topk_range,
+            )
             import numpy as np
 
             # Extract features from the clustering result metadata
@@ -545,6 +549,23 @@ class OptimalRegimeClusteringOrchestrator:
                 target_range=target_range,
                 metric="euclidean",
                 random_state=self.config.random_state
+            )
+
+            # Keep cluster count and distribution aligned with goals
+            new_labels = merge_tail_into_topk(
+                features,
+                new_labels,
+                k=self.config.target_n_clusters,
+                coverage_target=(self.config.target_coverage_pct - 0.05, self.config.target_coverage_pct),
+                metric="euclidean",
+            )
+            new_labels = balance_topk_range(
+                features,
+                new_labels,
+                k=self.config.target_n_clusters,
+                target_range=(self.config.min_cluster_size_pct, self.config.max_cluster_size_pct),
+                metric="euclidean",
+                random_state=self.config.random_state,
             )
 
             # Create new clustering result

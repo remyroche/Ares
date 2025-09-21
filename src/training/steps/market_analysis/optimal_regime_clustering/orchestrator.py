@@ -322,7 +322,7 @@ class OptimalRegimeClusteringOrchestrator:
                     data = standardized_parquet_handler.read_parquet_standardized(data_path)
                 else:
                     # Try to find processed data first for the requested timeframe
-                processed_data_path = f"historical_data/binance/ethusdt/processed/ethusdt_{timeframe}"
+                    processed_data_path = f"historical_data/binance/ethusdt/processed/ethusdt_{timeframe}"
                 if Path(processed_data_path).exists():
                     # Use processed data for regime clustering
                     data = self._load_processed_data_for_regime_clustering(processed_data_path)
@@ -338,26 +338,26 @@ class OptimalRegimeClusteringOrchestrator:
                     f"artifacts/hmm_regime_unified_artifacts.json"
                 ]
 
-                    data = None
-                    for path in possible_paths:
-                        try:
-                            if path.endswith('.parquet'):
-                                if Path(path).exists():
-                                    data = standardized_parquet_handler.read_parquet_standardized(path)
-                                    break
-                            elif path.endswith('.json'):
-                                if Path(path).exists():
-                                    with open(path, 'r') as f:
-                                        json_data = json.load(f)
-                                        # Extract cluster data from JSON
-                                        if 'regime_statistics' in json_data:
-                                            data = pd.DataFrame(json_data['regime_statistics'])
-                                            break
-                        except Exception:
-                            continue
+                data = None
+                for path in possible_paths:
+                    try:
+                        if path.endswith('.parquet'):
+                            if Path(path).exists():
+                                data = standardized_parquet_handler.read_parquet_standardized(path)
+                                break
+                        elif path.endswith('.json'):
+                            if Path(path).exists():
+                                with open(path, 'r') as f:
+                                    json_data = json.load(f)
+                                    # Extract cluster data from JSON
+                                    if 'regime_statistics' in json_data:
+                                        data = pd.DataFrame(json_data['regime_statistics'])
+                                        break
+                    except Exception:
+                        continue
 
-                    if data is None:
-                        raise FileNotFoundError(f"Could not load data from {data_path} or default locations")
+                if data is None:
+                    raise FileNotFoundError(f"Could not load data from {data_path} or default locations")
 
             # Validate data has required features
             required_features = self.config.feature_dimensions

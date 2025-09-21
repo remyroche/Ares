@@ -379,82 +379,26 @@ class HDBSCANClusterer(BaseClusterer):
             return DBSCANClusterer(self.config).fit_predict(data)
         
         from sklearn.preprocessing import StandardScaler
-        # Constraint utilities operate in the same space (no re-embedding)
-        try:
-            from .constraints import (
-                fit_hdbscan_with_noise_target,
-                enforce_cluster_constraints,
-                _compute_centroids,
-            )
-            CONSTRAINTS_AVAILABLE = True
-        except Exception:
-            CONSTRAINTS_AVAILABLE = False
         
         # Standardize data
         scaler = StandardScaler()
         data_scaled = scaler.fit_transform(data)
         
-        # Fit HDBSCAN with optional noise targeting
-        hdbscan_params = dict(self.config.hdbscan_params or {})
-        target_noise = hdbscan_params.pop("target_noise_range", (0.05, 0.10)) if "target_noise_range" in hdbscan_params else (0.05, 0.10)
-        # Ensure cluster_selection_method default that tends to finer clusters
-        hdbscan_params.setdefault("cluster_selection_method", "leaf")
-        if CONSTRAINTS_AVAILABLE and target_noise is not None:
-            clusterer = fit_hdbscan_with_noise_target(data_scaled, hdbscan_params, target_range=target_noise)
-            labels = clusterer.labels_
-            # Some hdbscan versions require explicit predict to fill labels
-            if labels is None or len(labels) != len(data_scaled):
-                labels = clusterer.fit_predict(data_scaled)
-        else:
-            clusterer = hdbscan.HDBSCAN(**hdbscan_params)
-            labels = clusterer.fit_predict(data_scaled)
-        
-        # Enforce distribution constraints in 4D space (scaled data) if available
-        if CONSTRAINTS_AVAILABLE:
-            metric = hdbscan_params.get("metric", "euclidean")
-            labels = enforce_cluster_constraints(
-                data_scaled,
-                labels,
-                noise_label=-1,
-                max_legit_prop=0.12,
-                target_topk=20,
-                coverage_target=(0.90, 0.95),
-                target_range=(0.03, 0.08),
-                metric=metric,
-                random_state=self.config.random_state,
-            )
+        # Fit HDBSCAN
+        clusterer = hdbscan.HDBSCAN(**self.config.hdbscan_params)
+        labels = clusterer.fit_predict(data_scaled)
 
         # Get cluster centers
         unique_labels = np.unique(labels[labels >= 0])
         cluster_centers = None
         if len(unique_labels) > 0:
-            if CONSTRAINTS_AVAILABLE:
-                cents = _compute_centroids(data_scaled, labels, include_labels=unique_labels, metric=hdbscan_params.get("metric", "euclidean"))
-                cluster_centers = np.stack([cents[int(l)] for l in unique_labels], axis=0)
-            else:
-                cluster_centers = np.array([
-                    data_scaled[labels == label].mean(axis=0)
-                    for label in unique_labels
-                ])
+            cluster_centers = np.array([
+                data_scaled[labels == label].mean(axis=0)
+                for label in unique_labels
+            ])
             cluster_centers = scaler.inverse_transform(cluster_centers)
         
         metrics = self._calculate_metrics(data_scaled, labels)
-        # Add distribution KPIs
-        try:
-            total = len(labels)
-            noise_pct = float(np.mean(labels == -1)) if total > 0 else 0.0
-            counts = np.array([np.sum(labels == l) for l in unique_labels]) if len(unique_labels) > 0 else np.array([])
-            largest_pct = float(np.max(counts) / total) if counts.size > 0 and total > 0 else 0.0
-            topk = 20
-            top_counts = np.sort(counts)[::-1][:topk]
-            topk_coverage = float(np.sum(top_counts) / total) if total > 0 else 0.0
-            metrics.update({
-                "noise_fraction": noise_pct,
-                "largest_cluster_fraction": largest_pct,
-                "top20_coverage": topk_coverage,
-            })
-        except Exception:
-            pass
         
         return ClusteringResult(
             method=ClusteringMethod.HDBSCAN,

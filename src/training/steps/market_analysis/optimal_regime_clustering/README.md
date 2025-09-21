@@ -26,11 +26,17 @@ For matrix optimization features (recommended):
 # The system automatically detects and uses matrix operations when available
 ```
 
-## Matrix Optimization
+## Auto-Detection & Matrix Optimization
 
-The system leverages the unified matrix operations system for maximum performance:
+The system automatically detects the latest HMM discovery results and uses matrix optimization:
 
-### Features
+### Auto-Detection Features
+- **Latest HMM Results**: Automatically finds the most recent HMM regime discovery output
+- **Smart Path Resolution**: Searches multiple common locations for HMM data
+- **Same Output Location**: Creates optimal clusters in the same directory as HMM discovery
+- **Flexible Input**: Accepts DataFrames or file paths with automatic detection
+
+### Matrix Optimization Features
 - **GPU Acceleration**: Apple Silicon M1/M2/M3 optimization
 - **Vectorized Operations**: Batch processing with optimized memory usage
 - **Enhanced Clustering**: Matrix-optimized HDBSCAN, DBSCAN, and K-means
@@ -67,12 +73,13 @@ results = run_matrix_optimized_clustering(
 from optimal_regime_clustering import run_optimal_clustering
 
 # This automatically uses matrix optimization with GPU acceleration
+# AND auto-detects the latest HMM discovery results!
 results = run_optimal_clustering(
-    data_path="hmm_cluster_data.parquet",
-    output_dir="optimal_clusters/",
-    symbol="ETHUSDT",
-    exchange="binance",
-    timeframe="1h"
+    # data_path="hmm_cluster_data.parquet",  # Optional - auto-detects latest
+    # output_dir="optimal_clusters/",        # Optional - uses HMM location
+    symbol="ETHUSDT",      # Default: ETHUSDT
+    exchange="binance",    # Default: binance
+    timeframe="15m"        # Default: 15m
 )
 
 # Features:
@@ -89,11 +96,11 @@ results = run_optimal_clustering(
 from optimal_regime_clustering import run_high_quality_clustering
 
 results = run_high_quality_clustering(
-    data_path="hmm_data.parquet",
-    output_dir="high_quality_clusters/",
-    symbol="BTCUSDT",
-    exchange="binance",
-    timeframe="1h"
+    # data_path="hmm_data.parquet",  # Optional - auto-detects latest
+    # output_dir="high_quality_clusters/",  # Optional - uses HMM location
+    symbol="BTCUSDT",      # Custom symbol
+    exchange="binance",    # Default: binance
+    timeframe="15m"        # Default: 15m
 )
 ```
 
@@ -103,11 +110,11 @@ results = run_high_quality_clustering(
 from optimal_regime_clustering import run_fast_clustering
 
 results = run_fast_clustering(
-    data_path="hmm_data.parquet",
-    output_dir="fast_clusters/",
-    symbol="ADAUSDT",
-    exchange="binance",
-    timeframe="1h"
+    # data_path="hmm_data.parquet",  # Optional - auto-detects latest
+    # output_dir="fast_clusters/",  # Optional - uses HMM location
+    symbol="ADAUSDT",      # Custom symbol
+    exchange="binance",    # Default: binance
+    timeframe="15m"        # Default: 15m
 )
 ```
 
@@ -117,11 +124,11 @@ results = run_fast_clustering(
 from optimal_regime_clustering import run_matrix_optimized_clustering
 
 results = run_matrix_optimized_clustering(
-    data_path="hmm_data.parquet",
-    output_dir="matrix_optimized_clusters/",
-    symbol="BTCUSDT",
-    exchange="binance",
-    timeframe="1h"
+    # data_path="hmm_data.parquet",  # Optional - auto-detects latest
+    # output_dir="matrix_optimized_clusters/",  # Optional - uses HMM location
+    symbol="BTCUSDT",      # Custom symbol
+    exchange="binance",    # Default: binance
+    timeframe="15m"        # Default: 15m
 )
 
 # Matrix optimization provides:
@@ -132,6 +139,24 @@ results = run_matrix_optimized_clustering(
 ```
 
 ## Configuration
+
+### Default Parameters (Updated)
+
+The system now uses these defaults:
+
+```python
+# Function defaults (all functions)
+symbol: str = "ETHUSDT"        # Default symbol
+exchange: str = "binance"      # Default exchange
+timeframe: str = "15m"         # Default timeframe (updated from 1h)
+
+# Clustering defaults
+target_n_clusters: int = 20    # 20 optimal clusters
+target_coverage_pct: float = 0.95  # 90-95% coverage
+max_noise_pct: float = 0.05    # <5% noise
+min_cluster_size_pct: float = 0.03  # 3% minimum per cluster
+max_cluster_size_pct: float = 0.08  # 8% maximum per cluster
+```
 
 ### Default Configuration
 

@@ -64,13 +64,13 @@ def example_basic_clustering():
             sample_data.to_parquet(data_path)
             print(f"Created sample data: {data_path}")
 
-        # Run basic clustering
+        # Run basic clustering (auto-detects HMM results if not provided)
         results = run_optimal_clustering(
-            data_path=data_path,
-            output_dir="optimal_clusters_example_1/",
-            symbol="ETHUSDT",
-            exchange="binance",
-            timeframe="1h"
+            # data_path=data_path,  # Optional - auto-detects latest HMM results
+            # output_dir="optimal_clusters_example_1/",  # Optional - uses HMM location
+            symbol="ETHUSDT",      # Default: ETHUSDT
+            exchange="binance",    # Default: binance
+            timeframe="15m"        # Default: 15m
         )
 
         if results['success']:
@@ -108,13 +108,13 @@ def example_high_quality_clustering():
             'timestamp': pd.date_range(start='2020-01-01', periods=n_samples, freq='H')
         })
 
-        # Run high-quality clustering
+        # Run high-quality clustering (auto-detects HMM results if DataFrame not provided)
         results = run_high_quality_clustering(
-            data_path=sample_data,  # Pass DataFrame directly
-            output_dir="optimal_clusters_example_2/",
-            symbol="BTCUSDT",
-            exchange="binance",
-            timeframe="1h"
+            # data_path=sample_data,  # Optional - auto-detects latest HMM results
+            # output_dir="optimal_clusters_example_2/",  # Optional - uses HMM location
+            symbol="BTCUSDT",      # Custom symbol
+            exchange="binance",    # Default: binance
+            timeframe="15m"        # Default: 15m
         )
 
         if results['success']:
@@ -149,13 +149,13 @@ def example_fast_clustering():
             'timestamp': pd.date_range(start='2020-01-01', periods=n_samples, freq='H')
         })
 
-        # Run fast clustering
+        # Run fast clustering (auto-detects HMM results)
         results = run_fast_clustering(
-            data_path=sample_data,
-            output_dir="optimal_clusters_example_3/",
-            symbol="ADAUSDT",
-            exchange="binance",
-            timeframe="1h"
+            # data_path=sample_data,  # Optional - auto-detects latest HMM results
+            # output_dir="optimal_clusters_example_3/",  # Optional - uses HMM location
+            symbol="ADAUSDT",      # Custom symbol
+            exchange="binance",    # Default: binance
+            timeframe="15m"        # Default: 15m
         )
 
         if results['success']:
@@ -394,13 +394,13 @@ def example_matrix_optimization():
             'timestamp': pd.date_range(start='2020-01-01', periods=n_samples, freq='H')
         })
 
-        # Run matrix-optimized clustering
+        # Run matrix-optimized clustering (auto-detects HMM results)
         results = run_matrix_optimized_clustering(
-            data_path=sample_data,
-            output_dir="matrix_optimized_example/",
-            symbol="MATRIX_TEST",
-            exchange="binance",
-            timeframe="1h"
+            # data_path=sample_data,  # Optional - auto-detects latest HMM results
+            # output_dir="matrix_optimized_example/",  # Optional - uses HMM location
+            symbol="MATRIX_TEST",  # Custom symbol
+            exchange="binance",    # Default: binance
+            timeframe="15m"        # Default: 15m
         )
 
         if results['success']:

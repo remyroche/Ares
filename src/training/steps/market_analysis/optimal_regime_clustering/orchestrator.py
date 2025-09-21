@@ -22,8 +22,59 @@ from .utils import (
     create_cluster_summary_report, bootstrap_cluster_stability,
     optimize_cluster_parameters, ClusterStatistics
 )
+import glob
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
+def detect_latest_hmm_results(symbol: str = "ETHUSDT", exchange: str = "binance", timeframe: str = "15m") -> tuple:
+    """Detect the latest HMM regime discovery results.
+
+    Args:
+        symbol: Trading symbol
+        exchange: Exchange name
+        timeframe: Data timeframe
+
+    Returns:
+        tuple: (data_path, output_dir) or (None, None) if not found
+    """
+    try:
+        # Search for HMM cluster files in multiple locations
+        search_patterns = [
+            f"historical_data/{exchange.lower()}/{symbol.lower()}/hmm_clusters/hmm_composite_clusters_{exchange}_{symbol}_{timeframe}.parquet",
+            f"data/hmm_clusters/hmm_composite_clusters_{exchange}_{symbol}_{timeframe}.parquet",
+            f"artifacts/hmm_regime_unified_artifacts.json",
+            f"**/hmm_composite_clusters_{exchange}_{symbol}_{timeframe}.parquet"
+        ]
+
+        data_path = None
+        for pattern in search_patterns:
+            files = glob.glob(pattern, recursive=True)
+            if files:
+                # Get the most recent file
+                data_path = max(files, key=lambda x: Path(x).stat().st_mtime)
+                break
+
+        if data_path:
+            # Determine output directory based on data path location
+            data_path_obj = Path(data_path)
+            if "historical_data" in str(data_path):
+                # Use the same directory structure
+                output_dir = data_path_obj.parent / "optimal_clusters"
+            else:
+                # Use standard output location
+                output_dir = Path(f"optimal_clusters/{exchange}/{symbol}/{timeframe}")
+
+            logger.info(f"✅ Detected latest HMM results: {data_path}")
+            logger.info(f"📁 Output directory: {output_dir}")
+            return str(data_path), str(output_dir)
+        else:
+            logger.warning(f"❌ No HMM results found for {exchange}/{symbol}/{timeframe}")
+            return None, None
+
+    except Exception as e:
+        logger.error(f"Error detecting HMM results: {e}")
+        return None, None
 
 class OptimalRegimeClusteringOrchestrator:
     """Orchestrates the optimal regime clustering pipeline."""
@@ -575,39 +626,58 @@ class OptimalRegimeClusteringOrchestrator:
             self.logger.error(f"Error creating ML datasets: {e}")
             return {}
 
-def run_optimal_clustering(data_path: str, output_dir: str, config: Optional[OptimalClusteringConfig] = None,
-                          symbol: str = "ETHUSDT", exchange: str = "binance", timeframe: str = "1h",
+def run_optimal_clustering(data_path: Optional[str] = None, output_dir: Optional[str] = None,
+                          config: Optional[OptimalClusteringConfig] = None,
+                          symbol: str = "ETHUSDT", exchange: str = "binance", timeframe: str = "15m",
                           **kwargs) -> Dict[str, Any]:
     """Convenience function to run optimal regime clustering (Matrix-Optimized by Default).
 
-    This is the main entry point for optimal regime clustering. It automatically uses
-    matrix optimization with GPU acceleration when available, providing maximum performance
-    while maintaining full compatibility with the 4D feature space (volume, volatility, momentum, trend).
+    This is the main entry point for optimal regime clustering. It automatically:
+    - Detects the latest HMM regime discovery results if data_path is not provided
+    - Uses matrix optimization with GPU acceleration when available
+    - Creates output in the same location as HMM discovery results if output_dir is not provided
+    - Maintains full compatibility with the 4D feature space (volume, volatility, momentum, trend)
 
     Features:
     - ✅ Matrix optimization with GPU acceleration (Apple Silicon M1/M2/M3)
     - ✅ 4D feature space processing (volume, volatility, momentum, trend)
     - ✅ 20 optimal clusters with 90-95% coverage
     - ✅ <5% noise with advanced filtering
+    - ✅ Automatic detection of latest HMM discovery results
     - ✅ Automatic fallback to standard clustering if matrix ops unavailable
 
     Args:
-        data_path: Path to HMM regime data
-        output_dir: Output directory
+        data_path: Path to HMM regime data (optional - auto-detects if not provided)
+        output_dir: Output directory (optional - uses HMM discovery location if not provided)
         config: Clustering configuration (optional, defaults to matrix-optimized config)
-        symbol: Trading symbol
-        exchange: Exchange name
-        timeframe: Data timeframe
+        symbol: Trading symbol (default: ETHUSDT)
+        exchange: Exchange name (default: binance)
+        timeframe: Data timeframe (default: 15m)
         **kwargs: Additional parameters
 
     Returns:
         Pipeline results with matrix optimization enabled by default
     """
+    # Auto-detect HMM results if not provided
+    if data_path is None or output_dir is None:
+        detected_data_path, detected_output_dir = detect_latest_hmm_results(symbol, exchange, timeframe)
+        if detected_data_path:
+            data_path = data_path or detected_data_path
+            output_dir = output_dir or detected_output_dir
+            logger.info(f"🔍 Auto-detected HMM results: {data_path}")
+        else:
+            logger.error("❌ No HMM results found and no data_path provided")
+            return {
+                'success': False,
+                'error': 'No HMM regime data found. Please provide data_path or ensure HMM discovery has been run.',
+                'metadata': {'symbol': symbol, 'exchange': exchange, 'timeframe': timeframe}
+            }
+
     orchestrator = OptimalRegimeClusteringOrchestrator(config)
     return orchestrator.run_clustering_pipeline(data_path, output_dir, symbol, exchange, timeframe, **kwargs)
 
-def run_high_quality_clustering(data_path: str, output_dir: str,
-                               symbol: str = "ETHUSDT", exchange: str = "binance", timeframe: str = "1h",
+def run_high_quality_clustering(data_path: Optional[str] = None, output_dir: Optional[str] = None,
+                               symbol: str = "ETHUSDT", exchange: str = "binance", timeframe: str = "15m",
                                **kwargs) -> Dict[str, Any]:
     """Run high-quality clustering with enhanced validation and matrix optimization.
 
@@ -631,12 +701,27 @@ def run_high_quality_clustering(data_path: str, output_dir: str,
     Returns:
         Pipeline results with high-quality validation
     """
+    # Auto-detect HMM results if not provided
+    if data_path is None or output_dir is None:
+        detected_data_path, detected_output_dir = detect_latest_hmm_results(symbol, exchange, timeframe)
+        if detected_data_path:
+            data_path = data_path or detected_data_path
+            output_dir = output_dir or detected_output_dir
+            logger.info(f"🔍 Auto-detected HMM results: {data_path}")
+        else:
+            logger.error("❌ No HMM results found and no data_path provided")
+            return {
+                'success': False,
+                'error': 'No HMM regime data found. Please provide data_path or ensure HMM discovery has been run.',
+                'metadata': {'symbol': symbol, 'exchange': exchange, 'timeframe': timeframe}
+            }
+
     config = get_clustering_config("high_quality")
     orchestrator = OptimalRegimeClusteringOrchestrator(config)
     return orchestrator.run_clustering_pipeline(data_path, output_dir, symbol, exchange, timeframe, **kwargs)
 
-def run_fast_clustering(data_path: str, output_dir: str,
-                       symbol: str = "ETHUSDT", exchange: str = "binance", timeframe: str = "1h",
+def run_fast_clustering(data_path: Optional[str] = None, output_dir: Optional[str] = None,
+                       symbol: str = "ETHUSDT", exchange: str = "binance", timeframe: str = "15m",
                        **kwargs) -> Dict[str, Any]:
     """Run fast clustering for quick results with relaxed validation.
 
@@ -660,12 +745,27 @@ def run_fast_clustering(data_path: str, output_dir: str,
     Returns:
         Pipeline results with fast processing
     """
+    # Auto-detect HMM results if not provided
+    if data_path is None or output_dir is None:
+        detected_data_path, detected_output_dir = detect_latest_hmm_results(symbol, exchange, timeframe)
+        if detected_data_path:
+            data_path = data_path or detected_data_path
+            output_dir = output_dir or detected_output_dir
+            logger.info(f"🔍 Auto-detected HMM results: {data_path}")
+        else:
+            logger.error("❌ No HMM results found and no data_path provided")
+            return {
+                'success': False,
+                'error': 'No HMM regime data found. Please provide data_path or ensure HMM discovery has been run.',
+                'metadata': {'symbol': symbol, 'exchange': exchange, 'timeframe': timeframe}
+            }
+
     config = get_clustering_config("fast_processing")
     orchestrator = OptimalRegimeClusteringOrchestrator(config)
     return orchestrator.run_clustering_pipeline(data_path, output_dir, symbol, exchange, timeframe, **kwargs)
 
-def run_matrix_optimized_clustering(data_path: str, output_dir: str,
-                                  symbol: str = "ETHUSDT", exchange: str = "binance", timeframe: str = "1h",
+def run_matrix_optimized_clustering(data_path: Optional[str] = None, output_dir: Optional[str] = None,
+                                  symbol: str = "ETHUSDT", exchange: str = "binance", timeframe: str = "15m",
                                   **kwargs) -> Dict[str, Any]:
     """Run matrix-optimized clustering (explicit matrix optimization mode).
 
@@ -693,5 +793,20 @@ def run_matrix_optimized_clustering(data_path: str, output_dir: str,
     Returns:
         Pipeline results with explicit matrix optimization
     """
+    # Auto-detect HMM results if not provided
+    if data_path is None or output_dir is None:
+        detected_data_path, detected_output_dir = detect_latest_hmm_results(symbol, exchange, timeframe)
+        if detected_data_path:
+            data_path = data_path or detected_data_path
+            output_dir = output_dir or detected_output_dir
+            logger.info(f"🔍 Auto-detected HMM results: {data_path}")
+        else:
+            logger.error("❌ No HMM results found and no data_path provided")
+            return {
+                'success': False,
+                'error': 'No HMM regime data found. Please provide data_path or ensure HMM discovery has been run.',
+                'metadata': {'symbol': symbol, 'exchange': exchange, 'timeframe': timeframe}
+            }
+
     # Use the same implementation as run_optimal_clustering since it's now matrix-optimized by default
     return run_optimal_clustering(data_path, output_dir, None, symbol, exchange, timeframe, **kwargs)

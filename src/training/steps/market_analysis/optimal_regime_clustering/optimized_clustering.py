@@ -656,13 +656,14 @@ class MatrixOptimizedClusterer:
             return {}
 
     def _iterative_constraint_enforcement(self, labels: np.ndarray, features: np.ndarray) -> np.ndarray:
-        """Iteratively enforce 3-8% constraints through splitting and merging.
+        """Iteratively enforce 3-8% constraints through smart transfer, splitting and merging.
 
         This method will repeatedly:
-        1. Split clusters that are too large (>8%) into exactly 2 subclusters
-        2. Merge clusters that are too small (<1%) with most similar neighbors
-        3. Apply smart redistribution to balance cluster sizes
-        4. Repeat until all constraints are met or max iterations reached
+        1. Try smart transfer from oversized to undersized clusters first
+        2. Split only clusters that couldn't be handled by transfer
+        3. Merge clusters that are too small (<1%) with most similar neighbors
+        4. Apply smart redistribution to balance cluster sizes
+        5. Repeat until all constraints are met or max iterations reached
 
         Args:
             labels: Initial cluster labels
@@ -688,10 +689,48 @@ class MatrixOptimizedClusterer:
 
             self.logger.info(f"🔄 Iteration {iteration + 1}: {violations} violations remaining")
 
-            # Step 1: Split oversized clusters (>8%) into exactly 2 subclusters
+            # Step 1: Try smart transfer first for oversized clusters
             oversized = [(i, pct) for i, pct in enumerate(percentages) if pct > 0.08]
-            if oversized:
+            undersized = [(i, pct) for i, pct in enumerate(percentages) if pct < 0.03]
+
+            if oversized and undersized and self.config.smart_cluster_transfer:
+                self.logger.info(f"🔄 Attempting smart transfer for {len(oversized)} oversized clusters")
+                transfers_made = False
+
                 for cluster_idx, pct in oversized:
+                    cluster_label = unique_labels[cluster_idx]
+                    # Find nearest undersized cluster that can accept transfer
+                    nearest_undersized = self._find_nearest_undersized_cluster(
+                        features, new_labels, cluster_label, undersized, unique_labels
+                    )
+
+                    if nearest_undersized is not None:
+                        # Calculate transfer amount (up to 25% of oversized cluster)
+                        transfer_amount = min(
+                            int(counts[cluster_idx] * self.config.smart_transfer_percentage),
+                            counts[cluster_idx] - 20  # Leave at least 20 samples
+                        )
+
+                        if transfer_amount > 0:
+                            # Transfer samples
+                            new_labels = self._transfer_samples_to_cluster(
+                                new_labels, cluster_label, nearest_undersized, transfer_amount
+                            )
+                            transfers_made = True
+                            self.logger.info(f"✅ Transferred {transfer_amount} samples from cluster {cluster_label} to {nearest_undersized}")
+
+                if transfers_made:
+                    # Re-evaluate after transfers
+                    unique_labels, counts = np.unique(new_labels, return_counts=True)
+                    percentages = counts / n_samples
+                    oversized = [(i, pct) for i, pct in enumerate(percentages) if pct > 0.08]
+                    undersized = [(i, pct) for i, pct in enumerate(percentages) if pct < 0.03]
+
+            # Step 2: Split only remaining oversized clusters (>8%) that couldn't be handled by transfer
+            still_oversized = [(i, pct) for i, pct in enumerate(percentages) if pct > 0.08]
+            if still_oversized:
+                self.logger.info(f"📊 Need to split {len(still_oversized)} remaining oversized clusters")
+                for cluster_idx, pct in still_oversized:
                     cluster_label = unique_labels[cluster_idx]
                     self.logger.info(f"🔧 Splitting oversized cluster {cluster_label} ({pct*100:.1f}%) into 2 subclusters")
 
@@ -705,7 +744,7 @@ class MatrixOptimizedClusterer:
                         new_labels, split_labels, cluster_label
                     )
 
-            # Step 2: Merge undersized clusters (<3%) with most similar neighbors
+            # Step 3: Merge undersized clusters (<3%) with most similar neighbors
             undersized = [(i, pct) for i, pct in enumerate(percentages) if pct < 0.01]
             if undersized:
                 for cluster_idx, pct in undersized:
@@ -720,7 +759,7 @@ class MatrixOptimizedClusterer:
                     if merged_labels is not None:
                         new_labels = merged_labels
 
-            # Step 3: Apply enhanced redistribution if still needed
+            # Step 4: Apply enhanced redistribution if still needed
             if iteration > 5 and violations > 0:
                 new_labels = self._enhanced_redistribution(new_labels, features, len(unique_labels))
 
@@ -737,6 +776,79 @@ class MatrixOptimizedClusterer:
         final_labels = self._final_cleanup_pass(new_labels, features)
 
         return final_labels
+
+    def _find_nearest_undersized_cluster(self, features: np.ndarray, labels: np.ndarray,
+                                        source_cluster: int, undersized_clusters: List,
+                                        unique_labels: np.ndarray) -> Optional[int]:
+        """Find the nearest undersized cluster that can accept transfers.
+
+        Args:
+            features: Feature matrix
+            labels: Cluster labels
+            source_cluster: Source cluster to transfer from
+            undersized_clusters: List of undersized cluster indices
+            unique_labels: Array of unique cluster labels
+
+        Returns:
+            Target cluster label or None if no suitable target found
+        """
+        try:
+            source_mask = labels == source_cluster
+            source_centroid = np.mean(features[source_mask], axis=0)
+
+            best_target = None
+            best_distance = float('inf')
+
+            for cluster_idx, _ in undersized_clusters:
+                target_cluster = unique_labels[cluster_idx]
+                target_mask = labels == target_cluster
+                target_centroid = np.mean(features[target_mask], axis=0)
+
+                # Calculate Euclidean distance
+                distance = np.linalg.norm(source_centroid - target_centroid)
+
+                if distance < best_distance:
+                    best_distance = distance
+                    best_target = target_cluster
+
+            return best_target
+
+        except Exception as e:
+            self.logger.warning(f"Error finding nearest undersized cluster: {e}")
+            return None
+
+    def _transfer_samples_to_cluster(self, labels: np.ndarray, source_cluster: int,
+                                   target_cluster: int, transfer_amount: int) -> np.ndarray:
+        """Transfer samples from source cluster to target cluster.
+
+        Args:
+            labels: Cluster labels
+            source_cluster: Source cluster to transfer from
+            target_cluster: Target cluster to transfer to
+            transfer_amount: Number of samples to transfer
+
+        Returns:
+            Updated labels
+        """
+        try:
+            # Find indices of samples in source cluster
+            source_mask = labels == source_cluster
+            source_indices = np.where(source_mask)[0]
+
+            # Randomly select samples to transfer
+            if len(source_indices) > transfer_amount:
+                transfer_indices = np.random.choice(source_indices, transfer_amount, replace=False)
+            else:
+                transfer_indices = source_indices
+
+            # Transfer the samples
+            labels[transfer_indices] = target_cluster
+
+            return labels
+
+        except Exception as e:
+            self.logger.warning(f"Error transferring samples: {e}")
+            return labels
 
     def _split_single_cluster(self, labels: np.ndarray, features: np.ndarray,
                              cluster_label: int, target_pct: float = 0.05) -> np.ndarray:

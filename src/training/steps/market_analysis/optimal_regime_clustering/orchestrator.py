@@ -221,7 +221,12 @@ class OptimalRegimeClusteringOrchestrator:
                 clustering_result = self._convert_optimized_to_standard_result(optimized_result)
             else:
                 # Use standard clustering
-                clustering_result = self.clusterer.cluster(regime_data)
+                if hasattr(self.clusterer, 'cluster_optimized'):
+                    # Matrix optimized clusterer
+                    clustering_result = self.clusterer.cluster_optimized(regime_data)
+                else:
+                    # Standard clusterer
+                    clustering_result = self.clusterer.cluster(regime_data)
 
                 if not clustering_result.success:
                     raise RuntimeError(f"Clustering failed: {clustering_result.error_message}")
@@ -316,13 +321,22 @@ class OptimalRegimeClusteringOrchestrator:
                 if data_path.exists():
                     data = standardized_parquet_handler.read_parquet_standardized(data_path)
                 else:
-                    # Try to find HMM cluster data with multiple timeframes
-                    possible_paths = [
-                        f"historical_data/binance/ethusdt/hmm_clusters/hmm_composite_clusters_binance_ETHUSDT_{timeframe}.parquet",
-                        f"historical_data/binance/ethusdt/hmm_clusters/hmm_composite_clusters_binance_ETHUSDT_1h.parquet",
-                        f"historical_data/binance/ethusdt/hmm_clusters/hmm_composite_clusters_binance_ETHUSDT_1m.parquet",
-                        f"artifacts/hmm_regime_unified_artifacts.json"
-                    ]
+                    # Try to find processed data first for the requested timeframe
+                processed_data_path = f"historical_data/binance/ethusdt/processed/ethusdt_{timeframe}"
+                if Path(processed_data_path).exists():
+                    # Use processed data for regime clustering
+                    data = self._load_processed_data_for_regime_clustering(processed_data_path)
+                    if data is not None:
+                        logger.info(f"✅ Using processed {timeframe} data for regime clustering")
+                        break
+
+                # Try to find HMM cluster data with multiple timeframes
+                possible_paths = [
+                    f"historical_data/binance/ethusdt/hmm_clusters/hmm_composite_clusters_binance_ETHUSDT_{timeframe}.parquet",
+                    f"historical_data/binance/ethusdt/hmm_clusters/hmm_composite_clusters_binance_ETHUSDT_1h.parquet",
+                    f"historical_data/binance/ethusdt/hmm_clusters/hmm_composite_clusters_binance_ETHUSDT_1m.parquet",
+                    f"artifacts/hmm_regime_unified_artifacts.json"
+                ]
 
                     data = None
                     for path in possible_paths:
@@ -362,6 +376,91 @@ class OptimalRegimeClusteringOrchestrator:
         except Exception as e:
             self.logger.error(f"Error loading data: {e}")
             raise
+
+    def _load_processed_data_for_regime_clustering(self, processed_data_path: str) -> Optional[pd.DataFrame]:
+        """Load processed data from partitioned files for regime clustering.
+
+        Args:
+            processed_data_path: Path to processed data directory
+
+        Returns:
+            DataFrame with regime clustering features or None if failed
+        """
+        try:
+            import pandas as pd
+            from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
+
+            data_path = Path(processed_data_path)
+            if not data_path.exists():
+                return None
+
+            # Collect all parquet files from the processed directory
+            parquet_files = []
+            for root, dirs, files in os.walk(data_path):
+                for file in files:
+                    if file.endswith('.parquet'):
+                        parquet_files.append(Path(root) / file)
+
+            if not parquet_files:
+                self.logger.warning(f"⚠️ No parquet files found in {processed_data_path}")
+                return None
+
+            # Load and concatenate all parquet files
+            dfs = []
+            for file_path in parquet_files:
+                try:
+                    df = standardized_parquet_handler.read_parquet_standardized(file_path)
+                    if df is not None and not df.empty:
+                        dfs.append(df)
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Failed to load {file_path}: {e}")
+                    continue
+
+            if not dfs:
+                self.logger.warning(f"⚠️ No valid data loaded from {processed_data_path}")
+                return None
+
+            # Concatenate all dataframes
+            combined_data = pd.concat(dfs, ignore_index=True)
+
+            if combined_data.empty:
+                self.logger.warning(f"⚠️ Combined data is empty for {processed_data_path}")
+                return None
+
+            # Prepare features for regime clustering
+            # Select relevant columns for clustering (volume, volatility, momentum, trend indicators)
+            feature_columns = []
+            for col in combined_data.columns:
+                if any(keyword in col.lower() for keyword in ['volume', 'volatility', 'momentum', 'trend', 'price', 'return', 'rsi', 'sma', 'ema', 'bbands']):
+                    feature_columns.append(col)
+
+            # If no specific feature columns found, use basic price/volume data
+            if not feature_columns:
+                feature_columns = ['open', 'high', 'low', 'close', 'volume']
+                # Remove columns that don't exist
+                feature_columns = [col for col in feature_columns if col in combined_data.columns]
+
+            if not feature_columns:
+                self.logger.warning(f"⚠️ No suitable feature columns found in processed data")
+                return None
+
+            # Extract features for clustering
+            features_data = combined_data[feature_columns].copy()
+
+            # Handle missing values
+            features_data = features_data.fillna(method='ffill', axis=0).fillna(method='bfill', axis=0).fillna(0)
+
+            # Add timestamp if available for temporal ordering
+            if 'timestamp' in combined_data.columns:
+                features_data['timestamp'] = combined_data['timestamp']
+                features_data = features_data.sort_values('timestamp').reset_index(drop=True)
+
+            self.logger.info(f"✅ Loaded {len(features_data)} samples with {len(feature_columns)} features from {processed_data_path}")
+            return features_data
+
+        except Exception as e:
+            self.logger.warning(f"Error loading processed data: {e}")
+            return None
 
     def _validate_clustering_results(self, clustering_result: ClusteringResult) -> bool:
         """Validate clustering results.

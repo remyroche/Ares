@@ -18,6 +18,11 @@ from src.utils.math_validation import validate_finite, validate_positive, valida
 from src.utils.common_utilities import safe_convert_dtypes, calculate_data_quality_metrics
 from .constants import ValidationThresholds, TemporalConsistencySettings, LoggingConstants
 
+# New enhanced components
+from .timeframe_config import get_timeframe_config, validate_timeframe_consistency, get_primary_timeframe
+from .temporal_validation import get_temporal_config, get_temporal_validator, get_temporal_cv
+from .temporal_cross_validation import get_temporal_cv_config, get_validation_pipeline
+
 # Module logger (not heavily used; we keep tprint for output consistency)
 logger = system_logger.getChild('HMMTrainingValidation')
 

@@ -37,6 +37,18 @@ class BaseTrainingConfig:
     enable_overfitting_prevention: bool = True
     overfitting_threshold: float = 0.1
     
+    # Universal validation settings
+    enable_validation: bool = True
+    enable_overfitting_detection: bool = True
+    enable_temporal_validation: bool = True
+    enable_timeframe_validation: bool = True
+    validation_failure_threshold: float = 0.5
+    fail_on_validation_error: bool = False
+    warn_on_validation_issues: bool = True
+    save_validation_reports: bool = True
+    validation_report_directory: str = "reports/validation"
+    enable_validation_logging: bool = True
+    
     # Training configuration
     validation_split: float = 0.2
     test_split: float = 0.1

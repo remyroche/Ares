@@ -40,6 +40,7 @@ class ModelResult:
     probabilities: Optional[Any] = None
     hyperparameters: Optional[Dict[str, Any]] = None
     training_history: Optional[Dict[str, List[float]]] = None
+    overfitting_analysis: Optional[Dict[str, Any]] = None
 
 
 class TrainingErrorHandler:

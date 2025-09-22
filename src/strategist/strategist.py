@@ -14,7 +14,7 @@ from ..core.decorators import handles_errors
 from src.utils.model_manager import ModelManager
 # Performance monitoring
 from src.utils.performance_utils import PerformanceMonitor, global_monitor
-from src.utils.caching import intelligent_caching
+from src.utils.unified_cache import cached
 # Live trading validation
 from src.utils.trading_decorators import validate_trading_inputs
 import numpy as np
@@ -185,7 +185,7 @@ class Strategist:
         context="strategy generation",
     )
     @create_strategy_validator(min_confidence = 0.0, max_confidence = 1.0)
-    @intelligent_caching(ttl=120, key_func=lambda self, market_data, current_price, analysis_results: f"strategy_{current_price}_{hash(str(market_data.tail(10).values.tolist()))}")
+    @cached(ttl=120, key_func=lambda self, market_data, current_price, analysis_results: f"strategy_{current_price}_{hash(str(market_data.tail(10).values.tolist()))}")
     @global_monitor.track_function
     async def generate_strategy(
         self,

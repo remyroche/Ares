@@ -41,7 +41,7 @@ from src.utils.warning_symbols import initialization_error
 # Live trading utilities
 from src.utils.model_manager import ModelManager
 from src.utils.performance_utils import PerformanceMonitor, global_monitor
-from src.utils.caching import intelligent_caching
+from src.utils.unified_cache import cached
 # Live trading validation
 from src.utils.trading_decorators import validate_trading_inputs
 
@@ -1302,7 +1302,7 @@ class Analyst:
         default_return=None,
         context="SR analysis",
     )
-    @intelligent_caching(ttl=60, key_func=lambda self, features_df: f"regime_analysis_{hash(str(features_df.values.tolist()))}")
+    @cached(ttl=60, key_func=lambda self, features_df: f"regime_analysis_{hash(str(features_df.values.tolist()))}")
     @global_monitor.track_function
     async def analyze_regime(self, features_df: pd.DataFrame) -> dict[str, Any]:
         """
@@ -1411,7 +1411,7 @@ class Analyst:
             tprint(f"❌ {error_msg}")
             return False
 
-    @intelligent_caching(ttl=60, key_func=lambda self, data, model_name: f"prediction_{model_name}_{hash(str(data.tail(5).values.tolist()))}")
+    @cached(ttl=60, key_func=lambda self, data, model_name: f"prediction_{model_name}_{hash(str(data.tail(5).values.tolist()))}")
     @handle_errors_with_tracking(
         context="live trading prediction",
         log_level="INFO",

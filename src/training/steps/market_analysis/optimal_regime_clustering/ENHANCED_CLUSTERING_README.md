@@ -1,6 +1,6 @@
 # Enhanced HMM Clustering with 4D Frontier Optimization
 
-This document describes the enhanced clustering system that implements significant improvements to the original 4D mapping-based clustering process while respecting the 3-8% per cluster constraint.
+This document describes the enhanced clustering system that has been integrated into the existing `optimized_clustering.py` module, implementing significant improvements to the 4D mapping-based clustering process while respecting the 3-8% per cluster constraint.
 
 ## 🎯 Key Improvements
 
@@ -80,10 +80,11 @@ config.min_davies_bouldin_score = 1.3
 ### Basic Enhanced Clustering
 
 ```python
-from .enhanced_optimized_clustering import run_enhanced_clustering_pipeline
+from .optimized_clustering import cluster_regimes_enhanced
+from .config import ENHANCED_CONFIG
 
 # Run enhanced clustering pipeline
-result = run_enhanced_clustering_pipeline("path/to/regime_data.parquet")
+result = cluster_regimes_enhanced("path/to/regime_data.parquet", ENHANCED_CONFIG)
 
 # Access results
 print(f"Clusters: {result.statistics.n_clusters}")
@@ -91,20 +92,35 @@ print(f"Silhouette: {result.quality_metrics.get('silhouette', 0.0)".3f"}")
 print(f"Enhanced Quality: {result.quality_metrics.get('enhanced_quality_score', 0.0)".3f"}")
 ```
 
-### Custom Configuration
+### Using Enhanced Configuration
 
 ```python
-from .config import OptimalClusteringConfig
-from .enhanced_optimized_clustering import EnhancedMatrixOptimizedClusterer
+from .config import OptimalClusteringConfig, ENHANCED_CONFIG
+from .optimized_clustering import cluster_regimes_enhanced
 
-# Create custom configuration
-config = OptimalClusteringConfig.create_high_quality()
-config.min_cluster_size_pct = 0.03
-config.max_cluster_size_pct = 0.08
+# Use the pre-configured enhanced clustering
+result = cluster_regimes_enhanced("path/to/regime_data.parquet", ENHANCED_CONFIG)
 
-# Create clusterer and run
-clusterer = EnhancedMatrixOptimizedClusterer(config)
-result = clusterer.cluster_with_enhanced_optimization(features, metadata)
+# Or create custom enhanced configuration
+config = OptimalClusteringConfig.create_enhanced_clustering()
+config.enhanced_min_silhouette_score = 0.4  # Adjust quality threshold
+result = cluster_regimes_enhanced("path/to/regime_data.parquet", config)
+```
+
+### Accessing Enhanced Results
+
+```python
+# Access frontier information
+frontiers = result.metadata.get('frontiers', {})
+total_frontiers = sum(len(f_list) for f_list in frontiers.values())
+
+# Access transfer history
+transfer_history = result.metadata.get('transfer_history', [])
+total_transfers = len(transfer_history)
+
+# Check if enhanced optimization was applied
+enhanced_applied = result.metadata.get('frontier_optimization_applied', False)
+iterations = result.metadata.get('optimization_iterations', 0)
 ```
 
 ### Analyzing Results

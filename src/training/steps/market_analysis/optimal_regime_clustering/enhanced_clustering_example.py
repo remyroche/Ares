@@ -9,17 +9,14 @@ import pandas as pd
 from typing import Dict, Any
 import logging
 
-# Import the enhanced clustering system
-from .enhanced_optimized_clustering import (
-    EnhancedMatrixOptimizedClusterer,
-    create_enhanced_clustering_config,
-    run_enhanced_clustering_pipeline,
-    EnhancedClusteringResult,
-    FrontierType,
-    FrontierBoundary,
-    RegimeTransferCandidate
+# Import the enhanced clustering system from the main optimized_clustering module
+from .optimized_clustering import (
+    MatrixOptimizedClusterer,
+    cluster_regimes_enhanced,
+    cluster_regimes_optimized,
+    create_matrix_optimized_clusterer
 )
-from .config import OptimalClusteringConfig
+from .config import OptimalClusteringConfig, ENHANCED_CONFIG
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -63,11 +60,11 @@ def demonstrate_enhanced_clustering():
 
     # Step 2: Create enhanced configuration
     logger.info("⚙️ Creating enhanced clustering configuration...")
-    config = create_enhanced_clustering_config()
+    config = ENHANCED_CONFIG
 
-    # Step 3: Run enhanced clustering pipeline
-    logger.info("🔬 Running enhanced clustering pipeline...")
-    result = run_enhanced_clustering_pipeline(regime_data, config)
+    # Step 3: Run enhanced clustering
+    logger.info("🔬 Running enhanced clustering...")
+    result = cluster_regimes_enhanced(regime_data, config)
 
     # Step 4: Analyze results
     if result.success:
@@ -103,10 +100,11 @@ def demonstrate_enhanced_clustering():
 
         # Analyze frontiers
         print(f"\n🗺️ 4D Frontiers Established:")
-        total_frontiers = sum(len(frontier_list) for frontier_list in result.frontiers.values())
+        frontiers = result.metadata.get('frontiers', {})
+        total_frontiers = sum(len(frontier_list) for frontier_list in frontiers.values())
         print(f"  • Total frontiers: {total_frontiers}")
 
-        for frontier_type, frontier_list in result.frontiers.items():
+        for frontier_type, frontier_list in frontiers.items():
             print(f"  • {frontier_type}: {len(frontier_list)} frontiers")
 
         # Analyze cluster sizes
@@ -125,10 +123,11 @@ def demonstrate_enhanced_clustering():
 
         # Analyze transfer history
         print(f"\n🔄 Regime Transfer History:")
-        print(f"  • Total transfers: {len(result.transfer_history)}")
+        transfer_history = result.metadata.get('transfer_history', [])
+        print(f"  • Total transfers: {len(transfer_history)}")
 
-        if result.transfer_history:
-            benefits = [transfer['benefit'] for transfer in result.transfer_history]
+        if transfer_history:
+            benefits = [transfer['benefit'] for transfer in transfer_history]
             print(f"  • Mean transfer benefit: {np.mean(benefits)".3f"}")
             print(f"  • Max transfer benefit: {np.max(benefits)".3f"}")
 
@@ -170,15 +169,16 @@ def demonstrate_custom_configuration():
     print(f"  • Quality thresholds - Silhouette: {config.min_silhouette_score}, CH: {config.min_calinski_harabasz_score}, DB: {config.min_davies_bouldin_score}")
     print(f"  • Enhanced features enabled: {config.weighted_4d_mapping and config.cv_based_similarity}")
 
-def analyze_frontier_characteristics(result: EnhancedClusteringResult):
+def analyze_frontier_characteristics(result):
     """Analyze the characteristics of established frontiers.
 
     Args:
-        result: Enhanced clustering result with frontiers
+        result: Clustering result with frontiers in metadata
     """
     logger.info("🗺️ Analyzing frontier characteristics...")
 
-    if not result.frontiers:
+    frontiers = result.metadata.get('frontiers', {})
+    if not frontiers:
         logger.warning("No frontiers found in results")
         return
 
@@ -187,7 +187,7 @@ def analyze_frontier_characteristics(result: EnhancedClusteringResult):
     print("="*60)
 
     # Analyze frontiers by type
-    for frontier_type, frontier_list in result.frontiers.items():
+    for frontier_type, frontier_list in frontiers.items():
         if not frontier_list:
             continue
 
@@ -195,9 +195,9 @@ def analyze_frontier_characteristics(result: EnhancedClusteringResult):
         print(f"  • Number of frontiers: {len(frontier_list)}")
 
         # Calculate statistics for this frontier type
-        similarities = [f.similarity_score for f in frontier_list]
-        cv_ratios = [f.cv_ratio for f in frontier_list]
-        size_ratios = [f.size_ratio for f in frontier_list]
+        similarities = [f['similarity_score'] for f in frontier_list]
+        cv_ratios = [f['cv_ratio'] for f in frontier_list]
+        size_ratios = [f['size_ratio'] for f in frontier_list]
 
         print(f"  • Mean similarity: {np.mean(similarities)".3f"} ± {np.std(similarities)".3f"}")
         print(f"  • Mean CV ratio: {np.mean(cv_ratios)".3f"} ± {np.std(cv_ratios)".3f"}")
@@ -205,15 +205,15 @@ def analyze_frontier_characteristics(result: EnhancedClusteringResult):
 
         # Count high-quality frontiers
         high_quality_count = sum(1 for f in frontier_list
-                               if f.similarity_score > 0.7 and f.cv_ratio < 1.5 and f.size_ratio < 2.0)
+                               if f['similarity_score'] > 0.7 and f['cv_ratio'] < 1.5 and f['size_ratio'] < 2.0)
         print(f"  • High-quality frontiers: {high_quality_count}/{len(frontier_list)} ({high_quality_count/len(frontier_list)*100".1f"}%)")
 
     # Overall frontier statistics
-    all_frontiers = [f for frontier_list in result.frontiers.values() for f in frontier_list]
+    all_frontiers = [f for frontier_list in frontiers.values() for f in frontier_list]
     if all_frontiers:
-        all_similarities = [f.similarity_score for f in all_frontiers]
-        all_cv_ratios = [f.cv_ratio for f in all_frontiers]
-        all_size_ratios = [f.size_ratio for f in all_frontiers]
+        all_similarities = [f['similarity_score'] for f in all_frontiers]
+        all_cv_ratios = [f['cv_ratio'] for f in all_frontiers]
+        all_size_ratios = [f['size_ratio'] for f in all_frontiers]
 
         print("
 📊 Overall Frontier Statistics:"        print(f"  • Total frontiers: {len(all_frontiers)}")
@@ -237,10 +237,13 @@ def compare_with_standard_clustering():
     standard_config.min_silhouette_score = 0.3  # Lower threshold
     standard_config.min_davies_bouldin_score = 1.5  # Higher threshold (worse)
 
-    # Simulate standard clustering (using enhanced as baseline)
-    enhanced_config = create_enhanced_clustering_config()
-    standard_result = run_enhanced_clustering_pipeline(regime_data, standard_config)
-    enhanced_result = run_enhanced_clustering_pipeline(regime_data, enhanced_config)
+    # Use standard clustering
+    standard_result = cluster_regimes_optimized(regime_data, standard_config)
+
+    # Enhanced clustering
+    logger.info("🚀 Running enhanced clustering...")
+    enhanced_config = ENHANCED_CONFIG
+    enhanced_result = cluster_regimes_enhanced(regime_data, enhanced_config)
 
     print(f"\n" + "="*60)
     print("CLUSTERING COMPARISON")

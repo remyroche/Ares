@@ -51,7 +51,7 @@ from src.utils.common_utilities import CommonUtilities
 
 # Import ML Common utilities
 from ..validation.cv_utils import TemporalCrossValidator, PurgedKFold
-from ..validation.validation_utils import ValidationFramework
+from src.utils.validation.unified_framework import UnifiedValidationFramework
 from ..optimization.pareto import ParetoFrontAnalyzer
 from ..ensembles.ensemble_manager import EnsembleManager
 

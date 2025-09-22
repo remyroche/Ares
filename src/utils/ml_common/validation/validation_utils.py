@@ -48,7 +48,6 @@ logger = logging.getLogger(__name__)
 # Export list for the module
 __all__ = [
     'ValidationError',
-    'ValidationFramework', 
     'ConfigurationValidator',
     'DataValidator',
     'ResourceValidator',
@@ -70,19 +69,7 @@ class ValidationError(Exception):
     """Custom exception for validation failures."""
 
 
-class ValidationFramework:
-    """Simple validation framework placeholder."""
-
-    def __init__(self):
-        self.logger = logger
-
-    def validate_config(self, config):
-        """Basic config validation."""
-        return True
-
-    def validate_data(self, data):
-        """Basic data validation."""
-        return True
+## Removed legacy ValidationFramework in favor of unified framework
 
 
 class ConfigurationValidator:

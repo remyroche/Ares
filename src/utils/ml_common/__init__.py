@@ -76,7 +76,7 @@ try:
     
     # Validation
     from .validation import (
-        ValidationFramework, ConfigurationValidator,
+        ConfigurationValidator,
         CrossValidationUtilities, PurgedKFold, TemporalCrossValidator,
         StabilityAnalyzer
     )
@@ -162,7 +162,7 @@ try:
         'SRFeatureIntegrator',
         
         # Validation
-        'ValidationFramework', 'ConfigurationValidator',
+        'ConfigurationValidator',
         'TemporalCrossValidator', 'PurgedKFold', 'CrossValidationUtilities', 'PurgedSplitConfig',
         'StabilityAnalyzer', 'feature_selection_stability', 'aggregate_time_blocks',
         'optimize_threshold', 'calibrate_probabilities',

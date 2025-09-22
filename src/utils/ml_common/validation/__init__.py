@@ -11,7 +11,7 @@ This module contains all validation functionality including:
 - Comprehensive ML validation
 """
 
-from .validation_utils import ValidationFramework, ConfigurationValidator
+from .validation_utils import ConfigurationValidator
 from .cv_utils import TemporalCrossValidator, PurgedKFold, CrossValidationUtilities
 from .cv import PurgedSplitConfig
 from .stability import feature_selection_stability, aggregate_time_blocks, StabilityAnalyzer
@@ -56,7 +56,7 @@ except Exception:
 
 __all__ = [
     # Original Validation Utils
-    'ValidationFramework', 'ConfigurationValidator',
+    'ConfigurationValidator',
 
     # Original Cross-validation
     'TemporalCrossValidator', 'PurgedKFold', 'CrossValidationUtilities', 'PurgedSplitConfig',

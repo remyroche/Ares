@@ -23,7 +23,7 @@ from .performance_monitor import (
     performance_monitor,
 )
 
-from .validation_framework import (
+from src.utils.validation.unified_framework import (
     ComprehensiveValidationFramework,
     comprehensive_validation,
 )

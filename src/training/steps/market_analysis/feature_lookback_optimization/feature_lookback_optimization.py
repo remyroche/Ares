@@ -118,7 +118,7 @@ except ImportError as e:
 
 from ...market_analysis.components.base_component import BaseMarketAnalysisComponent, ComponentConfig, ComponentResult
 from .optimization_reporter import OptimizationReporter
-from .validation_framework import ValidationFramework, ValidationLevel, ValidationStatus
+from src.utils.validation.unified_framework import FeatureLookbackValidationFramework, ValidationLevel, ValidationStatus
 from .monitoring_metrics import MonitoringMetrics, MetricType, MetricLevel
 from .optimization_strategy import OptimizationStrategyFactory, OptimizationMethod
 from src.utils.logger import system_logger
@@ -410,7 +410,7 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
         )
         
         # Initialize validation framework
-        self.validation_framework = ValidationFramework()
+        self.validation_framework = FeatureLookbackValidationFramework()
         
         # Initialize monitoring metrics
         self.monitoring = MonitoringMetrics(f"FeatureLookbackOptimization_{self.config.symbol}")

@@ -322,6 +322,9 @@ class HMMModelsTrainingComponentWrapper(BaseMarketAnalysisComponent):
                   )
                   raise ValueError(error_msg)
             
+            # Use HMM state recognition as the training objective
+            y = cluster_assignments
+
             # Execute training with comprehensive features
             results = self.training_instance.execute(X, y, cluster_assignments, feature_names, market_data=market_data)
             
@@ -549,6 +552,9 @@ class HMMEnsembleTrainingComponentWrapper(BaseMarketAnalysisComponent):
             # Ensure all data is in proper numpy format before training
             cluster_assignments = self._convert_to_numpy_array(cluster_assignments)
             
+            # Use HMM state recognition as the training objective
+            y = cluster_assignments
+
             # Execute training
             results = self.training_instance.execute(
                 X, y, cluster_assignments, feature_names, hmm_states, 

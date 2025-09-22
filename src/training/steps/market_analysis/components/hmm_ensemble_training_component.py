@@ -87,8 +87,8 @@ class HMMEnsembleTrainingComponent(BaseMarketAnalysisComponent):
 
             tprint(f"📊 Data extracted from dataframe: X={X.shape}, y={y.shape}, features={feature_columns}")
 
-            # Extract regime labels for ensemble training - use same as target for now
-            regime_labels = y.copy()
+            # Extract regime labels for ensemble training - will be set to HMM state assignments
+            regime_labels = None
 
             # Extract base HMM models from previous pipeline results
             base_hmm_models = {}
@@ -133,19 +133,23 @@ class HMMEnsembleTrainingComponent(BaseMarketAnalysisComponent):
                 tprint(f"❌ Error loading cluster assignments from HMM training input file: {e}")
                 raise ValueError(f"Failed to load cluster assignments: {e}")
 
-            # Validate cluster_assignments length matches X and y
+            # Validate cluster_assignments length matches X
             if cluster_assignments is not None:
                 if len(cluster_assignments) != X.shape[0]:
                     tprint(f"❌ CRITICAL: Data shape mismatch - FAILING FAST")
-                    tprint(f"    X={X.shape}, y={y.shape}, cluster_assignments={cluster_assignments.shape}")
-                    raise ValueError(f"Data shape mismatch: X={X.shape}, y={y.shape}, cluster_assignments={cluster_assignments.shape}")
+                    tprint(f"    X={X.shape}, cluster_assignments={cluster_assignments.shape}")
+                    raise ValueError(f"Data shape mismatch: X={X.shape}, cluster_assignments={cluster_assignments.shape}")
                 else:
                     tprint(f"✅ Cluster assignments loaded: {len(cluster_assignments)} samples")
             else:
                 tprint(f"❌ CRITICAL: No cluster assignments available - FAILING FAST")
                 raise ValueError("No cluster assignments available from HMM training input file")
 
-            tprint(f"📊 Final data shapes: X={X.shape}, y={y.shape}, cluster_assignments={len(cluster_assignments)}")
+            # For HMM state recognition, set both target y and regime_labels to the HMM state assignments
+            y = cluster_assignments
+            regime_labels = cluster_assignments
+
+            tprint(f"📊 Final data shapes: X={X.shape}, y={y.shape}, regime_labels={len(regime_labels)}")
 
             # Execute HMM ensemble training with aligned data
             tprint(f"🔄 Training HMM ensemble with {len(feature_columns)} features and {len(dataframe)} samples")
@@ -154,7 +158,7 @@ class HMMEnsembleTrainingComponent(BaseMarketAnalysisComponent):
             training_result = execute_hmm_ensemble_training(
                 X=X,
                 y=y,
-                regime_labels=cluster_assignments,  # Use cluster_assignments instead of regime_labels
+                regime_labels=regime_labels,
                 feature_names=feature_columns,
                 base_hmm_models=base_hmm_models,
                 hmm_training_metrics=hmm_training_metrics,

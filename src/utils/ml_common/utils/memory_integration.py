@@ -464,43 +464,9 @@ def integrate_memory_skimming_with_lookahead():
         return False
 
 def integrate_memory_skimming_with_model_evaluation():
-    """Integrate memory skimming with model evaluation utilities."""
-    try:
-        from .model_evaluation import ModelEvaluationUtilities
-        logger.info("✅ Successfully imported model evaluation utilities")
-    except ImportError as e:
-        logger.warning(f"⚠️ Could not integrate with model evaluation utilities: {e}")
-        return False
-
-    try:
-        # Add memory skimming to key methods
-        if hasattr(ModelEvaluationUtilities, 'multi_metric_evaluation'):
-            original_multi_metric = ModelEvaluationUtilities.multi_metric_evaluation
-
-            def enhanced_multi_metric_evaluation(self, *args, **kwargs):
-                try:
-                    manager = get_ml_memory_manager()
-                    estimated_memory_mb = manager.estimate_ml_memory_requirements(
-                        'model_inference', **kwargs
-                    )
-                    auto_skim_memory(estimated_memory_mb, 'model_inference')
-                    return original_multi_metric(self, *args, **kwargs)
-                except Exception as e:
-                    logger.warning(f"⚠️ Memory skimming failed for multi-metric evaluation: {e}")
-                    # Fallback to original method
-                    return original_multi_metric(self, *args, **kwargs)
-
-            # Replace method
-            ModelEvaluationUtilities.multi_metric_evaluation = enhanced_multi_metric_evaluation
-            logger.info("✅ Memory skimming integrated with model evaluation utilities")
-            return True
-        else:
-            logger.warning("⚠️ ModelEvaluationUtilities.multi_metric_evaluation method not found")
-            return False
-
-    except Exception as e:
-        logger.error(f"❌ Model evaluation memory integration failed: {e}")
-        return False
+    """Deprecated: ModelEvaluationUtilities removed; no integration needed."""
+    logger.info("ℹ️ Skipping model evaluation memory integration (deprecated)")
+    return True
 
 def integrate_memory_skimming_with_feature_selection():
     """Integrate memory skimming with feature selection utilities."""

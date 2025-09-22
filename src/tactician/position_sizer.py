@@ -24,7 +24,7 @@ from utils.warning_symbols import missing
 # Enhanced error handling and performance monitoring
 from src.utils.enhanced_error_handler import handle_errors_with_tracking
 from src.utils.performance_utils import PerformanceMonitor, global_monitor
-from src.utils.caching import intelligent_caching
+from src.utils.unified_cache import cached
 # Live trading utilities
 from src.utils.model_manager import ModelManager
 # Live trading validation
@@ -165,7 +165,7 @@ class PositionSizer:
 
     @validate_data_quality(required_columns = None, min_rows = 1, max_null_ratio = 0.0, check_duplicates = False, check_timestamps = False, context='position sizing calculation input validation')
     @core_handles_errors(fallback = None)
-    @intelligent_caching(ttl=300, key_func=lambda self, ml_predictions, current_price, account_balance, analyst_confidence, tactician_confidence, market_health_analysis, strategist_risk_parameters: f"position_size_{ml_predictions.get('combined_confidence', 0.5)}_{current_price}_{account_balance}")
+    @cached(ttl=300, key_func=lambda self, ml_predictions, current_price, account_balance, analyst_confidence, tactician_confidence, market_health_analysis, strategist_risk_parameters: f"position_size_{ml_predictions.get('combined_confidence', 0.5)}_{current_price}_{account_balance}")
     @global_monitor.track_function
     async def calculate_position_size(self, ml_predictions: dict[str, Any], current_price: float = 0.0, account_balance: float = 1000.0, analyst_confidence: float = 0.5, tactician_confidence: float = 0.5, market_health_analysis: dict[str, Any] | None = None, strategist_risk_parameters: dict[str, Any] | None = None) -> dict[str, Any] | None:
         """

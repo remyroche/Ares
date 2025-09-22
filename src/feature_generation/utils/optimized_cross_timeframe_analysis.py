@@ -71,7 +71,7 @@ except ImportError:
 try:
     from src.utils.ml_common import (
         DataQualityUtilities, FeatureSelectionFramework, 
-        ModelEvaluationUtilities, CrossValidationUtilities
+        CrossValidationUtilities
     )
     ML_COMMONS_AVAILABLE = True
 except ImportError:

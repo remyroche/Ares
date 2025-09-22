@@ -326,7 +326,8 @@ class OptimalRegimeClusterer:
                     # Temporal components
                     mi = self._mutual_transition_strength(T, i, j)
                     tg = self._temporal_coherence_gain(T, i, j)
-                    merge_score = 0.70 * feature_score + 0.15 * mi + 0.15 * tg
+                    # Weights: 80% feature similarity, 10% mutual transition, 10% temporal coherence gain
+                    merge_score = 0.80 * feature_score + 0.10 * mi + 0.10 * tg
                     candidates.append((merge_score, i, j, size_ok))
             if not candidates:
                 break
@@ -340,9 +341,7 @@ class OptimalRegimeClusterer:
                 sil_before = silhouette_score(X, labels) if len(np.unique(labels)) > 1 else -1.0
                 sil_after = silhouette_score(X, new_labels) if len(np.unique(new_labels)) > 1 else -1.0
                 degrade = sil_after - sil_before
-                # Temporal guardrail: require non-negative temporal gain for chosen pair
-                tg = self._temporal_coherence_gain(T, i, j)
-                if degrade >= -0.01 and tg >= 0.0:
+                if degrade >= -0.01:
                     labels = new_labels
                 else:
                     # Remove this pair and try next best
@@ -970,7 +969,34 @@ class OptimalRegimeClusterer:
         topk = np.argsort(dists, axis=1)[:, :min(3, k)]
         cnts = np.bincount(current, minlength=k)
 
-        # Phase A: raise to lower bound
+        # ---- Temporal coherence helpers (time-aware costs) ----
+        def temporal_penalty_for_assignment(i: int, target: int) -> float:
+            # Penalty for increasing boundaries around position i when assigning to target
+            left = current[i - 1] if i > 0 else target
+            right = current[i + 1] if i < n - 1 else target
+            before = int(current[i] != left) + int(current[i] != right)
+            after = int(target != left) + int(target != right)
+            delta = after - before
+            return float(max(0, delta) / 2.0)  # in [0,1]
+
+        def dwell_alignment_penalty(i: int, target: int) -> float:
+            # Lower penalty if neighbors already belong to target cluster
+            same = 0
+            if i > 0 and current[i - 1] == target:
+                same += 1
+            if i < n - 1 and current[i + 1] == target:
+                same += 1
+            return float(1.0 - same / 2.0)  # 0 if both neighbors same as target, 0.5 if one, 1.0 if none
+
+        def composite_cost(i: int, target: int) -> float:
+            base = float(dists[i, target])
+            denom = float(dists[i, topk[i][0]]) if topk.shape[1] >= 1 else (float(np.max(dists[i])) + 1e-12)
+            base_norm = base / (denom + 1e-12)
+            tpen = temporal_penalty_for_assignment(i, target)
+            dpen = dwell_alignment_penalty(i, target)
+            return 0.80 * base_norm + 0.15 * tpen + 0.05 * dpen
+
+        # Phase A: raise to lower bound (time-aware cost)
         for _ in range(5):
             deficits = [(c, lower - cnts[c]) for c in range(k) if cnts[c] < lower]
             if not deficits:
@@ -984,8 +1010,9 @@ class OptimalRegimeClusterer:
                     donor_ok = candidates
                 if donor_ok.size == 0:
                     continue
-                deltas = dists[donor_ok, c] - dists[donor_ok, current[donor_ok]]
-                order = np.argsort(deltas)
+                # Select by composite time-aware cost
+                comp = np.array([composite_cost(int(idx), int(c)) for idx in donor_ok])
+                order = np.argsort(comp)
                 to_move = donor_ok[order][:need]
                 for idx in to_move:
                     old = current[idx]
@@ -1000,7 +1027,7 @@ class OptimalRegimeClusterer:
             dists, centroids = compute_dists(current)
             topk = np.argsort(dists, axis=1)[:, :min(3, k)]
 
-        # Phase B: reduce above upper
+        # Phase B: reduce above upper (time-aware cost)
         for _ in range(5):
             overs = [(c, cnts[c] - upper) for c in range(k) if cnts[c] > upper]
             if not overs:
@@ -1014,16 +1041,16 @@ class OptimalRegimeClusterer:
                 best_alt = np.full(indices.shape[0], -1, dtype=int)
                 alt_cost = np.full(indices.shape[0], np.inf, dtype=float)
                 for idx_i, i in enumerate(indices):
+                    # evaluate a few nearest alternatives
                     for alt in topk[i]:
                         if alt == c or cnts[alt] >= upper:
                             continue
-                        cost = dists[i, alt]
+                        cost = composite_cost(int(i), int(alt))
                         if cost < alt_cost[idx_i]:
                             alt_cost[idx_i] = cost
                             best_alt[idx_i] = alt
-                stay_cost = dists[indices, c]
-                regret = alt_cost - stay_cost
-                order = np.argsort(regret)
+                # prefer lowest composite cost moves
+                order = np.argsort(alt_cost)
                 moved = 0
                 for idx in order:
                     if moved >= excess:

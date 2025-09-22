@@ -10,7 +10,7 @@ This module contains all model-related functionality including:
 
 from .model_factory import (
     EnhancedModelFactory, ModelType, ModelConfig,
-    create_analyst_models, create_tactician_models, create_model_factory
+    create_model_factory
 )
 from .multi_output_models import (
     MultiOutputConfig, MultiOutputModel, MultiOutputStackingModel, MultiOutputResult,
@@ -23,8 +23,7 @@ from .model_registry import ModelRegistry
 
 __all__ = [
     # Model Factory
-    'EnhancedModelFactory', 'ModelType', 'ModelConfig',
-    'create_analyst_models', 'create_tactician_models', 'create_model_factory',
+    'EnhancedModelFactory', 'ModelType', 'ModelConfig', 'create_model_factory',
     
     # Multi-Output Models
     'MultiOutputConfig', 'MultiOutputModel', 'MultiOutputStackingModel', 'MultiOutputResult',

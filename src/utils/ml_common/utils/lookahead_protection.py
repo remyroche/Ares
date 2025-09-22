@@ -33,8 +33,7 @@ import warnings
 
 from ..math_validation import safe_divide
 from ..common_operations import create_fallback_logger
-from src.utils.common_utilities import safe_dataframe_operation
-from datetime import datetime
+from src.utils.common_operations import safe_dataframe_operation
 
 # Enhanced imports for new functionality
 try:
@@ -84,7 +83,7 @@ class LookaheadBiasError(Exception):
 
     def __str__(self):
         if self.bias_score is not None:
-            return f"{self.error_type} (score: {self.bias_score".3f"}): {super().__str__()} | Context: {self.context}"
+            return f"{self.error_type} (score: {self.bias_score:.3f}): {super().__str__()} | Context: {self.context}"
         return f"{self.error_type}: {super().__str__()} | Context: {self.context}"
 
 try:

@@ -29,7 +29,7 @@ try:
     # Models
     from .models import (
         EnhancedModelFactory, ModelType, ModelConfig,
-        create_analyst_models, create_tactician_models, create_model_factory,
+        create_model_factory,
         MultiOutputConfig, MultiOutputModel, MultiOutputStackingModel, MultiOutputResult,
         prepare_multi_output_targets, create_analyst_outputs, create_tactician_outputs,
         create_multi_output_stacking_model,
@@ -131,8 +131,7 @@ try:
     # Define exports
     __all__ = [
         # Models
-        'EnhancedModelFactory', 'ModelType', 'ModelConfig',
-        'create_analyst_models', 'create_tactician_models', 'create_model_factory',
+        'EnhancedModelFactory', 'ModelType', 'ModelConfig', 'create_model_factory',
         'MultiOutputConfig', 'MultiOutputModel', 'MultiOutputStackingModel', 'MultiOutputResult',
         'prepare_multi_output_targets', 'create_analyst_outputs', 'create_tactician_outputs',
         'create_multi_output_stacking_model',

@@ -74,6 +74,9 @@ class TrainingUtils:
         # Initialize validation integration
         self._initialize_validation_integration()
 
+        # Ensure compatibility with existing methods
+        self._ensure_method_compatibility()
+
         logger.info("✅ TrainingUtils initialized with universal validation integration")
 
     def _initialize_validation_integration(self):
@@ -96,6 +99,43 @@ class TrainingUtils:
         self.validation_integrator = get_validation_integrator(validation_config)
 
         logger.info("✅ Universal validation integration initialized in TrainingUtils")
+
+    def _ensure_method_compatibility(self):
+        """Ensure compatibility between old and new methods."""
+        try:
+            # Check that universal validation integrator is properly initialized
+            if not hasattr(self, 'validation_integrator'):
+                logger.warning("⚠️ Universal validation integrator not initialized")
+                return
+
+            # Check that validation methods are available
+            required_methods = [
+                'validate_trained_model',
+                'validate_hpo_trial'
+            ]
+
+            for method_name in required_methods:
+                if not hasattr(self.validation_integrator, method_name):
+                    logger.warning(f"⚠️ Validation method {method_name} not available")
+                else:
+                    logger.debug(f"✅ Validation method {method_name} available")
+
+            # Check that new training methods are available
+            new_methods = [
+                'train_model_with_validation',
+                'validate_hpo_trial_with_validation'
+            ]
+
+            for method_name in new_methods:
+                if not hasattr(self, method_name):
+                    logger.warning(f"⚠️ Training method {method_name} not available")
+                else:
+                    logger.debug(f"✅ Training method {method_name} available")
+
+            logger.info("✅ Method compatibility check completed")
+
+        except Exception as e:
+            logger.error(f"❌ Method compatibility check failed: {e}")
 
     def train_model_with_validation(
         self,
@@ -694,10 +734,6 @@ class TrainingUtils:
             'model_name': model_name,
             'timestamp': datetime.now().isoformat(),
             'training_successful': False,
-            'data_leakage_analysis': {},
-            'model_complexity_analysis': {},
-            'overfitting_monitoring': {},
-            'enhanced_validation': {},
             'performance_metrics': {},
             'recommendations': [],
             'warnings': []

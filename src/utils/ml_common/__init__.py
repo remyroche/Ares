@@ -124,6 +124,10 @@ try:
         DataDriftDetector, DriftDetectionConfig, DriftReport, DriftResult,
         DriftType, DriftMethod, DriftSeverity, detect_data_drift, get_drifted_features
     )
+    from .monitoring import (
+        ErrorSeverity, ErrorCategory, ErrorContext, ErrorRecord,
+        EnhancedErrorDetector, get_global_error_detector, detect_error
+    )
     
     # Define exports
     __all__ = [
@@ -154,12 +158,12 @@ try:
         'ParetoFront', 'ParetoFrontAnalyzer',
         'RegimeSpecificTPSLOptimizer',
         
-        # Data Processing
-        'DataLabeler', 'LabelingConfig',
-        'DataQualityChecker', 'QualityReport',
-        'RegimeDataProcessor',
-        'MultiTimeframeTrainer',
-        'SRFeatureIntegrator',
+        # Data Processing (exported via getter functions)
+        # 'DataLabeler', 'LabelingConfig',  # Available via getter functions
+        # 'DataQualityChecker', 'QualityReport',  # Not implemented yet
+        # 'RegimeDataProcessor',  # Available via getter functions
+        # 'MultiTimeframeTrainer',  # Not implemented yet
+        # 'SRFeatureIntegrator',  # Not implemented yet
         
         # Validation
         'ValidationFramework', 'ConfigurationValidator',
@@ -186,12 +190,16 @@ try:
         'FeatureImportanceAnalyzer', 'FeatureImportanceConfig', 'FeatureImportanceResult',
         'ImportanceMethod', 'analyze_feature_importance', 'get_important_features',
         
-        # Data Drift Detection
-        'DataDriftDetector', 'DriftDetectionConfig', 'DriftReport', 'DriftResult',
-        'DriftType', 'DriftMethod', 'DriftSeverity', 'detect_data_drift', 'get_drifted_features',
-        
-        # Backward compatibility
-        'tprint'
+    # Data Drift Detection
+    'DataDriftDetector', 'DriftDetectionConfig', 'DriftReport', 'DriftResult',
+    'DriftType', 'DriftMethod', 'DriftSeverity', 'detect_data_drift', 'get_drifted_features',
+
+    # Monitoring
+    'ErrorSeverity', 'ErrorCategory', 'ErrorContext', 'ErrorRecord',
+    'EnhancedErrorDetector', 'get_global_error_detector', 'detect_error',
+
+    # Backward compatibility
+    'tprint'
     ]
     
     tprint("✅ ML Common utilities loaded successfully")

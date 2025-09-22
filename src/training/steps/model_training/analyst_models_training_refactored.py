@@ -336,14 +336,14 @@ try:
     from src.utils.ml_common.optimization.hpo_utils import (
         optimize_hyperparameters, create_search_space, validate_hpo_config
     )
-    from src.utils.ml_common.evaluation.evaluation_utils import (
-        calculate_metrics, evaluate_model_performance, create_evaluation_report
+    from src.utils.ml_common.evaluation import EvaluationUtils
+    from src.utils.ml_common.evaluation.evaluation_utils import create_evaluation_report
+    from src.utils.ml_common.monitoring import (
+        EnhancedErrorDetector
     )
-    from src.utils.ml_common.monitoring.enhanced_error_detector import (
-        ErrorDetector, ErrorHandler, ErrorReporter
-    )
+    from src.utils.ml_common.reporting import EnhancedReportingSystem
     from src.utils.ml_common.reporting.enhanced_reporting_system import (
-        ReportGenerator, ReportManager, create_training_report
+        get_global_reporting_system, create_training_report
     )
     ML_UTILITIES_AVAILABLE = True
 except ImportError as e:

@@ -12,7 +12,9 @@ from .enhanced_reporting_system import (
     ReportData,
     ReportType,
     Alert,
-    AlertLevel
+    AlertLevel,
+    get_global_reporting_system,
+    create_training_report
 )
 
 # Import validation reporting integration
@@ -30,7 +32,9 @@ __all__ = [
     'ReportType',
     'Alert',
     'AlertLevel',
-    
+    'get_global_reporting_system',
+    'create_training_report',
+
     # Validation Reporting Integration
     'ValidationReportingIntegrator',
     'ValidationReportData',

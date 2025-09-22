@@ -9,11 +9,32 @@ from .base_training_config import (
     TacticianTrainingConfig,
     HMMTrainingConfig
 )
+from .enhanced_ml_config import (
+    ErrorDetectionConfig,
+    HPOMonitoringConfig,
+    TestingConfig,
+    ReportingConfig,
+    PipelineConfig,
+    EnhancedMLConfig
+)
+from .universal_timeframe_config import UniversalTimeframeConfig
 
 __all__ = [
+    # Base Training Configs
     'BaseTrainingConfig',
     'PerRegimeTrainingConfig',
     'EnsembleTrainingConfig',
     'TacticianTrainingConfig',
-    'HMMTrainingConfig'
+    'HMMTrainingConfig',
+
+    # Enhanced ML Configs
+    'ErrorDetectionConfig',
+    'HPOMonitoringConfig',
+    'TestingConfig',
+    'ReportingConfig',
+    'PipelineConfig',
+    'EnhancedMLConfig',
+
+    # Universal Configs
+    'UniversalTimeframeConfig'
 ]

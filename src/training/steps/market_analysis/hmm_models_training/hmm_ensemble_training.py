@@ -207,9 +207,6 @@ except ImportError:
 # Using tprint for all logging - no logger needed
 
 # Additional ML imports for global classifier, calibration, and metrics
-from sklearn.ensemble import StackingClassifier, RandomForestClassifier
-from sklearn.linear_model import LogisticRegression
-from sklearn.calibration import CalibratedClassifierCV
 from sklearn.metrics import log_loss
 
 

@@ -95,75 +95,6 @@ class StreamlinedHMMTrainingStep(BaseTrainingStep):
         """
         return self.hmm_hpo.get_hmm_model_types()
 
-    def _apply_temporal_protection_to_regime_data(
-        self,
-        regime_data: Dict[int, Dict[str, np.ndarray]],
-        feature_names: Optional[List[str]] = None
-    ) -> Dict[int, Dict[str, np.ndarray]]:
-        """
-        Apply temporal protection to regime data using ml_commons tools.
-
-        Args:
-            regime_data: Prepared data for each regime
-            feature_names: Names of features
-
-        Returns:
-            Protected regime data with temporal constraints applied
-        """
-        self.logger.info("🛡️ Applying temporal protection to regime data")
-
-        protected_data = {}
-
-        for regime_id, data in regime_data.items():
-            self.logger.info(f"🔒 Applying temporal protection to regime {regime_id}")
-
-            X_regime = data['X']
-            y_regime = data['y']
-
-            # Apply temporal protection if we have sufficient data
-            if len(X_regime) > 50:  # Only apply if enough samples
-                # Create temporary DataFrame for temporal validation
-                temp_df = pd.DataFrame(X_regime, columns=feature_names or [f'feature_{i}' for i in range(X_regime.shape[1])])
-                temp_df['target'] = y_regime
-
-                # Use temporal protection to filter data
-                try:
-                    protected_temp_df = self.hmm_temporal_protection.create_temporal_data_filters(
-                        df=temp_df,
-                        timestamp_col='target'  # We'll use a dummy timestamp column
-                    )
-
-                    # Extract protected data
-                    if 'fresh_features' in protected_temp_df and protected_temp_df['fresh_features'] is not None:
-                        protected_df = protected_temp_df['fresh_features']
-                    elif 'regime_stable' in protected_temp_df and protected_temp_df['regime_stable'] is not None:
-                        protected_df = protected_temp_df['regime_stable']
-                    else:
-                        protected_df = temp_df
-
-                    # Convert back to numpy arrays
-                    protected_X = protected_df.drop('target', axis=1).values
-                    protected_y = protected_df['target'].values
-
-                    protected_data[regime_id] = {
-                        'X': protected_X,
-                        'y': protected_y,
-                        'temporal_protection_applied': True,
-                        'original_samples': len(X_regime),
-                        'protected_samples': len(protected_X)
-                    }
-
-                    self.logger.info(f"✅ Temporal protection applied to regime {regime_id}: "
-                                   f"{len(protected_X)}/{len(X_regime)} samples retained")
-
-                except Exception as e:
-                    self.logger.warning(f"⚠️ Temporal protection failed for regime {regime_id}: {e}")
-                    protected_data[regime_id] = data  # Fall back to original data
-            else:
-                self.logger.info(f"ℹ️ Skipping temporal protection for regime {regime_id} (insufficient data)")
-                protected_data[regime_id] = data
-
-        return protected_data
 
     def _evaluate_models_with_hmm_validation(
         self,
@@ -443,53 +374,6 @@ class StreamlinedHMMTrainingStep(BaseTrainingStep):
             'regime_count': len(regime_data)
         }
 
-    def _get_hmm_state_recognition_search_spaces(self) -> Dict[str, Dict[str, Any]]:
-        """
-        Get HPO search spaces optimized for HMM state recognition.
-
-        Returns:
-            Dictionary of search spaces for each model type
-        """
-        return {
-            # Base models for HMM state recognition
-            'logistic_regression': {
-                'C': {'type': 'float', 'low': 0.001, 'high': 10.0, 'log': True},
-                'penalty': {'type': 'categorical', 'choices': ['l1', 'l2', 'elasticnet']},
-                'solver': {'type': 'categorical', 'choices': ['liblinear', 'saga']},
-                'max_iter': {'type': 'int', 'low': 500, 'high': 2000}
-            },
-            'lightgbm': {
-                'n_estimators': {'type': 'int', 'low': 500, 'high': 2000},
-                'learning_rate': {'type': 'float', 'low': 0.01, 'high': 0.2, 'log': True},
-                'max_depth': {'type': 'int', 'low': 4, 'high': 10},
-                'reg_alpha': {'type': 'float', 'low': 0.0, 'high': 1.0},
-                'reg_lambda': {'type': 'float', 'low': 0.0, 'high': 1.0},
-                'subsample': {'type': 'float', 'low': 0.7, 'high': 1.0}
-            },
-            'random_forest': {
-                'n_estimators': {'type': 'int', 'low': 100, 'high': 1000},
-                'max_depth': {'type': 'int', 'low': 5, 'high': 20},
-                'min_samples_split': {'type': 'int', 'low': 2, 'high': 20},
-                'min_samples_leaf': {'type': 'int', 'low': 1, 'high': 10},
-                'max_features': {'type': 'categorical', 'choices': ['sqrt', 'log2', None]},
-                'bootstrap': {'type': 'categorical', 'choices': [True, False]}
-            },
-            'xgboost': {
-                'n_estimators': {'type': 'int', 'low': 500, 'high': 2000},
-                'learning_rate': {'type': 'float', 'low': 0.01, 'high': 0.2, 'log': True},
-                'max_depth': {'type': 'int', 'low': 4, 'high': 10},
-                'subsample': {'type': 'float', 'low': 0.7, 'high': 1.0},
-                'colsample_bytree': {'type': 'float', 'low': 0.7, 'high': 1.0},
-                'reg_alpha': {'type': 'float', 'low': 0.0, 'high': 1.0},
-                'reg_lambda': {'type': 'float', 'low': 0.0, 'high': 1.0}
-            },
-            'catboost': {
-                'n_estimators': {'type': 'int', 'low': 500, 'high': 2000},
-                'learning_rate': {'type': 'float', 'low': 0.01, 'high': 0.2, 'log': True},
-                'depth': {'type': 'int', 'low': 4, 'high': 10},
-                'l2_leaf_reg': {'type': 'float', 'low': 1.0, 'high': 10.0}
-            }
-        }
 
     def _handle_training_error(self, error: Exception, context: str = "") -> Dict[str, Any]:
         """

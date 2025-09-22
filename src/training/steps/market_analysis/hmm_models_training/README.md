@@ -38,7 +38,7 @@ The HMM training has been **completely migrated** to leverage the common_utils/ 
 - **Enhanced reporting** - comprehensive metrics and recommendations for all models
 - **HMM search spaces** - optimized HPO spaces for state recognition
 - **15m timeframe enforcement** - ensures consistent timeframe usage
-- **Comprehensive feature bank** - 12 feature categories (momentum, volatility, trend, volume, support/resistance, returns, oscillator, candlestick_pattern, hmm_regime, entropy, order_flow, acceleration)
+- **Comprehensive feature bank** - 17 feature categories (momentum, volatility, trend, volume, support/resistance, returns, oscillator, candlestick_pattern, hmm_regime, entropy, order_flow, acceleration, cross_timeframe, autoencoder, interaction, microstructure, time)
 - **Feature bank integration** - Automatic feature generation from comprehensive feature bank
 
 ## Usage
@@ -82,8 +82,9 @@ results = training_step.execute(X, y, regime_labels, feature_names)
 - ✅ **Enhanced reporting** - comprehensive metrics and recommendations for all models
 - ✅ **HMM state focus** - optimized for state recognition, not prediction
 - ✅ **Common_utils pipeline** - leverages robust ML training infrastructure
-- ✅ **Comprehensive feature bank** - 12 feature categories for maximum signal extraction
-- ✅ **Feature bank integration** - Automatic generation of momentum, volatility, trend, volume, and more features
+- ✅ **Comprehensive feature bank** - 17 feature categories for maximum signal extraction
+- ✅ **Feature bank integration** - Automatic generation of all feature types (momentum, volatility, trend, volume, support/resistance, returns, oscillator, candlestick_pattern, hmm_regime, entropy, order_flow, acceleration, legacy)
+- ✅ **Selective feature usage** - HMM training excludes complex categories (cross_timeframe, autoencoder, interaction, microstructure, time) for optimal performance
 
 ## Migration Complete ✅
 
@@ -144,7 +145,7 @@ The HMM models training uses **multi-objective optimization** to balance multipl
 **Primary Objectives:**
 - **Accuracy (40% weight)**: Standard classification accuracy for HMM state recognition
 - **F1-Score (30% weight)**: Harmonic mean of precision and recall, important for imbalanced regime data
-- **Regime Stability (30% weight)**: Custom metric measuring consistency of regime predictions over time
+- **Regime Stability (30% weight)**: Custom metric measuring consistency of regime predictions over time - ensures models don't overfit to noise and provide reliable regime classification
 
 **Why Multi-Objective?**
 - HMM state recognition requires balancing multiple competing goals
@@ -163,6 +164,30 @@ objective_weights=[0.4, 0.3, 0.3]
 - Random search with 100+ trials per model type
 - Automatic selection of best configuration based on weighted objectives
 - Regime-specific optimization when data allows
+
+### How Regime Stability Helps
+
+**Regime Stability** is crucial for HMM state recognition because:
+
+1. **Noise Reduction**: Financial markets are inherently noisy. A model might achieve high accuracy by overfitting to short-term noise rather than learning true regime patterns.
+
+2. **Temporal Consistency**: HMM states should be relatively stable over time. Rapid regime switching indicates the model is not capturing meaningful market states.
+
+3. **Reliability**: For trading applications, you need confidence that regime predictions are reliable, not just accurate on training data.
+
+4. **Generalization**: Models with high regime stability tend to generalize better to unseen market conditions.
+
+**Implementation**: The regime stability metric measures:
+- How often the predicted regime changes over short time windows
+- The consistency of regime predictions within similar market conditions
+- The temporal coherence of regime sequences
+- Penalty for unrealistic regime transition frequencies
+
+**Benefits**: This ensures the trained models provide:
+- More reliable regime classification for live trading
+- Better signal-to-noise ratio in regime predictions
+- Reduced false positives in regime changes
+- More stable model behavior over time
 
 ## Benefits
 
@@ -193,7 +218,7 @@ The streamlined approach automatically configures:
 - **Validation**: Universal validation integration
 - **Enhanced reporting**: Comprehensive metrics and recommendations for all models
 - **Gradient booster comparison**: XGBoost vs CatBoost to select best performer
-- **Comprehensive features**: 12 feature categories from feature bank (momentum, volatility, trend, volume, support/resistance, returns, oscillator, candlestick_pattern, hmm_regime, entropy, order_flow, acceleration)
+- **Comprehensive features**: 13 feature categories from feature bank (momentum, volatility, trend, volume, support/resistance, returns, oscillator, candlestick_pattern, hmm_regime, entropy, order_flow, acceleration, legacy) - excludes complex categories (cross_timeframe, autoencoder, interaction, microstructure, time)
 - **Feature bank integration**: Automatic feature generation for maximum signal extraction
 
 ### Custom Configuration

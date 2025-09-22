@@ -104,7 +104,7 @@ class FeatureBank:
         try:
             from .feature_generator import FeatureCategory
 
-            # List of categories to auto-register (excluding cross_timeframe, wavelet, candlestick, autoencoder, interaction, microstructure, time)
+            # List of categories to auto-register (including all available categories)
             categories_to_register = [
                 FeatureCategory.MOMENTUM,
                 FeatureCategory.VOLATILITY,
@@ -117,7 +117,12 @@ class FeatureBank:
                 FeatureCategory.HMM_REGIME,
                 FeatureCategory.ENTROPY,
                 FeatureCategory.ORDER_FLOW,
-                FeatureCategory.ACCELERATION
+                FeatureCategory.ACCELERATION,
+                FeatureCategory.CROSS_TIMEFRAME,
+                FeatureCategory.AUTOENCODER,
+                FeatureCategory.INTERACTION,
+                FeatureCategory.MICROSTRUCTURE,
+                FeatureCategory.TIME
             ]
 
             registered_count = 0
@@ -163,7 +168,12 @@ class FeatureBank:
                 FeatureCategory.HMM_REGIME: self._create_hmm_regime_generators,
                 FeatureCategory.ENTROPY: self._create_entropy_generators,
                 FeatureCategory.ORDER_FLOW: self._create_order_flow_generators,
-                FeatureCategory.ACCELERATION: self._create_acceleration_generators
+                FeatureCategory.ACCELERATION: self._create_acceleration_generators,
+                FeatureCategory.CROSS_TIMEFRAME: self._create_cross_timeframe_generators,
+                FeatureCategory.AUTOENCODER: self._create_autoencoder_generators,
+                FeatureCategory.INTERACTION: self._create_interaction_generators,
+                FeatureCategory.MICROSTRUCTURE: self._create_microstructure_generators,
+                FeatureCategory.TIME: self._create_time_generators
             }
 
             creator_func = category_creators.get(category)
@@ -458,6 +468,71 @@ class FeatureBank:
 
         except Exception as e:
             self.logger.warning(f"⚠️ Failed to create acceleration generators: {e}")
+
+        return generators
+
+    def _create_cross_timeframe_generators(self) -> List[FeatureGenerator]:
+        """Create cross-timeframe-specific feature generators."""
+        generators = []
+        try:
+            from ..categories.cross_timeframe import create_default_cross_timeframe_generators
+            advanced_generators = create_default_cross_timeframe_generators()
+            generators.extend(advanced_generators)
+
+        except Exception as e:
+            self.logger.warning(f"⚠️ Failed to create cross-timeframe generators: {e}")
+
+        return generators
+
+    def _create_autoencoder_generators(self) -> List[FeatureGenerator]:
+        """Create autoencoder-specific feature generators."""
+        generators = []
+        try:
+            from ..categories.autoencoder import create_default_autoencoder_generators
+            advanced_generators = create_default_autoencoder_generators()
+            generators.extend(advanced_generators)
+
+        except Exception as e:
+            self.logger.warning(f"⚠️ Failed to create autoencoder generators: {e}")
+
+        return generators
+
+    def _create_interaction_generators(self) -> List[FeatureGenerator]:
+        """Create interaction-specific feature generators."""
+        generators = []
+        try:
+            from ..categories.interaction import create_default_interaction_generators
+            advanced_generators = create_default_interaction_generators()
+            generators.extend(advanced_generators)
+
+        except Exception as e:
+            self.logger.warning(f"⚠️ Failed to create interaction generators: {e}")
+
+        return generators
+
+    def _create_microstructure_generators(self) -> List[FeatureGenerator]:
+        """Create microstructure-specific feature generators."""
+        generators = []
+        try:
+            from ..categories.microstructure import create_default_microstructure_generators
+            advanced_generators = create_default_microstructure_generators()
+            generators.extend(advanced_generators)
+
+        except Exception as e:
+            self.logger.warning(f"⚠️ Failed to create microstructure generators: {e}")
+
+        return generators
+
+    def _create_time_generators(self) -> List[FeatureGenerator]:
+        """Create time-specific feature generators."""
+        generators = []
+        try:
+            from ..categories.time import create_default_time_generators
+            advanced_generators = create_default_time_generators()
+            generators.extend(advanced_generators)
+
+        except Exception as e:
+            self.logger.warning(f"⚠️ Failed to create time generators: {e}")
 
         return generators
 

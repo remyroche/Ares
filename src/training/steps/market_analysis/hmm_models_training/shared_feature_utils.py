@@ -38,11 +38,11 @@ class HMMEnhancedFeatureCreator:
             # Get the global feature bank
             feature_bank = get_global_feature_bank()
 
-            # Generate features using all available categories (excluding cross-timeframe and complex categories)
+            # Generate features using all available categories (excluding cross_timeframe, autoencoder, interaction, microstructure, time)
             categories_to_use = [
                 "momentum", "volatility", "trend", "volume", "support_resistance",
                 "returns", "oscillator", "candlestick_pattern", "hmm_regime",
-                "entropy", "order_flow", "acceleration"
+                "entropy", "order_flow", "acceleration", "legacy"
             ]
 
             tprint(f"🎯 Generating comprehensive features using {len(categories_to_use)} categories...")

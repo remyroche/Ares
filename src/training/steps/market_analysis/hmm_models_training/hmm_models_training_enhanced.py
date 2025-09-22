@@ -302,7 +302,7 @@ class StreamlinedHMMTrainingStep(BaseTrainingStep):
         self.logger.info(f"  - Base features: {len(regime_data)} regimes")
         if feature_names:
             self.logger.info(f"  - Enhanced features: {len(feature_names)} total")
-            self.logger.info(f"  - Feature categories: 12 comprehensive categories")
+            self.logger.info(f"  - Feature categories: 13 comprehensive categories (excluding complex categories)")
         self.logger.info(f"  - Feature bank integration: ✅ Active")
 
         # Log enhanced summary

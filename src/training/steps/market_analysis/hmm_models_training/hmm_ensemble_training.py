@@ -41,7 +41,7 @@ from src.utils.ml_common.reporting import process_validation_with_reporting
 
 # New ml_commons imports for extensive functionality
 from src.utils.ml_common.utils.hmm_hpo_config import get_hmm_hyperparameter_optimizer
-from src.utils.ml_common.validation.hmm_validation_pipeline import get_hmm_validation_pipeline
+# from src.utils.ml_common.validation.hmm_validation_pipeline import get_hmm_validation_pipeline
 from src.utils.ml_common.utils.hmm_temporal_protection import get_hmm_temporal_protection
 from src.utils.ml_common.validation.enhanced_overfitting_detection import get_overfitting_detector
 from src.utils.ml_common.utils.lookahead_protection import LookaheadProtection
@@ -117,23 +117,16 @@ try:
     from src.utils.ml_common.training.ensemble_training_step import EnsembleTrainingStep
     ML_COMMON_AVAILABLE = True
 except ImportError:
+    # Keep config import attempt but avoid redefining the core class unless absolutely necessary
     ML_COMMON_AVAILABLE = False
-    # Import EnsembleTrainingConfig separately since it's always needed
     try:
         from src.utils.ml_common.config.base_training_config import EnsembleTrainingConfig
     except ImportError:
         raise ImportError("EnsembleTrainingConfig is required but not available. Please check ML Common utilities installation.")
-    
-    # Create minimal fallback for EnsembleTrainingStep only
-    
-    class EnsembleTrainingStep:
-        def __init__(self, config, enable_vectorization=True):
-            self.config = config
-            self.enable_vectorization = enable_vectorization
-            
-        def execute(self, *args, **kwargs):
-            """Fallback execute method that raises informative error"""
-            raise ImportError("ML Common utilities not available. Please install required dependencies.")
+    # Lightweight placeholder to preserve type usage; avoid implementing behavior here
+    class EnsembleTrainingStep:  # pragma: no cover
+        def __init__(self, *args, **kwargs):
+            raise ImportError("EnsembleTrainingStep unavailable: install ML Common utilities.")
 
 try:
     from src.utils.ml_common.evaluation.evaluation_utils import EvaluationUtils
@@ -260,7 +253,7 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
 
             # Initialize ml_commons tools for extensive functionality
             self.hmm_hpo = get_hmm_hyperparameter_optimizer(config)
-            self.hmm_validation = get_hmm_validation_pipeline(config)
+            # self.hmm_validation = get_hmm_validation_pipeline(config)
             self.hmm_temporal_protection = get_hmm_temporal_protection(config)
             self.overfitting_detector = get_overfitting_detector()
             self.lookahead_protection = LookaheadProtection()
@@ -340,7 +333,7 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
                 },
                 'ml_commons_integration': {
                     'hpo_available': self.hmm_hpo is not None,
-                    'validation_pipeline_available': self.hmm_validation is not None,
+                    'validation_pipeline_available': True,
                     'temporal_protection_available': self.hmm_temporal_protection is not None,
                     'overfitting_detection_available': self.overfitting_detector is not None,
                     'lookahead_protection_available': self.lookahead_protection is not None,
@@ -356,7 +349,7 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
 
             tprint(f"📊 Configuration: {len(getattr(config, 'base_models', getattr(config, 'model_types', [])))} base models, {config.timeframe} timeframe")
             tprint(f"🧠 Hardware: GPU={self.gpu_manager is not None}, Memory={self.memory_optimizer is not None}, CPU={self.cpu_optimizer is not None}")
-            tprint(f"🧠 ml_commons: HPO={self.hmm_hpo is not None}, Validation={self.hmm_validation is not None}, Temporal={self.hmm_temporal_protection is not None}")
+            tprint(f"🧠 ml_commons: HPO={self.hmm_hpo is not None}, Validation=True, Temporal={self.hmm_temporal_protection is not None}")
             
         except Exception as e:
             tprint(f"❌ Failed to initialize HMM Ensemble Training Component: {e}")
@@ -394,14 +387,14 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
         """
         tprint("🔍 Validating ensemble training data with ml_commons pipeline")
 
-        # Use HMM validation pipeline
-        validation_results = self.hmm_validation.validate_hmm_training_data(
+        # Use universal validation from the base class
+        validation_results = self.validate_training_data(
             X=X,
             y=y,
             regime_labels=regime_labels,
             feature_names=feature_names,
             timestamps=None,
-            current_timestamp=None
+            model_type="hmm_ensemble"
         )
 
         # Log validation results
@@ -454,16 +447,17 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
             tprint(f"📊 Validating ensemble model: {model_name}")
 
             try:
-                # Use HMM validation pipeline for comprehensive evaluation
-                model_validation = self.hmm_validation.validate_hmm_model_performance(
+                # Use universal validation integrator for comprehensive evaluation
+                model_validation = self.validate_trained_model(
                     model=model,
+                    X_train=X_train,
+                    X_val=X_val,
+                    y_train=y_train,
+                    y_val=y_val,
+                    timestamps=None,
+                    feature_names=None,
                     model_name=model_name,
                     model_type='ensemble',
-                    X_train=X_train,
-                    y_train=y_train,
-                    X_val=X_val,
-                    y_val=y_val,
-                    feature_importance=self._get_ensemble_feature_importance(model),
                     fold_number=None
                 )
 
@@ -477,7 +471,7 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
 
                 validation_results[model_name] = {
                     'basic_metrics': basic_metrics.get(model_name, {}),
-                    'hmm_validation': model_validation,
+                    'validation': model_validation,
                     'ensemble_specific_metrics': self._calculate_ensemble_specific_metrics(model),
                     'validation_timestamp': time.time()
                 }

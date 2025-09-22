@@ -22,7 +22,7 @@ from src.utils.ml_common.config.universal_timeframe_config import get_primary_ti
 
 # New ml_commons imports for extensive functionality
 from src.utils.ml_common.utils.hmm_hpo_config import get_hmm_hyperparameter_optimizer
-from src.utils.ml_common.validation.hmm_validation_pipeline import get_hmm_validation_pipeline
+# from src.utils.ml_common.validation.hmm_validation_pipeline import get_hmm_validation_pipeline
 from src.utils.ml_common.utils.hmm_temporal_protection import get_hmm_temporal_protection
 from src.utils.ml_common.validation.enhanced_overfitting_detection import get_overfitting_detector
 from src.utils.ml_common.utils.lookahead_protection import LookaheadProtection
@@ -74,7 +74,7 @@ class StreamlinedHMMTrainingStep(BaseTrainingStep):
 
         # Initialize ml_commons utilities for extensive functionality
         self.hmm_hpo = get_hmm_hyperparameter_optimizer(config)
-        self.hmm_validation = get_hmm_validation_pipeline(config)
+        # self.hmm_validation = get_hmm_validation_pipeline(config)
         self.hmm_temporal_protection = get_hmm_temporal_protection(config)
         self.overfitting_detector = get_overfitting_detector()
         self.lookahead_protection = LookaheadProtection()
@@ -96,7 +96,7 @@ class StreamlinedHMMTrainingStep(BaseTrainingStep):
         return self.hmm_hpo.get_hmm_model_types()
 
 
-    def _evaluate_models_with_hmm_validation(
+    def _evaluate_models_with_validation(
         self,
         models: Dict[str, Any],
         X_train: np.ndarray,
@@ -104,7 +104,7 @@ class StreamlinedHMMTrainingStep(BaseTrainingStep):
         regime_name: str
     ) -> Dict[str, Any]:
         """
-        Evaluate models using comprehensive HMM validation pipeline.
+        Evaluate models using the universal validation integrator.
 
         Args:
             models: Dictionary of trained models
@@ -115,7 +115,7 @@ class StreamlinedHMMTrainingStep(BaseTrainingStep):
         Returns:
             Enhanced evaluation results with HMM validation
         """
-        self.logger.info(f"🔍 Evaluating models for {regime_name} using HMM validation pipeline")
+        self.logger.info(f"🔍 Evaluating models for {regime_name} using universal validation integrator")
 
         evaluation_results = {}
 
@@ -128,16 +128,17 @@ class StreamlinedHMMTrainingStep(BaseTrainingStep):
                 X_val = X_train  # For now, use training data as validation
                 y_val = y_train
 
-                # Use HMM validation pipeline for comprehensive evaluation
-                validation_result = self.hmm_validation.validate_hmm_model_performance(
+                # Use universal validation integrator for comprehensive evaluation
+                validation_result = self.validate_trained_model(
                     model=model,
+                    X_train=X_train,
+                    X_val=X_val,
+                    y_train=y_train,
+                    y_val=y_val,
+                    timestamps=None,
+                    feature_names=None,
                     model_name=model_name,
                     model_type=self._get_model_type_from_name(model_name),
-                    X_train=X_train,
-                    y_train=y_train,
-                    X_val=X_val,
-                    y_val=y_val,
-                    feature_importance=self._get_feature_importance(model),
                     fold_number=None
                 )
 
@@ -151,7 +152,7 @@ class StreamlinedHMMTrainingStep(BaseTrainingStep):
 
                 evaluation_results[model_name] = {
                     'basic_metrics': basic_metrics.get(model_name, {}),
-                    'hmm_validation': validation_result,
+                    'validation': validation_result,
                     'regime_context': regime_name,
                     'evaluation_timestamp': time.time()
                 }
@@ -227,14 +228,14 @@ class StreamlinedHMMTrainingStep(BaseTrainingStep):
         """
         self.logger.info("🚀 Starting streamlined HMM training execution")
 
-        # Validate input data using comprehensive HMM validation pipeline
-        validation_results = self.hmm_validation.validate_hmm_training_data(
+        # Validate input data using universal validation integration from BaseTrainingStep
+        validation_results = self.validate_training_data(
             X=X,
             y=y,
             regime_labels=regime_labels,
             feature_names=feature_names,
-            timestamps=None,  # Add timestamps if available
-            current_timestamp=None  # Will use current time if None
+            timestamps=None,
+            model_type="hmm_state_recognition"
         )
 
         if not validation_results['valid']:
@@ -359,8 +360,8 @@ class StreamlinedHMMTrainingStep(BaseTrainingStep):
             X_regime = regime_data[int(regime_name.split('_')[1])]['X']
             y_regime = regime_data[int(regime_name.split('_')[1])]['y']
 
-            # Evaluate models using comprehensive HMM validation pipeline
-            evaluation_results[regime_name] = self._evaluate_models_with_hmm_validation(
+            # Evaluate models using universal validation integration
+            evaluation_results[regime_name] = self._evaluate_models_with_validation(
                 models=models,
                 X_train=X_regime,
                 y_train=y_regime,
@@ -527,7 +528,7 @@ class StreamlinedHMMTrainingStep(BaseTrainingStep):
                     f"Regime {regime_id}: Use {best_info['best_model']} (F1: {best_info['best_f1_score']:.4f})"
                 )
 
-        # Add validation insights from ml_commons tools
+        # Add validation insights from universal validation tools
         if validation_results:
             enhanced_report['validation_insights'] = self._generate_validation_insights(
                 validation_results, evaluation_results
@@ -576,8 +577,8 @@ class StreamlinedHMMTrainingStep(BaseTrainingStep):
         overfitting_detections = []
         for regime_name, regime_evaluations in evaluation_results.items():
             for model_name, evaluation in regime_evaluations.items():
-                hmm_validation = evaluation.get('hmm_validation', {})
-                overfitting_analysis = hmm_validation.get('overfitting_analysis', {})
+                validation = evaluation.get('validation', {})
+                overfitting_analysis = validation.get('overfitting_analysis', {})
 
                 if overfitting_analysis.get('overfitting_detected', False):
                     overfitting_detections.append({

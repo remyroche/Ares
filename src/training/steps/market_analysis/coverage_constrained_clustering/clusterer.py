@@ -81,15 +81,18 @@ class CoverageConstrainedClusterer:
 
 	def _enforce_size_bounds(self, labels: np.ndarray, total: int) -> np.ndarray:
 		min_size, max_size = compute_cluster_size_bounds(total, self.config.min_cluster_fraction, self.config.max_cluster_fraction)
-		# If a cluster exceeds max_size, mark farthest members as noise (-1)
+		# ZERO NOISE: If a cluster exceeds max_size, split it into multiple clusters instead of marking as noise
 		new_labels = labels.copy()
+		next_cluster_id = max(np.unique(labels)) + 1
+		
 		for k in np.unique(labels):
 			idx = np.where(new_labels == k)[0]
 			if idx.size > max_size:
-				# Drop excess points arbitrarily here (in feature space unaware). Caller should call with sorted by distance if possible.
-				# We leave distance-aware trimming to _trim_outliers_per_cluster before this step.
-				drop_count = idx.size - max_size
-				new_labels[idx[:drop_count]] = -1
+				# Split oversized cluster into multiple clusters
+				excess_count = idx.size - max_size
+				# Create new cluster for excess points
+				new_labels[idx[:excess_count]] = next_cluster_id
+				next_cluster_id += 1
 		return new_labels
 
 	def cluster(self, hmm_artifact: Dict[str, Any]) -> ClusteringOutputs:

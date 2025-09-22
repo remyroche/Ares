@@ -10,14 +10,14 @@ class CoverageClusteringConfig:
 	target_num_clusters: int = 20
 	min_num_clusters: int = 15
 	max_num_clusters: int = 26
-	target_coverage: float = 0.92  # 92% mid of 90–95%
-	min_coverage: float = 0.90
-	max_coverage: float = 0.95
+	target_coverage: float = 1.0   # 100% coverage - zero noise
+	min_coverage: float = 1.0      # 100% coverage - zero noise  
+	max_coverage: float = 1.0      # 100% coverage - zero noise
 
 	# Size constraints as fraction of total
 	min_cluster_fraction: float = 0.03
 	max_cluster_fraction: float = 0.08
-	max_noise_fraction: float = 0.05
+	max_noise_fraction: float = 0.0   # Zero noise - all samples must be clustered
 
 	# Clustering knobs
 	max_init_trials: int = 8

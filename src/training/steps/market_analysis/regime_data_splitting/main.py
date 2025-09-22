@@ -323,7 +323,7 @@ except ImportError as e:
 
 # Vectorized Processing Core and Enhanced Matrix Operations
 try:
-    from src.utils.vectorized_processing_core import get_vectorized_processing_core
+    from src.utils.matrix_operations import get_vectorized_processing_core
     from src.utils.matrix_operations import EnhancedMatrixOperations
     VECTORIZED_OPTIMIZATIONS_AVAILABLE = True
 except ImportError as e:

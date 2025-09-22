@@ -22,7 +22,6 @@ from src.utils.performance_utils import PerformanceMonitor, global_monitor
 from src.utils.tracing import with_tracing_span
 from src.utils.validation import validate_data_quality
 # ML Common utilities
-from src.utils.ml_common.model_evaluation import ModelEvaluationUtilities
 from src.utils.ml_common.model_registry import ModelRegistry
 from src.utils.ml_common.data_quality import DataQualityUtilities
 from src.utils.ml_common.pipeline_orchestrator import MLPipelineOrchestrator

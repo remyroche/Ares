@@ -18,7 +18,7 @@ from .enhanced_overfitting_detection import (
     detect_overfitting_for_model
 )
 from ..utils.lookahead_protection import LookaheadProtection
-from ..utils.model_evaluation import ModelEvaluationUtils
+from ..evaluation.unified_evaluator import evaluate_multiple_datasets
 from ..config.base_training_config import HMMTrainingConfig
 
 logger = logging.getLogger(__name__)
@@ -39,7 +39,7 @@ class HMMValidationPipeline:
         self.config = config or HMMTrainingConfig()
         self.overfitting_detector = get_overfitting_detector()
         self.lookahead_protection = LookaheadProtection()
-        self.evaluation_utils = ModelEvaluationUtils()
+        # Deprecated evaluator removed; using unified evaluator where needed
         self.logger = logger.getChild('HMMValidationPipeline')
 
     def validate_hmm_training_data(

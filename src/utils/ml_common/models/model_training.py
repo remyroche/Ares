@@ -28,7 +28,7 @@ import time
 import logging
 from datetime import datetime
 
-from .model_evaluation import ModelEvaluationUtilities as ModelEvaluator
+from ..evaluation.unified_evaluator import evaluate_model as ModelEvaluator
 from ..confidence_metrics import calculate_confidence_metrics, log_confidence_metrics
 from ..explainability.model_explanations import explain_model_with_shap_lime
 from ..explainability.model_explainability import ModelExplainabilityManager, with_explainability
@@ -75,8 +75,8 @@ class EnhancedModelTrainer:
         
         _LOGGER.info("🚀 Initializing EnhancedModelTrainer...")
         
-        # Initialize model evaluator
-        self.evaluator = ModelEvaluator(self.config.get('evaluation', {}))
+        # Initialize model evaluator (unified API)
+        self.evaluator = ModelEvaluator
         
         # Initialize explainability manager
         self.explainability_manager = ModelExplainabilityManager(
@@ -246,8 +246,8 @@ class EnhancedModelTrainer:
                 )
             else:
                 # Single-output evaluation
-                evaluation_results = self.evaluator.comprehensive_evaluation(
-                    y_test, y_pred, y_pred_proba, task_type='classification'
+                evaluation_results = self.evaluator(
+                    model=model, X=X_test, y=y_test, task='classification'
                 )
             
             # Post-training HPO if enabled and model performance is good

@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 class BootstrapConfidenceIntervalAnalyzer:
     """Analyze model performance using bootstrap confidence intervals."""
 
-    def __init__(self, n_bootstrap: int = 1000, confidence_level: float = 0.95, n_jobs: int = -1):
+    def __init__(self, n_bootstrap: int = 100, confidence_level: float = 0.95, n_jobs: int = -1):
         """
         Initialize the bootstrap analyzer.
 

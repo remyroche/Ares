@@ -1,10 +1,17 @@
 #!/usr/bin/env python3
 """Configuration management for code analysis."""
 
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Union
 from dataclasses import dataclass
 from pathlib import Path
 import logging
+
+try:
+    # Prefer unified loader if available
+    from src.common.config.loader import save_to_file as _save_to_file, load_from_file as _load_from_file
+except Exception:
+    _save_to_file = None
+    _load_from_file = None
 
 
 @dataclass
@@ -40,6 +47,21 @@ class CodeQualityConfig:
             output_dir=config_dict.get("output_dir", "analysis_results"),
             analysis_config=analysis_config
         )
+
+    def save_to_file(self, filepath: Union[str, Path]) -> None:
+        if _save_to_file is not None:
+            return _save_to_file(self, filepath)
+        # Fallback simple JSON
+        path = Path(filepath)
+        data = self.to_dict()
+        if path.suffix.lower() == ".json":
+            import json
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps(data, indent=2))
+        else:
+            import yaml
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(yaml.dump(data, default_flow_style=False, indent=2))
 
 
 @dataclass

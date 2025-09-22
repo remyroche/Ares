@@ -639,6 +639,43 @@ class MultiOutputStackingModel(MultiOutputModel):
                     kwargs['early_stopping_rounds'] = 50
                 if 'verbose' in sig.parameters:
                     kwargs['verbose'] = False
+            # If no eval_set path, enable native sklearn early stopping parameters when available
+            try:
+                if hasattr(model, 'get_params') and hasattr(model, 'set_params'):
+                    params = model.get_params()
+                    updates = {}
+                    # Generic patience from prevention helper if available
+                    patience = 10
+                    tol = 1e-4
+                    if self._overfit_helper is not None:
+                        try:
+                            patience = int(getattr(self._overfit_helper.config, 'early_stopping_patience', 10))
+                            tol = float(getattr(self._overfit_helper.config, 'early_stopping_min_delta', 1e-4))
+                        except Exception:
+                            pass
+                    # Models with early_stopping flag (e.g., HistGradientBoosting, MLP, SGD)
+                    if 'early_stopping' in params and 'eval_set' not in kwargs:
+                        updates['early_stopping'] = True
+                    # Patience-like parameter
+                    if 'n_iter_no_change' in params:
+                        updates['n_iter_no_change'] = patience
+                    # Validation fraction for internal split if we have a validation set size
+                    if 'validation_fraction' in params:
+                        if X_va is not None and X_tr is not None:
+                            total = len(X_tr) + len(X_va)
+                            if total > 0:
+                                val_frac = max(0.05, min(0.2, len(X_va) / total))
+                                updates['validation_fraction'] = val_frac
+                        else:
+                            updates['validation_fraction'] = max(0.05, 0.1)
+                    # Tolerance mapping
+                    if 'tol' in params:
+                        updates['tol'] = tol
+                    if updates:
+                        model.set_params(**updates)
+            except Exception:
+                pass
+
             model.fit(X_tr, y_tr, **kwargs)  # type: ignore[arg-type]
         except Exception:
             # Fallback simple fit

@@ -754,8 +754,10 @@ class MarketAnalysisSubPipeline:
             
             # Convert config to component config
             component_config = self._convert_to_component_config(config)
-            # Enforce 15m timeframe for HMM components only
+            # Enforce 15m timeframe for HMM components only (log warning if overriding)
             if sub_pipeline_name in ('hmm_models_training', 'hmm_ensemble_training'):
+                if component_config.timeframe != '15m':
+                    self.logger.warning(f"⚠️ {sub_pipeline_name}: timeframe {component_config.timeframe} supplied; overriding to 15m")
                 component_config.timeframe = '15m'
             
             # Create component using factory
@@ -982,8 +984,10 @@ class MarketAnalysisSubPipeline:
             try:
                 progress_info = f"({i+1-start_index}/{len(execution_sequence)-start_index})"
                 self.logger.info(f'🔄 Executing {pipeline_name} {progress_info} [Group: {current_group}]')
-                # Ensure 15m timeframe at dispatch time for HMM components only
+                # Ensure 15m timeframe at dispatch time for HMM components only (log warning if overriding)
                 if pipeline_name in ('hmm_models_training', 'hmm_ensemble_training'):
+                    if getattr(config, 'timeframe', None) != '15m':
+                        self.logger.warning(f"⚠️ {pipeline_name}: timeframe {config.timeframe} supplied; overriding to 15m")
                     config = SubPipelineConfig(
                         mode=config.mode,
                         symbol=config.symbol,

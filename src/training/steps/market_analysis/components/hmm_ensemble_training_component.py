@@ -39,6 +39,8 @@ class HMMEnsembleTrainingComponent(BaseMarketAnalysisComponent):
             # Enforce 15m timeframe for ensemble runtime
             if hasattr(self.core_component, 'config'):
                 setattr(self.core_component.config, 'timeframe', '15m')
+                if getattr(self.core_component.config, 'timeframe', None) != '15m':
+                    tprint("⚠️ HMM Ensemble: Non-15m timeframe supplied; overriding to 15m for consistency")
         except Exception:
             pass
 

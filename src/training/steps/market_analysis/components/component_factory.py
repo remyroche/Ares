@@ -139,6 +139,8 @@ class HMMModelsTrainingComponentWrapper(BaseMarketAnalysisComponent):
                     # Enforce 15m timeframe for HMM models at runtime
                     if hasattr(self.training_instance, 'config'):
                         setattr(self.training_instance.config, 'timeframe', '15m')
+                        if getattr(self.training_instance.config, 'timeframe', None) != '15m':
+                            print("⚠️ HMM Models: Non-15m timeframe supplied; overriding to 15m for consistency")
                 except Exception:
                     pass
 
@@ -390,6 +392,8 @@ class HMMEnsembleTrainingComponentWrapper(BaseMarketAnalysisComponent):
                     # Enforce 15m timeframe for HMM ensemble at runtime
                     if hasattr(self.training_instance, 'config'):
                         setattr(self.training_instance.config, 'timeframe', '15m')
+                        if getattr(self.training_instance.config, 'timeframe', None) != '15m':
+                            print("⚠️ HMM Ensemble: Non-15m timeframe supplied; overriding to 15m for consistency")
                 except Exception:
                     pass
             

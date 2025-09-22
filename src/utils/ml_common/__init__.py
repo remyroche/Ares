@@ -80,6 +80,74 @@ try:
         CrossValidationUtilities, PurgedKFold, TemporalCrossValidator,
         StabilityAnalyzer
     )
+
+    # New Comprehensive Utilities
+    try:
+        from .data_leakage_prevention import (
+            DataLeakagePrevention, DataLeakagePreventionConfig,
+            create_data_leakage_prevention, validate_data_integrity
+        )
+    except ImportError as e:
+        DataLeakagePrevention = None
+        DataLeakagePreventionConfig = None
+        create_data_leakage_prevention = None
+        validate_data_integrity = None
+        tprint(f"⚠️ Data leakage prevention not available: {e}")
+
+    try:
+        from .overfitting_monitoring import (
+            OverfittingMonitoring, OverfittingMonitoringConfig,
+            create_overfitting_monitor, monitor_model_performance
+        )
+    except ImportError as e:
+        OverfittingMonitoring = None
+        OverfittingMonitoringConfig = None
+        create_overfitting_monitor = None
+        monitor_model_performance = None
+        tprint(f"⚠️ Overfitting monitoring not available: {e}")
+
+    try:
+        from .enhanced_validation import (
+            EnhancedValidation, EnhancedValidationConfig,
+            create_enhanced_validation, validate_model_comprehensive
+        )
+    except ImportError as e:
+        EnhancedValidation = None
+        EnhancedValidationConfig = None
+        create_enhanced_validation = None
+        validate_model_comprehensive = None
+        tprint(f"⚠️ Enhanced validation not available: {e}")
+
+    try:
+        from .hpo_overfitting_prevention import (
+            HPOOverfittingPrevention, HPOOverfittingPreventionConfig,
+            create_hpo_overfitting_prevention, optimize_model_hyperparameters
+        )
+    except ImportError as e:
+        HPOOverfittingPrevention = None
+        HPOOverfittingPreventionConfig = None
+        create_hpo_overfitting_prevention = None
+        optimize_model_hyperparameters = None
+        tprint(f"⚠️ HPO with overfitting prevention not available: {e}")
+
+    try:
+        from .model_complexity_analysis import (
+            ModelComplexityAnalyzer, ModelComplexityAnalysisConfig,
+            create_model_complexity_analyzer, analyze_model_complexity
+        )
+    except ImportError as e:
+        ModelComplexityAnalyzer = None
+        ModelComplexityAnalysisConfig = None
+        create_model_complexity_analyzer = None
+        analyze_model_complexity = None
+        tprint(f"⚠️ Model complexity analysis not available: {e}")
+
+    # Training utilities with comprehensive validation
+    try:
+        from .training.training_utils import TrainingUtils
+    except ImportError as e:
+        TrainingUtils = None
+        tprint(f"⚠️ Training utilities not available: {e}")
     # Thresholding functions (imported separately to avoid sklearn dependency issues)
     try:
         from .validation.thresholding import optimize_threshold, calibrate_probabilities
@@ -189,7 +257,20 @@ try:
         # Data Drift Detection
         'DataDriftDetector', 'DriftDetectionConfig', 'DriftReport', 'DriftResult',
         'DriftType', 'DriftMethod', 'DriftSeverity', 'detect_data_drift', 'get_drifted_features',
-        
+
+        # New Comprehensive Utilities
+        'DataLeakagePrevention', 'DataLeakagePreventionConfig',
+        'create_data_leakage_prevention', 'validate_data_integrity',
+        'OverfittingMonitoring', 'OverfittingMonitoringConfig',
+        'create_overfitting_monitor', 'monitor_model_performance',
+        'EnhancedValidation', 'EnhancedValidationConfig',
+        'create_enhanced_validation', 'validate_model_comprehensive',
+        'HPOOverfittingPrevention', 'HPOOverfittingPreventionConfig',
+        'create_hpo_overfitting_prevention', 'optimize_model_hyperparameters',
+        'ModelComplexityAnalyzer', 'ModelComplexityAnalysisConfig',
+        'create_model_complexity_analyzer', 'analyze_model_complexity',
+        'TrainingUtils',
+
         # Backward compatibility
         'tprint'
     ]

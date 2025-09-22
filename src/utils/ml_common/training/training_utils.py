@@ -24,6 +24,13 @@ from src.utils.ml_common.optimization import HierarchicalHPO, HierarchicalHPOCon
 from src.utils.ml_common.optimization.overfitting_prevention import OverfittingPrevention, OverfittingPreventionConfig
 from src.utils.ml_common.evaluation.evaluation_utils import EvaluationUtils
 
+# Import new comprehensive utilities
+from src.utils.ml_common.data_leakage_prevention import DataLeakagePrevention, DataLeakagePreventionConfig
+from src.utils.ml_common.overfitting_monitoring import OverfittingMonitoring, OverfittingMonitoringConfig
+from src.utils.ml_common.enhanced_validation import EnhancedValidation, EnhancedValidationConfig
+from src.utils.ml_common.hpo_overfitting_prevention import HPOOverfittingPrevention, HPOOverfittingPreventionConfig
+from src.utils.ml_common.model_complexity_analysis import ModelComplexityAnalyzer, ModelComplexityAnalysisConfig
+
 logger = system_logger.getChild('TrainingUtils')
 
 
@@ -50,18 +57,27 @@ class TrainingUtils:
         self.overfitting_prevention = OverfittingPrevention(
             OverfittingPreventionConfig() if config.enable_overfitting_prevention else None
         )
-        
+
+        # Initialize comprehensive ML utilities
+        self.data_leakage_prevention = DataLeakagePrevention(DataLeakagePreventionConfig())
+        self.overfitting_monitoring = OverfittingMonitoring(OverfittingMonitoringConfig())
+        self.enhanced_validation = EnhancedValidation(EnhancedValidationConfig())
+        self.hpo_overfitting_prevention = HPOOverfittingPrevention(HPOOverfittingPreventionConfig())
+        self.model_complexity_analyzer = ModelComplexityAnalyzer(ModelComplexityAnalysisConfig())
+
         # Initialize hardware optimizers
         self.gpu_manager = get_m1_gpu_manager()
         self.memory_optimizer = get_m1_memory_optimizer()
         self.cpu_optimizer = get_m1_cpu_optimizer()
-        
+
         if self.gpu_manager:
             logger.info("🚀 M1 GPU optimization enabled")
         if self.memory_optimizer:
             logger.info("🧠 M1 memory optimization enabled")
         if self.cpu_optimizer:
             logger.info("⚡ M1 CPU optimization enabled")
+
+        logger.info("✅ Comprehensive ML utilities initialized")
     
     def create_model(
         self, 
@@ -507,3 +523,536 @@ class TrainingUtils:
         }
         
         return default_params.get(model_type.upper(), {})
+
+    def train_model_with_comprehensive_validation(
+        self,
+        model_class: Any,
+        X_train: Union[pd.DataFrame, np.ndarray],
+        y_train: Union[pd.Series, np.ndarray],
+        X_val: Union[pd.DataFrame, np.ndarray],
+        y_val: Union[pd.Series, np.ndarray],
+        X_test: Optional[Union[pd.DataFrame, np.ndarray]] = None,
+        y_test: Optional[Union[pd.Series, np.ndarray]] = None,
+        model_name: str = "comprehensive_model",
+        model_params: Optional[Dict[str, Any]] = None,
+        feature_names: Optional[List[str]] = None,
+        timestamps: Optional[pd.Series] = None
+    ) -> Dict[str, Any]:
+        """
+        Train a model with comprehensive validation and monitoring.
+
+        This method provides a complete training pipeline with:
+        1. Data leakage prevention
+        2. Model complexity analysis
+        3. Overfitting monitoring
+        4. Enhanced validation
+        5. Performance tracking
+
+        Args:
+            model_class: Model class to train
+            X_train: Training features
+            y_train: Training targets
+            X_val: Validation features
+            y_val: Validation targets
+            X_test: Optional test features
+            y_test: Optional test targets
+            model_name: Name of the model
+            model_params: Optional model parameters
+            feature_names: Optional feature names
+            timestamps: Optional timestamp series
+
+        Returns:
+            Dictionary containing comprehensive training results
+        """
+        self.logger.info(f"🚀 Starting comprehensive training for {model_name}")
+
+        results = {
+            'model_name': model_name,
+            'timestamp': datetime.now().isoformat(),
+            'training_successful': False,
+            'data_leakage_analysis': {},
+            'model_complexity_analysis': {},
+            'overfitting_monitoring': {},
+            'enhanced_validation': {},
+            'performance_metrics': {},
+            'recommendations': [],
+            'warnings': []
+        }
+
+        try:
+            # Step 1: Data Leakage Prevention
+            self.logger.info("🔍 Step 1: Data Leakage Prevention")
+            leakage_results = self.data_leakage_prevention.validate_data_integrity(
+                X_train, y_train, timestamps
+            )
+
+            if not leakage_results.get('overall_valid', True):
+                results['warnings'].append("Data leakage detected - proceeding with caution")
+
+            results['data_leakage_analysis'] = leakage_results
+
+            # Step 2: Model Complexity Analysis
+            self.logger.info("🔍 Step 2: Model Complexity Analysis")
+            complexity_results = self.model_complexity_analyzer.analyze_model_complexity(
+                model_class(**model_params) if model_params else model_class(),
+                X_train, y_train, X_val, y_val, model_name, feature_names
+            )
+            results['model_complexity_analysis'] = complexity_results
+
+            # Step 3: Create and train model with regularization
+            self.logger.info("🔍 Step 3: Model Training with Regularization")
+            if model_params is None:
+                model_params = self.get_default_model_params(model_class.__name__)
+
+            # Apply overfitting prevention
+            model = self.create_model(model_class.__name__, model_name, model_params)
+
+            # Train model
+            model.fit(X_train, y_train)
+
+            # Step 4: Comprehensive Monitoring
+            self.logger.info("🔍 Step 4: Comprehensive Performance Monitoring")
+            monitoring_results = self.overfitting_monitoring.monitor_model_performance(
+                model, X_train, y_train, X_val, y_val, X_test, y_test, model_name
+            )
+            results['overfitting_monitoring'] = monitoring_results
+
+            # Step 5: Enhanced Validation
+            self.logger.info("🔍 Step 5: Enhanced Validation")
+            validation_results = self.enhanced_validation.perform_comprehensive_validation(
+                model, X_train, y_train, X_val, y_val, X_test, y_test, model_name, timestamps
+            )
+            results['enhanced_validation'] = validation_results
+
+            # Step 6: Performance Metrics
+            self.logger.info("🔍 Step 6: Performance Metrics")
+            performance_metrics = self.evaluate_models(
+                {model_name: model}, X_val, y_val,
+                is_classification=len(np.unique(y_train)) <= 10
+            )
+            results['performance_metrics'] = performance_metrics
+
+            # Step 7: Generate Recommendations
+            self.logger.info("🔍 Step 7: Generating Recommendations")
+            all_recommendations = []
+
+            # Collect recommendations from all analyses
+            all_recommendations.extend(leakage_results.get('prevention_report', {}).get('recommendations', []))
+            all_recommendations.extend(complexity_results.get('simplification_recommendations', []))
+            all_recommendations.extend(monitoring_results.get('recommendations', []))
+            all_recommendations.extend(validation_results.get('recommendations', []))
+
+            results['recommendations'] = list(set(all_recommendations))  # Remove duplicates
+
+            # Step 8: Overall Assessment
+            results['training_successful'] = self._assess_training_success(results)
+
+            if results['training_successful']:
+                self.logger.info(f"✅ Comprehensive training completed successfully for {model_name}")
+            else:
+                self.logger.warning(f"⚠️ Comprehensive training completed with warnings for {model_name}")
+
+        except Exception as e:
+            error_msg = f"Comprehensive training failed for {model_name}: {e}"
+            results['error'] = error_msg
+            results['training_successful'] = False
+            results['recommendations'].append("Review training setup and data quality")
+            self.logger.error(f"❌ {error_msg}")
+
+        return results
+
+    def _assess_training_success(self, results: Dict[str, Any]) -> bool:
+        """Assess overall training success based on all validation results."""
+        try:
+            # Check data leakage
+            leakage_analysis = results.get('data_leakage_analysis', {})
+            if not leakage_analysis.get('overall_valid', True):
+                return False
+
+            # Check model complexity
+            complexity_analysis = results.get('model_complexity_analysis', {})
+            risk_level = complexity_analysis.get('overfitting_risk', 'low')
+            if risk_level in ['very_high', 'high']:
+                return False
+
+            # Check overfitting monitoring
+            monitoring_results = results.get('overfitting_monitoring', {})
+            if monitoring_results.get('overfitting_detected', False):
+                return False
+
+            # Check enhanced validation
+            validation_results = results.get('enhanced_validation', {})
+            validation_summary = validation_results.get('validation_summary', {})
+            if not validation_summary.get('overall_pass', True):
+                return False
+
+            return True
+
+        except Exception as e:
+            self.logger.warning(f"Training success assessment failed: {e}")
+            return False
+
+    def train_ensemble_with_comprehensive_validation(
+        self,
+        base_models: Dict[str, Any],
+        X_train: Union[pd.DataFrame, np.ndarray],
+        y_train: Union[pd.Series, np.ndarray],
+        X_val: Union[pd.DataFrame, np.ndarray],
+        y_val: Union[pd.Series, np.ndarray],
+        ensemble_name: str = "comprehensive_ensemble",
+        ensemble_method: str = "voting"
+    ) -> Dict[str, Any]:
+        """
+        Train an ensemble with comprehensive validation and monitoring.
+
+        Args:
+            base_models: Dictionary of trained base models
+            X_train: Training features
+            y_train: Training targets
+            X_val: Validation features
+            y_val: Validation targets
+            ensemble_name: Name of the ensemble
+            ensemble_method: Ensemble method ('voting', 'stacking', 'bagging')
+
+        Returns:
+            Dictionary containing comprehensive ensemble training results
+        """
+        self.logger.info(f"🚀 Starting comprehensive ensemble training for {ensemble_name}")
+
+        results = {
+            'ensemble_name': ensemble_name,
+            'timestamp': datetime.now().isoformat(),
+            'training_successful': False,
+            'base_model_analyses': {},
+            'ensemble_diversity_analysis': {},
+            'overfitting_monitoring': {},
+            'enhanced_validation': {},
+            'performance_metrics': {},
+            'recommendations': []
+        }
+
+        try:
+            # Step 1: Analyze each base model
+            self.logger.info("🔍 Step 1: Base Model Analysis")
+            for model_name, model in base_models.items():
+                model_analysis = self.analyze_model_comprehensive(
+                    model, X_train, y_train, X_val, y_val, model_name
+                )
+                results['base_model_analyses'][model_name] = model_analysis
+
+            # Step 2: Ensemble Diversity Analysis
+            self.logger.info("🔍 Step 2: Ensemble Diversity Analysis")
+            diversity_results = self.overfitting_monitoring.analyze_ensemble_diversity(
+                base_models, X_val, y_val, ensemble_name
+            )
+            results['ensemble_diversity_analysis'] = diversity_results
+
+            # Step 3: Create and train ensemble
+            self.logger.info("🔍 Step 3: Ensemble Creation and Training")
+            if ensemble_method == 'voting':
+                from sklearn.ensemble import VotingRegressor, VotingClassifier
+                is_regression = len(np.unique(y_train)) > 10
+
+                if is_regression:
+                    ensemble_model = VotingRegressor(list(base_models.items()))
+                else:
+                    ensemble_model = VotingClassifier(list(base_models.items()))
+
+            elif ensemble_method == 'stacking':
+                from sklearn.ensemble import StackingRegressor, StackingClassifier
+                is_regression = len(np.unique(y_train)) > 10
+
+                if is_regression:
+                    ensemble_model = StackingRegressor(list(base_models.items()))
+                else:
+                    ensemble_model = StackingClassifier(list(base_models.items()))
+
+            else:
+                raise ValueError(f"Unsupported ensemble method: {ensemble_method}")
+
+            # Train ensemble
+            ensemble_model.fit(X_train, y_train)
+
+            # Step 4: Comprehensive Monitoring
+            self.logger.info("🔍 Step 4: Ensemble Performance Monitoring")
+            monitoring_results = self.overfitting_monitoring.monitor_model_performance(
+                ensemble_model, X_train, y_train, X_val, y_val, None, None, ensemble_name
+            )
+            results['overfitting_monitoring'] = monitoring_results
+
+            # Step 5: Enhanced Validation
+            self.logger.info("🔍 Step 5: Ensemble Validation")
+            validation_results = self.enhanced_validation.perform_comprehensive_validation(
+                ensemble_model, X_train, y_train, X_val, y_val, None, None, ensemble_name
+            )
+            results['enhanced_validation'] = validation_results
+
+            # Step 6: Performance Comparison
+            self.logger.info("🔍 Step 6: Performance Comparison")
+            ensemble_metrics = self.evaluate_models(
+                {ensemble_name: ensemble_model}, X_val, y_val,
+                is_classification=len(np.unique(y_train)) <= 10
+            )
+            results['performance_metrics'] = ensemble_metrics
+
+            # Compare with base models
+            base_metrics = {}
+            for model_name, model in base_models.items():
+                base_metrics[model_name] = self.evaluate_models(
+                    {model_name: model}, X_val, y_val,
+                    is_classification=len(np.unique(y_train)) <= 10
+                )[model_name]
+
+            results['base_model_metrics'] = base_metrics
+
+            # Step 7: Generate Recommendations
+            self.logger.info("🔍 Step 7: Generating Ensemble Recommendations")
+            ensemble_recommendations = []
+
+            # Diversity recommendations
+            if diversity_results.get('overfitting_risk') in ['high', 'medium']:
+                ensemble_recommendations.extend([
+                    "Consider adding more diverse base models",
+                    "Implement ensemble diversity regularization",
+                    "Monitor ensemble performance for overfitting"
+                ])
+
+            # Base model recommendations
+            for model_name, analysis in results['base_model_analyses'].items():
+                model_recommendations = analysis.get('recommendations', [])
+                ensemble_recommendations.extend([f"{model_name}: {rec}" for rec in model_recommendations])
+
+            results['recommendations'] = ensemble_recommendations
+
+            # Step 8: Overall Assessment
+            results['training_successful'] = self._assess_ensemble_training_success(results)
+
+            if results['training_successful']:
+                self.logger.info(f"✅ Comprehensive ensemble training completed for {ensemble_name}")
+            else:
+                self.logger.warning(f"⚠️ Comprehensive ensemble training completed with warnings for {ensemble_name}")
+
+        except Exception as e:
+            error_msg = f"Comprehensive ensemble training failed for {ensemble_name}: {e}"
+            results['error'] = error_msg
+            results['training_successful'] = False
+            results['recommendations'].append("Review ensemble setup and base model compatibility")
+            self.logger.error(f"❌ {error_msg}")
+
+        return results
+
+    def _assess_ensemble_training_success(self, results: Dict[str, Any]) -> bool:
+        """Assess overall ensemble training success."""
+        try:
+            # Check ensemble diversity
+            diversity_analysis = results.get('ensemble_diversity_analysis', {})
+            if diversity_analysis.get('overfitting_risk') == 'very_high':
+                return False
+
+            # Check ensemble performance
+            ensemble_metrics = results.get('performance_metrics', {})
+            if not ensemble_metrics:
+                return False
+
+            # Check base model performance
+            base_analyses = results.get('base_model_analyses', {})
+            failed_base_models = 0
+
+            for model_name, analysis in base_analyses.items():
+                if not analysis.get('training_successful', True):
+                    failed_base_models += 1
+
+            if failed_base_models > len(base_analyses) * 0.5:  # More than half failed
+                return False
+
+            return True
+
+        except Exception as e:
+            self.logger.warning(f"Ensemble training success assessment failed: {e}")
+            return False
+
+    def optimize_hyperparameters_with_comprehensive_validation(
+        self,
+        model_class: Any,
+        X: Union[pd.DataFrame, np.ndarray],
+        y: Union[pd.Series, np.ndarray],
+        model_name: str = "optimized_model",
+        search_space: Optional[Dict[str, Any]] = None,
+        custom_objective: Optional[Callable] = None,
+        timestamps: Optional[pd.Series] = None
+    ) -> Dict[str, Any]:
+        """
+        Optimize hyperparameters with comprehensive validation and overfitting prevention.
+
+        Args:
+            model_class: Model class to optimize
+            X: Feature matrix
+            y: Target values
+            model_name: Name of the model
+            search_space: Parameter search space
+            custom_objective: Custom objective function
+            timestamps: Optional timestamp series
+
+        Returns:
+            Dictionary containing comprehensive optimization results
+        """
+        self.logger.info(f"🚀 Starting comprehensive HPO for {model_name}")
+
+        results = {
+            'model_name': model_name,
+            'timestamp': datetime.now().isoformat(),
+            'optimization_successful': False,
+            'hpo_results': {},
+            'best_model_analysis': {},
+            'recommendations': []
+        }
+
+        try:
+            # Step 1: Perform HPO with overfitting prevention
+            self.logger.info("🔍 Step 1: Hyperparameter Optimization")
+            hpo_results = self.hpo_overfitting_prevention.optimize_hyperparameters(
+                model_class, X, y, model_name, search_space, custom_objective, timestamps
+            )
+            results['hpo_results'] = hpo_results
+
+            # Step 2: Analyze best model
+            self.logger.info("🔍 Step 2: Best Model Analysis")
+            best_params = hpo_results.get('best_params', {})
+            best_model = model_class(**best_params)
+            best_model.fit(X, y)
+
+            # Comprehensive analysis of best model
+            best_model_analysis = self.train_model_with_comprehensive_validation(
+                model_class, X, y, X, y, None, None, f"{model_name}_best", best_params
+            )
+            results['best_model_analysis'] = best_model_analysis
+
+            # Step 3: Generate recommendations
+            self.logger.info("🔍 Step 3: Generating HPO Recommendations")
+            hpo_recommendations = hpo_results.get('recommendations', [])
+            model_recommendations = best_model_analysis.get('recommendations', [])
+
+            results['recommendations'] = list(set(hpo_recommendations + model_recommendations))
+
+            # Step 4: Overall Assessment
+            results['optimization_successful'] = self._assess_hpo_success(results)
+
+            if results['optimization_successful']:
+                self.logger.info(f"✅ Comprehensive HPO completed successfully for {model_name}")
+            else:
+                self.logger.warning(f"⚠️ Comprehensive HPO completed with warnings for {model_name}")
+
+        except Exception as e:
+            error_msg = f"Comprehensive HPO failed for {model_name}: {e}"
+            results['error'] = error_msg
+            results['optimization_successful'] = False
+            results['recommendations'].append("Review HPO setup and optimization constraints")
+            self.logger.error(f"❌ {error_msg}")
+
+        return results
+
+    def _assess_hpo_success(self, results: Dict[str, Any]) -> bool:
+        """Assess overall HPO success."""
+        try:
+            # Check HPO results
+            hpo_results = results.get('hpo_results', {})
+            if not hpo_results.get('best_params'):
+                return False
+
+            # Check best model analysis
+            best_model_analysis = results.get('best_model_analysis', {})
+            if not best_model_analysis.get('training_successful', False):
+                return False
+
+            # Check overfitting risk
+            model_complexity = best_model_analysis.get('model_complexity_analysis', {})
+            risk_level = model_complexity.get('overfitting_risk', 'low')
+
+            if risk_level in ['very_high', 'high']:
+                return False
+
+            return True
+
+        except Exception as e:
+            self.logger.warning(f"HPO success assessment failed: {e}")
+            return False
+
+    def analyze_model_comprehensive(
+        self,
+        model: Any,
+        X_train: Union[pd.DataFrame, np.ndarray],
+        y_train: Union[pd.Series, np.ndarray],
+        X_val: Union[pd.DataFrame, np.ndarray],
+        y_val: Union[pd.Series, np.ndarray],
+        model_name: str = "analyzed_model",
+        feature_names: Optional[List[str]] = None
+    ) -> Dict[str, Any]:
+        """
+        Perform comprehensive model analysis.
+
+        Args:
+            model: Trained model
+            X_train: Training features
+            y_train: Training targets
+            X_val: Validation features
+            y_val: Validation targets
+            model_name: Name of the model
+            feature_names: Optional feature names
+
+        Returns:
+            Dictionary containing comprehensive analysis results
+        """
+        self.logger.info(f"🔍 Starting comprehensive analysis for {model_name}")
+
+        results = {
+            'model_name': model_name,
+            'timestamp': datetime.now().isoformat(),
+            'analysis_complete': False,
+            'complexity_analysis': {},
+            'performance_analysis': {},
+            'validation_analysis': {},
+            'recommendations': []
+        }
+
+        try:
+            # 1. Model Complexity Analysis
+            self.logger.debug("Analyzing model complexity...")
+            complexity_results = self.model_complexity_analyzer.analyze_model_complexity(
+                model, X_train, y_train, X_val, y_val, model_name, feature_names
+            )
+            results['complexity_analysis'] = complexity_results
+
+            # 2. Performance Analysis
+            self.logger.debug("Analyzing model performance...")
+            performance_results = self.overfitting_monitoring.monitor_model_performance(
+                model, X_train, y_train, X_val, y_val, None, None, model_name
+            )
+            results['performance_analysis'] = performance_results
+
+            # 3. Validation Analysis
+            self.logger.debug("Performing validation analysis...")
+            validation_results = self.enhanced_validation.perform_comprehensive_validation(
+                model, X_train, y_train, X_val, y_val, None, None, model_name
+            )
+            results['validation_analysis'] = validation_results
+
+            # 4. Generate Comprehensive Recommendations
+            self.logger.debug("Generating comprehensive recommendations...")
+            all_recommendations = []
+
+            all_recommendations.extend(complexity_results.get('simplification_recommendations', []))
+            all_recommendations.extend(performance_results.get('recommendations', []))
+            all_recommendations.extend(validation_results.get('recommendations', []))
+
+            results['recommendations'] = list(set(all_recommendations))
+            results['analysis_complete'] = True
+
+            self.logger.info(f"✅ Comprehensive analysis completed for {model_name}")
+
+        except Exception as e:
+            error_msg = f"Comprehensive analysis failed for {model_name}: {e}"
+            results['error'] = error_msg
+            results['recommendations'].append("Review analysis setup and data quality")
+            self.logger.error(f"❌ {error_msg}")
+
+        return results

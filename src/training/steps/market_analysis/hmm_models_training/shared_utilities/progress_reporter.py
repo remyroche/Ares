@@ -18,6 +18,16 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+# Import tprint for consistent logging
+try:
+    from src.utils.tprint import tprint
+    TPRINT_AVAILABLE = True
+except ImportError:
+    TPRINT_AVAILABLE = False
+    # Fallback to print if tprint is not available
+    def tprint(*args, **kwargs):
+        print(*args, **kwargs)
+
 
 class ProgressReporter:
     """Unified progress reporting for training operations."""
@@ -89,7 +99,7 @@ class ProgressReporter:
         status = "✅" if success else "❌"
         accuracy_str = f" (acc: {accuracy:.4f})" if accuracy is not None else ""
         
-        print(f"\r{status} {model_name}{accuracy_str} | Progress: {progress_percent:.1f}% | "
+        tprint(f"\r{status} {model_name}{accuracy_str} | Progress: {progress_percent:.1f}% | "
               f"Success: {self.successful_models}/{self.completed_models} | "
               f"ETA: {eta:.1f}s", end="", flush=True)
     
@@ -103,19 +113,19 @@ class ProgressReporter:
         total_time = time.time() - self.start_time
         
         if self.show_progress:
-            print(f"\n\n🎯 Training Summary:")
-            print(f"   Total time: {total_time:.2f}s")
+            tprint(f"\n\n🎯 Training Summary:")
+            tprint(f"   Total time: {total_time:.2f}s")
             if self.model_times:
                 if NUMPY_AVAILABLE:
-                    print(f"   Average time per model: {np.mean(self.model_times):.2f}s")
-                    print(f"   Fastest model: {np.min(self.model_times):.2f}s")
-                    print(f"   Slowest model: {np.max(self.model_times):.2f}s")
+                    tprint(f"   Average time per model: {np.mean(self.model_times):.2f}s")
+                    tprint(f"   Fastest model: {np.min(self.model_times):.2f}s")
+                    tprint(f"   Slowest model: {np.max(self.model_times):.2f}s")
                 else:
-                    print(f"   Average time per model: {sum(self.model_times)/len(self.model_times):.2f}s")
-                    print(f"   Fastest model: {min(self.model_times):.2f}s")
-                    print(f"   Slowest model: {max(self.model_times):.2f}s")
-            print(f"   Successful models: {self.successful_models}/{self.total_models}")
-            print(f"   Success rate: {(self.successful_models/self.total_models)*100:.1f}%")
+                    tprint(f"   Average time per model: {sum(self.model_times)/len(self.model_times):.2f}s")
+                    tprint(f"   Fastest model: {min(self.model_times):.2f}s")
+                    tprint(f"   Slowest model: {max(self.model_times):.2f}s")
+            tprint(f"   Successful models: {self.successful_models}/{self.total_models}")
+            tprint(f"   Success rate: {(self.successful_models/self.total_models)*100:.1f}%")
         
         # Calculate additional statistics
         successful_times = [r['training_time'] for r in self.model_results if r['success']]

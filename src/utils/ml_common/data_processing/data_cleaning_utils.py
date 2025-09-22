@@ -11,6 +11,7 @@ from typing import List, Tuple, Optional
 import logging
 
 logger = logging.getLogger(__name__)
+from src.utils.tprint import tprint
 
 def exclude_corrupted_periods(df: pd.DataFrame,
                              corrupted_periods: Optional[List[Tuple[str, str]]] = None,
@@ -237,8 +238,8 @@ if __name__ == "__main__":
     result = create_clean_dataset_pipeline(input_file, output_file)
 
     if result['success']:
-        print("🎉 Clean dataset created successfully!")
-        print(f"Excluded: {result['excluded_rows']:,} rows ({result['data_loss_percentage']:.4f}%)")
-        print(f"Quality: {result['quality_report']['assessment']}")
+        tprint("🎉 Clean dataset created successfully!")
+        tprint(f"Excluded: {result['excluded_rows']:,} rows ({result['data_loss_percentage']:.4f}%)")
+        tprint(f"Quality: {result['quality_report']['assessment']}")
     else:
-        print(f"❌ Failed to create clean dataset: {result['error']}")
+        tprint(f"❌ Failed to create clean dataset: {result['error']}")

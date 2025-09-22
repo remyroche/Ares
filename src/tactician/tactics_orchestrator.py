@@ -797,11 +797,12 @@ class TacticsOrchestrator:
                     c = float(predictions[key].get('confidence', 0.0))
                     c_05_candidates.append(c)
 
+            # Note: Volatility-based adjustments removed per exit strategy update
             conf_025 = max(c_025_candidates) if c_025_candidates else float(predictions.get('combined_confidence', 0.5)) * 0.95
             conf_05 = max(c_05_candidates) if c_05_candidates else float(predictions.get('combined_confidence', 0.5)) * 0.85
-            # Extrapolate to 0.75% and 1.0% from 0.5%
-            conf_075 = max(0.0, min(1.0, conf_05 * 0.85))
-            conf_10 = max(0.0, min(1.0, conf_05 * 0.7))
+            # Use simplified confidence extrapolation (no volatility adjustments)
+            conf_075 = max(0.0, min(1.0, conf_05))
+            conf_10 = max(0.0, min(1.0, conf_05))
 
             price_target_confidences = {
                 '0.25%': float(max(0.0, min(1.0, conf_025))),
@@ -810,7 +811,8 @@ class TacticsOrchestrator:
                 '1.0%': float(conf_10),
             }
 
-            # Adverse probabilities as complementary likelihoods
+            # Note: Volatility-based adversarial confidences removed per exit strategy update
+            # Use simplified complementary likelihoods (no volatility adjustments)
             adversarial_confidences = {
                 k: float(max(0.0, min(1.0, 1.0 - v))) for k, v in price_target_confidences.items()
             }
@@ -836,7 +838,8 @@ class TacticsOrchestrator:
             active_positions = self.get_active_positions()
             for position_id, position in active_positions.items():
                 exit_signal = await self.ml_tactics.evaluate_exit_signal(tactician_predictions, position)
-                if exit_signal.get('exit_signal') in ['EXIT', 'PARTIAL_EXIT']:
+                # Note: PARTIAL_EXIT removed per exit strategy update, only check for EXIT
+                if exit_signal.get('exit_signal') == 'EXIT':
                     self.logger.info(f"Exit signal for position {position_id}: {exit_signal['exit_signal']}")
         except Exception as e:
             self.logger.exception(failed(f'❌ Error checking exit signals: {e}'))

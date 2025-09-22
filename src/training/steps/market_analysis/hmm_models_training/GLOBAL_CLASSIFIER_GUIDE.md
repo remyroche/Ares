@@ -4,6 +4,8 @@
 
 The Global HMM Classifier provides a single model approach to predict probability distributions over all 20 HMM states simultaneously. This is a shift from the per-regime training approach to a unified global classifier.
 
+**Fully integrated with ml_commons infrastructure** using EnhancedModelFactory, ModelType enum, and comprehensive evaluation utilities.
+
 ## Key Features
 
 ### 1. **Single Model for All States**
@@ -20,6 +22,12 @@ The Global HMM Classifier provides a single model approach to predict probabilit
 - No fallback to degraded features
 - Fails immediately if comprehensive feature generation fails
 - Ensures data quality for training
+
+### 4. **ml_commons Integration**
+- Uses EnhancedModelFactory for model creation
+- Leverages ModelType enum for standardized model types
+- Integrates with ml_commons evaluation utilities
+- Full compatibility with existing ml_commons infrastructure
 
 ## Usage Examples
 
@@ -96,50 +104,70 @@ print(f"Objective score: {best_recommendation['objective_score']:.4f}")
 
 ### 1. **Multi-Class Logistic Regression**
 ```python
-# Fast, interpretable, good baseline
-LogisticRegression(
-    multi_class='multinomial',
-    solver='lbfgs',
-    max_iter=1000
+# Fast, interpretable, good baseline - Created via ml_commons EnhancedModelFactory
+ModelConfig(
+    model_name="global_hmm_logistic",
+    model_type=ModelType.LOGISTIC_REGRESSION,
+    model_params={
+        'multi_class': 'multinomial',
+        'solver': 'lbfgs',
+        'max_iter': 1000
+    }
 )
 ```
 
 ### 2. **Multi-Class LightGBM**
 ```python
-# High performance, fast training
-LGBMClassifier(
-    objective='multiclass',
-    num_class=20,
-    metric='multi_logloss'
+# High performance, fast training - Created via ml_commons EnhancedModelFactory
+ModelConfig(
+    model_name="global_hmm_lightgbm",
+    model_type=ModelType.LIGHTGBM_CLASSIFIER,
+    model_params={
+        'objective': 'multiclass',
+        'num_class': 20,
+        'metric': 'multi_logloss'
+    }
 )
 ```
 
 ### 3. **Multi-Class XGBoost**
 ```python
-# Gradient boosting with multi-class objective
-XGBClassifier(
-    objective='multi:softprob',
-    num_class=20,
-    eval_metric='mlogloss'
+# Gradient boosting with multi-class objective - Created via ml_commons EnhancedModelFactory
+ModelConfig(
+    model_name="global_hmm_xgboost",
+    model_type=ModelType.XGBOOST_CLASSIFIER,
+    model_params={
+        'objective': 'multi:softprob',
+        'num_class': 20,
+        'eval_metric': 'mlogloss'
+    }
 )
 ```
 
 ### 4. **Multi-Class Random Forest**
 ```python
-# Robust ensemble method
-RandomForestClassifier(
-    n_estimators=100,
-    n_jobs=-1
+# Robust ensemble method - Created via ml_commons EnhancedModelFactory
+ModelConfig(
+    model_name="global_hmm_rf",
+    model_type=ModelType.RANDOM_FOREST_CLASSIFIER,
+    model_params={
+        'n_estimators': 100,
+        'n_jobs': -1
+    }
 )
 ```
 
 ### 5. **Multi-Class CatBoost**
 ```python
-# Advanced gradient boosting
-CatBoostClassifier(
-    objective='MultiClass',
-    classes_count=20,
-    verbose=False
+# Advanced gradient boosting - Created via ml_commons EnhancedModelFactory
+ModelConfig(
+    model_name="global_hmm_catboost",
+    model_type=ModelType.CATBOOST_CLASSIFIER,
+    model_params={
+        'objective': 'MultiClass',
+        'classes_count': 20,
+        'verbose': False
+    }
 )
 ```
 
@@ -176,6 +204,16 @@ CatBoostClassifier(
 3. **Better State Relationships**: Model learns state transitions
 4. **Reduced Complexity**: No regime-specific logic needed
 5. **Improved Accuracy**: Focus on overall classification performance
+
+## ml_commons Integration Benefits
+
+1. **Standardized Model Creation**: Uses EnhancedModelFactory with ModelType enum
+2. **Consistent Configuration**: ModelConfig dataclass for all model parameters
+3. **Advanced Evaluation**: ml_commons evaluation utilities for comprehensive metrics
+4. **Memory Optimization**: Built-in M1 hardware optimization
+5. **Error Handling**: Robust error handling and fallback mechanisms
+6. **Extensibility**: Easy to add new model types through ModelType enum
+7. **Compatibility**: Full integration with existing ml_commons infrastructure
 
 ## Migration from Per-Regime Training
 

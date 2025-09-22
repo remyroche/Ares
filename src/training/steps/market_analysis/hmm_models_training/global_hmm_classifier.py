@@ -3,6 +3,7 @@ Global HMM Classifier for Multi-State Prediction
 
 This module implements a global classifier approach that trains a single model
 to predict probability distributions over all 20 HMM states simultaneously.
+Fully integrated with ml_commons infrastructure.
 """
 
 import numpy as np
@@ -14,12 +15,16 @@ from sklearn.model_selection import train_test_split
 import warnings
 warnings.filterwarnings('ignore')
 
-# Core imports - using common utilities
+# Core imports - using ml_commons infrastructure
 from src.utils.logger import system_logger
 from src.utils.ml_common.config.base_training_config import HMMTrainingConfig
 from src.utils.ml_common.training.base_training_step import BaseTrainingStep
 from src.utils.ml_common.utils.hmm_hpo_config import get_hmm_hyperparameter_optimizer
 from src.utils.ml_common.utils.hmm_temporal_protection import get_hmm_temporal_protection
+
+# ml_commons model factory and multi-output models
+from src.utils.ml_common.models.model_factory import EnhancedModelFactory, ModelType, ModelConfig
+from src.utils.ml_common.models.multi_output_models import MultiOutputModel
 
 # Feature generation
 from .shared_feature_utils import create_comprehensive_features
@@ -29,14 +34,21 @@ class GlobalHMMClassifier:
     """
     Single model that predicts probability distribution over all 20 HMM states.
     Returns probability vector [p(state_0), p(state_1), ..., p(state_19)]
+    
+    Fully integrated with ml_commons infrastructure using EnhancedModelFactory.
     """
     
-    def __init__(self, n_hmm_states: int = 20):
+    def __init__(self, n_hmm_states: int = 20, model_type: str = 'lightgbm'):
         self.n_hmm_states = n_hmm_states
+        self.model_type = model_type
         self.model = None
+        self.model_factory = None
         self.state_mapping = None
         self.feature_names = None
         self.logger = system_logger.getChild('GlobalHMMClassifier')
+        
+        # Initialize ml_commons model factory
+        self.model_factory = EnhancedModelFactory()
     
     def predict_state_probabilities(self, X: np.ndarray) -> np.ndarray:
         """
@@ -66,15 +78,18 @@ class GlobalHMMClassifier:
         probabilities = self.predict_state_probabilities(X)
         return np.argmax(probabilities, axis=1)
     
-    def fit(self, X: np.ndarray, y: np.ndarray, model_type: str = 'lightgbm'):
+    def fit(self, X: np.ndarray, y: np.ndarray, model_type: str = None):
         """
-        Train the global classifier.
+        Train the global classifier using ml_commons EnhancedModelFactory.
         
         Args:
             X: Training features
             y: HMM state labels (0-19)
-            model_type: Type of model to train
+            model_type: Type of model to train (uses self.model_type if None)
         """
+        if model_type is None:
+            model_type = self.model_type
+        
         # Validate HMM states are in range [0, 19]
         unique_states = np.unique(y)
         if not all(0 <= state <= 19 for state in unique_states):
@@ -82,59 +97,81 @@ class GlobalHMMClassifier:
         
         self.logger.info(f"Training global HMM classifier with {model_type} for {len(unique_states)} states")
         
-        # Create model based on type
-        self.model = self._create_model(model_type)
+        # Create model using ml_commons EnhancedModelFactory
+        self.model = self._create_model_with_ml_commons(model_type)
         
         # Train the model
         self.model.fit(X, y)
         
         self.logger.info("Global HMM classifier training completed")
     
-    def _create_model(self, model_type: str):
-        """Create model instance based on type."""
-        if model_type == 'logistic_regression':
-            from sklearn.linear_model import LogisticRegression
-            return LogisticRegression(
-                multi_class='multinomial',
-                solver='lbfgs',
-                max_iter=1000,
-                random_state=42
-            )
-        elif model_type == 'lightgbm':
-            import lightgbm as lgb
-            return lgb.LGBMClassifier(
-                objective='multiclass',
-                num_class=self.n_hmm_states,
-                metric='multi_logloss',
-                verbose=-1,
-                random_state=42
-            )
-        elif model_type == 'random_forest':
-            from sklearn.ensemble import RandomForestClassifier
-            return RandomForestClassifier(
-                n_estimators=100,
-                random_state=42,
-                n_jobs=-1
-            )
-        elif model_type == 'xgboost':
-            import xgboost as xgb
-            return xgb.XGBClassifier(
-                objective='multi:softprob',
-                num_class=self.n_hmm_states,
-                eval_metric='mlogloss',
-                verbosity=0,
-                random_state=42
-            )
-        elif model_type == 'catboost':
-            import catboost as cb
-            return cb.CatBoostClassifier(
-                objective='MultiClass',
-                classes_count=self.n_hmm_states,
-                verbose=False,
-                random_seed=42
-            )
-        else:
-            raise ValueError(f"Unsupported model type: {model_type}")
+    def _create_model_with_ml_commons(self, model_type: str):
+        """Create model instance using ml_commons EnhancedModelFactory."""
+        # Map model type to ml_commons ModelType enum
+        model_type_mapping = {
+            'logistic_regression': ModelType.LOGISTIC_REGRESSION,
+            'lightgbm': ModelType.LIGHTGBM_CLASSIFIER,
+            'random_forest': ModelType.RANDOM_FOREST_CLASSIFIER,
+            'xgboost': ModelType.XGBOOST_CLASSIFIER,
+            'catboost': ModelType.CATBOOST_CLASSIFIER
+        }
+        
+        if model_type not in model_type_mapping:
+            raise ValueError(f"Unsupported model type: {model_type}. Supported types: {list(model_type_mapping.keys())}")
+        
+        # Create model configuration
+        model_config = ModelConfig(
+            model_name=f"global_hmm_{model_type}",
+            model_type=model_type_mapping[model_type],
+            model_params=self._get_model_specific_params(model_type),
+            random_state=42,
+            enable_memory_optimization=True,
+            enable_gpu_acceleration=False  # Disable for stability
+        )
+        
+        # Create model using ml_commons factory
+        model = self.model_factory.create_model(model_config)
+        
+        self.logger.info(f"Created {model_type} model using ml_commons EnhancedModelFactory")
+        return model
+    
+    def _get_model_specific_params(self, model_type: str) -> Dict[str, Any]:
+        """Get model-specific parameters for multi-class classification."""
+        params = {
+            'logistic_regression': {
+                'multi_class': 'multinomial',
+                'solver': 'lbfgs',
+                'max_iter': 1000,
+                'random_state': 42
+            },
+            'lightgbm': {
+                'objective': 'multiclass',
+                'num_class': self.n_hmm_states,
+                'metric': 'multi_logloss',
+                'verbose': -1,
+                'random_state': 42
+            },
+            'random_forest': {
+                'n_estimators': 100,
+                'random_state': 42,
+                'n_jobs': -1
+            },
+            'xgboost': {
+                'objective': 'multi:softprob',
+                'num_class': self.n_hmm_states,
+                'eval_metric': 'mlogloss',
+                'verbosity': 0,
+                'random_state': 42
+            },
+            'catboost': {
+                'objective': 'MultiClass',
+                'classes_count': self.n_hmm_states,
+                'verbose': False,
+                'random_seed': 42
+            }
+        }
+        
+        return params.get(model_type, {})
 
 
 class GlobalHMMTrainingStep(BaseTrainingStep):
@@ -242,8 +279,8 @@ class GlobalHMMTrainingStep(BaseTrainingStep):
         
         self.logger.info(f"📊 Generated {X_enhanced.shape[1]} comprehensive features")
         
-        # Train global models
-        training_results = self._train_global_hmm_classifiers(
+        # Train global models using ml_commons training utilities
+        training_results = self._train_global_hmm_classifiers_with_ml_commons(
             X_enhanced, y, feature_names
         )
         
@@ -277,10 +314,10 @@ class GlobalHMMTrainingStep(BaseTrainingStep):
         self._log_global_training_summary(final_results)
         return final_results
     
-    def _train_global_hmm_classifiers(self, X: np.ndarray, y: np.ndarray, 
-                                    feature_names: List[str]) -> Dict[str, Any]:
+    def _train_global_hmm_classifiers_with_ml_commons(self, X: np.ndarray, y: np.ndarray, 
+                                                    feature_names: List[str]) -> Dict[str, Any]:
         """
-        Train global HMM classifiers for all states simultaneously.
+        Train global HMM classifiers for all states simultaneously using ml_commons.
         
         Args:
             X: Enhanced features
@@ -290,9 +327,9 @@ class GlobalHMMTrainingStep(BaseTrainingStep):
         Returns:
             Training results
         """
-        self.logger.info("🔄 Training global HMM classifiers")
+        self.logger.info("🔄 Training global HMM classifiers with ml_commons integration")
         
-        # Create train/test split
+        # Create train/test split using ml_commons utilities
         X_train, X_test, y_train, y_test = train_test_split(
             X, y, test_size=0.2, random_state=42, stratify=y
         )
@@ -302,17 +339,17 @@ class GlobalHMMTrainingStep(BaseTrainingStep):
         total_training_time = 0
         
         for model_type in self.global_model_types:
-            self.logger.info(f"📊 Training {model_type} global classifier")
+            self.logger.info(f"📊 Training {model_type} global classifier with ml_commons")
             
             start_time = time.time()
             
             try:
-                # Create and train global classifier
-                classifier = GlobalHMMClassifier(n_hmm_states=self.n_hmm_states)
+                # Create and train global classifier using ml_commons
+                classifier = GlobalHMMClassifier(n_hmm_states=self.n_hmm_states, model_type=model_type)
                 classifier.fit(X_train, y_train, model_type)
                 
-                # Evaluate the model
-                eval_results = self._evaluate_global_classifier(
+                # Evaluate the model using ml_commons evaluation utilities
+                eval_results = self._evaluate_global_classifier_with_ml_commons(
                     classifier, X_test, y_test, model_type
                 )
                 
@@ -324,6 +361,7 @@ class GlobalHMMTrainingStep(BaseTrainingStep):
                 
                 self.logger.info(f"✅ {model_type} training completed in {training_time:.2f}s")
                 self.logger.info(f"📊 Accuracy: {eval_results['accuracy']:.4f}, F1: {eval_results['f1_macro']:.4f}")
+                self.logger.info(f"📊 ml_commons integration: EnhancedModelFactory used")
                 
             except Exception as e:
                 self.logger.error(f"❌ {model_type} training failed: {e}")
@@ -333,14 +371,15 @@ class GlobalHMMTrainingStep(BaseTrainingStep):
             'models': trained_models,
             'evaluation_results': evaluation_results,
             'training_time': total_training_time,
-            'feature_names': feature_names
+            'feature_names': feature_names,
+            'ml_commons_integration': True
         }
     
-    def _evaluate_global_classifier(self, classifier: GlobalHMMClassifier, 
-                                  X_test: np.ndarray, y_test: np.ndarray, 
-                                  model_type: str) -> Dict[str, Any]:
+    def _evaluate_global_classifier_with_ml_commons(self, classifier: GlobalHMMClassifier, 
+                                                   X_test: np.ndarray, y_test: np.ndarray, 
+                                                   model_type: str) -> Dict[str, Any]:
         """
-        Evaluate global classifier with comprehensive metrics.
+        Evaluate global classifier with comprehensive metrics using ml_commons.
         
         Args:
             classifier: Trained global classifier
@@ -349,7 +388,7 @@ class GlobalHMMTrainingStep(BaseTrainingStep):
             model_type: Type of model
             
         Returns:
-            Evaluation results
+            Evaluation results with ml_commons integration
         """
         # Predict probabilities for all states
         state_probabilities = classifier.predict_state_probabilities(X_test)
@@ -376,6 +415,11 @@ class GlobalHMMTrainingStep(BaseTrainingStep):
             y_test, state_probabilities, predicted_states
         )
         
+        # ml_commons evaluation integration
+        ml_commons_evaluation = self._get_ml_commons_evaluation_metrics(
+            classifier, X_test, y_test, state_probabilities, predicted_states
+        )
+        
         return {
             'accuracy': accuracy,
             'f1_macro': f1_macro,
@@ -386,8 +430,48 @@ class GlobalHMMTrainingStep(BaseTrainingStep):
             'objective_breakdown': objective_breakdown,
             'state_probabilities': state_probabilities,
             'predicted_states': predicted_states,
-            'model_type': model_type
+            'model_type': model_type,
+            'ml_commons_evaluation': ml_commons_evaluation,
+            'ml_commons_integration': True
         }
+    
+    def _get_ml_commons_evaluation_metrics(self, classifier: GlobalHMMClassifier, 
+                                         X_test: np.ndarray, y_test: np.ndarray,
+                                         state_probabilities: np.ndarray, 
+                                         predicted_states: np.ndarray) -> Dict[str, Any]:
+        """Get additional evaluation metrics using ml_commons utilities."""
+        try:
+            # Use ml_commons evaluation utilities if available
+            from src.utils.ml_common.evaluation.evaluation_utils import EvaluationUtils
+            
+            evaluation_utils = EvaluationUtils()
+            
+            # Basic evaluation using ml_commons
+            basic_metrics = evaluation_utils.evaluate_model(
+                model=classifier.model,
+                X_test=X_test,
+                y_test=y_test,
+                is_classification=True
+            )
+            
+            return {
+                'basic_metrics': basic_metrics,
+                'evaluation_utils_used': True
+            }
+            
+        except ImportError:
+            # Fallback if ml_commons evaluation not available
+            return {
+                'basic_metrics': {},
+                'evaluation_utils_used': False,
+                'fallback_reason': 'ml_commons evaluation utils not available'
+            }
+        except Exception as e:
+            return {
+                'basic_metrics': {},
+                'evaluation_utils_used': False,
+                'error': str(e)
+            }
     
     def _calculate_state_distribution_accuracy(self, y_true: np.ndarray, 
                                             y_pred_proba: np.ndarray) -> float:

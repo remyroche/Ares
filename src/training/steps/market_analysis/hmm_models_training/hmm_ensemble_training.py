@@ -137,14 +137,14 @@ try:
     )
     from .shared_utilities.training_error_handler import TrainingMetrics, ModelResult
 
-    # Enhanced analysis utilities
+    # Enhanced analysis utilities (now integrated into ML commons)
     try:
-        from .shared_utilities.learning_curve_analysis import LearningCurveAnalyzer
-        from .shared_utilities.bootstrap_confidence_intervals import BootstrapConfidenceIntervalAnalyzer
+        from src.utils.ml_common.evaluation.enhanced_learning_curve_analysis import EnhancedLearningCurveAnalyzer
+        from src.utils.ml_common.evaluation.enhanced_bootstrap_confidence_intervals import EnhancedBootstrapConfidenceIntervalAnalyzer
         ENHANCED_ANALYSIS_AVAILABLE = True
     except ImportError:
-        LearningCurveAnalyzer = None
-        BootstrapConfidenceIntervalAnalyzer = None
+        EnhancedLearningCurveAnalyzer = None
+        EnhancedBootstrapConfidenceIntervalAnalyzer = None
         ENHANCED_ANALYSIS_AVAILABLE = False
 
     SHARED_UTILITIES_AVAILABLE = True

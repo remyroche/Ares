@@ -34,10 +34,12 @@ The HMM training has been **completely migrated** to leverage the common_utils/ 
 - **No ensemble models** - removed voting, stacking, bagging, ada boost, extra trees
 - **No deep learning models** - removed TabNet and neural networks for HMM focus
 - **Gradient booster comparison** - XGBoost vs CatBoost, training both to select best
-- **Regime-aware training** - per-regime model training
+- **Regime-aware training** - per-regime model training with regime prediction capability (models trained per regime for better specialization, but unified prediction capability)
 - **Enhanced reporting** - comprehensive metrics and recommendations for all models
 - **HMM search spaces** - optimized HPO spaces for state recognition
 - **15m timeframe enforcement** - ensures consistent timeframe usage
+- **Comprehensive feature bank** - 12 feature categories (momentum, volatility, trend, volume, support/resistance, returns, oscillator, candlestick_pattern, hmm_regime, entropy, order_flow, acceleration)
+- **Feature bank integration** - Automatic feature generation from comprehensive feature bank
 
 ## Usage
 
@@ -80,6 +82,8 @@ results = training_step.execute(X, y, regime_labels, feature_names)
 - ✅ **Enhanced reporting** - comprehensive metrics and recommendations for all models
 - ✅ **HMM state focus** - optimized for state recognition, not prediction
 - ✅ **Common_utils pipeline** - leverages robust ML training infrastructure
+- ✅ **Comprehensive feature bank** - 12 feature categories for maximum signal extraction
+- ✅ **Feature bank integration** - Automatic generation of momentum, volatility, trend, volume, and more features
 
 ## Migration Complete ✅
 
@@ -104,6 +108,61 @@ The HMM training has been **completely migrated** to leverage the common_utils/ 
 - **Gradient booster comparison** - both XGBoost and CatBoost trained to select best performer
 - **Single-step migration** - no gradual transition needed
 - **Backward compatibility maintained** - existing function names preserved
+
+## Regime Training Clarification
+
+### Important: Per-Regime Training vs Regime Prediction
+
+**Per-Regime Training**: ✅ **USED**
+- Models are trained separately for each market regime
+- Each regime gets its own optimized model
+- Better specialization for regime-specific patterns
+- Training data is split by regime labels
+
+**Individual Regime Models**: ✅ **USED**
+- Separate model instances for each regime
+- Each model learns regime-specific HMM state patterns
+- Better performance within each regime context
+
+**Unified Regime Prediction**: ✅ **NEEDED**
+- Single prediction interface that can predict current regime with probabilities
+- Models should be able to determine "which regime are we in right now?"
+- Probability distributions over possible regimes
+- Confidence scores for regime classification
+
+**Not Needed**: ❌ **Ensemble per regime**
+- No need for separate ensemble models per regime
+- Base models (logistic, LightGBM, RF, XGBoost, CatBoost) are sufficient
+- Focus on regime prediction capability rather than complex ensemble per regime
+
+## Multi-Objective Optimization
+
+### HMM Training Objectives
+
+The HMM models training uses **multi-objective optimization** to balance multiple performance metrics:
+
+**Primary Objectives:**
+- **Accuracy (40% weight)**: Standard classification accuracy for HMM state recognition
+- **F1-Score (30% weight)**: Harmonic mean of precision and recall, important for imbalanced regime data
+- **Regime Stability (30% weight)**: Custom metric measuring consistency of regime predictions over time
+
+**Why Multi-Objective?**
+- HMM state recognition requires balancing multiple competing goals
+- Different regimes may have different optimal model configurations
+- Ensures robust performance across various market conditions
+- Provides better generalization than single-objective optimization
+
+**Objective Weights Configuration:**
+```python
+objectives=["accuracy", "f1_score", "regime_stability"]
+objective_weights=[0.4, 0.3, 0.3]
+```
+
+**Implementation:**
+- Uses Pareto-front optimization for finding optimal trade-offs
+- Random search with 100+ trials per model type
+- Automatic selection of best configuration based on weighted objectives
+- Regime-specific optimization when data allows
 
 ## Benefits
 
@@ -134,6 +193,8 @@ The streamlined approach automatically configures:
 - **Validation**: Universal validation integration
 - **Enhanced reporting**: Comprehensive metrics and recommendations for all models
 - **Gradient booster comparison**: XGBoost vs CatBoost to select best performer
+- **Comprehensive features**: 12 feature categories from feature bank (momentum, volatility, trend, volume, support/resistance, returns, oscillator, candlestick_pattern, hmm_regime, entropy, order_flow, acceleration)
+- **Feature bank integration**: Automatic feature generation for maximum signal extraction
 
 ### Custom Configuration
 ```python

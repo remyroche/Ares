@@ -1,14 +1,17 @@
 """
 Shared Enhanced Feature Utilities for HMM Training
 
-This module provides consistent enhanced feature creation for both hmm_models_training 
+This module provides consistent enhanced feature creation for both hmm_models_training
 and hmm_ensemble_training to ensure they use the same feature engineering pipeline.
+
+Now enhanced to use the comprehensive feature bank system for maximum feature coverage.
 """
 
 import numpy as np
 import pandas as pd
 from typing import List, Tuple, Optional
 from src.utils.tprint import tprint
+from src.feature_generation.core.feature_bank import get_global_feature_bank
 
 
 class HMMEnhancedFeatureCreator:
@@ -19,6 +22,67 @@ class HMMEnhancedFeatureCreator:
     same feature engineering pipeline, eliminating inconsistencies.
     """
     
+    @staticmethod
+    def create_comprehensive_features(data: pd.DataFrame, regime_labels: Optional[np.ndarray] = None) -> Tuple[np.ndarray, List[str]]:
+        """
+        Create comprehensive features using the feature bank system for HMM training.
+
+        Args:
+            data: Input data DataFrame with OHLCV columns
+            regime_labels: Optional regime labels for regime-aware features
+
+        Returns:
+            Tuple of (feature_matrix, feature_names)
+        """
+        try:
+            # Get the global feature bank
+            feature_bank = get_global_feature_bank()
+
+            # Generate features using all available categories (excluding cross-timeframe and complex categories)
+            categories_to_use = [
+                "momentum", "volatility", "trend", "volume", "support_resistance",
+                "returns", "oscillator", "candlestick_pattern", "hmm_regime",
+                "entropy", "order_flow", "acceleration"
+            ]
+
+            tprint(f"🎯 Generating comprehensive features using {len(categories_to_use)} categories...")
+
+            # Generate features
+            feature_df = feature_bank.generate_features(
+                data=data,
+                categories=categories_to_use,
+                lookback_optimization=False  # Disable for speed in training
+            )
+
+            if feature_df.empty:
+                tprint("⚠️ No features generated from feature bank, falling back to basic features")
+                return HMMEnhancedFeatureCreator.create_enhanced_features(
+                    data[['close', 'volume']].values if 'close' in data.columns else data.values,
+                    regime_labels or np.zeros(len(data))
+                )
+
+            # Convert to numpy array
+            feature_matrix = feature_df.values
+            feature_names = list(feature_df.columns)
+
+            # Add regime labels if provided
+            if regime_labels is not None and len(regime_labels) == len(feature_matrix):
+                # Add regime-aware features
+                regime_features = HMMEnhancedFeatureCreator._create_regime_features(regime_labels)
+                feature_matrix = np.hstack([feature_matrix, regime_features])
+                feature_names.extend([f"regime_{i}" for i in range(regime_features.shape[1])])
+
+            tprint(f"✅ Generated {feature_matrix.shape[1]} comprehensive features")
+            return feature_matrix, feature_names
+
+        except Exception as e:
+            tprint(f"⚠️ Comprehensive feature generation failed: {e}")
+            # Fallback to basic enhanced features
+            return HMMEnhancedFeatureCreator.create_enhanced_features(
+                data[['close', 'volume']].values if 'close' in data.columns else data.values,
+                regime_labels or np.zeros(len(data))
+            )
+
     @staticmethod
     def create_enhanced_features(X: np.ndarray, regime_labels: np.ndarray) -> np.ndarray:
         """
@@ -327,6 +391,19 @@ class HMMEnhancedFeatureCreator:
         
         return lagged_features
 
+    @staticmethod
+    def _create_regime_features(regime_labels: np.ndarray) -> np.ndarray:
+        """Create regime-specific features for comprehensive feature set."""
+        n_samples = len(regime_labels)
+        # Create basic regime encoding
+        unique_regimes = np.unique(regime_labels)
+        regime_features = np.zeros((n_samples, len(unique_regimes)))
+
+        for i, regime in enumerate(unique_regimes):
+            regime_features[:, i] = (regime_labels == regime).astype(float)
+
+        return regime_features
+
 
 # Convenience functions for easy importing
 def create_enhanced_features(X: np.ndarray, regime_labels: np.ndarray) -> np.ndarray:
@@ -339,7 +416,12 @@ def get_enhanced_feature_names(original_feature_count: int, original_feature_nam
     return HMMEnhancedFeatureCreator.get_enhanced_feature_names(original_feature_count, original_feature_names)
 
 
-def create_enhanced_features_with_names(X: np.ndarray, regime_labels: np.ndarray, 
+def create_enhanced_features_with_names(X: np.ndarray, regime_labels: np.ndarray,
                                       original_feature_names: Optional[List[str]] = None) -> Tuple[np.ndarray, List[str]]:
     """Create enhanced features with names."""
     return HMMEnhancedFeatureCreator.create_enhanced_features_with_names(X, regime_labels, original_feature_names)
+
+
+def create_comprehensive_features(data: pd.DataFrame, regime_labels: Optional[np.ndarray] = None) -> Tuple[np.ndarray, List[str]]:
+    """Create comprehensive features using feature bank."""
+    return HMMEnhancedFeatureCreator.create_comprehensive_features(data, regime_labels)

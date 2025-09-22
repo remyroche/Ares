@@ -104,7 +104,7 @@ class FeatureBank:
         try:
             from .feature_generator import FeatureCategory
 
-            # List of categories to auto-register
+            # List of categories to auto-register (excluding cross_timeframe, wavelet, candlestick, autoencoder, interaction, microstructure, time)
             categories_to_register = [
                 FeatureCategory.MOMENTUM,
                 FeatureCategory.VOLATILITY,
@@ -113,7 +113,11 @@ class FeatureBank:
                 FeatureCategory.SUPPORT_RESISTANCE,
                 FeatureCategory.RETURNS,
                 FeatureCategory.OSCILLATOR,
-                FeatureCategory.CANDLESTICK_PATTERN
+                FeatureCategory.CANDLESTICK_PATTERN,
+                FeatureCategory.HMM_REGIME,
+                FeatureCategory.ENTROPY,
+                FeatureCategory.ORDER_FLOW,
+                FeatureCategory.ACCELERATION
             ]
 
             registered_count = 0
@@ -155,7 +159,11 @@ class FeatureBank:
                 FeatureCategory.SUPPORT_RESISTANCE: self._create_sr_generators,
                 FeatureCategory.RETURNS: self._create_returns_generators,
                 FeatureCategory.OSCILLATOR: self._create_oscillator_generators,
-                FeatureCategory.CANDLESTICK_PATTERN: self._create_pattern_generators
+                FeatureCategory.CANDLESTICK_PATTERN: self._create_pattern_generators,
+                FeatureCategory.HMM_REGIME: self._create_hmm_regime_generators,
+                FeatureCategory.ENTROPY: self._create_entropy_generators,
+                FeatureCategory.ORDER_FLOW: self._create_order_flow_generators,
+                FeatureCategory.ACCELERATION: self._create_acceleration_generators
             }
 
             creator_func = category_creators.get(category)
@@ -389,6 +397,67 @@ class FeatureBank:
 
         except Exception as e:
             self.logger.warning(f"⚠️ Failed to create pattern generators: {e}")
+
+        return generators
+
+    def _create_hmm_regime_generators(self) -> List[FeatureGenerator]:
+        """Create HMM regime-specific feature generators."""
+        generators = []
+        try:
+            # Try to create advanced HMM regime generators
+            from ..categories.hmm_regime import create_default_hmm_regime_generators
+            advanced_generators = create_default_hmm_regime_generators()
+            generators.extend(advanced_generators)
+
+            # Try performance metrics generators
+            from ..categories.hmm_performance_metrics import create_default_hmm_performance_metrics_generators
+            try:
+                performance_generators = create_default_hmm_performance_metrics_generators()
+                generators.extend(performance_generators)
+            except ImportError:
+                pass
+
+        except Exception as e:
+            self.logger.warning(f"⚠️ Failed to create HMM regime generators: {e}")
+
+        return generators
+
+    def _create_entropy_generators(self) -> List[FeatureGenerator]:
+        """Create entropy-specific feature generators."""
+        generators = []
+        try:
+            from ..categories.entropy import create_default_entropy_generators
+            advanced_generators = create_default_entropy_generators()
+            generators.extend(advanced_generators)
+
+        except Exception as e:
+            self.logger.warning(f"⚠️ Failed to create entropy generators: {e}")
+
+        return generators
+
+    def _create_order_flow_generators(self) -> List[FeatureGenerator]:
+        """Create order flow-specific feature generators."""
+        generators = []
+        try:
+            from ..categories.order_flow import create_default_order_flow_generators
+            advanced_generators = create_default_order_flow_generators()
+            generators.extend(advanced_generators)
+
+        except Exception as e:
+            self.logger.warning(f"⚠️ Failed to create order flow generators: {e}")
+
+        return generators
+
+    def _create_acceleration_generators(self) -> List[FeatureGenerator]:
+        """Create acceleration-specific feature generators."""
+        generators = []
+        try:
+            from ..categories.acceleration import create_default_acceleration_generators
+            advanced_generators = create_default_acceleration_generators()
+            generators.extend(advanced_generators)
+
+        except Exception as e:
+            self.logger.warning(f"⚠️ Failed to create acceleration generators: {e}")
 
         return generators
 

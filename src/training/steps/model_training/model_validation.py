@@ -16,7 +16,7 @@ from collections import defaultdict
 import traceback
 
 from src.utils.logger import get_system_logger
-from src.utils.ml_training_safeguards import MLTrainingSafeguards
+from src.utils.ml_common.utils.base_safeguards import MLTrainingSafeguards
 
 logger = get_system_logger().getChild('ModelValidation')
 

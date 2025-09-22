@@ -9,7 +9,7 @@ from typing import Any, Dict, Optional
 from ..simplified_training_manager import SimplifiedTrainingManager
 from src.utils.logger import system_logger
 from src.core.decorators.errors import handles_errors
-from src.utils.ml_training_safeguards import MLTrainingSafeguards
+from src.utils.ml_common.utils.base_safeguards import MLTrainingSafeguards
 import logging
 from datetime import datetime
 

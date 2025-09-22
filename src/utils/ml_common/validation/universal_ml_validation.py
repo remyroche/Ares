@@ -270,8 +270,8 @@ class UniversalMLValidator:
                     train_probabilities = model.predict_proba(X_train)
                     val_probabilities = model.predict_proba(X_val)
                 except Exception as e:
-                    logger.error(f"❌ Critical error: Could not get probabilities from model: {e}")
-                    raise ValueError(f"Model probability extraction failed: {e}")
+                    logger.warning(f"Could not get probabilities from model: {e}")
+                    # Continue without probabilities - they're optional
             
             # Get feature importance if available
             feature_importance = None

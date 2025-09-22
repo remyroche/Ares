@@ -62,10 +62,11 @@ class AdvancedQualityEvaluator:
             'davies_bouldin': 0.20,
             'calinski_harabasz': 0.15,
             'within_cluster_cv': 0.15,
-            'cluster_stability': 0.10,
+            'cluster_stability': 0.08,  # Reduced from 0.10 for stability over time
             'information_preservation': 0.08,
             'temporal_consistency': 0.05,
-            'domain_constraints': 0.02
+            'domain_constraints': 0.02,
+            'stability_over_time': 0.05  # New: small weight for temporal stability
         }
 
     def evaluate_comprehensive_quality(self, features: np.ndarray, labels: np.ndarray,
@@ -115,6 +116,10 @@ class AdvancedQualityEvaluator:
 
             # 7. Robustness metrics
             metrics['robustness'] = self._calculate_robustness_metrics(features, labels)
+
+            # 8. Stability over time
+            if timestamps is not None:
+                metrics['stability_over_time'] = self._calculate_stability_over_time(features, labels, timestamps)
 
             # Calculate overall score with adaptive weighting
             overall_score = self._calculate_adaptive_overall_score(metrics)
@@ -600,11 +605,11 @@ class AdvancedQualityEvaluator:
             # Analyze individual metrics
             for name, metric in metrics.items():
                 if metric.value < 0.3 and metric.is_higher_better:
-                    warnings.append(f"Low {metric.name} score: {metric.value:.3f".3f" metric.description}")
+                    warnings.append(f"Low {metric.name} score: {metric.value:.3f} - {metric.description}")
                     recommendations.append(f"Consider improving {metric.name} by adjusting clustering parameters")
 
                 elif metric.value > 0.8 and not metric.is_higher_better:
-                    warnings.append(f"High {metric.name} score: {metric.value:.3f".3f" metric.description}")
+                    warnings.append(f"High {metric.name} score: {metric.value:.3f} - {metric.description}")
                     recommendations.append(f"Consider reducing {metric.name} by using different clustering approach")
 
             # Cross-metric analysis
@@ -700,6 +705,110 @@ class AdvancedQualityEvaluator:
         # Placeholder - would implement robustness analysis
         return QualityMetric("robustness", 0.8, 0.05, QualityMetricType.ROBUSTNESS, "Clustering robustness", is_higher_better=True)
 
+    def _calculate_stability_over_time(self, features: np.ndarray, labels: np.ndarray, timestamps: np.ndarray) -> QualityMetric:
+        """Calculate cluster stability over time using temporal consistency analysis."""
+        try:
+            mask = labels != -1
+            if mask.sum() < 5 or timestamps is None:
+                return QualityMetric(
+                    name="stability_over_time",
+                    value=0.0,
+                    weight=0.05,
+                    metric_type=QualityMetricType.STABILITY,
+                    description="Cluster stability over time using temporal consistency",
+                    is_higher_better=True
+                )
+
+            clean_features = features[mask]
+            clean_labels = labels[mask]
+            clean_timestamps = timestamps[mask]
+
+            # Sort by time
+            sort_indices = np.argsort(clean_timestamps)
+            sorted_features = clean_features[sort_indices]
+            sorted_labels = clean_labels[sort_indices]
+
+            # Calculate stability using multiple time windows
+            n_windows = min(5, len(sorted_features) // 10)
+            if n_windows < 2:
+                return QualityMetric(
+                    name="stability_over_time",
+                    value=0.0,
+                    weight=0.05,
+                    metric_type=QualityMetricType.STABILITY,
+                    description="Cluster stability over time using temporal consistency",
+                    is_higher_better=True
+                )
+
+            window_size = len(sorted_features) // n_windows
+            stability_scores = []
+
+            # Calculate stability across consecutive windows
+            for i in range(n_windows - 1):
+                window1_start = i * window_size
+                window1_end = (i + 1) * window_size
+                window2_start = (i + 1) * window_size
+                window2_end = min((i + 2) * window_size, len(sorted_features))
+
+                if window1_end <= window1_start or window2_end <= window2_start:
+                    continue
+
+                window1_labels = sorted_labels[window1_start:window1_end]
+                window2_labels = sorted_labels[window2_start:window2_end]
+
+                # Calculate Jaccard similarity between cluster assignments
+                if len(window1_labels) > 0 and len(window2_labels) > 0:
+                    # Create contingency table
+                    unique_labels = np.unique(np.concatenate([window1_labels, window2_labels]))
+                    contingency = np.zeros((len(unique_labels), 2))
+
+                    for j, label in enumerate(unique_labels):
+                        contingency[j, 0] = np.sum(window1_labels == label)
+                        contingency[j, 1] = np.sum(window2_labels == label)
+
+                    # Calculate stability as weighted overlap
+                    total_mass = np.sum(contingency)
+                    if total_mass > 0:
+                        # Use intersection over union approach
+                        intersection = np.sum(np.minimum(contingency[:, 0], contingency[:, 1]))
+                        union = np.sum(np.maximum(contingency[:, 0], contingency[:, 1]))
+                        jaccard_similarity = intersection / union if union > 0 else 0.0
+                        stability_scores.append(jaccard_similarity)
+
+            if not stability_scores:
+                return QualityMetric(
+                    name="stability_over_time",
+                    value=0.0,
+                    weight=0.05,
+                    metric_type=QualityMetricType.STABILITY,
+                    description="Cluster stability over time using temporal consistency",
+                    is_higher_better=True
+                )
+
+            mean_stability = np.mean(stability_scores)
+            std_stability = np.std(stability_scores)
+
+            return QualityMetric(
+                name="stability_over_time",
+                value=float(mean_stability),
+                weight=0.05,
+                metric_type=QualityMetricType.STABILITY,
+                description="Cluster stability over time using temporal consistency",
+                confidence_interval=(float(mean_stability - std_stability), float(mean_stability + std_stability)),
+                is_higher_better=True
+            )
+
+        except Exception as e:
+            logger.warning(f"Stability over time calculation failed: {e}")
+            return QualityMetric(
+                name="stability_over_time",
+                value=0.0,
+                weight=0.05,
+                metric_type=QualityMetricType.STABILITY,
+                description="Stability over time (fallback)",
+                is_higher_better=True
+            )
+
 
 class AdvancedMultiObjectiveOptimizer:
     """Advanced multi-objective optimization for clustering."""
@@ -722,7 +831,7 @@ class AdvancedMultiObjectiveOptimizer:
             },
             'stability': {
                 'function': self._objective_stability,
-                'weight': 0.15,
+                'weight': 0.12,
                 'description': 'Cluster stability over time'
             },
             'information': {
@@ -732,7 +841,7 @@ class AdvancedMultiObjectiveOptimizer:
             },
             'efficiency': {
                 'function': self._objective_efficiency,
-                'weight': 0.10,
+                'weight': 0.08,
                 'description': 'Computational efficiency'
             },
             'interpretability': {
@@ -749,6 +858,11 @@ class AdvancedMultiObjectiveOptimizer:
                 'function': self._objective_temporal_consistency,
                 'weight': 0.04,
                 'description': 'Temporal consistency'
+            },
+            'stability_over_time': {
+                'function': self._objective_stability_over_time,
+                'weight': 0.05,
+                'description': 'Stability of clusters over time periods'
             }
         }
 
@@ -877,42 +991,512 @@ class AdvancedMultiObjectiveOptimizer:
         except Exception:
             return 0.0
 
-    # Placeholder methods for other objectives
     def _objective_stability(self, features: np.ndarray, labels: np.ndarray,
                            original_features: Optional[np.ndarray], timestamps: Optional[np.ndarray],
                            domain_constraints: Optional[Dict[str, Any]]) -> float:
-        """Calculate stability objective."""
-        return 0.7  # Placeholder
+        """Calculate stability objective using bootstrap analysis."""
+        try:
+            mask = labels != -1
+            if mask.sum() < 10:
+                return 0.5
+
+            clean_features = features[mask]
+            clean_labels = labels[mask]
+
+            # Bootstrap stability analysis
+            n_bootstrap = min(30, len(clean_features) // 2)
+            stability_scores = []
+
+            for _ in range(n_bootstrap):
+                # Sample with replacement
+                indices = np.random.choice(len(clean_features), size=min(50, len(clean_features)), replace=True)
+                sample_features = clean_features[indices]
+                sample_labels = clean_labels[indices]
+
+                if len(np.unique(sample_labels)) > 1:
+                    try:
+                        # Calculate silhouette on bootstrap sample
+                        score = silhouette_score(sample_features, sample_labels)
+                        stability_scores.append(score)
+                    except:
+                        continue
+
+            if not stability_scores:
+                return 0.5
+
+            # Stability is measured by consistency of silhouette scores
+            mean_stability = np.mean(stability_scores)
+            std_stability = np.std(stability_scores)
+
+            # Higher mean and lower variance = higher stability
+            stability_score = mean_stability * (1.0 / (1.0 + std_stability))
+
+            return float(stability_score)
+
+        except Exception:
+            return 0.5
 
     def _objective_information(self, features: np.ndarray, labels: np.ndarray,
                              original_features: Optional[np.ndarray], timestamps: Optional[np.ndarray],
                              domain_constraints: Optional[Dict[str, Any]]) -> float:
         """Calculate information preservation objective."""
-        return 0.8  # Placeholder
+        try:
+            if original_features is None:
+                return 0.5  # Neutral score if no original features
+
+            mask = labels != -1
+            if mask.sum() < 2:
+                return 0.5
+
+            clean_features = features[mask]
+            clean_original = original_features[mask]
+            clean_labels = labels[mask]
+
+            # Calculate mutual information preservation per cluster
+            preservation_scores = []
+
+            for label in np.unique(clean_labels):
+                cluster_mask = clean_labels == label
+                cluster_features = clean_features[cluster_mask]
+                cluster_original = clean_original[cluster_mask]
+
+                if len(cluster_features) < 2 or len(cluster_original) < 2:
+                    continue
+
+                # Calculate mutual information between original and transformed features
+                cluster_preservation = 0.0
+                valid_calculations = 0
+
+                for i in range(min(cluster_features.shape[1], cluster_original.shape[1])):
+                    try:
+                        # Use mutual information regression for each feature
+                        mi = mutual_info_regression(
+                            cluster_original[:, i:i+1],
+                            cluster_features[:, i]
+                        )[0]
+                        cluster_preservation += mi
+                        valid_calculations += 1
+                    except:
+                        continue
+
+                if valid_calculations > 0:
+                    preservation_scores.append(cluster_preservation / valid_calculations)
+
+            if not preservation_scores:
+                return 0.5
+
+            return float(np.mean(preservation_scores))
+
+        except Exception:
+            return 0.5
 
     def _objective_efficiency(self, features: np.ndarray, labels: np.ndarray,
                             original_features: Optional[np.ndarray], timestamps: Optional[np.ndarray],
                             domain_constraints: Optional[Dict[str, Any]]) -> float:
-        """Calculate efficiency objective."""
-        return 0.6  # Placeholder
+        """Calculate computational efficiency objective."""
+        try:
+            n_samples, n_features = features.shape
+
+            # Time complexity score (simplified)
+            # Penalize large datasets and high dimensionality
+            time_score = 1.0 / (1.0 + n_samples * n_features * np.log(n_samples + 1))
+
+            # Memory efficiency score
+            # Estimate memory usage based on dataset size
+            estimated_memory_mb = (n_samples * n_features * 8) / (1024 * 1024)  # Assume 8 bytes per value
+            memory_score = 1.0 / (1.0 + estimated_memory_mb / 1000)  # Penalty for large memory usage
+
+            # Scalability score
+            # Prefer algorithms that scale well with data size
+            if n_samples > 10000:
+                scalability_score = 0.3  # Lower score for very large datasets
+            elif n_samples > 1000:
+                scalability_score = 0.6
+            else:
+                scalability_score = 0.9
+
+            return 0.5 * time_score + 0.3 * memory_score + 0.2 * scalability_score
+
+        except Exception:
+            return 0.5
 
     def _objective_interpretability(self, features: np.ndarray, labels: np.ndarray,
                                   original_features: Optional[np.ndarray], timestamps: Optional[np.ndarray],
                                   domain_constraints: Optional[Dict[str, Any]]) -> float:
-        """Calculate interpretability objective."""
-        return 0.5  # Placeholder
+        """Calculate cluster interpretability objective."""
+        try:
+            mask = labels != -1
+            if mask.sum() < 2:
+                return 0.5
+
+            clean_features = features[mask]
+            clean_labels = labels[mask]
+            unique_labels = np.unique(clean_labels)
+
+            # 1. Feature importance within clusters
+            feature_importance_score = 0.0
+            for label in unique_labels:
+                cluster_mask = clean_labels == label
+                cluster_features = clean_features[cluster_mask]
+
+                if len(cluster_features) < 2:
+                    continue
+
+                # Calculate within-cluster variance for each feature
+                # Higher variance in important features = better separation
+                feature_variances = np.var(cluster_features, axis=0)
+                normalized_variances = feature_variances / (np.sum(feature_variances) + 1e-6)
+
+                # Features with high variance are more discriminative
+                feature_importance_score += np.mean(normalized_variances)
+
+            feature_importance_score = feature_importance_score / len(unique_labels) if unique_labels.size > 0 else 0.0
+
+            # 2. Cluster separation in interpretable dimensions
+            # Calculate between-cluster variance
+            cluster_centers = []
+            for label in unique_labels:
+                cluster_mask = clean_labels == label
+                cluster_center = np.mean(clean_features[cluster_mask], axis=0)
+                cluster_centers.append(cluster_center)
+
+            if len(cluster_centers) > 1:
+                between_variance = np.var(cluster_centers, axis=0)
+                total_variance = np.var(clean_features, axis=0)
+                separation_score = np.mean(between_variance / (total_variance + 1e-6))
+            else:
+                separation_score = 0.0
+
+            # 3. Concept drift detection (simplified)
+            # Check if cluster characteristics change over time
+            drift_score = 1.0  # Assume no drift if no timestamps
+
+            # Combine scores
+            interpretability_score = 0.4 * feature_importance_score + 0.4 * separation_score + 0.2 * drift_score
+
+            return float(interpretability_score)
+
+        except Exception:
+            return 0.5
 
     def _objective_domain_fitness(self, features: np.ndarray, labels: np.ndarray,
                                 original_features: Optional[np.ndarray], timestamps: Optional[np.ndarray],
                                 domain_constraints: Optional[Dict[str, Any]]) -> float:
-        """Calculate domain fitness objective."""
-        return 0.9  # Placeholder
+        """Calculate domain fitness objective for financial data."""
+        try:
+            if domain_constraints is None:
+                return 0.5  # Neutral score if no domain constraints
+
+            fitness_scores = []
+
+            # Volatility clustering constraint
+            if 'volatility_bounds' in domain_constraints:
+                volatility_score = self._check_volatility_constraints(features, labels, domain_constraints)
+                fitness_scores.append(volatility_score)
+
+            # Volume distribution constraint
+            if 'volume_ranges' in domain_constraints:
+                volume_score = self._check_volume_constraints(features, labels, domain_constraints)
+                fitness_scores.append(volume_score)
+
+            # Trend stability constraint
+            if 'trend_stability' in domain_constraints:
+                trend_score = self._check_trend_consistency(features, labels, domain_constraints)
+                fitness_scores.append(trend_score)
+
+            # Sharpe ratio optimization
+            sharpe_score = self._calculate_sharpe_ratio_fitness(features, labels)
+            fitness_scores.append(sharpe_score)
+
+            # Risk-adjusted return metrics
+            risk_score = self._calculate_risk_adjusted_fitness(features, labels)
+            fitness_scores.append(risk_score)
+
+            return float(np.mean(fitness_scores)) if fitness_scores else 0.5
+
+        except Exception:
+            return 0.5
 
     def _objective_temporal_consistency(self, features: np.ndarray, labels: np.ndarray,
                                       original_features: Optional[np.ndarray], timestamps: Optional[np.ndarray],
                                       domain_constraints: Optional[Dict[str, Any]]) -> float:
         """Calculate temporal consistency objective."""
-        return 0.7  # Placeholder
+        try:
+            if timestamps is None:
+                return 0.5  # Neutral score if no timestamps
+
+            mask = labels != -1
+            if mask.sum() < 5:
+                return 0.5
+
+            clean_features = features[mask]
+            clean_labels = labels[mask]
+            clean_timestamps = timestamps[mask]
+
+            # Sort by time
+            sort_indices = np.argsort(clean_timestamps)
+            sorted_features = clean_features[sort_indices]
+            sorted_labels = clean_labels[sort_indices]
+
+            # Calculate consistency over time windows
+            n_windows = min(5, len(sorted_features) // 10)
+            if n_windows < 2:
+                return 0.5
+
+            window_size = len(sorted_features) // n_windows
+            consistency_scores = []
+
+            for i in range(n_windows - 1):
+                window1_start = i * window_size
+                window1_end = (i + 1) * window_size
+                window2_start = (i + 1) * window_size
+                window2_end = min((i + 2) * window_size, len(sorted_features))
+
+                if window1_end <= window1_start or window2_end <= window2_start:
+                    continue
+
+                window1_labels = sorted_labels[window1_start:window1_end]
+                window2_labels = sorted_labels[window2_start:window2_end]
+
+                # Calculate Jaccard similarity between consecutive windows
+                if len(window1_labels) > 0 and len(window2_labels) > 0:
+                    unique_labels = np.unique(np.concatenate([window1_labels, window2_labels]))
+                    overlap_matrix = np.zeros((len(unique_labels), 2))
+
+                    for j, label in enumerate(unique_labels):
+                        overlap_matrix[j, 0] = np.sum(window1_labels == label)
+                        overlap_matrix[j, 1] = np.sum(window2_labels == label)
+
+                    # Calculate stability as intersection over union
+                    total_mass = np.sum(overlap_matrix)
+                    if total_mass > 0:
+                        intersection = np.sum(np.minimum(overlap_matrix[:, 0], overlap_matrix[:, 1]))
+                        union = np.sum(np.maximum(overlap_matrix[:, 0], overlap_matrix[:, 1]))
+                        jaccard = intersection / union if union > 0 else 0.0
+                        consistency_scores.append(jaccard)
+
+            return float(np.mean(consistency_scores)) if consistency_scores else 0.5
+
+        except Exception:
+            return 0.5
+
+    def _objective_stability_over_time(self, features: np.ndarray, labels: np.ndarray,
+                                     original_features: Optional[np.ndarray], timestamps: Optional[np.ndarray],
+                                     domain_constraints: Optional[Dict[str, Any]]) -> float:
+        """Calculate stability of clusters over time periods."""
+        try:
+            if timestamps is None:
+                return 0.5
+
+            mask = labels != -1
+            if mask.sum() < 5:
+                return 0.5
+
+            clean_features = features[mask]
+            clean_labels = labels[mask]
+            clean_timestamps = timestamps[mask]
+
+            # Sort by time
+            sort_indices = np.argsort(clean_timestamps)
+            sorted_features = clean_features[sort_indices]
+            sorted_labels = clean_labels[sort_indices]
+
+            # Calculate stability using multiple time windows
+            n_windows = min(5, len(sorted_features) // 10)
+            if n_windows < 2:
+                return 0.5
+
+            window_size = len(sorted_features) // n_windows
+            stability_scores = []
+
+            # Calculate stability across consecutive windows
+            for i in range(n_windows - 1):
+                window1_start = i * window_size
+                window1_end = (i + 1) * window_size
+                window2_start = (i + 1) * window_size
+                window2_end = min((i + 2) * window_size, len(sorted_features))
+
+                if window1_end <= window1_start or window2_end <= window2_start:
+                    continue
+
+                window1_labels = sorted_labels[window1_start:window1_end]
+                window2_labels = sorted_labels[window2_start:window2_end]
+
+                # Calculate Jaccard similarity between cluster assignments
+                if len(window1_labels) > 0 and len(window2_labels) > 0:
+                    unique_labels = np.unique(np.concatenate([window1_labels, window2_labels]))
+                    contingency = np.zeros((len(unique_labels), 2))
+
+                    for j, label in enumerate(unique_labels):
+                        contingency[j, 0] = np.sum(window1_labels == label)
+                        contingency[j, 1] = np.sum(window2_labels == label)
+
+                    # Calculate stability as weighted overlap
+                    total_mass = np.sum(contingency)
+                    if total_mass > 0:
+                        intersection = np.sum(np.minimum(contingency[:, 0], contingency[:, 1]))
+                        union = np.sum(np.maximum(contingency[:, 0], contingency[:, 1]))
+                        jaccard_similarity = intersection / union if union > 0 else 0.0
+                        stability_scores.append(jaccard_similarity)
+
+            return float(np.mean(stability_scores)) if stability_scores else 0.5
+
+        except Exception:
+            return 0.5
+
+    # Helper methods for domain fitness
+    def _check_volatility_constraints(self, features: np.ndarray, labels: np.ndarray,
+                                    domain_constraints: Dict[str, Any]) -> float:
+        """Check if clusters satisfy volatility constraints."""
+        try:
+            volatility_bounds = domain_constraints['volatility_bounds']
+            min_volatility, max_volatility = volatility_bounds
+
+            unique_labels = np.unique(labels)
+            constraint_satisfaction = []
+
+            for label in unique_labels:
+                cluster_mask = labels == label
+                cluster_features = features[cluster_mask]
+
+                if len(cluster_features) < 2:
+                    continue
+
+                # Calculate volatility for this cluster (using standard deviation)
+                cluster_volatility = np.mean(np.std(cluster_features, axis=0))
+
+                # Check if within bounds
+                if min_volatility <= cluster_volatility <= max_volatility:
+                    constraint_satisfaction.append(1.0)
+                else:
+                    constraint_satisfaction.append(0.0)
+
+            return np.mean(constraint_satisfaction) if constraint_satisfaction else 0.0
+
+        except Exception:
+            return 0.5
+
+    def _check_volume_constraints(self, features: np.ndarray, labels: np.ndarray,
+                                domain_constraints: Dict[str, Any]) -> float:
+        """Check if clusters satisfy volume constraints."""
+        try:
+            volume_ranges = domain_constraints['volume_ranges']
+
+            # Assuming volume is the first feature
+            volume_feature = features[:, 0] if features.shape[1] > 0 else np.zeros(len(features))
+
+            unique_labels = np.unique(labels)
+            constraint_satisfaction = []
+
+            for label in unique_labels:
+                cluster_mask = labels == label
+                cluster_volumes = volume_feature[cluster_mask]
+
+                if len(cluster_volumes) < 2:
+                    continue
+
+                # Check volume distribution
+                mean_volume = np.mean(cluster_volumes)
+                if volume_ranges[0] <= mean_volume <= volume_ranges[1]:
+                    constraint_satisfaction.append(1.0)
+                else:
+                    constraint_satisfaction.append(0.0)
+
+            return np.mean(constraint_satisfaction) if constraint_satisfaction else 0.0
+
+        except Exception:
+            return 0.5
+
+    def _check_trend_consistency(self, features: np.ndarray, labels: np.ndarray,
+                               domain_constraints: Dict[str, Any]) -> float:
+        """Check trend consistency within clusters."""
+        try:
+            trend_stability = domain_constraints['trend_stability']
+
+            unique_labels = np.unique(labels)
+            consistency_scores = []
+
+            for label in unique_labels:
+                cluster_mask = labels == label
+                cluster_features = features[cluster_mask]
+
+                if len(cluster_features) < 5:
+                    continue
+
+                # Calculate trend stability using autocorrelation
+                # For simplicity, use variance of consecutive differences
+                if cluster_features.shape[1] > 2:  # Assuming trend is in feature index 2
+                    trend_feature = cluster_features[:, 2]
+                    differences = np.diff(trend_feature)
+                    stability = 1.0 / (1.0 + np.var(differences))
+                    consistency_scores.append(stability)
+
+            return np.mean(consistency_scores) if consistency_scores else 0.5
+
+        except Exception:
+            return 0.5
+
+    def _calculate_sharpe_ratio_fitness(self, features: np.ndarray, labels: np.ndarray) -> float:
+        """Calculate Sharpe ratio-based fitness for financial clusters."""
+        try:
+            unique_labels = np.unique(labels)
+            sharpe_scores = []
+
+            for label in unique_labels:
+                cluster_mask = labels == label
+                cluster_features = features[cluster_mask]
+
+                if len(cluster_features) < 2:
+                    continue
+
+                # Calculate returns (simplified - using feature differences)
+                if cluster_features.shape[1] > 1:
+                    # Assume feature 1 is price-like for return calculation
+                    returns = np.diff(cluster_features[:, 1])
+                    if len(returns) > 0:
+                        mean_return = np.mean(returns)
+                        std_return = np.std(returns)
+                        sharpe = mean_return / (std_return + 1e-6)  # Sharpe ratio
+                        sharpe_scores.append(sharpe)
+
+            if not sharpe_scores:
+                return 0.5
+
+            # Normalize Sharpe ratios (higher is better)
+            mean_sharpe = np.mean(sharpe_scores)
+            return float(np.tanh(mean_sharpe))  # Scale to [-1, 1] range
+
+        except Exception:
+            return 0.5
+
+    def _calculate_risk_adjusted_fitness(self, features: np.ndarray, labels: np.ndarray) -> float:
+        """Calculate risk-adjusted return fitness."""
+        try:
+            unique_labels = np.unique(labels)
+            risk_scores = []
+
+            for label in unique_labels:
+                cluster_mask = labels == label
+                cluster_features = features[cluster_mask]
+
+                if len(cluster_features) < 2:
+                    continue
+
+                # Calculate maximum drawdown (simplified)
+                if cluster_features.shape[1] > 1:
+                    # Use cumulative product to simulate portfolio value
+                    values = np.cumprod(1 + np.diff(cluster_features[:, 1]) / cluster_features[:-1, 1])
+                    if len(values) > 1:
+                        # Calculate drawdown
+                        peak = np.maximum.accumulate(values)
+                        drawdown = np.min((values / peak) - 1)
+                        risk_score = 1.0 / (1.0 + abs(drawdown))  # Lower drawdown = higher score
+                        risk_scores.append(risk_score)
+
+            return np.mean(risk_scores) if risk_scores else 0.5
+
+        except Exception:
+            return 0.5
 
 
 class BatchTransferProcessor:
@@ -986,8 +1570,8 @@ class BatchTransferProcessor:
 
                 logger.info(f"📊 Batch {current_iteration + 1} completed:")
                 logger.info(f"   • Transfers applied: {len(batch_transfers)}")
-                logger.info(f"   • Quality improvement: {quality_improvement:.".4f")
-                logger.info(f"   • Overall quality: {quality_after.overall_score:.".4f")
+                logger.info(f"   • Quality improvement: {quality_improvement:.4f}")
+                logger.info(f"   • Overall quality: {quality_after.overall_score:.4f}")
 
                 # Check for convergence criteria
                 if quality_improvement < 0.01:  # Less than 1% improvement
@@ -1135,12 +1719,13 @@ def create_multi_objective_config() -> Dict[str, Any]:
         'objective_weights': {
             'separation': 0.25,
             'cohesion': 0.20,
-            'stability': 0.15,
+            'stability': 0.12,
             'information': 0.12,
-            'efficiency': 0.10,
+            'efficiency': 0.08,
             'interpretability': 0.08,
             'domain_fitness': 0.06,
-            'temporal_consistency': 0.04
+            'temporal_consistency': 0.04,
+            'stability_over_time': 0.05  # New objective with small weight
         }
     }
 

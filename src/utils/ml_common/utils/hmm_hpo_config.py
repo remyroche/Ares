@@ -7,7 +7,7 @@ leveraging the common HPO utilities to reduce code duplication in market_analysi
 
 from typing import Dict, Any, List, Optional
 import numpy as np
-from .hpo_utils import get_hyperparameter_optimizer, HyperparameterOptimization
+from .hpo_utils import HyperparameterOptimization
 from ..config.base_training_config import HMMTrainingConfig
 
 class HMMHyperparameterOptimizer:
@@ -23,7 +23,6 @@ class HMMHyperparameterOptimizer:
             config: HMM training configuration
         """
         self.config = config or HMMTrainingConfig()
-        self.base_optimizer = get_hyperparameter_optimizer()
 
     def get_hmm_state_recognition_search_spaces(self) -> Dict[str, Dict[str, Any]]:
         """
@@ -179,13 +178,75 @@ class HMMHyperparameterOptimizer:
                     'choices': model_types
                 }
 
-        return self.base_optimizer.multi_objective_optimization(
-            param_space=combined_param_space,
-            objective_function=objective_function,
-            n_trials=n_trials,
-            n_objectives=len(objectives),
-            direction='maximize'
-        )
+        # Lightweight random-search multi-objective routine (previously legacy adapter)
+        trials: List[Dict[str, Any]] = []
+        rng = np.random.default_rng(42)
+
+        def _sample_params(space: Dict[str, Any]) -> Dict[str, Any]:
+            params: Dict[str, Any] = {}
+            for name, cfg in space.items():
+                if isinstance(cfg, dict):
+                    typ = cfg.get('type', 'float')
+                    if typ == 'int':
+                        low, high = int(cfg.get('low', 0)), int(cfg.get('high', 100))
+                        params[name] = int(rng.integers(low, max(low + 1, high + 1)))
+                    elif typ == 'float':
+                        low, high = float(cfg.get('low', 0.0)), float(cfg.get('high', 1.0))
+                        if cfg.get('log', False) and low > 0 and high > low:
+                            params[name] = float(np.exp(rng.uniform(np.log(low), np.log(high))))
+                        else:
+                            params[name] = float(rng.uniform(low, high))
+                    elif typ == 'categorical':
+                        choices = cfg.get('choices', [])
+                        if choices:
+                            params[name] = choices[int(rng.integers(0, len(choices)))]
+                elif isinstance(cfg, list) and cfg:
+                    params[name] = cfg[int(rng.integers(0, len(cfg)))]
+            return params
+
+        for i in range(n_trials):
+            params = _sample_params(combined_param_space)
+            try:
+                scores = objective_function(**params)
+                if not isinstance(scores, (list, tuple)):
+                    scores = [scores]
+                trials.append({'params': params, 'objectives': scores, 'trial_number': i, 'success': True})
+            except Exception as e:
+                trials.append({'params': params, 'objectives': [float('-inf')] * len(objectives), 'trial_number': i, 'success': False, 'error': str(e)})
+
+        # Pareto front
+        successful = [t for t in trials if t['success']]
+        pareto: List[Dict[str, Any]] = []
+        for t in successful:
+            dominated = False
+            for o in successful:
+                if t is o:
+                    continue
+                dom = True
+                strictly_better = False
+                for a, b in zip(o['objectives'], t['objectives']):
+                    if a < b:
+                        dom = False
+                        break
+                    if a > b:
+                        strictly_better = True
+                if dom and strictly_better:
+                    dominated = True
+                    break
+            if not dominated:
+                pareto.append(t)
+
+        pareto.sort(key=lambda x: x['objectives'][0] if x['objectives'] else float('-inf'), reverse=True)
+
+        return {
+            'trials': trials,
+            'pareto_front': pareto,
+            'best_params': pareto[0]['params'] if pareto else None,
+            'n_trials': n_trials,
+            'n_objectives': len(objectives),
+            'direction': 'maximize',
+            'success': len(pareto) > 0
+        }
 
     def get_hmm_model_types(self) -> List[str]:
         """Get recommended HMM model types."""

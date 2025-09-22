@@ -111,14 +111,14 @@ class ModelManager:
     """
     Enhanced model manager with comprehensive error handling and type safety.
     """
-    def __init__(self, config: dict[str, Any]) -> None:
+    def __init__(self, config: dict[str, Any] | None = None) -> None:
         """
         Initialize model manager with enhanced type safety.
 
         Args:
             config: Configuration dictionary
         """
-        self.config: dict[str, Any] = config
+        self.config: dict[str, Any] = config or {}
         self.logger = system_logger.getChild("ModelManager")
 
         # Model management
@@ -401,6 +401,65 @@ class ModelManager:
 
         self.logger.info(f"Model {model_name} loaded successfully")
         return model
+
+    async def list_available_models(self) -> list[str]:
+        """List available models by scanning the models directory for supported formats."""
+        try:
+            supported_formats: list[str] = self.model_config.get(
+                "supported_formats",
+                [".joblib", ".pkl", ".h5"],
+            )
+            if not os.path.isdir(self.models_dir):
+                return []
+            model_names: list[str] = []
+            for file in os.listdir(self.models_dir):
+                if any(file.endswith(fmt) for fmt in supported_formats):
+                    model_names.append(os.path.splitext(file)[0])
+            return sorted(set(model_names))
+        except Exception as e:
+            self.logger.error(error(f"Failed to list available models: {e}"))
+            return []
+
+    async def get_prediction(self, model: Any, data: Any) -> dict[str, Any]:
+        """Run prediction on a loaded model with best-effort handling across common types."""
+        try:
+            # scikit-learn style
+            if hasattr(model, "predict"):
+                y_pred = model.predict(data)
+                # Some models provide predict_proba for classification
+                proba = None
+                if hasattr(model, "predict_proba"):
+                    try:
+                        proba = model.predict_proba(data)
+                    except Exception:
+                        proba = None
+                return {"predictions": y_pred, "probabilities": proba}
+
+            # XGBoost Booster
+            try:
+                import xgboost as xgb  # type: ignore
+                if isinstance(model, xgb.Booster):
+                    dmatrix = xgb.DMatrix(data)
+                    y_pred = model.predict(dmatrix)
+                    return {"predictions": y_pred}
+            except Exception:
+                pass
+
+            # LightGBM Booster
+            try:
+                import lightgbm as lgb  # type: ignore
+                if isinstance(model, lgb.Booster):
+                    y_pred = model.predict(data)
+                    return {"predictions": y_pred}
+            except Exception:
+                pass
+
+            # PyTorch models require a wrapper; we cannot infer here
+            self.logger.warning(warn_symbol("Model type not directly supported for prediction"))
+            return {"error": "unsupported_model_type"}
+        except Exception as e:
+            self.logger.error(error(f"Prediction failed: {e}"))
+            return {"error": str(e)}
 
     @handles_errors(
         exceptions=(ValueError, AttributeError),

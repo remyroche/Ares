@@ -18,6 +18,17 @@ import pandas as pd
 import logging
 import time
 
+# Optional ML libraries (used when loading certain formats)
+try:
+    import lightgbm as lgb  # type: ignore
+except Exception:  # pragma: no cover - optional dependency
+    lgb = None  # type: ignore
+
+try:
+    import xgboost as xgb  # type: ignore
+except Exception:  # pragma: no cover - optional dependency
+    xgb = None  # type: ignore
+
 class ModelMetadata:
     """Model metadata container."""
 
@@ -161,9 +172,14 @@ class StandardizedModelManager:
                 self.logger.warning('PyTorch models require model class for loading')
                 return (None, metadata)
             if file_path.suffix == '.txt':
+                if lgb is None:
+                    self.logger.error('LightGBM not available to load .txt model')
+                    return None
                 model = lgb.Booster(model_file = str(file_path))
             elif file_path.suffix == '.json':
-                
+                if xgb is None:
+                    self.logger.error('XGBoost not available to load .json model')
+                    return None
                 model = xgb.Booster()
                 model.load_model(str(file_path))
             else:
@@ -232,6 +248,16 @@ class StandardizedModelManager:
         if step_name is None:
             return list(self.registry.values())
         return [metadata for metadata in self.registry.values() if metadata.get('step_name') == step_name]
+
+    def list_available_models(self, step_name: str | None = None) -> list[str]:
+        """List available model IDs (optionally filtered by step)."""
+        try:
+            if step_name is None:
+                return list(self.registry.keys())
+            return [mid for mid, meta in self.registry.items() if meta.get('step_name') == step_name]
+        except Exception as e:
+            self.logger.exception(f'Error listing available models: {e}')
+            return []
 
     def delete_model(self, model_id: str) -> bool:
         """Delete a model and its metadata.

@@ -651,8 +651,8 @@ class MultiOutputStackingModel(MultiOutputModel):
                         try:
                             patience = int(getattr(self._overfit_helper.config, 'early_stopping_patience', 10))
                             tol = float(getattr(self._overfit_helper.config, 'early_stopping_min_delta', 1e-4))
-                        except Exception:
-                            pass
+                        except Exception as cfg_err:
+                            self.logger.debug(f"Overfitting prevention config not available: {cfg_err}")
                     # Models with early_stopping flag (e.g., HistGradientBoosting, MLP, SGD)
                     if 'early_stopping' in params and 'eval_set' not in kwargs:
                         updates['early_stopping'] = True
@@ -673,12 +673,12 @@ class MultiOutputStackingModel(MultiOutputModel):
                         updates['tol'] = tol
                     if updates:
                         model.set_params(**updates)
-            except Exception:
-                pass
+            except Exception as proba_err:
+                self.logger.debug(f"predict_proba failed or unsupported: {proba_err}")
 
             model.fit(X_tr, y_tr, **kwargs)  # type: ignore[arg-type]
-        except Exception:
-            # Fallback simple fit
+        except Exception as fit_err:
+            self.logger.debug(f"Model fit with early stopping args failed, retrying simple fit: {fit_err}")
             model.fit(X_tr, y_tr)
 
     def _predict_1d(self, model: Any, X: np.ndarray) -> np.ndarray:

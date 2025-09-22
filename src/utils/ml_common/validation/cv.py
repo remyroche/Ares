@@ -173,8 +173,8 @@ def validate_cv_integrity(
                 if len(np.unique(y.iloc[va])) < 2:
                     ok = False
                     issues.append(f"fold_{i}: single-class val")
-            except Exception:
-                pass
+            except Exception as class_check_err:
+                _LOGGER.debug(f"Class analysis failed for fold {i}: {class_check_err}")
         if is_time and len(tr) > 0 and len(va) > 0:
             if not (X.index[tr][-1] < X.index[va][0]):
                 ok = False

@@ -744,8 +744,8 @@ class LookaheadProtection:
                                     leakage['issues'].append(
                                         f"Potential target leakage: feature '{col}' has {corr:.3f} correlation with target"
                                     )
-                        except:
-                            pass  # Skip correlation check if it fails
+                        except Exception as corr_err:
+                            self.logger.debug(f"Correlation check failed for column '{col}': {corr_err}")
 
             return leakage
 

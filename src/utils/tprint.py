@@ -51,10 +51,26 @@ except ImportError:
 # Import existing numba timestamps for compatibility
 try:
     from .numba_timestamps import (
-        NUMBA_AVAILABLE, 
-        get_numba_timestamp, 
+        NUMBA_AVAILABLE,
+        get_numba_timestamp,
         get_detailed_timestamp,
-        get_simple_timestamp
+        get_simple_timestamp,
+        numba_print_with_timestamp,
+        numba_print_detailed,
+        numba_print_simple,
+        numba_print_progress,
+        numba_print_performance,
+        numba_print_error,
+        numba_print_warning,
+        numba_print_info,
+        numba_print_debug,
+        get_numba_timestamp_string,
+        get_numba_detailed_timestamp_string,
+        get_numba_simple_timestamp_string,
+        numba_timer_start,
+        numba_timer_elapsed,
+        numba_print_timing,
+        NumbaTimestampFormatter
     )
 except ImportError:
     NUMBA_AVAILABLE = False
@@ -64,6 +80,91 @@ except ImportError:
         return datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
     def get_simple_timestamp():
         return datetime.now().strftime('%H:%M:%S.%f')[:-3]
+
+    # Fallback functions for non-numba environments
+    def numba_print_with_timestamp(message: str) -> None:
+        """Fallback print with timestamp."""
+        timestamp = get_numba_timestamp()
+        tprint(f"[{timestamp}] {message}")
+
+    def numba_print_detailed(message: str) -> None:
+        """Fallback detailed print with timestamp."""
+        timestamp = get_detailed_timestamp()
+        tprint(f"[{timestamp}] {message}")
+
+    def numba_print_simple(message: str) -> None:
+        """Fallback simple print with timestamp."""
+        timestamp = get_simple_timestamp()
+        tprint(f"[{timestamp}] {message}")
+
+    def numba_print_progress(step: int, total: int, message: str) -> None:
+        """Fallback progress print with timestamp."""
+        timestamp = get_numba_timestamp()
+        progress = (step / total) * 100 if total > 0 else 0
+        tprint(f"[{timestamp}] Progress: {step}/{total} ({progress:.1f}%) - {message}")
+
+    def numba_print_performance(operation: str, duration: float) -> None:
+        """Fallback performance print with timestamp."""
+        timestamp = get_numba_timestamp()
+        tprint(f"[{timestamp}] Performance: {operation} took {duration:.3f}s")
+
+    def numba_print_error(error_msg: str) -> None:
+        """Fallback error print with timestamp."""
+        timestamp = get_numba_timestamp()
+        tprint(f"[{timestamp}] ERROR: {error_msg}")
+
+    def numba_print_warning(warning_msg: str) -> None:
+        """Fallback warning print with timestamp."""
+        timestamp = get_numba_timestamp()
+        tprint(f"[{timestamp}] WARNING: {warning_msg}")
+
+    def numba_print_info(info_msg: str) -> None:
+        """Fallback info print with timestamp."""
+        timestamp = get_numba_timestamp()
+        tprint(f"[{timestamp}] INFO: {info_msg}")
+
+    def numba_print_debug(debug_msg: str) -> None:
+        """Fallback debug print with timestamp."""
+        timestamp = get_numba_timestamp()
+        tprint(f"[{timestamp}] DEBUG: {debug_msg}")
+
+    def get_numba_timestamp_string() -> str:
+        """Fallback timestamp string."""
+        return get_numba_timestamp()
+
+    def get_numba_detailed_timestamp_string() -> str:
+        """Fallback detailed timestamp string."""
+        return get_detailed_timestamp()
+
+    def get_numba_simple_timestamp_string() -> str:
+        """Fallback simple timestamp string."""
+        return get_simple_timestamp()
+
+    def numba_timer_start() -> float:
+        """Fallback timer start."""
+        return time.perf_counter()
+
+    def numba_timer_elapsed(start_time: float) -> float:
+        """Fallback timer elapsed."""
+        return time.perf_counter() - start_time
+
+    def numba_print_timing(operation: str, start_time: float) -> None:
+        """Fallback timing print."""
+        elapsed = numba_timer_elapsed(start_time)
+        numba_print_performance(operation, elapsed)
+
+    class NumbaTimestampFormatter:
+        """Fallback Numba-compatible timestamp formatter."""
+        def __init__(self, format_string: str = '%H:%M:%S'):
+            self.format_string = format_string
+
+        def get_timestamp(self) -> str:
+            """Get current timestamp as string."""
+            return datetime.now().strftime(self.format_string)
+
+        def get_timestamp_with_microseconds(self) -> str:
+            """Get current timestamp with microseconds."""
+            return datetime.now().strftime('%H:%M:%S.%f')[:-3]  # Remove last 3 digits for milliseconds
 
 
 class LogLevel(Enum):
@@ -758,7 +859,13 @@ def capture_print_to_tprint():
     class CaptureStdout(io.StringIO):
         def write(self, s):
             if s.strip():  # Only log non-empty strings
-                _global_manager._log_print_statement(s.strip(), _recursion_guard=True)
+                # Check if we're already in a logging context to prevent recursion
+                if not getattr(self, '_in_logging_context', False):
+                    self._in_logging_context = True
+                    try:
+                        _global_manager._log_print_statement(s.strip(), _recursion_guard=True)
+                    finally:
+                        self._in_logging_context = False
             return super().write(s)
 
         def flush(self):
@@ -835,6 +942,24 @@ __all__ = [
     # Integration
     'NUMBA_AVAILABLE',
     'COLORAMA_AVAILABLE',
+
+    # Numba compatibility exports
+    'numba_print_with_timestamp',
+    'numba_print_detailed',
+    'numba_print_simple',
+    'numba_print_progress',
+    'numba_print_performance',
+    'numba_print_error',
+    'numba_print_warning',
+    'numba_print_info',
+    'numba_print_debug',
+    'get_numba_timestamp_string',
+    'get_numba_detailed_timestamp_string',
+    'get_numba_simple_timestamp_string',
+    'numba_timer_start',
+    'numba_timer_elapsed',
+    'numba_print_timing',
+    'NumbaTimestampFormatter',
 ]
 
 # Auto-setup print capture if configured

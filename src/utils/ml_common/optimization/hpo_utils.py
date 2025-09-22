@@ -1418,15 +1418,15 @@ class HyperparameterOptimization:
                     params = model.get_params()
                     if 'n_jobs' in params:
                         model.set_params(n_jobs=1)
-            except Exception:
-                pass
+            except Exception as nj_cap_err:
+                self.logger.debug(f"Failed to cap nested parallelism (n_jobs): {nj_cap_err}")
 
             fit_params = {}
             try:
                 if SKLEARN_AVAILABLE and len(np.unique(y)) <= 10:
                     fit_params['sample_weight'] = compute_sample_weight('balanced', y)
-            except Exception:
-                pass
+            except Exception as sw_err:
+                self.logger.debug(f"sample_weight computation failed in CV eval: {sw_err}")
             # Manual CV to handle sample_weight safely
             try:
                 fold_scores: list[float] = []
@@ -1440,19 +1440,21 @@ class HyperparameterOptimization:
                             mdl.fit(X_tr, y_tr, sample_weight=fit_params['sample_weight'][train_idx])
                         else:
                             mdl.fit(X_tr, y_tr)
-                    except Exception:
+                    except Exception as fit_err:
+                        self.logger.debug(f"Fit failed with sample_weight handling; retrying without: {fit_err}")
                         mdl.fit(X_tr, y_tr)
                     try:
                         from sklearn.metrics import get_scorer
                         scorer = get_scorer(scoring) if isinstance(scoring, str) else scoring
                         score = scorer(mdl, X_te, y_te)
-                    except Exception:
+                    except Exception as score_err:
+                        self.logger.debug(f"Scorer failed ({score_err}); using estimator.score fallback")
                         score = mdl.score(X_te, y_te) if hasattr(mdl, 'score') else 0.0
                     fold_scores.append(float(score))
                 if fold_scores:
                     return float(np.mean(fold_scores))
-            except Exception:
-                pass
+            except Exception as cv_loop_err:
+                self.logger.debug(f"Manual CV loop failed in CV eval: {cv_loop_err}")
             return 0.5
         except Exception as e:
             self.logger.warning(f"CV evaluation failed: {e}")

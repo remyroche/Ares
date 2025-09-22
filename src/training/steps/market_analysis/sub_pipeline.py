@@ -1,7 +1,7 @@
 """
-Market Analysis Sub-Pipeline - Complete 12-Step Pipeline
+Market Analysis Sub-Pipeline - Complete 13-Step Pipeline
 
-This module provides the complete market analysis sub-pipeline with exactly 12 required steps:
+This module provides the complete market analysis sub-pipeline with exactly 13 required steps:
 
 1. sr_parameter_optimization - Optimize SR detection levels
 2. sr_detection - Detect Support/Resistance levels
@@ -15,6 +15,7 @@ This module provides the complete market analysis sub-pipeline with exactly 12 r
 10. feature_lookback_optimization - Optimize feature lookback periods
 11. pid_based_feature_generation - PID-based feature generation with interaction, polynomial, and cross-timeframe features
 12. final_feature_selection - Final multi-stage feature selection (120→100→80→60)
+13. cross_timeframe_analysis - Cross timeframe analysis
 """
 
 from typing import Any, Dict, List, Optional, Tuple
@@ -129,7 +130,9 @@ class SubPipelineResult:
             'hmm_models_training': ['hmm_models_training_result'],
             'hmm_ensemble_training': ['hmm_ensemble_training_result'],
             'regime_data_splitting': ['regime_data_splitting_result'],
+            # Support both legacy and current naming for the multi-horizon step
             'multi_horizon_labeling': ['multi_horizon_labeling_result'],
+            'multi_horizon_profit_labeler': ['multi_horizon_labeling_result'],
             'feature_lookback_optimization': ['feature_lookback_optimization_result'],
             'pid_based_feature_generation': ['pid_based_feature_generation_result'],
             'final_feature_selection': ['final_feature_selection_result']
@@ -161,7 +164,7 @@ class MarketAnalysisSubPipeline:
             self.config = config or SubPipelineConfig()
             self.original_config = {}
         
-        self.logger = logger.getChild('MarketAnalysisSubPipeline')
+        self.logger = logger
         self.results: List[SubPipelineResult] = []
         
         # Apply logging configuration
@@ -282,7 +285,7 @@ class MarketAnalysisSubPipeline:
         config: Optional[SubPipelineConfig] = None
     ) -> Dict[str, Any]:
         """
-        Execute all 11 market analysis steps automatically from the beginning.
+        Execute all 13 market analysis steps automatically from the beginning.
         
         This is a convenience method that starts from step 1 (sr_parameter_optimization)
         and automatically triggers all subsequent steps when each completes.
@@ -295,8 +298,11 @@ class MarketAnalysisSubPipeline:
         """
         if config is None:
             config = self.config
+        
+        # Reset results for a fresh run
+        self.results = []
             
-        self.logger.info('🚀 Starting automatic execution of all 12 market analysis steps')
+        self.logger.info('🚀 Starting automatic execution of all 13 market analysis steps')
         self.logger.info('=' * 80)
         self.logger.info('📋 Steps to be executed automatically:')
         self.logger.info('   1. sr_parameter_optimization - Optimize SR detection levels')
@@ -307,10 +313,11 @@ class MarketAnalysisSubPipeline:
         self.logger.info('   6. hmm_models_training - Base models training, HPO, saving, metrics')
         self.logger.info('   7. hmm_ensemble_training - Meta-model, HPO, saving, metrics')
         self.logger.info('   8. regime_data_splitting - Tag data by regimes')
-        self.logger.info('   9. multi_horizon_profit_labeler - Apply triple barrier method')
+        self.logger.info('   9. multi_horizon_profit_labeler - Apply multi-horizon profit labeling')
         self.logger.info('   10. feature_lookback_optimization - Optimize feature lookback periods')
         self.logger.info('   11. pid_based_feature_generation - Cross timeframe interaction features')
         self.logger.info('   12. final_feature_selection - Final feature selection (120→100→80→60)')
+        self.logger.info('   13. cross_timeframe_analysis - Cross timeframe analysis')
         self.logger.info('=' * 80)
         
         # Execute from the first step - this will automatically trigger all subsequent steps
@@ -348,12 +355,14 @@ class MarketAnalysisSubPipeline:
 
         Data Processing Steps (8-12):
         8. Regime data splitting
-        9. Triple barrier labeling
+        9. Multi-horizon profit labeling
         10. Feature lookback optimization
         11. PID-based feature generation
         12. Final feature selection (120→100→80→60)
         """
         self.logger.info('🎯 Starting Market Analysis Sub-Pipeline execution')
+        # Reset results for a fresh run
+        self.results = []
         
         try:
             # Extract data from pipeline state
@@ -484,12 +493,8 @@ class MarketAnalysisSubPipeline:
                         features = pid_features['combined_features']
                         feature_names = pid_features.get('combined_feature_names', [])
                 
-                # Extract targets from labeled_data
+                # Targets are not required: HMM training uses cluster_assignments as labels
                 targets = None
-                if 'labeled_data' in results and results['labeled_data']:
-                    labeled_data = results['labeled_data']
-                    if isinstance(labeled_data, dict) and 'labels' in labeled_data:
-                        targets = labeled_data['labels']
                 
                 # Extract regime labels from regime assignments
                 regime_labels = None
@@ -509,7 +514,7 @@ class MarketAnalysisSubPipeline:
                 # Log data availability for debugging
                 self.logger.info(f"📊 Data prepared for HMM Models Training:")
                 self.logger.info(f"   - Features: {'✅' if features is not None else '❌'}")
-                self.logger.info(f"   - Targets: {'✅' if targets is not None else '❌'}")
+                self.logger.info(f"   - Targets: {'✅' if targets is not None else '❌'} (HMM uses cluster_assignments)")
                 self.logger.info(f"   - Regime Labels: {'✅' if regime_labels is not None else '❌'}")
                 self.logger.info(f"   - Feature Names: {len(feature_names) if feature_names else 0}")
                 
@@ -571,48 +576,21 @@ class MarketAnalysisSubPipeline:
                 'regime_data': results['regime_data']
             })
             
-            # Stage 9: Multi-Horizon Labeling
+            # Stage 9: Multi-Horizon Labeling (via component system)
             self.logger.info('🎯 Executing Stage 9: Multi-Horizon Labeling')
-            try:
-                from src.training.steps.market_analysis.multi_horizon_sub_pipeline_adapter import execute_multi_horizon_labeling_step
-                
-                # Extract labeling configuration
-                labeling_config = self.config.custom_params.get('multi_horizon_labeling', {})
-                
-                multi_horizon_labeling_result = execute_multi_horizon_labeling_step(
-                    data=data,
-                    regime_labels=self._current_pipeline_state.get('regime_labels'),
-                    config=labeling_config,
-                    symbol=self.config.symbol,
-                    exchange=self.config.exchange,
-                    timeframe=self.config.timeframe,
-                    mode=self.config.mode.value
-                )
-                
-                # Check if the result is already a dictionary (from multi_horizon adapter)
-                if isinstance(multi_horizon_labeling_result, dict):
-                    # It's already a dictionary result from the adapter
-                    result_status = multi_horizon_labeling_result.get('status', 'failed')
-                    if result_status != 'completed':
-                        return self._create_error_result("Multi-Horizon Labeling failed", multi_horizon_labeling_result)
-                else:
-                    # It's a MockResult object, use the status attribute
-                    if multi_horizon_labeling_result.status != 'completed':
-                        return self._create_error_result("Multi-Horizon Labeling failed", multi_horizon_labeling_result.artifacts)
-                    
-            except Exception as e:
-                self.logger.error(f"Multi-Horizon Labeling execution failed: {e}")
-                return self._create_error_result("Multi-Horizon Labeling execution failed", str(e))
-            
-            # Extract data from consolidated artifact
-            multi_horizon_data = multi_horizon_labeling_result.artifacts.get('multi_horizon_labeling_result', {})
+            mh_component_result = await self.execute_sub_pipeline('multi_horizon_profit_labeler', self.config)
+            is_success, error_info = self._validate_sub_pipeline_result(mh_component_result, "Multi-Horizon Labeling")
+            if not is_success:
+                return error_info
+            # Extract data from consolidated artifact using dict-safe access
+            mh_result_dict = mh_component_result.artifacts
+            multi_horizon_data = mh_result_dict.get('multi_horizon_labeling_result', {})
             results['labeled_data'] = multi_horizon_data.get('labeled_data', {})
             results['labeling_metrics'] = multi_horizon_data.get('labeling_metrics', {})
-            
             # Update pipeline state for next components
             self._current_pipeline_state.update({
                 'labeled_data': results['labeled_data'],
-                'multi_horizon_labeling_result': multi_horizon_data  # Add for PID component compatibility
+                'multi_horizon_labeling_result': multi_horizon_data
             })
             
             # Stage 10: Feature Lookback Optimization
@@ -908,7 +886,7 @@ class MarketAnalysisSubPipeline:
         6. hmm_models_training - Base models training, HPO, saving, metrics
         7. hmm_ensemble_training - Meta-model, HPO, saving, metrics
         8. regime_data_splitting - Tag data by regimes
-        9. multi_horizon_profit_labeler - Apply triple barrier method
+        9. multi_horizon_profit_labeler - Apply multi-horizon profit labeling
         10. feature_lookback_optimization - Optimize feature lookback periods
         11. pid_based_feature_generation - Cross timeframe interaction features
         12. final_feature_selection - Final feature selection (120→100→80→60)
@@ -1019,27 +997,14 @@ class MarketAnalysisSubPipeline:
                 self.logger.info(f'🔄 Executing {pipeline_name} {progress_info} [Group: {current_group}]')
                 # Ensure 15m timeframe at dispatch time for HMM components only (log warning if overriding)
                 if pipeline_name in ('hmm_models_training', 'hmm_ensemble_training'):
+                    # Avoid mutating the shared config; create a scoped copy for this call
+                    from dataclasses import replace as _dc_replace
+                    scoped_config = _dc_replace(config, timeframe='15m')
                     if getattr(config, 'timeframe', None) != '15m':
-                        self.logger.warning(f"⚠️ {pipeline_name}: timeframe {config.timeframe} supplied; overriding to 15m")
-                    config = SubPipelineConfig(
-                        mode=config.mode,
-                        symbol=config.symbol,
-                        exchange=config.exchange,
-                        timeframe='15m',
-                        data_dir=config.data_dir,
-                        start_date=config.start_date,
-                        end_date=config.end_date,
-                        force_rerun=config.force_rerun,
-                        parallel_processing=config.parallel_processing,
-                        max_workers=config.max_workers,
-                        validation_enabled=config.validation_enabled,
-                        monitoring_enabled=config.monitoring_enabled,
-                        fast_mode=config.fast_mode,
-                        skip_next_pipeline=config.skip_next_pipeline,
-                        single_stage_only=config.single_stage_only,
-                        custom_params=config.custom_params
-                    )
-                result = await self.execute_sub_pipeline(pipeline_name, config)
+                        self.logger.warning(f"⚠️ {pipeline_name}: timeframe {config.timeframe} supplied; overriding to 15m for this step only")
+                    result = await self.execute_sub_pipeline(pipeline_name, scoped_config)
+                else:
+                    result = await self.execute_sub_pipeline(pipeline_name, config)
                 results.append(result)
                 
                 # If this sub-pipeline failed, stop the sequence

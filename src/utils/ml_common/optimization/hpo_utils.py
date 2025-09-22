@@ -712,10 +712,12 @@ class HyperparameterOptimization:
                 model = model_factory(**params)
                 # Cap per-trial parallelism if supported
                 try:
-                    if hasattr(model, 'set_params'):
-                        model.set_params(**{k: v for k, v in {'n_jobs': 1}.items() if k in getattr(model, 'get_params')().keys()})
-                except Exception:
-                    pass
+                    if hasattr(model, 'set_params') and hasattr(model, 'get_params'):
+                        params = model.get_params()
+                        if 'n_jobs' in params:
+                            model.set_params(n_jobs=1)
+                except Exception as nj_err:
+                    logger.debug(f"Failed to cap n_jobs for model in Optuna trial: {nj_err}")
 
                 # Prepare CV and fit params
                 cv_obj = cv if cv is not None else self._create_time_series_split(len(X))
@@ -725,8 +727,8 @@ class HyperparameterOptimization:
                 try:
                     if SKLEARN_AVAILABLE and len(np.unique(y)) <= 10:
                         fp.setdefault('sample_weight', compute_sample_weight('balanced', y))
-                except Exception:
-                    pass
+                except Exception as sw_err:
+                    logger.debug(f"sample_weight computation failed: {sw_err}")
 
                 # Manual CV loop to support sample_weight without passing fit_params
                 try:
@@ -741,13 +743,15 @@ class HyperparameterOptimization:
                                 mdl.fit(X_tr, y_tr, sample_weight=fp['sample_weight'][train_idx])
                             else:
                                 mdl.fit(X_tr, y_tr)
-                        except Exception:
+                        except Exception as fit_err:
+                            logger.debug(f"Fit without sample_weight due to: {fit_err}")
                             mdl.fit(X_tr, y_tr)
                         try:
                             from sklearn.metrics import get_scorer
                             scorer = get_scorer(scoring) if isinstance(scoring, str) else scoring
                             score = scorer(mdl, X_te, y_te)
-                        except Exception:
+                        except Exception as score_err:
+                            logger.debug(f"Scorer failed ({score_err}), using estimator.score fallback")
                             score = mdl.score(X_te, y_te) if hasattr(mdl, 'score') else 0.0
                         fold_scores.append(float(score))
                         trial.report(float(score), step=i)
@@ -755,8 +759,8 @@ class HyperparameterOptimization:
                             raise optuna.TrialPruned()
                     if fold_scores:
                         return float(np.mean(fold_scores))
-                except Exception:
-                    pass
+                except Exception as cv_err:
+                    logger.debug(f"Manual CV loop failed, falling back to single-score evaluation: {cv_err}")
 
                 # Fallback single-score
                 return self._evaluate_model(model, X, y)

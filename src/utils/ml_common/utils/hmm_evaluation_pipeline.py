@@ -312,8 +312,8 @@ class ComprehensiveHMMEvaluationPipeline:
                     train_probabilities = model.predict_proba(X_train)
                     val_probabilities = model.predict_proba(X_val)
                     test_probabilities = model.predict_proba(X_test) if X_test is not None else None
-                except:
-                    pass
+                except Exception as proba_err:
+                    self.logger.debug(f"predict_proba unavailable or failed: {proba_err}")
 
             # Calculate metrics using sklearn
             from sklearn.metrics import (

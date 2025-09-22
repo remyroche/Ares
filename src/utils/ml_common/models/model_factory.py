@@ -1087,7 +1087,19 @@ class EnhancedModelFactory:
             # GPU acceleration (if supported by model)
             if self.m1_gpu and model_config.enable_gpu_acceleration:
                 # Add GPU-specific parameters if the model supports them
-                pass
+                try:
+                    params = model.get_params() if hasattr(model, 'get_params') else {}
+                    gpu_keys = [k for k in params.keys() if k in {'device', 'tree_method', 'gpu_id'}]
+                    updates: Dict[str, Any] = {}
+                    if 'device' in gpu_keys:
+                        updates['device'] = 'gpu'
+                    if 'tree_method' in gpu_keys:
+                        updates['tree_method'] = 'hist'
+                    if updates and hasattr(model, 'set_params'):
+                        model.set_params(**updates)
+                except Exception:
+                    # Best-effort GPU optimization; safe to ignore
+                    ...
             
             # Apply parameters
             if m1_params:

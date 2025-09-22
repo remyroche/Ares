@@ -252,8 +252,8 @@ def calibrate_probabilities(
         # fallback to original
         try:
             estimator.fit(X_train, y_train)
-        except Exception:
-            pass
+        except Exception as e2:
+            _LOGGER.debug(f"Calibration fallback fit failed: {e2}")
         return estimator
 
 

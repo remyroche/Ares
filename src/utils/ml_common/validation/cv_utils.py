@@ -758,15 +758,15 @@ class CrossValidationUtilities:
                     if y_pred_proba is not None:
                         try:
                             metrics['roc_auc'] = roc_auc_score(y_true, y_pred_proba[:, 1])
-                        except:
-                            pass
+                        except Exception as auc_err:
+                            self.logger.debug(f"ROC AUC (binary) calculation failed: {auc_err}")
                 else:  # Multi-class
                     metrics['f1_macro'] = f1_score(y_true, y_pred, average='macro')
                     if y_pred_proba is not None:
                         try:
                             metrics['roc_auc_ovr'] = roc_auc_score(y_true, y_pred_proba, multi_class='ovr')
-                        except:
-                            pass
+                        except Exception as auc_err:
+                            self.logger.debug(f"ROC AUC (ovr) calculation failed: {auc_err}")
             else:  # Regression
                 metrics['mae'] = mean_absolute_error(y_true, y_pred)
                 metrics['mse'] = mean_squared_error(y_true, y_pred)

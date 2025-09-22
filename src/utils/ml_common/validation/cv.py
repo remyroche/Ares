@@ -102,7 +102,6 @@ def analyze_splits(
             _LOGGER.debug(f"📊 Train classes: {fold['train_class_counts']}")
         except Exception as e:
             _LOGGER.warning(f"⚠️ Failed to analyze train class counts for fold {i}: {e}")
-            pass
             
         try:
             u, c = np.unique(y.iloc[va], return_counts=True)
@@ -110,7 +109,6 @@ def analyze_splits(
             _LOGGER.debug(f"📊 Val classes: {fold['val_class_counts']}")
         except Exception as e:
             _LOGGER.warning(f"⚠️ Failed to analyze val class counts for fold {i}: {e}")
-            pass
             
         if is_time and len(tr) > 0 and len(va) > 0:
             temporal_ok = bool(X.index[tr][-1] < X.index[va][0])

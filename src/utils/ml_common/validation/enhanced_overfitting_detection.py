@@ -637,8 +637,8 @@ def detect_overfitting_for_model(model,
         try:
             train_probabilities = model.predict_proba(X_train)
             val_probabilities = model.predict_proba(X_val)
-        except:
-            pass
+        except Exception as proba_err:
+            logger.debug(f"predict_proba unavailable or failed: {proba_err}")
     
     # Get feature importance if available
     feature_importance = None

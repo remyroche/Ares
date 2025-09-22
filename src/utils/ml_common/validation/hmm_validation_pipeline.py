@@ -444,8 +444,8 @@ class HMMValidationPipeline:
                 try:
                     train_probabilities = model.predict_proba(X_train)
                     val_probabilities = model.predict_proba(X_val)
-                except:
-                    pass
+                except Exception as proba_err:
+                    self.logger.debug(f"predict_proba unavailable or failed: {proba_err}")
 
             # Calculate metrics using sklearn
             from sklearn.metrics import (

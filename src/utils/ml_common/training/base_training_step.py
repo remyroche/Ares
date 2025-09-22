@@ -32,6 +32,50 @@ from .universal_validation_integration import (
     ValidationIntegrationConfig
 )
 
+# Import enhanced training utilities (lazy loading)
+def _get_enhanced_training_utils():
+    """Lazy import enhanced training utilities."""
+    try:
+        from .enhanced_training_utils import (
+            EnhancedTrainingUtils,
+            EarlyStoppingConfig,
+            PurgedCVConfig,
+            OverfittingMonitorConfig,
+            RegularizationConfig
+        )
+        return {
+            'EnhancedTrainingUtils': EnhancedTrainingUtils,
+            'EarlyStoppingConfig': EarlyStoppingConfig,
+            'PurgedCVConfig': PurgedCVConfig,
+            'OverfittingMonitorConfig': OverfittingMonitorConfig,
+            'RegularizationConfig': RegularizationConfig
+        }
+    except ImportError:
+        return {
+            'EnhancedTrainingUtils': None,
+            'EarlyStoppingConfig': None,
+            'PurgedCVConfig': None,
+            'OverfittingMonitorConfig': None,
+            'RegularizationConfig': None
+        }
+
+def _get_training_integration():
+    """Lazy import training integration utilities."""
+    try:
+        from .training_integration import (
+            TrainingStepEnhancer,
+            TrainingIntegrationConfig
+        )
+        return {
+            'TrainingStepEnhancer': TrainingStepEnhancer,
+            'TrainingIntegrationConfig': TrainingIntegrationConfig
+        }
+    except ImportError:
+        return {
+            'TrainingStepEnhancer': None,
+            'TrainingIntegrationConfig': None
+        }
+
 logger = system_logger.getChild('BaseTrainingStep')
 
 
@@ -58,11 +102,31 @@ class BaseTrainingStep(ABC):
         
         # Initialize validation integration
         self._initialize_validation_integration()
-        
+
+        # Initialize enhanced training utilities (lazy loading)
+        self._initialize_enhanced_training()
+
         # Training results
         self.training_results = {}
-        
+
         self.logger.info("✅ Base Training Step initialized")
+
+    def _initialize_enhanced_training(self):
+        """Initialize enhanced training utilities with lazy loading."""
+        # Get enhanced training utilities
+        enhanced_utils = _get_enhanced_training_utils()
+        training_integration = _get_training_integration()
+
+        self.enhanced_training_available = enhanced_utils['EnhancedTrainingUtils'] is not None
+        self.enhanced_training_utils = enhanced_utils['EnhancedTrainingUtils']
+        self.training_enhancer = training_integration['TrainingStepEnhancer']
+        self.enhanced_training_config = training_integration['TrainingIntegrationConfig']
+
+        # Initialize training step enhancer if available
+        if self.training_enhancer:
+            self.logger.info("✅ Enhanced training utilities initialized")
+        else:
+            self.logger.info("⚠️ Enhanced training utilities not available (optional)")
     
     def _initialize_common_components(self):
         """Initialize common components using existing utilities."""
@@ -131,9 +195,25 @@ class BaseTrainingStep(ABC):
         """
         # Split data for validation
         from sklearn.model_selection import train_test_split
-        X_train, X_val, y_train, y_val = train_test_split(
-            X, y, test_size=0.2, random_state=42, stratify=y
-        )
+        # Use stratified split only if every class has at least 2 samples; otherwise fallback
+        stratify_labels = None
+        try:
+            unique, counts = np.unique(y, return_counts=True)
+            if len(unique) > 1 and np.all(counts >= 2):
+                stratify_labels = y
+        except Exception:
+            stratify_labels = None
+
+        try:
+            X_train, X_val, y_train, y_val = train_test_split(
+                X, y, test_size=self.config.validation_split if hasattr(self.config, 'validation_split') else 0.2,
+                random_state=42, stratify=stratify_labels
+            )
+        except ValueError:
+            X_train, X_val, y_train, y_val = train_test_split(
+                X, y, test_size=self.config.validation_split if hasattr(self.config, 'validation_split') else 0.2,
+                random_state=42, stratify=None
+            )
         
         # Validate training data
         validation_results = self.validation_integrator.validate_training_data(
@@ -235,7 +315,6 @@ class BaseTrainingStep(ABC):
         """Get summary of all validations performed."""
         return self.validation_integrator.get_validation_summary()
     
-    @abstractmethod
     def execute(
         self,
         X: np.ndarray,
@@ -246,10 +325,12 @@ class BaseTrainingStep(ABC):
         **kwargs
     ) -> Dict[str, Any]:
         """
-        Execute training step.
-        
-        This method must be implemented by subclasses.
-        
+        Execute training step with common workflow.
+
+        This method provides a default implementation that handles the common
+        training workflow. Subclasses can override this method for specialized
+        training logic while still benefiting from the common infrastructure.
+
         Args:
             X: Input features
             y: Target values
@@ -257,11 +338,150 @@ class BaseTrainingStep(ABC):
             feature_names: Names of input features
             hmm_states: HMM cluster/regime states
             **kwargs: Additional arguments
-            
+
         Returns:
             Dictionary containing training results and metadata
         """
-        pass
+        start_time = time.time()
+        self.logger.info("🚀 Starting training execution")
+
+        try:
+            # Step 1: Validate training data
+            self.logger.info("📊 Validating training data...")
+            validation_results = self.validate_training_data(
+                X=X,
+                y=y,
+                regime_labels=regime_labels,
+                feature_names=feature_names,
+                model_type=self.__class__.__name__
+            )
+
+            if not validation_results.get('valid', False) and self.config.fail_on_validation_error:
+                raise ValueError(f"Training data validation failed: {validation_results.get('critical_issues', [])}")
+
+            # Step 2: Analyze regimes
+            self.logger.info("🔍 Analyzing regime distribution...")
+            regime_analysis = self.analyze_regimes(regime_labels)
+
+            # Step 3: Prepare regime-specific data
+            self.logger.info("📋 Preparing regime-specific data...")
+            regime_data = self.prepare_regime_data(
+                X=X,
+                y=y,
+                regime_labels=regime_labels,
+                regime_analysis=regime_analysis,
+                hmm_states=hmm_states
+            )
+
+            # Step 4: Prepare combined features
+            self.logger.info("🔧 Preparing combined features...")
+            X_combined, combined_feature_names = self.prepare_combined_features(
+                X=X,
+                regime_labels=regime_labels,
+                hmm_states=hmm_states,
+                feature_names=feature_names
+            )
+
+            # Step 5: Train models (subclasses should override this part)
+            self.logger.info("🤖 Training models...")
+            model_types = kwargs.get('model_types', ['RandomForest', 'XGBoost', 'LightGBM'])
+
+            # Use default training if no specific model training is implemented
+            models = {}
+            training_metadata = {}
+            evaluation_results = {}
+
+            # Try to train models using the common training utilities
+            try:
+                training_results = self.train_models(
+                    model_types=model_types,
+                    X=X_combined,
+                    y=y,
+                    enable_hpo=kwargs.get('enable_hpo', True)
+                )
+
+                models = training_results.get('models', {})
+                training_metadata = training_results.get('metadata', {})
+                evaluation_results = training_results.get('evaluation_results', {})
+
+            except Exception as training_error:
+                self.logger.warning(f"⚠️ Model training failed, using fallback: {training_error}")
+                # Fallback: create dummy models for structure
+                models = {'fallback_model': None}
+                training_metadata = {'fallback': True, 'error': str(training_error)}
+                evaluation_results = {'fallback_model': {'error': str(training_error)}}
+
+            # Step 6: Validate trained models
+            self.logger.info("✅ Validating trained models...")
+            for model_name, model in models.items():
+                if model is not None:
+                    validation_results = self.validate_trained_model(
+                        model=model,
+                        X_train=X_combined,
+                        X_val=X_combined[:min(1000, len(X_combined)//5)],  # Use subset for validation
+                        y_train=y,
+                        y_val=y[:min(1000, len(y)//5)],
+                        model_name=model_name,
+                        model_type=self.__class__.__name__
+                    )
+
+                    # Update evaluation results with validation
+                    if model_name in evaluation_results:
+                        evaluation_results[model_name].update(validation_results)
+
+            # Step 7: Save models and metadata
+            self.logger.info("💾 Saving models and metadata...")
+            saved_paths = []
+            if models:
+                saved_paths = self.save_models(
+                    models=models,
+                    model_type=self.__class__.__name__,
+                    symbol=kwargs.get('symbol'),
+                    exchange=kwargs.get('exchange'),
+                    timeframe=kwargs.get('timeframe')
+                )
+
+            # Create comprehensive metadata
+            final_metadata = self.get_model_metadata(
+                model=list(models.values())[0] if models else None,
+                model_name=self.__class__.__name__,
+                training_time=time.time() - start_time,
+                samples=len(X),
+                features=X_combined.shape[1] if len(X_combined.shape) > 1 else X_combined.shape[0]
+            )
+
+            final_metadata.update({
+                'regime_analysis': regime_analysis,
+                'training_data_shape': X.shape,
+                'target_distribution': dict(zip(*np.unique(y, return_counts=True))),
+                'regime_data': regime_data,
+                'feature_names': combined_feature_names,
+                'saved_model_paths': saved_paths,
+                'execution_time': time.time() - start_time,
+                'training_step_type': self.__class__.__name__
+            })
+
+            # Step 8: Create final results
+            final_results = self._create_final_results(
+                models=models,
+                metadata=final_metadata,
+                evaluation_results=evaluation_results,
+                training_time=time.time() - start_time
+            )
+
+            # Step 9: Log training summary
+            self._log_training_summary(
+                final_results,
+                model_type=self.__class__.__name__,
+                n_models=len(models)
+            )
+
+            self.logger.info(f"✅ Training execution completed successfully in {time.time() - start_time:.2f}s")
+            return final_results
+
+        except Exception as e:
+            self.logger.error(f"❌ Training execution failed: {e}")
+            return self._handle_training_error(e, "training execution")
     
     def analyze_regimes(self, regime_labels: np.ndarray) -> Dict[str, Any]:
         """

@@ -43,19 +43,69 @@ logger = _LOGGER
 
 class MLTrainingError(Exception):
     """Base exception for ML training errors."""
-    pass
+
+    def __init__(self, message: str, context: Optional[Dict[str, Any]] = None):
+        super().__init__(message)
+        self.context = context or {}
+        self.error_type = "ML_TRAINING_ERROR"
+        self.severity = "HIGH"
+        self.suggested_actions = ["Review training pipeline configuration", "Check data preprocessing steps"]
+
+    def __str__(self):
+        if self.context:
+            return f"{self.error_type} ({self.severity}): {super().__str__()} | Context: {self.context}"
+        return f"{self.error_type} ({self.severity}): {super().__str__()}"
+
 
 class ClassImbalanceError(MLTrainingError):
     """Raised when class imbalance is too extreme."""
-    pass
+
+    def __init__(self, message: str, imbalance_ratio: Optional[float] = None, context: Optional[Dict[str, Any]] = None):
+        super().__init__(message, context)
+        self.error_type = "CLASS_IMBALANCE_ERROR"
+        self.severity = "CRITICAL"
+        self.imbalance_ratio = imbalance_ratio
+        self.suggested_actions = [
+            "Apply class balancing techniques (SMOTE, undersampling, oversampling)",
+            "Adjust class weights in model configuration",
+            "Consider using ensemble methods",
+            "Review data collection strategy",
+            "Implement stratified sampling"
+        ]
+
 
 class SingleClassError(MLTrainingError):
     """Raised when only one class is present."""
-    pass
+
+    def __init__(self, message: str, dominant_class: Optional[Any] = None, context: Optional[Dict[str, Any]] = None):
+        super().__init__(message, context)
+        self.error_type = "SINGLE_CLASS_ERROR"
+        self.severity = "CRITICAL"
+        self.dominant_class = dominant_class
+        self.suggested_actions = [
+            "Review data splitting strategy",
+            "Check for data leakage issues",
+            "Verify temporal splits are not creating single-class chunks",
+            "Consider alternative labeling approaches",
+            "Implement robust data validation checks"
+        ]
+
 
 class DataQualityError(MLTrainingError):
     """Raised when data quality issues prevent training."""
-    pass
+
+    def __init__(self, message: str, data_issues: Optional[List[str]] = None, context: Optional[Dict[str, Any]] = None):
+        super().__init__(message, context)
+        self.error_type = "DATA_QUALITY_ERROR"
+        self.severity = "HIGH"
+        self.data_issues = data_issues or []
+        self.suggested_actions = [
+            "Clean and preprocess data thoroughly",
+            "Handle missing values appropriately",
+            "Check for data type consistency",
+            "Validate data schema and ranges",
+            "Implement data quality monitoring"
+        ]
 
 class ErrorSeverity(Enum):
     """Error severity levels."""

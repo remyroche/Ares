@@ -501,8 +501,9 @@ class ModelRegistry:
                 try:
                     version_num = int(latest_version) + 1
                     return str(version_num)
-                except ValueError:
-                    pass
+                except ValueError as e:
+                    self.logger.warning(f"Could not parse version number '{latest_version}': {e}. Using version 1.")
+                    return "1"
             return "1"
         elif strategy == 'timestamp':
             return datetime.now().strftime("%Y%m%d_%H%M%S")

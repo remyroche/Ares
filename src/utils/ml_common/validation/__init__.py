@@ -57,7 +57,7 @@ PurgedKFold = PurgedSplitConfig
 from .stability import feature_selection_stability, aggregate_time_blocks, StabilityAnalyzer
 from .thresholding import optimize_threshold, calibrate_probabilities
 
-# Enhanced validation components
+# Enhanced validation components (consolidated with unified CV)
 from .enhanced_overfitting_detection import (
     UniversalOverfittingDetector,
     OverfittingConfig,
@@ -81,6 +81,14 @@ from .universal_ml_validation import (
     UniversalMLValidationReport,
     get_ml_validator,
     validate_ml_model
+)
+# Enhanced validation (now uses unified CV)
+from .enhanced_validation import (
+    EnhancedValidator,
+    EnhancedValidationConfig,
+    ValidationReport,
+    get_enhanced_validator,
+    validate_model_comprehensively
 )
 
 # Re-export unified validation config helpers
@@ -110,14 +118,14 @@ __all__ = [
 
     # Original Threshold Optimization
     'optimize_threshold', 'calibrate_probabilities',
-    
+
     # Enhanced Overfitting Detection
     'UniversalOverfittingDetector',
     'OverfittingConfig',
     'OverfittingReport',
     'get_overfitting_detector',
     'detect_overfitting_for_model',
-    
+
     # Universal Temporal Validation
     'UniversalTemporalValidator',
     'UniversalTemporalCrossValidator',
@@ -127,13 +135,21 @@ __all__ = [
     'get_temporal_validator',
     'get_temporal_cv',
     'create_time_series_split',
-    
+
     # Universal ML Validation
     'UniversalMLValidator',
     'UniversalMLValidationConfig',
     'UniversalMLValidationReport',
     'get_ml_validator',
     'validate_ml_model',
+
+    # Enhanced Validation (consolidated with unified CV)
+    'EnhancedValidator',
+    'EnhancedValidationConfig',
+    'ValidationReport',
+    'get_enhanced_validator',
+    'validate_model_comprehensively',
+
     # Unified helpers
     'save_validation_config',
     'load_validation_config'

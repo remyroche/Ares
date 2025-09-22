@@ -351,8 +351,8 @@ def cached(
         if key_func is not None:
             try:
                 return str(key_func(*args, **kwargs))
-            except Exception:
-                pass
+            except Exception as e:
+                raise ValueError(f"Custom cache key function failed: {e}")
         uc = get_unified_cache(namespace=namespace)
         return uc.build_cache_key(func.__name__, args, kwargs)
 

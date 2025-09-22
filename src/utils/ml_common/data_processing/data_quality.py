@@ -1271,8 +1271,9 @@ class DataQualityUtilities:
                     try:
                         pd.to_datetime(df[col].head(10), errors='coerce')
                         datetime_cols.append(col)
-                    except:
-                        pass
+                    except Exception as e:
+                        logger.warning(f"Could not parse datetime for column {col}: {e}")
+                        # Continue without this column
 
             if datetime_cols:
                 timeliness_indicators.append(0.9)  # Has datetime information
@@ -1354,8 +1355,9 @@ class DataQualityUtilities:
                     lof_scores = lof.fit_predict(numeric_df)
                     lof_outliers = np.where(lof_scores == -1)[0]
                     outlier_results['outlier_indices'].update(lof_outliers)
-            except:
-                pass
+            except Exception as e:
+                logger.error(f"❌ Critical error: Outlier detection failed: {e}")
+                raise ValueError(f"Data quality outlier detection failed: {e}")
 
             outlier_results['outlier_indices'] = list(outlier_results['outlier_indices'])
             return outlier_results

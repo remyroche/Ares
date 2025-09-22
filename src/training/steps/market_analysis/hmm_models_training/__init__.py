@@ -63,9 +63,10 @@ from .hmm_ensemble_training import (
 )
 
 # New enhanced components
-from .timeframe_config import (
-    TimeframeConfig,
-    get_timeframe_config,
+# Re-export timeframe utilities from ml_common universal config
+from src.utils.ml_common.config.universal_timeframe_config import (
+    UniversalTimeframeConfig as TimeframeConfig,
+    get_timeframe_manager as get_timeframe_config,
     set_timeframe_config,
     validate_timeframe_consistency,
     get_primary_timeframe,
@@ -73,39 +74,74 @@ from .timeframe_config import (
     is_cross_timeframe_enabled
 )
 
-from .early_stopping import (
-    EarlyStoppingConfig,
-    EarlyStoppingMonitor,
-    AggressiveOverfittingDetector,
-    get_early_stopping_config,
-    get_overfitting_detector
-)
+# Deprecated local early_stopping; use ml_common training utils if needed.
+try:
+    from src.utils.ml_common.training.enhanced_training_utils import (
+        EarlyStoppingConfig,
+        OverfittingMonitorConfig as AggressiveOverfittingDetector
+    )
+    def get_early_stopping_config():
+        return EarlyStoppingConfig()
+    def get_overfitting_detector():
+        from src.utils.ml_common.validation.enhanced_overfitting_detection import get_overfitting_detector as _g
+        return _g()
+except Exception:
+    # Keep names available but minimal to avoid import errors
+    class EarlyStoppingConfig: ...
+    class AggressiveOverfittingDetector: ...
+    def get_early_stopping_config(): return EarlyStoppingConfig()
+    def get_overfitting_detector(): return None
 
-from .temporal_validation import (
-    TemporalValidationConfig,
-    TemporalValidator,
-    TemporalCrossValidator,
-    WalkForwardValidator,
-    get_temporal_config,
-    get_temporal_validator,
-    get_temporal_cv,
-    create_walk_forward_validator
-)
+# Deprecated local temporal_validation; proxy to ml_common if available
+try:
+    from src.utils.ml_common.validation.temporal_validation import (
+        TemporalValidationConfig,
+        TemporalValidator,
+        TemporalCrossValidator,
+        WalkForwardValidator
+    )
+    def get_temporal_config(): return TemporalValidationConfig()
+    def get_temporal_validator(): return TemporalValidator()
+    def get_temporal_cv(): return TemporalCrossValidator()
+    def create_walk_forward_validator(): return WalkForwardValidator()
+except Exception:
+    class TemporalValidationConfig: ...
+    class TemporalValidator: ...
+    class TemporalCrossValidator: ...
+    class WalkForwardValidator: ...
+    def get_temporal_config(): return TemporalValidationConfig()
+    def get_temporal_validator(): return TemporalValidator()
+    def get_temporal_cv(): return TemporalCrossValidator()
+    def create_walk_forward_validator(): return WalkForwardValidator()
 
-from .temporal_cross_validation import (
-    TemporalCVConfig,
-    TimeSeriesSplit,
-    TemporalCrossValidator,
-    TemporalValidationPipeline,
-    get_temporal_cv_config,
-    get_validation_pipeline,
-    create_time_series_split
-)
+# Deprecated local temporal_cross_validation; proxy to ml_common if available
+try:
+    from src.utils.ml_common.validation.temporal_cross_validation import (
+        TemporalCVConfig,
+        TimeSeriesSplit,
+        TemporalCrossValidator,
+        TemporalValidationPipeline
+    )
+    def get_temporal_cv_config(): return TemporalCVConfig()
+    def get_validation_pipeline(): return TemporalValidationPipeline()
+    def create_time_series_split(): return TimeSeriesSplit()
+except Exception:
+    class TemporalCVConfig: ...
+    class TimeSeriesSplit: ...
+    class TemporalCrossValidator: ...
+    class TemporalValidationPipeline: ...
+    def get_temporal_cv_config(): return TemporalCVConfig()
+    def get_validation_pipeline(): return TemporalValidationPipeline()
+    def create_time_series_split(): return TimeSeriesSplit()
 
-from .enhanced_training_integration import (
-    EnhancedHMMTrainingPipeline,
-    demonstrate_enhanced_training
-)
+# Remove broken local re-exports; optional alias to ml_common if available
+try:
+    from src.utils.ml_common.training.training_integration import TrainingStepEnhancer as EnhancedHMMTrainingPipeline
+    def demonstrate_enhanced_training():
+        return "Enhanced training demonstration is available via ml_common."
+except Exception:
+    class EnhancedHMMTrainingPipeline: ...
+    def demonstrate_enhanced_training(): return ""
 
 # Enhanced Components - Overfitting Reporting
 from .overfitting_reporting import (

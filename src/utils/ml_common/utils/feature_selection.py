@@ -43,143 +43,18 @@ class FeatureSelectionFramework:
             self._bank_framework = None
 
     def _validate_data_quality(self, X: np.ndarray, y: np.ndarray, context: str = "feature_selection") -> Dict[str, Any]:
-        """
-        Validate data quality and return diagnostics.
-
-        Args:
-            X: Feature matrix
-            y: Target vector
-            context: Context for logging
-
-        Returns:
-            Dictionary with validation results and any preprocessing needed
-        """
-        validation_results = {
+        """Deprecated local validation. Central bank handles data checks. Kept for compatibility."""
+        return {
             'is_valid': True,
             'issues': [],
-            'data_shape': X.shape,
-            'target_shape': y.shape,
+            'data_shape': getattr(X, 'shape', None),
+            'target_shape': getattr(y, 'shape', None),
             'needs_preprocessing': False
         }
 
-        # Check for NaN values in features
-        nan_mask_X = np.isnan(X)
-        nan_count_X = np.sum(nan_mask_X)
-        if nan_count_X > 0:
-            validation_results['issues'].append(f"Found {nan_count_X} NaN values in feature matrix")
-            validation_results['features_have_nan'] = True
-            validation_results['needs_preprocessing'] = True
-            self.logger.warning(f"⚠️ {context}: Found {nan_count_X} NaN values in feature matrix ({(nan_count_X/X.size)*100:.2f}%)")
-
-        # Check for infinity values in features
-        inf_mask_X = np.isinf(X)
-        inf_count_X = np.sum(inf_mask_X)
-        if inf_count_X > 0:
-            validation_results['issues'].append(f"Found {inf_count_X} infinity values in feature matrix")
-            validation_results['features_have_inf'] = True
-            validation_results['needs_preprocessing'] = True
-            self.logger.warning(f"⚠️ {context}: Found {inf_count_X} infinity values in feature matrix ({(inf_count_X/X.size)*100:.2f}%)")
-
-        # Check for NaN values in target
-        nan_mask_y = np.isnan(y)
-        nan_count_y = np.sum(nan_mask_y)
-        if nan_count_y > 0:
-            validation_results['issues'].append(f"Found {nan_count_y} NaN values in target variable")
-            validation_results['target_has_nan'] = True
-            validation_results['is_valid'] = False
-            self.logger.error(f"❌ {context}: Found {nan_count_y} NaN values in target variable - cannot proceed")
-
-        # Check for constant target values
-        unique_y = np.unique(y)
-        if len(unique_y) == 1:
-            validation_results['issues'].append(f"All target values are identical ({unique_y[0]})")
-            validation_results['constant_target'] = True
-            validation_results['is_valid'] = False
-            self.logger.error(f"❌ {context}: All target values are identical ({unique_y[0]}) - cannot perform meaningful feature selection")
-
-        # Check target data type issues for classification
-        if len(unique_y) <= 10:  # Likely classification
-            try:
-                y_int = y.astype(int)
-                if not np.array_equal(y, y_int):
-                    validation_results['issues'].append("Target values are not integers for classification task")
-                    validation_results['target_dtype_issue'] = True
-                    self.logger.warning(f"⚠️ {context}: Target values are not integers, switching to regression")
-            except (ValueError, TypeError):
-                validation_results['issues'].append("Target values cannot be converted to integers for classification")
-                validation_results['target_dtype_issue'] = True
-                self.logger.warning(f"⚠️ {context}: Target values cannot be converted to integers, treating as regression")
-
-        # Overall validation status
-        validation_results['is_valid'] = validation_results['is_valid'] and len(validation_results['issues']) == 0
-
-        return validation_results
-
     def _preprocess_data_for_ml(self, X: np.ndarray, y: np.ndarray, validation_results: Dict[str, Any], context: str = "feature_selection") -> np.ndarray:
-        """
-        Preprocess data to handle NaN and infinity values.
-
-        Args:
-            X: Feature matrix
-            y: Target vector (for reference, not modified)
-            validation_results: Results from data validation
-            context: Context for logging
-
-        Returns:
-            Preprocessed feature matrix
-        """
-        X_processed = X.copy()
-
-        # Handle NaN values in features
-        if validation_results.get('features_have_nan', False):
-            nan_mask = np.isnan(X_processed)
-            nan_count = np.sum(nan_mask)
-            self.logger.info(f"🔧 {context}: Filling {nan_count} NaN values in features with column means")
-
-            # Fill NaN values with column means
-            for col in range(X_processed.shape[1]):
-                col_data = X_processed[:, col]
-                nan_indices = np.isnan(col_data)
-                if np.any(nan_indices):
-                    finite_mask = np.isfinite(col_data)
-                    if np.any(finite_mask):
-                        col_mean = np.mean(col_data[finite_mask])
-                        X_processed[nan_indices, col] = col_mean
-                    else:
-                        X_processed[nan_indices, col] = 0.0
-
-        # Handle infinity values in features (similar to existing wrapper method)
-        if validation_results.get('features_have_inf', False):
-            inf_mask = np.isinf(X_processed)
-            inf_count = np.sum(inf_mask)
-            self.logger.info(f"🔧 {context}: Handling {inf_count} infinity values in features")
-
-            # Replace positive infinity
-            pos_inf_mask = np.isposinf(X_processed)
-            if np.any(pos_inf_mask):
-                finite_mask = np.isfinite(X_processed)
-                if np.any(finite_mask):
-                    max_finite = np.max(X_processed[finite_mask])
-                    X_processed[pos_inf_mask] = max(max_finite * 10, 1e10)
-                else:
-                    X_processed[pos_inf_mask] = 1e10
-
-            # Replace negative infinity
-            neg_inf_mask = np.isneginf(X_processed)
-            if np.any(neg_inf_mask):
-                finite_mask = np.isfinite(X_processed)
-                if np.any(finite_mask):
-                    min_finite = np.min(X_processed[finite_mask])
-                    X_processed[neg_inf_mask] = min(min_finite * 10, -1e10)
-                else:
-                    X_processed[neg_inf_mask] = -1e10
-
-        # Clip extremely large values
-        max_float64 = 1e308
-        min_float64 = -1e308
-        X_processed = np.clip(X_processed, min_float64, max_float64)
-
-        return X_processed
+        """Deprecated local preprocessing. Central bank handles preprocessing."""
+        return X
 
     def select_features(
         self,
@@ -352,19 +227,8 @@ class FeatureSelectionFramework:
         return results
 
     def _choose_optimal_method(self, X: np.ndarray, y: np.ndarray, task_type: str) -> str:
-        """Choose optimal feature selection method based on data characteristics."""
-        n_features = X.shape[1]
-        n_samples = X.shape[0]
-
-        # For small datasets, prefer filter methods
-        if n_samples < 1000:
-            return 'filter'
-        # For high-dimensional data, use embedded methods
-        elif n_features > 1000:
-            return 'embedded'
-        # For moderate datasets, use hybrid approach
-        else:
-            return 'hybrid'
+        """Deprecated: selection strategy handled by central bank. Kept for compatibility."""
+        return 'comprehensive'
 
     def _filter_based_selection(
         self,
@@ -374,27 +238,8 @@ class FeatureSelectionFramework:
         k: int,
         **kwargs
     ) -> Tuple[List[int], np.ndarray, np.ndarray]:
-        """Filter-based feature selection."""
-        self.logger.debug("📊 Using filter-based selection")
-
-        if task_type == 'regression':
-            # Use f_regression for regression
-            selector = SelectKBest(score_func=f_regression, k=k)
-            selector.fit(X, y)
-            scores = selector.scores_
-        else:
-            # Use f_classif for classification
-            selector = SelectKBest(score_func=f_classif, k=k)
-            selector.fit(X, y)
-            scores = selector.scores_
-
-        # Get selected features
-        selected_features = selector.get_support(indices=True)
-
-        # Create ranking (higher score = better rank)
-        ranking = np.argsort(scores)[::-1]  # Sort in descending order
-
-        return selected_features.tolist(), scores, ranking
+        """Deprecated local path. Use central bank."""
+        raise RuntimeError("filter_based_selection is deprecated; use central framework")
 
     def _wrapper_based_selection(
         self,
@@ -404,65 +249,8 @@ class FeatureSelectionFramework:
         k: int,
         **kwargs
     ) -> Tuple[List[int], np.ndarray, np.ndarray]:
-        """Wrapper-based feature selection using RFE."""
-        self.logger.debug("📊 Using wrapper-based selection")
-
-        # Preprocess data to handle infinity and large values
-        X_processed = X.copy()
-
-        # Handle infinity values
-        inf_mask = np.isinf(X_processed)
-        if np.any(inf_mask):
-            self.logger.warning(f"⚠️ Found {np.sum(inf_mask)} infinity values in data for wrapper RFE, replacing with finite values")
-
-            # Replace positive infinity
-            pos_inf_mask = np.isposinf(X_processed)
-            if np.any(pos_inf_mask):
-                finite_mask = np.isfinite(X_processed)
-                if np.any(finite_mask):
-                    max_finite = np.max(X_processed[finite_mask])
-                    X_processed[pos_inf_mask] = max(max_finite * 10, 1e10)
-                else:
-                    X_processed[pos_inf_mask] = 1e10
-
-            # Replace negative infinity
-            neg_inf_mask = np.isneginf(X_processed)
-            if np.any(neg_inf_mask):
-                finite_mask = np.isfinite(X_processed)
-                if np.any(finite_mask):
-                    min_finite = np.min(X_processed[finite_mask])
-                    X_processed[neg_inf_mask] = min(min_finite * 10, -1e10)
-                else:
-                    X_processed[neg_inf_mask] = -1e10
-
-        # Clip extremely large values
-        max_float64 = 1e308
-        min_float64 = -1e308
-        X_processed = np.clip(X_processed, min_float64, max_float64)
-
-        # Use processed data for RFE
-        X = X_processed
-
-        # Choose base estimator
-        if task_type == 'regression':
-            estimator = RandomForestRegressor(n_estimators=100, random_state=42)
-        else:
-            estimator = RandomForestClassifier(n_estimators=100, random_state=42)
-
-        # Use RFE for feature selection
-        selector = RFE(estimator=estimator, n_features_to_select=k)
-        selector.fit(X, y)
-
-        # Get selected features
-        selected_features = selector.get_support(indices=True)
-
-        # Get feature rankings (lower rank = better)
-        ranking = selector.ranking_
-
-        # Create scores (inverse of ranking)
-        scores = 1.0 / ranking
-
-        return selected_features.tolist(), scores, ranking
+        """Deprecated local path. Use central bank."""
+        raise RuntimeError("wrapper_based_selection is deprecated; use central framework")
 
     def _embedded_based_selection(
         self,
@@ -472,38 +260,8 @@ class FeatureSelectionFramework:
         k: int,
         **kwargs
     ) -> Tuple[List[int], np.ndarray, np.ndarray]:
-        """Embedded-based feature selection using Lasso or tree-based methods."""
-        self.logger.debug("📊 Using embedded-based selection")
-
-        if task_type == 'regression':
-            # Use Lasso for regression
-            estimator = LassoCV(cv=5, random_state=42)
-        else:
-            # Use Random Forest for classification
-            estimator = RandomForestClassifier(n_estimators=100, random_state=42)
-
-        # Use SelectFromModel
-        selector = SelectFromModel(estimator=estimator, max_features=k)
-        selector.fit(X, y)
-
-        # Get selected features
-        selected_features = selector.get_support(indices=True)
-
-        # Get feature importances
-        if hasattr(selector.estimator_, 'coef_'):
-            # Lasso coefficients
-            scores = np.abs(selector.estimator_.coef_)
-        elif hasattr(selector.estimator_, 'feature_importances_'):
-            # Tree-based feature importances
-            scores = selector.estimator_.feature_importances_
-        else:
-            # Fallback: equal scores
-            scores = np.ones(X.shape[1])
-
-        # Create ranking
-        ranking = np.argsort(scores)[::-1]
-
-        return selected_features.tolist(), scores, ranking
+        """Deprecated local path. Use central bank."""
+        raise RuntimeError("embedded_based_selection is deprecated; use central framework")
 
     def _hybrid_selection(
         self,
@@ -513,36 +271,8 @@ class FeatureSelectionFramework:
         k: int,
         **kwargs
     ) -> Tuple[List[int], np.ndarray, np.ndarray]:
-        """Hybrid feature selection combining multiple methods."""
-        self.logger.debug("📊 Using hybrid selection")
-
-        # Step 1: Filter-based pre-selection (select 2x desired features)
-        pre_k = min(k * 2, X.shape[1])
-        filter_selected, filter_scores, _ = self._filter_based_selection(
-            X, y, task_type, pre_k
-        )
-
-        # Step 2: Wrapper-based refinement on pre-selected features
-        X_filtered = X[:, filter_selected]
-        wrapper_selected, wrapper_scores, wrapper_ranking = self._wrapper_based_selection(
-            X_filtered, y, task_type, k
-        )
-
-        # Map back to original feature indices
-        selected_features = [filter_selected[i] for i in wrapper_selected]
-
-        # Combine scores
-        combined_scores = np.zeros(X.shape[1])
-        combined_scores[filter_selected] = filter_scores[filter_selected]
-        combined_scores[selected_features] *= 2  # Boost scores for wrapper-selected features
-
-        # Create ranking for all original features (lower values = better rank)
-        ranking = np.full(X.shape[1], len(filter_selected) + 1, dtype=int)  # Default to worst rank
-        # Map wrapper rankings back to original feature indices
-        for i, filter_idx in enumerate(filter_selected):
-            ranking[filter_idx] = wrapper_ranking[i]
-
-        return selected_features, combined_scores, ranking
+        """Deprecated local path. Use central bank."""
+        raise RuntimeError("hybrid_selection is deprecated; use central framework")
 
     def _analyze_feature_importance(
         self,
@@ -591,91 +321,16 @@ class FeatureSelectionFramework:
         evaluation_metric: Optional[Callable] = None,
         **kwargs
     ) -> Dict[str, Any]:
-        """
-        Perform iterative feature selection to find optimal number of features.
-
-        Args:
-            X: Feature matrix
-            y: Target vector
-            task_type: Type of ML task
-            min_features: Minimum number of features to test
-            max_features: Maximum number of features to test
-            step_size: Step size for feature count
-            evaluation_metric: Metric function for evaluation
-
-        Returns:
-            Dictionary containing iterative selection results
-        """
-        self.logger.info(f"🔍 Starting iterative feature selection ({min_features}-{max_features})")
-
-        start_time = time.time()
-
-        # Set default evaluation metric
-        if evaluation_metric is None:
-            if task_type == 'regression':
-                evaluation_metric = lambda y_true, y_pred: r2_score(y_true, y_pred)
-            else:
-                evaluation_metric = lambda y_true, y_pred: accuracy_score(y_true, y_pred)
-
-        results = []
-        best_result = None
-        best_score = float('-inf')
-
-        # Test different numbers of features
-        for n_features in range(min_features, max_features + 1, step_size):
-            self.logger.debug(f"📊 Testing {n_features} features")
-
-            try:
-                # Perform feature selection
-                selection_result = self.select_features(
-                    X, y, task_type=task_type, k=n_features, **kwargs
-                )
-
-                if not selection_result['success']:
-                    continue
-
-                # Evaluate selected features
-                evaluation_result = self._evaluate_feature_subset(
-                    X, y, selection_result['selected_features'],
-                    evaluation_metric, task_type, **kwargs
-                )
-
-                result = {
-                    'n_features': n_features,
-                    'selected_features': selection_result['selected_features'],
-                    'selection_result': selection_result,
-                    'evaluation_score': evaluation_result.get('score', float('nan')),
-                    'evaluation_details': evaluation_result
-                }
-                results.append(result)
-
-                # Track best result
-                if evaluation_result.get('score', float('nan')) > best_score:
-                    best_score = evaluation_result['score']
-                    best_result = result
-
-            except Exception as e:
-                self.logger.warning(f"⚠️ Failed evaluation for {n_features} features: {e}")
-                result = {
-                    'n_features': n_features,
-                    'error': str(e),
-                    'success': False
-                }
-                results.append(result)
-
-        iteration_time = time.time() - start_time
-
-        final_result = {
-            'results': results,
-            'best_result': best_result,
-            'optimal_n_features': best_result['n_features'] if best_result else None,
-            'best_score': best_score if best_result else None,
-            'iteration_time': iteration_time,
-            'success': best_result is not None
+        """Deprecated iterative sweep. Use central comprehensive pipeline instead."""
+        return {
+            'results': [],
+            'best_result': None,
+            'optimal_n_features': None,
+            'best_score': None,
+            'iteration_time': 0.0,
+            'success': False,
+            'error': 'iterative_feature_selection is deprecated; use central framework',
         }
-
-        self.logger.info(f"✅ Iterative feature selection completed in {iteration_time:.3f}s")
-        return final_result
 
     def _evaluate_feature_subset(
         self,
@@ -686,91 +341,8 @@ class FeatureSelectionFramework:
         task_type: str,
         **kwargs
     ) -> Dict[str, Any]:
-        """Evaluate a subset of features using cross-validation."""
-        try:
-            # Get feature indices
-            if hasattr(X, 'columns'):
-                feature_indices = [X.columns.get_loc(feat) for feat in selected_features]
-                X_subset = X.iloc[:, feature_indices].values
-            else:
-                # Assume X is numpy array and selected_features contains indices
-                feature_indices = selected_features
-                X_subset = X[:, feature_indices]
-
-            # Convert y to numpy array if needed
-            y_array = np.array(y)
-
-            # Validate subset data quality
-            validation_results = self._validate_data_quality(X_subset, y_array, "feature_subset_evaluation")
-            if not validation_results['is_valid']:
-                self.logger.warning(f"⚠️ Feature subset validation failed: {validation_results['issues']}")
-                return {
-                    'error': f"Subset validation failed: {', '.join(validation_results['issues'])}",
-                    'validation_issues': validation_results['issues'],
-                    'success': False
-                }
-
-            # Preprocess subset data if needed
-            if validation_results['needs_preprocessing']:
-                X_subset = self._preprocess_data_for_ml(X_subset, y_array, validation_results, "feature_subset_evaluation")
-
-            # Simple train-test split evaluation
-            from sklearn.model_selection import train_test_split
-
-            X_train, X_test, y_train, y_test = train_test_split(
-                X_subset, y_array, test_size=0.2, random_state=42
-            )
-
-            # Train a simple model
-            if task_type == 'regression':
-                from sklearn.linear_model import LinearRegression
-                model = LinearRegression()
-            else:
-                from sklearn.linear_model import LogisticRegression
-                model = LogisticRegression(random_state=42, max_iter=2000)
-
-            model.fit(X_train, y_train)
-            y_pred = model.predict(X_test)
-
-            # Calculate score
-            score = evaluation_metric(y_test, y_pred)
-
-            return {
-                'score': float(score),
-                'n_features': len(selected_features),
-                'success': True
-            }
-
-        except Exception as e:
-            self.logger.error(f"❌ Feature subset evaluation failed: {e}")
-
-            # Enhanced error diagnostics for evaluation failures
-            error_diagnostics = {
-                'error_type': type(e).__name__,
-                'error_message': str(e),
-                'n_selected_features': len(selected_features) if 'selected_features' in locals() else None,
-                'task_type': task_type,
-                'subset_shape': X_subset.shape if 'X_subset' in locals() else None,
-                'target_shape': y_array.shape if 'y_array' in locals() else None
-            }
-
-            # Try to provide more specific guidance
-            if "Input contains NaN" in str(e):
-                error_diagnostics['guidance'] = "Subset contains NaN values that weren't properly handled"
-            elif "Input contains infinity" in str(e):
-                error_diagnostics['guidance'] = "Subset contains infinity values that weren't properly handled"
-            elif "constant" in str(e).lower():
-                error_diagnostics['guidance'] = "Target variable appears to be constant in this subset"
-            elif "convergence" in str(e).lower():
-                error_diagnostics['guidance'] = "Model failed to converge - try different model parameters"
-            else:
-                error_diagnostics['guidance'] = "General evaluation failure - check subset data quality"
-
-            return {
-                'error': str(e),
-                'error_diagnostics': error_diagnostics,
-                'success': False
-            }
+        """Deprecated local evaluation. Use caller-provided evaluation flow."""
+        return {'success': False, 'error': 'deprecated'}
 
 
 # Global instance for easy access

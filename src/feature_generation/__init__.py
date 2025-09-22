@@ -171,21 +171,6 @@ except ImportError as e:
     logger = logging.getLogger(__name__)
     logger.warning(f"Matrix integration not available: {e}")
 
-# Backwards compatibility layer
-try:
-    from .compatibility import (
-        LegacyFeatureAdapter,
-        migrate_legacy_features,
-        get_legacy_adapter,
-        enable_legacy_compatibility
-    )
-    COMPATIBILITY_AVAILABLE = True
-except ImportError as e:
-    COMPATIBILITY_AVAILABLE = False
-    import logging
-    logger = logging.getLogger(__name__)
-    logger.warning(f"Backwards compatibility not available: {e}")
-
 # HMM compatibility layer
 try:
     from .compatibility.hmm_compatibility import (
@@ -320,15 +305,6 @@ if MATRIX_INTEGRATION_AVAILABLE:
         "VectorizedFeatureGenerator",
         "get_matrix_processor",
         "enable_matrix_acceleration"
-    ])
-
-# Backwards compatibility
-if COMPATIBILITY_AVAILABLE:
-    __all__.extend([
-        "LegacyFeatureAdapter",
-        "migrate_legacy_features",
-        "get_legacy_adapter", 
-        "enable_legacy_compatibility"
     ])
 
 # HMM compatibility

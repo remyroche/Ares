@@ -41,15 +41,8 @@ try:
 except ImportError:
     GPU_AVAILABLE = False
 
-try:
-    # from src.utils.hardware.m1_memory_optimizer import (  # type: ignore
-    #     auto_skim_memory, smart_memory_allocation,
-    #     memory_skim_decorator, auto_memory_skim_decorator,
-    #     auto_memory_skim_context, smart_memory_context
-    # )
-    MEMORY_OPTIMIZER_AVAILABLE = False
-except ImportError:
-    MEMORY_OPTIMIZER_AVAILABLE = False
+# Memory optimizer integration is optional and currently disabled to avoid import cycles
+MEMORY_OPTIMIZER_AVAILABLE = False
 
 
 try:
@@ -381,8 +374,18 @@ def _dominates(a: Solution, b: Solution, objectives: ObjectiveDirection) -> bool
         av = a.metrics.get(m)
         bv = b.metrics.get(m)
         if av is None or bv is None:
-            # Missing metric -> cannot dominate on this objective
-            return False
+            # Missing metric: treat as worst possible for that objective so that
+            # presence of metric is favored over absence, avoiding False positives.
+            # For max objectives, None is -inf; for min objectives, None is +inf.
+            if av is None and bv is None:
+                # Neither provides this metric; skip this objective
+                continue
+            if direction == 'max':
+                av = -math.inf if av is None else av
+                bv = -math.inf if bv is None else bv
+            else:
+                av = math.inf if av is None else av
+                bv = math.inf if bv is None else bv
 
         if direction == 'max':
             if av < bv:

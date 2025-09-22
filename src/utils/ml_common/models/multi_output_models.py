@@ -708,19 +708,16 @@ class MultiOutputStackingModel(MultiOutputModel):
             predictions = []
             
             for output_idx, output_name in enumerate(self.config.output_names):
-                # Check and create missing base models
-                if output_name not in self.base_models or len(self.base_models[output_name]) == 0:
+                # Ensure base and meta models exist. If missing, create sensible defaults.
+                if output_name not in self.base_models or len(self.base_models.get(output_name, {})) == 0:
                     self.logger.debug(f"🔧 Creating default base models for prediction: {output_name}")
                     self._create_default_base_models(output_name)
-                
-                # Check and create missing meta models
                 if output_name not in self.meta_models:
                     self.logger.debug(f"🔧 Creating default meta model for prediction: {output_name}")
                     self._create_default_meta_model(output_name)
-                
-                # If still missing models after creation attempts, use zeros
-                if output_name not in self.base_models or output_name not in self.meta_models:
-                    self.logger.warning(f"⚠️ Missing models for output {output_name}, using zeros")
+                # If still missing, use zeros as safe fallback (avoid crash)
+                if output_name not in self.base_models or output_name not in self.meta_models or len(self.base_models[output_name]) == 0:
+                    self.logger.warning(f"⚠️ Missing base/meta models for output {output_name}, returning zeros for this output")
                     predictions.append(np.zeros(X.shape[0]))
                     continue
                 
@@ -739,7 +736,12 @@ class MultiOutputStackingModel(MultiOutputModel):
                 
                 # Get meta model prediction
                 meta_model = self.meta_models[output_name]
-                meta_pred = np.asarray(meta_model.predict(meta_features)).ravel()
+                try:
+                    meta_pred = np.asarray(meta_model.predict(meta_features)).ravel()
+                except Exception:
+                    # Fallback to averaging base predictions if meta model fails
+                    self.logger.warning(f"⚠️ Meta model prediction failed for {output_name}, using mean of base predictions")
+                    meta_pred = base_pred_array.mean(axis=1)
                 
                 predictions.append(meta_pred)
                 self.logger.debug(f"✅ Predictions generated for {output_name}: {len(meta_pred)} samples")

@@ -1,19 +1,12 @@
 """
 ML Common - Optimization Parallel Processing Module
 
-This module re-exports the rich ParallelProcessingCoordinator from
-utils.parallel_processing to avoid duplication and ensure a single
-source of truth.
+This module now re-exports ParallelProcessor from the central optimizer
+to avoid duplication and ensure a single source of truth.
 """
 
-from ..utils.parallel_processing import (
-    ParallelProcessingCoordinator as _UtilsParallelProcessingCoordinator,
-)
+from src.utils.parallel_processing_optimizer import ParallelProcessor
 
 
-# Re-export under the optimization namespace for backwards compatibility
-ParallelProcessingCoordinator = _UtilsParallelProcessingCoordinator
-
-
-__all__ = ['ParallelProcessingCoordinator']
+__all__ = ['ParallelProcessor']
 

@@ -57,7 +57,7 @@ try:
     # Optimization
     from .optimization import (
         # HyperparameterOptimization,
-        ParetoOptimizer, ParetoFront,
+        ParetoOptimizer, ParetoFront, ParetoFrontAnalyzer,
         RegimeSpecificTPSLOptimizer
     )
     

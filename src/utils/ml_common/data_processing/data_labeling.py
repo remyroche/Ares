@@ -42,8 +42,8 @@ from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer, M1Me
 from src.utils.hardware.m1_gpu_utils import get_m1_gpu_manager
 from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer, M1CPUOptimizer
 
-# Import ML Common utilities for cross-validation (unified API)
-from ..validation.unified_cv import TemporalCrossValidator, PurgedKFold
+# Import ML Common utilities for cross-validation (use compatibility exports)
+from ..validation.cv_utils import TemporalCrossValidator, PurgedKFold
 # from .validation_utils import ValidationFramework  # Not available
 # from .pareto import ParetoFrontAnalyzer  # Causes circular import
 

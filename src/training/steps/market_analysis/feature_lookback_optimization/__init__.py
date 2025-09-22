@@ -12,7 +12,7 @@ Main Components:
 from .feature_lookback_optimization import FeatureLookbackOptimizationComponent
 from .feature_lookback_optimization_modular import FeatureLookbackOptimizationComponent as ModularFeatureLookbackOptimizationComponent
 from .optimization_reporter import OptimizationReporter
-from .validation_framework import ValidationFramework, ValidationLevel, ValidationStatus
+from src.utils.validation.unified_framework import FeatureLookbackValidationFramework, ValidationLevel, ValidationStatus
 from .dependency_manager import DependencyManager, get_dependency, is_dependency_available
 from .monitoring_metrics import MonitoringMetrics, MetricType, MetricLevel
 
@@ -41,7 +41,7 @@ __all__ = [
 
     # Utilities
     'OptimizationReporter',
-    'ValidationFramework',
+    'FeatureLookbackValidationFramework',
     'DependencyManager',
     'get_dependency',
     'is_dependency_available',

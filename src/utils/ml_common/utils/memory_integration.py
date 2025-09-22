@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 Memory Integration Module for ML Common Utilities
 
@@ -32,7 +34,8 @@ def auto_skim_memory(memory_mb: float, operation_type: str) -> Dict[str, Any]:
     return {
         'memory_freed_mb': memory_mb * 0.1,  # Stub: free 10% of requested memory
         'operation_type': operation_type,
-        'success': True
+        'success': True,
+        'skimming_performed': True
     }
 
 def smart_memory_allocation(memory_mb: float, operation_type: str) -> Dict[str, Any]:
@@ -42,7 +45,8 @@ def smart_memory_allocation(memory_mb: float, operation_type: str) -> Dict[str, 
     return {
         'allocated_mb': memory_mb,
         'operation_type': operation_type,
-        'optimization_applied': True
+        'optimization_applied': True,
+        'allocation_successful': True
     }
 
 def memory_skim_decorator(operation_type: str):
@@ -385,36 +389,37 @@ def integrate_memory_skimming_with_hpo():
 def integrate_memory_skimming_with_cv():
     """Integrate memory skimming with cross-validation utilities."""
     try:
-        from .cv_utils import CrossValidationUtilities
-        logger.info("✅ Successfully imported CV utilities")
+        # Use unified CV instead of legacy cv_utils
+        from ..validation.unified_cv import UnifiedCrossValidator
+        logger.info("✅ Successfully imported Unified CV utilities")
     except ImportError as e:
         logger.warning(f"⚠️ Could not integrate with CV utilities: {e}")
         return False
 
     try:
-        # Store original method before enhancement
-        if hasattr(CrossValidationUtilities, 'walk_forward_validation'):
-            original_walk_forward = CrossValidationUtilities.walk_forward_validation
+        # Add walk_forward-like helper onto UnifiedCrossValidator for compatibility
+        if hasattr(UnifiedCrossValidator, 'run'):
+            original_run = UnifiedCrossValidator.run
 
-            def enhanced_walk_forward_validation(self, *args, **kwargs):
+            def enhanced_run(self, model, X, y, *args, strategy: str = 'standard', **kwargs):
                 try:
                     manager = get_ml_memory_manager()
                     estimated_memory_mb = manager.estimate_ml_memory_requirements(
                         'cross_validation', **kwargs
                     )
                     auto_skim_memory(estimated_memory_mb, 'data_processing')
-                    return original_walk_forward(self, *args, **kwargs)
+                    return original_run(self, model, X, y, *args, strategy=strategy, **kwargs)
                 except Exception as e:
-                    logger.warning(f"⚠️ Memory skimming failed for walk-forward: {e}")
+                    logger.warning(f"⚠️ Memory skimming failed for CV run: {e}")
                     # Fallback to original method
-                    return original_walk_forward(self, *args, **kwargs)
+                    return original_run(self, model, X, y, *args, strategy=strategy, **kwargs)
 
             # Replace method
-            CrossValidationUtilities.walk_forward_validation = enhanced_walk_forward_validation
-            logger.info("✅ Memory skimming integrated with CV utilities")
+            UnifiedCrossValidator.run = enhanced_run
+            logger.info("✅ Memory skimming integrated with Unified CV utilities")
             return True
         else:
-            logger.warning("⚠️ CrossValidationUtilities.walk_forward_validation method not found")
+            logger.warning("⚠️ UnifiedCrossValidator.run method not found")
             return False
 
     except Exception as e:

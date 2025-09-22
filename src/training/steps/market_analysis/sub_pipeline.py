@@ -47,6 +47,14 @@ class SubPipelineStatus(Enum):
     SKIPPED = "skipped"
 
 @dataclass
+class LoggingConfig:
+    """Logging configuration for the sub-pipeline."""
+    level: str = "INFO"
+    enable_console: bool = True
+    enable_file: bool = False
+    log_file: Optional[str] = None
+
+@dataclass
 class SubPipelineConfig:
     """Configuration for sub-pipeline execution."""
     mode: ExecutionMode = ExecutionMode.FULL
@@ -65,6 +73,7 @@ class SubPipelineConfig:
     skip_next_pipeline: bool = False
     single_stage_only: bool = False  # New parameter to control single vs sequential execution
     custom_params: Dict[str, Any] = field(default_factory=dict)
+    logging: LoggingConfig = field(default_factory=LoggingConfig)
 
 @dataclass
 class SubPipelineResult:
@@ -155,6 +164,9 @@ class MarketAnalysisSubPipeline:
         self.logger = logger.getChild('MarketAnalysisSubPipeline')
         self.results: List[SubPipelineResult] = []
         
+        # Apply logging configuration
+        self._apply_logging_config(self.config.logging)
+        
         # Initialize artifact and version managers
         self.artifact_manager = get_artifact_manager()
         self.version_manager = get_version_manager()
@@ -166,6 +178,27 @@ class MarketAnalysisSubPipeline:
         self._current_data = None
         self._current_pipeline_state = {}
         self._accumulated_artifacts = {}
+
+    def _apply_logging_config(self, logging_cfg: LoggingConfig) -> None:
+        try:
+            import logging as _logging
+            from pathlib import Path as _Path
+            level = getattr(_logging, str(logging_cfg.level).upper(), _logging.INFO)
+            self.logger.setLevel(level)
+            if logging_cfg.enable_file and logging_cfg.log_file:
+                has_same_file = any(
+                    isinstance(h, _logging.FileHandler) and getattr(h, 'baseFilename', None) == str(_Path(logging_cfg.log_file).resolve())
+                    for h in self.logger.handlers
+                )
+                if not has_same_file:
+                    _Path(logging_cfg.log_file).parent.mkdir(parents=True, exist_ok=True)
+                    fh = _logging.FileHandler(logging_cfg.log_file)
+                    fh.setLevel(level)
+                    formatter = _logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+                    fh.setFormatter(formatter)
+                    self.logger.addHandler(fh)
+        except Exception:
+            pass
     
     def _validate_sub_pipeline_result(self, result: SubPipelineResult, stage_name: str) -> Tuple[bool, Optional[Dict[str, Any]]]:
         """

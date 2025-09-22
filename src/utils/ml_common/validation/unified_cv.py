@@ -275,11 +275,18 @@ def nested_cross_validation(
     )
 
 
+# Backward-compatibility aliases for legacy imports
+from .cv import PurgedSplitConfig as PurgedKFold  # type: ignore
+TemporalCrossValidator = UnifiedCrossValidator  # type: ignore
+
 __all__ = [
     "UnifiedCrossValidator",
     "UnifiedCVResult",
     "perform_cross_validation",
     "temporal_cross_validation",
     "nested_cross_validation",
+    # Legacy names
+    "TemporalCrossValidator",
+    "PurgedKFold",
 ]
 

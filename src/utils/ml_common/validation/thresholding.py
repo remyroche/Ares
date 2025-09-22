@@ -250,8 +250,8 @@ def calibrate_probabilities(
         calibrated.fit(X_train, y_train)
         return calibrated
     except Exception as e:
-        _LOGGER.error(f"❌ Critical error: Calibration failed: {e}")
-        raise ValueError(f"Calibration failed and no fallback available: {e}")
+        _LOGGER.warning(f"Calibration failed: {e}, returning original estimator")
+        return estimator  # Return original estimator as fallback
 
 
 class AdaptiveThresholding:

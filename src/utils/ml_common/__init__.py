@@ -157,7 +157,7 @@ try:
         'ParetoFront', 'ParetoFrontAnalyzer',
         'RegimeSpecificTPSLOptimizer',
         
-        # Data Processing (lazy-loaded getters)
+        # Data Processing (expose getters rather than heavy objects)
         'EnhancedDataLabelerGetter', 'LabelingConfigGetter',
         
         # Validation
@@ -173,7 +173,7 @@ try:
         'setup_logger', 'get_logger',
         'MemoryOptimizer', 'MemoryIntegrator',
         'ParallelProcessor',
-        'UnifiedCache', 'get_unified_cache', 'cached',
+        'UnifiedCache', 'get_unified_cache', 'cached', 'SharedMLCache',
         'limit_blas_threads', 'get_thread_info', 'validate_thread_environment',
         'LookaheadProtection', 'MLTrainingSafeguards',
         'RobustErrorHandler',

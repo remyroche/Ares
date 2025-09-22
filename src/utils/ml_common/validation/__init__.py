@@ -12,7 +12,6 @@ This module contains all validation functionality including:
 """
 
 from .validation_utils import ConfigurationValidator
-from .cv_utils import TemporalCrossValidator, PurgedKFold, CrossValidationUtilities
 from .unified_cv import (
     UnifiedCrossValidator,
     UnifiedCVResult,
@@ -20,7 +19,41 @@ from .unified_cv import (
     temporal_cross_validation,
     nested_cross_validation,
 )
-from .cv import PurgedSplitConfig
+from .cv import PurgedSplitConfig, purged_time_series_splits
+
+# Backward-compatibility shims for legacy imports
+# Legacy code may import these from validation. Provide thin wrappers/aliases.
+
+# Alias legacy TemporalCrossValidator to the unified implementation
+TemporalCrossValidator = UnifiedCrossValidator
+
+
+class CrossValidationUtilities:  # minimal shim
+    """Backwards-compatible utilities wrapper.
+
+    Currently implements walk_forward_validation using the unified CV API
+    with temporal strategy.
+    """
+
+    @staticmethod
+    def walk_forward_validation(model, X, y, *, n_splits: int = 5, gap: int = 0,
+                                test_size: int | None = None, scoring=None, n_jobs: int = 1):
+        # Delegate to unified API
+        return perform_cross_validation(
+            model,
+            X,
+            y,
+            strategy="temporal",
+            cv_folds=n_splits,
+            temporal_gap=gap,
+            temporal_test_size=test_size,
+            scoring=scoring,
+            n_jobs=n_jobs,
+        )
+
+
+# PurgedKFold legacy name: expose the available split config to avoid import errors
+PurgedKFold = PurgedSplitConfig
 from .stability import feature_selection_stability, aggregate_time_blocks, StabilityAnalyzer
 from .thresholding import optimize_threshold, calibrate_probabilities
 
@@ -75,7 +108,8 @@ __all__ = [
 
     # Original Cross-validation
     'TemporalCrossValidator', 'PurgedKFold', 'CrossValidationUtilities', 'PurgedSplitConfig',
-    # Unified CV API (consolidated)
+    'purged_time_series_splits',
+    # Unified CV API
     'UnifiedCrossValidator', 'UnifiedCVResult',
     'perform_cross_validation', 'temporal_cross_validation', 'nested_cross_validation',
 

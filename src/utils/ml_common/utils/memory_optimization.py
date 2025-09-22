@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 Memory-Efficient ML Training Utilities
 
@@ -26,6 +28,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union, Callable, Iterator, 
 from datetime import datetime, timedelta
 import logging
 import gc
+import time
 import psutil
 import os
 from pathlib import Path
@@ -648,7 +651,7 @@ class GPUMemoryPool:
         self.allocated_tensors = []
         self.memory_usage = 0.0
 
-    def allocate_tensor(self, shape: Tuple[int, ...], dtype: torch.dtype = torch.float32) -> torch.Tensor:
+    def allocate_tensor(self, shape: Tuple[int, ...], dtype: Any = None) -> Any:
         """
         Allocate tensor from memory pool.
 
@@ -660,6 +663,14 @@ class GPUMemoryPool:
             Allocated tensor
         """
         try:
+            # Default dtype if torch available
+            if dtype is None:
+                try:
+                    import torch as _torch
+                    dtype = _torch.float32
+                except Exception:
+                    dtype = None
+
             # Check if allocation would exceed limit
             tensor_size_mb = self._calculate_tensor_size_mb(shape, dtype)
 
@@ -668,8 +679,14 @@ class GPUMemoryPool:
                 self.cleanup()
 
             # Allocate tensor on best available device (cuda > mps > cpu)
-            device = 'cuda' if torch.cuda.is_available() else ('mps' if torch.backends.mps.is_available() else 'cpu')
-            tensor = torch.zeros(shape, dtype=dtype, device=device)
+            try:
+                import torch as _torch
+                device = 'cuda' if _torch.cuda.is_available() else ('mps' if _torch.backends.mps.is_available() else 'cpu')
+                used_dtype = dtype if dtype is not None else _torch.float32
+                tensor = _torch.zeros(shape, dtype=used_dtype, device=device)
+            except Exception:
+                # Fallback to numpy array when torch unavailable
+                tensor = np.zeros(shape, dtype=np.float32)
 
             # Track allocation
             self.allocated_tensors.append(tensor)
@@ -679,7 +696,12 @@ class GPUMemoryPool:
 
         except Exception as e:
             logger.warning(f"GPU tensor allocation failed: {e}")
-            return torch.zeros(shape, dtype=dtype)
+            try:
+                import torch as _torch
+                used_dtype = dtype if dtype is not None else _torch.float32
+                return _torch.zeros(shape, dtype=used_dtype)
+            except Exception:
+                return np.zeros(shape, dtype=np.float32)
 
     def cleanup(self) -> None:
         """Clean up GPU memory pool."""
@@ -691,20 +713,29 @@ class GPUMemoryPool:
             self.allocated_tensors.clear()
 
             # Force GPU memory cleanup
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-            elif torch.backends.mps.is_available():
-                torch.mps.empty_cache()
+            try:
+                import torch as _torch
+                if _torch.cuda.is_available():
+                    _torch.cuda.empty_cache()
+                elif _torch.backends.mps.is_available():
+                    _torch.mps.empty_cache()
+            except Exception:
+                pass
 
             self.memory_usage = 0.0
 
         except Exception as e:
             logger.warning(f"GPU memory cleanup failed: {e}")
 
-    def _calculate_tensor_size_mb(self, shape: Tuple[int, ...], dtype: torch.dtype) -> float:
+    def _calculate_tensor_size_mb(self, shape: Tuple[int, ...], dtype: Any) -> float:
         """Calculate tensor size in MB."""
         try:
-            element_size = torch.tensor([], dtype=dtype).element_size()
+            try:
+                import torch as _torch
+                element_size = _torch.tensor([], dtype=(dtype or _torch.float32)).element_size()
+            except Exception:
+                # Fallback to numpy dtype size
+                element_size = np.dtype(np.float32).itemsize
             total_elements = np.prod(shape)
             size_bytes = element_size * total_elements
             size_mb = size_bytes / (1024 * 1024)
@@ -729,7 +760,7 @@ class GPUMemoryPool:
             memory_gb = process.memory_info().rss / (1024 ** 3)
             return memory_gb
         except Exception as e:
-            self.logger.warning(f"Could not get memory usage: {e}")
+            logger.warning(f"Could not get memory usage: {e}")
             return 0.0
 
     def __del__(self):

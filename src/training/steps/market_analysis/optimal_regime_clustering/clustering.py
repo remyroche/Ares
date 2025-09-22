@@ -478,7 +478,7 @@ class OptimalRegimeClusterer:
 
             # Calculate statistics and metrics
             statistics = calculate_cluster_statistics(final_labels, self.config.to_dict())
-            quality_metrics = calculate_cluster_quality_metrics(features, final_labels)
+            quality_metrics = calculate_cluster_quality_metrics(features, final_labels, feature_metadata)
 
             # Validate results
             validation = validate_cluster_quality(statistics, quality_metrics, self.config.to_dict())
@@ -535,7 +535,7 @@ class OptimalRegimeClusterer:
 
             # Calculate statistics and metrics
             statistics = calculate_cluster_statistics(labels, self.config.to_dict())
-            quality_metrics = calculate_cluster_quality_metrics(features, labels)
+            quality_metrics = calculate_cluster_quality_metrics(features, labels, feature_metadata)
 
             # Validate results
             validation = validate_cluster_quality(statistics, quality_metrics, self.config.to_dict())

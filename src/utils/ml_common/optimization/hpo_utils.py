@@ -1650,18 +1650,24 @@ class HyperparameterOptimization:
         """Perform coarse grid search for staged HPO."""
         try:
             self.logger.info(f"🔍 Creating coarse grid with {grid_points} points per parameter")
-            
-            # Create coarse parameter grid
-            param_grid = self._coarse_grid_from_search_space(search_space, grid_points)
-            self.logger.info(f"📊 Coarse grid size: {len(param_grid)} combinations")
-            
+
+            # Create coarse parameter grid (dict of name -> list of values)
+            coarse_grid = self._coarse_grid_from_search_space(search_space, grid_points)
+
+            # Build Cartesian product of parameter combinations safely
+            import itertools
+            param_names = list(coarse_grid.keys())
+            param_values_lists = [coarse_grid[name] for name in param_names]
+            combinations_iter = itertools.product(*param_values_lists) if param_values_lists else []
+
             best_score = -np.inf
             best_params = {}
             parameter_scores = []
-            
+
             # Evaluate each parameter combination
-            for i, params in enumerate(param_grid):
+            for i, combo in enumerate(combinations_iter):
                 try:
+                    params = {name: value for name, value in zip(param_names, combo)}
                     model = model_factory(**params)
                     score = self._evaluate_model_cv(model, X, y, cv_obj, scoring)
                     parameter_scores.append((params, score))
@@ -1671,7 +1677,7 @@ class HyperparameterOptimization:
                         best_params = params.copy()
                     
                     if (i + 1) % 10 == 0:
-                        self.logger.debug(f"   Evaluated {i + 1}/{len(param_grid)} combinations")
+                        self.logger.debug(f"   Evaluated {i + 1} combinations")
                         
                 except Exception as e:
                     self.logger.warning(f"⚠️ Failed to evaluate parameters {params}: {e}")
@@ -1686,7 +1692,7 @@ class HyperparameterOptimization:
             return {
                 'best_params': best_params,
                 'best_score': best_score,
-                'n_combinations': len(param_grid),
+                'n_combinations': len(parameter_scores),
                 'valid_combinations': len(parameter_scores),
                 'parameter_scores': parameter_scores[:10]  # Keep top 10 for analysis
             }

@@ -84,7 +84,7 @@ class LookaheadBiasError(Exception):
 
     def __str__(self):
         if self.bias_score is not None:
-            return f"{self.error_type} (score: {self.bias_score".3f"}): {super().__str__()} | Context: {self.context}"
+            return f"{self.error_type} (score: {self.bias_score:.3f}): {super().__str__()} | Context: {self.context}"
         return f"{self.error_type}: {super().__str__()} | Context: {self.context}"
 
 try:

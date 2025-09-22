@@ -18,7 +18,6 @@ from ..validation.hmm_validation_pipeline import get_hmm_validation_pipeline
 from .hmm_temporal_protection import get_hmm_temporal_protection
 from ..validation.enhanced_overfitting_detection import get_overfitting_detector
 from .lookahead_protection import LookaheadProtection
-from .model_evaluation import ModelEvaluationUtils
 from ..evaluation.unified_evaluator import (
     evaluate_multiple_datasets,
 )
@@ -46,7 +45,6 @@ class ComprehensiveHMMEvaluationPipeline:
         self.hmm_temporal_protection = get_hmm_temporal_protection()
         self.overfitting_detector = get_overfitting_detector()
         self.lookahead_protection = LookaheadProtection()
-        self.model_evaluation_utils = ModelEvaluationUtils()
 
         self.logger = logger.getChild('ComprehensiveHMMEvaluationPipeline')
         self.logger.info("🚀 Comprehensive HMM Evaluation Pipeline initialized")
@@ -293,112 +291,6 @@ class ComprehensiveHMMEvaluationPipeline:
         self.logger.info("✅ Comprehensive evaluation completed for all models")
         return results
 
-    def _calculate_comprehensive_metrics(
-        self,
-        model: Any,
-        X_train: np.ndarray,
-        y_train: np.ndarray,
-        X_val: np.ndarray,
-        y_val: np.ndarray,
-        X_test: Optional[np.ndarray],
-        y_test: Optional[np.ndarray]
-    ) -> Dict[str, Any]:
-        """Calculate comprehensive performance metrics."""
-        metrics = {}
-
-        try:
-            # Get predictions for all datasets
-            train_predictions = model.predict(X_train)
-            val_predictions = model.predict(X_val)
-            test_predictions = model.predict(X_test) if X_test is not None else None
-
-            # Get probabilities if available
-            train_probabilities = None
-            val_probabilities = None
-            test_probabilities = None
-
-            if hasattr(model, 'predict_proba'):
-                try:
-                    train_probabilities = model.predict_proba(X_train)
-                    val_probabilities = model.predict_proba(X_val)
-                    test_probabilities = model.predict_proba(X_test) if X_test is not None else None
-                except:
-                    pass
-
-            # Calculate metrics using sklearn
-            from sklearn.metrics import (
-                accuracy_score, f1_score, precision_score, recall_score,
-                roc_auc_score, log_loss, confusion_matrix, classification_report
-            )
-
-            # Basic classification metrics
-            for dataset_name, (predictions, labels, probabilities) in [
-                ('train', (train_predictions, y_train, train_probabilities)),
-                ('validation', (val_predictions, y_val, val_probabilities)),
-                ('test', (test_predictions, y_test, test_probabilities))
-            ]:
-                if predictions is None:
-                    continue
-
-                pred, true_labels, proba = predictions, labels, probabilities
-
-                dataset_metrics = {
-                    'accuracy': float(accuracy_score(true_labels, pred)),
-                    'f1_weighted': float(f1_score(true_labels, pred, average='weighted')),
-                    'precision_weighted': float(precision_score(true_labels, pred, average='weighted')),
-                    'recall_weighted': float(recall_score(true_labels, pred, average='weighted'))
-                }
-
-                # Per-class metrics
-                unique_classes = np.unique(true_labels)
-                per_class_metrics = {}
-                for class_label in unique_classes:
-                    class_mask = true_labels == class_label
-                    if class_mask.sum() > 0:
-                        class_pred = pred[class_mask]
-                        class_true = true_labels[class_mask]
-                        per_class_metrics[int(class_label)] = {
-                            'precision': float(precision_score(class_true, class_pred, average='weighted', zero_division=0)),
-                            'recall': float(recall_score(class_true, class_pred, average='weighted', zero_division=0)),
-                            'f1': float(f1_score(class_true, class_pred, average='weighted', zero_division=0)),
-                            'support': int(class_mask.sum())
-                        }
-
-                dataset_metrics['per_class_metrics'] = per_class_metrics
-
-                # ROC AUC and log loss if probabilities available
-                if proba is not None:
-                    try:
-                        if len(unique_classes) == 2:
-                            dataset_metrics['roc_auc'] = float(roc_auc_score(true_labels, proba[:, 1]))
-                        else:
-                            dataset_metrics['roc_auc'] = float(roc_auc_score(true_labels, proba, multi_class='ovr'))
-
-                        dataset_metrics['log_loss'] = float(log_loss(true_labels, proba))
-                    except:
-                        dataset_metrics['roc_auc'] = None
-                        dataset_metrics['log_loss'] = None
-
-                # Confusion matrix
-                dataset_metrics['confusion_matrix'] = confusion_matrix(true_labels, pred).tolist()
-
-                metrics[dataset_name] = dataset_metrics
-
-            # Calculate cross-dataset metrics
-            if 'train' in metrics and 'validation' in metrics:
-                train_acc = metrics['train']['accuracy']
-                val_acc = metrics['validation']['accuracy']
-                metrics['train_val_accuracy_gap'] = float(train_acc - val_acc)
-
-                train_f1 = metrics['train']['f1_weighted']
-                val_f1 = metrics['validation']['f1_weighted']
-                metrics['train_val_f1_gap'] = float(train_f1 - val_f1)
-
-        except Exception as e:
-            self.logger.warning(f"⚠️ Failed to calculate comprehensive metrics: {e}")
-            metrics['error'] = str(e)
-
-        return metrics
 
     def _perform_overfitting_analysis(
         self,

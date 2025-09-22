@@ -444,8 +444,10 @@ class HMMValidationPipeline:
                 try:
                     train_probabilities = model.predict_proba(X_train)
                     val_probabilities = model.predict_proba(X_val)
-                except:
-                    pass
+                except Exception as e:
+                    self.logger.debug(f"Could not get probabilities from model: {e}")
+                    train_probabilities = None
+                    val_probabilities = None
 
             # Calculate metrics using sklearn
             from sklearn.metrics import (

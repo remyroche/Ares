@@ -1635,7 +1635,29 @@ class FeatureSelectionFramework:
             # Memory optimization
             if config['memory_optimization']:
                 # Memory optimization handled by unified matrix operations
-                pass
+                try:
+                    # Force garbage collection if available
+                    import gc
+                    gc.collect()
+
+                    # Clear intermediate results to free memory
+                    if 'intermediate_results' in locals():
+                        del intermediate_results
+
+                    # Log memory usage if monitoring is available
+                    try:
+                        import psutil
+                        process = psutil.Process()
+                        memory_mb = process.memory_info().rss / 1024 / 1024
+                        _LOGGER.debug(f"💾 Memory usage after pipeline: {memory_mb:.1f} MB")
+                    except ImportError:
+                        pass  # psutil not available
+
+                    _LOGGER.debug("🧹 Memory optimization completed")
+
+                except Exception as e:
+                    _LOGGER.warning(f"⚠️ Memory optimization failed: {e}")
+                    # Continue anyway as this is not critical
             
             _LOGGER.info(f"🎉 Hierarchical pipeline completed successfully!")
             _LOGGER.info(f"📊 Final result: {len(final_features)}/{features_target_count} target features")

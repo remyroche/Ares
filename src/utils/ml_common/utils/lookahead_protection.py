@@ -66,8 +66,26 @@ class LookaheadBiasDetector:
         return True
 
 class LookaheadBiasError(Exception):
-    """Fallback exception for lookahead bias"""
-    pass
+    """Exception raised when lookahead bias is detected in ML training."""
+
+    def __init__(self, message: str, bias_score: Optional[float] = None, context: Optional[Dict[str, Any]] = None):
+        super().__init__(message)
+        self.bias_score = bias_score
+        self.context = context or {}
+        self.error_type = "LOOKAHEAD_BIAS_ERROR"
+        self.severity = "CRITICAL"
+        self.suggested_actions = [
+            "Remove future-looking features from training data",
+            "Verify temporal ordering of data splits",
+            "Implement strict temporal validation",
+            "Check feature engineering for target leakage",
+            "Review data preprocessing pipeline"
+        ]
+
+    def __str__(self):
+        if self.bias_score is not None:
+            return f"{self.error_type} (score: {self.bias_score".3f"}): {super().__str__()} | Context: {self.context}"
+        return f"{self.error_type}: {super().__str__()} | Context: {self.context}"
 
 try:
     from src.utils.lookahead_bias_detector import LookaheadBiasDetector, LookaheadBiasError

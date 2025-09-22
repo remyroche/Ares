@@ -22,6 +22,13 @@ import logging
 import time
 from datetime import datetime
 
+# PyTorch import for GPU acceleration
+try:
+    import torch
+    TORCH_AVAILABLE = True
+except ImportError:
+    TORCH_AVAILABLE = False
+
 # M1 Optimization imports
 from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer, M1MemoryOptimizer
 from src.utils.hardware.memory_optimization import get_memory_manager, MemoryMonitor
@@ -1087,7 +1094,25 @@ class EnhancedModelFactory:
             # GPU acceleration (if supported by model)
             if self.m1_gpu and model_config.enable_gpu_acceleration:
                 # Add GPU-specific parameters if the model supports them
-                pass
+                gpu_params = {}
+
+                # Common GPU parameters for different model types
+                if hasattr(model, 'device') and TORCH_AVAILABLE:
+                    # PyTorch models
+                    gpu_params['device'] = 'mps' if hasattr(torch, 'mps') else 'cuda'
+                elif hasattr(model, 'gpu_id'):
+                    # XGBoost/LightGBM style models
+                    gpu_params['gpu_id'] = 0
+                elif hasattr(model, 'n_gpus'):
+                    # Some ensemble models
+                    gpu_params['n_gpus'] = 1
+
+                # Add any GPU parameters we found
+                if gpu_params:
+                    m1_params.update(gpu_params)
+                    self.logger.debug(f"🚀 Added GPU acceleration parameters: {gpu_params}")
+                else:
+                    self.logger.debug("ℹ️ Model doesn't support GPU acceleration parameters")
             
             # Apply parameters
             if m1_params:

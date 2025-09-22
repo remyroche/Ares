@@ -637,8 +637,10 @@ def detect_overfitting_for_model(model,
         try:
             train_probabilities = model.predict_proba(X_train)
             val_probabilities = model.predict_proba(X_val)
-        except:
-            pass
+        except Exception as e:
+            logger.debug(f"Could not get probabilities from model: {e}")
+            train_probabilities = None
+            val_probabilities = None
     
     # Get feature importance if available
     feature_importance = None

@@ -242,7 +242,7 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
                     config = EnsembleTrainingConfig(
                         model_name="tactician_ensemble_models_1m",
                         timeframe="1m",
-                        model_types=["xgboost", "randomforest", "catboost", "elastic_net"],
+                        model_types=["xgboost", "catboost"],
                         hpo_n_trials=100,
                         hpo_timeout_seconds=3600,
                         min_samples_per_regime=1000,
@@ -575,6 +575,8 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
             # Step 3: Base model validation and preparation
             self._start_step("Base Model Preparation")
             base_tactician_models = self._prepare_base_models(base_tactician_models)
+            # Cache for later OOF in meta-feature builder
+            self.base_tactician_models_cache = base_tactician_models
             self._complete_step(True, metrics={'base_models_count': len(base_tactician_models)})
             
             # Step 4: Feature enhancement with full model integration
@@ -796,9 +798,7 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
     def _create_base_models_from_config(self) -> Dict[str, Any]:
         """Create base tactician models from configuration."""
         try:
-            from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
-            from sklearn.linear_model import LinearRegression, ElasticNet
-            from sklearn.svm import SVR
+            # Restrict to XGBoost and CatBoost only; fast-fail if unavailable
             
             self.logger.info("🏭 Creating tactician models for 1m timeframe...")
             
@@ -806,65 +806,31 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
             # Note: Some models are placeholders until proper implementations are available
             models = {}
             
-            # Try to use actual XGBoost if available, otherwise use RandomForest placeholder
             try:
                 import xgboost as xgb
-                models['xgboost_model'] = xgb.XGBRegressor(
-                    n_estimators=150,
-                    random_state=42,
-                    max_depth=15,
-                    n_jobs=-1,
-                    objective='reg:squarederror'
-                )
-                self.logger.info("✅ Using actual XGBoost implementation")
-            except ImportError:
-                self.logger.warning("⚠️ XGBoost not available, using RandomForest placeholder")
-                models['xgboost_model'] = RandomForestRegressor(  # XGBoost placeholder
-                    n_estimators=150, 
-                    random_state=42, 
-                    max_depth=15,
-                    n_jobs=-1
-                )
-            
-            # RandomForest model (actual implementation)
-            models['randomforest_model'] = RandomForestRegressor(
-                n_estimators=150, 
-                random_state=43, 
-                max_depth=12,
-                n_jobs=-1
-            )
-            
-            # Try to use actual CatBoost if available, otherwise use RandomForest placeholder
+            except ImportError as e:
+                raise RuntimeError(f"XGBoost is required for Tactician ensemble base models: {e}")
+
             try:
                 import catboost as cb
-                models['catboost_model'] = cb.CatBoostRegressor(
-                    iterations=150,
-                    random_seed=44,
-                    depth=10,
-                    verbose=False,
-                    allow_writing_files=False
-                )
-                self.logger.info("✅ Using actual CatBoost implementation")
-            except ImportError:
-                self.logger.warning("⚠️ CatBoost not available, using RandomForest placeholder")
-                models['catboost_model'] = RandomForestRegressor(  # CatBoost placeholder
-                    n_estimators=150, 
-                    random_state=44, 
-                    max_depth=10,
-                    n_jobs=-1
-                )
-            
-            # Linear models (actual implementations)
-            models['elastic_net_model'] = ElasticNet(
-                alpha=0.1,
-                l1_ratio=0.5,
-                random_state=45,
-                max_iter=2000
+            except ImportError as e:
+                raise RuntimeError(f"CatBoost is required for Tactician ensemble base models: {e}")
+
+            models = {}
+            models['xgboost_model'] = xgb.XGBRegressor(
+                n_estimators=300,
+                random_state=42,
+                max_depth=12,
+                n_jobs=-1,
+                objective='reg:squarederror'
             )
-            
-            models['linear_model'] = LinearRegression()
-            
-            models['svr_model'] = SVR(kernel='rbf', C=1.0, gamma='scale')
+            models['catboost_model'] = cb.CatBoostRegressor(
+                iterations=500,
+                random_seed=44,
+                depth=8,
+                verbose=False,
+                allow_writing_files=False
+            )
             
             # Validate models
             for model_name, model in models.items():
@@ -899,7 +865,7 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
                     if 'catboost' in module:
                         self.logger.info(f"  ✅ {model_name}: Actual CatBoost implementation ({model_type})")
                     else:
-                        self.logger.warning(f"  ⚠️ {model_name}: RandomForest placeholder for CatBoost ({model_type})")
+                        self.logger.error(f"  ❌ {model_name}: Invalid CatBoost implementation context ({module})")
                 else:
                     self.logger.info(f"  ✅ {model_name}: Actual implementation ({model_type})")
                     
@@ -973,7 +939,7 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
             if analyst_models:
                 for model_name, model in analyst_models.items():
                     try:
-                  predictions = self._generate_oof_predictions(model, X, model_name)
+                        predictions = self._generate_oof_predictions(model, X, model_name)
                         if predictions is not None:
                             analyst_predictions.append((model_name, predictions))
                             additional_features_count += predictions.shape[1]
@@ -984,6 +950,22 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
                     except Exception as e:
                         self.logger.warning(f"⚠️ Could not add predictions from {model_name}: {e}")
                         integration_stats['integration_errors'].append(f"Analyst model {model_name} failed: {e}")
+
+            # Generate OOF predictions for base tactician models as additional meta inputs
+            tactician_predictions = []
+            try:
+                if hasattr(self, 'base_tactician_models_cache') and self.base_tactician_models_cache:
+                    for base_name, base_model in self.base_tactician_models_cache.items():
+                        try:
+                            preds = self._generate_oof_predictions(base_model, X, f"tactician_{base_name}")
+                            if preds is not None:
+                                tactician_predictions.append((f"tactician_{base_name}", preds))
+                                additional_features_count += preds.shape[1]
+                                self.logger.info(f"✅ Generated OOF predictions for base tactician model: {base_name}")
+                        except Exception as te:
+                            self.logger.warning(f"⚠️ Failed OOF for base tactician {base_name}: {te}")
+            except Exception:
+                pass
 
             # Generate OOF predictions for analyst ensembles to prevent data leakage
             ensemble_predictions = []
@@ -1095,6 +1077,21 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
                 # Add ensemble predictions with hardware optimization
                 for ensemble_name, predictions in ensemble_predictions:
                     pred_cols = predictions.shape[1]
+                # Add base tactician predictions with hardware optimization
+                for base_name, predictions in tactician_predictions:
+                    pred_cols = predictions.shape[1]
+                    try:
+                        if ADVANCED_MEMORY_AVAILABLE:
+                            memory_optimizer.optimized_array_copy(
+                                source=predictions,
+                                destination=X_enhanced[:, current_col:current_col + pred_cols]
+                            )
+                        else:
+                            X_enhanced[:, current_col:current_col + pred_cols] = predictions
+                    except:
+                        X_enhanced[:, current_col:current_col + pred_cols] = predictions
+                    current_col += pred_cols
+                    self.logger.info(f"📊 Added {pred_cols} features from base tactician model: {base_name}")
                     try:
                         if ADVANCED_MEMORY_AVAILABLE:
                             # Use hardware-optimized copy

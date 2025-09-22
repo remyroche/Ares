@@ -512,6 +512,21 @@ class ModelTrainingSubPipeline:
                     raise ValueError(error_msg)
                 tprint_success(f"✅ Sub-pipeline '{sub_pipeline_name}' validated successfully")
                 
+                # Enforce mandatory tactician lookback optimization before tactician training steps
+                if sub_pipeline_name in ('tactician_models_training', 'tactician_ensemble_training'):
+                    lookback_completed = any(
+                        r.sub_pipeline_name == 'tactician_lookback_optimization' and r.status == SubPipelineStatus.COMPLETED
+                        for r in self.results
+                    )
+                    if not lookback_completed:
+                        error_msg = (
+                            "Tactician lookback optimization is mandatory before running '"
+                            f"{sub_pipeline_name}'. Run 'tactician_lookback_optimization' first."
+                        )
+                        tprint_error(f"❌ {error_msg}")
+                        self.logger.error(f"❌ {error_msg}")
+                        raise RuntimeError(error_msg)
+
                 # Step 3: Validate configuration
                 tprint(f"🔍 STEP 3/8: Validating configuration...")
                 if not self._validate_config(config):

@@ -1,4 +1,3 @@
-from src.utils.tprint import tprint
 
 
 from datetime import datetime
@@ -10,14 +9,13 @@ from ..utils.logger import system_logger
 from ..utils.warning_symbols import failed, initialization_error, warning
 from ..core.error_classes import ValidationError
 from ..core.decorators import handles_errors
+from ..utils.compat import handle_specific_errors
 # Live trading utilities
 from src.utils.model_manager import ModelManager
 # Performance monitoring
 from src.utils.performance_utils import PerformanceMonitor, global_monitor
 from src.utils.unified_cache import cached
 # Live trading validation
-from src.utils.trading_decorators import validate_trading_inputs
-import numpy as np
 import pandas as pd
 
 """
@@ -46,9 +44,6 @@ from .utils import (
 if TYPE_CHECKING:
     from .analyst.analyst import Analyst
     from .tactician.tactician import Tactician
-from typing import Any
-import logging
-import time
 
 class Strategist:
     """
@@ -138,7 +133,7 @@ class Strategist:
                 regime_config = self.config.get("strategist", {}).get("regime_classifier", {})
                 try:
 
-                    self.regime_classifier = _EnhancedRegimeClassifier(regime_config)
+                    self.regime_classifier = EnhancedRegimeClassifier(regime_config)
                     await self.regime_classifier.initialize()
                     self.logger.info("✅ Enhanced regime classifier initialized")
                 except Exception as e:
@@ -526,7 +521,7 @@ class Strategist:
                 f"Risk management: SL={strategy['stop_loss']:.2f}, TP={strategy['take_profit']:.2f}"
             )
 
-        # Reduce confidence if it's below threshold'
+        # Reduce confidence if it's below threshold
         if strategy["confidence"] < self.strategist_config.min_confidence_threshold:
             strategy["direction"] = "HOLD"
             strategy["reasoning"].append(

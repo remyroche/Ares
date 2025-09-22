@@ -3,13 +3,16 @@ from typing import Any
 from .exchange.factory import ExchangeFactory
 from .analyst.analyst import Analyst
 from .components.modular_analyst import ModularAnalyst
+from .components.modular_strategist import ModularStrategist
 from .components.modular_tactician import ModularTactician
 from .core.dependency_injection import DependencyContainer, ServiceLifetime
 from .interfaces.base_interfaces import IAnalyst, IEventBus, IStrategist, ISupervisor, ITactician
+from .interfaces.event_bus import EventBus
 from .supervisor.supervisor import Supervisor
+from .strategist.strategist import Strategist
+from .tactician.tactician import Tactician
 from ..training.training_manager import TrainingManager
 from .utils.logger import system_logger
-import logging
 import time
 
 class ServiceRegistry:

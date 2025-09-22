@@ -10,7 +10,7 @@ from .sr_parameter_optimization import SRParameterOptimizationComponent
 from .sr_detection import SRDetectionComponent
 from .sr_clustering import SRClusteringComponent
 from .hmm_regime_discovery import HMMRegimeDiscoveryComponent
-from .optimal_regime_clustering import OptimalRegimeClusteringComponent
+from ..hmm_clustering.components.clustering_component import OptimalRegimeClusteringComponent
 # HMM training components moved to hmm_models_training module
 # from .hmm_models_training import HMMModelsTrainingComponent
 from .hmm_ensemble_training_component import HMMEnsembleTrainingComponent
@@ -617,7 +617,7 @@ class ComponentFactory:
         'sr_detection': SRDetectionComponent,
         'sr_clustering': SRClusteringComponent,
         'hmm_regime_discovery': HMMRegimeDiscoveryComponent,
-        'hmm_clustering': OptimalRegimeClusteringComponent,  # Updated to use optimal regime clustering
+        'hmm_clustering': OptimalRegimeClusteringComponent,  # Updated to use consolidated HMM clustering
         'hmm_ensemble_training': HMMEnsembleTrainingComponent,
         # 'hmm_models_training': HMMModelsTrainingComponent,  # Moved to hmm_models_training module
         # 'hmm_ensemble_training': HMMEnsembleTrainingComponent,  # Removed

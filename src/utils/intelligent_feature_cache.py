@@ -15,6 +15,8 @@ import numpy as np
 import pandas as pd
 import json
 
+from src.utils.unified_cache import UnifiedCache
+
 logger = logging.getLogger(__name__)
 
 class IntelligentFeatureCache:
@@ -37,6 +39,15 @@ class IntelligentFeatureCache:
         self.max_memory_mb = max_memory_mb
         self.max_cache_size_mb = max_cache_size_mb
         self.enable_compression = enable_compression
+        # Delegate storage to UnifiedCache for consistency
+        self._ucache = UnifiedCache(
+            cache_dir=cache_dir,
+            max_memory_mb=max_memory_mb,
+            enable_disk=True,
+            enable_compression=enable_compression,
+            default_ttl_seconds=None,
+            namespace='intelligent_feature_cache',
+        )
         self.memory_cache: dict[str, Any] = {}
         self.cache_metadata: dict[str, dict[str, Any]] = {}
         self.hit_count = 0
@@ -201,22 +212,18 @@ class IntelligentFeatureCache:
         Returns:
             Cached data or None if not found
         """
-        if cache_key in self.memory_cache:
+        # Prefer unified cache (includes memory+disk)
+        value = self._ucache.get(cache_key)
+        if value is not None:
             self.hit_count += 1
+            # Mirror minimal metadata for backward visibility
+            self.cache_metadata.setdefault(cache_key, {})
             self.cache_metadata[cache_key]['last_access'] = time.time()
-            self.cache_metadata[cache_key]['access_count'] += 1
-            return self.memory_cache[cache_key]
-        disk_result = self._load_from_disk(cache_key)
-        if disk_result is not None:
-            data, metadata = disk_result
-            self.hit_count += 1
-            data_size_mb = self._estimate_data_size_mb(data)
-            if data_size_mb < self.max_memory_mb * 0.1:
-                self.memory_cache[cache_key] = data
-                self.cache_metadata[cache_key] = metadata
-                self.cache_metadata[cache_key]['last_access'] = time.time()
-                self.cache_metadata[cache_key]['access_count'] += 1
-            return data
+            self.cache_metadata[cache_key]['access_count'] = int(self.cache_metadata[cache_key].get('access_count', 0)) + 1
+            # Maintain small in-memory mirror when tiny
+            if self._estimate_data_size_mb(value) < self.max_memory_mb * 0.1:
+                self.memory_cache[cache_key] = value
+            return value
         self.miss_count += 1
         return None
 
@@ -232,14 +239,12 @@ class IntelligentFeatureCache:
         if metadata is None:
             metadata = {}
         metadata.update({'created': time.time(), 'last_access': time.time(), 'access_count': 1, 'size_mb': self._estimate_data_size_mb(data)})
-        data_size_mb = float(metadata['size_mb'])
-        current_memory = self._get_memory_usage_mb()
-        if current_memory + data_size_mb > self.max_memory_mb:
-            self._evict_least_used(self.max_memory_mb * 0.8)
-        if self._get_memory_usage_mb() + data_size_mb <= self.max_memory_mb:
+        # Write via unified cache; it will manage eviction and disk
+        self._ucache.set(cache_key, data, metadata)
+        # Maintain small in-memory mirror
+        if self._estimate_data_size_mb(data) < self.max_memory_mb * 0.1:
             self.memory_cache[cache_key] = data
             self.cache_metadata[cache_key] = metadata
-        self._save_to_disk(cache_key, data, metadata)
 
     def _estimate_data_size_mb(self, data: Any) -> float:
         """
@@ -261,11 +266,7 @@ class IntelligentFeatureCache:
         """Clear all caches."""
         self.memory_cache.clear()
         self.cache_metadata.clear()
-        for cache_file in self.cache_dir.glob('*.pkl*'):
-            try:
-                cache_file.unlink()
-            except Exception as e:
-                logger.warning(f'Failed to delete cache file {cache_file}: {e}')
+        self._ucache.clear_namespace()
         logger.info('🧹 Cleared all caches')
 
     def get_stats(self) -> dict:
@@ -276,7 +277,10 @@ class IntelligentFeatureCache:
             Dictionary with cache statistics
         """
         memory_usage = self._get_memory_usage_mb()
-        disk_usage = sum((f.stat().st_size for f in self.cache_dir.glob('*.pkl*'))) / (1024 * 1024)
+        try:
+            disk_usage = self._ucache.get_stats().get('disk_usage_mb', 0.0)
+        except Exception:
+            disk_usage = 0.0
         total_requests = self.hit_count + self.miss_count
         hit_rate = self.hit_count / total_requests if total_requests > 0 else 0.0
         return {'memory_usage_mb': memory_usage, 'disk_usage_mb': disk_usage, 'memory_cache_size': len(self.memory_cache), 'hit_count': self.hit_count, 'miss_count': self.miss_count, 'hit_rate': hit_rate, 'eviction_count': self.eviction_count, 'total_requests': total_requests}

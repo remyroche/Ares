@@ -23,6 +23,13 @@ from contextlib import contextmanager
 
 import numpy as np
 
+# Unified cache for generic values
+try:
+    from src.utils.unified_cache import get_unified_cache
+    UNIFIED_CACHE_AVAILABLE = True
+except Exception:
+    UNIFIED_CACHE_AVAILABLE = False
+
 # Enhanced dependency management with fast fail
 try:
     from joblib import Memory
@@ -100,6 +107,21 @@ class SharedMLCache:
         self._last_access: Dict[str, float] = {}
         tprint("✅ Memory tracking initialized")
         
+        # Backing unified cache for generic values
+        self._unified = None
+        if UNIFIED_CACHE_AVAILABLE:
+            try:
+                self._unified = get_unified_cache(
+                    namespace="ml_common_shared",
+                    cache_dir=self._cache_dir,
+                    max_memory_mb=self._max_memory_mb,
+                    enable_disk=True,
+                    enable_compression=True,
+                )
+                tprint("✅ UnifiedCache available for generic values")
+            except Exception as e:
+                tprint(f"⚠️ UnifiedCache init failed: {e}")
+
         # Memory monitoring
         self._initial_memory = self._get_memory_usage()
         init_time = time.time() - start_time
@@ -175,21 +197,23 @@ class SharedMLCache:
     def set_cached_value(self, key: str, data: Any) -> None:
         """Generic cache setter for arbitrary data."""
         try:
-            # Use a general cache dictionary for arbitrary data
-            if not hasattr(self, '_generic_cache'):
-                self._generic_cache: Dict[str, Any] = {}
-
-            self._generic_cache[key] = data
-            self._update_cache_stats(key, data)
-            self._check_memory_usage()
+            if self._unified is not None:
+                self._unified.set(key, data)
+            else:
+                if not hasattr(self, '_generic_cache'):
+                    self._generic_cache: Dict[str, Any] = {}
+                self._generic_cache[key] = data
+                self._update_cache_stats(key, data)
+                self._check_memory_usage()
         except Exception as e:
             tprint(f"❌ Failed to cache data: {e}")
 
     def get_cached_value(self, key: str) -> Any:
         """Generic cache getter for arbitrary data."""
         try:
+            if self._unified is not None:
+                return self._unified.get(key)
             if hasattr(self, '_generic_cache') and key in self._generic_cache:
-                # Update access stats for LRU
                 self._update_access_stats(key)
                 return self._generic_cache[key]
             return None
@@ -305,6 +329,8 @@ class SharedMLCache:
             # Clear generic cache if it exists
             if hasattr(self, '_generic_cache'):
                 self._generic_cache.clear()
+            if self._unified is not None:
+                self._unified.clear_namespace()
             
             # Clear tracking dictionaries
             self._cache_sizes.clear()

@@ -48,6 +48,14 @@ class SubPipelineStatus(Enum):
     SKIPPED = "skipped"
 
 @dataclass
+class LoggingConfig:
+    """Logging configuration for the sub-pipeline."""
+    level: str = "INFO"
+    enable_console: bool = True
+    enable_file: bool = False
+    log_file: Optional[str] = None
+
+@dataclass
 class SubPipelineConfig:
     """Configuration for sub-pipeline execution."""
     mode: ExecutionMode = ExecutionMode.FULL
@@ -64,6 +72,7 @@ class SubPipelineConfig:
     monitoring_enabled: bool = True
     single_stage_only: bool = False
     custom_params: Dict[str, Any] = field(default_factory=dict)
+    logging: LoggingConfig = field(default_factory=LoggingConfig)
 
 @dataclass
 class SubPipelineResult:
@@ -78,6 +87,10 @@ class SubPipelineResult:
     error_message: Optional[str] = None
     artifacts: Dict[str, Any] = field(default_factory=dict)
 
+    @property
+    def success(self) -> bool:
+        return self.status == SubPipelineStatus.COMPLETED and self.error_message is None
+
 class BacktestingSubPipeline:
     """
     Backtesting Sub-Pipeline Manager.
@@ -91,6 +104,9 @@ class BacktestingSubPipeline:
         self.config = config or SubPipelineConfig()
         self.logger = logger.getChild('BacktestingSubPipeline')
         self.results: List[SubPipelineResult] = []
+        
+        # Apply logging configuration
+        self._apply_logging_config(self.config.logging)
         
         # Initialize sub-pipeline registry
         self.sub_pipelines = {
@@ -107,6 +123,25 @@ class BacktestingSubPipeline:
         self.artifact_manager = get_artifact_manager()
         self.pickup_utils = get_artifact_pickup_utils()
         self.version_manager = get_version_manager()
+
+    def _apply_logging_config(self, logging_cfg: LoggingConfig) -> None:
+        try:
+            level = getattr(logging, str(logging_cfg.level).upper(), logging.INFO)
+            self.logger.setLevel(level)
+            if logging_cfg.enable_file and logging_cfg.log_file:
+                has_same_file = any(
+                    isinstance(h, logging.FileHandler) and getattr(h, 'baseFilename', None) == str(Path(logging_cfg.log_file).resolve())
+                    for h in self.logger.handlers
+                )
+                if not has_same_file:
+                    Path(logging_cfg.log_file).parent.mkdir(parents=True, exist_ok=True)
+                    fh = logging.FileHandler(logging_cfg.log_file)
+                    fh.setLevel(level)
+                    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+                    fh.setFormatter(formatter)
+                    self.logger.addHandler(fh)
+        except Exception:
+            pass
     def _log_sub_pipeline_completion(self, sub_pipeline_name: str, config: SubPipelineConfig, artifacts: Dict[str, Any]):
         """Helper method to log sub-pipeline completion with emojis and artifact paths."""
         tprint("\n" + "="*80)

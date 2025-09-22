@@ -35,6 +35,12 @@ class HMMEnsembleTrainingComponent(BaseMarketAnalysisComponent):
         """Initialize the HMM ensemble training component."""
         super().__init__(config)
         self.core_component = HMMEnsembleTrainingCore(config=None, enable_vectorization=True)
+        try:
+            # Enforce 15m timeframe for ensemble runtime
+            if hasattr(self.core_component, 'config'):
+                setattr(self.core_component.config, 'timeframe', '15m')
+        except Exception:
+            pass
 
     def get_required_artifacts(self) -> list[str]:
         """Get list of required artifacts this component must produce."""

@@ -14,7 +14,7 @@ class BaseTrainingConfig:
     
     # Basic configuration
     model_name: str = "base_model"
-    timeframe: str = "15m"
+    timeframe: str = "5m"
     
     # HPO configuration
     enable_hpo: bool = True

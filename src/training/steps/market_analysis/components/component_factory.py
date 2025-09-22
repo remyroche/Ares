@@ -135,6 +135,12 @@ class HMMModelsTrainingComponentWrapper(BaseMarketAnalysisComponent):
             # Create training instance if not exists
             if self.training_instance is None:
                 self.training_instance = self.training_class()
+                try:
+                    # Enforce 15m timeframe for HMM models at runtime
+                    if hasattr(self.training_instance, 'config'):
+                        setattr(self.training_instance.config, 'timeframe', '15m')
+                except Exception:
+                    pass
 
             # Extract required data from pipeline state
             X = pipeline_state.get('features')
@@ -380,6 +386,12 @@ class HMMEnsembleTrainingComponentWrapper(BaseMarketAnalysisComponent):
             # Create training instance if not exists
             if self.training_instance is None:
                 self.training_instance = self.training_class()
+                try:
+                    # Enforce 15m timeframe for HMM ensemble at runtime
+                    if hasattr(self.training_instance, 'config'):
+                        setattr(self.training_instance.config, 'timeframe', '15m')
+                except Exception:
+                    pass
             
             # Extract required data from pipeline state
             X = pipeline_state.get('features')

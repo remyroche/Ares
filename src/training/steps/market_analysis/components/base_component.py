@@ -17,7 +17,7 @@ class ComponentConfig:
     """Base configuration for pipeline components."""
     symbol: str = "BTCUSDT"
     exchange: str = "binance"
-    timeframe: str = "15m"
+    timeframe: str = "30m"
     data_dir: str = "historical_data"
     start_date: Optional[str] = None
     end_date: Optional[str] = None

@@ -22,12 +22,25 @@ from sklearn.metrics import r2_score, accuracy_score
 logger = logging.getLogger(__name__)
 
 class FeatureSelectionFramework:
-    """Feature selection framework with memory management."""
+    """Feature selection framework with memory management.
+
+    NOTE: Core selection logic is now centralized in
+    `src/utils/feature_selection/framework.py`. This class acts as a thin
+    adapter to preserve imports and backward compatibility while delegating
+    to the central bank.
+    """
 
     def __init__(self):
         """Initialize feature selection framework."""
         self.logger = logger.getChild('FeatureSelectionFramework')
-        self.logger.info("🚀 Initializing FeatureSelectionFramework")
+        self.logger.info("🚀 Initializing FeatureSelectionFramework (delegating to central bank)")
+        try:
+            # Lazy import to avoid cycles
+            from src.utils.feature_selection.framework import get_feature_selection_framework as _get_bank_framework
+            self._bank_framework = _get_bank_framework()
+        except Exception as e:
+            self.logger.warning(f"⚠️ Central bank framework unavailable, local utilities will be used: {e}")
+            self._bank_framework = None
 
     def _validate_data_quality(self, X: np.ndarray, y: np.ndarray, context: str = "feature_selection") -> Dict[str, Any]:
         """
@@ -244,50 +257,82 @@ class FeatureSelectionFramework:
         }
 
         try:
-            if method == 'auto':
-                # Automatically choose best method based on data characteristics
-                selected_method = self._choose_optimal_method(X, y, task_type)
-                self.logger.info(f"📊 Auto-selected method: {selected_method}")
-                method = selected_method
+            # Delegate to central bank if available
+            if self._bank_framework is not None:
+                from src.utils.feature_selection.framework import select_features as bank_select
 
-            # Apply selected method
-            if method == 'filter':
-                selected_features, scores, ranking = self._filter_based_selection(
-                    X, y, task_type, k, **kwargs
+                # Map args to central API
+                is_classification = task_type == 'classification'
+                bank_result = bank_select(
+                    pd.DataFrame(X, columns=feature_names) if not hasattr(X, 'values') else X,
+                    y,
+                    method=method,
+                    max_features=max_features or k,
+                    is_classification=is_classification,
+                    feature_names=feature_names,
+                    framework_config=None,
                 )
-            elif method == 'wrapper':
-                selected_features, scores, ranking = self._wrapper_based_selection(
-                    X, y, task_type, k, **kwargs
-                )
-            elif method == 'embedded':
-                selected_features, scores, ranking = self._embedded_based_selection(
-                    X, y, task_type, k, **kwargs
-                )
-            elif method == 'hybrid':
-                selected_features, scores, ranking = self._hybrid_selection(
-                    X, y, task_type, k, **kwargs
-                )
+
+                # Project bank result to legacy shape
+                results.update({
+                    'selected_features': bank_result.get('selected_features', []),
+                    'n_selected_features': len(bank_result.get('selected_features', [])),
+                    'selection_ratio': (len(bank_result.get('selected_features', [])) / len(feature_names)) if feature_names else None,
+                    'feature_scores': bank_result.get('final_scores', bank_result.get('feature_scores', {})),
+                    'feature_ranking': [],
+                    'success': bank_result.get('success', True),
+                    'method': bank_result.get('method', method),
+                })
+
+                # Optional analysis
+                try:
+                    if results['selected_features'] and not hasattr(X, 'values'):
+                        # If X was ndarray, build indices
+                        idxs = [feature_names.index(f) for f in results['selected_features'] if f in feature_names]
+                    else:
+                        idxs = [feature_names.index(f) for f in results['selected_features']]
+                    results['feature_importance_analysis'] = self._analyze_feature_importance(
+                        X if not hasattr(X, 'values') else X.values, y, idxs, task_type
+                    )
+                except Exception:
+                    pass
             else:
-                raise ValueError(f"Unknown feature selection method: {method}")
+                # Fallback to local strategies for compatibility
+                if method == 'auto':
+                    selected_method = self._choose_optimal_method(X, y, task_type)
+                    self.logger.info(f"📊 Auto-selected method: {selected_method}")
+                    method = selected_method
 
-            # Update results
-            results['selected_features'] = [feature_names[i] for i in selected_features]
-            results['feature_scores'] = {feature_names[i]: float(scores[i]) for i in range(len(scores))}
-            results['feature_ranking'] = [(feature_names[i], float(ranking[i])) for i in range(len(ranking))]
-            results['n_selected_features'] = len(selected_features)
-            results['selection_ratio'] = len(selected_features) / len(feature_names)
+                if method == 'filter':
+                    selected_features, scores, ranking = self._filter_based_selection(
+                        X, y, task_type, k, **kwargs
+                    )
+                elif method == 'wrapper':
+                    selected_features, scores, ranking = self._wrapper_based_selection(
+                        X, y, task_type, k, **kwargs
+                    )
+                elif method == 'embedded':
+                    selected_features, scores, ranking = self._embedded_based_selection(
+                        X, y, task_type, k, **kwargs
+                    )
+                elif method == 'hybrid':
+                    selected_features, scores, ranking = self._hybrid_selection(
+                        X, y, task_type, k, **kwargs
+                    )
+                else:
+                    raise ValueError(f"Unknown feature selection method: {method}")
 
-            # Calculate feature importance metrics
-            results['feature_importance_analysis'] = self._analyze_feature_importance(
-                X, y, selected_features, task_type
-            )
-
-            results['success'] = True
-
+                results['selected_features'] = [feature_names[i] for i in selected_features]
+                results['feature_scores'] = {feature_names[i]: float(scores[i]) for i in range(len(scores))}
+                results['feature_ranking'] = [(feature_names[i], float(ranking[i])) for i in range(len(ranking))]
+                results['n_selected_features'] = len(selected_features)
+                results['selection_ratio'] = len(selected_features) / len(feature_names)
+                results['feature_importance_analysis'] = self._analyze_feature_importance(
+                    X, y, selected_features, task_type
+                )
+                results['success'] = True
         except Exception as e:
             self.logger.error(f"❌ Feature selection failed: {e}")
-
-            # Enhanced error diagnostics
             error_diagnostics = {
                 'error_type': type(e).__name__,
                 'error_message': str(e),
@@ -299,26 +344,7 @@ class FeatureSelectionFramework:
                 'max_features': max_features,
                 'feature_names_count': len(feature_names) if 'feature_names' in locals() else None
             }
-
-            # Try to provide more specific guidance
-            if "Input contains NaN" in str(e):
-                error_diagnostics['guidance'] = "Data contains NaN values that weren't properly handled"
-            elif "Input contains infinity" in str(e):
-                error_diagnostics['guidance'] = "Data contains infinity values that weren't properly handled"
-            elif "constant" in str(e).lower():
-                error_diagnostics['guidance'] = "Target variable appears to be constant - check target data"
-            elif "classification" in str(e).lower():
-                error_diagnostics['guidance'] = "Classification task failed - check target variable format"
-            elif "regression" in str(e).lower():
-                error_diagnostics['guidance'] = "Regression task failed - check target variable format"
-            else:
-                error_diagnostics['guidance'] = "General feature selection failure - check data quality and parameters"
-
-            results.update({
-                'error': str(e),
-                'error_diagnostics': error_diagnostics,
-                'success': False
-            })
+            results.update({'error': str(e), 'error_diagnostics': error_diagnostics, 'success': False})
 
         results['selection_time'] = time.time() - start_time
 

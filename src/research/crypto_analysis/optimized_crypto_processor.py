@@ -29,7 +29,7 @@ from src.utils.common_operations import (
 from src.utils.parquet_utils import ParquetUtils
 from src.utils.matrix_operations.unified_operations import UnifiedMatrixOperations
 from src.utils.ml_common.data_processing.data_cleaning_utils import exclude_corrupted_periods
-from src.utils.ml_common.optimization.parallel_processing import ParallelProcessingCoordinator
+from src.utils.ml_common.utils.parallel_processing import ParallelProcessingCoordinator
 from src.utils.error_handler import handles_errors, safe_execution
 from src.utils.logger import system_logger
 from src.utils.async_utils import AsyncFileManager

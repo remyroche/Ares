@@ -87,7 +87,7 @@ from src.utils.intelligent_feature_cache import IntelligentFeatureCache
 # Enhanced data processing
 from src.utils.enhanced_data_operations import EnhancedDataOperations
 from src.utils.data_processing_utils import DataProcessingUtils
-from src.utils.vectorized_processing_core import VectorizedProcessingCore
+from src.utils.matrix_operations import VectorizedProcessingCore
 
 # Performance monitoring
 from src.utils.performance_utils import PerformanceMonitor

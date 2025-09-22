@@ -85,16 +85,16 @@ def test_complete_migration():
     start_time = time.time()
 
     try:
-        # Test with comprehensive model types including ensembles
+        # Test with optimized model types (top 2 base + ensemble models)
         config = HMMTrainingConfig(
             model_name="complete_migration_test",
             timeframe="15m",  # Should be enforced
             model_types=[
-                # Base models
+                # Base models (top 2)
                 "logistic_regression", "lightgbm", "random_forest",
                 # Ensemble models
                 "voting_classifier", "stacking_classifier", "bagging_classifier",
-                "ada_boost_classifier", "extra_trees_classifier"
+                "ada_boost_classifier", "extra_trees_classifier", "xgboost"
             ],
             hpo_trials=10,  # Reduced for testing
             enable_multi_objective=True,
@@ -122,7 +122,7 @@ def test_complete_migration():
 
         # Check that ensemble models are included
         model_types_used = results.get('model_types_used', [])
-        ensemble_models = [m for m in model_types_used if 'ensemble' in m.lower() or 'voting' in m.lower() or 'stacking' in m.lower()]
+        ensemble_models = [m for m in model_types_used if 'ensemble' in m.lower() or 'voting' in m.lower() or 'stacking' in m.lower() or 'bagging' in m.lower() or 'ada_boost' in m.lower() or 'extra_trees' in m.lower() or 'xgboost' in m.lower()]
         print(f"📊 Ensemble models included: {len(ensemble_models)} - {ensemble_models}")
 
         if results.get('timeframe') == '15m':
@@ -185,7 +185,8 @@ def test_complete_migration():
     print("🎉 Complete migration tests passed successfully!")
     print("\n📊 Summary:")
     print("- ✅ Streamlined HMM training with complete migration")
-    print("- ✅ Ensemble models included in model types")
+    print("- ✅ Base models optimized to top 2 (logistic_regression, lightgbm, random_forest)")
+    print("- ✅ Ensemble models include XGBoost as best of XGBoost/CatBoost")
     print("- ✅ 15m timeframe enforcement working")
     print("- ✅ HMM state recognition focus confirmed")
     print("- ✅ BaseTrainingStep inheritance verified")

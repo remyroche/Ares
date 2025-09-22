@@ -70,18 +70,19 @@ class StreamlinedHMMTrainingStep(BaseTrainingStep):
 
     def _get_hmm_model_types(self) -> List[str]:
         """
-        Get HMM-specific model types including ensemble models.
+        Get HMM-specific model types optimized for state recognition.
+
+        Base models: logistic_regression, lightgbm, random_forest (top 2)
+        Ensemble models: voting, stacking, bagging, ada boost, extra trees, xgboost (best of XGBoost/CatBoost)
 
         Returns:
             List of model types optimized for HMM state recognition
         """
         return [
-            # Base models for state recognition
+            # Base models for state recognition (top 2)
             "logistic_regression",
             "lightgbm",
             "random_forest",
-            "xgboost",
-            "catboost",
 
             # Ensemble models for robust state recognition
             "voting_classifier",        # Voting ensemble
@@ -89,6 +90,7 @@ class StreamlinedHMMTrainingStep(BaseTrainingStep):
             "bagging_classifier",       # Bagging ensemble
             "ada_boost_classifier",     # AdaBoost ensemble
             "extra_trees_classifier",   # Extra Trees ensemble
+            "xgboost",                  # XGBoost as ensemble model (best of XGBoost/CatBoost)
 
             # Deep learning models (if available)
             "tabnet_classifier",        # TabNet
@@ -249,7 +251,7 @@ class StreamlinedHMMTrainingStep(BaseTrainingStep):
             Dictionary of search spaces for each model type
         """
         return {
-            # Base models
+            # Base models (top 2)
             'logistic_regression': {
                 'C': {'type': 'float', 'low': 0.001, 'high': 10.0, 'log': True},
                 'penalty': {'type': 'categorical', 'choices': ['l1', 'l2', 'elasticnet']},
@@ -271,21 +273,6 @@ class StreamlinedHMMTrainingStep(BaseTrainingStep):
                 'min_samples_leaf': {'type': 'int', 'low': 1, 'high': 10},
                 'max_features': {'type': 'categorical', 'choices': ['sqrt', 'log2', None]},
                 'bootstrap': {'type': 'categorical', 'choices': [True, False]}
-            },
-            'xgboost': {
-                'n_estimators': {'type': 'int', 'low': 500, 'high': 2000},
-                'learning_rate': {'type': 'float', 'low': 0.01, 'high': 0.2, 'log': True},
-                'max_depth': {'type': 'int', 'low': 4, 'high': 10},
-                'subsample': {'type': 'float', 'low': 0.7, 'high': 1.0},
-                'colsample_bytree': {'type': 'float', 'low': 0.7, 'high': 1.0},
-                'reg_alpha': {'type': 'float', 'low': 0.0, 'high': 1.0},
-                'reg_lambda': {'type': 'float', 'low': 0.0, 'high': 1.0}
-            },
-            'catboost': {
-                'n_estimators': {'type': 'int', 'low': 500, 'high': 2000},
-                'learning_rate': {'type': 'float', 'low': 0.01, 'high': 0.2, 'log': True},
-                'depth': {'type': 'int', 'low': 4, 'high': 10},
-                'l2_leaf_reg': {'type': 'float', 'low': 1.0, 'high': 10.0}
             },
 
             # Ensemble models
@@ -318,6 +305,15 @@ class StreamlinedHMMTrainingStep(BaseTrainingStep):
                 'min_samples_leaf': {'type': 'int', 'low': 1, 'high': 10},
                 'max_features': {'type': 'categorical', 'choices': ['sqrt', 'log2', None]},
                 'bootstrap': {'type': 'categorical', 'choices': [True, False]}
+            },
+            'xgboost': {  # XGBoost as ensemble model (best of XGBoost/CatBoost)
+                'n_estimators': {'type': 'int', 'low': 500, 'high': 2000},
+                'learning_rate': {'type': 'float', 'low': 0.01, 'high': 0.2, 'log': True},
+                'max_depth': {'type': 'int', 'low': 4, 'high': 10},
+                'subsample': {'type': 'float', 'low': 0.7, 'high': 1.0},
+                'colsample_bytree': {'type': 'float', 'low': 0.7, 'high': 1.0},
+                'reg_alpha': {'type': 'float', 'low': 0.0, 'high': 1.0},
+                'reg_lambda': {'type': 'float', 'low': 0.0, 'high': 1.0}
             },
 
             # Deep learning models

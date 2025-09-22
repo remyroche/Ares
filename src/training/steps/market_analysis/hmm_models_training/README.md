@@ -30,7 +30,8 @@ The HMM training has been **completely migrated** to leverage the common_utils/ 
 - **Reporting integration** - comprehensive reporting and metrics
 
 ### 3. HMM-Specific Optimizations
-- **State recognition models** - logistic regression, LightGBM, Random Forest
+- **Base models (top 2)** - logistic regression, LightGBM, Random Forest
+- **Ensemble models** - voting, stacking, bagging, ada boost, extra trees, XGBoost (best of XGBoost/CatBoost)
 - **Regime-aware training** - per-regime model training
 - **HMM search spaces** - optimized HPO spaces for state recognition
 - **15m timeframe enforcement** - ensures consistent timeframe usage
@@ -56,11 +57,11 @@ results = execute_enhanced_hmm_models_training(
 from src.utils.ml_common.config.base_training_config import HMMTrainingConfig
 config = HMMTrainingConfig(
     model_types=[
-        # Base models
-        "logistic_regression", "lightgbm", "random_forest", "xgboost", "catboost",
+        # Base models (top 2)
+        "logistic_regression", "lightgbm", "random_forest",
         # Ensemble models
         "voting_classifier", "stacking_classifier", "bagging_classifier",
-        "ada_boost_classifier", "extra_trees_classifier",
+        "ada_boost_classifier", "extra_trees_classifier", "xgboost",
         # Deep learning models
         "tabnet_classifier", "neural_network_classifier"
     ],
@@ -74,7 +75,8 @@ results = training_step.execute(X, y, regime_labels, feature_names)
 
 **Key Features:**
 - ✅ **15m timeframe enforcement** - automatic HMM state recognition
-- ✅ **Ensemble models included** - voting, stacking, bagging, ada boost, extra trees
+- ✅ **Base models (top 2)** - logistic regression, LightGBM, Random Forest
+- ✅ **Ensemble models** - voting, stacking, bagging, ada boost, extra trees, XGBoost (best of XGBoost/CatBoost)
 - ✅ **Deep learning models** - TabNet and neural networks when available
 - ✅ **HMM state focus** - optimized for state recognition, not prediction
 - ✅ **Common_utils pipeline** - leverages robust ML training infrastructure
@@ -88,12 +90,14 @@ The HMM training has been **completely migrated** to leverage the common_utils/ 
 - ✅ **90%+ reduction in custom code** - leverages BaseTrainingStep inheritance
 - ✅ **Universal validation, HPO, and reporting** from common_utils
 - ✅ **HMM state recognition focus** with 15m timeframe enforcement
-- ✅ **Ensemble models included** - voting, stacking, bagging, ada boost, extra trees
+- ✅ **Base models (top 2)** - logistic regression, LightGBM, Random Forest only
+- ✅ **Ensemble models included** - voting, stacking, bagging, ada boost, extra trees, XGBoost (best of XGBoost/CatBoost)
 - ✅ **Deep learning support** - TabNet and neural networks when available
 
 ### What Changed
 - **Complete file replacement** - `hmm_models_training_enhanced.py` now contains the streamlined implementation
-- **Ensemble models added** - comprehensive model types for robust state recognition
+- **Model selection optimized** - Base models reduced to top 2 (logistic regression, LightGBM, Random Forest)
+- **Ensemble models** - XGBoost selected as best of XGBoost/CatBoost comparison
 - **Single-step migration** - no gradual transition needed
 - **Backward compatibility maintained** - existing function names preserved
 
@@ -119,7 +123,9 @@ The HMM training has been **completely migrated** to leverage the common_utils/ 
 ### Streamlined Approach
 The streamlined approach automatically configures:
 - **Timeframe**: 15m (enforced for HMM state recognition)
-- **Model types**: 12 comprehensive models including ensembles and deep learning
+- **Base models**: 3 top models (logistic regression, LightGBM, Random Forest)
+- **Ensemble models**: 6 models (voting, stacking, bagging, ada boost, extra trees, XGBoost)
+- **Deep learning models**: TabNet and neural networks when available
 - **HPO**: Enabled with HMM-specific search spaces for all model types
 - **Validation**: Universal validation integration
 - **Reporting**: Common reporting pipeline
@@ -128,11 +134,11 @@ The streamlined approach automatically configures:
 ```python
 config = HMMTrainingConfig(
     model_types=[
-        # Base models
-        "logistic_regression", "lightgbm", "random_forest", "xgboost", "catboost",
+        # Base models (top 2)
+        "logistic_regression", "lightgbm", "random_forest",
         # Ensemble models
         "voting_classifier", "stacking_classifier", "bagging_classifier",
-        "ada_boost_classifier", "extra_trees_classifier",
+        "ada_boost_classifier", "extra_trees_classifier", "xgboost",
         # Deep learning models
         "tabnet_classifier", "neural_network_classifier"
     ],

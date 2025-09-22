@@ -29,34 +29,92 @@ from ..config.universal_timeframe_config import (
     validate_timeframe_consistency
 )
 
-# Import new utility modules
-from ..validation.data_leakage_prevention import (
-    get_data_leakage_prevention,
-    DataLeakageConfig,
-    detect_temporal_leakage,
-    detect_train_test_leakage
+# Import and integrate with existing modules
+from ..lookahead_bias_detector import LookaheadBiasDetector
+from ..validation.enhanced_overfitting_detection import (
+    UniversalOverfittingDetector,
+    OverfittingConfig,
+    OverfittingReport,
+    get_overfitting_detector
 )
-from ..validation.overfitting_monitoring import (
-    get_overfitting_monitor,
-    OverfittingMonitoringConfig,
-    start_monitoring_session,
-    monitor_training_step
+from ..validation.universal_ml_validation import (
+    get_ml_validator,
+    UniversalMLValidationConfig
 )
-from ..validation.enhanced_validation import (
-    get_enhanced_validator,
-    EnhancedValidationConfig,
-    validate_model_comprehensively
+from ..optimization.overfitting_prevention import (
+    OverfittingPrevention,
+    OverfittingPreventionConfig
 )
-from ..validation.hpo_overfitting_prevention import (
-    get_hpo_with_overfitting_prevention,
-    HPOOverfittingPreventionConfig,
-    optimize_hyperparameters_safely
-)
-from ..validation.model_complexity_analysis import (
-    get_model_complexity_analyzer,
-    ModelComplexityConfig,
-    analyze_model_complexity
-)
+
+# Import new utility modules that complement existing ones
+try:
+    from ..validation.data_leakage_prevention import (
+        get_data_leakage_prevention,
+        DataLeakageConfig,
+        detect_temporal_leakage,
+        detect_train_test_leakage
+    )
+    DATA_LEAKAGE_AVAILABLE = True
+except ImportError:
+    DATA_LEAKAGE_AVAILABLE = False
+    get_data_leakage_prevention = None
+    DataLeakageConfig = None
+    detect_temporal_leakage = None
+    detect_train_test_leakage = None
+
+try:
+    from ..validation.overfitting_monitoring import (
+        get_overfitting_monitor,
+        OverfittingMonitoringConfig,
+        start_monitoring_session,
+        monitor_training_step
+    )
+    OVERFITTING_MONITORING_AVAILABLE = True
+except ImportError:
+    OVERFITTING_MONITORING_AVAILABLE = False
+    get_overfitting_monitor = None
+    OverfittingMonitoringConfig = None
+    start_monitoring_session = None
+    monitor_training_step = None
+
+try:
+    from ..validation.enhanced_validation import (
+        get_enhanced_validator,
+        EnhancedValidationConfig,
+        validate_model_comprehensively
+    )
+    ENHANCED_VALIDATION_AVAILABLE = True
+except ImportError:
+    ENHANCED_VALIDATION_AVAILABLE = False
+    get_enhanced_validator = None
+    EnhancedValidationConfig = None
+    validate_model_comprehensively = None
+
+try:
+    from ..validation.hpo_overfitting_prevention import (
+        get_hpo_with_overfitting_prevention,
+        HPOOverfittingPreventionConfig,
+        optimize_hyperparameters_safely
+    )
+    HPO_PREVENTION_AVAILABLE = True
+except ImportError:
+    HPO_PREVENTION_AVAILABLE = False
+    get_hpo_with_overfitting_prevention = None
+    HPOOverfittingPreventionConfig = None
+    optimize_hyperparameters_safely = None
+
+try:
+    from ..validation.model_complexity_analysis import (
+        get_model_complexity_analyzer,
+        ModelComplexityConfig,
+        analyze_model_complexity
+    )
+    COMPLEXITY_ANALYSIS_AVAILABLE = True
+except ImportError:
+    COMPLEXITY_ANALYSIS_AVAILABLE = False
+    get_model_complexity_analyzer = None
+    ModelComplexityConfig = None
+    analyze_model_complexity = None
 
 # Import reporting integration
 from ..reporting.validation_reporting_integration import (

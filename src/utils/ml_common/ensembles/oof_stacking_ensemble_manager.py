@@ -398,9 +398,68 @@ class OOFStackingEnsembleManager:
                 except Exception as catboost_error:
                     self.logger.warning(f"CatBoost early stopping setup failed: {catboost_error}")
 
-            # Random Forest and other models don't need early stopping
+            # Neural networks and other models - use enhanced early stopping
+            elif 'neural' in model_type or 'torch' in model_type or 'pytorch' in model_type or 'tensorflow' in model_type:
+                try:
+                    # Use enhanced early stopping for neural networks
+                    from ..training.enhanced_early_stopping import apply_enhanced_early_stopping, get_early_stopping_config
+
+                    config = get_early_stopping_config(
+                        enabled=True,
+                        patience=self.config.early_stopping_patience,
+                        min_delta=self.config.early_stopping_min_delta,
+                        mode='min',
+                        monitor='validation_loss',
+                        nn_learning_rate=0.001,
+                        nn_batch_size=32,
+                        nn_epochs=100
+                    )
+
+                    trained_model, result = apply_enhanced_early_stopping(
+                        model, X_train, y_train, X_val, y_val, model_name, config
+                    )
+
+                    # Store result information for later use
+                    if not hasattr(self, 'early_stopping_results'):
+                        self.early_stopping_results = {}
+                    self.early_stopping_results[model_name] = result
+
+                    self.logger.debug(f"✅ Neural network early stopping configured for {model_name}")
+                    return trained_model
+
+                except Exception as nn_error:
+                    self.logger.warning(f"Neural network early stopping setup failed: {nn_error}")
+
+            # Other models - use generic enhanced early stopping
             else:
-                self.logger.debug(f"ℹ️ No early stopping setup needed for {model_name}")
+                try:
+                    # Use enhanced early stopping for other models
+                    from ..training.enhanced_early_stopping import apply_enhanced_early_stopping, get_early_stopping_config
+
+                    config = get_early_stopping_config(
+                        enabled=True,
+                        patience=self.config.early_stopping_patience,
+                        min_delta=self.config.early_stopping_min_delta,
+                        mode='min',
+                        monitor='validation_loss',
+                        generic_check_frequency=1,
+                        generic_max_iterations=100
+                    )
+
+                    trained_model, result = apply_enhanced_early_stopping(
+                        model, X_train, y_train, X_val, y_val, model_name, config
+                    )
+
+                    # Store result information for later use
+                    if not hasattr(self, 'early_stopping_results'):
+                        self.early_stopping_results = {}
+                    self.early_stopping_results[model_name] = result
+
+                    self.logger.debug(f"✅ Generic early stopping configured for {model_name}")
+                    return trained_model
+
+                except Exception as generic_error:
+                    self.logger.warning(f"Generic early stopping setup failed: {generic_error}")
 
             return model
 

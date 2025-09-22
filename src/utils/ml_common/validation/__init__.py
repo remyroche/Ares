@@ -6,6 +6,9 @@ This module contains all validation functionality including:
 - Model stability assessment
 - Threshold optimization
 - Validation metrics
+- Enhanced overfitting detection
+- Universal temporal validation
+- Comprehensive ML validation
 """
 
 from .validation_utils import ValidationFramework, ConfigurationValidator
@@ -14,16 +17,66 @@ from .cv import PurgedSplitConfig
 from .stability import feature_selection_stability, aggregate_time_blocks, StabilityAnalyzer
 from .thresholding import optimize_threshold, calibrate_probabilities
 
+# Enhanced validation components
+from .enhanced_overfitting_detection import (
+    UniversalOverfittingDetector,
+    OverfittingConfig,
+    OverfittingReport,
+    get_overfitting_detector,
+    detect_overfitting_for_model
+)
+from .universal_temporal_validation import (
+    UniversalTemporalValidator,
+    UniversalTemporalCrossValidator,
+    UniversalTimeSeriesSplit,
+    TemporalValidationConfig,
+    TemporalValidationReport,
+    get_temporal_validator,
+    get_temporal_cv,
+    create_time_series_split
+)
+from .universal_ml_validation import (
+    UniversalMLValidator,
+    UniversalMLValidationConfig,
+    UniversalMLValidationReport,
+    get_ml_validator,
+    validate_ml_model
+)
+
 __all__ = [
-    # Validation Utils
+    # Original Validation Utils
     'ValidationFramework', 'ConfigurationValidator',
 
-    # Cross-validation
+    # Original Cross-validation
     'TemporalCrossValidator', 'PurgedKFold', 'CrossValidationUtilities', 'PurgedSplitConfig',
 
-    # Stability Analysis
+    # Original Stability Analysis
     'feature_selection_stability', 'aggregate_time_blocks', 'StabilityAnalyzer',
 
-    # Threshold Optimization
-    'optimize_threshold', 'calibrate_probabilities'
+    # Original Threshold Optimization
+    'optimize_threshold', 'calibrate_probabilities',
+    
+    # Enhanced Overfitting Detection
+    'UniversalOverfittingDetector',
+    'OverfittingConfig',
+    'OverfittingReport',
+    'get_overfitting_detector',
+    'detect_overfitting_for_model',
+    
+    # Universal Temporal Validation
+    'UniversalTemporalValidator',
+    'UniversalTemporalCrossValidator',
+    'UniversalTimeSeriesSplit',
+    'TemporalValidationConfig',
+    'TemporalValidationReport',
+    'get_temporal_validator',
+    'get_temporal_cv',
+    'create_time_series_split',
+    
+    # Universal ML Validation
+    'UniversalMLValidator',
+    'UniversalMLValidationConfig',
+    'UniversalMLValidationReport',
+    'get_ml_validator',
+    'validate_ml_model'
 ]

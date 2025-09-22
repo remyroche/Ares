@@ -4,14 +4,8 @@
 from typing import List, Dict, Any, Optional, Union
 from dataclasses import dataclass
 from pathlib import Path
-import logging
 
-try:
-    # Prefer unified loader if available
-    from src.common.config.loader import save_to_file as _save_to_file, load_from_file as _load_from_file
-except Exception:
-    _save_to_file = None
-    _load_from_file = None
+from src.common.config.loader import save_to_file as _unified_save_to_file, load_from_file as _unified_load_from_file
 
 
 @dataclass
@@ -49,19 +43,7 @@ class CodeQualityConfig:
         )
 
     def save_to_file(self, filepath: Union[str, Path]) -> None:
-        if _save_to_file is not None:
-            return _save_to_file(self, filepath)
-        # Fallback simple JSON
-        path = Path(filepath)
-        data = self.to_dict()
-        if path.suffix.lower() == ".json":
-            import json
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(json.dumps(data, indent=2))
-        else:
-            import yaml
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(yaml.dump(data, default_flow_style=False, indent=2))
+        _unified_save_to_file(self, filepath)
 
 
 @dataclass
@@ -166,15 +148,23 @@ def get_default_config() -> AnalysisConfig:
 
 
 def load_config(config_file: str) -> CodeQualityConfig:
-    """Load configuration from a YAML or JSON file."""
+    """Load configuration from a YAML or JSON file.
+
+    Delegates to unified loader when available for consistency.
+    """
+    try:
+        return _unified_load_from_file(config_file, CodeQualityConfig)  # type: ignore[return-value]
+    except Exception:
+        pass
+
     import yaml
     import json
     from pathlib import Path
-    
+
     config_path = Path(config_file)
     if not config_path.exists():
         raise FileNotFoundError(f"Configuration file not found: {config_file}")
-    
+
     with open(config_path, 'r', encoding='utf-8') as f:
         if config_path.suffix.lower() in ['.yaml', '.yml']:
             config_dict = yaml.safe_load(f)
@@ -182,5 +172,5 @@ def load_config(config_file: str) -> CodeQualityConfig:
             config_dict = json.load(f)
         else:
             raise ValueError(f"Unsupported configuration file format: {config_path.suffix}")
-    
+
     return CodeQualityConfig.from_dict(config_dict)

@@ -43,6 +43,17 @@ from .universal_ml_validation import (
     validate_ml_model
 )
 
+# Re-export unified validation config helpers
+try:
+    from src.common.config.validation import (
+        EnhancedValidationConfig as UnifiedEnhancedValidationConfig,
+        UniversalMLValidationConfig as UnifiedUniversalMLValidationConfig,
+        save_validation_config as save_validation_config,
+        load_validation_config as load_validation_config,
+    )
+except Exception:
+    pass
+
 __all__ = [
     # Original Validation Utils
     'ValidationFramework', 'ConfigurationValidator',
@@ -78,5 +89,8 @@ __all__ = [
     'UniversalMLValidationConfig',
     'UniversalMLValidationReport',
     'get_ml_validator',
-    'validate_ml_model'
+    'validate_ml_model',
+    # Unified helpers
+    'save_validation_config',
+    'load_validation_config'
 ]

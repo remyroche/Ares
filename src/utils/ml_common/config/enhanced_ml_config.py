@@ -6,20 +6,12 @@ This module provides comprehensive configuration management for the enhanced
 ML training, HPO, and testing pipelines.
 """
 
-import logging
-from typing import Dict, List, Any, Optional, Union
+from typing import Dict, Any, Union
 from dataclasses import dataclass, field
 from pathlib import Path
-import json
-import yaml
+from src.common.config.loader import save_to_file as _unified_save_to_file, load_from_file as _unified_load_from_file
 
 from src.utils.logger import get_logger
-try:
-    # Prefer unified loader if available
-    from src.common.config.loader import save_to_file as _save_to_file, load_from_file as _load_from_file
-except Exception:
-    _save_to_file = None
-    _load_from_file = None
 
 logger = get_logger("EnhancedMLConfig")
 
@@ -233,21 +225,9 @@ class EnhancedMLConfig:
         return config
     
     def save_to_file(self, filepath: Union[str, Path]):
-        """Save configuration to file."""
+        """Save configuration to file using the unified loader."""
         try:
-            if _save_to_file is not None:
-                return _save_to_file(self, filepath)
-
-            filepath = Path(filepath)
-            config_dict = self.to_dict()
-            if filepath.suffix.lower() == '.json':
-                with open(filepath, 'w') as f:
-                    json.dump(config_dict, f, indent=2)
-            elif filepath.suffix.lower() in ['.yml', '.yaml']:
-                with open(filepath, 'w') as f:
-                    yaml.dump(config_dict, f, default_flow_style=False, indent=2)
-            else:
-                raise ValueError(f"Unsupported file format: {filepath.suffix}")
+            _unified_save_to_file(self, filepath)
             logger.info(f"✅ Configuration saved to: {filepath}")
         except Exception as e:
             logger.error(f"❌ Failed to save configuration: {e}")
@@ -255,23 +235,9 @@ class EnhancedMLConfig:
     
     @classmethod
     def load_from_file(cls, filepath: Union[str, Path]) -> 'EnhancedMLConfig':
-        """Load configuration from file."""
+        """Load configuration from file using the unified loader."""
         try:
-            if _load_from_file is not None:
-                return _load_from_file(filepath, cls)  # type: ignore[return-value]
-
-            filepath = Path(filepath)
-            if not filepath.exists():
-                raise FileNotFoundError(f"Configuration file not found: {filepath}")
-            if filepath.suffix.lower() == '.json':
-                with open(filepath, 'r') as f:
-                    config_dict = json.load(f)
-            elif filepath.suffix.lower() in ['.yml', '.yaml']:
-                with open(filepath, 'r') as f:
-                    config_dict = yaml.safe_load(f)
-            else:
-                raise ValueError(f"Unsupported file format: {filepath.suffix}")
-            config = cls.from_dict(config_dict)
+            config = _unified_load_from_file(filepath, cls)  # type: ignore[return-value]
             logger.info(f"✅ Configuration loaded from: {filepath}")
             return config
         except Exception as e:

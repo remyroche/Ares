@@ -8,8 +8,7 @@ to ensure consistency and prevent timeframe-related issues.
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass
 import logging
-from pathlib import Path
-import json
+from src.common.config.loader import save_to_file as _unified_save_to_file, load_from_file as _unified_load_from_file
 
 logger = logging.getLogger(__name__)
 
@@ -161,9 +160,7 @@ class UniversalTimeframeConfig:
             bool: True if successful, False otherwise
         """
         try:
-            config_dict = self.to_dict()
-            with open(filepath, 'w') as f:
-                json.dump(config_dict, f, indent=2)
+            _unified_save_to_file(self, filepath)
             logger.info(f"Configuration saved to {filepath}")
             return True
         except Exception as e:
@@ -182,15 +179,7 @@ class UniversalTimeframeConfig:
             UniversalTimeframeConfig: Loaded configuration
         """
         try:
-            with open(filepath, 'r') as f:
-                config_dict = json.load(f)
-            
-            # Create instance with loaded data
-            config = cls()
-            for key, value in config_dict.items():
-                if hasattr(config, key):
-                    setattr(config, key, value)
-            
+            config = _unified_load_from_file(filepath, cls)
             logger.info(f"Configuration loaded from {filepath}")
             return config
         except Exception as e:

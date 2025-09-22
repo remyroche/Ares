@@ -34,6 +34,10 @@ import time
 from ...math_validation import safe_divide, safe_log
 from ...common_operations import create_fallback_logger
 from src.utils.hardware.m1_gpu_utils import M1GPUManager
+from ..evaluation.unified_evaluator import (
+    compute_classification_metrics,
+    compute_regression_metrics,
+)
 
 # Enhanced dependency management with fast fail
 try:
@@ -133,13 +137,26 @@ class ModelEvaluationUtilities:
             )
 
             if task_type == 'classification':
-                evaluation_results.update(self._evaluate_classification_metrics(
-                    y_true, y_pred, y_prob, class_names
-                ))
+                basic = compute_classification_metrics(y_true, y_pred, y_prob)
+                evaluation_results['basic_metrics'] = {
+                    k: v for k, v in basic.items() if k in (
+                        'accuracy','balanced_accuracy','f1_macro','f1_weighted','precision_macro','recall_macro'
+                    )
+                }
+                evaluation_results['detailed_metrics'] = {
+                    k: v for k, v in basic.items() if k in (
+                        'confusion_matrix','classification_report','roc_auc','log_loss'
+                    )
+                }
             elif task_type == 'regression':
-                evaluation_results.update(self._evaluate_regression_metrics(
-                    y_true, y_pred
-                ))
+                basic = compute_regression_metrics(y_true, y_pred)
+                evaluation_results['basic_metrics'] = {
+                    k: v for k, v in basic.items() if k in ('mae','mse','rmse','r2')
+                }
+                if self.enable_detailed_metrics:
+                    evaluation_results['detailed_metrics'] = {
+                        k: v for k, v in basic.items() if k in ('mape','smape','explained_variance')
+                    }
             else:
                 raise ValueError(f"Unsupported task type: {task_type}")
 

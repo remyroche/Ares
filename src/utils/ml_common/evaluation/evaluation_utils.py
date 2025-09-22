@@ -16,6 +16,11 @@ from sklearn.metrics import (
 # Use existing utilities
 from src.utils.math_validation import safe_divide, safe_log, validate_finite
 from src.utils.logger import system_logger
+from src.utils.ml_common.evaluation.unified_evaluator import (
+    compute_classification_metrics,
+    compute_regression_metrics,
+    evaluate_model as unified_evaluate_model,
+)
 
 # Enhanced analysis imports
 try:
@@ -35,6 +40,7 @@ except ImportError:
     BootstrapAnalysisResult = None
 
 logger = system_logger.getChild('EvaluationUtils')
+logger.info("EvaluationUtils delegating core metric computation to unified_evaluator")
 
 
 class EvaluationUtils:
@@ -62,90 +68,25 @@ class EvaluationUtils:
             Dictionary containing calculated metrics
         """
         if metrics is None:
-            if is_classification:
-                metrics = ['accuracy', 'precision', 'recall', 'f1_score']
-            else:
-                metrics = ['mse', 'mae', 'r2', 'mape', 'smape']
-        
-        calculated_metrics = {}
-        
+            metrics = (
+                ['accuracy', 'precision', 'recall', 'f1_score']
+                if is_classification
+                else ['mse', 'mae', 'r2', 'mape', 'smape']
+            )
+
         if is_classification:
-            # Classification metrics
-            if 'accuracy' in metrics:
-                calculated_metrics['accuracy'] = accuracy_score(y_true, y_pred)
-            
-            if 'precision' in metrics:
-                calculated_metrics['precision'] = precision_score(
-                    y_true, y_pred, average='weighted', zero_division=0
-                )
-            
-            if 'recall' in metrics:
-                calculated_metrics['recall'] = recall_score(
-                    y_true, y_pred, average='weighted', zero_division=0
-                )
-            
-            if 'f1_score' in metrics:
-                calculated_metrics['f1_score'] = f1_score(
-                    y_true, y_pred, average='weighted', zero_division=0
-                )
-            
-            if 'classification_report' in metrics:
-                calculated_metrics['classification_report'] = classification_report(
-                    y_true, y_pred, output_dict=True
-                )
-            
-            if 'confusion_matrix' in metrics:
-                calculated_metrics['confusion_matrix'] = confusion_matrix(y_true, y_pred).tolist()
-            
-            if y_pred_proba is not None:
-                if 'log_loss' in metrics:
-                    calculated_metrics['log_loss'] = log_loss(y_true, y_pred_proba)
-                
-                if 'roc_auc' in metrics and len(np.unique(y_true)) == 2:
-                    calculated_metrics['roc_auc'] = roc_auc_score(y_true, y_pred_proba[:, 1])
-        
+            return compute_classification_metrics(
+                y_true=y_true,
+                y_pred=y_pred,
+                y_prob=y_pred_proba,
+                include=metrics,
+            )
         else:
-            # Regression metrics
-            if 'mse' in metrics:
-                calculated_metrics['mse'] = mean_squared_error(y_true, y_pred)
-            
-            if 'rmse' in metrics:
-                calculated_metrics['rmse'] = np.sqrt(mean_squared_error(y_true, y_pred))
-            
-            if 'mae' in metrics:
-                calculated_metrics['mae'] = mean_absolute_error(y_true, y_pred)
-            
-            if 'r2' in metrics:
-                calculated_metrics['r2'] = r2_score(y_true, y_pred)
-            
-            if 'mape' in metrics:
-                # Use safe division to avoid division by zero
-                mask = y_true != 0
-                if np.any(mask):
-                    mape_values = np.abs((y_true[mask] - y_pred[mask]) / y_true[mask])
-                    calculated_metrics['mape'] = np.mean(mape_values) * 100
-                else:
-                    calculated_metrics['mape'] = 0.0
-            
-            if 'smape' in metrics:
-                # Use safe division for SMAPE calculation
-                denominator = np.abs(y_true) + np.abs(y_pred)
-                smape_values = np.where(
-                    denominator != 0,
-                    2 * np.abs(y_true - y_pred) / denominator,
-                    0.0
-                )
-                calculated_metrics['smape'] = np.mean(smape_values) * 100
-            
-            if 'explained_variance' in metrics:
-                # Use safe division for explained variance
-                y_var = np.var(y_true)
-                if y_var != 0:
-                    calculated_metrics['explained_variance'] = 1 - np.var(y_true - y_pred) / y_var
-                else:
-                    calculated_metrics['explained_variance'] = 0.0
-        
-        return calculated_metrics
+            return compute_regression_metrics(
+                y_true=y_true,
+                y_pred=y_pred,
+                include=metrics,
+            )
     
     @staticmethod
     def evaluate_model_performance(
@@ -168,18 +109,8 @@ class EvaluationUtils:
         Returns:
             Dictionary containing calculated metrics
         """
-        # Make predictions
-        y_pred = model.predict(X)
-        
-        # Get probabilities if available and needed
-        y_pred_proba = None
-        if is_classification and hasattr(model, 'predict_proba'):
-            y_pred_proba = model.predict_proba(X)
-        
-        # Calculate metrics
-        return EvaluationUtils.calculate_metrics(
-            y, y_pred, y_pred_proba, metrics, is_classification
-        )
+        task = 'classification' if is_classification else 'regression'
+        return unified_evaluate_model(model=model, X=X, y=y, task=task, include=metrics)
     
     @staticmethod
     def evaluate_ensemble_performance(
@@ -202,18 +133,8 @@ class EvaluationUtils:
         Returns:
             Dictionary containing calculated metrics
         """
-        # Make predictions
-        y_pred = ensemble.predict(X)
-        
-        # Get probabilities if available and needed
-        y_pred_proba = None
-        if is_classification and hasattr(ensemble, 'predict_proba'):
-            y_pred_proba = ensemble.predict_proba(X)
-        
-        # Calculate metrics
-        return EvaluationUtils.calculate_metrics(
-            y, y_pred, y_pred_proba, metrics, is_classification
-        )
+        task = 'classification' if is_classification else 'regression'
+        return unified_evaluate_model(model=ensemble, X=X, y=y, task=task, include=metrics)
     
     @staticmethod
     def evaluate_regime_performance(

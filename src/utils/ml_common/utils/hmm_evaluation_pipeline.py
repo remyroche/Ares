@@ -19,6 +19,9 @@ from .hmm_temporal_protection import get_hmm_temporal_protection
 from ..validation.enhanced_overfitting_detection import get_overfitting_detector
 from .lookahead_protection import LookaheadProtection
 from .model_evaluation import ModelEvaluationUtils
+from ..evaluation.unified_evaluator import (
+    evaluate_multiple_datasets,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -128,8 +131,15 @@ class ComprehensiveHMMEvaluationPipeline:
         try:
             # Step 1: Basic Performance Metrics
             self.logger.info("📊 Step 1: Calculating performance metrics")
-            evaluation_results['performance_metrics'] = self._calculate_comprehensive_metrics(
-                model, X_train, y_train, X_val, y_val, X_test, y_test
+            datasets = {
+                'train': (X_train, y_train),
+                'validation': (X_val, y_val),
+            }
+            if X_test is not None and y_test is not None:
+                datasets['test'] = (X_test, y_test)
+
+            evaluation_results['performance_metrics'] = evaluate_multiple_datasets(
+                datasets=datasets, model=model, task='classification'
             )
 
             # Step 2: Overfitting Detection and Analysis

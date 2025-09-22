@@ -55,11 +55,7 @@ class HMMEnhancedFeatureCreator:
             )
 
             if feature_df.empty:
-                tprint("⚠️ No features generated from feature bank, falling back to basic features")
-                return HMMEnhancedFeatureCreator.create_enhanced_features(
-                    data[['close', 'volume']].values if 'close' in data.columns else data.values,
-                    regime_labels or np.zeros(len(data))
-                )
+                raise ValueError("Feature bank returned empty feature set for provided OHLCV data")
 
             # Convert to numpy array
             feature_matrix = feature_df.values
@@ -76,12 +72,8 @@ class HMMEnhancedFeatureCreator:
             return feature_matrix, feature_names
 
         except Exception as e:
-            tprint(f"⚠️ Comprehensive feature generation failed: {e}")
-            # Fallback to basic enhanced features
-            return HMMEnhancedFeatureCreator.create_enhanced_features(
-                data[['close', 'volume']].values if 'close' in data.columns else data.values,
-                regime_labels or np.zeros(len(data))
-            )
+            tprint(f"❌ Comprehensive feature generation failed: {e}")
+            raise
 
     @staticmethod
     def create_enhanced_features(X: np.ndarray, regime_labels: np.ndarray) -> np.ndarray:

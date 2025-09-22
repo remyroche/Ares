@@ -392,21 +392,11 @@ class StreamlinedHMMTrainingStep(BaseTrainingStep):
                     'feature_names': fn
                 }
             else:
-                # Deterministic engineered features without synthetic OHLCV
-                regime_labels_for_features = data.get('regime_labels')
-                if regime_labels_for_features is None or len(regime_labels_for_features) != len(X_regime):
-                    regime_labels_for_features = np.zeros(len(X_regime), dtype=int)
-
-                X_enhanced, fn = create_enhanced_features_with_names(
-                    X_regime,
-                    regime_labels_for_features,
-                    original_feature_names=global_feature_names
+                # Fast-fail if comprehensive OHLCV DataFrame is not provided
+                self.logger.error("Missing required OHLCV regime_df with columns ['open','high','low','close','volume'] for comprehensive feature generation")
+                raise ValueError(
+                    "OHLCV regime_df with columns ['open','high','low','close','volume'] is required for HMM training features."
                 )
-                enhanced_regime_data[regime_id] = {
-                    'X': X_enhanced,
-                    'y': y_regime,
-                    'feature_names': fn
-                }
 
         # Train models for each regime using enhanced features
         all_results = {}

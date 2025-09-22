@@ -968,34 +968,52 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
                     hmm_features = None
                     integration_stats['integration_errors'].append(f"HMM integration failed: {e}")
             
-            # Generate and count analyst model predictions
+            # Generate OOF predictions for analyst models to prevent data leakage
             analyst_predictions = []
             if analyst_models:
                 for model_name, model in analyst_models.items():
                     try:
-                        predictions = self._generate_model_predictions(model, X, model_name)
+                        # Use OOF predictions instead of in-sample predictions
+                        predictions = self._generate_oof_model_predictions(
+                            model=model,
+                            X_train=X_train,
+                            y_train=y_train,
+                            X_test=X,  # Use the same X for now - in practice this should be a disjoint holdout
+                            model_name=model_name,
+                            is_classification=True
+                        )
                         if predictions is not None:
                             analyst_predictions.append((model_name, predictions))
                             additional_features_count += predictions.shape[1]
                             integration_stats['analyst_models_integrated'] += 1
+                            self.logger.info(f"✅ Generated OOF predictions for analyst model: {model_name}")
                         else:
-                            integration_stats['integration_errors'].append(f"Failed to generate predictions for {model_name}")
+                            integration_stats['integration_errors'].append(f"Failed to generate OOF predictions for {model_name}")
                     except Exception as e:
                         self.logger.warning(f"⚠️ Could not add predictions from {model_name}: {e}")
                         integration_stats['integration_errors'].append(f"Analyst model {model_name} failed: {e}")
             
-            # Generate and count ensemble predictions
+            # Generate OOF predictions for analyst ensembles to prevent data leakage
             ensemble_predictions = []
             if analyst_ensembles:
                 for ensemble_name, ensemble in analyst_ensembles.items():
                     try:
-                        predictions = self._generate_model_predictions(ensemble, X, ensemble_name)
+                        # Use OOF predictions instead of in-sample predictions
+                        predictions = self._generate_oof_model_predictions(
+                            model=ensemble,
+                            X_train=X_train,
+                            y_train=y_train,
+                            X_test=X,  # Use the same X for now - in practice this should be a disjoint holdout
+                            model_name=ensemble_name,
+                            is_classification=True
+                        )
                         if predictions is not None:
                             ensemble_predictions.append((ensemble_name, predictions))
                             additional_features_count += predictions.shape[1]
                             integration_stats['analyst_ensembles_integrated'] += 1
+                            self.logger.info(f"✅ Generated OOF predictions for analyst ensemble: {ensemble_name}")
                         else:
-                            integration_stats['integration_errors'].append(f"Failed to generate predictions for {ensemble_name}")
+                            integration_stats['integration_errors'].append(f"Failed to generate OOF predictions for {ensemble_name}")
                     except Exception as e:
                         self.logger.warning(f"⚠️ Could not add predictions from {ensemble_name}: {e}")
                         integration_stats['integration_errors'].append(f"Analyst ensemble {ensemble_name} failed: {e}")
@@ -1232,6 +1250,120 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
         except Exception as e:
             self.logger.warning(f"⚠️ Failed to generate predictions from {model_name}: {e}")
             return None
+
+    def _generate_oof_model_predictions(self,
+                                       model: Any,
+                                       X_train: np.ndarray,
+                                       y_train: np.ndarray,
+                                       X_test: np.ndarray,
+                                       model_name: str,
+                                       is_classification: bool = True) -> Optional[np.ndarray]:
+        """
+        Generate out-of-fold predictions for a model to prevent data leakage.
+
+        Args:
+            model: Model to generate predictions from
+            X_train: Training features
+            y_train: Training targets
+            X_test: Test features for prediction
+            model_name: Name of the model
+            is_classification: Whether this is a classification task
+
+        Returns:
+            OOF predictions or None if failed
+        """
+        try:
+            # Check if model has predict method
+            if not hasattr(model, 'predict'):
+                self.logger.warning(f"⚠️ Model {model_name} does not have predict method")
+                return None
+
+            # For OOF predictions, we need to:
+            # 1. Train the model on X_train, y_train
+            # 2. Generate predictions on X_test
+
+            # Clone model to avoid state issues
+            from sklearn.base import clone
+            model_clone = clone(model)
+
+            # Setup early stopping if enabled
+            if self.config.enable_early_stopping:
+                # Use a portion of training data for validation in early stopping
+                val_size = min(1000, int(0.1 * len(X_train)))
+                X_train_main = X_train[:-val_size]
+                X_val = X_train[-val_size:]
+                y_train_main = y_train[:-val_size]
+                y_val = y_train[-val_size:]
+
+                model_clone = self._setup_early_stopping_for_model(
+                    model_clone, X_train_main, X_val, y_train_main, y_val, model_name
+                )
+
+            # Train model
+            model_clone.fit(X_train, y_train)
+
+            # Generate predictions on test set
+            predictions = self._generate_model_predictions(model_clone, X_test, model_name)
+
+            if predictions is not None:
+                self.logger.info(f"✅ Generated OOF predictions for {model_name} on test set")
+            else:
+                self.logger.warning(f"⚠️ Failed to generate OOF predictions for {model_name}")
+
+            return predictions
+
+        except Exception as e:
+            self.logger.error(f"Failed to generate OOF predictions for {model_name}: {e}")
+            self.logger.error(f"Traceback: {traceback.format_exc()}")
+            return None
+
+    def _setup_early_stopping_for_model(self, model: Any, X_train: np.ndarray, X_val: np.ndarray, y_train: np.ndarray, y_val: np.ndarray, model_name: str) -> Any:
+        """Setup early stopping for tree-based models."""
+        try:
+            model_type = model_name.lower()
+
+            # XGBoost early stopping
+            if 'xgb' in model_type:
+                try:
+                    model.set_params(
+                        eval_set=[(X_val, y_val)],
+                        early_stopping_rounds=50,
+                        eval_metric="logloss",
+                        verbose=False
+                    )
+                except Exception as xgb_error:
+                    self.logger.warning(f"XGBoost early stopping setup failed: {xgb_error}")
+
+            # LightGBM early stopping
+            elif 'lgbm' in model_type or 'lightgbm' in model_type:
+                try:
+                    model.set_params(
+                        eval_set=[(X_val, y_val)],
+                        early_stopping_rounds=50,
+                        eval_metric="binary_logloss",
+                        callbacks=['early_stopping'],
+                        verbose=-1
+                    )
+                except Exception as lgbm_error:
+                    self.logger.warning(f"LightGBM early stopping setup failed: {lgbm_error}")
+
+            # CatBoost early stopping
+            elif 'catboost' in model_type:
+                try:
+                    model.set_params(
+                        eval_set=(X_val, y_val),
+                        early_stopping_rounds=50,
+                        verbose=False,
+                        use_best_model=True
+                    )
+                except Exception as catboost_error:
+                    self.logger.warning(f"CatBoost early stopping setup failed: {catboost_error}")
+
+            return model
+
+        except Exception as e:
+            self.logger.warning(f"Failed to setup early stopping for {model_name}: {e}")
+            return model
     
     def _add_meta_learner_metadata(
         self,

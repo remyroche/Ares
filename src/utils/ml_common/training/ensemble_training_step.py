@@ -152,51 +152,31 @@ class EnsembleTrainingStep(BaseTrainingStep):
         is_classification: bool = True
     ) -> Dict[str, Any]:
         """
-        Create ensemble models with specified meta-learner.
-        
+        Create ensemble models using OOF stacking with temporal validation.
+
         Args:
             base_models: Dictionary of base models
             is_classification: Whether this is a classification task
-            
+
         Returns:
             Dictionary containing ensemble models
         """
         ensembles = {}
-        
-        if is_classification:
-            # Stacking ensemble with specified meta-learner
-            meta_learner = self.training_utils.create_model(
-                model_type=self.config.meta_model,
-                model_name=f"{self.config.model_name}_meta_learner",
-                model_params=self._get_meta_model_params()
-            )
-            
-            from sklearn.ensemble import StackingClassifier
-            ensembles['stacking_ensemble'] = StackingClassifier(
-                estimators=list(base_models.items()),
-                final_estimator=meta_learner,
-                cv=self.config.cv_folds,
-                n_jobs=-1,
-                stack_method='predict_proba',
-                passthrough=True
-            )
-            
-        else:
-            # Stacking ensemble with specified meta-learner
-            meta_learner = self.training_utils.create_model(
-                model_type=self.config.meta_model,
-                model_name=f"{self.config.model_name}_meta_learner",
-                model_params=self._get_meta_model_params()
-            )
-            
-            from sklearn.ensemble import StackingRegressor
-            ensembles['stacking_ensemble'] = StackingRegressor(
-                estimators=list(base_models.items()),
-                final_estimator=meta_learner,
-                cv=self.config.cv_folds,
-                n_jobs=-1
-            )
-        
+
+        # Use OOF stacking ensemble for proper temporal validation
+        ensemble_name = f"{self.config.model_name}_oof_stacking_ensemble"
+
+        # Create OOF stacking ensemble
+        oof_ensemble = self.training_utils.create_oof_stacking_ensemble(
+            base_models=base_models,
+            ensemble_name=ensemble_name,
+            n_outputs=1 if not isinstance(list(base_models.values())[0], dict) else len(base_models),
+            enable_temporal_validation=True,
+            cv_folds=self.config.cv_folds
+        )
+
+        ensembles['oof_stacking_ensemble'] = oof_ensemble
+
         return ensembles
     
     def train_ensemble_models(
@@ -207,44 +187,71 @@ class EnsembleTrainingStep(BaseTrainingStep):
         is_classification: bool = True
     ) -> Dict[str, Any]:
         """
-        Train ensemble models.
-        
+        Train ensemble models using OOF stacking with comprehensive validation.
+
         Args:
             base_models: Dictionary of base models
             X: Input features
             y: Target values
             is_classification: Whether this is a classification task
-            
+
         Returns:
             Dictionary containing training results
         """
         # Create ensemble models
         ensemble_models = self.create_ensemble_models(base_models, is_classification)
-        
+
         # Train ensemble models
         ensemble_results = {}
-        
+
         for name, ensemble in ensemble_models.items():
             self.logger.info(f"🔄 Training ensemble model: {name}")
-            
-            # Train ensemble
+
+            # Use comprehensive training with validation
             start_time = time.time()
-            ensemble.fit(X, y)
+            trained_ensemble, validation_results = self.training_utils.train_oof_stacking_ensemble(
+                ensemble_manager=ensemble,
+                X=X,
+                y=y,
+                model_name=name,
+                model_type="stacking",
+                timestamps=None,  # Add timestamp support if available
+                feature_names=None  # Add feature names if available
+            )
             training_time = time.time() - start_time
-            
+
             ensemble_results[name] = {
-                'ensemble': ensemble,
+                'ensemble': trained_ensemble,
                 'base_models': base_models,
                 'training_time': training_time,
+                'validation_results': validation_results,
                 'config': {
                     'meta_model': self.config.meta_model,
                     'cv_folds': self.config.cv_folds,
-                    'base_models': list(base_models.keys())
+                    'base_models': list(base_models.keys()),
+                    'oof_validation': True,
+                    'temporal_validation': True
                 }
             }
-            
-            self.logger.info(f"✅ {name} completed in {training_time:.2f}s")
-        
+
+            self.logger.info(f"✅ {name} completed in {training_time:.2f}s with OOF validation")
+
+            # Log validation results with comprehensive details
+            if validation_results['valid']:
+                self.logger.info(f"✅ Ensemble validation passed: {validation_results['validation_score']:.4f".4f"
+                # Log additional validation details if available
+                if 'enhanced_validation' in validation_results:
+                    enhanced = validation_results['enhanced_validation']
+                    self.logger.info(f"📊 Enhanced validation score: {enhanced.get('validation_score', 'N/A')}")
+                    self.logger.info(f"📈 Performance stability: {enhanced.get('performance_stability', 'N/A')}")
+                    self.logger.info(f"🔍 Validation reliability: {enhanced.get('validation_reliability', 'N/A')}")
+            else:
+                self.logger.warning(f"⚠️ Ensemble validation failed: {len(validation_results.get('critical_issues', []))} issues")
+                for issue in validation_results.get('critical_issues', []):
+                    self.logger.error(f"❌ Critical issue: {issue}")
+                for warning in validation_results.get('warnings', []):
+                    self.logger.warning(f"⚠️ Warning: {warning}")
+
         return ensemble_results
     
     def train_regime_ensembles(
@@ -483,8 +490,8 @@ class EnsembleTrainingStep(BaseTrainingStep):
         is_classification: bool
     ) -> Dict[str, Any]:
         """
-        Optimize ensemble using HPO.
-        
+        Optimize ensemble using OOF stacking with HPO and comprehensive validation.
+
         Args:
             base_models: Base models for ensemble
             X: Input features
@@ -492,42 +499,55 @@ class EnsembleTrainingStep(BaseTrainingStep):
             regime: Regime identifier
             feature_names: Names of input features
             is_classification: Whether this is a classification task
-            
+
         Returns:
             Dictionary containing optimization results
         """
         self.logger.debug(f"🔄 Optimizing ensemble for regime {regime}...")
-        
-        # Create ensemble configuration
-        ensemble_config = StackingEnsembleConfig(
-            ensemble_name=f"hmm_ensemble_regime_{regime}",
-            output_dir=getattr(self.config, 'model_save_path', './models/hmm_ensemble'),
+
+        # Create OOF stacking ensemble
+        ensemble_name = f"hmm_ensemble_regime_{regime}_oof_stacking"
+        oof_ensemble = self.training_utils.create_oof_stacking_ensemble(
             base_models=base_models,
-            enable_cross_validation=self.config.enable_cross_validation,
+            ensemble_name=ensemble_name,
+            n_outputs=1 if not isinstance(list(base_models.values())[0], dict) else len(base_models),
+            enable_temporal_validation=True,
             cv_folds=self.config.cv_folds
         )
-        
-        # Create ensemble manager
-        ensemble_manager = StackingEnsembleManager(ensemble_config)
-        
+
         # Apply overfitting prevention
         if self.config.enable_overfitting_prevention:
-            for model_name, model in base_models.items():
-                base_models[model_name] = self.training_utils.overfitting_prevention.apply_regularization(
-                    model, model_name
-                )
-        
-        # Train ensemble
+            for output_name, models in base_models.items():
+                for model_name, model in models.items():
+                    base_models[output_name][model_name] = self.training_utils.overfitting_prevention.apply_regularization(
+                        model, model_name
+                    )
+
+        # Train ensemble with comprehensive validation
         start_time = time.time()
-        ensemble_manager.train_ensemble(X, y)
+        trained_ensemble, validation_results = self.training_utils.train_oof_stacking_ensemble(
+            ensemble_manager=oof_ensemble,
+            X=X,
+            y=y,
+            model_name=f"regime_{regime}_ensemble",
+            model_type="stacking",
+            timestamps=None,
+            feature_names=feature_names
+        )
         training_time = time.time() - start_time
-        
+
         return {
-            'ensemble_manager': ensemble_manager,
+            'ensemble_manager': trained_ensemble,
             'base_models': base_models,
             'regime': regime,
             'training_time': training_time,
-            'config': ensemble_config
+            'validation_results': validation_results,
+            'config': {
+                'ensemble_name': ensemble_name,
+                'oof_validation': True,
+                'temporal_validation': True,
+                'cv_folds': self.config.cv_folds
+            }
         }
     
     def _train_single_ensemble(
@@ -540,8 +560,8 @@ class EnsembleTrainingStep(BaseTrainingStep):
         is_classification: bool
     ) -> Dict[str, Any]:
         """
-        Train single ensemble without HPO.
-        
+        Train single ensemble without HPO using OOF stacking.
+
         Args:
             base_models: Base models for ensemble
             X: Input features
@@ -549,42 +569,55 @@ class EnsembleTrainingStep(BaseTrainingStep):
             regime: Regime identifier
             feature_names: Names of input features
             is_classification: Whether this is a classification task
-            
+
         Returns:
             Dictionary containing training results
         """
         self.logger.debug(f"🔄 Training ensemble for regime {regime} (no HPO)...")
-        
-        # Create ensemble configuration
-        ensemble_config = StackingEnsembleConfig(
-            ensemble_name=f"hmm_ensemble_regime_{regime}",
-            output_dir=getattr(self.config, 'model_save_path', './models/hmm_ensemble'),
+
+        # Create OOF stacking ensemble
+        ensemble_name = f"hmm_ensemble_regime_{regime}_oof_stacking"
+        oof_ensemble = self.training_utils.create_oof_stacking_ensemble(
             base_models=base_models,
-            enable_cross_validation=self.config.enable_cross_validation,
+            ensemble_name=ensemble_name,
+            n_outputs=1 if not isinstance(list(base_models.values())[0], dict) else len(base_models),
+            enable_temporal_validation=True,
             cv_folds=self.config.cv_folds
         )
-        
-        # Create ensemble manager
-        ensemble_manager = StackingEnsembleManager(ensemble_config)
-        
+
         # Apply overfitting prevention
         if self.config.enable_overfitting_prevention:
-            for model_name, model in base_models.items():
-                base_models[model_name] = self.training_utils.overfitting_prevention.apply_regularization(
-                    model, model_name
-                )
-        
-        # Train ensemble
+            for output_name, models in base_models.items():
+                for model_name, model in models.items():
+                    base_models[output_name][model_name] = self.training_utils.overfitting_prevention.apply_regularization(
+                        model, model_name
+                    )
+
+        # Train ensemble with comprehensive validation
         start_time = time.time()
-        ensemble_manager.train_ensemble(X, y)
+        trained_ensemble, validation_results = self.training_utils.train_oof_stacking_ensemble(
+            ensemble_manager=oof_ensemble,
+            X=X,
+            y=y,
+            model_name=f"regime_{regime}_ensemble",
+            model_type="stacking",
+            timestamps=None,
+            feature_names=feature_names
+        )
         training_time = time.time() - start_time
-        
+
         return {
-            'ensemble_manager': ensemble_manager,
+            'ensemble_manager': trained_ensemble,
             'base_models': base_models,
             'regime': regime,
             'training_time': training_time,
-            'config': ensemble_config
+            'validation_results': validation_results,
+            'config': {
+                'ensemble_name': ensemble_name,
+                'oof_validation': True,
+                'temporal_validation': True,
+                'cv_folds': self.config.cv_folds
+            }
         }
     
     def _get_meta_model_params(self) -> Dict[str, Any]:
@@ -853,38 +886,82 @@ class EnsembleTrainingStep(BaseTrainingStep):
         is_classification: bool = True
     ) -> Dict[str, Any]:
         """
-        Evaluate ensemble performance per regime.
-        
+        Evaluate ensemble performance per regime using OOF predictions.
+
         Args:
             regime_results: Training results for each regime
             X: Input features
             y: Target values
             regime_labels: Regime labels for each sample
             is_classification: Whether this is a classification task
-            
+
         Returns:
             Dictionary containing evaluation results per regime
         """
         evaluation_results = {}
-        
+
         for regime, ensemble_result in regime_results['ensembles'].items():
             regime_mask = regime_labels == regime
             regime_X = X[regime_mask]
             regime_y = y[regime_mask]
-            
+
             ensemble_manager = ensemble_result['ensemble_manager']
-            
-            # Make predictions
-            y_pred = ensemble_manager.predict(regime_X)
-            
-            # Calculate metrics
-            metrics = self.evaluation_utils.calculate_metrics(
-                y_true=regime_y,
-                y_pred=y_pred,
-                metrics=self.config.evaluation_metrics,
-                is_classification=is_classification
-            )
-            
-            evaluation_results[regime] = metrics
-        
+
+            # Use OOF predictions for evaluation (proper out-of-sample)
+            if hasattr(ensemble_manager, 'get_oof_predictions'):
+                oof_predictions = ensemble_manager.get_oof_predictions()
+                oof_scores = ensemble_manager.get_oof_scores()
+
+                # Aggregate OOF predictions for this regime
+                if regime in oof_predictions:
+                    # Use OOF predictions instead of new predictions
+                    y_pred = np.array(list(oof_predictions[regime].values())).mean(axis=0)
+
+                    # Calculate metrics using OOF predictions
+                    metrics = self.evaluation_utils.calculate_metrics(
+                        y_true=regime_y,
+                        y_pred=y_pred,
+                        metrics=self.config.evaluation_metrics,
+                        is_classification=is_classification
+                    )
+
+                    # Add OOF-specific metrics
+                    metrics['oof_validation'] = True
+                    metrics['oof_score'] = oof_scores.get(regime, 0.0)
+                    metrics['evaluation_method'] = 'out_of_fold'
+
+                    evaluation_results[regime] = metrics
+
+                    self.logger.info(f"✅ Regime {regime} evaluated using OOF predictions: {oof_scores.get(regime, 0.0):.4f".4f"                else:
+                    # Fallback to regular predictions if OOF not available
+                    self.logger.warning(f"⚠️ OOF predictions not available for regime {regime}, using regular predictions")
+                    y_pred = ensemble_manager.predict(regime_X)
+
+                    metrics = self.evaluation_utils.calculate_metrics(
+                        y_true=regime_y,
+                        y_pred=y_pred,
+                        metrics=self.config.evaluation_metrics,
+                        is_classification=is_classification
+                    )
+
+                    metrics['oof_validation'] = False
+                    metrics['evaluation_method'] = 'in_sample'
+                    evaluation_results[regime] = metrics
+            else:
+                # Fallback for non-OOF ensembles
+                y_pred = ensemble_manager.predict(regime_X)
+
+                metrics = self.evaluation_utils.calculate_metrics(
+                    y_true=regime_y,
+                    y_pred=y_pred,
+                    metrics=self.config.evaluation_metrics,
+                    is_classification=is_classification
+                )
+
+                metrics['oof_validation'] = False
+                metrics['evaluation_method'] = 'in_sample'
+                evaluation_results[regime] = metrics
+
+                self.logger.warning(f"⚠️ OOF evaluation not available for regime {regime}")
+
         return evaluation_results

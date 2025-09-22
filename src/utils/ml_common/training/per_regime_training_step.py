@@ -46,6 +46,30 @@ except ImportError:
     RegularizationConfig = None
     TrainingIntegrationConfig = None
 
+# Universal validation integration
+try:
+    from src.utils.ml_common.training.universal_validation_integration import (
+        get_validation_integrator,
+        ValidationIntegrationConfig,
+        intelligently_select_utilities,
+        start_monitoring_session,
+        monitor_training_step,
+        perform_data_leakage_check,
+        perform_enhanced_validation,
+        perform_complexity_analysis
+    )
+    UNIVERSAL_VALIDATION_AVAILABLE = True
+except ImportError:
+    UNIVERSAL_VALIDATION_AVAILABLE = False
+    get_validation_integrator = None
+    ValidationIntegrationConfig = None
+    intelligently_select_utilities = None
+    start_monitoring_session = None
+    monitor_training_step = None
+    perform_data_leakage_check = None
+    perform_enhanced_validation = None
+    perform_complexity_analysis = None
+
 logger = logging.getLogger(__name__)
 
 
@@ -85,11 +109,20 @@ class PerRegimeTrainingStep(BaseTrainingStep):
         self.enhanced_training_available = ENHANCED_TRAINING_AVAILABLE
         self.training_enhancer = None
         self.enhanced_training_config = None
-        
+
+        # Universal validation integration
+        self.universal_validation_available = UNIVERSAL_VALIDATION_AVAILABLE
+        self.validation_integrator = None
+        self.validation_config = None
+
         # Initialize enhanced training utilities
         if self.enhanced_training_available:
             self._initialize_enhanced_training_utilities()
-        
+
+        # Initialize universal validation integration
+        if self.universal_validation_available:
+            self._initialize_universal_validation_integration()
+
         self.logger.info("✅ Enhanced Per-Regime Training Step initialized")
     
     def _initialize_enhanced_training_utilities(self):
@@ -115,6 +148,38 @@ class PerRegimeTrainingStep(BaseTrainingStep):
             self.logger.warning(f"⚠️ Enhanced training utilities initialization failed: {e}")
             self.enhanced_training_config = None
             self.training_enhancer = None
+
+    def _initialize_universal_validation_integration(self):
+        """Initialize universal validation integration for comprehensive model validation."""
+        try:
+            # Create validation integration configuration
+            self.validation_config = ValidationIntegrationConfig(
+                enable_validation=True,
+                enable_overfitting_detection=True,
+                enable_temporal_validation=True,
+                enable_timeframe_validation=True,
+                enable_data_leakage_prevention=True,
+                enable_overfitting_monitoring=True,
+                enable_enhanced_validation=True,
+                enable_hpo_overfitting_prevention=True,
+                enable_model_complexity_analysis=True,
+                save_validation_reports=True,
+                validation_report_directory="reports/validation/per_regime",
+                enable_validation_logging=True,
+                fail_on_validation_error=False,
+                warn_on_validation_issues=True,
+                auto_select_utilities=True
+            )
+
+            # Initialize validation integrator
+            self.validation_integrator = get_validation_integrator(self.validation_config)
+
+            self.logger.info("✅ Universal validation integration initialized successfully")
+
+        except Exception as e:
+            self.logger.warning(f"⚠️ Universal validation integration initialization failed: {e}")
+            self.validation_config = None
+            self.validation_integrator = None
     
     def train_regime_models(
         self,

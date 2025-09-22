@@ -29,6 +29,35 @@ from ..config.universal_timeframe_config import (
     validate_timeframe_consistency
 )
 
+# Import new utility modules
+from ..validation.data_leakage_prevention import (
+    get_data_leakage_prevention,
+    DataLeakageConfig,
+    detect_temporal_leakage,
+    detect_train_test_leakage
+)
+from ..validation.overfitting_monitoring import (
+    get_overfitting_monitor,
+    OverfittingMonitoringConfig,
+    start_monitoring_session,
+    monitor_training_step
+)
+from ..validation.enhanced_validation import (
+    get_enhanced_validator,
+    EnhancedValidationConfig,
+    validate_model_comprehensively
+)
+from ..validation.hpo_overfitting_prevention import (
+    get_hpo_with_overfitting_prevention,
+    HPOOverfittingPreventionConfig,
+    optimize_hyperparameters_safely
+)
+from ..validation.model_complexity_analysis import (
+    get_model_complexity_analyzer,
+    ModelComplexityConfig,
+    analyze_model_complexity
+)
+
 # Import reporting integration
 from ..reporting.validation_reporting_integration import (
     get_validation_reporting_integrator,
@@ -40,34 +69,72 @@ logger = logging.getLogger(__name__)
 @dataclass
 class ValidationIntegrationConfig:
     """Configuration for validation integration into training pipelines."""
-    
+
     # Validation settings
     enable_validation: bool = True
     enable_overfitting_detection: bool = True
     enable_temporal_validation: bool = True
     enable_timeframe_validation: bool = True
-    
+
+    # New utility settings
+    enable_data_leakage_prevention: bool = True
+    enable_overfitting_monitoring: bool = True
+    enable_enhanced_validation: bool = True
+    enable_hpo_overfitting_prevention: bool = True
+    enable_model_complexity_analysis: bool = True
+
     # Validation thresholds
     validation_failure_threshold: float = 0.5  # Minimum validation score to pass
     critical_issue_threshold: int = 1  # Number of critical issues to fail
-    
+
     # Reporting settings
     save_validation_reports: bool = True
     validation_report_directory: str = "reports/validation"
     enable_validation_logging: bool = True
-    
+
     # Integration behavior
     fail_on_validation_error: bool = False  # Whether to fail training on validation errors
     warn_on_validation_issues: bool = True  # Whether to warn on validation issues
     auto_fix_validation_issues: bool = False  # Whether to attempt automatic fixes
-    
+
     # Model-specific settings
     model_validation_overrides: Dict[str, Dict[str, Any]] = None
-    
+
+    # Utility-specific configurations
+    data_leakage_config: Optional[DataLeakageConfig] = None
+    overfitting_monitoring_config: Optional[OverfittingMonitoringConfig] = None
+    enhanced_validation_config: Optional[EnhancedValidationConfig] = None
+    hpo_overfitting_prevention_config: Optional[HPOOverfittingPreventionConfig] = None
+    model_complexity_config: Optional[ModelComplexityConfig] = None
+
+    # Intelligent utility selection
+    auto_select_utilities: bool = True
+    utility_selection_criteria: Dict[str, Any] = None
+
     def __post_init__(self):
         """Initialize default values."""
         if self.model_validation_overrides is None:
             self.model_validation_overrides = {}
+        if self.utility_selection_criteria is None:
+            self.utility_selection_criteria = {
+                'min_samples_for_enhanced_validation': 100,
+                'min_features_for_complexity_analysis': 10,
+                'enable_hpo_prevention_for_trials': 50,
+                'enable_leakage_prevention_for_time_series': True,
+                'enable_monitoring_for_long_training': True
+            }
+
+        # Initialize default configurations if not provided
+        if self.data_leakage_config is None:
+            self.data_leakage_config = DataLeakageConfig()
+        if self.overfitting_monitoring_config is None:
+            self.overfitting_monitoring_config = OverfittingMonitoringConfig()
+        if self.enhanced_validation_config is None:
+            self.enhanced_validation_config = EnhancedValidationConfig()
+        if self.hpo_overfitting_prevention_config is None:
+            self.hpo_overfitting_prevention_config = HPOOverfittingPreventionConfig()
+        if self.model_complexity_config is None:
+            self.model_complexity_config = ModelComplexityConfig()
 
 class UniversalValidationIntegrator:
     """Integrates universal validation into ML training pipelines."""
@@ -75,28 +142,36 @@ class UniversalValidationIntegrator:
     def __init__(self, config: Optional[ValidationIntegrationConfig] = None):
         """
         Initialize validation integrator.
-        
+
         Args:
             config: Validation integration configuration
         """
         self.config = config or ValidationIntegrationConfig()
-        
+
         # Initialize validation components
         self.overfitting_detector = get_overfitting_detector()
         self.temporal_validator = get_temporal_validator()
         self.timeframe_manager = get_timeframe_manager()
-        
+
+        # Initialize new utility components
+        self.data_leakage_prevention = get_data_leakage_prevention(self.config.data_leakage_config)
+        self.overfitting_monitor = get_overfitting_monitor(self.config.overfitting_monitoring_config)
+        self.enhanced_validator = get_enhanced_validator(self.config.enhanced_validation_config)
+        self.hpo_prevention = get_hpo_with_overfitting_prevention(self.config.hpo_overfitting_prevention_config)
+        self.complexity_analyzer = get_model_complexity_analyzer(self.config.model_complexity_config)
+
         # Initialize reporting integration
         self.reporting_integrator = get_validation_reporting_integrator()
-        
+
         # Create validation report directory
         if self.config.save_validation_reports:
             Path(self.config.validation_report_directory).mkdir(parents=True, exist_ok=True)
-        
+
         # Track validation history
         self.validation_history = []
-        
-        logger.info("✅ Universal Validation Integrator initialized")
+        self.monitoring_sessions = {}
+
+        logger.info("✅ Universal Validation Integrator initialized with new utilities")
     
     def validate_training_data(self, 
                               X_train: np.ndarray,
@@ -470,31 +545,311 @@ class UniversalValidationIntegrator:
             for warning in validation_results['warnings'][:3]:  # Show first 3 warnings
                 logger.warning(f"  Warning: {warning}")
     
+    def intelligently_select_utilities(self,
+                                     X: np.ndarray,
+                                     y: np.ndarray,
+                                     model_type: str,
+                                     task_type: str = "training",
+                                     n_samples: Optional[int] = None,
+                                     n_features: Optional[int] = None) -> Dict[str, Any]:
+        """
+        Intelligently select which validation utilities to use based on data characteristics.
+
+        Args:
+            X: Feature matrix
+            y: Target vector
+            model_type: Type of model
+            task_type: Type of task (training, hpo, evaluation)
+            n_samples: Number of samples (if None, inferred from X)
+            n_features: Number of features (if None, inferred from X)
+
+        Returns:
+            Dict with utility selection decisions and rationale
+        """
+        if not self.config.auto_select_utilities:
+            return {
+                'utilities_selected': {
+                    'data_leakage_prevention': self.config.enable_data_leakage_prevention,
+                    'overfitting_monitoring': self.config.enable_overfitting_monitoring,
+                    'enhanced_validation': self.config.enable_enhanced_validation,
+                    'hpo_overfitting_prevention': self.config.enable_hpo_overfitting_prevention,
+                    'model_complexity_analysis': self.config.enable_model_complexity_analysis
+                },
+                'selection_rationale': 'Manual configuration used'
+            }
+
+        # Infer data characteristics
+        if n_samples is None and X is not None:
+            n_samples = len(X)
+        if n_features is None and X is not None:
+            n_features = X.shape[1]
+
+        # Default selections
+        selections = {
+            'data_leakage_prevention': False,
+            'overfitting_monitoring': False,
+            'enhanced_validation': False,
+            'hpo_overfitting_prevention': False,
+            'model_complexity_analysis': False
+        }
+
+        rationale_parts = []
+
+        # Data leakage prevention selection
+        if (self.config.enable_data_leakage_prevention and
+            n_samples is not None and n_samples > 50):
+            # Enable for time series or large datasets
+            if (self.config.utility_selection_criteria['enable_leakage_prevention_for_time_series'] or
+                n_samples > 500):
+                selections['data_leakage_prevention'] = True
+                rationale_parts.append("Data leakage prevention enabled (time series/large dataset)")
+
+        # Overfitting monitoring selection
+        if (self.config.enable_overfitting_monitoring and
+            task_type == "training" and n_samples is not None):
+            # Enable for longer training sessions
+            if (self.config.utility_selection_criteria['enable_monitoring_for_long_training'] and
+                n_samples > 200):
+                selections['overfitting_monitoring'] = True
+                rationale_parts.append("Overfitting monitoring enabled (long training session)")
+
+        # Enhanced validation selection
+        if (self.config.enable_enhanced_validation and
+            n_samples is not None and
+            n_samples >= self.config.utility_selection_criteria['min_samples_for_enhanced_validation']):
+            selections['enhanced_validation'] = True
+            rationale_parts.append("Enhanced validation enabled (sufficient data)")
+
+        # Model complexity analysis selection
+        if (self.config.enable_model_complexity_analysis and
+            n_features is not None and
+            n_features >= self.config.utility_selection_criteria['min_features_for_complexity_analysis']):
+            selections['model_complexity_analysis'] = True
+            rationale_parts.append("Model complexity analysis enabled (sufficient features)")
+
+        # HPO overfitting prevention selection
+        if (self.config.enable_hpo_overfitting_prevention and
+            task_type == "hpo" and n_samples is not None):
+            # Enable for HPO with many trials
+            if n_samples > 100:  # Large enough for meaningful HPO
+                selections['hpo_overfitting_prevention'] = True
+                rationale_parts.append("HPO overfitting prevention enabled (HPO task)")
+
+        # Model-specific adjustments
+        selections = self._adjust_for_model_type(selections, model_type, rationale_parts)
+
+        # Data-specific adjustments
+        selections = self._adjust_for_data_characteristics(selections, X, y, rationale_parts)
+
+        return {
+            'utilities_selected': selections,
+            'selection_rationale': '; '.join(rationale_parts),
+            'data_characteristics': {
+                'n_samples': n_samples,
+                'n_features': n_features,
+                'model_type': model_type,
+                'task_type': task_type
+            }
+        }
+
+    def _adjust_for_model_type(self, selections: Dict[str, bool], model_type: str, rationale_parts: List[str]) -> Dict[str, bool]:
+        """Adjust utility selections based on model type."""
+        model_type_lower = model_type.lower()
+
+        # Tree-based models benefit from complexity analysis
+        if model_type_lower in ['xgboost', 'lightgbm', 'catboost', 'random_forest', 'extra_trees']:
+            if not selections['model_complexity_analysis']:
+                selections['model_complexity_analysis'] = True
+                rationale_parts.append("Complexity analysis enabled (tree-based model)")
+
+        # Neural networks benefit from overfitting monitoring
+        elif model_type_lower in ['neural_network', 'deep_learning', 'cnn', 'rnn']:
+            if not selections['overfitting_monitoring']:
+                selections['overfitting_monitoring'] = True
+                rationale_parts.append("Overfitting monitoring enabled (neural network)")
+
+        return selections
+
+    def _adjust_for_data_characteristics(self, selections: Dict[str, bool], X: np.ndarray, y: np.ndarray, rationale_parts: List[str]) -> Dict[str, bool]:
+        """Adjust utility selections based on data characteristics."""
+        try:
+            # Check for temporal patterns that suggest time series
+            if X is not None and len(X) > 10:
+                # Simple heuristic: check if data looks like it has temporal structure
+                # This could be enhanced with more sophisticated time series detection
+                temporal_likelihood = self._assess_temporal_likelihood(X, y)
+
+                if temporal_likelihood > 0.7:
+                    if not selections['data_leakage_prevention']:
+                        selections['data_leakage_prevention'] = True
+                        rationale_parts.append("Data leakage prevention enabled (temporal patterns detected)")
+
+        except Exception as e:
+            logger.warning(f"Data characteristics adjustment failed: {e}")
+
+        return selections
+
+    def _assess_temporal_likelihood(self, X: np.ndarray, y: np.ndarray) -> float:
+        """Assess likelihood that data has temporal structure."""
+        try:
+            # Simple heuristics for temporal data detection
+            likelihood = 0.0
+
+            # Check for autocorrelation in target
+            if len(y) > 20:
+                from scipy.stats import pearsonr
+                # Check autocorrelation at lag 1
+                if len(y) > 1:
+                    corr, _ = pearsonr(y[:-1], y[1:])
+                    if abs(corr) > 0.5:
+                        likelihood += 0.4
+
+            # Check for feature autocorrelation
+            if X.shape[1] > 0:
+                feature_corr_sum = 0
+                n_features_checked = min(5, X.shape[1])
+
+                for i in range(n_features_checked):
+                    if len(X) > 1:
+                        corr, _ = pearsonr(X[:-1, i], X[1:, i])
+                        feature_corr_sum += abs(corr)
+
+                avg_feature_corr = feature_corr_sum / n_features_checked
+                if avg_feature_corr > 0.3:
+                    likelihood += 0.3
+
+            # Check for time-like features (e.g., increasing indices)
+            if X.shape[1] > 0:
+                # Check if first feature looks like time index
+                first_feature = X[:, 0]
+                if len(first_feature) > 1:
+                    # Check if it's monotonically increasing
+                    if np.all(np.diff(first_feature) >= 0):
+                        likelihood += 0.3
+
+            return min(1.0, likelihood)
+
+        except Exception as e:
+            logger.error(f"Temporal likelihood assessment failed: {e}")
+            return 0.5
+
+    def start_monitoring_session(self, model_name: str, model_type: str = "unknown") -> str:
+        """Start a monitoring session for overfitting monitoring."""
+        session_id = start_monitoring_session(model_name, model_type)
+        self.monitoring_sessions[session_id] = {
+            'model_name': model_name,
+            'model_type': model_type,
+            'start_time': datetime.now()
+        }
+        return session_id
+
+    def monitor_training_step(self,
+                             session_id: str,
+                             epoch: int,
+                             train_accuracy: float,
+                             val_accuracy: float,
+                             train_loss: float,
+                             val_loss: float,
+                             additional_metrics: Optional[Dict[str, float]] = None):
+        """Monitor a training step using overfitting monitoring."""
+        return monitor_training_step(
+            session_id, epoch, train_accuracy, val_accuracy, train_loss, val_loss, additional_metrics
+        )
+
+    def end_monitoring_session(self, session_id: str):
+        """End a monitoring session."""
+        if session_id in self.monitoring_sessions:
+            del self.monitoring_sessions[session_id]
+        self.overfitting_monitor.end_monitoring_session(session_id)
+
+    def perform_data_leakage_check(self,
+                                  data: pd.DataFrame,
+                                  timestamp_column: str,
+                                  target_column: Optional[str] = None,
+                                  dataset_name: str = "dataset") -> Dict[str, Any]:
+        """Perform data leakage check using the prevention utility."""
+        leakage_report = detect_temporal_leakage(data, timestamp_column, target_column, dataset_name)
+        return {
+            'leakage_detected': leakage_report.temporal_leakage_detected or leakage_report.lookahead_bias_detected,
+            'leakage_rate': leakage_report.overall_leakage_rate,
+            'severity': leakage_report.severity_level,
+            'recommendations': leakage_report.recommendations,
+            'report': leakage_report
+        }
+
+    def perform_enhanced_validation(self,
+                                   model: Any,
+                                   X: np.ndarray,
+                                   y: np.ndarray,
+                                   model_name: str = "unknown",
+                                   model_type: str = "unknown",
+                                   is_classification: bool = True) -> Dict[str, Any]:
+        """Perform enhanced validation using the enhanced validator."""
+        validation_report = validate_model_comprehensively(
+            model, X, y, model_name, model_type, is_classification=is_classification
+        )
+        return {
+            'validation_score': validation_report.validation_quality_score,
+            'performance_stability': validation_report.performance_stability,
+            'validation_reliability': validation_report.validation_reliability,
+            'recommendations': validation_report.recommendations,
+            'report': validation_report
+        }
+
+    def perform_complexity_analysis(self,
+                                   model: Any,
+                                   X: np.ndarray,
+                                   y: np.ndarray,
+                                   model_name: str = "unknown",
+                                   model_type: str = "unknown") -> Dict[str, Any]:
+        """Perform model complexity analysis."""
+        complexity_report = analyze_model_complexity(
+            model, X, y, model_name, model_type
+        )
+        return {
+            'complexity_score': complexity_report.overall_complexity_score,
+            'complexity_level': complexity_report.complexity_level,
+            'overfitting_risk': complexity_report.overfitting_risk_score,
+            'simplification_potential': complexity_report.simplification_potential,
+            'recommendations': complexity_report.primary_recommendations,
+            'report': complexity_report
+        }
+
     def get_validation_summary(self) -> Dict[str, Any]:
         """Get summary of all validations."""
         if not self.validation_history:
             return {'message': 'No validations performed'}
-        
+
         total_validations = len(self.validation_history)
         valid_validations = sum(1 for v in self.validation_history if v['valid'])
         success_rate = valid_validations / total_validations
-        
+
         # Model type distribution
         model_type_counts = {}
         for validation in self.validation_history:
             model_type = validation['model_type']
             model_type_counts[model_type] = model_type_counts.get(model_type, 0) + 1
-        
+
         # Average validation scores
         avg_validation_score = np.mean([v['validation_score'] for v in self.validation_history])
-        
+
+        # Utility usage statistics
+        utility_usage = {
+            'data_leakage_prevention': sum(1 for v in self.validation_history if 'leakage_check' in v),
+            'overfitting_monitoring': len(self.monitoring_sessions),
+            'enhanced_validation': sum(1 for v in self.validation_history if 'enhanced_validation' in v),
+            'complexity_analysis': sum(1 for v in self.validation_history if 'complexity_analysis' in v)
+        }
+
         return {
             'total_validations': total_validations,
             'valid_validations': valid_validations,
             'success_rate': success_rate,
             'model_type_distribution': model_type_counts,
             'average_validation_score': avg_validation_score,
-            'validation_history': self.validation_history
+            'validation_history': self.validation_history,
+            'utility_usage': utility_usage,
+            'monitoring_sessions_active': len(self.monitoring_sessions)
         }
 
 # Global integrator instance
@@ -554,3 +909,67 @@ def validate_hpo_trial(model: Any,
         model, X_train, X_val, y_train, y_val, trial_params,
         model_name, model_type, trial_number
     )
+
+def intelligently_select_utilities(X: np.ndarray,
+                                  y: np.ndarray,
+                                  model_type: str,
+                                  task_type: str = "training",
+                                  n_samples: Optional[int] = None,
+                                  n_features: Optional[int] = None,
+                                  config: Optional[ValidationIntegrationConfig] = None) -> Dict[str, Any]:
+    """Convenience function to intelligently select validation utilities."""
+    integrator = get_validation_integrator(config)
+    return integrator.intelligently_select_utilities(
+        X, y, model_type, task_type, n_samples, n_features
+    )
+
+def start_monitoring_session(model_name: str, model_type: str = "unknown", config: Optional[ValidationIntegrationConfig] = None) -> str:
+    """Convenience function to start monitoring session."""
+    integrator = get_validation_integrator(config)
+    return integrator.start_monitoring_session(model_name, model_type)
+
+def monitor_training_step(session_id: str,
+                         epoch: int,
+                         train_accuracy: float,
+                         val_accuracy: float,
+                         train_loss: float,
+                         val_loss: float,
+                         additional_metrics: Optional[Dict[str, float]] = None,
+                         config: Optional[ValidationIntegrationConfig] = None):
+    """Convenience function to monitor training step."""
+    integrator = get_validation_integrator(config)
+    return integrator.monitor_training_step(
+        session_id, epoch, train_accuracy, val_accuracy, train_loss, val_loss, additional_metrics
+    )
+
+def perform_data_leakage_check(data: pd.DataFrame,
+                              timestamp_column: str,
+                              target_column: Optional[str] = None,
+                              dataset_name: str = "dataset",
+                              config: Optional[ValidationIntegrationConfig] = None) -> Dict[str, Any]:
+    """Convenience function to perform data leakage check."""
+    integrator = get_validation_integrator(config)
+    return integrator.perform_data_leakage_check(data, timestamp_column, target_column, dataset_name)
+
+def perform_enhanced_validation(model: Any,
+                               X: np.ndarray,
+                               y: np.ndarray,
+                               model_name: str = "unknown",
+                               model_type: str = "unknown",
+                               is_classification: bool = True,
+                               config: Optional[ValidationIntegrationConfig] = None) -> Dict[str, Any]:
+    """Convenience function to perform enhanced validation."""
+    integrator = get_validation_integrator(config)
+    return integrator.perform_enhanced_validation(
+        model, X, y, model_name, model_type, is_classification
+    )
+
+def perform_complexity_analysis(model: Any,
+                               X: np.ndarray,
+                               y: np.ndarray,
+                               model_name: str = "unknown",
+                               model_type: str = "unknown",
+                               config: Optional[ValidationIntegrationConfig] = None) -> Dict[str, Any]:
+    """Convenience function to perform model complexity analysis."""
+    integrator = get_validation_integrator(config)
+    return integrator.perform_complexity_analysis(model, X, y, model_name, model_type)

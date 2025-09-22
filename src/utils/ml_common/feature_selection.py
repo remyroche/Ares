@@ -45,7 +45,7 @@ from ..math_validation import (
 )
 from ..common_operations import create_fallback_logger, safe_dataframe_operation
 from src.utils.hardware.m1_gpu_utils import M1GPUManager
-from src.utils.parallel_processing_optimizer import ParallelProcessor
+from src.utils.ml_common.utils import ParallelProcessor
 from ..matrix_operations import (
     safe_correlation_matrix, m1_matrix_multiply, safe_matrix_multiply,
     safe_matrix_inverse, get_unified_matrix_operations

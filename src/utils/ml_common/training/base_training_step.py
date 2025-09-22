@@ -24,6 +24,14 @@ from src.utils.ml_common.training.training_utils import TrainingUtils
 from src.utils.ml_common.models.model_manager import ModelManager
 from src.utils.ml_common.evaluation.evaluation_utils import EvaluationUtils
 
+# Import universal validation integration
+from .universal_validation_integration import (
+    get_validation_integrator,
+    validate_training_data,
+    validate_trained_model,
+    ValidationIntegrationConfig
+)
+
 logger = system_logger.getChild('BaseTrainingStep')
 
 
@@ -47,6 +55,9 @@ class BaseTrainingStep(ABC):
         
         # Initialize common components
         self._initialize_common_components()
+        
+        # Initialize validation integration
+        self._initialize_validation_integration()
         
         # Training results
         self.training_results = {}
@@ -76,6 +87,142 @@ class BaseTrainingStep(ABC):
         self.parquet_utils = ParquetUtils()
         
         self.logger.info("✅ Common components initialized with existing utilities")
+    
+    def _initialize_validation_integration(self):
+        """Initialize universal validation integration."""
+        # Create validation configuration
+        validation_config = ValidationIntegrationConfig(
+            enable_validation=getattr(self.config, 'enable_validation', True),
+            enable_overfitting_detection=getattr(self.config, 'enable_overfitting_detection', True),
+            enable_temporal_validation=getattr(self.config, 'enable_temporal_validation', True),
+            enable_timeframe_validation=getattr(self.config, 'enable_timeframe_validation', True),
+            save_validation_reports=getattr(self.config, 'save_validation_reports', True),
+            validation_report_directory=getattr(self.config, 'validation_report_directory', "reports/validation"),
+            enable_validation_logging=getattr(self.config, 'enable_validation_logging', True),
+            fail_on_validation_error=getattr(self.config, 'fail_on_validation_error', False),
+            warn_on_validation_issues=getattr(self.config, 'warn_on_validation_issues', True)
+        )
+        
+        # Initialize validation integrator
+        self.validation_integrator = get_validation_integrator(validation_config)
+        
+        self.logger.info("✅ Universal validation integration initialized")
+    
+    def validate_training_data(self, 
+                              X: np.ndarray,
+                              y: np.ndarray,
+                              regime_labels: np.ndarray,
+                              feature_names: Optional[List[str]] = None,
+                              timestamps: Optional[np.ndarray] = None,
+                              model_type: str = "unknown") -> Dict[str, Any]:
+        """
+        Validate training data before model training.
+        
+        Args:
+            X: Input features
+            y: Target values
+            regime_labels: Regime labels for each sample
+            feature_names: Names of input features
+            timestamps: Optional timestamps for temporal validation
+            model_type: Type of model
+            
+        Returns:
+            Dict: Validation results
+        """
+        # Split data for validation
+        from sklearn.model_selection import train_test_split
+        X_train, X_val, y_train, y_val = train_test_split(
+            X, y, test_size=0.2, random_state=42, stratify=y
+        )
+        
+        # Validate training data
+        validation_results = self.validation_integrator.validate_training_data(
+            X_train=X_train,
+            X_val=X_val,
+            y_train=y_train,
+            y_val=y_val,
+            timestamps=timestamps,
+            feature_names=feature_names,
+            model_type=model_type
+        )
+        
+        # Log validation results
+        if validation_results['valid']:
+            self.logger.info("✅ Training data validation passed")
+        else:
+            self.logger.warning("⚠️ Training data validation failed")
+            for issue in validation_results.get('critical_issues', []):
+                self.logger.error(f"Critical issue: {issue}")
+            for warning in validation_results.get('warnings', []):
+                self.logger.warning(f"Warning: {warning}")
+        
+        return validation_results
+    
+    def validate_trained_model(self, 
+                              model: Any,
+                              X_train: np.ndarray,
+                              X_val: np.ndarray,
+                              y_train: np.ndarray,
+                              y_val: np.ndarray,
+                              timestamps: Optional[np.ndarray] = None,
+                              feature_names: Optional[List[str]] = None,
+                              model_name: str = "unknown",
+                              model_type: str = "unknown",
+                              fold_number: Optional[int] = None) -> Dict[str, Any]:
+        """
+        Validate trained model with comprehensive analysis.
+        
+        Args:
+            model: Trained ML model
+            X_train: Training features
+            X_val: Validation features
+            y_train: Training labels
+            y_val: Validation labels
+            timestamps: Optional timestamps for temporal validation
+            feature_names: Optional feature names
+            model_name: Name of the model
+            model_type: Type of model
+            fold_number: Fold number for cross-validation
+            
+        Returns:
+            Dict: Comprehensive validation results
+        """
+        # Validate trained model
+        validation_results = self.validation_integrator.validate_trained_model(
+            model=model,
+            X_train=X_train,
+            X_val=X_val,
+            y_train=y_train,
+            y_val=y_val,
+            timestamps=timestamps,
+            feature_names=feature_names,
+            model_name=model_name,
+            model_type=model_type,
+            fold_number=fold_number
+        )
+        
+        # Log validation results
+        if validation_results['valid']:
+            self.logger.info(f"✅ Model validation passed for {model_name}")
+            self.logger.info(f"  Validation score: {validation_results.get('validation_score', 'N/A')}")
+        else:
+            self.logger.warning(f"⚠️ Model validation failed for {model_name}")
+            for issue in validation_results.get('critical_issues', []):
+                self.logger.error(f"Critical issue: {issue}")
+            for warning in validation_results.get('warnings', []):
+                self.logger.warning(f"Warning: {warning}")
+        
+        # Store validation results in training results
+        if 'validation_results' not in self.training_results:
+            self.training_results['validation_results'] = {}
+        
+        self.training_results['validation_results'][model_name] = validation_results
+        
+        return validation_results
+    
+    def get_validation_summary(self) -> Dict[str, Any]:
+        """Get summary of all validations performed."""
+        return self.validation_integrator.get_validation_summary()
     
     @abstractmethod
     def execute(

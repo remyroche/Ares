@@ -33,8 +33,7 @@ import warnings
 
 from ..math_validation import safe_divide
 from ..common_operations import create_fallback_logger
-from src.utils.common_utilities import safe_dataframe_operation
-from datetime import datetime
+from src.utils.common_operations import safe_dataframe_operation
 
 # Enhanced imports for new functionality
 try:

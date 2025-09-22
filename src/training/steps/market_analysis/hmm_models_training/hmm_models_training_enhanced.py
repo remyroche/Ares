@@ -1,50 +1,18 @@
 """
-Enhanced HMM Models Training
+Streamlined HMM Models Training
 
-Streamlined, robust, and well-reported HMM models training with comprehensive error handling.
-Integrated with common utilities for better maintainability and performance.
+Simplified HMM models training that leverages the common_utils/ ML training pipeline.
+Focuses on HMM state recognition with 15m timeframe, minimal custom code.
 """
 
 import numpy as np
 import pandas as pd
-from typing import Any, Dict, List, Optional, Tuple, Union, Callable
+from typing import Any, Dict, List, Optional, Tuple, Union
 import time
-import warnings
-from dataclasses import dataclass
-from pathlib import Path
-import json
-import psutil
-import os
-import gc
 
-warnings.filterwarnings('ignore')
-
-# Check ML library dependencies
-ML_LIBRARIES_STATUS = {}
-try:
-    import sklearn
-    ML_LIBRARIES_STATUS['sklearn'] = True
-except ImportError:
-    ML_LIBRARIES_STATUS['sklearn'] = False
-
-try:
-    import lightgbm
-    ML_LIBRARIES_STATUS['lightgbm'] = True
-except ImportError:
-    ML_LIBRARIES_STATUS['lightgbm'] = False
-
-try:
-    import xgboost
-    ML_LIBRARIES_STATUS['xgboost'] = True
-except ImportError:
-    ML_LIBRARIES_STATUS['xgboost'] = False
-
-# Core imports
+# Core imports - using common utilities
 from src.utils.tprint import tprint
 from src.utils.logger import system_logger
-from .utils import StandardizedLogger, safe_execute, performance_monitor, ConfigurationValidator
-from .constants import TrainingLimits, LoggingConstants
-from .shared_feature_utils import create_enhanced_features_with_names
 from src.utils.ml_common.config.base_training_config import HMMTrainingConfig
 from src.utils.ml_common.training.base_training_step import BaseTrainingStep
 
@@ -1445,23 +1413,23 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
                             if current_memory_pct > 95:
                                 tprint(f"⚠️ Memory usage critical ({current_memory_pct:.1f}%) - skipping {model_type}")
                                 raise MemoryError(f"Insufficient memory for {model_type} training")
-                            
-                # Enhanced: Add proper time-series holdout with PurgedKFold/TimeSeriesSplit
-                from sklearn.model_selection import TimeSeriesSplit
-                from sklearn.metrics import accuracy_score
-                try:
-                    # Prefer PurgedKFoldTime when possible for embargo/purge handling
-                    from src.utils.purged_kfold import PurgedKFoldTime
-                    use_purged_kfold = True
-                except Exception:
-                    use_purged_kfold = False
 
-                # Build an index-aware DataFrame view if possible (required by PurgedKFoldTime)
-                if isinstance(X, np.ndarray):
-                    import pandas as pd
-                    X_df = pd.DataFrame(X)
-                else:
-                    X_df = X  # Already a DataFrame
+                            # Enhanced: Add proper time-series holdout with PurgedKFold/TimeSeriesSplit
+                            from sklearn.model_selection import TimeSeriesSplit
+                            from sklearn.metrics import accuracy_score
+                            try:
+                                # Prefer PurgedKFoldTime when possible for embargo/purge handling
+                                from src.utils.purged_kfold import PurgedKFoldTime
+                                use_purged_kfold = True
+                            except Exception:
+                                use_purged_kfold = False
+
+                            # Build an index-aware DataFrame view if possible (required by PurgedKFoldTime)
+                            if isinstance(X, np.ndarray):
+                                import pandas as pd
+                                X_df = pd.DataFrame(X)
+                            else:
+                                X_df = X  # Already a DataFrame
 
                             # Check split integrity
                             if SHARED_UTILITIES_AVAILABLE:
@@ -1474,19 +1442,19 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
                                 split_message = "Split validation skipped - shared utilities not available"
 
 
-                if not is_split_valid:
-                    raise ValueError(f"Invalid time-series split: {split_message}")
+                            if not is_split_valid:
+                                raise ValueError(f"Invalid time-series split: {split_message}")
 
-                # Train on training window only
-                model.fit(X_train, y_train)
+                            # Train on training window only
+                            model.fit(X_train, y_train)
 
-                # Predictions on both in-sample (train) and out-of-sample (test)
-                train_predictions = model.predict(X_train)
-                test_predictions = model.predict(X_test)
+                            # Predictions on both in-sample (train) and out-of-sample (test)
+                            train_predictions = model.predict(X_train)
+                            test_predictions = model.predict(X_test)
 
-                # Metrics
-                train_accuracy = accuracy_score(y_train, train_predictions)
-                test_accuracy = accuracy_score(y_test, test_predictions)
+                            # Metrics
+                            train_accuracy = accuracy_score(y_train, train_predictions)
+                            test_accuracy = accuracy_score(y_test, test_predictions)
 
                             # Get feature importance before overfitting detection
                             feature_importance = None

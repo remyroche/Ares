@@ -714,8 +714,9 @@ class HyperparameterOptimization:
                 try:
                     if hasattr(model, 'set_params'):
                         model.set_params(**{k: v for k, v in {'n_jobs': 1}.items() if k in getattr(model, 'get_params')().keys()})
-                except Exception:
-                    pass
+                except Exception as e:
+                    self.logger.error(f"❌ Critical error: Could not set model parameters: {e}")
+                    raise ValueError(f"Model parameter setting failed: {e}")
 
                 # Prepare CV and fit params
                 cv_obj = cv if cv is not None else self._create_time_series_split(len(X))
@@ -725,8 +726,9 @@ class HyperparameterOptimization:
                 try:
                     if SKLEARN_AVAILABLE and len(np.unique(y)) <= 10:
                         fp.setdefault('sample_weight', compute_sample_weight('balanced', y))
-                except Exception:
-                    pass
+                except Exception as e:
+                    self.logger.error(f"❌ Critical error: Could not compute sample weights: {e}")
+                    raise ValueError(f"Sample weight computation failed: {e}")
 
                 # Manual CV loop to support sample_weight without passing fit_params
                 try:
@@ -755,11 +757,9 @@ class HyperparameterOptimization:
                             raise optuna.TrialPruned()
                     if fold_scores:
                         return float(np.mean(fold_scores))
-                except Exception:
-                    pass
-
-                # Fallback single-score
-                return self._evaluate_model(model, X, y)
+                except Exception as e:
+                    self.logger.error(f"❌ Critical error: CV loop failed: {e}")
+                    raise ValueError(f"Cross-validation failed during HPO: {e}")
 
             # Create study with TPE sampler (Bayesian optimization) and pruner/storage
             sampler = TPESampler()
@@ -1430,15 +1430,17 @@ class HyperparameterOptimization:
                     params = model.get_params()
                     if 'n_jobs' in params:
                         model.set_params(n_jobs=1)
-            except Exception:
-                pass
+            except Exception as e:
+                self.logger.error(f"❌ Critical error: Could not set model parameters: {e}")
+                raise ValueError(f"Model parameter setting failed: {e}")
 
             fit_params = {}
             try:
                 if SKLEARN_AVAILABLE and len(np.unique(y)) <= 10:
                     fit_params['sample_weight'] = compute_sample_weight('balanced', y)
-            except Exception:
-                pass
+            except Exception as e:
+                self.logger.error(f"❌ Critical error: Could not compute sample weights: {e}")
+                raise ValueError(f"Sample weight computation failed: {e}")
             # Manual CV to handle sample_weight safely
             try:
                 fold_scores: list[float] = []
@@ -1463,9 +1465,9 @@ class HyperparameterOptimization:
                     fold_scores.append(float(score))
                 if fold_scores:
                     return float(np.mean(fold_scores))
-            except Exception:
-                pass
-            return 0.5
+            except Exception as e:
+                self.logger.error(f"❌ Critical error: CV loop failed: {e}")
+                raise ValueError(f"Cross-validation failed during HPO: {e}")
         except Exception as e:
             self.logger.warning(f"CV evaluation failed: {e}")
             return 0.5

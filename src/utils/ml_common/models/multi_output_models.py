@@ -180,20 +180,174 @@ class MultiOutputModel(ABC):
         self.logger.info(f"📊 Output names: {config.output_names}")
         self.logger.info(f"⚖️ Output weights: {self.output_weights}")
     
-    @abstractmethod
     def fit(self, X: np.ndarray, y: np.ndarray) -> 'MultiOutputModel':
         """Fit the multi-output model."""
-        pass
-    
-    @abstractmethod
+        try:
+            self.logger.info(f"🔧 Fitting multi-output model with {X.shape[0]} samples, {X.shape[1]} features")
+
+            # Validate inputs
+            if not self.validate_inputs(X, y):
+                raise ValueError("Input validation failed")
+
+            # Reshape y if needed for multi-output
+            y_reshaped = self._reshape_targets(y)
+            self.logger.debug(f"📊 Target shape after reshaping: {y_reshaped.shape}")
+
+            # Initialize individual models for each output
+            self.models = {}
+            self.fitted = True
+
+            # Determine if this is a classification or regression task
+            self.is_classification = self._determine_task_type(y_reshaped)
+
+            # Train models for each output
+            for i in range(self.config.n_outputs):
+                output_name = self.config.output_names[i] if i < len(self.config.output_names) else f"output_{i}"
+                output_target = y_reshaped[:, i]
+
+                self.logger.info(f"🤖 Training model for {output_name} (output {i+1}/{self.config.n_outputs})")
+
+                # Create model for this output
+                model = self._create_single_output_model(i, output_target)
+
+                # Train the model
+                model.fit(X, output_target)
+
+                self.models[output_name] = model
+
+                # Log training progress
+                if hasattr(model, 'score'):
+                    train_score = model.score(X, output_target)
+                    self.logger.info(f"✅ {output_name} model trained - Training score: {train_score:.4f}")
+                else:
+                    self.logger.info(f"✅ {output_name} model trained successfully")
+
+            self.logger.info(f"✅ Multi-output model fitted successfully with {len(self.models)} individual models")
+            return self
+
+        except Exception as e:
+            self.logger.error(f"❌ Model fitting failed: {e}")
+            raise
+
     def predict(self, X: np.ndarray) -> np.ndarray:
         """Make predictions for all outputs."""
-        pass
-    
-    @abstractmethod
+        try:
+            if not self.fitted:
+                raise ValueError("Model must be fitted before making predictions")
+
+            if not self.validate_inputs(X):
+                raise ValueError("Input validation failed")
+
+            self.logger.info(f"🔮 Making predictions for {X.shape[0]} samples, {X.shape[1]} features")
+
+            # Collect predictions from all models
+            predictions = []
+            prediction_details = {}
+
+            for i, (output_name, model) in enumerate(self.models.items()):
+                self.logger.debug(f"📊 Predicting {output_name} (output {i+1}/{len(self.models)})")
+
+                # Make prediction for this output
+                output_pred = model.predict(X)
+
+                # Apply any output-specific transformations
+                if hasattr(self.config, 'output_transforms') and output_name in self.config.output_transforms:
+                    transform_func = self.config.output_transforms[output_name]
+                    output_pred = transform_func(output_pred)
+                    self.logger.debug(f"🔄 Applied transformation to {output_name}")
+
+                predictions.append(output_pred)
+                prediction_details[output_name] = {
+                    'shape': output_pred.shape,
+                    'range': (output_pred.min(), output_pred.max()) if len(output_pred) > 0 else None
+                }
+
+            # Combine predictions into multi-output format
+            if self.config.output_format == 'array':
+                result = np.column_stack(predictions)
+            else:
+                # Return as dictionary
+                result = dict(zip(self.config.output_names, predictions))
+
+            self.logger.info(f"✅ Predictions completed - Shape: {result.shape if hasattr(result, 'shape') else len(result)}")
+            self.logger.debug(f"📊 Prediction details: {prediction_details}")
+
+            return result
+
+        except Exception as e:
+            self.logger.error(f"❌ Prediction failed: {e}")
+            raise
+
     def predict_proba(self, X: np.ndarray) -> Optional[np.ndarray]:
         """Make probability predictions for all outputs."""
-        pass
+        try:
+            if not self.fitted:
+                raise ValueError("Model must be fitted before making predictions")
+
+            if not self.is_classification:
+                self.logger.info("ℹ️ predict_proba called on regression model - returning None")
+                return None
+
+            if not self.validate_inputs(X):
+                raise ValueError("Input validation failed")
+
+            self.logger.info(f"🎲 Making probability predictions for {X.shape[0]} samples")
+
+            # Collect probability predictions from all models
+            probas = []
+            proba_details = {}
+
+            for i, (output_name, model) in enumerate(self.models.items()):
+                self.logger.debug(f"🎯 Predicting probabilities for {output_name}")
+
+                if hasattr(model, 'predict_proba'):
+                    output_proba = model.predict_proba(X)
+                    probas.append(output_proba)
+
+                    proba_details[output_name] = {
+                        'shape': output_proba.shape,
+                        'classes': getattr(model, 'classes_', None)
+                    }
+                else:
+                    # If model doesn't support predict_proba, create pseudo-probabilities
+                    predictions = model.predict(X)
+                    # Convert predictions to pseudo-probabilities (simple approach)
+                    if hasattr(model, 'classes_'):
+                        # For classification models with classes
+                        n_classes = len(model.classes_)
+                        pseudo_proba = np.zeros((len(predictions), n_classes))
+                        for j, pred in enumerate(predictions):
+                            class_idx = np.where(model.classes_ == pred)[0]
+                            if len(class_idx) > 0:
+                                pseudo_proba[j, class_idx[0]] = 1.0
+                            else:
+                                # Fallback: assign equal probability
+                                pseudo_proba[j, :] = 1.0 / n_classes
+                    else:
+                        # For regression models, create binary-like probabilities
+                        pseudo_proba = np.column_stack([1 - predictions, predictions])
+                        pseudo_proba = pseudo_proba / pseudo_proba.sum(axis=1, keepdims=True)
+
+                    probas.append(pseudo_proba)
+                    proba_details[output_name] = {
+                        'shape': pseudo_proba.shape,
+                        'note': 'Pseudo-probabilities generated'
+                    }
+
+            # Combine probabilities into multi-output format
+            if self.config.output_format == 'array':
+                result = np.concatenate(probas, axis=1)
+            else:
+                result = dict(zip(self.config.output_names, probas))
+
+            self.logger.info(f"✅ Probability predictions completed - Shape: {result.shape if hasattr(result, 'shape') else len(result)}")
+            self.logger.debug(f"📊 Probability details: {proba_details}")
+
+            return result
+
+        except Exception as e:
+            self.logger.error(f"❌ Probability prediction failed: {e}")
+            raise
     
     def validate_outputs(self, y: np.ndarray) -> bool:
         """Validate output data format."""
@@ -651,8 +805,10 @@ class MultiOutputStackingModel(MultiOutputModel):
                         try:
                             patience = int(getattr(self._overfit_helper.config, 'early_stopping_patience', 10))
                             tol = float(getattr(self._overfit_helper.config, 'early_stopping_min_delta', 1e-4))
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            self.logger.debug(f"Could not extract early stopping parameters: {e}")
+                            patience = 10
+                            tol = 1e-4
                     # Models with early_stopping flag (e.g., HistGradientBoosting, MLP, SGD)
                     if 'early_stopping' in params and 'eval_set' not in kwargs:
                         updates['early_stopping'] = True
@@ -673,8 +829,9 @@ class MultiOutputStackingModel(MultiOutputModel):
                         updates['tol'] = tol
                     if updates:
                         model.set_params(**updates)
-            except Exception:
-                pass
+            except Exception as e:
+                self.logger.debug(f"Could not update model parameters: {e}")
+                # Continue with original parameters
 
             model.fit(X_tr, y_tr, **kwargs)  # type: ignore[arg-type]
         except Exception:
@@ -689,8 +846,9 @@ class MultiOutputStackingModel(MultiOutputModel):
                 if hasattr(proba, 'shape') and len(proba.shape) > 1 and proba.shape[1] > 1:
                     return proba[:, 1].astype(float)
                 return np.asarray(proba).astype(float).ravel()
-            except Exception:
-                pass
+            except Exception as e:
+                self.logger.debug(f"predict_proba failed, falling back to predict: {e}")
+                # Fall through to predict method
         pred = model.predict(X)
         pred_arr = np.asarray(pred).astype(float)
         return pred_arr.ravel()

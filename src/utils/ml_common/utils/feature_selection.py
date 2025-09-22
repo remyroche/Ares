@@ -169,8 +169,9 @@ class FeatureSelectionFramework:
                     results['feature_importance_analysis'] = self._analyze_feature_importance(
                         X if not hasattr(X, 'values') else X.values, y, idxs, task_type
                     )
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.error(f"❌ Critical error: Feature importance analysis failed: {e}")
+                    raise ValueError(f"Feature selection analysis failed: {e}")
             else:
                 # Fallback to local strategies for compatibility
                 if method == 'auto':

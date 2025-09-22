@@ -26,6 +26,7 @@ import pandas as pd
 from typing import Any, Dict, List, Optional, Tuple, Union, Callable
 import time
 import logging
+import warnings
 from datetime import datetime
 
 from ..evaluation.unified_evaluator import evaluate_model as ModelEvaluator
@@ -330,8 +331,10 @@ class EnhancedModelTrainer:
                     else:
                         roc_auc = roc_auc_score(y_true, y_pred_proba, multi_class='ovr', average='macro')
                         log_loss_score = log_loss(y_true, y_pred_proba)
-                except Exception:
-                    pass
+                except Exception as e:
+                    # Fail fast on metric calculation errors
+                    logger.error(f"❌ Critical error: Could not calculate ROC-AUC/log loss: {e}")
+                    raise ValueError(f"Model metric calculation failed: {e}")
             
             return {
                 'accuracy': float(accuracy),

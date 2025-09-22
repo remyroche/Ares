@@ -122,8 +122,8 @@ class TacticianSignalGenerator:
             return False
 
     @handles_errors
-    @traced("tactician_signal_generation")
-    @log_execution_time
+    @traced(span_name="tactician_signal_generation")
+    @log_execution_time()
     async def generate_timing_signal(
         self,
         symbol: str,

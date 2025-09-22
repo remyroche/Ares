@@ -1,12 +1,13 @@
 from src.utils.tprint import tprint
-
-from .utils.compat import handle_specific_errors
-from .core.error_classes import execution_error, initialization_error, validation_error
-from .utils.logger import system_logger
-from .core.decorators import handles_errors
-from .utils.warning_symbols import invalid
-from .monitoring.enhanced_monitoring_orchestrator import EnhancedMonitoringOrchestrator
 import numpy as np
+
+from src.utils.logger import system_logger
+from src.core.decorators import handles_errors
+from ..utils.error_handling import (
+    ExecutionError, TradingErrorSeverity, trading_error_handler,
+    critical_operation, require_no_fallback
+)
+from ..utils.validation import validate_trading_config, validate_market_data
 
 # src/paper_trader.py
 """
@@ -34,20 +35,11 @@ def get_trade_tracker() -> TradeTracker:
     """Get a trade tracker instance."""
     return TradeTracker()
 
-from .config.constants import (
-    DEFAULT_COMMISSION_RATE,
-    DEFAULT_INITIAL_BALANCE,
-    DEFAULT_MAX_POSITION_SIZE,
-    DEFAULT_SLIPPAGE_RATE,
-)
-from .utils.decorators import (
-    handles_errors,
-    log_call,
-    log_execution_time,
-    traced,
-)
-from .utils.compat import handle_specific_errors
-from .utils.logger import system_logger
+# Constants for paper trading
+DEFAULT_COMMISSION_RATE = 0.001  # 0.1%
+DEFAULT_INITIAL_BALANCE = 10000.0
+DEFAULT_MAX_POSITION_SIZE = 0.25  # 25%
+DEFAULT_SLIPPAGE_RATE = 0.001  # 0.1%
 import logging
 import os
 import pandas as pd
@@ -109,14 +101,10 @@ class PaperTrader:
         # Enhanced monitoring integration
         self.enhanced_monitoring: EnhancedMonitoringOrchestrator | None = None
 
-    @handle_specific_errors(
-        error_handlers={
-            ValueError: (False, "Invalid paper trader configuration"),
-            AttributeError: (False, "Missing required trader parameters"),
-            KeyError: (False, "Missing configuration keys"),
-        },
-        default_return=False,
-        context="paper trader initialization",
+    @trading_error_handler(
+        error_types=(ValueError, AttributeError, KeyError),
+        severity=TradingErrorSeverity.MEDIUM,
+        raise_on_error=True
     )
     async def initialize(self) -> bool:
         """
@@ -147,14 +135,14 @@ class PaperTrader:
 
         except Exception as e:
             self.logger.exception(
-                initialization_error(f"Paper Trader initialization failed: {e}"),
+                ExecutionError(f"Paper Trader initialization failed: {e}"),
             )
             return False
 
-    @handles_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="trader configuration loading",
+    @trading_error_handler(
+        error_types=(ValueError, AttributeError),
+        severity=TradingErrorSeverity.MEDIUM,
+        raise_on_error=True
     )
     async def _load_trader_configuration(self) -> None:
         """Load trader configuration."""
@@ -177,13 +165,13 @@ class PaperTrader:
 
         except Exception as e:
             self.logger.exception(
-                initialization_error(f"Error loading trader configuration: {e}"),
+                ExecutionError(f"Error loading trader configuration: {e}"),
             )
 
-    @handles_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=False,
-        context="configuration validation",
+    @trading_error_handler(
+        error_types=(ValueError, AttributeError),
+        severity=TradingErrorSeverity.MEDIUM,
+        raise_on_error=True
     )
     def _validate_configuration(self) -> bool:
         """
@@ -218,14 +206,14 @@ class PaperTrader:
 
         except Exception as e:
             self.logger.exception(
-                validation_error(f"Error validating configuration: {e}"),
+                ExecutionError(f"Error validating configuration: {e}"),
             )
             return False
 
-    @handles_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="trading state initialization",
+    @trading_error_handler(
+        error_types=(ValueError, AttributeError),
+        severity=TradingErrorSeverity.MEDIUM,
+        raise_on_error=True
     )
     async def _initialize_trading_state(self) -> None:
         """Initialize trading state."""
@@ -245,13 +233,13 @@ class PaperTrader:
 
         except Exception as e:
             self.logger.exception(
-                initialization_error(f"Error initializing trading state: {e}"),
+                ExecutionError(f"Error initializing trading state: {e}"),
             )
 
-    @handles_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="enhanced monitoring initialization",
+    @trading_error_handler(
+        error_types=(Exception,),
+        severity=TradingErrorSeverity.MEDIUM,
+        raise_on_error=True
     )
     async def _initialize_enhanced_monitoring(self) -> None:
         """Initialize enhanced monitoring system."""
@@ -272,13 +260,13 @@ class PaperTrader:
                 
         except Exception as e:
             self.logger.exception(
-                initialization_error(f"Error initializing enhanced monitoring: {e}"),
+                ExecutionError(f"Error initializing enhanced monitoring: {e}"),
             )
 
-    @handles_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="trade monitoring recording",
+    @trading_error_handler(
+        error_types=(Exception,),
+        severity=TradingErrorSeverity.MEDIUM,
+        raise_on_error=True
     )
     async def _record_trade_in_monitoring(self, trade_record: dict[str, Any], side: str) -> None:
         """Record trade in enhanced monitoring system."""
@@ -321,10 +309,11 @@ class PaperTrader:
         except Exception as e:
             self.logger.exception(f"Error recording {side} trade in monitoring: {e}")
 
-    @handles_errors(fallback=False)
-    @log_execution_time()
-    @log_call(level="INFO")
-    @traced(span_name="execute_buy_order")
+    @trading_error_handler(
+        error_types=(Exception,),
+        severity=TradingErrorSeverity.HIGH,
+        raise_on_error=True
+    )
     async def execute_buy_order(
         self,
         symbol: str,
@@ -428,13 +417,14 @@ class PaperTrader:
             return True
 
         except Exception as e:
-            self.logger.exception(execution_error(f"Error executing buy order: {e}"))
+            self.logger.exception(ExecutionError(f"Error executing buy order: {e}"))
             return False
 
-    @handles_errors(fallback=False)
-    @log_execution_time()
-    @log_call(level="INFO")
-    @traced(span_name="execute_sell_order")
+    @trading_error_handler(
+        error_types=(Exception,),
+        severity=TradingErrorSeverity.HIGH,
+        raise_on_error=True
+    )
     async def execute_sell_order(
         self,
         symbol: str,
@@ -546,13 +536,13 @@ class PaperTrader:
             return True
 
         except Exception as e:
-            self.logger.exception(execution_error(f"Error executing sell order: {e}"))
+            self.logger.exception(ExecutionError(f"Error executing sell order: {e}"))
             return False
 
-    @handles_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=False,
-        context="order validation",
+    @trading_error_handler(
+        error_types=(ValueError, AttributeError),
+        severity=TradingErrorSeverity.MEDIUM,
+        raise_on_error=True
     )
     def _validate_order(self, symbol: str, quantity: float, price: float) -> bool:
         """
@@ -595,13 +585,13 @@ class PaperTrader:
             return True
 
         except Exception as e:
-            self.logger.exception(validation_error(f"Error validating order: {e}"))
+            self.logger.exception(ExecutionError(f"Error validating order: {e}"))
             return False
 
-    @handles_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="position getting",
+    @trading_error_handler(
+        error_types=(ValueError, AttributeError),
+        severity=TradingErrorSeverity.MEDIUM,
+        raise_on_error=True
     )
     def get_position(self, symbol: str) -> dict[str, Any] | None:
         """
@@ -618,7 +608,7 @@ class PaperTrader:
 
         except Exception as e:
             self.logger.exception(
-                execution_error(f"Error getting position for {symbol}: {e}"),
+                ExecutionError(f"Error getting position for {symbol}: {e}"),
             )
             return None
 
@@ -631,7 +621,7 @@ class PaperTrader:
             self._update_equity()
         except Exception as e:
             self.logger.exception(
-                execution_error(f"Error marking price for {symbol}: {e}"),
+                ExecutionError(f"Error marking price for {symbol}: {e}"),
             )
 
     def _update_equity(self) -> None:
@@ -646,12 +636,12 @@ class PaperTrader:
                     equity += qty * (mark - avg)
             self.equity_history.append(equity)
         except Exception as e:
-            self.logger.exception(execution_error(f"Error updating equity: {e}"))
+            self.logger.exception(ExecutionError(f"Error updating equity: {e}"))
 
-    @handles_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="all positions getting",
+    @trading_error_handler(
+        error_types=(ValueError, AttributeError),
+        severity=TradingErrorSeverity.MEDIUM,
+        raise_on_error=True
     )
     def get_all_positions(self) -> dict[str, dict[str, Any]]:
         """
@@ -664,13 +654,13 @@ class PaperTrader:
             return self.positions.copy()
 
         except Exception as e:
-            self.logger.exception(execution_error(f"Error getting all positions: {e}"))
+            self.logger.exception(ExecutionError(f"Error getting all positions: {e}"))
             return {}
 
-    @handles_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="balance getting",
+    @trading_error_handler(
+        error_types=(ValueError, AttributeError),
+        severity=TradingErrorSeverity.MEDIUM,
+        raise_on_error=True
     )
     def get_balance(self) -> float:
         """
@@ -683,13 +673,13 @@ class PaperTrader:
             return self.balance
 
         except Exception as e:
-            self.logger.exception(execution_error(f"Error getting balance: {e}"))
+            self.logger.exception(ExecutionError(f"Error getting balance: {e}"))
             return 0.0
 
-    @handles_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="trade history getting",
+    @trading_error_handler(
+        error_types=(ValueError, AttributeError),
+        severity=TradingErrorSeverity.MEDIUM,
+        raise_on_error=True
     )
     def get_trade_history(self, symbol: str | None = None) -> list[dict[str, Any]]:
         """
@@ -709,13 +699,13 @@ class PaperTrader:
             return self.trade_history.copy()
 
         except Exception as e:
-            self.logger.exception(execution_error(f"Error getting trade history: {e}"))
+            self.logger.exception(ExecutionError(f"Error getting trade history: {e}"))
             return []
 
-    @handles_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="performance calculation",
+    @trading_error_handler(
+        error_types=(ValueError, AttributeError),
+        severity=TradingErrorSeverity.MEDIUM,
+        raise_on_error=True
     )
     def calculate_performance(self) -> dict[str, Any]:
         """
@@ -796,7 +786,7 @@ class PaperTrader:
 
         except Exception as e:
             self.logger.exception(
-                execution_error(f"Error calculating performance: {e}"),
+                ExecutionError(f"Error calculating performance: {e}"),
             )
             return {}
 
@@ -818,10 +808,10 @@ class PaperTrader:
             "slippage_rate": self.slippage_rate,
         }
 
-    @handles_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="paper trader cleanup",
+    @trading_error_handler(
+        error_types=(Exception,),
+        severity=TradingErrorSeverity.MEDIUM,
+        raise_on_error=True
     )
     async def stop(self) -> None:
         """Stop the paper trader."""
@@ -843,7 +833,7 @@ class PaperTrader:
             self.logger.info("✅ Paper Trader stopped successfully")
 
         except Exception as e:
-            self.logger.exception(execution_error(f"Error stopping paper trader: {e}"))
+            self.logger.exception(ExecutionError(f"Error stopping paper trader: {e}"))
 
 # Global paper trader instance
 paper_trader: PaperTrader | None = None

@@ -152,8 +152,8 @@ class RegimeClassifier:
             self.logger.error(f"❌ Failed to load model weights: {e}")
     
     @handles_errors
-    @traced("regime_classification")
-    @log_execution_time
+    @traced(span_name="regime_classification")
+    @log_execution_time()
     async def classify(
         self,
         features: Dict[str, Any],

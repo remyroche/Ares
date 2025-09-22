@@ -108,8 +108,8 @@ class AnalystSignalGenerator:
             return False
 
     @handles_errors
-    @traced("analyst_signal_generation")
-    @log_execution_time
+    @traced(span_name="analyst_signal_generation")
+    @log_execution_time()
     async def generate_signal(
         self,
         symbol: str,

@@ -206,7 +206,7 @@ class RegimeWeightManager:
             self.logger.error(f"❌ Failed to calculate initial weights: {e}")
     
     @handles_errors
-    @traced("regime_weight_calculation")
+    @traced(span_name="regime_weight_calculation")
     async def get_regime_weight(
         self,
         regime: RegimeType,

@@ -120,8 +120,8 @@ class SignalCombiner:
             return False
 
     @handles_errors
-    @traced("signal_combination")
-    @log_execution_time
+    @traced(span_name="signal_combination")
+    @log_execution_time()
     async def combine_signals(
         self,
         analyst_signal: Optional[AnalystSignal] = None,

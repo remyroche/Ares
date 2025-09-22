@@ -22,8 +22,8 @@ from src.core.decorators import handles_errors, traced, log_execution_time
 from src.utils.tprint import tprint_info, tprint_warning, tprint_error, tprint_success, tprint_structured, LogLevel
 from src.utils.enhanced_error_handler import get_enhanced_error_handler
 from src.utils.memory_management.streaming_data_processor import get_streaming_processor, with_memory_optimization
-from src.utils.hardware.unified_hardware_manager import get_hardware_manager
-from src.utils.data.data_processing_utils import optimize_dataframe_memory
+from src.utils.hardware.unified_hardware_manager import get_unified_hardware_manager
+from src.utils.data.processing.data_processing import optimize_dataframe_dtypes
 from src.exchange.binance import BinanceExchange
 from src.config.config import get_static_config
 
@@ -120,7 +120,7 @@ class LiveDataCollector:
         # Advanced systems
         self.error_recovery = get_enhanced_error_handler() if config.error_recovery else None
         self.streaming_processor = get_streaming_processor()
-        self.hardware_manager = get_hardware_manager()
+        self.hardware_manager = get_unified_hardware_manager()
         
         # Performance optimization
         self.memory_optimized = True
@@ -609,7 +609,7 @@ class LiveDataCollector:
         # Optimize memory usage for the returned DataFrame
         if self.memory_optimized and not df.empty:
             try:
-                df = optimize_dataframe_memory(df)
+                df = optimize_dataframe_dtypes(df)
             except Exception as e:
                 tprint_warning(f"⚠️ Memory optimization failed: {e}")
         
@@ -641,7 +641,7 @@ class LiveDataCollector:
             # Convert processed buffer to optimized DataFrame and back
             if self.processed_buffer:
                 temp_df = pd.DataFrame(self.processed_buffer[-100:])  # Keep last 100
-                optimized_df = optimize_dataframe_memory(temp_df)
+                optimized_df = optimize_dataframe_dtypes(temp_df)
                 self.processed_buffer = optimized_df.to_dict('records')
                 
             tprint_info("🧹 Memory optimization completed")

@@ -9,14 +9,24 @@ New Features:
 - Trading Orchestrator: Unified coordination of all trading components
 """
 
-from .order_manager import OrderManager
-from .exchange_interface import ExchangeInterface
+from .order_manager import (
+    OrderManager, Order, OrderType, OrderSide, OrderStatus,
+    TimeInForce, OrderBook, create_order_manager, get_order_manager
+)
+from .exchange_interface import (
+    ExchangeInterface, ExchangeType, MarketDataType, ConnectionStatus,
+    MarketData, TickerData, KlineData, SimulatedExchange,
+    create_exchange_interface, get_exchange_interface
+)
 from .paper_trader import PaperTrader
-from .live_trader import LiveTrader
+from .live_trader import (
+    LiveTrader, LiveTraderStatus, Position, TradingSession,
+    create_live_trader, get_live_trader
+)
 
-# Import new live trading components
+# Import live trading components
 from .live_trading_scheduler import (
-    LiveTradingScheduler, ModelType, ExecutionStatus, 
+    LiveTradingScheduler, ModelType, ExecutionStatus,
     create_live_trading_scheduler, start_live_trading_scheduler
 )
 
@@ -26,15 +36,46 @@ from .trading_orchestrator import (
 )
 
 __all__ = [
+    # Order Management
     "OrderManager",
+    "Order",
+    "OrderType",
+    "OrderSide",
+    "OrderStatus",
+    "TimeInForce",
+    "OrderBook",
+    "create_order_manager",
+    "get_order_manager",
+
+    # Exchange Interface
     "ExchangeInterface",
-    "PaperTrader", 
+    "ExchangeType",
+    "MarketDataType",
+    "ConnectionStatus",
+    "MarketData",
+    "TickerData",
+    "KlineData",
+    "SimulatedExchange",
+    "create_exchange_interface",
+    "get_exchange_interface",
+
+    # Trading Implementations
+    "PaperTrader",
     "LiveTrader",
+    "LiveTraderStatus",
+    "Position",
+    "TradingSession",
+    "create_live_trader",
+    "get_live_trader",
+
+    # Live Trading Components
     "LiveTradingScheduler",
     "ModelType",
     "ExecutionStatus",
     "create_live_trading_scheduler",
     "start_live_trading_scheduler",
+
+    # Orchestration
     "TradingOrchestrator",
     "TradingMode",
     "OrchestratorStatus",

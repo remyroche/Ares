@@ -388,18 +388,28 @@ class EnhancedModelTrainer:
     def _perform_cross_validation(self, model: Any, X: np.ndarray, y: np.ndarray) -> Dict[str, Any]:
         """Perform cross-validation on the model."""
         try:
+            # Delegate to unified CV API for consistency
+            from src.utils.ml_common.validation.unified_cv import perform_cross_validation as unified_perform_cv
+
             if not SKLEARN_AVAILABLE:
                 return {'error': 'Scikit-learn not available'}
-            
-            # Perform cross-validation
-            cv_scores = cross_val_score(model, X, y, cv=self.cv_folds, scoring='accuracy')
-            
+
+            result = unified_perform_cv(
+                model,
+                X,
+                y,
+                strategy='standard',
+                cv_folds=self.cv_folds,
+                scoring='accuracy'
+            )
+
+            scores = result.get('scores', []) or []
             return {
-                'scores': cv_scores.tolist(),
-                'mean_score': float(np.mean(cv_scores)),
-                'std_score': float(np.std(cv_scores)),
-                'min_score': float(np.min(cv_scores)),
-                'max_score': float(np.max(cv_scores)),
+                'scores': scores,
+                'mean_score': float(result.get('mean', 0.0)) if result.get('mean') is not None else 0.0,
+                'std_score': float(result.get('std', 0.0)) if result.get('std') is not None else 0.0,
+                'min_score': float(result.get('min', 0.0)) if result.get('min') is not None else (float(np.min(scores)) if len(scores) else 0.0),
+                'max_score': float(result.get('max', 0.0)) if result.get('max') is not None else (float(np.max(scores)) if len(scores) else 0.0),
                 'cv_folds': self.cv_folds
             }
             

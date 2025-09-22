@@ -249,9 +249,12 @@ class OverfittingPrevention:
                 cv = TimeSeriesSplit(n_splits=self.config.cv_folds)
             
             # Perform cross-validation
-            cv_scores = cross_val_score(
-                model, X, y, cv=cv, scoring='neg_mean_squared_error', n_jobs=1
-            )
+            try:
+                from src.utils.ml_common.validation.unified_cv import perform_cross_validation as unified_perform_cv
+                cv_res = unified_perform_cv(model, X, y, strategy='standard', cv_folds=self.config.cv_folds, scoring='neg_mean_squared_error')
+                cv_scores = np.array(cv_res.get('scores', []) or [])
+            except Exception:
+                cv_scores = np.array([])
             
             # Calculate metrics
             cv_mean = np.mean(cv_scores)

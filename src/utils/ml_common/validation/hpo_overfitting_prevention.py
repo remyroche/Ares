@@ -481,44 +481,20 @@ class HPOWithOverfittingPrevention:
                                 y: np.ndarray,
                                 is_classification: bool,
                                 random_state: int) -> float:
-        """Perform nested cross-validation."""
+        """Perform nested cross-validation via unified CV API."""
         try:
-            # Outer CV for unbiased performance estimation
-            if is_classification:
-                outer_cv = StratifiedKFold(
-                    n_splits=self.config.outer_cv_folds,
-                    shuffle=True,
-                    random_state=random_state
-                )
-            else:
-                outer_cv = KFold(
-                    n_splits=self.config.outer_cv_folds,
-                    shuffle=True,
-                    random_state=random_state
-                )
-
-            outer_scores = []
-
-            for train_idx, val_idx in outer_cv.split(X, y):
-                X_train, X_val = X[train_idx], X[val_idx]
-                y_train, y_val = y[train_idx], y[val_idx]
-
-                # Inner CV for hyperparameter selection (simplified)
-                inner_model = type(model)()
-                inner_model.fit(X_train, y_train)
-
-                # Evaluate on validation set
-                if is_classification:
-                    y_pred = inner_model.predict(X_val)
-                    score = accuracy_score(y_val, y_pred)
-                else:
-                    y_pred = inner_model.predict(X_val)
-                    score = 1 - np.mean((y_val - y_pred) ** 2) / np.var(y_val)
-
-                outer_scores.append(score)
-
-            return np.mean(outer_scores)
-
+            from src.utils.ml_common.validation.unified_cv import nested_cross_validation as unified_nested
+            score = unified_nested(
+                model,
+                X,
+                y,
+                outer_folds=self.config.outer_cv_folds,
+                inner_folds=self.config.inner_cv_folds,
+                scoring='accuracy' if is_classification else 'r2',
+                random_state=random_state,
+                stratified=is_classification,
+            )
+            return float(score)
         except Exception as e:
             logger.error(f"Nested CV failed: {e}")
             return 0.0
@@ -529,18 +505,24 @@ class HPOWithOverfittingPrevention:
                                 y: np.ndarray,
                                 is_classification: bool,
                                 random_state: int) -> float:
-        """Perform simple cross-validation."""
+        """Perform simple cross-validation via unified CV API."""
         try:
-            if is_classification:
-                cv = StratifiedKFold(n_splits=self.config.outer_cv_folds, shuffle=True, random_state=random_state)
-                scoring = make_scorer(accuracy_score)
-            else:
-                cv = KFold(n_splits=self.config.outer_cv_folds, shuffle=True, random_state=random_state)
-                scoring = make_scorer(lambda y_true, y_pred: 1 - np.mean((y_true - y_pred) ** 2) / np.var(y_true))
-
-            scores = cross_val_score(model, X, y, cv=cv, scoring=scoring, n_jobs=-1)
-            return np.mean(scores)
-
+            from src.utils.ml_common.validation.unified_cv import perform_cross_validation as unified_perform_cv
+            result = unified_perform_cv(
+                model,
+                X,
+                y,
+                strategy='standard',
+                cv_folds=self.config.outer_cv_folds,
+                scoring='accuracy' if is_classification else 'r2',
+                random_state=random_state,
+                stratified=is_classification,
+            )
+            mean_val = result.get('mean')
+            if mean_val is None:
+                scores = result.get('scores', []) or []
+                return float(np.mean(scores)) if len(scores) else 0.0
+            return float(mean_val)
         except Exception as e:
             logger.error(f"Simple CV failed: {e}")
             return 0.0
@@ -695,11 +677,13 @@ class HPOWithOverfittingPrevention:
                 report.final_model_score = 1 - np.mean((y - y_pred) ** 2) / np.var(y)
 
             # Stability assessment
-            cv_scores = cross_val_score(
-                final_model, X, y,
-                cv=5, scoring='accuracy' if is_classification else 'r2'
-            )
-            report.final_model_stability = 1 - np.std(cv_scores)
+            try:
+                from src.utils.ml_common.validation.unified_cv import perform_cross_validation as unified_perform_cv
+                cv_res = unified_perform_cv(final_model, X, y, strategy='standard', cv_folds=5, scoring='accuracy' if is_classification else 'r2')
+                cv_scores = np.array(cv_res.get('scores', []) or [])
+                report.final_model_stability = 1 - float(np.std(cv_scores)) if cv_scores.size else 0.0
+            except Exception:
+                report.final_model_stability = 0.0
 
             # Robustness assessment
             report.final_model_robustness = self._assess_model_robustness(

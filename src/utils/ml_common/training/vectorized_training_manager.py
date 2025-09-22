@@ -1006,17 +1006,13 @@ class VectorizedTrainingManager:
         # Use sklearn's cross_validate for vectorized CV
         if hasattr(ensemble, 'get_params'):
             # Perform cross-validation to find best parameters
-            cv_results = cross_validate(
-                ensemble, X, y,
-                cv=cv_folds,
-                n_jobs=-1,
-                scoring=['neg_mean_squared_error', 'r2'] if not hasattr(y, 'classes') else ['accuracy', 'f1'],
-                return_estimator=True
+            from src.utils.ml_common.validation.unified_cv import perform_cross_validation as unified_perform_cv
+            scoring_list = ['neg_mean_squared_error', 'r2'] if not hasattr(y, 'classes') else ['accuracy', 'f1']
+            _ = unified_perform_cv(
+                ensemble, X, y, strategy='standard', cv_folds=cv_folds, scoring=scoring_list
             )
-
-            # Return best estimator
-            best_idx = np.argmax(cv_results['test_r2'] if 'test_r2' in cv_results else cv_results['test_accuracy'])
-            return cv_results['estimator'][best_idx]
+            # unified API does not return estimators; return original ensemble
+            return ensemble
 
         return ensemble
 
@@ -1129,14 +1125,13 @@ class VectorizedTrainingManager:
             try:
                 eval_start_time = time.time()
 
-                # Use sklearn's cross_validate with comprehensive scoring
-                cv_result = cross_validate(
+                # Use unified CV with comprehensive scoring
+                from src.utils.ml_common.validation.unified_cv import perform_cross_validation as unified_perform_cv
+                cv_result = unified_perform_cv(
                     model, X, y,
-                    cv=cv_folds,
+                    strategy='standard',
+                    cv_folds=cv_folds,
                     scoring=scoring,
-                    n_jobs=-1,
-                    return_train_score=True,
-                    return_estimator=True
                 )
 
                 # Get predictions for additional metrics
@@ -1155,11 +1150,11 @@ class VectorizedTrainingManager:
                 # Compile results
                 result = {
                     'cv_results': cv_result,
-                    'mean_scores': {metric: np.mean(cv_result[f'test_{metric}']) for metric in scoring if f'test_{metric}' in cv_result},
-                    'std_scores': {metric: np.std(cv_result[f'test_{metric}']) for metric in scoring if f'test_{metric}' in cv_result},
-                    'train_scores': {metric: np.mean(cv_result[f'train_{metric}']) for metric in scoring if f'train_{metric}' in cv_result},
+                    'mean_scores': cv_result.get('mean_scores', {}),
+                    'std_scores': cv_result.get('std_scores', {}),
+                    'train_scores': cv_result.get('train_scores', {}),
                     'comprehensive_metrics': comprehensive_metrics,
-                    'cv_estimators': cv_result['estimator'],
+                    'cv_estimators': [],
                     'evaluation_time': evaluation_time,
                     'infrastructure_used': True
                 }

@@ -387,8 +387,8 @@ class MLTrainingSafeguards:
             Cross-validation results
         """
         try:
-            from sklearn.model_selection import cross_val_score, TimeSeriesSplit
-            from sklearn.metrics import accuracy_score, f1_score, balanced_accuracy_score
+            from sklearn.model_selection import TimeSeriesSplit
+            from src.utils.ml_common.validation.unified_cv import perform_cross_validation as unified_perform_cv
 
             # Validate data
             if len(X) < min_samples_per_fold * (n_splits + 1):
@@ -409,21 +409,21 @@ class MLTrainingSafeguards:
 
             tscv = TimeSeriesSplit(n_splits=n_splits, test_size=test_size)
 
-            # Perform cross-validation with multiple metrics
-            accuracy_scores = cross_val_score(model, X, y, cv=tscv, scoring='accuracy')
-            balanced_accuracy_scores = cross_val_score(model, X, y, cv=tscv, scoring='balanced_accuracy')
-            f1_scores = cross_val_score(model, X, y, cv=tscv, scoring='f1_macro')
+            # Perform cross-validation with multiple metrics via unified API
+            acc = unified_perform_cv(model, X, y, strategy='temporal', cv_folds=n_splits, scoring='accuracy')
+            bal = unified_perform_cv(model, X, y, strategy='temporal', cv_folds=n_splits, scoring='balanced_accuracy')
+            f1r = unified_perform_cv(model, X, y, strategy='temporal', cv_folds=n_splits, scoring='f1_macro')
 
             results = {
-                'direction_accuracy_scores': accuracy_scores.tolist(),
-                'direction_accuracy_mean': accuracy_scores.mean(),
-                'direction_accuracy_std': accuracy_scores.std(),
-                'balanced_accuracy_scores': balanced_accuracy_scores.tolist(),
-                'balanced_accuracy_mean': balanced_accuracy_scores.mean(),
-                'balanced_accuracy_std': balanced_accuracy_scores.std(),
-                'f1_scores': f1_scores.tolist(),
-                'f1_mean': f1_scores.mean(),
-                'f1_std': f1_scores.std(),
+                'direction_accuracy_scores': acc.get('scores', []) or [],
+                'direction_accuracy_mean': float(acc.get('mean', 0.0)),
+                'direction_accuracy_std': float(acc.get('std', 0.0)),
+                'balanced_accuracy_scores': bal.get('scores', []) or [],
+                'balanced_accuracy_mean': float(bal.get('mean', 0.0)),
+                'balanced_accuracy_std': float(bal.get('std', 0.0)),
+                'f1_scores': f1r.get('scores', []) or [],
+                'f1_mean': float(f1r.get('mean', 0.0)),
+                'f1_std': float(f1r.get('std', 0.0)),
                 'n_splits': n_splits,
                 'test_size': test_size
             }

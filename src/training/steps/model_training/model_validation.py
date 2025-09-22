@@ -537,11 +537,12 @@ class ModelValidationStep:
                     model_path = model_info.get('path')
                     if model_path and Path(model_path).exists():
                         import joblib
-                        from sklearn.model_selection import cross_val_score
+                        from src.utils.ml_common.validation.unified_cv import perform_cross_validation as unified_perform_cv
                         model = joblib.load(model_path)
                         
                         if hasattr(model, 'predict'):
-                            scores = cross_val_score(model, X, y, cv=5, scoring='accuracy')
+                            unified = unified_perform_cv(model, X, y, strategy='standard', cv_folds=5, scoring='accuracy')
+                            scores = np.array(unified.get('scores', []) or [])
                         else:
                             raise ValueError(f"Model {model_name} does not support cross-validation")
                     else:
@@ -551,9 +552,9 @@ class ModelValidationStep:
                     raise RuntimeError(f"Cross-validation failed for {model_name}: {cv_error}") from cv_error
                 
                 cv_results[model_name] = {
-                    'cv_scores': scores.tolist(),
-                    'mean_score': float(np.mean(scores)),
-                    'std_score': float(np.std(scores)),
+                    'cv_scores': scores.tolist() if scores.size else [],
+                    'mean_score': float(np.mean(scores)) if scores.size else 0.0,
+                    'std_score': float(np.std(scores)) if scores.size else 0.0,
                     'cv_folds': 5
                 }
 

@@ -249,33 +249,33 @@ class EnhancedValidator:
                                  is_classification: bool,
                                  cv_folds: int,
                                  random_state: int) -> Dict[str, Any]:
-        """Perform cross-validation with appropriate strategy."""
+        """Perform cross-validation with appropriate strategy (delegates to unified CV)."""
         try:
-            # Choose CV strategy
-            if self.config.cv_strategy == "stratified" and is_classification:
-                cv = StratifiedKFold(n_splits=cv_folds, shuffle=True, random_state=random_state)
-            else:
-                cv = KFold(n_splits=cv_folds, shuffle=True, random_state=random_state)
+            from src.utils.ml_common.validation.unified_cv import perform_cross_validation as unified_perform_cv
 
-            # Choose scoring metric
-            if is_classification:
-                scoring = make_scorer(accuracy_score)
-            else:
-                scoring = make_scorer(lambda y_true, y_pred: 1 - np.mean((y_true - y_pred) ** 2) / np.var(y_true))
+            strategy = "standard"
+            result = unified_perform_cv(
+                model,
+                X,
+                y,
+                strategy=strategy,
+                cv_folds=cv_folds,
+                scoring="accuracy" if is_classification else "r2",
+                random_state=random_state,
+                stratified=is_classification if self.config.cv_strategy == "stratified" else False,
+            )
 
-            # Perform cross-validation
-            cv_scores = cross_val_score(model, X, y, cv=cv, scoring=scoring, n_jobs=-1)
-
-            # Calculate confidence interval
-            mean_score = np.mean(cv_scores)
-            std_score = np.std(cv_scores)
+            scores = result.get('scores', []) or []
+            mean_score = float(result.get('mean', np.mean(scores) if len(scores) else 0.0))
+            std_score = float(result.get('std', np.std(scores) if len(scores) else 0.0))
+            n = len(scores) if len(scores) else cv_folds
             confidence_interval = (
-                mean_score - 1.96 * std_score / np.sqrt(len(cv_scores)),
-                mean_score + 1.96 * std_score / np.sqrt(len(cv_scores))
+                mean_score - 1.96 * std_score / np.sqrt(max(1, n)),
+                mean_score + 1.96 * std_score / np.sqrt(max(1, n))
             )
 
             return {
-                'scores': cv_scores.tolist(),
+                'scores': scores,
                 'mean': mean_score,
                 'std': std_score,
                 'confidence_interval': confidence_interval
@@ -445,9 +445,16 @@ class EnhancedValidator:
 
             # Overfitting test using cross-validation
             if self.config.test_for_overfitting:
-                cv_scores = cross_val_score(model, X, y, cv=5, scoring='accuracy' if is_classification else 'r2')
-                cv_mean = np.mean(cv_scores)
-                cv_std = np.std(cv_scores)
+                try:
+                    from src.utils.ml_common.validation.unified_cv import perform_cross_validation as unified_perform_cv
+                    cv_res = unified_perform_cv(model, X, y, strategy='standard', cv_folds=5, scoring='accuracy' if is_classification else 'r2')
+                    cv_scores = np.array(cv_res.get('scores', []) or [])
+                    cv_mean = float(cv_res.get('mean', np.mean(cv_scores) if cv_scores.size else 0.0))
+                    cv_std = float(cv_res.get('std', np.std(cv_scores) if cv_scores.size else 0.0))
+                except Exception:
+                    cv_scores = np.array([])
+                    cv_mean = 0.0
+                    cv_std = 0.0
 
                 if is_classification:
                     train_score = accuracy_score(y, model.predict(X))

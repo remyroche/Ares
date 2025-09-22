@@ -279,28 +279,31 @@ class ModelValidator:
         """Perform cross-validation."""
         try:
             self.logger.info(f"🔄 Performing {self.config.cv_folds}-fold cross-validation...")
-            
-            # Create cross-validation strategy
-            if self.config.cv_strategy == "stratified":
-                cv = StratifiedKFold(n_splits=self.config.cv_folds, shuffle=True, random_state=self.config.random_state)
-            elif self.config.cv_strategy == "kfold":
-                cv = KFold(n_splits=self.config.cv_folds, shuffle=True, random_state=self.config.random_state)
-            else:
-                # Default to KFold
-                cv = KFold(n_splits=self.config.cv_folds, shuffle=True, random_state=self.config.random_state)
-            
-            # Perform cross-validation
-            cv_scores = cross_val_score(model, X, y, cv=cv, scoring=scoring)
-            
-            # Calculate metrics
+
+            from src.utils.ml_common.validation.unified_cv import perform_cross_validation as unified_perform_cv
+
+            # Map strategy
+            stratified = True if self.config.cv_strategy == "stratified" else False
+            result = unified_perform_cv(
+                model,
+                X,
+                y,
+                strategy="standard",
+                cv_folds=self.config.cv_folds,
+                scoring=scoring,
+                random_state=self.config.random_state,
+                stratified=stratified,
+            )
+
+            scores = result.get('scores', []) or []
             metrics = ValidationMetrics(
-                cv_scores=cv_scores.tolist(),
-                cv_mean=np.mean(cv_scores),
-                cv_std=np.std(cv_scores),
-                cv_min=np.min(cv_scores),
-                cv_max=np.max(cv_scores),
-                score_variance=np.var(cv_scores),
-                score_range=np.max(cv_scores) - np.min(cv_scores),
+                cv_scores=scores,
+                cv_mean=float(result.get('mean', np.mean(scores) if len(scores) else 0.0)),
+                cv_std=float(result.get('std', np.std(scores) if len(scores) else 0.0)),
+                cv_min=float(result.get('min', np.min(scores))) if len(scores) else 0.0,
+                cv_max=float(result.get('max', np.max(scores))) if len(scores) else 0.0,
+                score_variance=float(np.var(scores)) if len(scores) else 0.0,
+                score_range=(float(np.max(scores) - np.min(scores)) if len(scores) else 0.0),
                 cv_folds=self.config.cv_folds,
                 sample_count=len(X)
             )

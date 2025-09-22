@@ -93,7 +93,7 @@ try:
         setup_logger, get_logger,
         MemoryOptimizer, MemoryIntegrator,
         ParallelProcessor,
-        SharedMLCache,
+        UnifiedCache, get_unified_cache, cached,
         limit_blas_threads, get_thread_info, validate_thread_environment,
         LookaheadProtection, MLTrainingSafeguards,
         RobustErrorHandler
@@ -171,7 +171,7 @@ try:
         'setup_logger', 'get_logger',
         'MemoryOptimizer', 'MemoryIntegrator',
         'ParallelProcessor',
-        'SharedMLCache',
+        'UnifiedCache', 'get_unified_cache', 'cached',
         'limit_blas_threads', 'get_thread_info', 'validate_thread_environment',
         'LookaheadProtection', 'MLTrainingSafeguards',
         'RobustErrorHandler',

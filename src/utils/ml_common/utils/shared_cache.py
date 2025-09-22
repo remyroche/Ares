@@ -75,7 +75,7 @@ def _safe_hash(obj: Any) -> str:
 
 
 class SharedMLCache:
-    """Thread-safe in-memory cache with optional joblib persistence and aggressive memory management."""
+    """DEPRECATED: Use src.utils.unified_cache.UnifiedCache instead."""
 
     _instance: Optional["SharedMLCache"] = None
     _lock = threading.Lock()

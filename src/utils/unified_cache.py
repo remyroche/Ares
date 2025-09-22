@@ -24,7 +24,7 @@ import pickle
 import threading
 import time
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple, Callable
 
 logger = logging.getLogger(__name__)
 
@@ -333,4 +333,54 @@ def get_unified_cache(
         default_ttl_seconds=default_ttl_seconds,
         namespace=namespace,
     )
+
+
+def cached(
+    ttl: Optional[int] = None,
+    key_func: Optional[Callable[..., str]] = None,
+    namespace: str = "decorators",
+    use_disk: bool = True,
+):
+    """Decorator for caching function results via UnifiedCache.
+
+    Supports both sync and async functions. Key selection priority:
+    key_func(args, kwargs) > function+args hash.
+    """
+
+    def _compute_key(func: Callable, args: Tuple[Any, ...], kwargs: Dict[str, Any]) -> str:
+        if key_func is not None:
+            try:
+                return str(key_func(*args, **kwargs))
+            except Exception:
+                pass
+        uc = get_unified_cache(namespace=namespace)
+        return uc.build_cache_key(func.__name__, args, kwargs)
+
+    def decorator(func: Callable) -> Callable:
+        import asyncio as _asyncio  # local import to avoid global requirement
+        is_async = _asyncio.iscoroutinefunction(func)
+        cache = get_unified_cache(namespace=namespace)
+
+        if is_async:
+            async def async_wrapper(*f_args: Any, **f_kwargs: Any):
+                key = _compute_key(func, f_args, f_kwargs)
+                cached_value = await cache.aget(key)
+                if cached_value is not None:
+                    return cached_value
+                result = await func(*f_args, **f_kwargs)
+                await cache.aset(key, result, ttl_seconds=ttl, persist=use_disk)
+                return result
+            return async_wrapper  # type: ignore[return-value]
+
+        def sync_wrapper(*f_args: Any, **f_kwargs: Any):
+            key = _compute_key(func, f_args, f_kwargs)
+            cached_value = cache.get(key)
+            if cached_value is not None:
+                return cached_value
+            result = func(*f_args, **f_kwargs)
+            cache.set(key, result, ttl_seconds=ttl, persist=use_disk)
+            return result
+        return sync_wrapper  # type: ignore[return-value]
+
+    return decorator
 

@@ -82,7 +82,7 @@ from src.utils.hardware.m1_optimizations import M1MemoryOptimizer as AdvancedM1M
 
 # Parallel processing and caching
 from src.utils.parallel_processing_optimizer import MacM1ParallelOptimizer
-from src.utils.intelligent_feature_cache import IntelligentFeatureCache
+from src.utils.caching import IntelligentCache
 
 # Enhanced data processing
 from src.utils.enhanced_data_operations import EnhancedDataOperations
@@ -293,13 +293,15 @@ class MultiTimeframeTrainer:
     def _initialize_caching_and_monitoring(self):
         """Initialize caching and performance monitoring components."""
         try:
-            # Intelligent Feature Cache
+            # Intelligent Feature Cache (Unified)
             if self.config.enable_intelligent_caching:
-                self.feature_cache_manager = IntelligentFeatureCache(
+                self.feature_cache_manager = IntelligentCache(
+                    ttl_seconds=None,
                     cache_dir=self.config.cache_dir,
+                    namespace=f"multi_timeframe_{self.symbol}_{self.exchange}",
                     max_memory_mb=self.config.max_cache_size_mb,
-                    max_cache_size_mb=self.config.max_cache_size_mb,
-                    enable_compression=True
+                    enable_compression=True,
+                    enable_disk=True,
                 )
                 self.logger.info("💾 Intelligent Feature Cache initialized")
             else:

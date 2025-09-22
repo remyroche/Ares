@@ -24,7 +24,7 @@ from ..utils.config.loaders import initialize_sr_parameters
 from src.utils.enhanced_error_handler import handle_errors_with_tracking
 from src.utils.warning_symbols import failed, initialization_error, warning
 from src.utils.performance_utils import PerformanceMonitor, global_monitor
-from src.utils.caching import intelligent_caching
+from src.utils.unified_cache import cached
 # Live trading utilities
 from src.utils.model_manager import ModelManager
 

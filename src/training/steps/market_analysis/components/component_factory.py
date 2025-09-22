@@ -135,6 +135,14 @@ class HMMModelsTrainingComponentWrapper(BaseMarketAnalysisComponent):
             # Create training instance if not exists
             if self.training_instance is None:
                 self.training_instance = self.training_class()
+                try:
+                    # Enforce 15m timeframe for HMM models at runtime
+                    if hasattr(self.training_instance, 'config'):
+                        setattr(self.training_instance.config, 'timeframe', '15m')
+                        if getattr(self.training_instance.config, 'timeframe', None) != '15m':
+                            print("⚠️ HMM Models: Non-15m timeframe supplied; overriding to 15m for consistency")
+                except Exception:
+                    pass
 
             # Extract required data from pipeline state
             X = pipeline_state.get('features')
@@ -322,6 +330,9 @@ class HMMModelsTrainingComponentWrapper(BaseMarketAnalysisComponent):
                   )
                   raise ValueError(error_msg)
             
+            # Use HMM state recognition as the training objective
+            y = cluster_assignments
+
             # Execute training with comprehensive features
             results = self.training_instance.execute(X, y, cluster_assignments, feature_names, market_data=market_data)
             
@@ -377,6 +388,14 @@ class HMMEnsembleTrainingComponentWrapper(BaseMarketAnalysisComponent):
             # Create training instance if not exists
             if self.training_instance is None:
                 self.training_instance = self.training_class()
+                try:
+                    # Enforce 15m timeframe for HMM ensemble at runtime
+                    if hasattr(self.training_instance, 'config'):
+                        setattr(self.training_instance.config, 'timeframe', '15m')
+                        if getattr(self.training_instance.config, 'timeframe', None) != '15m':
+                            print("⚠️ HMM Ensemble: Non-15m timeframe supplied; overriding to 15m for consistency")
+                except Exception:
+                    pass
             
             # Extract required data from pipeline state
             X = pipeline_state.get('features')
@@ -549,6 +568,9 @@ class HMMEnsembleTrainingComponentWrapper(BaseMarketAnalysisComponent):
             # Ensure all data is in proper numpy format before training
             cluster_assignments = self._convert_to_numpy_array(cluster_assignments)
             
+            # Use HMM state recognition as the training objective
+            y = cluster_assignments
+
             # Execute training
             results = self.training_instance.execute(
                 X, y, cluster_assignments, feature_names, hmm_states, 

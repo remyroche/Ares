@@ -754,6 +754,11 @@ class MarketAnalysisSubPipeline:
             
             # Convert config to component config
             component_config = self._convert_to_component_config(config)
+            # Enforce 15m timeframe for HMM components only (log warning if overriding)
+            if sub_pipeline_name in ('hmm_models_training', 'hmm_ensemble_training'):
+                if component_config.timeframe != '15m':
+                    self.logger.warning(f"⚠️ {sub_pipeline_name}: timeframe {component_config.timeframe} supplied; overriding to 15m")
+                component_config.timeframe = '15m'
             
             # Create component using factory
             component = self.component_factory.create_component(sub_pipeline_name, component_config)
@@ -979,6 +984,28 @@ class MarketAnalysisSubPipeline:
             try:
                 progress_info = f"({i+1-start_index}/{len(execution_sequence)-start_index})"
                 self.logger.info(f'🔄 Executing {pipeline_name} {progress_info} [Group: {current_group}]')
+                # Ensure 15m timeframe at dispatch time for HMM components only (log warning if overriding)
+                if pipeline_name in ('hmm_models_training', 'hmm_ensemble_training'):
+                    if getattr(config, 'timeframe', None) != '15m':
+                        self.logger.warning(f"⚠️ {pipeline_name}: timeframe {config.timeframe} supplied; overriding to 15m")
+                    config = SubPipelineConfig(
+                        mode=config.mode,
+                        symbol=config.symbol,
+                        exchange=config.exchange,
+                        timeframe='15m',
+                        data_dir=config.data_dir,
+                        start_date=config.start_date,
+                        end_date=config.end_date,
+                        force_rerun=config.force_rerun,
+                        parallel_processing=config.parallel_processing,
+                        max_workers=config.max_workers,
+                        validation_enabled=config.validation_enabled,
+                        monitoring_enabled=config.monitoring_enabled,
+                        fast_mode=config.fast_mode,
+                        skip_next_pipeline=config.skip_next_pipeline,
+                        single_stage_only=config.single_stage_only,
+                        custom_params=config.custom_params
+                    )
                 result = await self.execute_sub_pipeline(pipeline_name, config)
                 results.append(result)
                 

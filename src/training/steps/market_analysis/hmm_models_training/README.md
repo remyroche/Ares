@@ -85,6 +85,8 @@ results = training_step.execute(X, y, regime_labels, feature_names)
 - ✅ **Comprehensive feature bank** - 17 feature categories for maximum signal extraction
 - ✅ **Feature bank integration** - Automatic generation of all feature types (momentum, volatility, trend, volume, support/resistance, returns, oscillator, candlestick_pattern, hmm_regime, entropy, order_flow, acceleration, legacy)
 - ✅ **Selective feature usage** - HMM training excludes complex categories (cross_timeframe, autoencoder, interaction, microstructure, time) for optimal performance
+- ✅ **Short-term focus** - Optimized for 15m timeframe with reduced emphasis on long-term regime stability
+- ✅ **Rapid regime switching** - Accepts frequent regime changes appropriate for short-term (10-30 minute) predictions
 
 ## Migration Complete ✅
 
@@ -145,18 +147,19 @@ The HMM models training uses **multi-objective optimization** to balance multipl
 **Primary Objectives:**
 - **Accuracy (40% weight)**: Standard classification accuracy for HMM state recognition
 - **F1-Score (30% weight)**: Harmonic mean of precision and recall, important for imbalanced regime data
-- **Regime Stability (30% weight)**: Custom metric measuring consistency of regime predictions over time - ensures models don't overfit to noise and provide reliable regime classification
+- **Regime Stability (20% weight)**: Custom metric measuring consistency of regime predictions within similar market conditions - focuses on noise reduction rather than temporal persistence (reduced weight for short-term 15m predictions)
 
 **Why Multi-Objective?**
 - HMM state recognition requires balancing multiple competing goals
 - Different regimes may have different optimal model configurations
 - Ensures robust performance across various market conditions
 - Provides better generalization than single-objective optimization
+- Optimized for short-term (15m) predictions with appropriate regime transition handling
 
 **Objective Weights Configuration:**
 ```python
 objectives=["accuracy", "f1_score", "regime_stability"]
-objective_weights=[0.4, 0.3, 0.3]
+objective_weights=[0.4, 0.3, 0.2]  # Reduced regime stability weight for 15m short-term predictions
 ```
 
 **Implementation:**
@@ -169,25 +172,25 @@ objective_weights=[0.4, 0.3, 0.3]
 
 **Regime Stability** is crucial for HMM state recognition because:
 
-1. **Noise Reduction**: Financial markets are inherently noisy. A model might achieve high accuracy by overfitting to short-term noise rather than learning true regime patterns.
+1. **Noise Reduction**: Financial markets are inherently noisy. A model might achieve high accuracy by overfitting to short-term noise rather than learning true regime patterns. The stability metric helps identify models that learn meaningful patterns rather than noise.
 
-2. **Temporal Consistency**: HMM states should be relatively stable over time. Rapid regime switching indicates the model is not capturing meaningful market states.
+2. **Short-term Reliability**: For 15m timeframe predictions, the focus is on reliable regime classification within the next 10-30 minutes, accepting that regime changes can happen rapidly in volatile market conditions.
 
-3. **Reliability**: For trading applications, you need confidence that regime predictions are reliable, not just accurate on training data.
+3. **Consistency Within Market Conditions**: Rather than temporal persistence, the metric focuses on consistency of regime predictions when market conditions are similar, ensuring the model learns robust regime characteristics.
 
-4. **Generalization**: Models with high regime stability tend to generalize better to unseen market conditions.
+4. **Reduced Overfitting**: The stability metric helps prevent overfitting to random market fluctuations while still allowing the model to capture legitimate regime transitions.
 
 **Implementation**: The regime stability metric measures:
-- How often the predicted regime changes over short time windows
-- The consistency of regime predictions within similar market conditions
-- The temporal coherence of regime sequences
-- Penalty for unrealistic regime transition frequencies
+- Consistency of regime predictions within similar market conditions (focus on market state rather than time)
+- Minimal penalty for regime transitions (since rapid switching is acceptable for short-term predictions)
+- Focus on noise reduction and reliability rather than temporal persistence
+- Emphasis on meaningful regime patterns over random fluctuations
 
 **Benefits**: This ensures the trained models provide:
 - More reliable regime classification for live trading
 - Better signal-to-noise ratio in regime predictions
-- Reduced false positives in regime changes
-- More stable model behavior over time
+- Reduced overfitting to short-term market noise
+- Consistent performance across similar market conditions
 
 ## Benefits
 

@@ -54,7 +54,7 @@ class StreamlinedHMMTrainingStep(BaseTrainingStep):
                 hpo_trials=50,
                 enable_multi_objective=True,
                 objectives=["accuracy", "f1_score", "regime_stability"],
-                objective_weights=[0.4, 0.3, 0.3]
+                objective_weights=[0.4, 0.3, 0.2]  # Reduced regime stability weight for 15m short-term predictions
             )
         else:
             # Override timeframe to ensure 15m for HMM state recognition

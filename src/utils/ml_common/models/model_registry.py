@@ -540,14 +540,14 @@ class ModelRegistry:
     def _enhance_metadata(self, metadata: Dict[str, Any], model_name: str,
                          version: str, model: Any) -> Dict[str, Any]:
         """Enhance metadata with additional information."""
-        enhanced = metadata.copy()
+            enhanced = metadata.copy() if metadata is not None else {}
 
         # Add registry information
         enhanced.update({
             'model_name': model_name,
             'version': version,
             'created_at': datetime.now().isoformat(),
-            'model_type': getattr(model, '__class__', {}).get('__name__', 'unknown'),
+            'model_type': type(model).__name__ if model is not None else 'unknown',
             'registry_info': {
                 'registry_path': str(self.registry_path),
                 'registry_version': '1.0'

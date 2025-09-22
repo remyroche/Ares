@@ -66,8 +66,10 @@ class LookaheadBiasDetector:
         return True
 
 class LookaheadBiasError(Exception):
-    """Fallback exception for lookahead bias"""
-    pass
+    """Exception for lookahead bias with optional metadata."""
+    def __init__(self, message: str, *, details: Optional[Dict[str, Any]] = None):
+        super().__init__(message)
+        self.details = details or {}
 
 try:
     from src.utils.lookahead_bias_detector import LookaheadBiasDetector, LookaheadBiasError

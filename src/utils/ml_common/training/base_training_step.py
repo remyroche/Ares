@@ -261,7 +261,7 @@ class BaseTrainingStep(ABC):
         Returns:
             Dictionary containing training results and metadata
         """
-        pass
+        raise NotImplementedError(f"{self.__class__.__name__}.execute must be implemented by subclasses")
     
     def analyze_regimes(self, regime_labels: np.ndarray) -> Dict[str, Any]:
         """

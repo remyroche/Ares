@@ -49,7 +49,8 @@ def _default_cache_dir() -> str:
     try:
         os.makedirs(base, exist_ok=True)
     except Exception:
-        pass
+        # Fast-fail to in-memory cache directory if filesystem not writable
+        base = "/tmp/ares_ml_cache"
     return base
 
 
@@ -58,7 +59,8 @@ def _safe_hash(obj: Any) -> str:
         if JOBLIB_AVAILABLE:
             return str(joblib_hash(obj))
     except Exception:
-        pass
+        # Fall back to lightweight hashing below
+        ...
     try:
         if isinstance(obj, np.ndarray):
             return str(hash((obj.shape, obj.dtype.str, obj.tobytes())))

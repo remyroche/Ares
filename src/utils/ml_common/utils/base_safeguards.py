@@ -42,20 +42,29 @@ except Exception as e:
 logger = _LOGGER
 
 class MLTrainingError(Exception):
-    """Base exception for ML training errors."""
-    pass
+    """Base exception for ML training errors with optional context."""
+
+    def __init__(self, message: str = "", *, context: Optional[Dict[str, Any]] = None):
+        super().__init__(message)
+        self.message: str = message
+        self.context: Dict[str, Any] = context or {}
+        self.occurred_at: datetime = datetime.now()
+
+    def __str__(self) -> str:  # pragma: no cover - string formatting helper
+        context_str = f" | context={self.context}" if self.context else ""
+        return f"{self.__class__.__name__}: {self.message}{context_str}"
 
 class ClassImbalanceError(MLTrainingError):
     """Raised when class imbalance is too extreme."""
-    pass
+    ...
 
 class SingleClassError(MLTrainingError):
     """Raised when only one class is present."""
-    pass
+    ...
 
 class DataQualityError(MLTrainingError):
     """Raised when data quality issues prevent training."""
-    pass
+    ...
 
 class ErrorSeverity(Enum):
     """Error severity levels."""

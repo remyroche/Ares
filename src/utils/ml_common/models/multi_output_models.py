@@ -183,17 +183,17 @@ class MultiOutputModel(ABC):
     @abstractmethod
     def fit(self, X: np.ndarray, y: np.ndarray) -> 'MultiOutputModel':
         """Fit the multi-output model."""
-        pass
+        raise NotImplementedError(f"{self.__class__.__name__}.fit must be implemented")
     
     @abstractmethod
     def predict(self, X: np.ndarray) -> np.ndarray:
         """Make predictions for all outputs."""
-        pass
+        raise NotImplementedError(f"{self.__class__.__name__}.predict must be implemented")
     
     @abstractmethod
     def predict_proba(self, X: np.ndarray) -> Optional[np.ndarray]:
         """Make probability predictions for all outputs."""
-        pass
+        raise NotImplementedError(f"{self.__class__.__name__}.predict_proba must be implemented")
     
     def validate_outputs(self, y: np.ndarray) -> bool:
         """Validate output data format."""

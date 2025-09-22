@@ -74,28 +74,13 @@ except Exception:
         def correlation_based_filtering(self, X, feature_names, correlation_threshold=0.9):
             return {'selected_features': feature_names}
 try:
-    from src.utils.ml_common.parallel_processing import ParallelProcessingCoordinator  # type: ignore
+    from src.utils.parallel_processing_optimizer import ParallelProcessor  # type: ignore
 except Exception:
-    class ParallelProcessingCoordinator:  # type: ignore
+    class ParallelProcessor:  # type: ignore
         def __init__(self, *_args, **_kwargs):
             pass
-        def parallel_feature_engineering(self, funcs, args_list):
-            results = []
-            for f, arg in zip(funcs, args_list):
-                try:
-                    results.append(f(arg))
-                except Exception as e:
-                    results.append({'success': False, 'error': str(e), 'features': []})
-            return results
-        def error_handling_parallel_execution(self, task_defs, max_retries=0, error_handling_strategy='retry'):
-            out = []
-            for td in task_defs:
-                try:
-                    res = td['function'](**td.get('kwargs', {}))
-                except Exception as e:
-                    res = {'success': False, 'error': str(e)}
-                out.append(res)
-            return out
+        def parallel_apply(self, df, func):
+            return func(df)
 
 import torch
 
@@ -152,11 +137,7 @@ class Step03HMMRegimeDiscovery(BaseStep):
             'max_workers': 4,
             'random_state': 42
         })
-        self.parallel_processor = ParallelProcessingCoordinator({
-            'max_workers': 4,
-            'enable_joblib': True,
-            'chunk_size': 5000
-        })
+        self.parallel_processor = ParallelProcessor(max_workers = 4)
 
         self.logger.info('🚀 Step 3 initialized with comprehensive M1 optimizations and ML Common utilities')
 
@@ -728,7 +709,7 @@ class Step03HMMRegimeDiscovery(BaseStep):
             unique_regimes = np.unique(regime_labels)
             regime_stats = {}
 
-            # Use ParallelProcessingCoordinator for distributed calculation
+            # Use ParallelProcessor for distributed calculation
             if len(unique_regimes) > 1 and len(regime_labels) > 10000:
                 self.logger.info(f'⚡ Using parallel processing for {len(unique_regimes)} regimes')
 
@@ -1403,7 +1384,7 @@ class Step03HMMRegimeDiscovery(BaseStep):
                 ]
             },
             'feature_engineering': {
-                'utilities_used': ['FeatureSelectionFramework', 'ParallelProcessingCoordinator'],
+                'utilities_used': ['FeatureSelectionFramework', 'ParallelProcessor'],
                 'capabilities': [
                     'mRMR feature selection',
                     'Correlation-based filtering',
@@ -1420,7 +1401,7 @@ class Step03HMMRegimeDiscovery(BaseStep):
                 ]
             },
             'parallel_processing': {
-                'utilities_used': ['ParallelProcessingCoordinator'],
+                'utilities_used': ['ParallelProcessor'],
                 'capabilities': [
                     'Load-balanced processing',
                     'Error handling in parallel execution',

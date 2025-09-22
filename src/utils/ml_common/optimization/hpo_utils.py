@@ -30,7 +30,7 @@ import logging
 from concurrent.futures import ThreadPoolExecutor
 import time
 
-from .parallel_processing import ParallelProcessingCoordinator
+from src.utils.parallel_processing_optimizer import ParallelProcessor
 from ...nonlinear_optimization_helpers import (
     NonLinearConfig, NonLinearParameterSampler, apply_nonlinear_scoring,
     create_enhanced_search_space
@@ -109,7 +109,7 @@ class HyperparameterOptimization:
         _LOGGER.info(f"🚀 Configuration - Non-linear optimization: {self.use_nonlinear_optimization}")
 
         # Initialize utilities
-        self.parallel_coordinator = ParallelProcessingCoordinator(self.config) if self.enable_parallel else None
+        self.parallel_coordinator = ParallelProcessor() if self.enable_parallel else None
 
         # Enhanced optimization tracking
         self.optimization_history = []

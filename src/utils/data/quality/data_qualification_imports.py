@@ -174,13 +174,13 @@ class DataQualificationImportManager:
                 if self.enable_fallbacks:
                     ml_commons['feature_selection'] = self._get_fallback_feature_selection()
             
-            # Parallel Processing Coordinator
+            # Parallel Processing (use central ParallelProcessor)
             try:
-                from src.utils.ml_common.parallel_processing import ParallelProcessingCoordinator
-                ml_commons['parallel_processing'] = ParallelProcessingCoordinator
-                self.logger.debug("✅ ParallelProcessingCoordinator imported")
+                from src.utils.parallel_processing_optimizer import ParallelProcessor
+                ml_commons['parallel_processing'] = ParallelProcessor
+                self.logger.debug("✅ ParallelProcessor imported")
             except ImportError as e:
-                self.logger.warning(f"⚠️ ParallelProcessingCoordinator not available: {e}")
+                self.logger.warning(f"⚠️ ParallelProcessor not available: {e}")
                 if self.enable_fallbacks:
                     ml_commons['parallel_processing'] = self._get_fallback_parallel_processing()
             

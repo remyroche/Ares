@@ -42,8 +42,8 @@ from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer, M1Me
 from src.utils.hardware.m1_gpu_utils import get_m1_gpu_manager
 from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer, M1CPUOptimizer
 
-# Import ML Common utilities for cross-validation
-from ..validation.cv_utils import TemporalCrossValidator, PurgedKFold
+# Import ML Common utilities for cross-validation (unified API)
+from ..validation.unified_cv import temporal_cross_validation
 # from .validation_utils import ValidationFramework  # Not available
 # from .pareto import ParetoFrontAnalyzer  # Causes circular import
 
@@ -745,25 +745,56 @@ class EnhancedDataLabeler:
         n_splits: int = 5,
         purged_pct: float = 0.01
     ) -> Dict[str, Any]:
-        """Validate labels using temporal cross-validation."""
+        """Validate labels using temporal cross-validation (unified API)."""
         try:
-            # Initialize temporal cross-validator
-            cv = TemporalCrossValidator(n_splits=n_splits, purged_pct=purged_pct)
-            
             # Prepare data for CV
             X = labels_df.drop(['label', 'profit_pct'], axis=1, errors='ignore')
             y = labels_df['label']
-            
-            # Perform cross-validation
-            cv_results = cv.cross_validate(X, y)
-            
+
+            # Use a simple classifier for label validation
+            try:
+                from sklearn.ensemble import RandomForestClassifier
+                model = RandomForestClassifier(n_estimators=50, random_state=42)
+            except Exception:
+                model = None
+
+            # Map purged_pct to a gap approximately per fold (best-effort)
+            try:
+                approx_fold_size = max(1, len(X) // (n_splits + 1))
+                gap = max(0, int(approx_fold_size * purged_pct))
+            except Exception:
+                gap = 0
+
+            if model is None:
+                return {
+                    'cv_scores': [],
+                    'mean_score': 0.0,
+                    'std_score': 0.0,
+                    'validation_passed': False,
+                    'error': 'No classifier available for validation'
+                }
+
+            # Perform temporal CV via unified API
+            cv_res = temporal_cross_validation(
+                model,
+                X.values if hasattr(X, 'values') else X,
+                y.values if hasattr(y, 'values') else y,
+                n_splits=n_splits,
+                gap=gap,
+                test_size=None,
+                scoring='accuracy'
+            )
+
+            scores = np.array(cv_res.get('scores', []) or [])
+            mean_score = float(cv_res.get('mean', np.mean(scores) if scores.size else 0.0))
+            std_score = float(cv_res.get('std', np.std(scores) if scores.size else 0.0))
+
             return {
-                'cv_scores': cv_results,
-                'mean_score': np.mean(cv_results),
-                'std_score': np.std(cv_results),
-                'validation_passed': np.mean(cv_results) > 0.6
+                'cv_scores': scores.tolist() if scores.size else [],
+                'mean_score': mean_score,
+                'std_score': std_score,
+                'validation_passed': mean_score > 0.6
             }
-            
         except Exception as e:
             self.logger.error(f"❌ Cross-validation failed: {e}")
             return {

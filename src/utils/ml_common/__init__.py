@@ -78,7 +78,10 @@ try:
     from .validation import (
         ConfigurationValidator,
         CrossValidationUtilities, PurgedKFold, TemporalCrossValidator,
-        StabilityAnalyzer
+        StabilityAnalyzer,
+        # Unified CV
+        UnifiedCrossValidator, UnifiedCVResult,
+        perform_cross_validation, temporal_cross_validation, nested_cross_validation
     )
     # Thresholding functions (imported separately to avoid sklearn dependency issues)
     try:
@@ -164,6 +167,9 @@ try:
         # Validation
         'ConfigurationValidator',
         'TemporalCrossValidator', 'PurgedKFold', 'CrossValidationUtilities', 'PurgedSplitConfig',
+        # Unified CV exports
+        'UnifiedCrossValidator', 'UnifiedCVResult',
+        'perform_cross_validation', 'temporal_cross_validation', 'nested_cross_validation',
         'StabilityAnalyzer', 'feature_selection_stability', 'aggregate_time_blocks',
         'optimize_threshold', 'calibrate_probabilities',
         

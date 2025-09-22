@@ -13,6 +13,13 @@ This module contains all validation functionality including:
 
 from .validation_utils import ConfigurationValidator
 from .cv_utils import TemporalCrossValidator, PurgedKFold, CrossValidationUtilities
+from .unified_cv import (
+    UnifiedCrossValidator,
+    UnifiedCVResult,
+    perform_cross_validation,
+    temporal_cross_validation,
+    nested_cross_validation,
+)
 from .cv import PurgedSplitConfig
 from .stability import feature_selection_stability, aggregate_time_blocks, StabilityAnalyzer
 from .thresholding import optimize_threshold, calibrate_probabilities
@@ -60,6 +67,9 @@ __all__ = [
 
     # Original Cross-validation
     'TemporalCrossValidator', 'PurgedKFold', 'CrossValidationUtilities', 'PurgedSplitConfig',
+    # Unified CV API
+    'UnifiedCrossValidator', 'UnifiedCVResult',
+    'perform_cross_validation', 'temporal_cross_validation', 'nested_cross_validation',
 
     # Original Stability Analysis
     'feature_selection_stability', 'aggregate_time_blocks', 'StabilityAnalyzer',

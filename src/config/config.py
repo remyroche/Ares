@@ -90,27 +90,8 @@ class TradingConfig:
     state_file: str = "ares_state.json"
     lookback_years: int = 2
 
-    # Time-based exit configuration
-    enable_time_exit: bool = True
-    max_holding_time_hours: int = 24
-    profit_lock_time_hours: int = 4
-    loss_cut_time_hours: int = 2
-
-    # Stop loss configuration
-    enable_stop_loss: bool = True
-    stop_loss_type: str = "trailing"  # 'fixed' or 'trailing'
-    fixed_stop_loss_pct: float = 0.02
-    trailing_stop_activation_threshold: float = 0.01
-    trailing_stop_distance: float = 0.005
-    lock_profit_threshold: float = 0.03
-
-    # Take profit configuration
-    enable_take_profit: bool = True
-    take_profit_type: str = "dynamic"  # 'fixed' or 'dynamic'
-    fixed_take_profit_pct: float = 0.05
-    base_take_profit: float = 0.03
-    volatility_multiplier: float = 1.5
-    max_take_profit: float = 0.15
+    # Time-based exit configuration (simplified)
+    max_holding_time_hours: int = 3  # Maximum holding time in hours
 
 @dataclass
 class TrainingConfig:

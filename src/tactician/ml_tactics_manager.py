@@ -66,13 +66,19 @@ class MLTacticsManager:
             'micro_short_short': ml_tactics_optimization.get('micro_short_short_threshold', 0.73),
             'combined_threshold': ml_tactics_optimization.get('combined_threshold', 0.70)
         }
+        # Enhanced exit thresholds with adaptive features
         self.exit_thresholds = {
             'micro_immediate_long': ml_tactics_optimization.get('exit_micro_immediate_long_threshold', 0.40),
             'micro_immediate_short': ml_tactics_optimization.get('exit_micro_immediate_short_threshold', 0.35),
             'micro_short_long': ml_tactics_optimization.get('exit_micro_short_long_threshold', 0.45),
             'micro_short_short': ml_tactics_optimization.get('exit_micro_short_short_threshold', 0.40),
             'combined_exit_threshold': ml_tactics_optimization.get('combined_exit_threshold', 0.45),
-            'directional_confidence_min': ml_tactics_optimization.get('directional_confidence_min', 0.10)
+            'directional_confidence_min': ml_tactics_optimization.get('directional_confidence_min', 0.10),
+            # New adaptive thresholds for regime-based optimization
+            'high_volatility_multiplier': ml_tactics_optimization.get('high_volatility_multiplier', 0.8),  # Tighter thresholds in high vol
+            'low_volatility_multiplier': ml_tactics_optimization.get('low_volatility_multiplier', 1.2),    # Looser thresholds in low vol
+            'trending_market_multiplier': ml_tactics_optimization.get('trending_market_multiplier', 0.9), # Tighter in trending markets
+            'ranging_market_multiplier': ml_tactics_optimization.get('ranging_market_multiplier', 1.1),   # Looser in ranging markets
         }
         self.confidence_weights = {
             'analyst_weight': ml_tactics_optimization.get('analyst_confidence_weight', 0.3),
@@ -1180,21 +1186,29 @@ class MLTacticsManager:
         }
 
     @handles_errors(fallback = None)
-    async def evaluate_exit_signal(self, current_predictions: dict[str, Any], position_context: dict[str, Any]) -> dict[str, Any]:
+    async def evaluate_exit_signal(self, current_predictions: dict[str, Any], position_context: dict[str, Any], market_conditions: dict[str, Any] = None) -> dict[str, Any]:
         """
         Evaluate exit signal based on 0.3% micro movement predictions and position context.
 
         Args:
             current_predictions: Current multi-output predictions with micro movements
             position_context: Current position context (including position direction)
+            market_conditions: Optional market conditions (volatility, regime) for adaptive thresholds
 
         Returns:
-            dict: Exit signal evaluation based on probability degradation
+            dict: Exit signal evaluation based on probability degradation with adaptive thresholds
         """
         try:
             combined_confidence = current_predictions.get('combined_confidence', 0.5)
             directional_analysis = current_predictions.get('directional_analysis', {})
-            
+
+            # Apply adaptive thresholds based on market conditions
+            current_thresholds = self.exit_thresholds.copy()
+            if market_conditions:
+                current_volatility = market_conditions.get('volatility', 0.5)
+                market_regime = market_conditions.get('regime', 'neutral')
+                current_thresholds = self._apply_adaptive_thresholds(current_volatility, market_regime)
+
             # Get position direction from context
             position_side = position_context.get('side', '').upper()
             
@@ -1202,14 +1216,14 @@ class MLTacticsManager:
             if position_side == 'LONG':
                 micro_immediate_prob = current_predictions.get('micro_immediate_long', {}).get('probability', 0.5)
                 
-                # Check if immediate probability drops below exit threshold
-                immediate_exit = micro_immediate_prob <= self.exit_thresholds['micro_immediate_long']
+                # Check if immediate probability drops below exit threshold (using adaptive thresholds)
+                immediate_exit = micro_immediate_prob <= current_thresholds['micro_immediate_long']
                 
             elif position_side == 'SHORT':
                 micro_immediate_prob = current_predictions.get('micro_immediate_short', {}).get('probability', 0.5)
                 
-                # Check if immediate probability drops below exit threshold
-                immediate_exit = micro_immediate_prob <= self.exit_thresholds['micro_immediate_short']
+                # Check if immediate probability drops below exit threshold (using adaptive thresholds)
+                immediate_exit = micro_immediate_prob <= current_thresholds['micro_immediate_short']
                 
             else:
                 # No position or unknown direction
@@ -1222,13 +1236,13 @@ class MLTacticsManager:
             
             # Directional reversal detection - exit when direction confidence drops OR bias changes against position
             directional_reversal = (
-                directional_confidence < self.exit_thresholds['directional_confidence_min'] or
+                directional_confidence < current_thresholds['directional_confidence_min'] or
                 (position_side == 'LONG' and directional_bias == 'SHORT') or
                 (position_side == 'SHORT' and directional_bias == 'LONG')
             )
-            
+
             # Check combined confidence exit
-            combined_exit = combined_confidence <= self.exit_thresholds['combined_exit_threshold']
+            combined_exit = combined_confidence <= current_thresholds['combined_exit_threshold']
             
             # Determine exit signal - PRIORITIZE directional reversal as main exit trigger
             if directional_reversal:
@@ -1236,33 +1250,355 @@ class MLTacticsManager:
                 if directional_bias != 'NEUTRAL' and ((position_side == 'LONG' and directional_bias == 'SHORT') or (position_side == 'SHORT' and directional_bias == 'LONG')):
                     reason = f'DIRECTIONAL REVERSAL: Price direction changed from {position_side} to {directional_bias} (confidence: {directional_confidence:.3f})'
                 else:
-                    reason = f'DIRECTIONAL CONFIDENCE LOSS: Direction confidence ({directional_confidence:.3f}) below minimum ({self.exit_thresholds["directional_confidence_min"]})'
+                    reason = f'DIRECTIONAL CONFIDENCE LOSS: Direction confidence ({directional_confidence:.3f}) below minimum ({current_thresholds["directional_confidence_min"]:.3f})'
             elif combined_exit:
                 exit_signal = 'EXIT'
-                reason = f'Combined confidence ({combined_confidence:.3f}) below threshold ({self.exit_thresholds["combined_exit_threshold"]})'
+                reason = f'Combined confidence ({combined_confidence:.3f}) below threshold ({current_thresholds["combined_exit_threshold"]:.3f})'
             elif immediate_exit:
                 exit_signal = 'EXIT'
-                reason = f'Immediate probability degraded: {micro_immediate_prob:.3f} below threshold ({self.exit_thresholds[f"micro_immediate_{position_side.lower()}"]})'
+                reason = f'Immediate probability degraded: {micro_immediate_prob:.3f} below threshold ({current_thresholds[f"micro_immediate_{position_side.lower()}"]:.3f})'
             else:
                 exit_signal = 'HOLD'
                 reason = f'No exit signals - immediate: {micro_immediate_prob:.3f}, directional: {directional_confidence:.3f} ({directional_bias}), combined: {combined_confidence:.3f}'
             
             return {
-                'exit_signal': exit_signal, 
-                'reason': reason, 
-                'immediate_exit': immediate_exit, 
+                'exit_signal': exit_signal,
+                'reason': reason,
+                'immediate_exit': immediate_exit,
                 'directional_reversal': directional_reversal,
-                'combined_exit': combined_exit, 
+                'combined_exit': combined_exit,
                 'combined_confidence': combined_confidence,
                 'directional_confidence': directional_confidence,
                 'directional_bias': directional_bias,
                 'micro_immediate_prob': micro_immediate_prob,
-                'exit_thresholds': self.exit_thresholds,
-                'position_side': position_side
+                'exit_thresholds': current_thresholds,  # Return adaptive thresholds
+                'position_side': position_side,
+                'market_conditions_applied': market_conditions is not None,
+                'adaptive_multiplier': current_thresholds.get('adaptive_multiplier', 1.0)
             }
         except Exception as e:
             self.logger.exception(failed(f'❌ Exit signal evaluation failed: {e}'))
             return {'exit_signal': 'HOLD', 'reason': 'Evaluation failed', 'fifty_percent_exit': False, 'twenty_five_percent_exit': False, 'combined_exit': False, 'combined_confidence': 0.5, 'exit_thresholds': self.exit_thresholds}
+
+    def _apply_adaptive_thresholds(self, current_volatility: float, market_regime: str = 'neutral') -> dict[str, float]:
+        """
+        Apply adaptive thresholds based on market conditions.
+
+        Args:
+            current_volatility: Current market volatility level (0.0 to 1.0)
+            market_regime: Market regime ('trending', 'ranging', 'volatile', 'neutral')
+
+        Returns:
+            dict: Adjusted thresholds for current market conditions
+        """
+        try:
+            # Get base thresholds
+            adjusted_thresholds = self.exit_thresholds.copy()
+
+            # Volatility adjustment
+            if current_volatility > 0.7:  # High volatility
+                vol_multiplier = self.exit_thresholds.get('high_volatility_multiplier', 0.8)
+            elif current_volatility < 0.3:  # Low volatility
+                vol_multiplier = self.exit_thresholds.get('low_volatility_multiplier', 1.2)
+            else:
+                vol_multiplier = 1.0
+
+            # Market regime adjustment
+            if market_regime == 'trending':
+                regime_multiplier = self.exit_thresholds.get('trending_market_multiplier', 0.9)
+            elif market_regime == 'ranging':
+                regime_multiplier = self.exit_thresholds.get('ranging_market_multiplier', 1.1)
+            else:
+                regime_multiplier = 1.0
+
+            # Apply adjustments to key thresholds
+            combined_multiplier = vol_multiplier * regime_multiplier
+            adjusted_thresholds['combined_exit_threshold'] *= combined_multiplier
+            adjusted_thresholds['directional_confidence_min'] *= combined_multiplier
+
+            # Adjust immediate thresholds
+            for key in ['micro_immediate_long', 'micro_immediate_short']:
+                if key in adjusted_thresholds:
+                    adjusted_thresholds[key] *= combined_multiplier
+
+            self.logger.info(f"Applied adaptive thresholds: vol={current_volatility:.2f}, regime={market_regime}, multiplier={combined_multiplier:.2f}")
+            adjusted_thresholds['adaptive_multiplier'] = combined_multiplier
+            return adjusted_thresholds
+
+        except Exception as e:
+            self.logger.exception(f"❌ Adaptive threshold adjustment failed: {e}")
+            return self.exit_thresholds.copy()
+
+
+class ExitStrategyOptimizer:
+    """
+    Enhanced exit strategy optimizer with adaptive and ensemble methods.
+    """
+
+    def __init__(self, config: dict[str, Any]):
+        """
+        Initialize exit strategy optimizer.
+
+        Args:
+            config: Configuration dictionary
+        """
+        self.config = config
+        self.logger = system_logger.getChild('ExitStrategyOptimizer')
+
+        # Exit strategy parameters
+        self.exit_strategies = {
+            'directional_reversal': {
+                'weight': 0.4,
+                'description': 'Exit on directional reversal'
+            },
+            'combined_confidence': {
+                'weight': 0.3,
+                'description': 'Exit on combined confidence degradation'
+            },
+            'immediate_probability': {
+                'weight': 0.2,
+                'description': 'Exit on immediate probability degradation'
+            },
+            'time_based': {
+                'weight': 0.1,
+                'description': 'Exit based on time constraints'
+            }
+        }
+
+        # Market regime strategies
+        self.regime_strategies = {
+            'high_volatility': {
+                'directional_weight': 0.5,
+                'immediate_weight': 0.3,
+                'confidence_weight': 0.2
+            },
+            'low_volatility': {
+                'directional_weight': 0.3,
+                'immediate_weight': 0.2,
+                'confidence_weight': 0.5
+            },
+            'trending': {
+                'directional_weight': 0.6,
+                'immediate_weight': 0.2,
+                'confidence_weight': 0.2
+            },
+            'ranging': {
+                'directional_weight': 0.2,
+                'immediate_weight': 0.4,
+                'confidence_weight': 0.4
+            }
+        }
+
+    def optimize_exit_strategy(self, market_data: pd.DataFrame, current_predictions: dict[str, Any],
+                             position_context: dict[str, Any]) -> dict[str, Any]:
+        """
+        Optimize exit strategy based on current market conditions.
+
+        Args:
+            market_data: Current market data
+            current_predictions: ML predictions
+            position_context: Current position information
+
+        Returns:
+            dict: Optimized exit strategy recommendations
+        """
+        try:
+            # Analyze market conditions
+            market_conditions = self._analyze_market_conditions(market_data)
+
+            # Get base exit signals
+            base_signals = self._get_base_exit_signals(current_predictions, position_context)
+
+            # Apply ensemble methods
+            ensemble_signals = self._apply_ensemble_methods(base_signals, market_conditions)
+
+            # Generate recommendations
+            recommendations = self._generate_exit_recommendations(ensemble_signals, market_conditions)
+
+            return {
+                'exit_strategy': recommendations,
+                'market_conditions': market_conditions,
+                'base_signals': base_signals,
+                'ensemble_signals': ensemble_signals,
+                'timestamp': datetime.now().isoformat()
+            }
+
+        except Exception as e:
+            self.logger.exception(f"❌ Exit strategy optimization failed: {e}")
+            return {'exit_strategy': 'HOLD', 'reason': 'Optimization failed'}
+
+    def _analyze_market_conditions(self, market_data: pd.DataFrame) -> dict[str, Any]:
+        """Analyze current market conditions for adaptive thresholds."""
+        try:
+            # Calculate volatility
+            if len(market_data) > 20:
+                recent_data = market_data.tail(20)
+                volatility = recent_data['close'].pct_change().std()
+                volatility_score = min(1.0, volatility * 10)  # Normalize to 0-1
+            else:
+                volatility_score = 0.5
+
+            # Determine regime (simplified)
+            if volatility_score > 0.7:
+                regime = 'high_volatility'
+            elif volatility_score < 0.3:
+                regime = 'low_volatility'
+            elif self._is_trending(market_data):
+                regime = 'trending'
+            else:
+                regime = 'ranging'
+
+            return {
+                'volatility': volatility_score,
+                'regime': regime,
+                'trend_strength': self._calculate_trend_strength(market_data)
+            }
+
+        except Exception as e:
+            self.logger.exception(f"❌ Market condition analysis failed: {e}")
+            return {'volatility': 0.5, 'regime': 'neutral', 'trend_strength': 0.5}
+
+    def _is_trending(self, market_data: pd.DataFrame, window: int = 10) -> bool:
+        """Check if market is trending."""
+        try:
+            if len(market_data) < window * 2:
+                return False
+
+            recent_prices = market_data['close'].tail(window).values
+            older_prices = market_data['close'].tail(window * 2).head(window).values
+
+            # Simple trend detection: check if recent prices are consistently higher/lower
+            recent_trend = np.mean(np.diff(recent_prices))
+            older_trend = np.mean(np.diff(older_prices))
+
+            # If recent trend is stronger and consistent, consider it trending
+            return abs(recent_trend) > abs(older_trend) * 0.5
+
+        except Exception:
+            return False
+
+    def _calculate_trend_strength(self, market_data: pd.DataFrame, window: int = 20) -> float:
+        """Calculate trend strength (0-1)."""
+        try:
+            if len(market_data) < window:
+                return 0.5
+
+            prices = market_data['close'].tail(window).values
+            trend_strength = abs(np.polyfit(np.arange(window), prices, 1)[0])
+            return min(1.0, trend_strength * 100)  # Normalize
+
+        except Exception:
+            return 0.5
+
+    def _get_base_exit_signals(self, current_predictions: dict[str, Any], position_context: dict[str, Any]) -> dict[str, Any]:
+        """Get base exit signals from different strategies."""
+        try:
+            # Extract position information
+            position_side = position_context.get('side', 'LONG')
+            entry_time = position_context.get('entry_time')
+            hold_time = (datetime.now() - entry_time).total_seconds() if entry_time else 0
+
+            # Time-based signal
+            time_signal = 0.0
+            if hold_time > 10800:  # 3 hours
+                time_signal = 1.0
+            elif hold_time > 7200:  # 2 hours
+                time_signal = 0.5
+
+            # ML-based signals (simplified)
+            directional_signal = current_predictions.get('directional_reversal', 0.0)
+            confidence_signal = current_predictions.get('combined_confidence', 0.5)
+            immediate_signal = current_predictions.get('immediate_probability', 0.5)
+
+            return {
+                'directional': directional_signal,
+                'confidence': 1.0 - confidence_signal,  # Invert confidence for exit signal
+                'immediate': 1.0 - immediate_signal,   # Invert probability for exit signal
+                'time_based': time_signal
+            }
+
+        except Exception as e:
+            self.logger.exception(f"❌ Base exit signals calculation failed: {e}")
+            return {'directional': 0.0, 'confidence': 0.0, 'immediate': 0.0, 'time_based': 0.0}
+
+    def _apply_ensemble_methods(self, base_signals: dict[str, float], market_conditions: dict[str, Any]) -> dict[str, float]:
+        """Apply ensemble methods to combine exit signals."""
+        try:
+            regime = market_conditions.get('regime', 'neutral')
+
+            # Get regime-specific weights
+            regime_weights = self.regime_strategies.get(regime, {
+                'directional_weight': 0.4,
+                'immediate_weight': 0.3,
+                'confidence_weight': 0.3
+            })
+
+            # Calculate weighted ensemble signal
+            ensemble_signal = (
+                base_signals['directional'] * regime_weights['directional_weight'] +
+                base_signals['immediate'] * regime_weights['immediate_weight'] +
+                base_signals['confidence'] * regime_weights['confidence_weight'] +
+                base_signals['time_based'] * 0.1  # Time always has small weight
+            )
+
+            # Apply volatility adjustment
+            volatility = market_conditions.get('volatility', 0.5)
+            if volatility > 0.7:
+                ensemble_signal *= 1.2  # Higher sensitivity in high volatility
+            elif volatility < 0.3:
+                ensemble_signal *= 0.8  # Lower sensitivity in low volatility
+
+            return {
+                'ensemble_signal': min(1.0, ensemble_signal),
+                'base_signals': base_signals,
+                'regime_weights': regime_weights,
+                'volatility_adjustment': 1.2 if volatility > 0.7 else (0.8 if volatility < 0.3 else 1.0)
+            }
+
+        except Exception as e:
+            self.logger.exception(f"❌ Ensemble methods failed: {e}")
+            return {'ensemble_signal': 0.0, 'base_signals': base_signals}
+
+    def _generate_exit_recommendations(self, ensemble_signals: dict[str, float], market_conditions: dict[str, Any]) -> dict[str, Any]:
+        """Generate exit recommendations based on ensemble signals."""
+        try:
+            ensemble_signal = ensemble_signals.get('ensemble_signal', 0.0)
+
+            # Exit thresholds based on market conditions
+            regime = market_conditions.get('regime', 'neutral')
+            volatility = market_conditions.get('volatility', 0.5)
+
+            # Adaptive exit threshold
+            base_threshold = 0.6
+            if regime == 'high_volatility':
+                threshold = base_threshold * 0.8  # Lower threshold in high volatility
+            elif regime == 'low_volatility':
+                threshold = base_threshold * 1.2  # Higher threshold in low volatility
+            else:
+                threshold = base_threshold
+
+            # Adjust for volatility
+            threshold *= (1.0 - volatility * 0.2)  # Lower threshold when volatility increases
+
+            if ensemble_signal >= threshold:
+                recommendation = 'EXIT'
+                reason = f'Ensemble signal ({ensemble_signal:.3f}) exceeds threshold ({threshold:.3f}) in {regime} regime'
+            else:
+                recommendation = 'HOLD'
+                reason = f'Ensemble signal ({ensemble_signal:.3f}) below threshold ({threshold:.3f}) in {regime} regime'
+
+            return {
+                'action': recommendation,
+                'confidence': ensemble_signal,
+                'threshold': threshold,
+                'reason': reason,
+                'market_regime': regime,
+                'volatility': volatility
+            }
+
+        except Exception as e:
+            self.logger.exception(f"❌ Exit recommendations failed: {e}")
+            return {'action': 'HOLD', 'confidence': 0.0, 'reason': 'Recommendation failed'}
 
 @handles_errors(fallback = None)
 async def setup_ml_tactics_manager(config: dict[str, Any] | None = None) -> MLTacticsManager | None:

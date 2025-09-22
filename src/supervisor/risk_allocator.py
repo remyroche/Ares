@@ -148,12 +148,10 @@ class RiskAllocator:
     @handles_errors(fallback = None)
     async def _update_risk_limits(self) -> None:
         try:
-            # Update risk limits
+            # Update risk limits (simplified per exit strategy update)
             limits = {
-                "max_position_size": 0.1,
-                "max_drawdown": 0.15,
-                "max_leverage": 2.0,
-                "stop_loss_threshold": 0.05,
+                "max_position_size": 0.5,  # Increased to 50%
+                # Note: max_drawdown, max_leverage, stop_loss_threshold removed
             }
             self.risk_limits.update(limits)
             self.logger.info("Risk limits updated successfully")

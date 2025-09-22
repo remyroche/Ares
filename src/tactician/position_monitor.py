@@ -38,11 +38,11 @@ class PositionAction(Enum):
 
     STAY = "stay"
     EXIT = "exit"
-    SCALE_UP = "scale_up"
-    SCALE_DOWN = "scale_down"
+    # SCALE_UP = "scale_up"  # Commented out per exit strategy update
+    # SCALE_DOWN = "scale_down"  # Commented out per exit strategy update
     HEDGE = "hedge"
-    TAKE_PROFIT = "take_profit"
-    STOP_LOSS = "stop_loss"
+    # TAKE_PROFIT = "take_profit"  # Commented out per exit strategy update
+    # STOP_LOSS = "stop_loss"  # Commented out per exit strategy update
     FULL_CLOSE = "full_close"
 
 @dataclass
@@ -102,18 +102,10 @@ class PositionMonitor:
         self.monitor_config = config.get("position_monitor", {})
         self.monitoring_interval = self.monitor_config.get("monitoring_interval", 10)  # seconds
         
-        # Load step12 confidence optimization config
-        step12_config = config.get("step12_confidence_optimization", {})
-        position_monitor_config = step12_config.get("position_monitor", {})
-        
-        # Confidence thresholds for step12 optimization
-        self.confidence_threshold = position_monitor_config.get("confidence_threshold", 0.6)
-        self.high_confidence_threshold = position_monitor_config.get("high_confidence_threshold", 0.6)
-        self.low_confidence_threshold = position_monitor_config.get("low_confidence_threshold", 0.3)
-        self.very_low_confidence_threshold = position_monitor_config.get("very_low_confidence_threshold", 0.3)
-        
-        self.pnl_threshold = position_monitor_config.get("pnl_threshold", -0.05)  # -5%
-        self.max_position_age = position_monitor_config.get("max_position_age", 3600)  # 1 hour
+        # Note: Confidence thresholds removed as per exit strategy update
+        # Note: PnL threshold removed as per exit strategy update
+        # Keep only max position age (3 hours = 10800 seconds)
+        self.max_position_age = 10800  # 3 hours
 
         # Component managers
         self.order_manager: Optional[EnhancedOrderManager] = None
@@ -171,10 +163,6 @@ class PositionMonitor:
         try:
             if self.monitoring_interval <= 0:
                 self.logger.error(invalid("Monitoring interval must be positive"))
-                return False
-
-            if not 0 <= self.confidence_threshold <= 1:
-                self.logger.error(invalid("Confidence threshold must be between 0 and 1"))
                 return False
 
             if self.max_position_age <= 0:

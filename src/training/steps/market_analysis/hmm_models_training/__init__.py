@@ -16,6 +16,14 @@ from .hmm_models_training_enhanced import (
     execute_enhanced_hmm_models_training
 )
 
+# Global HMM Classifier - Single model for all 20 HMM states
+from .global_hmm_classifier import (
+    GlobalHMMClassifier,
+    GlobalHMMTrainingStep,
+    create_global_hmm_training,
+    execute_global_hmm_training
+)
+
 # Validation framework functionality moved to ml_commons HMMValidationPipeline
 # from .validation_framework import (  # DEPRECATED - use ml_commons validation instead
 #     HMMTrainingValidator,
@@ -157,6 +165,12 @@ __all__ = [
     'StreamlinedHMMTrainingStep',
     'create_enhanced_hmm_models_training',
     'execute_enhanced_hmm_models_training',
+    
+    # Global HMM Classifier - Single model for all 20 HMM states
+    'GlobalHMMClassifier',
+    'GlobalHMMTrainingStep',
+    'create_global_hmm_training',
+    'execute_global_hmm_training',
     
     # Data structures - DEPRECATED: use ml_commons evaluation pipeline instead
     # 'TrainingMetrics',

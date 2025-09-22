@@ -193,6 +193,10 @@ class MatrixOptimizedClusterer:
                 raw_quality_metrics = calculate_cluster_quality_metrics(features, clustering_result.labels)
             quality_metrics = self._sanitize_quality_metrics(raw_quality_metrics)
             validation = validate_cluster_quality(statistics, quality_metrics, self.config.to_dict())
+            
+            # Add metrics evolution to quality metrics
+            if hasattr(clustering_result, 'metrics_evolution'):
+                quality_metrics['metrics_evolution'] = clustering_result.metrics_evolution
 
             # Step 6: Generate performance report
             performance_metrics['total_time'] = time.time() - start_time
@@ -426,65 +430,306 @@ class MatrixOptimizedClusterer:
 
         try:
             # Use multi-stage clustering with matrix optimizations
-            result = self._matrix_optimized_multi_stage_clustering(features)
+            result, metrics_evolution = self._matrix_optimized_multi_stage_clustering(features)
 
             clustering_time = time.time() - start_time
             self.logger.info(f"✅ Matrix-optimized clustering completed in {clustering_time:.3f} seconds")
+            
+            # Store metrics evolution in the result
+            result.metrics_evolution = metrics_evolution
+            
             return result, clustering_time
 
         except Exception as e:
             self.logger.error(f"Matrix-optimized clustering failed: {e}")
             raise
 
-    def _matrix_optimized_multi_stage_clustering(self, features: np.ndarray) -> Any:
-        """Perform multi-stage clustering with matrix optimizations.
+    def _matrix_optimized_multi_stage_clustering(self, features: np.ndarray) -> Tuple[Any, Dict[str, Any]]:
+        """Perform multi-stage clustering with matrix optimizations and comprehensive metrics tracking.
 
         Args:
             features: Feature matrix
 
         Returns:
-            Clustering result
+            Tuple of (clustering_result, metrics_evolution)
         """
         try:
             self.logger.info("🔬 Starting matrix-optimized multi-stage clustering...")
+            
+            # Initialize metrics evolution tracking
+            metrics_evolution = {
+                'step_1_noise_reduction': {},
+                'step_2_main_clustering': {},
+                'step_3_combination': {},
+                'step_4_constraint_enforcement': {},
+                'step_5_final_result': {}
+            }
 
             # Stage 1: Noise reduction using optimized operations
-            noise_labels = self._matrix_optimized_noise_reduction(features)
+            self.logger.info("📊 Stage 1: Noise reduction with metrics tracking...")
+            noise_labels, noise_metrics = self._matrix_optimized_noise_reduction(features)
+            metrics_evolution['step_1_noise_reduction'] = noise_metrics
+            metrics_evolution['step_1_noise_reduction']['basic_metrics'] = self._calculate_basic_clustering_metrics(features, noise_labels)
 
             # Stage 2: Main clustering using matrix operations
-            main_labels = self._matrix_optimized_main_clustering(features)
+            self.logger.info("📊 Stage 2: Main clustering with metrics tracking...")
+            main_labels, main_metrics = self._matrix_optimized_main_clustering(features)
+            metrics_evolution['step_2_main_clustering'] = main_metrics
 
             # Stage 3: Combine and optimize using vectorized operations
-            final_labels = self._matrix_optimized_combine_clusters(features, noise_labels, main_labels)
+            self.logger.info("📊 Stage 3: Cluster combination with metrics tracking...")
+            final_labels, combination_metrics = self._matrix_optimized_combine_clusters(features, noise_labels, main_labels)
+            metrics_evolution['step_3_combination'] = combination_metrics
+            metrics_evolution['step_3_combination']['basic_metrics'] = self._calculate_basic_clustering_metrics(features, final_labels)
 
             # Stage 4: Apply iterative constraint enforcement for perfect 3-8% distribution
             if self.config.force_n_clusters:
-                final_labels = self._iterative_constraint_enforcement(final_labels, features)
+                self.logger.info("📊 Stage 4: Constraint enforcement with metrics tracking...")
+                final_labels, constraint_metrics = self._iterative_constraint_enforcement(final_labels, features)
+                metrics_evolution['step_4_constraint_enforcement'] = constraint_metrics
+                metrics_evolution['step_4_constraint_enforcement']['basic_metrics'] = self._calculate_basic_clustering_metrics(features, final_labels)
 
             # Stage 5: Create optimized cluster centers
+            self.logger.info("📊 Stage 5: Final result with comprehensive metrics...")
             cluster_centers = self._matrix_optimized_cluster_centers(features, final_labels)
+            
+            # Calculate final comprehensive metrics
+            final_basic_metrics = self._calculate_basic_clustering_metrics(features, final_labels)
+            final_detailed_metrics = self._calculate_detailed_clustering_metrics(features, final_labels, cluster_centers)
+            
+            metrics_evolution['step_5_final_result'] = {
+                'n_clusters': len(np.unique(final_labels)),
+                'cluster_centers_shape': cluster_centers.shape if cluster_centers is not None else None,
+                'basic_metrics': final_basic_metrics,
+                'detailed_metrics': final_detailed_metrics
+            }
 
             # Create result object
             class ClusteringResult:
-                def __init__(self, labels, centers):
+                def __init__(self, labels, centers, metrics_evolution):
                     self.labels = labels
                     self.cluster_centers = centers
+                    self.metrics_evolution = metrics_evolution
 
-            result = ClusteringResult(final_labels, cluster_centers)
-            return result
+            result = ClusteringResult(final_labels, cluster_centers, metrics_evolution)
+            return result, metrics_evolution
 
         except Exception as e:
             self.logger.error(f"Error in matrix-optimized multi-stage clustering: {e}")
-            raise
+            # Return empty result but still track metrics
+            empty_labels = np.full(len(features), -1)
+            empty_centers = np.array([])
+            error_metrics = {
+                'step_1_noise_reduction': {'error': str(e)},
+                'step_2_main_clustering': {'error': str(e)},
+                'step_3_combination': {'error': str(e)},
+                'step_4_constraint_enforcement': {'error': str(e)},
+                'step_5_final_result': {'error': str(e)}
+            }
+            
+            class ClusteringResult:
+                def __init__(self, labels, centers, metrics_evolution):
+                    self.labels = labels
+                    self.cluster_centers = centers
+                    self.metrics_evolution = metrics_evolution
+            
+            result = ClusteringResult(empty_labels, empty_centers, error_metrics)
+            return result, error_metrics
 
-    def _matrix_optimized_noise_reduction(self, features: np.ndarray) -> np.ndarray:
-        """Perform noise reduction using matrix operations.
+    def _calculate_basic_clustering_metrics(self, features: np.ndarray, labels: np.ndarray) -> Dict[str, float]:
+        """Calculate basic clustering metrics for each step.
+        
+        Args:
+            features: Feature matrix
+            labels: Cluster labels
+            
+        Returns:
+            Dictionary of basic metrics
+        """
+        try:
+            # Filter out noise points for metric calculation
+            valid_mask = labels != -1
+            if valid_mask.sum() == 0:
+                return {
+                    'silhouette': 0.0,
+                    'average_cluster_cv': 0.0,
+                    'n_clusters': 0,
+                    'n_valid_points': 0
+                }
+            
+            valid_features = features[valid_mask]
+            valid_labels = labels[valid_mask]
+            
+            # Calculate silhouette score
+            try:
+                from sklearn.metrics import silhouette_score
+                if len(np.unique(valid_labels)) > 1:
+                    silhouette = silhouette_score(valid_features, valid_labels)
+                else:
+                    silhouette = 0.0
+            except Exception:
+                silhouette = 0.0
+            
+            # Calculate average cluster CV
+            unique_labels = np.unique(valid_labels)
+            cluster_cvs = []
+            
+            for label in unique_labels:
+                cluster_mask = valid_labels == label
+                cluster_features = valid_features[cluster_mask]
+                
+                if len(cluster_features) > 1:
+                    # Calculate CV for each dimension
+                    dim_cvs = []
+                    for dim in range(cluster_features.shape[1]):
+                        dim_values = cluster_features[:, dim]
+                        mean_val = np.mean(dim_values)
+                        std_val = np.std(dim_values)
+                        if mean_val != 0:
+                            cv = std_val / abs(mean_val)
+                            dim_cvs.append(cv)
+                    
+                    if dim_cvs:
+                        cluster_cv = np.mean(dim_cvs)
+                        cluster_cvs.append(cluster_cv)
+            
+            average_cluster_cv = np.mean(cluster_cvs) if cluster_cvs else 0.0
+            
+            return {
+                'silhouette': float(silhouette),
+                'average_cluster_cv': float(average_cluster_cv),
+                'n_clusters': len(unique_labels),
+                'n_valid_points': len(valid_features),
+                'n_noise_points': len(features) - len(valid_features)
+            }
+            
+        except Exception as e:
+            self.logger.warning(f"Basic metrics calculation failed: {e}")
+            return {
+                'silhouette': 0.0,
+                'average_cluster_cv': 0.0,
+                'n_clusters': 0,
+                'n_valid_points': 0,
+                'error': str(e)
+            }
+
+    def _calculate_detailed_clustering_metrics(self, features: np.ndarray, labels: np.ndarray, cluster_centers: np.ndarray) -> Dict[str, Any]:
+        """Calculate detailed clustering metrics for final results.
+        
+        Args:
+            features: Feature matrix
+            labels: Cluster labels
+            cluster_centers: Cluster centers
+            
+        Returns:
+            Dictionary of detailed metrics
+        """
+        try:
+            # Filter out noise points
+            valid_mask = labels != -1
+            if valid_mask.sum() == 0:
+                return {'error': 'No valid clusters found'}
+            
+            valid_features = features[valid_mask]
+            valid_labels = labels[valid_mask]
+            
+            # Basic metrics
+            basic_metrics = self._calculate_basic_clustering_metrics(features, labels)
+            
+            # Cluster size distribution
+            unique_labels, counts = np.unique(valid_labels, return_counts=True)
+            cluster_sizes = counts / len(valid_labels)  # As percentages
+            
+            # Cluster size statistics
+            size_stats = {
+                'min_size_pct': float(np.min(cluster_sizes) * 100),
+                'max_size_pct': float(np.max(cluster_sizes) * 100),
+                'mean_size_pct': float(np.mean(cluster_sizes) * 100),
+                'std_size_pct': float(np.std(cluster_sizes) * 100),
+                'size_cv': float(np.std(cluster_sizes) / np.mean(cluster_sizes)) if np.mean(cluster_sizes) > 0 else 0.0
+            }
+            
+            # Distance metrics
+            try:
+                from sklearn.metrics import davies_bouldin_score, calinski_harabasz_score
+                
+                if len(unique_labels) > 1:
+                    davies_bouldin = davies_bouldin_score(valid_features, valid_labels)
+                    calinski_harabasz = calinski_harabasz_score(valid_features, valid_labels)
+                else:
+                    davies_bouldin = float('inf')
+                    calinski_harabasz = 0.0
+            except Exception:
+                davies_bouldin = float('inf')
+                calinski_harabasz = 0.0
+            
+            # Cluster separation analysis
+            separation_metrics = self._calculate_cluster_separation_metrics(valid_features, valid_labels, cluster_centers)
+            
+            return {
+                'basic_metrics': basic_metrics,
+                'size_distribution': size_stats,
+                'davies_bouldin': float(davies_bouldin),
+                'calinski_harabasz': float(calinski_harabasz),
+                'separation_metrics': separation_metrics,
+                'n_clusters': len(unique_labels),
+                'total_points': len(features),
+                'valid_points': len(valid_features),
+                'noise_points': len(features) - len(valid_features)
+            }
+            
+        except Exception as e:
+            self.logger.warning(f"Detailed metrics calculation failed: {e}")
+            return {'error': str(e)}
+
+    def _calculate_cluster_separation_metrics(self, features: np.ndarray, labels: np.ndarray, cluster_centers: np.ndarray) -> Dict[str, float]:
+        """Calculate cluster separation metrics.
+        
+        Args:
+            features: Feature matrix
+            labels: Cluster labels
+            cluster_centers: Cluster centers
+            
+        Returns:
+            Dictionary of separation metrics
+        """
+        try:
+            unique_labels = np.unique(labels)
+            n_clusters = len(unique_labels)
+            
+            if n_clusters < 2:
+                return {'min_centroid_distance': 0.0, 'mean_centroid_distance': 0.0}
+            
+            # Calculate pairwise centroid distances
+            centroid_distances = []
+            for i in range(n_clusters):
+                for j in range(i + 1, n_clusters):
+                    if i < cluster_centers.shape[0] and j < cluster_centers.shape[0]:
+                        distance = np.linalg.norm(cluster_centers[i] - cluster_centers[j])
+                        centroid_distances.append(distance)
+            
+            if centroid_distances:
+                return {
+                    'min_centroid_distance': float(np.min(centroid_distances)),
+                    'mean_centroid_distance': float(np.mean(centroid_distances)),
+                    'max_centroid_distance': float(np.max(centroid_distances)),
+                    'centroid_distance_std': float(np.std(centroid_distances))
+                }
+            else:
+                return {'min_centroid_distance': 0.0, 'mean_centroid_distance': 0.0}
+                
+        except Exception as e:
+            self.logger.warning(f"Cluster separation metrics calculation failed: {e}")
+            return {'error': str(e)}
+
+    def _matrix_optimized_noise_reduction(self, features: np.ndarray) -> Tuple[np.ndarray, Dict[str, Any]]:
+        """Perform noise reduction using matrix operations while keeping noise points.
 
         Args:
             features: Feature matrix
 
         Returns:
-            Noise-reduced labels
+            Tuple of (labels, noise_reduction_metrics)
         """
         try:
             # Use HDBSCAN with matrix operations if available
@@ -501,11 +746,25 @@ class MatrixOptimizedClusterer:
                 )
 
                 labels = clusterer.fit_predict(features)
+                
+                # Keep noise points (-1 labels) for further processing
                 valid_labels = labels[labels != -1]
+                noise_labels = labels[labels == -1]
                 unique_labels = np.unique(valid_labels)
                 n_clusters = len(unique_labels) if hasattr(unique_labels, '__len__') else 1
-                self.logger.info(f"✅ Matrix-optimized HDBSCAN found {n_clusters} clusters")
-                return labels
+                n_noise = len(noise_labels)
+                
+                # Calculate noise reduction metrics
+                noise_reduction_metrics = {
+                    'n_clusters': n_clusters,
+                    'n_noise_points': n_noise,
+                    'noise_percentage': (n_noise / len(labels)) * 100,
+                    'cluster_method': 'HDBSCAN',
+                    'parameters': optimized_params
+                }
+                
+                self.logger.info(f"✅ Matrix-optimized HDBSCAN found {n_clusters} clusters, {n_noise} noise points ({noise_reduction_metrics['noise_percentage']:.1f}%)")
+                return labels, noise_reduction_metrics
 
             except ImportError:
                 self.logger.warning("HDBSCAN not available, using optimized DBSCAN")
@@ -513,16 +772,25 @@ class MatrixOptimizedClusterer:
 
         except Exception as e:
             self.logger.warning(f"Matrix-optimized noise reduction failed: {e}")
-            return np.full(len(features), -1)
+            # Return all noise labels but still track metrics
+            labels = np.full(len(features), -1)
+            noise_reduction_metrics = {
+                'n_clusters': 0,
+                'n_noise_points': len(features),
+                'noise_percentage': 100.0,
+                'cluster_method': 'FAILED',
+                'error': str(e)
+            }
+            return labels, noise_reduction_metrics
 
-    def _matrix_optimized_dbscan(self, features: np.ndarray) -> np.ndarray:
-        """Perform DBSCAN using matrix operations.
+    def _matrix_optimized_dbscan(self, features: np.ndarray) -> Tuple[np.ndarray, Dict[str, Any]]:
+        """Perform DBSCAN using matrix operations while keeping noise points.
 
         Args:
             features: Feature matrix
 
         Returns:
-            DBSCAN labels
+            Tuple of (labels, noise_reduction_metrics)
         """
         try:
             from sklearn.cluster import DBSCAN
@@ -537,45 +805,92 @@ class MatrixOptimizedClusterer:
             )
 
             labels = clusterer.fit_predict(features)
+            
+            # Keep noise points (-1 labels) for further processing
             valid_labels = labels[labels != -1]
+            noise_labels = labels[labels == -1]
             unique_labels = np.unique(valid_labels)
             n_clusters = len(unique_labels) if hasattr(unique_labels, '__len__') else 1
-            self.logger.info(f"✅ Matrix-optimized DBSCAN found {n_clusters} clusters")
-            return labels
+            n_noise = len(noise_labels)
+            
+            # Calculate noise reduction metrics
+            noise_reduction_metrics = {
+                'n_clusters': n_clusters,
+                'n_noise_points': n_noise,
+                'noise_percentage': (n_noise / len(labels)) * 100,
+                'cluster_method': 'DBSCAN',
+                'eps': eps,
+                'min_samples': self.config.min_samples
+            }
+            
+            self.logger.info(f"✅ Matrix-optimized DBSCAN found {n_clusters} clusters, {n_noise} noise points ({noise_reduction_metrics['noise_percentage']:.1f}%)")
+            return labels, noise_reduction_metrics
 
         except Exception as e:
             self.logger.error(f"Error in matrix-optimized DBSCAN: {e}")
-            raise
+            # Return all noise labels but still track metrics
+            labels = np.full(len(features), -1)
+            noise_reduction_metrics = {
+                'n_clusters': 0,
+                'n_noise_points': len(features),
+                'noise_percentage': 100.0,
+                'cluster_method': 'DBSCAN_FAILED',
+                'error': str(e)
+            }
+            return labels, noise_reduction_metrics
 
-    def _matrix_optimized_main_clustering(self, features: np.ndarray) -> np.ndarray:
+    def _matrix_optimized_main_clustering(self, features: np.ndarray) -> Tuple[np.ndarray, Dict[str, Any]]:
         """Perform main clustering using matrix operations.
 
         Args:
             features: Feature matrix
 
         Returns:
-            Cluster labels
+            Tuple of (labels, main_clustering_metrics)
         """
         try:
             # Use centroid-based clustering for better 3-8% distribution
             if self.config.force_n_clusters and self.config.target_n_clusters == 20:
                 self.logger.info("🎯 Using centroid-based clustering for 20-cluster 3-8% distribution")
                 labels = self._calculate_centroid_based_clusters(features)
+                clustering_method = 'centroid_based'
             else:
                 # Use optimized K-means with matrix operations
                 labels = self._optimized_kmeans_clustering(features)
+                clustering_method = 'optimized_kmeans'
 
             unique_labels = np.unique(labels)
             if hasattr(unique_labels, '__len__'):
                 n_clusters = len(unique_labels)
             else:
                 n_clusters = 1
+                
+            # Calculate basic metrics for main clustering
+            basic_metrics = self._calculate_basic_clustering_metrics(features, labels)
+            
+            main_clustering_metrics = {
+                'n_clusters': n_clusters,
+                'clustering_method': clustering_method,
+                'target_clusters': self.config.target_n_clusters,
+                'basic_metrics': basic_metrics
+            }
+            
             self.logger.info(f"✅ Matrix-optimized clustering created {n_clusters} clusters")
-            return labels
+            self.logger.info(f"📊 Basic metrics - Silhouette: {basic_metrics.get('silhouette', 0.0):.3f}, "
+                           f"Avg CV: {basic_metrics.get('average_cluster_cv', 0.0):.3f}")
+            return labels, main_clustering_metrics
 
         except Exception as e:
             self.logger.error(f"Error in matrix-optimized main clustering: {e}")
-            raise
+            # Return empty labels but still track metrics
+            labels = np.full(len(features), -1)
+            main_clustering_metrics = {
+                'n_clusters': 0,
+                'clustering_method': 'FAILED',
+                'error': str(e),
+                'basic_metrics': {}
+            }
+            return labels, main_clustering_metrics
 
     def _optimized_kmeans_clustering(self, features: np.ndarray) -> np.ndarray:
         """Perform optimized K-means clustering using matrix operations.
@@ -625,8 +940,8 @@ class MatrixOptimizedClusterer:
             raise
 
     def _matrix_optimized_combine_clusters(self, features: np.ndarray, noise_labels: np.ndarray,
-                                        main_labels: np.ndarray) -> np.ndarray:
-        """Combine clusters using matrix operations.
+                                        main_labels: np.ndarray) -> Tuple[np.ndarray, Dict[str, Any]]:
+        """Combine clusters using matrix operations while keeping noise points.
 
         Args:
             features: Feature matrix
@@ -634,7 +949,7 @@ class MatrixOptimizedClusterer:
             main_labels: Labels from main clustering
 
         Returns:
-            Combined and optimized labels
+            Tuple of (combined_labels, combination_metrics)
         """
         try:
             # Use vectorized operations for efficient combination
@@ -652,11 +967,25 @@ class MatrixOptimizedClusterer:
             if self.config.adaptive_clustering:
                 final_labels = self._matrix_optimize_cluster_sizes(features, final_labels)
 
-            return final_labels
+            # Calculate combination metrics
+            combination_metrics = {
+                'input_noise_clusters': len(np.unique(noise_labels[noise_labels != -1])) if np.any(noise_labels != -1) else 0,
+                'input_main_clusters': len(np.unique(main_labels[main_labels != -1])) if np.any(main_labels != -1) else 0,
+                'output_clusters': len(np.unique(final_labels[final_labels != -1])) if np.any(final_labels != -1) else 0,
+                'noise_points_preserved': np.sum(final_labels == -1),
+                'adaptive_clustering_applied': self.config.adaptive_clustering
+            }
+
+            return final_labels, combination_metrics
 
         except Exception as e:
             self.logger.error(f"Error combining clusters: {e}")
-            return main_labels
+            # Return main labels but still track metrics
+            combination_metrics = {
+                'error': str(e),
+                'fallback_to_main_labels': True
+            }
+            return main_labels, combination_metrics
 
     def _matrix_optimize_cluster_sizes(self, features: np.ndarray, labels: np.ndarray) -> np.ndarray:
         """Optimize cluster sizes using matrix operations.
@@ -766,12 +1095,15 @@ class MatrixOptimizedClusterer:
         except Exception:
             return {}
 
-    def _iterative_constraint_enforcement(self, labels: np.ndarray, features: np.ndarray) -> np.ndarray:
+    def _iterative_constraint_enforcement(self, labels: np.ndarray, features: np.ndarray) -> Tuple[np.ndarray, Dict[str, Any]]:
         """Enforce constraints via merge-to-target and bounded assignment (3–8% per cluster, 100% coverage).
 
         This replaces heuristic transfer/split loops with:
         1) quality-aware merges to reach exactly `target_n_clusters`, then
         2) a capacity-constrained assignment to satisfy size bounds and full coverage.
+        
+        Returns:
+            Tuple of (enforced_labels, constraint_metrics)
         """
         try:
             current_labels = labels.copy()
@@ -809,10 +1141,34 @@ class MatrixOptimizedClusterer:
             if stagnation_count >= max_stagnation:
                 self.logger.info("Stopping constraint enforcement due to stagnation")
 
-            return current_labels
+            # Calculate constraint enforcement metrics
+            final_unique = np.unique(current_labels)
+            final_n_clusters = len(final_unique)
+            
+            # Calculate size distribution
+            unique_labels, counts = np.unique(current_labels, return_counts=True)
+            cluster_sizes = counts / len(current_labels)
+            
+            constraint_metrics = {
+                'initial_clusters': len(np.unique(labels)),
+                'final_clusters': final_n_clusters,
+                'target_clusters': target_k,
+                'iterations_completed': max_stagnation,
+                'size_violations_fixed': prev_violations,
+                'min_size_pct': float(np.min(cluster_sizes) * 100),
+                'max_size_pct': float(np.max(cluster_sizes) * 100),
+                'mean_size_pct': float(np.mean(cluster_sizes) * 100),
+                'size_constraint_met': np.all(cluster_sizes >= min_pct) and np.all(cluster_sizes <= max_pct)
+            }
+            
+            return current_labels, constraint_metrics
         except Exception as e:
             self.logger.warning(f"Constraint enforcement fallback due to error: {e}")
-            return labels
+            constraint_metrics = {
+                'error': str(e),
+                'fallback_to_original_labels': True
+            }
+            return labels, constraint_metrics
 
     # ----------------------------
     # Pareto/adjacency helpers

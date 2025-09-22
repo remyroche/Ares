@@ -76,7 +76,14 @@ def extract_regime_summary_vectors(
 	if not X or len(X[0]) == 0:
 		X = [[i, 0, 0, 0] for i in range(len(regime_keys))]
 
-	return np.asarray(X, dtype=float), regime_keys
+	X = np.asarray(X, dtype=float)
+	
+	# Apply StandardScaler for consistent scaling across all dimensions
+	from sklearn.preprocessing import StandardScaler
+	scaler = StandardScaler()
+	X_scaled = scaler.fit_transform(X)
+	
+	return X_scaled, regime_keys
 
 
 def aggregate_assignments_to_regimes(assignments: List[int]) -> Dict[int, int]:

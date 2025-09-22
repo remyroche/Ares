@@ -48,6 +48,12 @@ from .shared_feature_utils import create_enhanced_features_with_names
 from src.utils.ml_common.config.base_training_config import HMMTrainingConfig
 from src.utils.ml_common.training.base_training_step import BaseTrainingStep
 
+# New enhanced components
+from .timeframe_config import get_timeframe_config, validate_timeframe_consistency, get_primary_timeframe
+from .early_stopping import get_early_stopping_config, get_overfitting_detector, EarlyStoppingMonitor
+from .temporal_validation import get_temporal_config, get_temporal_validator, get_temporal_cv
+from .temporal_cross_validation import get_temporal_cv_config, get_validation_pipeline
+
 # Feature generation system imports
 try:
     from src.feature_generation.core.feature_bank import get_global_feature_bank
@@ -386,7 +392,7 @@ except ImportError as e:
                 return False
 
         @staticmethod
-        def validate_train_test_split(X_train, X_test, y_train, y_test, temporal_check: bool = False) -> tuple[bool, str]:
+        def validate_train_test_split(X_train, X_test, y_train, y_test, temporal_check: bool = True) -> tuple[bool, str]:
             """Basic train/test split validation."""
             try:
                 if len(X_train) == 0 or len(X_test) == 0:
@@ -501,7 +507,7 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
                 
             config = HMMTrainingConfig(
                 model_name="hmm_models_enhanced",
-                timeframe="15m",
+                timeframe=get_primary_timeframe(),
                 n_features=100,
                 sequence_length=20,
                 n_regimes=3,
@@ -1367,7 +1373,7 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
                             # Check split integrity
                             if SHARED_UTILITIES_AVAILABLE:
                                 is_split_valid, split_message = ValidationUtils.validate_train_test_split(
-                                    X_train, X_test, y_train, y_test, temporal_check=False
+                                    X_train, X_test, y_train, y_test, temporal_check=True
                                 )
                             else:
                                 # Basic split validation if shared utilities not available
@@ -1522,43 +1528,29 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
                             except Exception as e:
                                 tprint(f"⚠️ Error handling cluster assignments: {e}")
 
-                            # Comprehensive overfitting detection
-                            if SHARED_UTILITIES_AVAILABLE:
-                                overfitting_analysis = ValidationUtils.detect_overfitting_comprehensive(
-                                    train_predictions=train_predictions,
-                                    test_predictions=test_predictions,
-                                    train_labels=y_train,
-                                    test_labels=y_test,
-                                    train_probabilities=None,  # Will be filled if available
-                                    test_probabilities=None,   # Will be filled if available
-                                    model=model,
-                                    feature_importance=feature_importance
-                                )
-                            else:
-                                # Basic overfitting detection if shared utilities not available
-                                overfitting_analysis = {
-                                    'overfitting_detected': False,
-                                    'accuracy_gap': abs(train_accuracy - test_accuracy),
-                                    'message': 'Overfitting detection skipped - shared utilities not available'
-                                }
-
+                            # Enhanced overfitting detection with early stopping
+                            overfitting_detector = get_overfitting_detector()
+                            
                             # Get probabilities if available for enhanced analysis
+                            train_probabilities = None
+                            test_probabilities = None
                             if hasattr(model, 'predict_proba'):
                                 try:
                                     train_probabilities = model.predict_proba(X_train)
                                     test_probabilities = model.predict_proba(X_test)
-                                    overfitting_analysis = ValidationUtils.detect_overfitting_comprehensive(
-                                        train_predictions=train_predictions,
-                                        test_predictions=test_predictions,
-                                        train_labels=y_train,
-                                        test_labels=y_test,
-                                        train_probabilities=train_probabilities,
-                                        test_probabilities=test_probabilities,
-                                        model=model,
-                                        feature_importance=feature_importance
-                                    )
                                 except Exception:
                                     pass
+                            
+                            # Comprehensive overfitting analysis
+                            overfitting_analysis = overfitting_detector.comprehensive_overfitting_analysis(
+                                train_predictions=train_predictions,
+                                val_predictions=test_predictions,
+                                train_labels=y_train,
+                                val_labels=y_test,
+                                train_probabilities=train_probabilities,
+                                val_probabilities=test_probabilities,
+                                feature_importance=feature_importance
+                            )
 
                             # Enhanced overfitting reporting
                             if overfitting_analysis['is_overfitting']:

@@ -29,6 +29,12 @@ from src.utils.common_operations import (
     safe_dataframe_operation, safe_divide, safe_float, safe_int,
     ensure_directory, memory_checkpoint, optimize_memory, get_memory_usage
 )
+
+# New enhanced components
+from .timeframe_config import get_timeframe_config, validate_timeframe_consistency, get_primary_timeframe
+from .early_stopping import get_early_stopping_config, get_overfitting_detector, EarlyStoppingMonitor
+from .temporal_validation import get_temporal_config, get_temporal_validator, get_temporal_cv
+from .temporal_cross_validation import get_temporal_cv_config, get_validation_pipeline
 try:
     from src.utils.common_operations import (
         validate_dataframe, validate_finite, validate_positive, validate_range, 
@@ -252,7 +258,7 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
             if config is None:
                 config = EnsembleTrainingConfig(
                     model_name="hmm_ensemble_models",
-                    timeframe="15m",
+                    timeframe=get_primary_timeframe(),
                     min_samples_per_regime=500,  # 🔧 Reduced from 1000 to 500 for better regime coverage
                     enable_data_augmentation=True,
                     augmentation_method="smote",
@@ -2352,7 +2358,7 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
         # Get model paths from artifacts directory - use correct path where models are actually saved
         symbol = getattr(self.config, 'symbol', 'ETHUSDT')
         exchange = getattr(self.config, 'exchange', 'binance')
-        timeframe = getattr(self.config, 'timeframe', '15m')  # HMM models are trained on 15m timeframe
+        timeframe = getattr(self.config, 'timeframe', get_primary_timeframe())  # HMM models use standardized timeframe
 
         # Use the correct path where hmm_models_training actually saves models
         base_models_dir = Path("models/hmm_ensemble_models")
@@ -3130,7 +3136,7 @@ if __name__ == "__main__":
     # Create configuration
     config = EnsembleTrainingConfig(
         model_name="hmm_ensemble_models",
-        timeframe="15m",
+        timeframe=get_primary_timeframe(),
         model_types=["catboost", "elastic_net", "ensemble_rf"],
         hpo_n_trials=50,  # Reduced for demo
         enable_hpo=True,

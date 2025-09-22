@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Dict, List, Tuple, Any
+from contextlib import nullcontext
 
 import numpy as np
 from sklearn.cluster import KMeans
@@ -14,6 +15,14 @@ from .utils import (
 	aggregate_assignments_to_regimes,
 	map_regime_key_to_int,
 )
+
+# Optional vectorized utilities
+try:
+	from src.utils.matrix_operations.vectorized_core import get_vectorized_processing_core
+	_VECTOR_CORE_AVAILABLE = True
+except Exception:
+	_VECTOR_CORE_AVAILABLE = False
+	get_vectorized_processing_core = None
 
 
 @dataclass
@@ -51,7 +60,197 @@ class CoverageConstrainedClusterer:
 			metrics["size_cv"] = float(np.std(size_arr) / (np.mean(size_arr) + 1e-9))
 		else:
 			metrics["size_cv"] = 0.0
+		# Within-cluster compactness via CV of distances to centroids (lower is better)
+		try:
+			if X_used is not None and len(X_used) > 0 and len(np.unique(labels)) > 0:
+				centroids = {int(k): X_used[labels == k].mean(axis=0) for k in np.unique(labels)}
+				dists = np.zeros(len(X_used), dtype=float)
+				per_cluster_cv: Dict[int, float] = {}
+				for k in np.unique(labels):
+					idx = np.where(labels == k)[0]
+					if idx.size == 0:
+						continue
+					cd = np.linalg.norm(X_used[idx] - centroids[int(k)], axis=1)
+					dists[idx] = cd
+					mu_k = float(np.mean(cd) + 1e-9)
+					sigma_k = float(np.std(cd))
+					per_cluster_cv[int(k)] = float(sigma_k / mu_k)
+				mu = float(np.mean(dists) + 1e-9)
+				sigma = float(np.std(dists))
+				metrics["within_cluster_cv"] = float(sigma / mu)
+				# Attach per-cluster CV as well for diagnostics
+				metrics["per_cluster_within_cv"] = {int(k): float(v) for k, v in per_cluster_cv.items()}
+			else:
+				metrics["within_cluster_cv"] = float("inf")
+		except Exception:
+			metrics["within_cluster_cv"] = float("inf")
 		return metrics
+
+	def _compute_cluster_centroids(self, X: np.ndarray, labels: np.ndarray) -> Dict[int, np.ndarray]:
+		centroids: Dict[int, np.ndarray] = {}
+		for k in np.unique(labels):
+			idx = np.where(labels == k)[0]
+			if idx.size == 0:
+				continue
+			centroids[int(k)] = X[idx].mean(axis=0)
+		return centroids
+
+	def _compute_cluster_mean_distance(self, X: np.ndarray, labels: np.ndarray, centroids: Dict[int, np.ndarray]) -> Dict[int, float]:
+		mean_d: Dict[int, float] = {}
+		for k, c in centroids.items():
+			idx = np.where(labels == k)[0]
+			if idx.size == 0:
+				mean_d[k] = 0.0
+				continue
+			cd = np.linalg.norm(X[idx] - c, axis=1)
+			mean_d[k] = float(np.mean(cd))
+		return mean_d
+
+	def _labels_from_mapping(self, keys_order: List[str], mapping: Dict[str, int]) -> np.ndarray:
+		return np.array([int(mapping[k]) for k in keys_order], dtype=int)
+
+	def _refine_frontiers(
+		self,
+		X_used: np.ndarray,
+		selected_keys_order: List[str],
+		cluster_labels: Dict[str, int],
+		counts_per_key: Dict[str, int],
+		total_samples: int,
+	) -> Dict[str, int]:
+		cfg = self.config
+		if X_used.size == 0 or not selected_keys_order:
+			return cluster_labels
+
+		# Build arrays aligned to selected_keys_order
+		labels = self._labels_from_mapping(selected_keys_order, cluster_labels)
+		unique_clusters = sorted([int(c) for c in np.unique(labels)])
+		if len(unique_clusters) < 2:
+			return cluster_labels
+
+		min_size, max_size = compute_cluster_size_bounds(total_samples, cfg.min_cluster_fraction, cfg.max_cluster_fraction)
+		target_count = int(round(cfg.target_cluster_fraction * total_samples))
+
+		core = get_vectorized_processing_core() if _VECTOR_CORE_AVAILABLE and cfg.use_matrix_ops else None
+		cm = core.memory_checkpoint("frontier_refinement") if core is not None else None
+		ctx = cm if cm is not None else nullcontext()
+		with ctx:
+			for it in range(max(1, int(cfg.move_iterations))):
+				# Recompute centroids and mean distances
+				centroids = self._compute_cluster_centroids(X_used, labels)
+				mean_dist = self._compute_cluster_mean_distance(X_used, labels, centroids)
+
+				# Precompute size per cluster in sample counts
+				sizes: Dict[int, int] = {}
+				for k_idx, k in enumerate(selected_keys_order):
+					lab = int(labels[k_idx])
+					sizes[lab] = sizes.get(lab, 0) + int(counts_per_key.get(k, 0))
+
+				# Matrix of distances to all centroids
+				centroid_mat = np.vstack([centroids[c] for c in unique_clusters])
+				d2all = np.linalg.norm(X_used[:, None, :] - centroid_mat[None, :, :], axis=2)
+				# Nearest and second-nearest cluster indices (relative to unique_clusters ordering)
+				nearest_idx = np.argmin(d2all, axis=1)
+				relabeled_nearest = np.array([unique_clusters[i] for i in nearest_idx], dtype=int)
+				d_sorted_idx = np.argsort(d2all, axis=1)
+				second_idx = d_sorted_idx[:, 1]
+				relabeled_second = np.array([unique_clusters[i] for i in second_idx], dtype=int)
+				d1 = d2all[np.arange(len(X_used)), nearest_idx]
+				d2 = d2all[np.arange(len(X_used)), second_idx]
+
+				# Candidate frontier points: close to boundary between current and second
+				ratio = (d2 + 1e-9) / (d1 + 1e-9)
+				frontier_mask = ratio <= float(cfg.frontier_ratio_threshold)
+
+				# Build candidate move list with scores
+				candidates: List[Tuple[float, int, int]] = []  # (score, idx, dest_cluster)
+				for i in np.where(frontier_mask)[0].tolist():
+					current = int(labels[i])
+					dest = int(relabeled_second[i]) if current == int(relabeled_nearest[i]) else int(relabeled_nearest[i])
+					if dest == current:
+						continue
+					reg_key = selected_keys_order[i]
+					reg_size = int(counts_per_key.get(reg_key, 0))
+					if reg_size <= 0:
+						continue
+
+					# Size ratio constraint: don't move if dest already 50%+ bigger than src
+					size_src = int(sizes.get(current, 0))
+					size_dst = int(sizes.get(dest, 0))
+					if size_src <= 0:
+						continue
+					if float(size_dst) >= float(cfg.max_size_ratio_move) * float(size_src):
+						continue
+
+					# Check size bounds after move
+					new_src = size_src - reg_size
+					new_dst = size_dst + reg_size
+					if cfg.enforce_size_bounds_during_refinement:
+						if new_src < min_size or new_dst > max_size:
+							continue
+
+					# CV-like similarity: distance normalized by cluster mean distance
+					d_curr = float(np.linalg.norm(X_used[i] - centroids[current]))
+					d_alt = float(np.linalg.norm(X_used[i] - centroids[dest]))
+					md_curr = float(mean_dist.get(current, d_curr + 1e-9)) + 1e-9
+					md_alt = float(mean_dist.get(dest, d_alt + 1e-9)) + 1e-9
+					cv_curr = d_curr / md_curr
+					cv_alt = d_alt / md_alt
+
+					# Approx silhouette change
+					a = max(d_curr, 1e-9)
+					b = max(d_alt, 1e-9)
+					s_before = (b - a) / max(a, b)
+					s_after = (a - b) / max(a, b)
+					delta_s = s_after - s_before
+
+					# Size balance improvement toward target
+					dev_src_before = (size_src - target_count) ** 2 + (size_dst - target_count) ** 2
+					dev_src_after = (new_src - target_count) ** 2 + (new_dst - target_count) ** 2
+					delta_size_balance = float(dev_src_before - dev_src_after)
+
+					# Final score
+					score = (
+						cfg.cv_weight * (cv_curr - cv_alt) +
+						cfg.silhouette_weight * delta_s +
+						cfg.size_balance_weight * (delta_size_balance / (target_count ** 2 + 1e-9)) +
+						cfg.similarity_weight * ((d_curr - d_alt) / (md_curr + md_alt))
+					)
+					if score > 0:
+						candidates.append((float(score), int(i), int(dest)))
+
+				# Apply moves greedily by score while respecting constraints
+				if not candidates:
+					break
+				candidates.sort(key=lambda x: x[0], reverse=True)
+				moved = 0
+				for score, i, dest in candidates:
+					cur = int(labels[i])
+					if cur == dest:
+						continue
+					reg_key = selected_keys_order[i]
+					reg_size = int(counts_per_key.get(reg_key, 0))
+					size_src = int(sizes.get(cur, 0))
+					size_dst = int(sizes.get(dest, 0))
+					if size_src <= 0 or reg_size <= 0:
+						continue
+					if float(size_dst) >= float(cfg.max_size_ratio_move) * float(size_src):
+						continue
+					new_src = size_src - reg_size
+					new_dst = size_dst + reg_size
+					if cfg.enforce_size_bounds_during_refinement and (new_src < min_size or new_dst > max_size):
+						continue
+					# Commit move
+					labels[i] = dest
+					sizes[cur] = new_src
+					sizes[dest] = new_dst
+					cluster_labels[reg_key] = dest
+					moved += 1
+				# If no moves applied this iteration, stop
+				if moved == 0:
+					break
+
+		return cluster_labels
+
 
 	def _trim_outliers_per_cluster(self, X: np.ndarray, labels: np.ndarray) -> Tuple[np.ndarray, np.ndarray, List[int]]:
 		# Remove farthest points per cluster beyond quantile
@@ -290,6 +489,19 @@ class CoverageConstrainedClusterer:
 				cluster_labels[largest_regime] = new_cluster_id
 
 		# Recompute sizes after enforcement
+		# Frontier-based refinement to minimize CV and improve similarity while enforcing size constraints
+		selected_used = list(cluster_labels.keys())
+		idx_frontier = np.array([key_index[k] for k in selected_used], dtype=int)
+		X_frontier = X_regimes[idx_frontier]
+		cluster_labels = self._refine_frontiers(
+			X_frontier,
+			selected_used,
+			cluster_labels,
+			counts_per_key,
+			total,
+		)
+
+		# Recompute sizes after refinement
 		cluster_sizes: Dict[int, int] = {}
 		for sk, lab in cluster_labels.items():
 			cluster_sizes[lab] = cluster_sizes.get(lab, 0) + int(counts_per_key.get(sk, 0))
@@ -302,12 +514,24 @@ class CoverageConstrainedClusterer:
 		used_counts = sum([counts_per_key.get(sk, 0) for sk in selected_used])
 		coverage_pct = 100.0 * (used_counts / total) if total > 0 else 0.0
 
-		# Prepare evaluation metrics using all regime vectors but only for used labels
-		X_used = X_sel[valid_mask]
-		metrics = self._evaluate(X_sel, X_used, labels_used, cluster_sizes)
+		# Prepare evaluation metrics using refined labels
+		labels_refined = np.array([int(cluster_labels[k]) for k in selected_used], dtype=int)
+		X_used = X_frontier
+		metrics = self._evaluate(X_regimes, X_used, labels_refined, cluster_sizes)
+		# Also report target size adherence
+		min_size, max_size = compute_cluster_size_bounds(total, self.config.min_cluster_fraction, self.config.max_cluster_fraction)
+		target_count = int(round(self.config.target_cluster_fraction * total))
+		size_deviation = float(np.mean([(sz - target_count) ** 2 for sz in cluster_sizes.values()]) ** 0.5) if cluster_sizes else 0.0
 		metrics.update({
 			"coverage_pct": coverage_pct,
-			"clusters": len(np.unique(labels_used)),
+			"clusters": len(np.unique(labels_refined)),
+			"target_size": target_count,
+			"size_deviation_rmse": size_deviation,
+			"min_allowed_size": min_size,
+			"max_allowed_size": max_size,
+			"within_cluster_cv": metrics.get("within_cluster_cv", float("inf")),
+			"davies_bouldin": metrics.get("davies_bouldin", float("inf")),
+			"silhouette": metrics.get("silhouette", -1.0),
 		})
 
 		return ClusteringOutputs(

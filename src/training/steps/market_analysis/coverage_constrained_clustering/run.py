@@ -37,6 +37,10 @@ def main() -> None:
     parser.add_argument("--max_coverage", type=float, default=0.95)
     parser.add_argument("--min_frac", type=float, default=0.03)
     parser.add_argument("--max_frac", type=float, default=0.08)
+    parser.add_argument("--target_frac", type=float, default=0.05)
+    parser.add_argument("--frontier_ratio", type=float, default=1.1)
+    parser.add_argument("--move_iters", type=int, default=5)
+    parser.add_argument("--max_size_ratio_move", type=float, default=1.5)
     args = parser.parse_args()
 
     artifact = load_hmm_artifact(args.input)
@@ -86,6 +90,10 @@ def main() -> None:
         max_coverage=args.max_coverage,
         min_cluster_fraction=args.min_frac,
         max_cluster_fraction=args.max_frac,
+        target_cluster_fraction=args.target_frac,
+        frontier_ratio_threshold=args.frontier_ratio,
+        move_iterations=args.move_iters,
+        max_size_ratio_move=args.max_size_ratio_move,
     )
     clusterer = CoverageConstrainedClusterer(cfg)
 

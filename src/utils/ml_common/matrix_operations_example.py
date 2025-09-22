@@ -20,12 +20,14 @@ def demonstrate_basic_operations():
     logger.info("🔧 Demonstrating Basic M1-Enhanced Matrix Operations")
     
     try:
-        from matrix_operations_improved import (
+        from src.utils.matrix_operations import (
             get_unified_matrix_operations,
-            m1_matrix_multiply,
-            m1_correlation_matrix,
-            m1_eigendecomposition,
-            m1_svd_decomposition
+            safe_matrix_multiply,
+            safe_correlation_matrix,
+            gpu_matrix_multiply,
+            correlation_matrix_gpu,
+            eigendecomposition_gpu,
+            svd_gpu
         )
 
         # Get the enhanced operations instance
@@ -41,17 +43,17 @@ def demonstrate_basic_operations():
         # 1. Matrix Multiplication
         logger.info("🚀 Testing M1-optimized matrix multiplication...")
         start_time = time.time()
-        result = m1_matrix_multiply(A, B)
+        result = safe_matrix_multiply(A, B)
         multiplication_time = time.time() - start_time
         logger.info(f"✅ Matrix multiplication completed in {multiplication_time:.3f}s")
         logger.info(f"Result shape: {result.shape}")
-        
+
         # 2. Correlation Matrix
         logger.info("📊 Testing M1-optimized correlation matrix...")
         # Create a sample DataFrame
         data = pd.DataFrame(np.random.randn(1000, 50))
         start_time = time.time()
-        corr_matrix = m1_correlation_matrix(data)
+        corr_matrix = safe_correlation_matrix(data)
         correlation_time = time.time() - start_time
         logger.info(f"✅ Correlation matrix completed in {correlation_time:.3f}s")
         logger.info(f"Correlation matrix shape: {corr_matrix.shape}")
@@ -61,7 +63,7 @@ def demonstrate_basic_operations():
         # Create a symmetric matrix for eigendecomposition
         symmetric_matrix = A @ A.T
         start_time = time.time()
-        eigenvalues, eigenvectors = m1_eigendecomposition(symmetric_matrix)
+        eigenvalues, eigenvectors = eigendecomposition_gpu(symmetric_matrix)
         eigen_time = time.time() - start_time
         logger.info(f"✅ Eigendecomposition completed in {eigen_time:.3f}s")
         logger.info(f"Eigenvalues shape: {eigenvalues.shape}, Eigenvectors shape: {eigenvectors.shape}")
@@ -69,7 +71,7 @@ def demonstrate_basic_operations():
         # 4. SVD Decomposition
         logger.info("📐 Testing M1-optimized SVD decomposition...")
         start_time = time.time()
-        U, S, V = m1_svd_decomposition(A, k=100)  # Truncated SVD
+        U, S, V = svd_gpu(A, k=100)  # Truncated SVD
         svd_time = time.time() - start_time
         logger.info(f"✅ SVD decomposition completed in {svd_time:.3f}s")
         logger.info(f"U shape: {U.shape}, S shape: {S.shape}, V shape: {V.shape}")

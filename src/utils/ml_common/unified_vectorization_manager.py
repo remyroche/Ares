@@ -100,59 +100,19 @@ class UnifiedVectorizationManager:
     def _initialize_components(self):
         """Initialize all optimization components."""
         # Import and initialize optimization modules
-        try:
-            # Matrix operations
-            from ..matrix_operations import get_unified_matrix_operations
-            self.matrix_ops = get_unified_matrix_operations()
-            self.matrix_ops_available = True
-        except ImportError:
-            self.matrix_ops = None
-            self.matrix_ops_available = False
-
-        try:
-            # Vectorized backtesting
-            from .vectorized_backtesting import VectorizedBacktestingEngine, BacktestMode
-            self.backtesting_engine = VectorizedBacktestingEngine()
-            self.backtesting_available = True
-        except ImportError:
-            self.backtesting_engine = None
-            self.backtesting_available = False
-
-        try:
-            # Matrix cross-validation
-            from .matrix_cross_validation import MatrixCrossValidator
-            self.cv_engine = MatrixCrossValidator()
-            self.cv_available = True
-        except ImportError:
-            self.cv_engine = None
-            self.cv_available = False
-
-        try:
-            # Feature importance analyzer
-            from ..feature_selection.feature_importance_analyzer import FeatureImportanceAnalyzer
-            self.feature_analyzer = FeatureImportanceAnalyzer()
-            self.feature_selection_available = True
-        except ImportError:
-            self.feature_analyzer = None
-            self.feature_selection_available = False
-
-        try:
-            # Technical indicators
-            from ..utils.feature_generators import FeatureGenerators
-            self.technical_indicators = FeatureGenerators()
-            self.technical_indicators_available = True
-        except ImportError:
-            self.technical_indicators = None
-            self.technical_indicators_available = False
-
-        try:
-            # HMM operations
-            from ..hmm_composite_manager import EnhancedHMMCompositeManager
-            self.hmm_manager = EnhancedHMMCompositeManager()
-            self.hmm_available = True
-        except ImportError:
-            self.hmm_manager = None
-            self.hmm_available = False
+        # Initialize optimization components with lazy loading
+        self.matrix_ops = None
+        self.matrix_ops_available = False
+        self.backtesting_engine = None
+        self.backtesting_available = False
+        self.cv_engine = None
+        self.cv_available = False
+        self.feature_analyzer = None
+        self.feature_selection_available = False
+        self.technical_indicators = None
+        self.technical_indicators_available = False
+        self.hmm_manager = None
+        self.hmm_available = False
 
         # Hardware detection
         self._detect_hardware_capabilities()
@@ -300,25 +260,67 @@ class UnifiedVectorizationManager:
         """Execute operation with GPU acceleration."""
         metadata = {'gpu_accelerated': True}
 
-        if operation_type == OperationType.MATRIX_MULTIPLICATION and self.matrix_ops:
-            # Use matrix operations for matrix multiplication
-            result = self.matrix_ops.matrix_multiply(data['a'], data['b'])
-            metadata['matrix_ops_used'] = True
+        if operation_type == OperationType.MATRIX_MULTIPLICATION:
+            # Load matrix operations on demand
+            if not self.matrix_ops_available:
+                try:
+                    from ..matrix_operations import get_unified_matrix_operations
+                    self.matrix_ops = get_unified_matrix_operations()
+                    self.matrix_ops_available = True
+                except ImportError:
+                    pass
 
-        elif operation_type == OperationType.HMM_TRAINING and self.hmm_available:
-            # Use GPU-accelerated HMM training
-            result = self.hmm_manager.gpu_accelerated_hmm_training(
-                data, **kwargs
-            )
-            metadata['gpu_hmm_used'] = True
+            if self.matrix_ops_available:
+                # Use matrix operations for matrix multiplication
+                result = self.matrix_ops.matrix_multiply(data['a'], data['b'])
+                metadata['matrix_ops_used'] = True
+            else:
+                # Fallback to CPU execution
+                self.logger.warning(f"⚠️ Matrix operations not available for {operation_type.value}, falling back to CPU")
+                return self._execute_vectorized_cpu(operation_type, data, config, **kwargs)
 
-        elif operation_type == OperationType.BACKTESTING and self.backtesting_available:
-            # Use GPU-accelerated backtesting
-            from .vectorized_backtesting import BacktestMode
-            result = self.backtesting_engine.run_vectorized_backtest(
-                data['signals'], data['prices'], mode=BacktestMode.GPU_ACCELERATED, **kwargs
-            )
-            metadata['gpu_backtesting_used'] = True
+        elif operation_type == OperationType.HMM_TRAINING:
+            # Load HMM manager on demand
+            if not self.hmm_available:
+                try:
+                    from ..hmm_composite_manager import EnhancedHMMCompositeManager
+                    self.hmm_manager = EnhancedHMMCompositeManager()
+                    self.hmm_available = True
+                except ImportError:
+                    pass
+
+            if self.hmm_available:
+                # Use GPU-accelerated HMM training
+                result = self.hmm_manager.gpu_accelerated_hmm_training(
+                    data, **kwargs
+                )
+                metadata['gpu_hmm_used'] = True
+            else:
+                # Fallback to CPU execution
+                self.logger.warning(f"⚠️ HMM operations not available for {operation_type.value}, falling back to CPU")
+                return self._execute_vectorized_cpu(operation_type, data, config, **kwargs)
+
+        elif operation_type == OperationType.BACKTESTING:
+            # Load backtesting engine on demand
+            if not self.backtesting_available:
+                try:
+                    from .vectorized_backtesting import VectorizedBacktestingEngine, BacktestMode
+                    self.backtesting_engine = VectorizedBacktestingEngine()
+                    self.backtesting_available = True
+                except ImportError:
+                    pass
+
+            if self.backtesting_available:
+                # Use GPU-accelerated backtesting
+                from .vectorized_backtesting import BacktestMode
+                result = self.backtesting_engine.run_vectorized_backtest(
+                    data['signals'], data['prices'], mode=BacktestMode.GPU_ACCELERATED, **kwargs
+                )
+                metadata['gpu_backtesting_used'] = True
+            else:
+                # Fallback to CPU execution
+                self.logger.warning(f"⚠️ Backtesting not available for {operation_type.value}, falling back to CPU")
+                return self._execute_vectorized_cpu(operation_type, data, config, **kwargs)
 
         else:
             # Fallback to CPU execution
@@ -332,22 +334,50 @@ class UnifiedVectorizationManager:
         """Execute operation with parallel processing."""
         metadata = {'parallel_processing': True, 'workers': config.parallel_workers or self.hardware_caps['cpu_cores']}
 
-        if operation_type == OperationType.CROSS_VALIDATION and self.cv_available:
-            # Use parallel cross-validation
-            result = self.cv_engine.parallel_cross_validate(
-                data['X'], data['y'], data['model_class'],
-                model_params=data.get('model_params'),
-                max_workers=metadata['workers'],
-                **kwargs
-            )
-            metadata['parallel_cv_used'] = True
+        if operation_type == OperationType.CROSS_VALIDATION:
+            # Load cross-validation engine on demand
+            if not self.cv_available:
+                try:
+                    from .matrix_cross_validation import MatrixCrossValidator
+                    self.cv_engine = MatrixCrossValidator()
+                    self.cv_available = True
+                except ImportError:
+                    pass
 
-        elif operation_type == OperationType.FEATURE_SELECTION and self.feature_selection_available:
-            # Use parallel feature selection
-            result = self.feature_analyzer.batch_compute_importance(
-                data['X'], data['y'], **kwargs
-            )
-            metadata['parallel_feature_selection_used'] = True
+            if self.cv_available:
+                # Use parallel cross-validation
+                result = self.cv_engine.parallel_cross_validate(
+                    data['X'], data['y'], data['model_class'],
+                    model_params=data.get('model_params'),
+                    max_workers=metadata['workers'],
+                    **kwargs
+                )
+                metadata['parallel_cv_used'] = True
+            else:
+                # Fallback to CPU execution
+                self.logger.warning(f"⚠️ Cross-validation not available for {operation_type.value}, falling back to CPU")
+                return self._execute_vectorized_cpu(operation_type, data, config, **kwargs)
+
+        elif operation_type == OperationType.FEATURE_SELECTION:
+            # Load feature analyzer on demand
+            if not self.feature_selection_available:
+                try:
+                    from ..feature_selection.feature_importance_analyzer import FeatureImportanceAnalyzer
+                    self.feature_analyzer = FeatureImportanceAnalyzer()
+                    self.feature_selection_available = True
+                except ImportError:
+                    pass
+
+            if self.feature_selection_available:
+                # Use parallel feature selection
+                result = self.feature_analyzer.batch_compute_importance(
+                    data['X'], data['y'], **kwargs
+                )
+                metadata['parallel_feature_selection_used'] = True
+            else:
+                # Fallback to CPU execution
+                self.logger.warning(f"⚠️ Feature selection not available for {operation_type.value}, falling back to CPU")
+                return self._execute_vectorized_cpu(operation_type, data, config, **kwargs)
 
         else:
             # Fallback to CPU execution
@@ -360,13 +390,27 @@ class UnifiedVectorizationManager:
         """Execute operation with hybrid optimization (GPU + parallel)."""
         metadata = {'hybrid_optimization': True}
 
-        if operation_type == OperationType.BACKTESTING and self.backtesting_available:
-            # Use hybrid backtesting (GPU + parallel chunks)
-            from .vectorized_backtesting import BacktestMode
-            result = self.backtesting_engine.run_vectorized_backtest(
-                data['signals'], data['prices'], mode=BacktestMode.HYBRID, **kwargs
-            )
-            metadata['hybrid_backtesting_used'] = True
+        if operation_type == OperationType.BACKTESTING:
+            # Load backtesting engine on demand
+            if not self.backtesting_available:
+                try:
+                    from .vectorized_backtesting import VectorizedBacktestingEngine, BacktestMode
+                    self.backtesting_engine = VectorizedBacktestingEngine()
+                    self.backtesting_available = True
+                except ImportError:
+                    pass
+
+            if self.backtesting_available:
+                # Use hybrid backtesting (GPU + parallel chunks)
+                from .vectorized_backtesting import BacktestMode
+                result = self.backtesting_engine.run_vectorized_backtest(
+                    data['signals'], data['prices'], mode=BacktestMode.HYBRID, **kwargs
+                )
+                metadata['hybrid_backtesting_used'] = True
+            else:
+                # Fallback to GPU execution
+                self.logger.warning(f"⚠️ Backtesting not available for {operation_type.value}, falling back to GPU")
+                return self._execute_gpu_accelerated(operation_type, data, config, **kwargs)
 
         else:
             # Fallback to GPU execution
@@ -406,35 +450,95 @@ class UnifiedVectorizationManager:
         """Execute operation with vectorized CPU operations."""
         metadata = {'vectorized_cpu': True}
 
-        if operation_type == OperationType.TECHNICAL_INDICATORS and self.technical_indicators_available:
-            # Use batch technical indicators
-            result = self.technical_indicators.batch_technical_indicators(
-                data, kwargs.get('indicator_configs', {}), **kwargs
-            )
-            metadata['batch_indicators_used'] = True
+        if operation_type == OperationType.TECHNICAL_INDICATORS:
+            # Load technical indicators on demand
+            if not self.technical_indicators_available:
+                try:
+                    from ..utils.feature_generators import FeatureGenerators
+                    self.technical_indicators = FeatureGenerators()
+                    self.technical_indicators_available = True
+                except ImportError:
+                    pass
 
-        elif operation_type == OperationType.FEATURE_SELECTION and self.feature_selection_available:
-            # Use vectorized feature selection
-            result = self.feature_analyzer.batch_compute_importance(
-                data['X'], data['y'], **kwargs
-            )
-            metadata['vectorized_feature_selection_used'] = True
+            if self.technical_indicators_available:
+                # Use batch technical indicators
+                result = self.technical_indicators.batch_technical_indicators(
+                    data, kwargs.get('indicator_configs', {}), **kwargs
+                )
+                metadata['batch_indicators_used'] = True
+            else:
+                # Generic fallback
+                self.logger.warning(f"⚠️ Technical indicators not available for {operation_type.value}")
+                result = self._execute_generic_operation(operation_type, data, **kwargs)
+                metadata['generic_fallback'] = True
 
-        elif operation_type == OperationType.CROSS_VALIDATION and self.cv_available:
-            # Use matrix cross-validation
-            result = self.cv_engine.cross_validate(
-                data['X'], data['y'], data['model_class'],
-                model_params=data.get('model_params'), **kwargs
-            )
-            metadata['matrix_cv_used'] = True
+        elif operation_type == OperationType.FEATURE_SELECTION:
+            # Load feature analyzer on demand
+            if not self.feature_selection_available:
+                try:
+                    from ..feature_selection.feature_importance_analyzer import FeatureImportanceAnalyzer
+                    self.feature_analyzer = FeatureImportanceAnalyzer()
+                    self.feature_selection_available = True
+                except ImportError:
+                    pass
 
-        elif operation_type == OperationType.BACKTESTING and self.backtesting_available:
-            # Use vectorized backtesting
-            from .vectorized_backtesting import BacktestMode
-            result = self.backtesting_engine.run_vectorized_backtest(
-                data['signals'], data['prices'], mode=BacktestMode.VECTORIZED, **kwargs
-            )
-            metadata['vectorized_backtesting_used'] = True
+            if self.feature_selection_available:
+                # Use vectorized feature selection
+                result = self.feature_analyzer.batch_compute_importance(
+                    data['X'], data['y'], **kwargs
+                )
+                metadata['vectorized_feature_selection_used'] = True
+            else:
+                # Generic fallback
+                self.logger.warning(f"⚠️ Feature selection not available for {operation_type.value}")
+                result = self._execute_generic_operation(operation_type, data, **kwargs)
+                metadata['generic_fallback'] = True
+
+        elif operation_type == OperationType.CROSS_VALIDATION:
+            # Load cross-validation engine on demand
+            if not self.cv_available:
+                try:
+                    from .matrix_cross_validation import MatrixCrossValidator
+                    self.cv_engine = MatrixCrossValidator()
+                    self.cv_available = True
+                except ImportError:
+                    pass
+
+            if self.cv_available:
+                # Use matrix cross-validation
+                result = self.cv_engine.cross_validate(
+                    data['X'], data['y'], data['model_class'],
+                    model_params=data.get('model_params'), **kwargs
+                )
+                metadata['matrix_cv_used'] = True
+            else:
+                # Generic fallback
+                self.logger.warning(f"⚠️ Cross-validation not available for {operation_type.value}")
+                result = self._execute_generic_operation(operation_type, data, config, **kwargs)
+                metadata['generic_fallback'] = True
+
+        elif operation_type == OperationType.BACKTESTING:
+            # Load backtesting engine on demand
+            if not self.backtesting_available:
+                try:
+                    from .vectorized_backtesting import VectorizedBacktestingEngine, BacktestMode
+                    self.backtesting_engine = VectorizedBacktestingEngine()
+                    self.backtesting_available = True
+                except ImportError:
+                    pass
+
+            if self.backtesting_available:
+                # Use vectorized backtesting
+                from .vectorized_backtesting import BacktestMode
+                result = self.backtesting_engine.run_vectorized_backtest(
+                    data['signals'], data['prices'], mode=BacktestMode.VECTORIZED, **kwargs
+                )
+                metadata['vectorized_backtesting_used'] = True
+            else:
+                # Generic fallback
+                self.logger.warning(f"⚠️ Backtesting not available for {operation_type.value}")
+                result = self._execute_generic_operation(operation_type, data, **kwargs)
+                metadata['generic_fallback'] = True
 
         else:
             # Generic fallback

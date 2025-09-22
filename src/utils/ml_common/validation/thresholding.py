@@ -1,6 +1,13 @@
 from __future__ import annotations
 
-from src.utils.tprint import tprint
+def _tprint(message: str, level: str = "INFO") -> None:
+    """Print message with timestamp and level."""
+    try:
+        from src.utils.tprint import tprint as _tprint_func
+        _tprint_func(message, level)
+    except Exception:
+        # Fallback to simple print
+        print(f"[{level}] {message}")
 
 """
 Threshold search and calibration helpers.
@@ -12,13 +19,20 @@ from typing import Any, Dict, List, Optional, Tuple, Callable
 
 import numpy as np
 
-# Initialize logger early to ensure availability in import error handlers
-try:
-    from ..logger import get_logger
-    _LOGGER = get_logger("MLCommon.Thresholding")
-except Exception:
-    import logging
-    _LOGGER = logging.getLogger("MLCommon.Thresholding")
+# Initialize logger with lazy loading
+_LOGGER = None
+
+def _get_logger():
+    """Get logger with lazy loading."""
+    global _LOGGER
+    if _LOGGER is None:
+        try:
+            from ..logger import get_logger
+            _LOGGER = get_logger("MLCommon.Thresholding")
+        except Exception:
+            import logging
+            _LOGGER = logging.getLogger("MLCommon.Thresholding")
+    return _LOGGER
 
 # Import torch for GPU acceleration
 try:
@@ -27,31 +41,36 @@ try:
 except ImportError:
     TORCH_AVAILABLE = False
 
-# Enhanced dependency management with fast fail
-try:
-    from sklearn.calibration import CalibratedClassifierCV
-    from sklearn.metrics import (
-        f1_score,
-        balanced_accuracy_score,
-        roc_auc_score,
-        precision_recall_curve,
-    )
-    SKLEARN_AVAILABLE = True
-    tprint("✅ Scikit-learn available for thresholding functionality")
-except ImportError as e:
-    SKLEARN_AVAILABLE = False
-    tprint(f"❌ Scikit-learn not available: {e}. Thresholding functionality severely limited.")
-    _LOGGER.error("Scikit-learn not available - limited thresholding functionality")
-    raise ImportError(f"Scikit-learn is required for thresholding functionality: {e}")
-except Exception as e:
-    SKLEARN_AVAILABLE = False
-    tprint(f"❌ Scikit-learn import failed: {e}. Thresholding functionality severely limited.")
-    _LOGGER.error(f"Scikit-learn import failed: {e}")
-    raise ImportError(f"Scikit-learn import failed: {e}")
+# Scikit-learn availability flag
+SKLEARN_AVAILABLE = False
 
-# Validate critical dependencies
-if not SKLEARN_AVAILABLE:
-    raise ImportError("Scikit-learn is required for thresholding utilities")
+def _check_sklearn():
+    """Check and import sklearn dependencies."""
+    global SKLEARN_AVAILABLE
+    if not SKLEARN_AVAILABLE:
+        try:
+            from sklearn.calibration import CalibratedClassifierCV
+            from sklearn.metrics import (
+                f1_score,
+                balanced_accuracy_score,
+                roc_auc_score,
+                precision_recall_curve,
+            )
+            SKLEARN_AVAILABLE = True
+            _tprint("✅ Scikit-learn available for thresholding functionality")
+        except ImportError as e:
+            SKLEARN_AVAILABLE = False
+            logger = _get_logger()
+            logger.error("Scikit-learn not available - limited thresholding functionality")
+            raise ImportError(f"Scikit-learn is required for thresholding functionality: {e}")
+        except Exception as e:
+            SKLEARN_AVAILABLE = False
+            logger = _get_logger()
+            logger.error(f"Scikit-learn import failed: {e}")
+            raise ImportError(f"Scikit-learn import failed: {e}")
+    return SKLEARN_AVAILABLE
+
+# Validate critical dependencies - done on first use
 
 # Import M1 utilities for enhanced performance
 
@@ -117,7 +136,8 @@ def optimize_threshold(
         try:
             return _optimize_threshold_parallel(y_true, y_prob, metric, thresholds, use_gpu)
         except Exception as e:
-            _LOGGER.warning(f"Parallel threshold optimization failed: {e}, falling back to sequential")
+            logger = _get_logger()
+            logger.warning(f"Parallel threshold optimization failed: {e}, falling back to sequential")
 
     # Sequential implementation (original)
     return _optimize_threshold_sequential(y_true, y_prob, metric, thresholds)
@@ -250,7 +270,8 @@ def calibrate_probabilities(
         calibrated.fit(X_train, y_train)
         return calibrated
     except Exception as e:
-        _LOGGER.error(f"❌ Critical error: Calibration failed: {e}")
+        logger = _get_logger()
+        logger.error(f"❌ Critical error: Calibration failed: {e}")
         raise ValueError(f"Calibration failed and no fallback available: {e}")
 
 

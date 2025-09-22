@@ -13,14 +13,42 @@ Key Features:
 - M1 hardware optimization integration
 """
 
-import numpy as np
-import pandas as pd
 from typing import Any, Dict, List, Optional, Tuple, Union, Type
 from dataclasses import dataclass, field
 from enum import Enum
 import logging
 import time
 from datetime import datetime
+
+# Lazy import numpy and pandas
+_numpy_available = False
+_pandas_available = False
+
+def _get_numpy():
+    """Get numpy with lazy loading."""
+    global _numpy_available
+    if not _numpy_available:
+        try:
+            import numpy as np
+            _numpy_available = True
+            return np
+        except ImportError:
+            raise ImportError("NumPy is required for model factory functionality")
+    import numpy as np
+    return np
+
+def _get_pandas():
+    """Get pandas with lazy loading."""
+    global _pandas_available
+    if not _pandas_available:
+        try:
+            import pandas as pd
+            _pandas_available = True
+            return pd
+        except ImportError:
+            raise ImportError("Pandas is required for model factory functionality")
+    import pandas as pd
+    return pd
 
 # PyTorch import for GPU acceleration
 try:
@@ -29,37 +57,16 @@ try:
 except ImportError:
     TORCH_AVAILABLE = False
 
-# M1 Optimization imports
-from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer, M1MemoryOptimizer
-from src.utils.hardware.memory_optimization import get_memory_manager, MemoryMonitor
+# M1 Optimization imports (lazy loaded to prevent circular imports)
+M1_OPTIMIZER_AVAILABLE = False
+MEMORY_MANAGER_AVAILABLE = False
+UNIFIED_MODEL_FACTORY_AVAILABLE = False
 
-# Enhanced adaptive regularization imports
-try:
-    from src.training.steps.market_analysis.hmm_models_training.shared_utilities.unified_model_factory import UnifiedModelFactory
-    UNIFIED_MODEL_FACTORY_AVAILABLE = True
-except ImportError:
-    UNIFIED_MODEL_FACTORY_AVAILABLE = False
-    UnifiedModelFactory = None
-
-# Common utilities
-from src.utils.common_operations import (
-    safe_json_dump, safe_json_load, safe_file_exists, ensure_directory,
-    safe_mean, safe_std, safe_float, safe_int, get_current_datetime,
-    safe_append, safe_extend, safe_dict_get, safe_lower, safe_upper,
-    format_datetime, validate_file_path, get_file_size
-)
-from src.utils.math_validation import (
-    safe_divide, safe_log, safe_sqrt, safe_power, validate_finite,
-    validate_positive, validate_range, safe_kelly_calculation,
-    safe_weighted_average, safe_percentage_change, MathValidationError
-)
-from src.core.decorators import (
-    handles_errors, validates, traced, log_execution_time,
-    timeout, error_boundary, compose
-)
-from src.core.errors import (
-    ValidationError, DataIntegrityError, TimeoutError
-)
+# Common utilities (lazy loaded to prevent circular imports)
+COMMON_OPERATIONS_AVAILABLE = False
+MATH_VALIDATION_AVAILABLE = False
+DECORATORS_AVAILABLE = False
+ERRORS_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -170,14 +177,15 @@ class EnhancedModelFactory:
         
         self.config = config or {}
         
-        # Initialize M1 optimizers
+        # Initialize M1 optimizers (lazy loaded)
         self.logger.debug("🔧 Initializing M1 optimizers...")
-        self.m1_gpu = get_m1_memory_optimizer() if self.config.get('enable_gpu_acceleration', True) else None
-        self.m1_memory = get_m1_memory_optimizer(
-            memory_limit_gb=self.config.get('memory_limit_gb', 8.0)
-        ) if self.config.get('enable_memory_optimization', True) else None
-        self.m1_cpu = get_memory_manager() if self.config.get('enable_parallel_processing', True) else None
-        
+        self.m1_gpu = None
+        self.m1_memory = None
+        self.m1_cpu = None
+
+        # Load dependencies on demand
+        self._load_dependencies()
+
         self.logger.debug("✅ M1 optimizers initialized")
         
         # Model registry for created models
@@ -261,7 +269,82 @@ class EnhancedModelFactory:
             self.logger.warning("⚠️ TensorFlow not available")
         
         return dependencies
-    
+
+    def _load_dependencies(self):
+        """Load dependencies on demand to prevent circular imports."""
+        global M1_OPTIMIZER_AVAILABLE, MEMORY_MANAGER_AVAILABLE, UNIFIED_MODEL_FACTORY_AVAILABLE
+        global COMMON_OPERATIONS_AVAILABLE, MATH_VALIDATION_AVAILABLE, DECORATORS_AVAILABLE, ERRORS_AVAILABLE
+
+        # Load M1 optimizers
+        if not M1_OPTIMIZER_AVAILABLE:
+            try:
+                from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer, M1MemoryOptimizer
+                M1_OPTIMIZER_AVAILABLE = True
+            except ImportError:
+                pass
+
+        if not MEMORY_MANAGER_AVAILABLE:
+            try:
+                from src.utils.hardware.memory_optimization import get_memory_manager, MemoryMonitor
+                MEMORY_MANAGER_AVAILABLE = True
+            except ImportError:
+                pass
+
+        # Load common utilities
+        if not COMMON_OPERATIONS_AVAILABLE:
+            try:
+                from src.utils.common_operations import (
+                    safe_json_dump, safe_json_load, safe_file_exists, ensure_directory,
+                    safe_mean, safe_std, safe_float, safe_int, get_current_datetime,
+                    safe_append, safe_extend, safe_dict_get, safe_lower, safe_upper,
+                    format_datetime, validate_file_path, get_file_size
+                )
+                COMMON_OPERATIONS_AVAILABLE = True
+            except ImportError:
+                pass
+
+        if not MATH_VALIDATION_AVAILABLE:
+            try:
+                from src.utils.math_validation import (
+                    safe_divide, safe_log, safe_sqrt, safe_power, validate_finite,
+                    validate_positive, validate_range, safe_kelly_calculation,
+                    safe_weighted_average, safe_percentage_change, MathValidationError
+                )
+                MATH_VALIDATION_AVAILABLE = True
+            except ImportError:
+                pass
+
+        if not DECORATORS_AVAILABLE:
+            try:
+                from src.core.decorators import (
+                    handles_errors, validates, traced, log_execution_time,
+                    timeout, error_boundary, compose
+                )
+                DECORATORS_AVAILABLE = True
+            except ImportError:
+                pass
+
+        if not ERRORS_AVAILABLE:
+            try:
+                from src.core.errors import (
+                    ValidationError, DataIntegrityError, TimeoutError
+                )
+                ERRORS_AVAILABLE = True
+            except ImportError:
+                pass
+
+        # Initialize M1 optimizers now that dependencies are loaded
+        if M1_OPTIMIZER_AVAILABLE and self.config.get('enable_gpu_acceleration', True):
+            self.m1_gpu = get_m1_memory_optimizer()
+
+        if M1_OPTIMIZER_AVAILABLE and self.config.get('enable_memory_optimization', True):
+            self.m1_memory = get_m1_memory_optimizer(
+                memory_limit_gb=self.config.get('memory_limit_gb', 8.0)
+            )
+
+        if MEMORY_MANAGER_AVAILABLE and self.config.get('enable_parallel_processing', True):
+            self.m1_cpu = get_memory_manager()
+
     @traced(span_name='create_model')
     def create_model(self, model_config: ModelConfig) -> Any:
         """Create a model instance based on configuration."""
@@ -350,38 +433,62 @@ class EnhancedModelFactory:
     
     def _validate_model_config(self, model_config: ModelConfig) -> None:
         """Validate model configuration."""
-        
+
         # Check if model type is supported
         if not isinstance(model_config.model_type, ModelType):
-            raise ValidationError(f"Invalid model type: {model_config.model_type}")
-        
+            if ERRORS_AVAILABLE:
+                raise ValidationError(f"Invalid model type: {model_config.model_type}")
+            else:
+                raise ValueError(f"Invalid model type: {model_config.model_type}")
+
         # Check dependencies
         if model_config.model_type in [ModelType.LIGHTGBM, ModelType.LIGHTGBM_CLASSIFIER]:
             if not self.dependencies.get('lightgbm', False):
-                raise ValidationError("LightGBM not available")
-        
+                if ERRORS_AVAILABLE:
+                    raise ValidationError("LightGBM not available")
+                else:
+                    raise ImportError("LightGBM not available")
+
         if model_config.model_type in [ModelType.CATBOOST, ModelType.CATBOOST_CLASSIFIER]:
             if not self.dependencies.get('catboost', False):
-                raise ValidationError("CatBoost not available")
-        
+                if ERRORS_AVAILABLE:
+                    raise ValidationError("CatBoost not available")
+                else:
+                    raise ImportError("CatBoost not available")
+
         if model_config.model_type in [ModelType.XGBOOST, ModelType.XGBOOST_CLASSIFIER, ModelType.XGBOOST_CUSTOM, ModelType.XGBOOST_META]:
             if not self.dependencies.get('xgboost', False):
-                raise ValidationError("XGBoost not available")
-        
+                if ERRORS_AVAILABLE:
+                    raise ValidationError("XGBoost not available")
+                else:
+                    raise ImportError("XGBoost not available")
+
         if model_config.model_type in [ModelType.TABNET, ModelType.TABNET_CLASSIFIER]:
             if not self.dependencies.get('pytorch_tabnet', False):
-                raise ValidationError("PyTorch TabNet not available")
-        
+                if ERRORS_AVAILABLE:
+                    raise ValidationError("PyTorch TabNet not available")
+                else:
+                    raise ImportError("PyTorch TabNet not available")
+
         if model_config.model_type in [ModelType.TIME_SERIES_TRANSFORMER, ModelType.TCN, ModelType.LSTM]:
             if not self.dependencies.get('torch', False):
-                raise ValidationError("PyTorch not available")
-        
+                if ERRORS_AVAILABLE:
+                    raise ValidationError("PyTorch not available")
+                else:
+                    raise ImportError("PyTorch not available")
+
         # Validate multi-output configuration
         if model_config.is_multi_output:
             if model_config.n_outputs < 2:
-                raise ValidationError("Multi-output requires at least 2 outputs")
+                if ERRORS_AVAILABLE:
+                    raise ValidationError("Multi-output requires at least 2 outputs")
+                else:
+                    raise ValueError("Multi-output requires at least 2 outputs")
             if model_config.output_names and len(model_config.output_names) != model_config.n_outputs:
-                raise ValidationError("Output names count must match n_outputs")
+                if ERRORS_AVAILABLE:
+                    raise ValidationError("Output names count must match n_outputs")
+                else:
+                    raise ValueError("Output names count must match n_outputs")
     
     def _create_random_forest_model(self, model_config: ModelConfig) -> Any:
         """Create Random Forest model."""
@@ -551,7 +658,7 @@ class EnhancedModelFactory:
                 if not self.is_fitted:
                     raise ValueError("Model not fitted")
                 # Placeholder implementation
-                return np.zeros(len(X))
+                return _get_numpy().zeros(len(X))
         
         return TimeSeriesTransformer(**model_config.model_params)
     
@@ -576,7 +683,7 @@ class EnhancedModelFactory:
                 if not self.is_fitted:
                     raise ValueError("Model not fitted")
                 # Placeholder implementation
-                return np.zeros(len(X))
+                return _get_numpy().zeros(len(X))
         
         return LSTM(**model_config.model_params)
     
@@ -636,7 +743,7 @@ class EnhancedModelFactory:
                 if not self.is_fitted:
                     raise ValueError("Model not fitted")
                 # Placeholder implementation
-                return np.zeros(len(X))
+                return _get_numpy().zeros(len(X))
         
         return TCN(**params)
     
@@ -683,7 +790,7 @@ class EnhancedModelFactory:
                 if not self.is_fitted:
                     raise ValueError("Model not fitted")
                 # Placeholder implementation
-                return np.zeros(len(X))
+                return _get_numpy().zeros(len(X))
         
         return WaveNet(**params)
     
@@ -724,7 +831,7 @@ class EnhancedModelFactory:
                 if not self.is_fitted:
                     raise ValueError("Model not fitted")
                 # Placeholder implementation
-                return np.zeros(len(X))
+                return _get_numpy().zeros(len(X))
         
         return TemporalFusionTransformer(**params)
     
@@ -766,7 +873,7 @@ class EnhancedModelFactory:
                 if not self.is_fitted:
                     raise ValueError("Model not fitted")
                 # Placeholder implementation
-                return np.zeros(len(X))
+                return _get_numpy().zeros(len(X))
         
         return TabNetAttention(**params)
     
@@ -837,7 +944,7 @@ class EnhancedModelFactory:
                 if not self.is_fitted:
                     raise ValueError("Model not fitted")
                 # Placeholder implementation
-                return np.zeros(len(X))
+                return _get_numpy().zeros(len(X))
         
         return ElasticNetQuantile(**model_config.model_params)
     
@@ -862,7 +969,7 @@ class EnhancedModelFactory:
                 if not self.is_fitted:
                     raise ValueError("Model not fitted")
                 # Placeholder implementation
-                return np.zeros(len(X))
+                return _get_numpy().zeros(len(X))
         
         return QuantileRegression(**model_config.model_params)
     
@@ -1028,7 +1135,7 @@ class EnhancedModelFactory:
                 if not self.is_fitted:
                     raise ValueError("Model not fitted")
                 # Placeholder implementation
-                return np.zeros(len(X))
+                return _get_numpy().zeros(len(X))
         
         return NODE(**params)
     

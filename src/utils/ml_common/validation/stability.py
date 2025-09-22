@@ -19,35 +19,56 @@ try:
 except ImportError:
     TORCH_AVAILABLE = False
 
-try:
-    from ..logger import get_logger
-    _LOGGER = get_logger("MLCommon.Stability")
-except Exception:
-    import logging
-    _LOGGER = logging.getLogger("MLCommon.Stability")
+# Initialize logger with lazy loading
+_LOGGER = None
 
-# Import M1 utilities
-try:
-    from src.utils.hardware.m1_gpu_utils import M1GPUManager
-    GPU_AVAILABLE = True
-except ImportError:
-    GPU_AVAILABLE = False
+# Hardware utilities (lazy loaded)
+GPU_AVAILABLE = False
+MEMORY_OPTIMIZER_AVAILABLE = False
+CPU_OPTIMIZER_AVAILABLE = False
 
-try:
-    from src.utils.hardware.m1_memory_optimizer import (
-        auto_skim_memory, smart_memory_allocation,
-        memory_skim_decorator, auto_memory_skim_decorator,
-        auto_memory_skim_context, smart_memory_context
-    )
-    MEMORY_OPTIMIZER_AVAILABLE = True
-except ImportError:
-    MEMORY_OPTIMIZER_AVAILABLE = False
 
-try:
-    from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer
-    CPU_OPTIMIZER_AVAILABLE = True
-except ImportError:
-    CPU_OPTIMIZER_AVAILABLE = False
+def _get_logger():
+    """Get logger with lazy loading."""
+    global _LOGGER
+    if _LOGGER is None:
+        try:
+            from ..logger import get_logger
+            _LOGGER = get_logger("MLCommon.Stability")
+        except Exception:
+            import logging
+            _LOGGER = logging.getLogger("MLCommon.Stability")
+    return _LOGGER
+
+
+def _load_hardware_utilities():
+    """Load hardware utilities on demand."""
+    global GPU_AVAILABLE, MEMORY_OPTIMIZER_AVAILABLE, CPU_OPTIMIZER_AVAILABLE
+
+    if not GPU_AVAILABLE:
+        try:
+            from src.utils.hardware.m1_gpu_utils import M1GPUManager
+            GPU_AVAILABLE = True
+        except ImportError:
+            pass
+
+    if not MEMORY_OPTIMIZER_AVAILABLE:
+        try:
+            from src.utils.hardware.m1_memory_optimizer import (
+                auto_skim_memory, smart_memory_allocation,
+                memory_skim_decorator, auto_memory_skim_decorator,
+                auto_memory_skim_context, smart_memory_context
+            )
+            MEMORY_OPTIMIZER_AVAILABLE = True
+        except ImportError:
+            pass
+
+    if not CPU_OPTIMIZER_AVAILABLE:
+        try:
+            from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer
+            CPU_OPTIMIZER_AVAILABLE = True
+        except ImportError:
+            pass
 
 
 def feature_selection_stability(
@@ -67,33 +88,38 @@ def feature_selection_stability(
     Returns:
         Dict with selection counts, stability scores, and fold count
     """
-    _LOGGER.info(f"🔄 Computing feature selection stability for {len(all_features)} features across {len(fold_selections)} folds")
+    logger = _get_logger()
+    logger.info(f"🔄 Computing feature selection stability for {len(all_features)} features across {len(fold_selections)} folds")
     start_time = time.time()
     
     n_folds = max(1, len(fold_selections))
-    _LOGGER.debug(f"📊 Number of folds: {n_folds}")
-    _LOGGER.debug(f"📊 Total features: {len(all_features)}")
-    _LOGGER.debug(f"📊 Use parallel processing: {use_parallel}")
+    logger.debug(f"📊 Number of folds: {n_folds}")
+    logger.debug(f"📊 Total features: {len(all_features)}")
+    logger.debug(f"📊 Use parallel processing: {use_parallel}")
+
+    # Load hardware utilities if needed
+    if use_parallel and len(all_features) > 100:
+        _load_hardware_utilities()
 
     # Use parallel processing for large feature sets
     if use_parallel and CPU_OPTIMIZER_AVAILABLE and len(all_features) > 100:
-        _LOGGER.debug("🚀 Attempting parallel stability calculation...")
+        logger.debug("🚀 Attempting parallel stability calculation...")
         try:
             result = _feature_selection_stability_parallel(fold_selections, all_features, n_folds)
             stability_time = time.time() - start_time
-            _LOGGER.info(f"✅ Parallel stability calculation completed in {stability_time:.3f}s")
+            logger.info(f"✅ Parallel stability calculation completed in {stability_time:.3f}s")
             return result
         except Exception as e:
-            _LOGGER.warning(f"⚠️ Parallel stability calculation failed: {e}, falling back to sequential")
+            logger.warning(f"⚠️ Parallel stability calculation failed: {e}, falling back to sequential")
 
     # Sequential implementation
-    _LOGGER.debug("🔄 Using sequential stability calculation...")
+    logger.debug("🔄 Using sequential stability calculation...")
     counts: Dict[str, int] = {f: 0 for f in all_features}
     
     for i, sel in enumerate(fold_selections):
         if i % 10 == 0:  # Log progress every 10 folds
             progress = (i / len(fold_selections)) * 100
-            _LOGGER.debug(f"📊 Processing fold {i+1}/{len(fold_selections)} ({progress:.1f}%)")
+            logger.debug(f"📊 Processing fold {i+1}/{len(fold_selections)} ({progress:.1f}%)")
         
         for f in sel:
             if f in counts:
@@ -102,10 +128,10 @@ def feature_selection_stability(
     stability = {f: counts[f] / n_folds for f in all_features}
     
     stability_time = time.time() - start_time
-    _LOGGER.info(f"✅ Sequential stability calculation completed in {stability_time:.3f}s")
-    _LOGGER.info(f"📊 Average stability score: {np.mean(list(stability.values())):.4f}")
-    _LOGGER.info(f"📊 Max stability score: {max(stability.values()):.4f}")
-    _LOGGER.info(f"📊 Min stability score: {min(stability.values()):.4f}")
+    logger.info(f"✅ Sequential stability calculation completed in {stability_time:.3f}s")
+    logger.info(f"📊 Average stability score: {np.mean(list(stability.values())):.4f}")
+    logger.info(f"📊 Max stability score: {max(stability.values()):.4f}")
+    logger.info(f"📊 Min stability score: {min(stability.values()):.4f}")
     
     return {
         'selection_counts': counts,
@@ -173,7 +199,7 @@ def aggregate_time_blocks(
         try:
             return _aggregate_time_blocks_gpu(block_metrics, keys)
         except Exception as e:
-            _LOGGER.warning(f"GPU aggregation failed: {e}, falling back to CPU")
+            logger.warning(f"GPU aggregation failed: {e}, falling back to CPU")
 
     # CPU implementation
     return _aggregate_time_blocks_cpu(block_metrics, keys)
@@ -251,7 +277,7 @@ class StabilityAnalyzer:
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         """Initialize stability analyzer."""
         self.config = config or {}
-        self.logger = _LOGGER.getChild('StabilityAnalyzer')
+        self.logger = _get_logger().getChild('StabilityAnalyzer')
 
         # Bootstrap parameters
         self.n_bootstraps = self.config.get('n_bootstraps', 100)
@@ -265,10 +291,10 @@ class StabilityAnalyzer:
         # Cross-dataset parameters
         self.min_dataset_overlap = self.config.get('min_dataset_overlap', 0.3)
 
-        _LOGGER.info("📈 StabilityAnalyzer initialized")
-        _LOGGER.info(f"⚙️ Bootstrap samples: {self.n_bootstraps}")
-        _LOGGER.info(f"⚙️ Bootstrap fraction: {self.bootstrap_fraction}")
-        _LOGGER.info(f"⚙️ Stability threshold: {self.stability_threshold}")
+        self.logger.info("📈 StabilityAnalyzer initialized")
+        self.logger.info(f"⚙️ Bootstrap samples: {self.n_bootstraps}")
+        self.logger.info(f"⚙️ Bootstrap fraction: {self.bootstrap_fraction}")
+        self.logger.info(f"⚙️ Stability threshold: {self.stability_threshold}")
 
     def analyze_bootstrap_stability(self, X: np.ndarray, y: np.ndarray,
                                    feature_names: List[str],
@@ -276,8 +302,8 @@ class StabilityAnalyzer:
                                    method_params: Dict[str, Any]) -> Dict[str, Any]:
         """Analyze feature selection stability using bootstrap sampling."""
         start_time = time.time()
-        _LOGGER.info(f"📈 Starting bootstrap stability analysis...")
-        _LOGGER.info(f"📊 Parameters - Bootstrap samples: {self.n_bootstraps}, Data shape: {X.shape}")
+        self.logger.info(f"📈 Starting bootstrap stability analysis...")
+        self.logger.info(f"📊 Parameters - Bootstrap samples: {self.n_bootstraps}, Data shape: {X.shape}")
 
         try:
             n_samples, n_features = X.shape
@@ -292,7 +318,7 @@ class StabilityAnalyzer:
             np.random.seed(42)  # For reproducibility
 
             for bootstrap_idx in range(self.n_bootstraps):
-                _LOGGER.debug(f"🔄 Bootstrap {bootstrap_idx + 1}/{self.n_bootstraps}")
+                self.logger.debug(f"🔄 Bootstrap {bootstrap_idx + 1}/{self.n_bootstraps}")
 
                 # Sample bootstrap data
                 bootstrap_indices = np.random.choice(n_samples, size=bootstrap_size, replace=True)
@@ -322,7 +348,7 @@ class StabilityAnalyzer:
                             'success': True
                         })
                     else:
-                        _LOGGER.warning(f"⚠️ Bootstrap {bootstrap_idx + 1} failed: {result.get('error', 'Unknown error')}")
+                        self.logger.warning(f"⚠️ Bootstrap {bootstrap_idx + 1} failed: {result.get('error', 'Unknown error')}")
                         bootstrap_results.append({
                             'bootstrap_idx': bootstrap_idx,
                             'success': False,
@@ -330,7 +356,7 @@ class StabilityAnalyzer:
                         })
 
                 except Exception as e:
-                    _LOGGER.warning(f"⚠️ Bootstrap {bootstrap_idx + 1} failed: {e}")
+                    self.logger.warning(f"⚠️ Bootstrap {bootstrap_idx + 1} failed: {e}")
                     bootstrap_results.append({
                         'bootstrap_idx': bootstrap_idx,
                         'success': False,
@@ -368,13 +394,13 @@ class StabilityAnalyzer:
                 'success': True
             }
 
-            _LOGGER.info(f"✅ Bootstrap stability analysis completed in {execution_time:.3f}s")
-            _LOGGER.info(f"📊 Found {len(stable_features)} stable features out of {len(feature_names)}")
+            self.logger.info(f"✅ Bootstrap stability analysis completed in {execution_time:.3f}s")
+            self.logger.info(f"📊 Found {len(stable_features)} stable features out of {len(feature_names)}")
 
             return result
 
         except Exception as e:
-            _LOGGER.error(f"❌ Bootstrap stability analysis failed: {e}")
+            self.logger.error(f"❌ Bootstrap stability analysis failed: {e}")
             return {
                 'stable_features': [],
                 'stability_scores': {},
@@ -427,7 +453,7 @@ class StabilityAnalyzer:
             return metrics
 
         except Exception as e:
-            _LOGGER.warning(f"⚠️ Failed to calculate stability metrics: {e}")
+            self.logger.warning(f"⚠️ Failed to calculate stability metrics: {e}")
             return {'error': str(e)}
 
 

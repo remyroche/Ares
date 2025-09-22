@@ -16,21 +16,48 @@ from pathlib import Path
 import json
 import warnings
 
-# Import existing modules
-from ..lookahead_bias_detector import LookaheadBiasDetector
-from ..validation.enhanced_overfitting_detection import (
-    UniversalOverfittingDetector,
-    OverfittingConfig,
-    get_overfitting_detector
-)
-from ..validation.universal_ml_validation import (
-    get_ml_validator,
-    UniversalMLValidationConfig
-)
-from ..optimization.overfitting_prevention import (
-    OverfittingPrevention,
-    OverfittingPreventionConfig
-)
+# Import existing modules using lazy loading to prevent circular imports
+try:
+    from ..lookahead_bias_detector import LookaheadBiasDetector
+    LOOKAHEAD_DETECTOR_AVAILABLE = True
+except ImportError:
+    LookaheadBiasDetector = None
+    LOOKAHEAD_DETECTOR_AVAILABLE = False
+
+try:
+    from ..validation.enhanced_overfitting_detection import (
+        UniversalOverfittingDetector,
+        OverfittingConfig,
+        get_overfitting_detector
+    )
+    OVERFITTING_DETECTION_AVAILABLE = True
+except ImportError:
+    UniversalOverfittingDetector = None
+    OverfittingConfig = None
+    get_overfitting_detector = None
+    OVERFITTING_DETECTION_AVAILABLE = False
+
+try:
+    from ..validation.universal_ml_validation import (
+        get_ml_validator,
+        UniversalMLValidationConfig
+    )
+    ML_VALIDATION_AVAILABLE = True
+except ImportError:
+    get_ml_validator = None
+    UniversalMLValidationConfig = None
+    ML_VALIDATION_AVAILABLE = False
+
+try:
+    from ..optimization.overfitting_prevention import (
+        OverfittingPrevention,
+        OverfittingPreventionConfig
+    )
+    OVERFITTING_PREVENTION_AVAILABLE = True
+except ImportError:
+    OverfittingPrevention = None
+    OverfittingPreventionConfig = None
+    OVERFITTING_PREVENTION_AVAILABLE = False
 
 # Import new complementary modules
 try:
@@ -105,9 +132,9 @@ class IntegratedValidationConfig:
     enable_complexity_analysis: bool = True
 
     # Configuration objects
-    overfitting_config: Optional[OverfittingConfig] = None
-    ml_validation_config: Optional[UniversalMLValidationConfig] = None
-    overfitting_prevention_config: Optional[OverfittingPreventionConfig] = None
+    overfitting_config: Optional[Any] = None
+    ml_validation_config: Optional[Any] = None
+    overfitting_prevention_config: Optional[Any] = None
 
     # New module configurations
     data_leakage_config: Optional[Any] = None
@@ -126,13 +153,13 @@ class IntegratedValidationConfig:
 
     def __post_init__(self):
         """Initialize default configurations."""
-        if self.overfitting_config is None:
+        if self.overfitting_config is None and OVERFITTING_DETECTION_AVAILABLE:
             self.overfitting_config = OverfittingConfig()
 
-        if self.ml_validation_config is None:
+        if self.ml_validation_config is None and ML_VALIDATION_AVAILABLE:
             self.ml_validation_config = UniversalMLValidationConfig()
 
-        if self.overfitting_prevention_config is None:
+        if self.overfitting_prevention_config is None and OVERFITTING_PREVENTION_AVAILABLE:
             self.overfitting_prevention_config = OverfittingPreventionConfig()
 
         if self.utility_selection_criteria is None:
@@ -204,11 +231,22 @@ class IntegratedValidationSystem:
         """
         self.config = config or IntegratedValidationConfig()
 
-        # Initialize existing modules
-        self.lookahead_detector = LookaheadBiasDetector() if self.config.enable_lookahead_bias_detection else None
-        self.overfitting_detector = get_overfitting_detector(self.config.overfitting_config) if self.config.enable_overfitting_detection else None
-        self.ml_validator = get_ml_validator(self.config.ml_validation_config) if self.config.enable_ml_validation else None
-        self.overfitting_prevention = OverfittingPrevention(self.config.overfitting_prevention_config) if self.config.enable_overfitting_prevention else None
+        # Initialize existing modules (only if dependencies are available)
+        self.lookahead_detector = None
+        if self.config.enable_lookahead_bias_detection and LOOKAHEAD_DETECTOR_AVAILABLE:
+            self.lookahead_detector = LookaheadBiasDetector()
+
+        self.overfitting_detector = None
+        if self.config.enable_overfitting_detection and OVERFITTING_DETECTION_AVAILABLE and get_overfitting_detector:
+            self.overfitting_detector = get_overfitting_detector(self.config.overfitting_config)
+
+        self.ml_validator = None
+        if self.config.enable_ml_validation and ML_VALIDATION_AVAILABLE and get_ml_validator:
+            self.ml_validator = get_ml_validator(self.config.ml_validation_config)
+
+        self.overfitting_prevention = None
+        if self.config.enable_overfitting_prevention and OVERFITTING_PREVENTION_AVAILABLE:
+            self.overfitting_prevention = OverfittingPrevention(self.config.overfitting_prevention_config)
 
         # Initialize new complementary modules
         self.data_leakage_manager = get_data_leakage_prevention(self.config.data_leakage_config) if DATA_LEAKAGE_AVAILABLE and self.config.enable_data_leakage_prevention else None
@@ -294,7 +332,7 @@ class IntegratedValidationSystem:
             selected_utilities = self.intelligently_select_utilities(X_test if hasattr(X_test, '__len__') else None, model_type, task_type)
 
             # Run existing module validations
-            if 'lookahead_bias_detection' in selected_utilities and self.lookahead_detector:
+            if 'lookahead_bias_detection' in selected_utilities and self.lookahead_detector and LOOKAHEAD_DETECTOR_AVAILABLE:
                 try:
                     # Set current timestamp for bias detection
                     self.lookahead_detector.set_current_timestamp(datetime.now())
@@ -302,7 +340,7 @@ class IntegratedValidationSystem:
                 except Exception as e:
                     result.lookahead_bias_result = {'status': 'error', 'error': str(e)}
 
-            if 'overfitting_detection' in selected_utilities and self.overfitting_detector:
+            if 'overfitting_detection' in selected_utilities and self.overfitting_detector and OVERFITTING_DETECTION_AVAILABLE:
                 try:
                     # Use existing overfitting detector
                     detection_result = self.overfitting_detector.detect_overfitting(model, X_train, y_train, X_test, y_test)
@@ -310,7 +348,7 @@ class IntegratedValidationSystem:
                 except Exception as e:
                     result.overfitting_detection_result = {'status': 'error', 'error': str(e)}
 
-            if 'ml_validation' in selected_utilities and self.ml_validator:
+            if 'ml_validation' in selected_utilities and self.ml_validator and ML_VALIDATION_AVAILABLE:
                 try:
                     # Use existing ML validator
                     validation_result = self.ml_validator.validate_model(model, X_test, y_test)
@@ -318,7 +356,7 @@ class IntegratedValidationSystem:
                 except Exception as e:
                     result.ml_validation_result = {'status': 'error', 'error': str(e)}
 
-            if 'overfitting_prevention' in selected_utilities and self.overfitting_prevention:
+            if 'overfitting_prevention' in selected_utilities and self.overfitting_prevention and OVERFITTING_PREVENTION_AVAILABLE:
                 try:
                     # Use existing overfitting prevention
                     prevention_result = self.overfitting_prevention.analyze_model(model)

@@ -53,6 +53,7 @@ from .timeframe_config import get_timeframe_config, validate_timeframe_consisten
 from .early_stopping import get_early_stopping_config, get_overfitting_detector, EarlyStoppingMonitor
 from .temporal_validation import get_temporal_config, get_temporal_validator, get_temporal_cv
 from .temporal_cross_validation import get_temporal_cv_config, get_validation_pipeline
+from .overfitting_reporting import get_overfitting_reporter, OverfittingReporter
 
 # Feature generation system imports
 try:
@@ -1530,6 +1531,7 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
 
                             # Enhanced overfitting detection with early stopping
                             overfitting_detector = get_overfitting_detector()
+                            overfitting_reporter = get_overfitting_reporter()
                             
                             # Get probabilities if available for enhanced analysis
                             train_probabilities = None
@@ -1551,28 +1553,42 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
                                 val_probabilities=test_probabilities,
                                 feature_importance=feature_importance
                             )
+                            
+                            # Generate comprehensive report
+                            overfitting_report = overfitting_detector.generate_comprehensive_report(
+                                overfitting_analysis=overfitting_analysis,
+                                model_name=model_name,
+                                fold_number=None
+                            )
 
-                            # Enhanced overfitting reporting
-                            if overfitting_analysis['is_overfitting']:
-                                severity = overfitting_analysis['severity']
-                                tprint(f"⚠️ OVERFITTING DETECTED ({severity.upper()} severity):")
-                                tprint(f"   Train accuracy: {overfitting_analysis['train_accuracy']:.4f}")
-                                tprint(f"   Test accuracy: {overfitting_analysis['test_accuracy']:.4f}")
-                                tprint(f"   Accuracy gap: {overfitting_analysis['accuracy_gap']:.4f}")
-                                tprint(f"   F1 gap: {overfitting_analysis['f1_gap']:.4f}")
-
-                                if overfitting_analysis['warnings']:
-                                    for warning in overfitting_analysis['warnings']:
-                                        tprint(f"   {warning}")
-
-                                if overfitting_analysis['recommendations']:
-                                    tprint(f"   📋 Recommendations:")
-                                    for rec in overfitting_analysis['recommendations'][:3]:  # Show top 3
-                                        tprint(f"      • {rec}")
+                            # Enhanced overfitting reporting with comprehensive analysis
+                            if overfitting_report.is_overfitting:
+                                tprint(f"🚨 OVERFITTING DETECTED ({overfitting_report.severity.upper()} severity)")
+                                tprint(f"   Confidence Level: {overfitting_report.confidence_level:.2f}")
+                                tprint(f"   Train Accuracy: {overfitting_report.train_accuracy:.4f}")
+                                tprint(f"   Val Accuracy:   {overfitting_report.val_accuracy:.4f}")
+                                tprint(f"   Accuracy Gap:   {overfitting_report.accuracy_gap:.4f}")
+                                tprint(f"   F1 Gap:         {overfitting_report.f1_gap:.4f}")
+                                
+                                if overfitting_report.indicators:
+                                    tprint(f"   Indicators ({len(overfitting_report.indicators)}):")
+                                    for indicator in overfitting_report.indicators:
+                                        tprint(f"     • {indicator}")
+                                
+                                if overfitting_report.warnings:
+                                    tprint("   Warnings:")
+                                    for warning in overfitting_report.warnings[:5]:  # Show top 5
+                                        tprint(f"     {warning}")
+                                
+                                if overfitting_report.recommendations:
+                                    tprint("   Recommendations:")
+                                    for rec in overfitting_report.recommendations[:5]:  # Show top 5
+                                        tprint(f"     {rec}")
                             else:
-                                # Calculate accuracy gap for display
-                                accuracy_gap = train_accuracy - test_accuracy
-                                tprint(f"✅ Model generalization validated: Train={train_accuracy:.4f}, Test={test_accuracy:.4f}, Gap={accuracy_gap:.4f}")
+                                tprint(f"✅ No overfitting detected - Model generalization looks good")
+                                tprint(f"   Train Accuracy: {overfitting_report.train_accuracy:.4f}")
+                                tprint(f"   Val Accuracy:   {overfitting_report.val_accuracy:.4f}")
+                                tprint(f"   Accuracy Gap:   {overfitting_report.accuracy_gap:.4f}")
 
                             # Use test set predictions for final metrics
                             predictions = test_predictions

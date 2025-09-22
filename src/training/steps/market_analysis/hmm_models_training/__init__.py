@@ -101,6 +101,15 @@ from .enhanced_training_integration import (
     demonstrate_enhanced_training
 )
 
+# Enhanced Components - Overfitting Reporting
+from .overfitting_reporting import (
+    OverfittingReport,
+    OverfittingTrend,
+    OverfittingReporter,
+    get_overfitting_reporter,
+    create_overfitting_reporter
+)
+
 __all__ = [
     # Main training class
     'HMMModelsTrainingEnhanced',
@@ -172,6 +181,13 @@ __all__ = [
     # Enhanced Components - Integration
     'EnhancedHMMTrainingPipeline',
     'demonstrate_enhanced_training',
+    
+    # Enhanced Components - Overfitting Reporting
+    'OverfittingReport',
+    'OverfittingTrend',
+    'OverfittingReporter',
+    'get_overfitting_reporter',
+    'create_overfitting_reporter',
     
     # Utilities
     'StandardizedLogger',

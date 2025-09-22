@@ -10,6 +10,9 @@ from dataclasses import dataclass
 from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
 import logging
 
+# Import enhanced reporting
+from .overfitting_reporting import OverfittingReporter, get_overfitting_reporter
+
 logger = logging.getLogger(__name__)
 
 @dataclass
@@ -169,9 +172,10 @@ class EarlyStoppingMonitor:
 class AggressiveOverfittingDetector:
     """Aggressive overfitting detection with multiple validation strategies."""
     
-    def __init__(self, config: EarlyStoppingConfig):
+    def __init__(self, config: EarlyStoppingConfig, reporter: Optional[OverfittingReporter] = None):
         self.config = config
         self.detection_history = []
+        self.reporter = reporter or get_overfitting_reporter()
         
     def comprehensive_overfitting_analysis(self, 
                                          train_predictions: np.ndarray,
@@ -319,6 +323,29 @@ class AggressiveOverfittingDetector:
             analysis['is_overfitting'] = False
             
         return analysis
+    
+    def generate_comprehensive_report(self, 
+                                    overfitting_analysis: Dict[str, Any],
+                                    model_name: str = "unknown",
+                                    fold_number: Optional[int] = None) -> 'OverfittingReport':
+        """
+        Generate comprehensive overfitting report with enhanced reporting.
+        
+        Args:
+            overfitting_analysis: Overfitting analysis results
+            model_name: Name of the model
+            fold_number: Fold number (for cross-validation)
+            
+        Returns:
+            OverfittingReport: Comprehensive report
+        """
+        return self.reporter.generate_comprehensive_report(
+            overfitting_analysis, model_name, fold_number
+        )
+    
+    def get_detection_summary(self) -> Dict[str, Any]:
+        """Get summary of all overfitting detections."""
+        return self.reporter.get_summary_report()
 
 # Global instances for easy access
 DEFAULT_EARLY_STOPPING_CONFIG = EarlyStoppingConfig()

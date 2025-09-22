@@ -35,6 +35,7 @@ from .timeframe_config import get_timeframe_config, validate_timeframe_consisten
 from .early_stopping import get_early_stopping_config, get_overfitting_detector, EarlyStoppingMonitor
 from .temporal_validation import get_temporal_config, get_temporal_validator, get_temporal_cv
 from .temporal_cross_validation import get_temporal_cv_config, get_validation_pipeline
+from .overfitting_reporting import get_overfitting_reporter, OverfittingReporter
 try:
     from src.utils.common_operations import (
         validate_dataframe, validate_finite, validate_positive, validate_range, 

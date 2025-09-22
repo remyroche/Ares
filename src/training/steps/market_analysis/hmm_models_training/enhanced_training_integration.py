@@ -42,6 +42,11 @@ from .temporal_cross_validation import (
     create_time_series_split,
     TemporalCVConfig
 )
+from .overfitting_reporting import (
+    get_overfitting_reporter,
+    OverfittingReporter,
+    OverfittingReport
+)
 
 # Import existing components
 from .hmm_models_training_enhanced import HMMModelsTrainingEnhanced
@@ -186,6 +191,7 @@ class EnhancedHMMTrainingPipeline:
         self.temporal_validator = get_temporal_validator()
         self.overfitting_detector = get_overfitting_detector()
         self.validation_pipeline = get_validation_pipeline()
+        self.overfitting_reporter = get_overfitting_reporter()
         
         # Initialize training components
         self.hmm_training = HMMModelsTrainingEnhanced()

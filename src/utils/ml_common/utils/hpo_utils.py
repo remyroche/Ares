@@ -1,7 +1,10 @@
 """
-Hyperparameter Optimization Utilities
+Hyperparameter Optimization Utilities (Compatibility Wrapper)
 
-This module provides utilities for hyperparameter optimization with memory-aware operations.
+This module is a thin wrapper around the canonical implementation in
+`src.utils.ml_common.optimization.hpo_utils`. New code should import from the
+canonical module. This wrapper re-exports the canonical class and functions,
+and preserves a legacy API for backward compatibility where needed.
 """
 
 import logging
@@ -11,15 +14,30 @@ from functools import partial
 import numpy as np
 import pandas as pd
 
+# Re-export canonical implementation for new code paths
+from src.utils.ml_common.optimization.hpo_utils import (
+    HyperparameterOptimization as CanonicalHyperparameterOptimization,
+    optimize_hyperparameters,
+    create_search_space,
+    validate_hpo_config,
+    create_hpo_config,
+)
+
 logger = logging.getLogger(__name__)
 
-class HyperparameterOptimization:
-    """Hyperparameter optimization utilities with memory management."""
+# Alias canonical class for external imports
+HyperparameterOptimization = CanonicalHyperparameterOptimization
+
+class LegacyRandomSearchHPO:
+    """Legacy hyperparameter optimization utilities with memory management.
+
+    Deprecated: Prefer using `src.utils.ml_common.optimization.hpo_utils.HyperparameterOptimization`.
+    """
 
     def __init__(self):
-        """Initialize HPO utilities."""
-        self.logger = logger.getChild('HyperparameterOptimization')
-        self.logger.info("🚀 Initializing HyperparameterOptimization utilities")
+        """Initialize legacy HPO utilities."""
+        self.logger = logger.getChild('LegacyRandomSearchHPO')
+        self.logger.info("🚀 Initializing LegacyRandomSearchHPO utilities (deprecated)")
 
     def multi_objective_optimization(
         self,
@@ -286,15 +304,26 @@ class HyperparameterOptimization:
         return pareto_front
 
 
-# Global instance for easy access
-_hpo_instance = None
+# Global instance for easy access (legacy-compatible)
+_legacy_hpo_instance = None
 
-def get_hyperparameter_optimizer() -> HyperparameterOptimization:
-    """Get global hyperparameter optimizer instance."""
-    global _hpo_instance
-    if _hpo_instance is None:
-        _hpo_instance = HyperparameterOptimization()
-    return _hpo_instance
+def get_hyperparameter_optimizer():
+    """Get global hyperparameter optimizer instance (legacy-compatible).
+
+    Returns an instance that supports the older API used in some utilities.
+    New code should instantiate `HyperparameterOptimization` from the canonical module.
+    """
+    global _legacy_hpo_instance
+    if _legacy_hpo_instance is None:
+        _legacy_hpo_instance = LegacyRandomSearchHPO()
+    return _legacy_hpo_instance
 
 # Export key classes and functions
-__all__ = ['HyperparameterOptimization', 'get_hyperparameter_optimizer']
+__all__ = [
+    'HyperparameterOptimization',
+    'get_hyperparameter_optimizer',
+    'optimize_hyperparameters',
+    'create_search_space',
+    'validate_hpo_config',
+    'create_hpo_config',
+]

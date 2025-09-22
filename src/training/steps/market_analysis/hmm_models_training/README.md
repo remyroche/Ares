@@ -30,7 +30,7 @@ The HMM training has been **completely migrated** to leverage the common_utils/ 
 - **Reporting integration** - comprehensive reporting and metrics
 
 ### 3. HMM-Specific Optimizations
-- **Base models (top 2 + gradient boosters)** - logistic regression, LightGBM, Random Forest, XGBoost, CatBoost
+- **Optimized models** - LightGBM, XGBoost, CatBoost, Random Forest
 - **No ensemble models** - removed voting, stacking, bagging, ada boost, extra trees
 - **No deep learning models** - removed TabNet and neural networks for HMM focus
 - **Gradient booster comparison** - XGBoost vs CatBoost, training both to select best
@@ -62,8 +62,8 @@ results = execute_enhanced_hmm_models_training(
 from src.utils.ml_common.config.base_training_config import HMMTrainingConfig
 config = HMMTrainingConfig(
     model_types=[
-        # Base models (top 2 + gradient boosters to compare)
-        "logistic_regression", "lightgbm", "random_forest", "xgboost", "catboost"
+        # Optimized models for HMM state classification
+        "lightgbm", "xgboost", "catboost", "random_forest"
     ],
     hpo_trials=100,
     enable_multi_objective=True
@@ -75,7 +75,7 @@ results = training_step.execute(X, y, regime_labels, feature_names)
 
 **Key Features:**
 - ✅ **15m timeframe enforcement** - automatic HMM state recognition
-- ✅ **Base models (top 2 + gradient boosters)** - logistic regression, LightGBM, Random Forest, XGBoost, CatBoost
+- ✅ **Optimized models** - LightGBM, XGBoost, CatBoost, Random Forest
 - ✅ **No ensemble models** - removed voting, stacking, bagging, ada boost, extra trees
 - ✅ **No deep learning models** - removed TabNet and neural networks for HMM focus
 - ✅ **Gradient booster comparison** - XGBoost vs CatBoost, training both to select best
@@ -97,7 +97,7 @@ The HMM training has been **completely migrated** to leverage the common_utils/ 
 - ✅ **90%+ reduction in custom code** - leverages BaseTrainingStep inheritance
 - ✅ **Universal validation, HPO, and reporting** from common_utils
 - ✅ **HMM state recognition focus** with 15m timeframe enforcement
-- ✅ **Base models (top 2 + gradient boosters)** - logistic regression, LightGBM, Random Forest, XGBoost, CatBoost
+- ✅ **Optimized models** - LightGBM, XGBoost, CatBoost, Random Forest
 - ✅ **No ensemble models** - removed voting, stacking, bagging, ada boost, extra trees
 - ✅ **No deep learning models** - removed TabNet and neural networks for HMM focus
 - ✅ **Enhanced reporting** - comprehensive metrics and recommendations for all models

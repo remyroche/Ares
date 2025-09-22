@@ -109,11 +109,10 @@ class GlobalHMMClassifier:
         """Create model instance using ml_commons EnhancedModelFactory."""
         # Map model type to ml_commons ModelType enum
         model_type_mapping = {
-            'logistic_regression': ModelType.LOGISTIC_REGRESSION,
             'lightgbm': ModelType.LIGHTGBM_CLASSIFIER,
-            'random_forest': ModelType.RANDOM_FOREST_CLASSIFIER,
             'xgboost': ModelType.XGBOOST_CLASSIFIER,
-            'catboost': ModelType.CATBOOST_CLASSIFIER
+            'catboost': ModelType.CATBOOST_CLASSIFIER,
+            'random_forest': ModelType.RANDOM_FOREST_CLASSIFIER
         }
         
         if model_type not in model_type_mapping:
@@ -138,23 +137,12 @@ class GlobalHMMClassifier:
     def _get_model_specific_params(self, model_type: str) -> Dict[str, Any]:
         """Get model-specific parameters for multi-class classification."""
         params = {
-            'logistic_regression': {
-                'multi_class': 'multinomial',
-                'solver': 'lbfgs',
-                'max_iter': 1000,
-                'random_state': 42
-            },
             'lightgbm': {
                 'objective': 'multiclass',
                 'num_class': self.n_hmm_states,
                 'metric': 'multi_logloss',
                 'verbose': -1,
                 'random_state': 42
-            },
-            'random_forest': {
-                'n_estimators': 100,
-                'random_state': 42,
-                'n_jobs': -1
             },
             'xgboost': {
                 'objective': 'multi:softprob',
@@ -168,6 +156,11 @@ class GlobalHMMClassifier:
                 'classes_count': self.n_hmm_states,
                 'verbose': False,
                 'random_seed': 42
+            },
+            'random_forest': {
+                'n_estimators': 100,
+                'random_state': 42,
+                'n_jobs': -1
             }
         }
         
@@ -207,11 +200,10 @@ class GlobalHMMTrainingStep(BaseTrainingStep):
         # Global classifier specific settings
         self.n_hmm_states = 20
         self.global_model_types = [
-            "logistic_regression",  # Multi-class logistic regression
             "lightgbm",            # Multi-class LightGBM
-            "random_forest",       # Multi-class Random Forest
             "xgboost",             # Multi-class XGBoost
-            "catboost"             # Multi-class CatBoost
+            "catboost",            # Multi-class CatBoost
+            "random_forest"        # Multi-class Random Forest
         ]
         
         # Initialize ml_commons utilities

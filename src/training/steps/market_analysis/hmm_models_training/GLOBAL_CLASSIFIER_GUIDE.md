@@ -75,6 +75,9 @@ config = HMMTrainingConfig(
     objective_weights=[0.5, 0.35, 0.15]  # Updated weights
 )
 
+# Available model types (Logistic Regression removed for better performance)
+available_models = ["lightgbm", "xgboost", "catboost", "random_forest"]
+
 # Create and execute training
 training_step = create_global_hmm_training(config)
 results = training_step.execute(X, y, regime_labels, feature_names)
@@ -102,21 +105,7 @@ print(f"Objective score: {best_recommendation['objective_score']:.4f}")
 
 ## Model Types
 
-### 1. **Multi-Class Logistic Regression**
-```python
-# Fast, interpretable, good baseline - Created via ml_commons EnhancedModelFactory
-ModelConfig(
-    model_name="global_hmm_logistic",
-    model_type=ModelType.LOGISTIC_REGRESSION,
-    model_params={
-        'multi_class': 'multinomial',
-        'solver': 'lbfgs',
-        'max_iter': 1000
-    }
-)
-```
-
-### 2. **Multi-Class LightGBM**
+### 1. **Multi-Class LightGBM**
 ```python
 # High performance, fast training - Created via ml_commons EnhancedModelFactory
 ModelConfig(
@@ -130,7 +119,7 @@ ModelConfig(
 )
 ```
 
-### 3. **Multi-Class XGBoost**
+### 2. **Multi-Class XGBoost**
 ```python
 # Gradient boosting with multi-class objective - Created via ml_commons EnhancedModelFactory
 ModelConfig(
@@ -144,20 +133,7 @@ ModelConfig(
 )
 ```
 
-### 4. **Multi-Class Random Forest**
-```python
-# Robust ensemble method - Created via ml_commons EnhancedModelFactory
-ModelConfig(
-    model_name="global_hmm_rf",
-    model_type=ModelType.RANDOM_FOREST_CLASSIFIER,
-    model_params={
-        'n_estimators': 100,
-        'n_jobs': -1
-    }
-)
-```
-
-### 5. **Multi-Class CatBoost**
+### 3. **Multi-Class CatBoost**
 ```python
 # Advanced gradient boosting - Created via ml_commons EnhancedModelFactory
 ModelConfig(
@@ -167,6 +143,19 @@ ModelConfig(
         'objective': 'MultiClass',
         'classes_count': 20,
         'verbose': False
+    }
+)
+```
+
+### 4. **Multi-Class Random Forest**
+```python
+# Robust ensemble method - Created via ml_commons EnhancedModelFactory
+ModelConfig(
+    model_name="global_hmm_rf",
+    model_type=ModelType.RANDOM_FOREST_CLASSIFIER,
+    model_params={
+        'n_estimators': 100,
+        'n_jobs': -1
     }
 )
 ```

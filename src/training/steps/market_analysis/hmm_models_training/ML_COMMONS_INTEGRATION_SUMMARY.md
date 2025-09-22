@@ -43,11 +43,12 @@ model = self.model_factory.create_model(model_config)
 ### 2. **ModelType Enum Usage**
 
 **Standardized Model Types:**
-- `ModelType.LOGISTIC_REGRESSION`
 - `ModelType.LIGHTGBM_CLASSIFIER`
-- `ModelType.RANDOM_FOREST_CLASSIFIER`
 - `ModelType.XGBOOST_CLASSIFIER`
 - `ModelType.CATBOOST_CLASSIFIER`
+- `ModelType.RANDOM_FOREST_CLASSIFIER`
+
+**Note**: Logistic Regression removed for better performance on complex HMM state patterns.
 
 ### 3. **ModelConfig Dataclass**
 
@@ -66,6 +67,12 @@ ModelConfig(
     enable_gpu_acceleration=False
 )
 ```
+
+**Available Model Types (Optimized for HMM States):**
+- `LIGHTGBM_CLASSIFIER` - Best overall performance
+- `XGBOOST_CLASSIFIER` - Best for complex patterns
+- `CATBOOST_CLASSIFIER` - Best for categorical features
+- `RANDOM_FOREST_CLASSIFIER` - Good baseline
 
 ### 4. **Evaluation Integration**
 

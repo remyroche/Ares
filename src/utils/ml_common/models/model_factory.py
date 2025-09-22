@@ -1087,7 +1087,22 @@ class EnhancedModelFactory:
             # GPU acceleration (if supported by model)
             if self.m1_gpu and model_config.enable_gpu_acceleration:
                 # Add GPU-specific parameters if the model supports them
-                pass
+                try:
+                    params = model.get_params() if hasattr(model, 'get_params') else {}
+                    gpu_candidates = {
+                        'device': 'gpu',              # xgboost/sklearn compatible wrappers
+                        'tree_method': 'hist',        # xgboost reasonable default
+                        'predictor': 'gpu_predictor',# xgboost
+                        'use_gpu': True,              # lightgbm/catboost style
+                        'task_type': 'GPU'            # catboost
+                    }
+                    # Only set keys that exist in current model's parameters to avoid errors
+                    gpu_updates = {k: v for k, v in gpu_candidates.items() if k in params}
+                    if gpu_updates:
+                        m1_params.update(gpu_updates)
+                except Exception:
+                    # Silently ignore if model does not expose get_params or rejects updates
+                    pass
             
             # Apply parameters
             if m1_params:

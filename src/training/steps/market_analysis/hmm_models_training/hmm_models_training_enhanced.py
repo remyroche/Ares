@@ -9,23 +9,18 @@ This is the primary HMM training implementation - extensively using ml_commons t
 """
 
 import numpy as np
-import pandas as pd
 from typing import Any, Dict, List, Optional, Tuple, Union
 import time
 
 # Core imports - using common utilities
-from src.utils.tprint import tprint
 from src.utils.logger import system_logger
 from src.utils.ml_common.config.base_training_config import HMMTrainingConfig
 from src.utils.ml_common.training.base_training_step import BaseTrainingStep
-from src.utils.ml_common.config.universal_timeframe_config import get_primary_timeframe
 
 # New ml_commons imports for extensive functionality
 from src.utils.ml_common.utils.hmm_hpo_config import get_hmm_hyperparameter_optimizer
 # from src.utils.ml_common.validation.hmm_validation_pipeline import get_hmm_validation_pipeline
 from src.utils.ml_common.utils.hmm_temporal_protection import get_hmm_temporal_protection
-from src.utils.ml_common.validation.enhanced_overfitting_detection import get_overfitting_detector
-from src.utils.ml_common.utils.lookahead_protection import LookaheadProtection
 
 
 class StreamlinedHMMTrainingStep(BaseTrainingStep):
@@ -76,13 +71,11 @@ class StreamlinedHMMTrainingStep(BaseTrainingStep):
         self.hmm_hpo = get_hmm_hyperparameter_optimizer(config)
         # self.hmm_validation = get_hmm_validation_pipeline(config)
         self.hmm_temporal_protection = get_hmm_temporal_protection(config)
-        self.overfitting_detector = get_overfitting_detector()
-        self.lookahead_protection = LookaheadProtection()
 
         self.logger.info("✅ Streamlined HMM Training Step initialized with ml_commons tools")
         self.logger.info(f"📊 Timeframe: {config.timeframe} (HMM state recognition)")
         self.logger.info(f"📊 Model types: {config.model_types}")
-        self.logger.info("🧠 Available tools: HPO, Validation Pipeline, Temporal Protection, Overfitting Detection")
+        self.logger.info("🧠 Available tools: HPO, Universal Validation, Temporal Protection")
 
     def _get_hmm_model_types(self) -> List[str]:
         """
@@ -270,7 +263,7 @@ class StreamlinedHMMTrainingStep(BaseTrainingStep):
             feature_names=feature_names
         )
 
-        # Generate enhanced reporting for all models using ml_commons validation
+        # Generate enhanced reporting for all models using universal validation
         enhanced_reporting = self._generate_enhanced_model_report(
             models=training_results.get('models', {}),
             evaluation_results=training_results.get('evaluation_results', {}),
@@ -293,14 +286,12 @@ class StreamlinedHMMTrainingStep(BaseTrainingStep):
                 'enhanced_reporting': enhanced_reporting,
                 'ml_commons_integration': {
                     'hpo_used': True,
-                    'validation_pipeline_used': True,
+                    'universal_validation_used': True,
                     'temporal_protection_used': True,
-                    'overfitting_detection_used': True,
                     'tools_available': [
                         'HMMHyperparameterOptimizer',
-                        'HMMValidationPipeline',
-                        'HMMTemporalProtection',
-                        'UniversalOverfittingDetector'
+                        'UniversalValidationIntegrator',
+                        'HMMTemporalProtection'
                     ]
                 }
             }

@@ -41,7 +41,7 @@ from src.utils.ml_common.reporting import process_validation_with_reporting
 
 # New ml_commons imports for extensive functionality
 from src.utils.ml_common.utils.hmm_hpo_config import get_hmm_hyperparameter_optimizer
-# from src.utils.ml_common.validation.hmm_validation_pipeline import get_hmm_validation_pipeline
+# Deprecated HMM validation pipeline import fully removed (using universal validation instead)
 from src.utils.ml_common.utils.hmm_temporal_protection import get_hmm_temporal_protection
 from src.utils.ml_common.validation.enhanced_overfitting_detection import get_overfitting_detector
 from src.utils.ml_common.utils.lookahead_protection import LookaheadProtection
@@ -253,7 +253,7 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
 
             # Initialize ml_commons tools for extensive functionality
             self.hmm_hpo = get_hmm_hyperparameter_optimizer(config)
-            # self.hmm_validation = get_hmm_validation_pipeline(config)
+            # Deprecated: HMM validation pipeline no longer used
             self.hmm_temporal_protection = get_hmm_temporal_protection(config)
             self.overfitting_detector = get_overfitting_detector()
             self.lookahead_protection = LookaheadProtection()

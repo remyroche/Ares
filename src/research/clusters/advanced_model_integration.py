@@ -47,7 +47,8 @@ from .production_feature_integration import ProductionLeakageSafeFeatures, Produ
 # Import existing HMM components
 try:
     from src.training.steps.market_analysis.components.hmm_regime_discovery import HMMRegimeDiscoveryComponent
-    from src.training.steps.market_analysis.components.hmm_clustering import HMMClusteringComponent
+    # HMMClusteringComponent no longer exists - replaced by OptimalRegimeClusteringComponent
+    # from src.training.steps.market_analysis.components.hmm_clustering import HMMClusteringComponent
     HMM_COMPONENTS_AVAILABLE = True
 except ImportError:
     HMM_COMPONENTS_AVAILABLE = False

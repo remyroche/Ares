@@ -881,7 +881,7 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
         try:
             import pandas as pd
             import numpy as np
-            from src.training.steps.market_analysis.hmm_clustering.standardized_features import StandardizedFeatureCalculator
+            from .standardized_features import StandardizedFeatureCalculator
             
             # Calculate all standardized features
             standardized_calc = StandardizedFeatureCalculator()

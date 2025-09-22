@@ -918,10 +918,11 @@ def ensemble_predict(features):
                 guide['code_examples'] = {
                     'regime_detection': '''
 # Detect market regimes
-from src.training.steps.market_analysis.hmm_clustering import HMMRegimeDetector
+# HMMRegimeDetector no longer available from deleted hmm_clustering module
+# from src.training.steps.market_analysis.hmm_clustering import HMMRegimeDetector
 
-regime_detector = HMMRegimeDetector()
-regimes = regime_detector.detect_regimes(features)
+# regime_detector = HMMRegimeDetector()
+# regimes = regime_detector.detect_regimes(features)
 
 # Train regime-specific models
 regime_models = {}

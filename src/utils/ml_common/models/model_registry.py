@@ -540,7 +540,7 @@ class ModelRegistry:
     def _enhance_metadata(self, metadata: Dict[str, Any], model_name: str,
                          version: str, model: Any) -> Dict[str, Any]:
         """Enhance metadata with additional information."""
-            enhanced = metadata.copy() if metadata is not None else {}
+        enhanced = metadata.copy() if metadata is not None else {}
 
         # Add registry information
         enhanced.update({

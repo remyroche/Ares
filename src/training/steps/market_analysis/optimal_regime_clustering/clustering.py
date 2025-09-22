@@ -1171,18 +1171,3 @@ def create_optimal_clusterer(config: Optional[OptimalClusteringConfig] = None) -
         config = OptimalClusteringConfig()
 
     return OptimalRegimeClusterer(config)
-
-def cluster_hmm_regimes(data_path: str, config: Optional[OptimalClusteringConfig] = None,
-                       **kwargs) -> ClusteringResult:
-    """Convenience function to cluster HMM regimes.
-
-    Args:
-        data_path: Path to HMM regime data
-        config: Clustering configuration
-        **kwargs: Additional parameters
-
-    Returns:
-        ClusteringResult
-    """
-    clusterer = create_optimal_clusterer(config)
-    return clusterer.cluster(data_path, **kwargs)

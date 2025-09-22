@@ -24,7 +24,7 @@ Example usage:
 """
 
 from .config import OptimalClusteringConfig, get_clustering_config, DEFAULT_CONFIG, HIGH_QUALITY_CONFIG, FAST_CONFIG
-from .clustering import OptimalRegimeClusterer, ClusteringResult, create_optimal_clusterer, cluster_hmm_regimes
+from .clustering import OptimalRegimeClusterer, ClusteringResult, create_optimal_clusterer
 from .optimized_clustering import MatrixOptimizedClusterer, OptimizedClusteringResult, create_matrix_optimized_clusterer, cluster_regimes_optimized
 from .orchestrator import OptimalRegimeClusteringOrchestrator, run_optimal_clustering, run_high_quality_clustering, run_fast_clustering, run_matrix_optimized_clustering
 from .utils import (
@@ -50,7 +50,6 @@ __all__ = [
     "OptimalRegimeClusterer",
     "ClusteringResult",
     "create_optimal_clusterer",
-    "cluster_hmm_regimes",
 
     # Matrix-optimized clustering
     "MatrixOptimizedClusterer",

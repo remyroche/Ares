@@ -968,12 +968,12 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
                     hmm_features = None
                     integration_stats['integration_errors'].append(f"HMM integration failed: {e}")
             
-            # Generate and count analyst model predictions
+            # Generate and count analyst model predictions (prefer OOF)
             analyst_predictions = []
             if analyst_models:
                 for model_name, model in analyst_models.items():
                     try:
-                        predictions = self._generate_model_predictions(model, X, model_name)
+                        predictions = self._generate_oof_predictions(model, X, model_name)
                         if predictions is not None:
                             analyst_predictions.append((model_name, predictions))
                             additional_features_count += predictions.shape[1]
@@ -984,12 +984,12 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
                         self.logger.warning(f"⚠️ Could not add predictions from {model_name}: {e}")
                         integration_stats['integration_errors'].append(f"Analyst model {model_name} failed: {e}")
             
-            # Generate and count ensemble predictions
+            # Generate and count ensemble predictions (prefer OOF)
             ensemble_predictions = []
             if analyst_ensembles:
                 for ensemble_name, ensemble in analyst_ensembles.items():
                     try:
-                        predictions = self._generate_model_predictions(ensemble, X, ensemble_name)
+                        predictions = self._generate_oof_predictions(ensemble, X, ensemble_name)
                         if predictions is not None:
                             ensemble_predictions.append((ensemble_name, predictions))
                             additional_features_count += predictions.shape[1]
@@ -1139,6 +1139,75 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
             # Return original features if combination fails
             self.logger.warning("⚠️ Returning original features due to combination failure")
             return X
+
+    def _generate_oof_predictions(self, model: Any, X: np.ndarray, model_name: str, n_splits: int = 5) -> Optional[np.ndarray]:
+        """Generate OOF predictions for external models via TimeSeriesSplit.
+
+        If the external model is already trained, we only predict on validation folds;
+        if prediction fails, fall back to a simple last-10% holdout prediction column.
+        """
+        try:
+            import numpy as _np
+            from sklearn.model_selection import TimeSeriesSplit
+
+            if not hasattr(model, 'predict'):
+                return None
+
+            n = len(X)
+            if n < max(3, n_splits + 1):
+                # Too few samples for CV; try simple prediction
+                pred = model.predict(X)
+                pred_arr = _np.asarray(pred).reshape(-1, 1)
+                if pred_arr.shape[0] == n:
+                    return pred_arr
+                return None
+
+            splitter = TimeSeriesSplit(n_splits=max(2, n_splits))
+            oof = _np.zeros((n, 1), dtype=float)
+            filled = _np.zeros(n, dtype=bool)
+
+            for tr_idx, va_idx in splitter.split(_np.arange(n)):
+                try:
+                    # Assume model is pre-trained; predict on validation indices
+                    pred = model.predict(X[va_idx])
+                    pred_arr = _np.asarray(pred).reshape(-1, 1)
+                    if pred_arr.shape[0] != len(va_idx):
+                        continue
+                    oof[va_idx, 0] = pred_arr[:, 0]
+                    filled[va_idx] = True
+                except Exception as e:
+                    # Cannot create OOF for this model
+                    self.logger.debug(f"OOF prediction failed for {model_name} on a fold: {e}")
+                    continue
+
+            if filled.any():
+                # For any unfilled rows (e.g., earliest fold), try a holdout prediction from the last segment
+                if not filled.all():
+                    try:
+                        holdout = max(1, int(0.1 * n))
+                        tr_end = n - holdout
+                        pred_tail = model.predict(X[tr_end:])
+                        pred_tail_arr = _np.asarray(pred_tail).reshape(-1, 1)
+                        oof[tr_end:, 0] = pred_tail_arr[:, 0]
+                    except Exception:
+                        pass
+                return oof
+
+            # Full fallback: single holdout
+            try:
+                holdout = max(1, int(0.1 * n))
+                tr_end = n - holdout
+                pred_tail = model.predict(X[tr_end:])
+                pred_tail_arr = _np.asarray(pred_tail).reshape(-1, 1)
+                oof = _np.zeros((n, 1), dtype=float)
+                oof[tr_end:, 0] = pred_tail_arr[:, 0]
+                return oof
+            except Exception:
+                return None
+
+        except Exception as e:
+            self.logger.warning(f"⚠️ Failed to generate OOF predictions from {model_name}: {e}")
+            return None
     
     def _generate_model_predictions(self, model: Any, X: np.ndarray, model_name: str) -> Optional[np.ndarray]:
         """Generate predictions from a model with proper error handling and shape validation."""

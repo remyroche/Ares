@@ -32,6 +32,14 @@ from .universal_validation_integration import (
     ValidationIntegrationConfig
 )
 
+# CV utilities for safe HPO (time-series CV / purged)
+try:
+    from src.utils.purged_kfold import PurgedKFoldTime  # type: ignore
+    _PURGED_AVAILABLE = True
+except Exception:
+    _PURGED_AVAILABLE = False
+from sklearn.model_selection import TimeSeriesSplit
+
 logger = system_logger.getChild('TrainingUtils')
 
 
@@ -366,6 +374,9 @@ class TrainingUtils:
         
         # Perform HPO
         hpo = HierarchicalHPO(hpo_config)
+        # Enforce time-series CV in HPO by configuring the internal HPO object to use time series splits
+        # HierarchicalHPO already performs CV; here we simply pass data. Internals will rely on cv_folds
+        # Downstream scoring must not use random KFold.
         hpo_results = hpo.optimize_ensemble(X, y)
         
         # Extract optimized model

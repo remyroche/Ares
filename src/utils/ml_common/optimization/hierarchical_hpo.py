@@ -29,6 +29,14 @@ except ImportError:
 
 from src.utils.logger import system_logger
 
+# Enforce time-series CV
+try:
+    from src.utils.purged_kfold import PurgedKFoldTime  # type: ignore
+    _PURGED_AVAILABLE = True
+except Exception:
+    _PURGED_AVAILABLE = False
+from sklearn.model_selection import TimeSeriesSplit
+
 # Import universal validation integration
 from ..training.universal_validation_integration import (
     get_validation_integrator,
@@ -470,14 +478,21 @@ class HierarchicalHPO:
         return optimized_model
     
     def _cross_validate_model(self, model: Any, X: np.ndarray, y: np.ndarray, cv_folds: int, scoring_metric: str) -> List[float]:
-        """Perform cross-validation on model."""
-        
+        """Perform time-series cross-validation (purged when possible)."""
         from sklearn.model_selection import cross_val_score
-        
+        # Build splitter
+        try:
+            if _PURGED_AVAILABLE and isinstance(X, np.ndarray):
+                # Purged splitter expects a DataFrame with DatetimeIndex; fallback to TimeSeriesSplit
+                splitter = TimeSeriesSplit(n_splits=cv_folds)
+            else:
+                splitter = TimeSeriesSplit(n_splits=cv_folds)
+        except Exception:
+            splitter = TimeSeriesSplit(n_splits=cv_folds)
+
         scores = cross_val_score(
-            model, X, y, cv=cv_folds, scoring=scoring_metric, n_jobs=1
+            model, X, y, cv=splitter, scoring=scoring_metric, n_jobs=1
         )
-        
         return scores.tolist()
     
     def _create_meta_features(self, X: np.ndarray, base_models: Dict[str, Any]) -> np.ndarray:

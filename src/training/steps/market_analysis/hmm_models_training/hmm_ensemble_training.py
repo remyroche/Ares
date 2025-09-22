@@ -38,6 +38,14 @@ from src.utils.ml_common.validation import (
 )
 from src.utils.ml_common.config.universal_timeframe_config import get_primary_timeframe
 from src.utils.ml_common.reporting import process_validation_with_reporting
+
+# New ml_commons imports for extensive functionality
+from src.utils.ml_common.utils.hmm_hpo_config import get_hmm_hyperparameter_optimizer
+from src.utils.ml_common.validation.hmm_validation_pipeline import get_hmm_validation_pipeline
+from src.utils.ml_common.utils.hmm_temporal_protection import get_hmm_temporal_protection
+from src.utils.ml_common.validation.enhanced_overfitting_detection import get_overfitting_detector
+from src.utils.ml_common.utils.lookahead_protection import LookaheadProtection
+from src.utils.ml_common.utils.model_evaluation import ModelEvaluationUtils
 try:
     from src.utils.common_operations import (
         validate_dataframe, validate_finite, validate_positive, validate_range, 
@@ -199,9 +207,6 @@ except ImportError:
 # Using tprint for all logging - no logger needed
 
 # Additional ML imports for global classifier, calibration, and metrics
-from sklearn.ensemble import StackingClassifier, RandomForestClassifier
-from sklearn.linear_model import LogisticRegression
-from sklearn.calibration import CalibratedClassifierCV
 from sklearn.metrics import log_loss
 
 
@@ -252,6 +257,14 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
             self.serializer = UniversalSerializer()
             self.klines_manager = get_klines_manager() if KLINES_AVAILABLE else None
             self.evaluation_utils = EvaluationUtils() if ML_EVAL_AVAILABLE else None
+
+            # Initialize ml_commons tools for extensive functionality
+            self.hmm_hpo = get_hmm_hyperparameter_optimizer(config)
+            self.hmm_validation = get_hmm_validation_pipeline(config)
+            self.hmm_temporal_protection = get_hmm_temporal_protection(config)
+            self.overfitting_detector = get_overfitting_detector()
+            self.lookahead_protection = LookaheadProtection()
+            self.model_evaluation_utils = ModelEvaluationUtils()
             
             # Initialize advanced hardware optimizers from hardware/ directory
             if HARDWARE_OPTIMIZATIONS_AVAILABLE:
@@ -324,6 +337,14 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
                     'advanced_cpu_available': ADVANCED_CPU_AVAILABLE,
                     'unified_hardware_manager_available': hasattr(self, 'unified_hardware_manager') and self.unified_hardware_manager is not None,
                     'hardware_tools_source': 'hardware_directory' if HARDWARE_OPTIMIZATIONS_AVAILABLE else 'fallback'
+                },
+                'ml_commons_integration': {
+                    'hpo_available': self.hmm_hpo is not None,
+                    'validation_pipeline_available': self.hmm_validation is not None,
+                    'temporal_protection_available': self.hmm_temporal_protection is not None,
+                    'overfitting_detection_available': self.overfitting_detector is not None,
+                    'lookahead_protection_available': self.lookahead_protection is not None,
+                    'model_evaluation_available': self.model_evaluation_utils is not None
                 }
             }
             
@@ -332,9 +353,10 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
                 tprint("🚀 HMM Ensemble Training Component initialized with vectorization")
             else:
                 tprint("✅ HMM Ensemble Training Component initialized (standard mode)")
-                
+
             tprint(f"📊 Configuration: {len(getattr(config, 'base_models', getattr(config, 'model_types', [])))} base models, {config.timeframe} timeframe")
             tprint(f"🧠 Hardware: GPU={self.gpu_manager is not None}, Memory={self.memory_optimizer is not None}, CPU={self.cpu_optimizer is not None}")
+            tprint(f"🧠 ml_commons: HPO={self.hmm_hpo is not None}, Validation={self.hmm_validation is not None}, Temporal={self.hmm_temporal_protection is not None}")
             
         except Exception as e:
             tprint(f"❌ Failed to initialize HMM Ensemble Training Component: {e}")
@@ -350,7 +372,198 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
         
         # Memory management tracking
         self._large_arrays = []  # Track large arrays for cleanup
-    
+
+    def validate_ensemble_training_data(
+        self,
+        X: np.ndarray,
+        y: np.ndarray,
+        regime_labels: np.ndarray,
+        feature_names: Optional[List[str]] = None
+    ) -> Dict[str, Any]:
+        """
+        Validate ensemble training data using comprehensive ml_commons validation pipeline.
+
+        Args:
+            X: Input features
+            y: Target values
+            regime_labels: Regime labels
+            feature_names: Feature names
+
+        Returns:
+            Validation results
+        """
+        tprint("🔍 Validating ensemble training data with ml_commons pipeline")
+
+        # Use HMM validation pipeline
+        validation_results = self.hmm_validation.validate_hmm_training_data(
+            X=X,
+            y=y,
+            regime_labels=regime_labels,
+            feature_names=feature_names,
+            timestamps=None,
+            current_timestamp=None
+        )
+
+        # Log validation results
+        if validation_results['valid']:
+            tprint("✅ Ensemble training data validation passed")
+        else:
+            tprint("❌ Ensemble training data validation failed")
+            for recommendation in validation_results.get('recommendations', []):
+                tprint(f"💡 Recommendation: {recommendation}")
+
+        return validation_results
+
+    def get_ensemble_search_spaces(self) -> Dict[str, Dict[str, Any]]:
+        """
+        Get ensemble-specific HPO search spaces using ml_commons HMM HPO configuration.
+
+        Returns:
+            Dictionary of search spaces for ensemble methods
+        """
+        tprint("🔧 Getting ensemble search spaces from ml_commons HPO configuration")
+
+        return self.hmm_hpo.get_hmm_ensemble_search_spaces()
+
+    def validate_ensemble_models(
+        self,
+        ensemble_models: Dict[str, Any],
+        X_train: np.ndarray,
+        y_train: np.ndarray,
+        X_val: np.ndarray,
+        y_val: np.ndarray
+    ) -> Dict[str, Any]:
+        """
+        Validate ensemble models using comprehensive ml_commons validation.
+
+        Args:
+            ensemble_models: Dictionary of trained ensemble models
+            X_train: Training features
+            y_train: Training labels
+            X_val: Validation features
+            y_val: Validation labels
+
+        Returns:
+            Validation results for ensemble models
+        """
+        tprint("🔍 Validating ensemble models with ml_commons validation pipeline")
+
+        validation_results = {}
+
+        for model_name, model in ensemble_models.items():
+            tprint(f"📊 Validating ensemble model: {model_name}")
+
+            try:
+                # Use HMM validation pipeline for comprehensive evaluation
+                model_validation = self.hmm_validation.validate_hmm_model_performance(
+                    model=model,
+                    model_name=model_name,
+                    model_type='ensemble',
+                    X_train=X_train,
+                    y_train=y_train,
+                    X_val=X_val,
+                    y_val=y_val,
+                    feature_importance=self._get_ensemble_feature_importance(model),
+                    fold_number=None
+                )
+
+                # Add basic ensemble metrics
+                basic_metrics = self.evaluate_models(
+                    models={model_name: model},
+                    X=X_val,
+                    y=y_val,
+                    is_classification=True
+                )
+
+                validation_results[model_name] = {
+                    'basic_metrics': basic_metrics.get(model_name, {}),
+                    'hmm_validation': model_validation,
+                    'ensemble_specific_metrics': self._calculate_ensemble_specific_metrics(model),
+                    'validation_timestamp': time.time()
+                }
+
+                # Log overfitting detection
+                overfitting_analysis = model_validation.get('overfitting_analysis', {})
+                if overfitting_analysis.get('overfitting_detected', False):
+                    tprint(f"⚠️ Overfitting detected in {model_name}: {overfitting_analysis.get('severity', 'unknown')} severity")
+
+            except Exception as e:
+                tprint(f"❌ Failed to validate {model_name}: {e}")
+                validation_results[model_name] = {
+                    'error': str(e),
+                    'ensemble_specific_metrics': {}
+                }
+
+        return validation_results
+
+    def _get_ensemble_feature_importance(self, model: Any) -> Optional[np.ndarray]:
+        """Extract feature importance from ensemble model if available."""
+        try:
+            # For ensemble models, try to get feature importance from base estimators
+            if hasattr(model, 'estimators_'):
+                # Average feature importance from base estimators
+                base_importances = []
+                for estimator in model.estimators_:
+                    if hasattr(estimator, 'feature_importances_'):
+                        base_importances.append(estimator.feature_importances_)
+                    elif hasattr(estimator, 'coef_'):
+                        base_importances.append(np.abs(estimator.coef_).flatten())
+
+                if base_importances:
+                    return np.mean(base_importances, axis=0)
+
+            # For stacking models, try to get from final estimator
+            if hasattr(model, 'final_estimator_'):
+                final_estimator = model.final_estimator_
+                if hasattr(final_estimator, 'feature_importances_'):
+                    return final_estimator.feature_importances_
+                elif hasattr(final_estimator, 'coef_'):
+                    return np.abs(final_estimator.coef_).flatten()
+
+            return None
+        except:
+            return None
+
+    def _calculate_ensemble_specific_metrics(self, model: Any) -> Dict[str, Any]:
+        """Calculate ensemble-specific performance metrics."""
+        metrics = {
+            'n_estimators': None,
+            'ensemble_diversity': None,
+            'base_model_performance_variance': None
+        }
+
+        try:
+            # Number of base estimators
+            if hasattr(model, 'estimators_'):
+                metrics['n_estimators'] = len(model.estimators_)
+            elif hasattr(model, 'n_estimators'):
+                metrics['n_estimators'] = model.n_estimators
+
+            # For bagging models, calculate diversity metrics
+            if hasattr(model, 'estimators_') and len(model.estimators_) > 1:
+                # Simple diversity measure based on prediction variance
+                try:
+                    # Use a subset of training data for diversity calculation
+                    subset_size = min(100, len(X_train))
+                    X_subset = X_train[:subset_size]
+
+                    base_predictions = []
+                    for estimator in model.estimators_:
+                        pred = estimator.predict(X_subset)
+                        base_predictions.append(pred)
+
+                    if base_predictions:
+                        prediction_matrix = np.array(base_predictions)
+                        metrics['base_model_performance_variance'] = float(np.var(prediction_matrix.mean(axis=1)))
+                        metrics['ensemble_diversity'] = float(np.mean(np.var(prediction_matrix, axis=0)))
+                except:
+                    pass
+
+        except Exception as e:
+            tprint(f"⚠️ Failed to calculate ensemble-specific metrics: {e}")
+
+        return metrics
+
     def cleanup_memory(self) -> None:
         """
         Explicitly cleanup large arrays and resources to prevent memory leaks.
@@ -812,12 +1025,21 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
             Dictionary containing training results and metadata
         """
         execution_start_time = time.time()
-        tprint("🚀 Starting HMM ensemble training component with common utilities")
+        tprint("🚀 Starting HMM ensemble training component with ml_commons tools integration")
         
-        # Step 1: Validate inputs BEFORE resource allocation
-        tprint("🔄 Step 1: Validating inputs with common utilities...")
+        # Step 1: Validate inputs using comprehensive ml_commons validation pipeline
+        tprint("🔄 Step 1: Validating inputs with ml_commons validation pipeline...")
         try:
-            self._validate_input_data(X, y, regime_labels)
+            validation_results = self.validate_ensemble_training_data(X, y, regime_labels, feature_names)
+            if not validation_results['valid']:
+                error_msg = "Input validation failed"
+                tprint(f"❌ {error_msg}")
+                return {
+                    'error': error_msg,
+                    'execution_time': time.time() - execution_start_time,
+                    'validation_failed': True,
+                    'validation_results': validation_results
+                }
         except Exception as e:
             error_msg = f"Input validation failed: {e}"
             tprint(f"❌ {error_msg}")
@@ -849,6 +1071,21 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
                 tprint("🔄 Step 4: Adding ensemble-specific metadata...")
                 if 'error' not in results:
                     results = self._add_ensemble_specific_metadata(results, base_hmm_models, hmm_training_metrics)
+
+                    # Add ml_commons integration metadata
+                    results['ml_commons_integration'] = {
+                        'hpo_used': self.hmm_hpo is not None,
+                        'validation_pipeline_used': True,
+                        'temporal_protection_available': self.hmm_temporal_protection is not None,
+                        'overfitting_detection_available': self.overfitting_detector is not None,
+                        'ensemble_validation_used': True,
+                        'tools_available': [
+                            'HMMHyperparameterOptimizer',
+                            'HMMValidationPipeline',
+                            'HMMTemporalProtection',
+                            'UniversalOverfittingDetector'
+                        ]
+                    }
                 
                 # Step 5: Train global regime classifier (stacked, calibrated)
                 tprint("🔄 Step 5: Training global regime classifier (stacked + calibrated)...")

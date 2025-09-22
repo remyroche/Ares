@@ -12,6 +12,7 @@ import logging
 import numpy as np
 import pandas as pd
 from .core.decorators import handles_errors
+from ..utils.ml_common.evaluation.unified_evaluator import compute_sharpe_ratio
 
 
 @handles_errors(
@@ -132,9 +133,7 @@ def evaluate_sharpe_lift(
     gated_excess = gated_r - risk_free_rate
 
     def _sharpe(x: pd.Series) -> float:
-        mu = float(x.mean())
-        sd = float(x.std(ddof=1))
-        return (mu / sd) if sd > 1e-12 else 0.0
+        return compute_sharpe_ratio(x.values)
 
     sr_base = _sharpe(base_excess)
     sr_gated = _sharpe(gated_excess) if len(gated_excess) > 1 else 0.0

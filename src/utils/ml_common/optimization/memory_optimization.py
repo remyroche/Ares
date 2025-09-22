@@ -1,27 +1,10 @@
 """
 ML Common - Optimization Memory Optimization Module
 
-This module provides memory optimization utilities for optimization.
+Compatibility shim that re-exports MemoryEfficientTraining from utils.memory_optimization
+to avoid duplication and keep existing imports working.
 """
 
-from ...memory_management.streaming_data_processor import StreamingDataProcessor
-
-
-class MemoryEfficientTraining:
-    """Memory-efficient training utilities."""
-
-    def __init__(self):
-        self.streaming_processor = StreamingDataProcessor()
-
-    def optimize_memory_usage(self, data, batch_size=1000):
-        """Optimize memory usage for large datasets."""
-        # Simple implementation
-        return self.streaming_processor.process_in_chunks(data, batch_size)
-
-    def cleanup_memory(self):
-        """Clean up memory after training."""
-        import gc
-        gc.collect()
-
+from ..utils.memory_optimization import MemoryEfficientTraining
 
 __all__ = ['MemoryEfficientTraining']

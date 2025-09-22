@@ -184,7 +184,7 @@ class VectorizedBacktestingEngine:
         results.computation_time = computation_time
 
         logger.info(f"✅ Vectorized backtest completed in {computation_time:.3f}s")
-        logger.info(f"📊 Final portfolio value: ${portfolio_values[-1]:.2f}")
+        logger.info(f"📊 Final portfolio value: ${results.portfolio_values[-1]:.2f}")
         return results
 
     def _vectorized_backtest(self, signals: np.ndarray, prices: np.ndarray,

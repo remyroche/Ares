@@ -53,7 +53,7 @@ from ..matrix_operations import (
 from ..performance_utils import PerformanceMonitor, performance_timer, get_memory_usage
 from ..caching import intelligent_caching
 from .optimization.memory_optimization import MemoryEfficientTraining
-from .utils.shared_cache import SharedMLCache, shared_cache
+from src.utils.unified_cache import get_unified_cache
 from .validation.stability import StabilityAnalyzer
 
 # Enhanced dependency management with fast fail
@@ -219,7 +219,7 @@ class FeatureSelectionFramework:
             _LOGGER.info("🧠 Memory optimization tools initialized")
             
             # Caching and shared resources
-            self.shared_cache = SharedMLCache()
+            self.shared_cache = get_unified_cache()
             _LOGGER.info("💾 Shared cache initialized")
             
             # Stability and thresholding
@@ -784,7 +784,6 @@ class FeatureSelectionFramework:
             
         except Exception as e:
             _LOGGER.warning(f"⚠️ Performance monitoring hooks failed: {e}")
-
     def _add_caching_hooks(self):
         """Add caching hooks throughout the framework."""
         try:
@@ -1124,7 +1123,6 @@ class FeatureSelectionFramework:
                 'error_report': self.generate_error_report(error_context),
                 'selected_features': feature_names[:target_count] if feature_names else []  # Fallback
             }
-
     def hierarchical_feature_selection(self, X: np.ndarray, y: np.ndarray,
                                      feature_names: List[str],
                                      features_target_count: int,
@@ -1902,7 +1900,6 @@ class FeatureSelectionFramework:
         except Exception as e:
             _LOGGER.warning(f"⚠️ LASSO stability threshold determination failed: {e}")
             return 0.6, max(5, len(feature_names) // 10)
-
     def _determine_tree_ensemble_threshold(self, importance_scores: Dict[str, Dict[str, Any]],
                                          feature_names: List[str]) -> Tuple[float, int]:
         """Determine dynamic threshold for tree ensemble feature selection based on importance scores."""
@@ -2692,7 +2689,6 @@ class FeatureSelectionFramework:
             'interaction_stability_analysis': interaction_stability_analysis,
             'execution_time': execution_time
         }
-
     def _extract_feature_combinations(self, selected_features: List[str], 
                                     max_order: int) -> List[List[str]]:
         """
@@ -3404,7 +3400,6 @@ class FeatureSelectionFramework:
             execution_time = time.time() - start_time
             _LOGGER.error(f"❌ Stability-weighted selection failed after {execution_time:.3f}s: {e}")
             return {'error': str(e), 'selected_features': []}
-
     @performance_timer
     def correlation_based_filtering(self, X: np.ndarray, feature_names: List[str],
                                   correlation_threshold: float = 0.95,
@@ -4156,7 +4151,6 @@ class FeatureSelectionFramework:
             execution_time = time.time() - start_time
             _LOGGER.error(f"❌ LASSO stability selection failed after {execution_time:.3f}s: {e}")
             return {'error': str(e), 'selected_features': []}
-
     def lasso_feature_selection(self, X: np.ndarray, y: np.ndarray,
                                feature_names: List[str],
                                alpha: Optional[float] = None,
@@ -4282,10 +4276,10 @@ class FeatureSelectionFramework:
             return {'error': str(e), 'selected_features': []}
 
     def comprehensive_feature_selection(self, X: np.ndarray, y: np.ndarray,
-                                      feature_names: List[str],
-                                      methods: List[str] = None,
-                                      weights: Optional[Dict[str, float]] = None,
-                                      n_features: Optional[int] = None) -> Dict[str, Any]:
+                                        feature_names: List[str],
+                                        methods: List[str] = None,
+                                        weights: Optional[Dict[str, float]] = None,
+                                        n_features: Optional[int] = None) -> Dict[str, Any]:
         """
         Comprehensive feature selection combining multiple methods.
         
@@ -4468,14 +4462,14 @@ class FeatureSelectionFramework:
             return {'error': str(e), 'selected_features': []}
 
     def tree_based_ensemble_selection(self, X: np.ndarray, y: np.ndarray,
-                                    feature_names: List[str],
-                                    methods: List[str] = None,
-                                    weights: Optional[Dict[str, float]] = None,
-                                    n_features: Optional[int] = None,
-                                    cv_folds: int = 5,
-                                    permutation_importance_repeats: int = 10,
-                                    n_estimators: int = 100,
-                                    max_depth: Optional[int] = None) -> Dict[str, Any]:
+                                      feature_names: List[str],
+                                      methods: List[str] = None,
+                                      weights: Optional[Dict[str, float]] = None,
+                                      n_features: Optional[int] = None,
+                                      cv_folds: int = 5,
+                                      permutation_importance_repeats: int = 10,
+                                      n_estimators: int = 100,
+                                      max_depth: Optional[int] = None) -> Dict[str, Any]:
         """
         Enhanced ensemble selection using tree-based permutation importance with hyperparameter optimization.
         
@@ -4942,7 +4936,6 @@ class FeatureSelectionFramework:
                 'bootstrap_idx': params.get('bootstrap_idx', -1),
                 'error': str(e)
             }
-
     def _search_tree_hyperparameters(self, X: np.ndarray, y: np.ndarray, 
                                    param_grid: Dict[str, List], 
                                    is_classification: bool, 
@@ -5724,7 +5717,6 @@ class FeatureSelectionFramework:
         except Exception as e:
             _LOGGER.warning(f"⚠️ Efficiency metrics calculation failed: {e}")
             return {'efficiency_score': 0.5}
-
     def _calculate_overall_quality_score(self, quality_metrics: Dict[str, Any]) -> float:
         """Calculate overall quality score from all metrics."""
         try:
@@ -6455,7 +6447,6 @@ class FeatureSelectionFramework:
                 importance_scores[feature] = corr_importance * 0.8 + min(1.0, volatility) * 0.2
         
         return importance_scores
-
     def _causal_pre_filtering(self, X: np.ndarray, y: np.ndarray, feature_names: List[str],
                             causal_graph: Optional[Dict[str, Any]] = None,
                             domain_knowledge: Optional[Dict[str, Any]] = None) -> List[str]:
@@ -7226,7 +7217,6 @@ class FeatureSelectionFramework:
             return abs(corr) if not np.isnan(corr) else 0.0
         except:
             return 0.0
-
     def _calculate_enhanced_mrmr_score(self, candidate_feature: str, selected_features: List[str],
                                      X: np.ndarray, y: np.ndarray, feature_names: List[str],
                                      relevance_scores: Dict[str, float],
@@ -7984,7 +7974,6 @@ class FeatureSelectionFramework:
             )
         
         return validation_result
-
     def _create_reduction_plan(self, initial_count: int, target_count: int, 
                              model_type: str) -> Dict[str, Any]:
         """

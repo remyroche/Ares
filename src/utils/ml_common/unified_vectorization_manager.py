@@ -234,8 +234,6 @@ class UnifiedVectorizationManager:
         )
 
         self.logger.info(f"✅ Operation {operation_type.value} completed with {strategy.value} strategy")
-        self.logger.info(".3f")
-        self.logger.info(".1f")
         return optimization_result
 
     def _select_optimal_strategy(self, operation_type: OperationType,
@@ -668,10 +666,12 @@ def optimize_cross_validation(X: Union[np.ndarray, pd.DataFrame],
                            **kwargs) -> OptimizationResult:
     """Convenience function for optimized cross-validation."""
     manager = UnifiedVectorizationManager()
+    data_size = len(X) if hasattr(X, '__len__') else 1
+    data_dimensions = X.shape if hasattr(X, 'shape') else (data_size,)
     config = OperationConfig(
         operation_type=OperationType.CROSS_VALIDATION,
-        data_size=len(X) if hasattr(X, '__len__') else 1,
-        data_dimensions=X.shape if hasattr(X, 'shape') else (config.data_size,)
+        data_size=data_size,
+        data_dimensions=data_dimensions
     )
     data = {'X': X, 'y': y, 'model_class': model_class}
     return manager.optimize_operation(OperationType.CROSS_VALIDATION, data, config, **kwargs)
@@ -682,10 +682,12 @@ def optimize_backtesting(signals: Union[np.ndarray, pd.DataFrame],
                        **kwargs) -> OptimizationResult:
     """Convenience function for optimized backtesting."""
     manager = UnifiedVectorizationManager()
+    data_size = len(signals) if hasattr(signals, '__len__') else 1
+    data_dimensions = signals.shape if hasattr(signals, 'shape') else (data_size,)
     config = OperationConfig(
         operation_type=OperationType.BACKTESTING,
-        data_size=len(signals) if hasattr(signals, '__len__') else 1,
-        data_dimensions=signals.shape if hasattr(signals, 'shape') else (config.data_size,)
+        data_size=data_size,
+        data_dimensions=data_dimensions
     )
     data = {'signals': signals, 'prices': prices}
     return manager.optimize_operation(OperationType.BACKTESTING, data, config, **kwargs)

@@ -288,4 +288,4 @@ class HMMTrainingConfig(BaseTrainingConfig):
     objectives: List[str] = field(default_factory=lambda: [
         "accuracy", "f1_score", "regime_stability"
     ])
-    objective_weights: List[float] = field(default_factory=lambda: [0.4, 0.3, 0.3])
+    objective_weights: List[float] = field(default_factory=lambda: [0.4, 0.3, 0.2])  # Reduced regime stability weight for 15m short-term predictions

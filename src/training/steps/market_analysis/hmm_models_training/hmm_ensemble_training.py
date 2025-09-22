@@ -45,7 +45,7 @@ from src.utils.ml_common.utils.hmm_hpo_config import get_hmm_hyperparameter_opti
 from src.utils.ml_common.utils.hmm_temporal_protection import get_hmm_temporal_protection
 from src.utils.ml_common.validation.enhanced_overfitting_detection import get_overfitting_detector
 from src.utils.ml_common.utils.lookahead_protection import LookaheadProtection
-from src.utils.ml_common.utils.model_evaluation import ModelEvaluationUtils
+from src.utils.ml_common.evaluation.unified_evaluator import evaluate_multiple_datasets
 try:
     from src.utils.common_operations import (
         validate_dataframe, validate_finite, validate_positive, validate_range, 

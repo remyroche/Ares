@@ -1,14 +1,24 @@
 """
-Ensemble Training Step
+Ensemble Training Step - Enhanced with Overfitting Prevention and Lookahead Bias Detection
 
-Base class for ensemble training steps with common functionality.
-Enhanced with vectorized training capabilities for improved performance.
+Base class for ensemble training steps with comprehensive ML utilities integration.
+Enhanced Features:
+- Purged cross-validation for temporal data integrity
+- Early stopping for all supported models
+- Lookahead bias detection and prevention
+- Enhanced regularization parameters
+- Overfitting monitoring and detection
+- Walk-forward validation
+- Ensemble diversity metrics
+- Vectorized training capabilities for improved performance
 """
 
 import numpy as np
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union, Iterator
 import logging
 import time
+from datetime import datetime, timedelta
+import warnings
 
 from src.utils.ml_common.training.base_training_step import BaseTrainingStep
 from src.utils.ml_common.config.base_training_config import EnsembleTrainingConfig
@@ -22,20 +32,54 @@ except ImportError:
     VECTORIZED_TRAINING_AVAILABLE = False
     VectorizedTrainingManager = None
 
+# Enhanced training utilities
+try:
+    from src.utils.ml_common.training.enhanced_training_utils import (
+        EnhancedTrainingUtils,
+        EarlyStoppingConfig,
+        PurgedCVConfig,
+        OverfittingMonitorConfig,
+        RegularizationConfig
+    )
+    from src.utils.ml_common.training.training_integration import (
+        TrainingStepEnhancer,
+        TrainingIntegrationConfig
+    )
+    ENHANCED_TRAINING_AVAILABLE = True
+except ImportError:
+    ENHANCED_TRAINING_AVAILABLE = False
+    EnhancedTrainingUtils = None
+    TrainingStepEnhancer = None
+    EarlyStoppingConfig = None
+    PurgedCVConfig = None
+    OverfittingMonitorConfig = None
+    RegularizationConfig = None
+    TrainingIntegrationConfig = None
+
 logger = logging.getLogger(__name__)
 
 
 class EnsembleTrainingStep(BaseTrainingStep):
     """
-    Base class for ensemble training steps.
+    Enhanced base class for ensemble training steps with comprehensive ML utilities.
     
     This class provides common functionality for training ensemble models,
     including base model creation, ensemble training, and evaluation.
+    
+    Enhanced Features:
+    - Overfitting prevention and detection
+    - Lookahead bias detection and prevention
+    - Enhanced regularization parameters
+    - Early stopping for all supported models
+    - Purged cross-validation for temporal data
+    - Walk-forward validation
+    - Ensemble diversity monitoring
+    - Vectorized training capabilities
     """
     
     def __init__(self, config: EnsembleTrainingConfig, enable_vectorization: bool = True):
         """
-        Initialize ensemble training step with optional vectorization.
+        Initialize enhanced ensemble training step with optional vectorization.
 
         Args:
             config: Ensemble training configuration
@@ -48,6 +92,15 @@ class EnsembleTrainingStep(BaseTrainingStep):
         # Ensemble specific results
         self.ensemble_models = {}
         self.ensemble_metadata = {}
+        
+        # Enhanced training utilities
+        self.enhanced_training_available = ENHANCED_TRAINING_AVAILABLE
+        self.training_enhancer = None
+        self.enhanced_training_config = None
+        
+        # Initialize enhanced training utilities
+        if self.enhanced_training_available:
+            self._initialize_enhanced_training_utilities()
 
         # Vectorized training manager
         self.enable_vectorization = enable_vectorization and VECTORIZED_TRAINING_AVAILABLE
@@ -66,7 +119,32 @@ class EnsembleTrainingStep(BaseTrainingStep):
             else:
                 self.logger.info("⚠️ Vectorized training not available (import failed)")
 
-        self.logger.info("✅ Ensemble Training Step initialized")
+        self.logger.info("✅ Enhanced Ensemble Training Step initialized")
+    
+    def _initialize_enhanced_training_utilities(self):
+        """Initialize enhanced training utilities for overfitting prevention and lookahead bias detection."""
+        try:
+            # Create enhanced training configuration for Ensemble
+            self.enhanced_training_config = TrainingIntegrationConfig(
+                enable_early_stopping=True,
+                enable_purged_cv=True,
+                enable_lookahead_detection=True,
+                enable_temporal_splits=True,
+                enable_regularization=True,
+                enable_overfitting_monitoring=True,
+                enable_ensemble_diversity=True,  # Enable for ensemble
+                model_type='auto'
+            )
+            
+            # Initialize training enhancer
+            self.training_enhancer = TrainingStepEnhancer(self.enhanced_training_config)
+            
+            self.logger.info("✅ Enhanced training utilities initialized successfully")
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Enhanced training utilities initialization failed: {e}")
+            self.enhanced_training_config = None
+            self.training_enhancer = None
     
     def create_ensemble_models(
         self,

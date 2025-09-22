@@ -54,6 +54,32 @@ except ImportError as e:
     print("❌ This is a critical dependency for enhanced logging. Please install tprint.")
     raise ImportError(f"CRITICAL: tprint is required but not available: {e}") from e
 
+# Enhanced training utilities integration
+try:
+    from src.utils.ml_common.training.enhanced_training_utils import (
+        EnhancedTrainingUtils,
+        EarlyStoppingConfig,
+        PurgedCVConfig,
+        OverfittingMonitorConfig,
+        RegularizationConfig
+    )
+    from src.utils.ml_common.training.training_integration import (
+        TrainingStepEnhancer,
+        TrainingIntegrationConfig
+    )
+    ENHANCED_TRAINING_AVAILABLE = True
+    tprint_success("✅ Enhanced training utilities loaded")
+except ImportError as e:
+    ENHANCED_TRAINING_AVAILABLE = False
+    tprint_warning(f"⚠️ Enhanced training utilities not available: {e}")
+    EnhancedTrainingUtils = None
+    TrainingStepEnhancer = None
+    EarlyStoppingConfig = None
+    PurgedCVConfig = None
+    OverfittingMonitorConfig = None
+    RegularizationConfig = None
+    TrainingIntegrationConfig = None
+
 # Import common utilities - CRITICAL: Fast fail if not available
 try:
     from src.utils.common_operations import (
@@ -263,6 +289,11 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
             tprint_info("🔧 Initializing utility integrations...")
             self._initialize_utility_integrations()
             
+            # Initialize enhanced training utilities
+            if ENHANCED_TRAINING_AVAILABLE:
+                tprint_info("🚀 Initializing enhanced training utilities...")
+                self._initialize_enhanced_training_utilities()
+            
             # Log initialization success with comprehensive status
             if self.enable_vectorization:
                 tprint_success("🚀 Enhanced Tactician Ensemble Training Step initialized with vectorization")
@@ -282,6 +313,43 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
                 self._log_utility_integration_status()
             
             raise RuntimeError(error_msg) from e
+    
+    def _initialize_enhanced_training_utilities(self):
+        """Initialize enhanced training utilities for overfitting prevention and lookahead bias detection."""
+        try:
+            # Create enhanced training configuration for Ensemble
+            self.enhanced_training_config = TrainingIntegrationConfig(
+                enable_early_stopping=True,
+                enable_purged_cv=True,
+                enable_lookahead_detection=True,
+                enable_temporal_splits=True,
+                enable_regularization=True,
+                enable_overfitting_monitoring=True,
+                enable_ensemble_diversity=True,  # Enable for ensemble
+                model_type='auto'
+            )
+            
+            # Initialize training enhancer
+            self.training_enhancer = TrainingStepEnhancer(self.enhanced_training_config)
+            
+            # Store enhanced utilities
+            self.enhanced_training_utils = {
+                'EnhancedTrainingUtils': EnhancedTrainingUtils,
+                'EarlyStoppingConfig': EarlyStoppingConfig,
+                'PurgedCVConfig': PurgedCVConfig,
+                'OverfittingMonitorConfig': OverfittingMonitorConfig,
+                'RegularizationConfig': RegularizationConfig,
+                'TrainingStepEnhancer': TrainingStepEnhancer,
+                'TrainingIntegrationConfig': TrainingIntegrationConfig
+            }
+            
+            tprint_success("✅ Enhanced training utilities initialized successfully")
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Enhanced training utilities initialization failed: {e}")
+            self.enhanced_training_config = None
+            self.training_enhancer = None
+            self.enhanced_training_utils = {}
     
     def _initialize_hardware_optimizers(self) -> None:
         """Initialize hardware optimizers with graceful degradation."""

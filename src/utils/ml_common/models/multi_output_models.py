@@ -689,8 +689,8 @@ class MultiOutputStackingModel(MultiOutputModel):
                 if hasattr(proba, 'shape') and len(proba.shape) > 1 and proba.shape[1] > 1:
                     return proba[:, 1].astype(float)
                 return np.asarray(proba).astype(float).ravel()
-            except Exception:
-                pass
+            except Exception as proba_err:
+                self.logger.debug(f"predict_proba unavailable/failed for {type(model).__name__}: {proba_err}")
         pred = model.predict(X)
         pred_arr = np.asarray(pred).astype(float)
         return pred_arr.ravel()

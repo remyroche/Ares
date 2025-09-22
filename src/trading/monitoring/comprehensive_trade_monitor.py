@@ -18,13 +18,11 @@ import numpy as np
 
 from src.utils.logger import system_logger
 from src.utils.tprint import tprint_info, tprint_warning, tprint_error, tprint_success, tprint_structured, LogLevel
-from src.monitoring.enhanced_monitoring_orchestrator import (
-    EnhancedMonitoringOrchestrator, ComprehensiveTradeDecision, EnhancedMonitoringConfig
-)
-from src.monitoring.shap_lime_integration import (
-    ExplainabilityIntegrator, SHAPExplanation, LIMEExplanation
-)
-from src.explainability.explainability_orchestrator import ExplainabilityOrchestrator
+# Import from trading module components
+# from ..alert_manager import AlertManager, AlertType, AlertPriority  # Removed to avoid circular imports
+# from ..regime_monitor import RegimeMonitor, RegimeState, RegimeType  # Removed to avoid circular imports
+
+# Performance tracker imports would be added here if needed
 from ..utils.error_handling import TradingError, TradingErrorSeverity, trading_error_handler
 from ..utils.validation import validate_trading_config
 from ..utils.helpers import format_trading_metrics, save_trading_data

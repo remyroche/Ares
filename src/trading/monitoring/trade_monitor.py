@@ -18,7 +18,7 @@ import numpy as np
 from src.utils.logger import system_logger
 from src.core.decorators import handles_errors, traced, log_execution_time
 from src.utils.tprint import tprint_info, tprint_warning, tprint_error, tprint_success
-from .comprehensive_trade_monitor import comprehensive_trade_monitor
+# comprehensive_trade_monitor import removed to avoid circular imports
 
 logger = system_logger.getChild('TradeMonitor')
 
@@ -185,7 +185,7 @@ class TradeMonitor:
             return False
 
     @handles_errors
-    @traced("trade_monitoring")
+    @traced(span_name="trade_monitoring")
     async def record_trade(self, trade: Trade) -> bool:
         """
         Record a new trade.

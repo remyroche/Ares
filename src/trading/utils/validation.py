@@ -509,5 +509,66 @@ def validate_regime_data(
     
     if not warnings and not errors:
         tprint_success("✅ Regime data validation passed")
-    
+
     return True
+
+
+def validate_order_params(
+    symbol: str,
+    side: Any,
+    order_type: Any,
+    quantity: float,
+    price: Optional[float] = None,
+    stop_price: Optional[float] = None
+) -> None:
+    """
+    Validate order parameters for trading.
+
+    Args:
+        symbol: Trading symbol
+        side: Order side ('buy' or 'sell')
+        order_type: Order type
+        quantity: Order quantity
+        price: Order price (optional)
+        stop_price: Stop price (optional)
+
+    Raises:
+        ValidationError: If validation fails
+    """
+    errors = []
+
+    # Validate symbol
+    if not isinstance(symbol, str) or not symbol:
+        errors.append("Symbol must be a non-empty string")
+
+    # Validate side
+    if side not in ['buy', 'sell', OrderSide.BUY, OrderSide.SELL]:
+        errors.append(f"Invalid order side: {side}")
+
+    # Validate quantity
+    if not isinstance(quantity, (int, float)) or quantity <= 0:
+        errors.append(f"Quantity must be a positive number, got {quantity}")
+
+    # Validate price for limit orders
+    if order_type in ['limit', OrderType.LIMIT] and price is not None:
+        if not isinstance(price, (int, float)) or price <= 0:
+            errors.append(f"Price must be a positive number, got {price}")
+
+    # Validate stop price for stop orders
+    if order_type in ['stop', OrderType.STOP] and stop_price is not None:
+        if not isinstance(stop_price, (int, float)) or stop_price <= 0:
+            errors.append(f"Stop price must be a positive number, got {stop_price}")
+
+    if errors:
+        raise ValidationError(
+            f"Order parameter validation failed: {'; '.join(errors)}",
+            severity=TradingErrorSeverity.HIGH,
+            context={
+                'symbol': symbol,
+                'side': side,
+                'order_type': order_type,
+                'quantity': quantity,
+                'price': price,
+                'stop_price': stop_price
+            }
+        )

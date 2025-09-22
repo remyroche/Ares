@@ -138,8 +138,8 @@ class RegimeAnalyzer:
             self.logger.warning(f"⚠️ Failed to load historical data: {e}")
     
     @handles_errors
-    @traced("regime_analysis")
-    @log_execution_time
+    @traced(span_name="regime_analysis")
+    @log_execution_time()
     async def analyze_regime_stability(
         self,
         regime_history: List[Dict[str, Any]],

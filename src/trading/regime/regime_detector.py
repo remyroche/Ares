@@ -173,59 +173,57 @@ class RegimeDetector:
         # Get latest data point
         latest_data = market_data.iloc[-1]
         timestamp = latest_data.get('timestamp', datetime.now())
-            
-            # Extract features for regime detection
-            features = await self._extract_regime_features(market_data)
-            
-            # Classify regime using multiple methods
-            regime_probabilities = await self._classify_regime(features, market_data)
-            
-            # Determine primary regime
-            primary_regime = max(regime_probabilities.items(), key=lambda x: x[1])[0]
-            confidence = regime_probabilities[primary_regime]
-            
-            # Calculate regime strength
-            regime_strength = await self._calculate_regime_strength(regime_probabilities)
-            
-            # Calculate transition probability
-            transition_prob = await self._calculate_transition_probability(primary_regime)
-            
-            # Create detection result
-            detection = RegimeDetection(
-                timestamp=timestamp,
-                primary_regime=primary_regime,
-                regime_probabilities=regime_probabilities,
-                confidence=confidence,
-                regime_strength=regime_strength,
-                transition_probability=transition_prob,
-                features_used=features,
-                detection_metadata={
-                    'detection_method': 'ensemble',
-                    'model_version': '1.0',
-                    'processing_time_ms': 0  # Will be set by decorator
-                }
-            )
-            
-            # Update state
-            self.current_regime = primary_regime
-            self.regime_history.append(detection)
-            self.last_detection_time = timestamp
-            self.detection_count += 1
-            
-            # Maintain history size
-            if len(self.regime_history) > 1000:
-                self.regime_history = self.regime_history[-1000:]
-            
-            # Update performance metrics
-            await self._update_performance_metrics(detection)
-            
-            self.logger.debug(f"Regime detected: {primary_regime.value} (confidence: {confidence:.3f})")
-            
-            return detection
-            
-        except Exception as e:
-            self.logger.error(f"❌ Regime detection failed: {e}")
-            raise
+
+        # Extract features for regime detection
+        features = await self._extract_regime_features(market_data)
+
+        # Classify regime using multiple methods
+        regime_probabilities = await self._classify_regime(features, market_data)
+
+        # Determine primary regime
+        primary_regime = max(regime_probabilities.items(), key=lambda x: x[1])[0]
+        confidence = regime_probabilities[primary_regime]
+
+        # Calculate regime strength
+        regime_strength = await self._calculate_regime_strength(regime_probabilities)
+
+        # Calculate transition probability
+        transition_prob = await self._calculate_transition_probability(primary_regime)
+
+        # Create detection result
+        detection = RegimeDetection(
+            timestamp=timestamp,
+            primary_regime=primary_regime,
+            regime_probabilities=regime_probabilities,
+            confidence=confidence,
+            regime_strength=regime_strength,
+            transition_probability=transition_prob,
+            features_used=features,
+            detection_metadata={
+                'detection_method': 'ensemble',
+                'model_version': '1.0',
+                'processing_time_ms': 0  # Will be set by decorator
+            }
+        )
+
+        # Update state
+        self.current_regime = primary_regime
+        self.regime_history.append(detection)
+        self.last_detection_time = timestamp
+        self.detection_count += 1
+
+        # Maintain history size
+        if len(self.regime_history) > 1000:
+            self.regime_history = self.regime_history[-1000:]
+
+        # Update performance metrics
+        await self._update_performance_metrics(detection)
+
+        self.logger.debug(f"Regime detected: {primary_regime.value} (confidence: {confidence:.3f})")
+
+        tprint_structured(f"🔍 Regime Detection Result: {primary_regime.value} (Confidence: {confidence:.2f})")
+
+        return detection
     
     async def _extract_regime_features(self, market_data: pd.DataFrame) -> Dict[str, Any]:
         """Extract features for regime detection."""

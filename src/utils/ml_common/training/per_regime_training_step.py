@@ -1,31 +1,74 @@
 """
-Per-Regime Training Step
+Per-Regime Training Step - Enhanced with Overfitting Prevention and Lookahead Bias Detection
 
-Base class for per-regime training steps with common functionality.
+Base class for per-regime training steps with comprehensive ML utilities integration.
+Enhanced Features:
+- Purged cross-validation for temporal data integrity
+- Early stopping for all supported models
+- Lookahead bias detection and prevention
+- Enhanced regularization parameters
+- Overfitting monitoring and detection
+- Walk-forward validation
+- Ensemble diversity metrics
 """
 
 import numpy as np
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union, Iterator
 import logging
 import time
+from datetime import datetime, timedelta
+import warnings
 
 from src.utils.ml_common.training.base_training_step import BaseTrainingStep
 from src.utils.ml_common.config.base_training_config import PerRegimeTrainingConfig
+
+# Enhanced training utilities
+try:
+    from src.utils.ml_common.training.enhanced_training_utils import (
+        EnhancedTrainingUtils,
+        EarlyStoppingConfig,
+        PurgedCVConfig,
+        OverfittingMonitorConfig,
+        RegularizationConfig
+    )
+    from src.utils.ml_common.training.training_integration import (
+        TrainingStepEnhancer,
+        TrainingIntegrationConfig
+    )
+    ENHANCED_TRAINING_AVAILABLE = True
+except ImportError:
+    ENHANCED_TRAINING_AVAILABLE = False
+    EnhancedTrainingUtils = None
+    TrainingStepEnhancer = None
+    EarlyStoppingConfig = None
+    PurgedCVConfig = None
+    OverfittingMonitorConfig = None
+    RegularizationConfig = None
+    TrainingIntegrationConfig = None
 
 logger = logging.getLogger(__name__)
 
 
 class PerRegimeTrainingStep(BaseTrainingStep):
     """
-    Base class for per-regime training steps.
+    Enhanced base class for per-regime training steps with comprehensive ML utilities.
     
     This class provides common functionality for training models on a per-regime basis,
     including regime analysis, data preparation, and per-regime model training.
+    
+    Enhanced Features:
+    - Overfitting prevention and detection
+    - Lookahead bias detection and prevention
+    - Enhanced regularization parameters
+    - Early stopping for all supported models
+    - Purged cross-validation for temporal data
+    - Walk-forward validation
+    - Ensemble diversity monitoring
     """
     
     def __init__(self, config: PerRegimeTrainingConfig):
         """
-        Initialize per-regime training step.
+        Initialize enhanced per-regime training step.
         
         Args:
             config: Per-regime training configuration
@@ -38,23 +81,196 @@ class PerRegimeTrainingStep(BaseTrainingStep):
         self.regime_models = {}
         self.regime_metadata = {}
         
-        self.logger.info("✅ Per-Regime Training Step initialized")
+        # Enhanced training utilities
+        self.enhanced_training_available = ENHANCED_TRAINING_AVAILABLE
+        self.training_enhancer = None
+        self.enhanced_training_config = None
+        
+        # Initialize enhanced training utilities
+        if self.enhanced_training_available:
+            self._initialize_enhanced_training_utilities()
+        
+        self.logger.info("✅ Enhanced Per-Regime Training Step initialized")
+    
+    def _initialize_enhanced_training_utilities(self):
+        """Initialize enhanced training utilities for overfitting prevention and lookahead bias detection."""
+        try:
+            # Create enhanced training configuration
+            self.enhanced_training_config = TrainingIntegrationConfig(
+                enable_early_stopping=True,
+                enable_purged_cv=True,
+                enable_lookahead_detection=True,
+                enable_temporal_splits=True,
+                enable_regularization=True,
+                enable_overfitting_monitoring=True,
+                model_type='auto'
+            )
+            
+            # Initialize training enhancer
+            self.training_enhancer = TrainingStepEnhancer(self.enhanced_training_config)
+            
+            self.logger.info("✅ Enhanced training utilities initialized successfully")
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Enhanced training utilities initialization failed: {e}")
+            self.enhanced_training_config = None
+            self.training_enhancer = None
     
     def train_regime_models(
         self,
         regime_data: Dict[int, Dict[str, np.ndarray]],
-        feature_names: Optional[List[str]] = None
+        feature_names: Optional[List[str]] = None,
+        timestamps: Optional[Dict[int, np.ndarray]] = None
     ) -> Dict[str, Any]:
         """
-        Train models for each regime.
+        Train models for each regime with enhanced overfitting prevention.
         
         Args:
             regime_data: Prepared data for each regime
             feature_names: Names of input features
+            timestamps: Optional timestamps for temporal validation
             
         Returns:
             Dictionary containing training results for each regime
         """
+        # Use enhanced training if available
+        if self.enhanced_training_available and self.training_enhancer:
+            self.logger.info("🚀 Using enhanced training with overfitting prevention")
+            return self._train_regime_models_enhanced(regime_data, feature_names, timestamps)
+        else:
+            self.logger.info("🔄 Using standard training (enhanced utilities not available)")
+            return self._train_regime_models_standard(regime_data, feature_names)
+    
+    def _train_regime_models_enhanced(
+        self,
+        regime_data: Dict[int, Dict[str, np.ndarray]],
+        feature_names: Optional[List[str]] = None,
+        timestamps: Optional[Dict[int, np.ndarray]] = None
+    ) -> Dict[str, Any]:
+        """Train models with enhanced overfitting prevention and lookahead bias detection."""
+        results = {
+            'models': {},
+            'metadata': {},
+            'regime_analysis': {},
+            'enhanced_training_metadata': {},
+            'overfitting_warnings': [],
+            'ensemble_diversity': None
+        }
+        
+        trained_models = []
+        
+        for regime, data in regime_data.items():
+            if data.get('use_global', False):
+                self.logger.info(f"⏭️ Skipping regime {regime} (insufficient data, will use global model)")
+                continue
+            
+            self.logger.info(f"🎯 Training enhanced models for regime {regime} ({data['samples']} samples)...")
+            
+            # Extract data for this regime
+            X = data['X']
+            y = data['y']
+            timestamps_regime = timestamps.get(regime) if timestamps else None
+            
+            # Validate temporal data for lookahead bias
+            if timestamps_regime is not None:
+                self.logger.info(f"🔍 Validating temporal data for regime {regime}...")
+                is_valid, warnings = self.training_enhancer.enhanced_utils.validate_temporal_data(
+                    X, y, timestamps_regime, strict_mode=True
+                )
+                if warnings:
+                    for warning in warnings:
+                        self.logger.warning(f"⚠️ {warning}")
+                        results['overfitting_warnings'].append(f"Regime {regime}: {warning}")
+                if not is_valid:
+                    self.logger.error(f"❌ Temporal data validation failed for regime {regime}")
+                    continue
+            
+            # Train each model type for this regime
+            regime_model_results = {}
+            
+            for model_type in self.config.model_types:
+                try:
+                    self.logger.info(f"🔄 Training {model_type} for regime {regime} with enhanced utilities...")
+                    
+                    # Create model instance
+                    model = self.training_utils.create_model(model_type)
+                    
+                    # Apply enhanced regularization
+                    model = self.training_enhancer.enhanced_utils.apply_enhanced_regularization(
+                        model, model_type
+                    )
+                    
+                    # Train with early stopping and overfitting monitoring
+                    trained_model, metadata = self.training_enhancer.enhance_training_step(
+                        X, y, model, timestamps_regime, f"{model_type}_regime_{regime}"
+                    )
+                    
+                    regime_model_results[model_type] = {
+                        'model': trained_model,
+                        'metadata': metadata
+                    }
+                    trained_models.append(trained_model)
+                    
+                    # Check for overfitting warnings
+                    if metadata.get('overfitting_detected', False):
+                        warning_msg = f"Overfitting detected in {model_type} for regime {regime}"
+                        results['overfitting_warnings'].append(warning_msg)
+                        self.logger.warning(f"⚠️ {warning_msg}")
+                    
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Failed to train {model_type} for regime {regime}: {e}")
+                    continue
+            
+            results['models'][regime] = regime_model_results
+            
+            # Add regime analysis
+            results['regime_analysis'][regime] = {
+                'samples': data['samples'],
+                'features': X.shape[1] if len(X.shape) > 1 else 0,
+                'models_trained': len(regime_model_results),
+                'overfitting_detected': any(
+                    results['models'][regime][mt]['metadata'].get('overfitting_detected', False)
+                    for mt in results['models'][regime]
+                )
+            }
+        
+        # Calculate ensemble diversity if multiple models
+        if len(trained_models) > 1:
+            self.logger.info("📊 Calculating ensemble diversity...")
+            # Combine all regime data for diversity calculation
+            all_X = np.vstack([data['X'] for data in regime_data.values() if not data.get('use_global', False)])
+            all_y = np.hstack([data['y'] for data in regime_data.values() if not data.get('use_global', False)])
+            
+            diversity_metrics = self.training_enhancer.enhanced_utils.calculate_ensemble_diversity(
+                trained_models, all_X, all_y
+            )
+            results['ensemble_diversity'] = diversity_metrics
+            
+            if diversity_metrics.get('diversity_score', 0) < 0.1:
+                self.logger.warning("⚠️ Low ensemble diversity detected")
+            else:
+                self.logger.info("✅ Good ensemble diversity")
+        
+        # Add enhanced training metadata
+        results['enhanced_training_metadata'] = {
+            'overfitting_prevention_enabled': True,
+            'lookahead_bias_detection_enabled': timestamps is not None,
+            'early_stopping_enabled': True,
+            'enhanced_regularization_enabled': True,
+            'temporal_validation_enabled': timestamps is not None,
+            'total_warnings': len(results['overfitting_warnings']),
+            'regimes_processed': len([r for r in regime_data.values() if not r.get('use_global', False)])
+        }
+        
+        self.logger.info("✅ Enhanced regime training completed successfully")
+        return results
+    
+    def _train_regime_models_standard(
+        self,
+        regime_data: Dict[int, Dict[str, np.ndarray]],
+        feature_names: Optional[List[str]] = None
+    ) -> Dict[str, Any]:
+        """Train models using standard training (fallback)."""
         regime_models = {}
         regime_metadata = {}
         

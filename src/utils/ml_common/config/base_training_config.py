@@ -37,6 +37,43 @@ class BaseTrainingConfig:
     enable_overfitting_prevention: bool = True
     overfitting_threshold: float = 0.1
     
+    # Enhanced training utilities
+    enable_enhanced_training: bool = True
+    enable_early_stopping: bool = True
+    early_stopping_patience: int = 10
+    early_stopping_min_delta: float = 0.001
+    
+    # Lookahead bias detection
+    enable_lookahead_bias_detection: bool = True
+    lookahead_bias_strict_mode: bool = True
+    
+    # Enhanced regularization
+    enable_enhanced_regularization: bool = True
+    l1_alpha: float = 0.01
+    l2_alpha: float = 0.01
+    dropout_rate: float = 0.2
+    max_depth: Optional[int] = None
+    min_samples_split: int = 10
+    min_samples_leaf: int = 5
+    max_features: str = 'sqrt'  # 'sqrt', 'log2', None, or float
+    
+    # Temporal validation
+    enable_temporal_validation: bool = True
+    enable_purged_cv: bool = True
+    cv_purge_pct: float = 0.01  # 1% of data purged between train/test
+    cv_gap: int = 0  # Additional gap between train/test
+    
+    # Walk-forward validation
+    enable_walk_forward_validation: bool = False
+    wfv_initial_train_size: int = 1000
+    wfv_test_size: int = 100
+    wfv_step_size: int = 50
+    wfv_expanding_window: bool = True
+    
+    # Ensemble diversity monitoring
+    enable_ensemble_diversity: bool = False
+    diversity_threshold: float = 0.1
+    
     # Training configuration
     validation_split: float = 0.2
     test_split: float = 0.1

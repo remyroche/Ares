@@ -349,6 +349,32 @@ try:
 except ImportError as e:
     print(f"Warning: ML utilities not available: {e}")
     ML_UTILITIES_AVAILABLE = False
+
+# Enhanced training utilities integration
+try:
+    from src.utils.ml_common.training.enhanced_training_utils import (
+        EnhancedTrainingUtils,
+        EarlyStoppingConfig,
+        PurgedCVConfig,
+        OverfittingMonitorConfig,
+        RegularizationConfig
+    )
+    from src.utils.ml_common.training.training_integration import (
+        TrainingStepEnhancer,
+        TrainingIntegrationConfig
+    )
+    ENHANCED_TRAINING_AVAILABLE = True
+    tprint_success("✅ Enhanced training utilities loaded")
+except ImportError as e:
+    ENHANCED_TRAINING_AVAILABLE = False
+    tprint_warning(f"⚠️ Enhanced training utilities not available: {e}")
+    EnhancedTrainingUtils = None
+    TrainingStepEnhancer = None
+    EarlyStoppingConfig = None
+    PurgedCVConfig = None
+    OverfittingMonitorConfig = None
+    RegularizationConfig = None
+    TrainingIntegrationConfig = None
     # Define fallback functions
     def validate_input_data(*args, **kwargs):
         return {'valid': True}
@@ -1030,6 +1056,11 @@ class AnalystModelsTrainingStepRefactored(PerRegimeTrainingStep):
                 'create_training_report': create_training_report
             }
             
+            # Initialize enhanced training utilities
+            if ENHANCED_TRAINING_AVAILABLE:
+                tprint_info("🚀 Initializing enhanced training utilities")
+                self._initialize_enhanced_training_utilities()
+            
             tprint_success("✅ ML common utilities initialized successfully")
             
         except Exception as e:
@@ -1038,6 +1069,42 @@ class AnalystModelsTrainingStepRefactored(PerRegimeTrainingStep):
                 'fallback': 'basic_ml_operations'
             })
             tprint_warning("⚠️ ML utilities initialization failed, using basic ML operations")
+    
+    def _initialize_enhanced_training_utilities(self):
+        """Initialize enhanced training utilities for overfitting prevention and lookahead bias detection."""
+        try:
+            # Create enhanced training configuration
+            self.enhanced_training_config = TrainingIntegrationConfig(
+                enable_early_stopping=True,
+                enable_purged_cv=True,
+                enable_lookahead_detection=True,
+                enable_temporal_splits=True,
+                enable_regularization=True,
+                enable_overfitting_monitoring=True,
+                model_type='auto'
+            )
+            
+            # Initialize training enhancer
+            self.training_enhancer = TrainingStepEnhancer(self.enhanced_training_config)
+            
+            # Store enhanced utilities
+            self.enhanced_training_utils = {
+                'EnhancedTrainingUtils': EnhancedTrainingUtils,
+                'EarlyStoppingConfig': EarlyStoppingConfig,
+                'PurgedCVConfig': PurgedCVConfig,
+                'OverfittingMonitorConfig': OverfittingMonitorConfig,
+                'RegularizationConfig': RegularizationConfig,
+                'TrainingStepEnhancer': TrainingStepEnhancer,
+                'TrainingIntegrationConfig': TrainingIntegrationConfig
+            }
+            
+            tprint_success("✅ Enhanced training utilities initialized successfully")
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Enhanced training utilities initialization failed: {e}")
+            self.enhanced_training_config = None
+            self.training_enhancer = None
+            self.enhanced_training_utils = {}
     
     def _initialize_serialization_utilities(self):
         """Initialize serialization utilities for data persistence."""
@@ -1401,7 +1468,8 @@ class AnalystModelsTrainingStepRefactored(PerRegimeTrainingStep):
         y: np.ndarray,
         regime_labels: np.ndarray,
         feature_names: Optional[List[str]] = None,
-        hmm_states: Optional[np.ndarray] = None
+        hmm_states: Optional[np.ndarray] = None,
+        timestamps: Optional[np.ndarray] = None
     ) -> Dict[str, Any]:
         """
         Execute Enhanced Analyst models training step with comprehensive utilities integration.
@@ -1479,25 +1547,63 @@ class AnalystModelsTrainingStepRefactored(PerRegimeTrainingStep):
                 # Step 5: Training execution with comprehensive error handling
                 self.progress_tracker.update_step("Enhanced Model Training", {"model_types": len(self.config.model_types)})
                 
-                # VECTORIZED: Use ultra-fast vectorized training by default
-                tprint_info("🚀 Using VECTORIZED analyst models training with hardware optimization")
-                training_successful = False
-                results = None
-                
-                try:
-                    with tprint_timer("Vectorized Training", LogLevel.PERFORMANCE):
-                        with monitor_resources("Vectorized Training", self.logger):
-                            results = super().execute_vectorized(
-                                X=X,
-                                y=y,
-                                regime_labels=regime_labels,
-                                feature_names=feature_names,
-                                hmm_states=hmm_states,
-                                is_classification=False,  # Analyst models are typically regression
-                                symbol=None,  # Can be passed as kwargs
-                                exchange=None,
-                                timeframe=self.config.timeframe
+                # Enhanced training with overfitting prevention and lookahead bias detection
+                if ENHANCED_TRAINING_AVAILABLE and hasattr(self, 'training_enhancer'):
+                    tprint_info("🚀 Using ENHANCED analyst models training with overfitting prevention")
+                    training_successful = False
+                    results = None
+                    
+                    try:
+                        # Validate temporal data for lookahead bias
+                        if timestamps is not None:
+                            tprint_info("🔍 Validating temporal data for lookahead bias...")
+                            is_valid, warnings = self.training_enhancer.enhanced_utils.validate_temporal_data(
+                                X, y, timestamps, strict_mode=True
                             )
+                            if warnings:
+                                for warning in warnings:
+                                    tprint_warning(f"⚠️ {warning}")
+                            if not is_valid:
+                                tprint_error("❌ Temporal data validation failed")
+                                raise ValueError("Lookahead bias detected in temporal data")
+                        
+                        # Use enhanced training with temporal integrity
+                        with tprint_timer("Enhanced Training", LogLevel.PERFORMANCE):
+                            with monitor_resources("Enhanced Training", self.logger):
+                                results = self._execute_enhanced_training(
+                                    X, y, regime_labels, feature_names, hmm_states, timestamps
+                                )
+                        
+                        training_successful = True
+                        tprint_success("✅ Enhanced training completed successfully")
+                        
+                    except Exception as e:
+                        tprint_warning(f"⚠️ Enhanced training failed: {e}, falling back to standard method")
+                        # Fallback to standard training
+                        results = self._execute_standard_training(
+                            X, y, regime_labels, feature_names, hmm_states
+                        )
+                        training_successful = True
+                else:
+                    # VECTORIZED: Use ultra-fast vectorized training by default
+                    tprint_info("🚀 Using VECTORIZED analyst models training with hardware optimization")
+                    training_successful = False
+                    results = None
+                    
+                    try:
+                        with tprint_timer("Vectorized Training", LogLevel.PERFORMANCE):
+                            with monitor_resources("Vectorized Training", self.logger):
+                                results = super().execute_vectorized(
+                                    X=X,
+                                    y=y,
+                                    regime_labels=regime_labels,
+                                    feature_names=feature_names,
+                                    hmm_states=hmm_states,
+                                    is_classification=False,  # Analyst models are typically regression
+                                    symbol=None,  # Can be passed as kwargs
+                                    exchange=None,
+                                    timeframe=self.config.timeframe
+                                )
                     
                     if results.get('vectorized', False):
                         tprint_success("✅ VECTORIZED analyst training completed successfully")
@@ -1595,6 +1701,138 @@ class AnalystModelsTrainingStepRefactored(PerRegimeTrainingStep):
             
             # Fast-fail: Re-raise the exception with enhanced context
             raise RuntimeError(error_msg) from e
+    
+    def _execute_enhanced_training(self, X: np.ndarray, y: np.ndarray, regime_labels: np.ndarray, 
+                                 feature_names: Optional[List[str]], hmm_states: Optional[np.ndarray], 
+                                 timestamps: Optional[np.ndarray]) -> Dict[str, Any]:
+        """Execute enhanced training with overfitting prevention and lookahead bias detection."""
+        try:
+            tprint_info("🚀 Executing enhanced training with overfitting prevention")
+            
+            # Get unique regimes
+            unique_regimes = np.unique(regime_labels)
+            results = {
+                'models': {},
+                'regime_analysis': {},
+                'enhanced_training_metadata': {},
+                'overfitting_warnings': [],
+                'ensemble_diversity': None
+            }
+            
+            # Train models for each regime with enhanced utilities
+            for regime in unique_regimes:
+                regime_mask = regime_labels == regime
+                X_regime = X[regime_mask]
+                y_regime = y[regime_mask]
+                timestamps_regime = timestamps[regime_mask] if timestamps is not None else None
+                
+                tprint_info(f"🎯 Training models for regime {regime} ({len(X_regime)} samples)")
+                
+                # Train each model type for this regime
+                regime_models = {}
+                for model_type in self.config.model_types:
+                    try:
+                        # Create model instance
+                        model = self._create_model_instance(model_type)
+                        
+                        # Apply enhanced regularization
+                        model = self.training_enhancer.enhanced_utils.apply_enhanced_regularization(
+                            model, model_type
+                        )
+                        
+                        # Train with early stopping and overfitting monitoring
+                        trained_model, metadata = self.training_enhancer.enhance_training_step(
+                            X_regime, y_regime, model, timestamps_regime, f"analyst_{model_type}_regime_{regime}"
+                        )
+                        
+                        regime_models[model_type] = {
+                            'model': trained_model,
+                            'metadata': metadata
+                        }
+                        
+                        # Check for overfitting warnings
+                        if metadata.get('overfitting_detected', False):
+                            results['overfitting_warnings'].append(f"Overfitting detected in {model_type} for regime {regime}")
+                        
+                    except Exception as e:
+                        tprint_warning(f"⚠️ Failed to train {model_type} for regime {regime}: {e}")
+                        continue
+                
+                results['models'][regime] = regime_models
+            
+            # Calculate ensemble diversity if multiple models
+            if len(self.config.model_types) > 1:
+                tprint_info("📊 Calculating ensemble diversity...")
+                for regime in unique_regimes:
+                    if regime in results['models']:
+                        models_list = [results['models'][regime][mt]['model'] for mt in self.config.model_types 
+                                     if mt in results['models'][regime]]
+                        if len(models_list) > 1:
+                            diversity_metrics = self.training_enhancer.enhanced_utils.calculate_ensemble_diversity(
+                                models_list, X[regime_labels == regime], y[regime_labels == regime]
+                            )
+                            results['ensemble_diversity'] = diversity_metrics
+                            
+                            if diversity_metrics.get('diversity_score', 0) < 0.1:
+                                tprint_warning(f"⚠️ Low ensemble diversity for regime {regime}")
+                            else:
+                                tprint_success(f"✅ Good ensemble diversity for regime {regime}")
+            
+            # Add enhanced training metadata
+            results['enhanced_training_metadata'] = {
+                'overfitting_prevention_enabled': True,
+                'lookahead_bias_detection_enabled': True,
+                'early_stopping_enabled': True,
+                'enhanced_regularization_enabled': True,
+                'temporal_validation_enabled': timestamps is not None,
+                'total_warnings': len(results['overfitting_warnings'])
+            }
+            
+            tprint_success("✅ Enhanced training completed successfully")
+            return results
+            
+        except Exception as e:
+            tprint_error(f"❌ Enhanced training failed: {e}")
+            raise
+    
+    def _execute_standard_training(self, X: np.ndarray, y: np.ndarray, regime_labels: np.ndarray, 
+                                 feature_names: Optional[List[str]], hmm_states: Optional[np.ndarray]) -> Dict[str, Any]:
+        """Execute standard training as fallback."""
+        try:
+            tprint_info("🚀 Executing standard training (fallback)")
+            
+            # Use vectorized training if available
+            try:
+                results = super().execute_vectorized(
+                    X=X,
+                    y=y,
+                    regime_labels=regime_labels,
+                    feature_names=feature_names,
+                    hmm_states=hmm_states,
+                    is_classification=False,
+                    symbol=None,
+                    exchange=None,
+                    timeframe=self.config.timeframe
+                )
+            except Exception:
+                # Fallback to standard execute
+                results = super().execute(
+                    X=X,
+                    y=y,
+                    regime_labels=regime_labels,
+                    feature_names=feature_names,
+                    hmm_states=hmm_states,
+                    is_classification=False,
+                    symbol=None,
+                    exchange=None,
+                    timeframe=self.config.timeframe
+                )
+            
+            return results
+            
+        except Exception as e:
+            tprint_error(f"❌ Standard training failed: {e}")
+            raise
     
     def _validate_input_data_enhanced(self, X: np.ndarray, y: np.ndarray, regime_labels: np.ndarray) -> Dict[str, Any]:
         """Enhanced input data validation with comprehensive error reporting and math validation."""

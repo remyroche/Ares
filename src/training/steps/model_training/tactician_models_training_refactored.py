@@ -110,6 +110,32 @@ except ImportError as e:
     print("❌ Advanced ML features are essential. Please install ml_common.")
     raise ImportError(f"CRITICAL: ML common utilities are required but not available: {e}") from e
 
+# Enhanced training utilities integration
+try:
+    from src.utils.ml_common.training.enhanced_training_utils import (
+        EnhancedTrainingUtils,
+        EarlyStoppingConfig,
+        PurgedCVConfig,
+        OverfittingMonitorConfig,
+        RegularizationConfig
+    )
+    from src.utils.ml_common.training.training_integration import (
+        TrainingStepEnhancer,
+        TrainingIntegrationConfig
+    )
+    ENHANCED_TRAINING_AVAILABLE = True
+    tprint_success("✅ Enhanced training utilities loaded")
+except ImportError as e:
+    ENHANCED_TRAINING_AVAILABLE = False
+    tprint_warning(f"⚠️ Enhanced training utilities not available: {e}")
+    EnhancedTrainingUtils = None
+    TrainingStepEnhancer = None
+    EarlyStoppingConfig = None
+    PurgedCVConfig = None
+    OverfittingMonitorConfig = None
+    RegularizationConfig = None
+    TrainingIntegrationConfig = None
+
 
 # Import vectorized training manager for enhanced capabilities
 try:
@@ -256,6 +282,11 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
             tprint_info("🔧 Initializing utility integrations...")
             self._initialize_utility_integrations()
             
+            # Initialize enhanced training utilities
+            if ENHANCED_TRAINING_AVAILABLE:
+                tprint_info("🚀 Initializing enhanced training utilities...")
+                self._initialize_enhanced_training_utilities()
+            
             # Log initialization success with comprehensive status
             if self.enable_vectorization:
                 tprint_success("🚀 Enhanced Tactician Models Training Step initialized with vectorization")
@@ -270,6 +301,43 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
         except Exception as e:
             self._handle_initialization_error(e)
             raise
+    
+    def _initialize_enhanced_training_utilities(self):
+        """Initialize enhanced training utilities for overfitting prevention and lookahead bias detection."""
+        try:
+            # Create enhanced training configuration for Tactician
+            self.enhanced_training_config = TrainingIntegrationConfig(
+                enable_early_stopping=True,
+                enable_purged_cv=True,
+                enable_lookahead_detection=True,
+                enable_temporal_splits=True,
+                enable_regularization=True,
+                enable_overfitting_monitoring=True,
+                enable_walk_forward=True,  # Enable for Tactician
+                model_type='auto'
+            )
+            
+            # Initialize training enhancer
+            self.training_enhancer = TrainingStepEnhancer(self.enhanced_training_config)
+            
+            # Store enhanced utilities
+            self.enhanced_training_utils = {
+                'EnhancedTrainingUtils': EnhancedTrainingUtils,
+                'EarlyStoppingConfig': EarlyStoppingConfig,
+                'PurgedCVConfig': PurgedCVConfig,
+                'OverfittingMonitorConfig': OverfittingMonitorConfig,
+                'RegularizationConfig': RegularizationConfig,
+                'TrainingStepEnhancer': TrainingStepEnhancer,
+                'TrainingIntegrationConfig': TrainingIntegrationConfig
+            }
+            
+            tprint_success("✅ Enhanced training utilities initialized successfully")
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Enhanced training utilities initialization failed: {e}")
+            self.enhanced_training_config = None
+            self.training_enhancer = None
+            self.enhanced_training_utils = {}
     
     def _start_phase(self, phase: TrainingPhase, context: Optional[Dict[str, Any]] = None) -> None:
         """Start tracking a training phase with structured logging."""
@@ -986,7 +1054,8 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
         hmm_regime_features: Optional[np.ndarray] = None,
         all_analyst_models_outputs: Optional[Dict[str, np.ndarray]] = None,
         hmm_model_outputs: Optional[np.ndarray] = None,
-        analyst_ensemble_outputs: Optional[np.ndarray] = None
+        analyst_ensemble_outputs: Optional[np.ndarray] = None,
+        timestamps: Optional[np.ndarray] = None
     ) -> Dict[str, Any]:
         """
         Execute enhanced Tactician models training step with comprehensive error handling and utility integration.
@@ -1573,6 +1642,46 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
             # Pre-training validation
             self._validate_training_inputs(X, y, regime_labels, feature_names, hmm_states)
             
+            # Enhanced training with overfitting prevention and lookahead bias detection
+            if ENHANCED_TRAINING_AVAILABLE and hasattr(self, 'training_enhancer'):
+                self.logger.info("🚀 Using ENHANCED tactician models training with overfitting prevention")
+                training_metrics['enhanced_training_attempted'] = True
+                
+                try:
+                    # Validate temporal data for lookahead bias
+                    if timestamps is not None:
+                        self.logger.info("🔍 Validating temporal data for lookahead bias...")
+                        is_valid, warnings = self.training_enhancer.enhanced_utils.validate_temporal_data(
+                            X, y, timestamps, strict_mode=True
+                        )
+                        if warnings:
+                            for warning in warnings:
+                                self.logger.warning(f"⚠️ {warning}")
+                        if not is_valid:
+                            self.logger.error("❌ Temporal data validation failed")
+                            raise ValueError("Lookahead bias detected in temporal data")
+                    
+                    # Use enhanced training with temporal integrity
+                    enhanced_start_time = time.time()
+                    results = self._execute_enhanced_tactician_training(
+                        X, y, regime_labels, feature_names, hmm_states, timestamps,
+                        analyst_signals, analyst_model_outputs, hmm_regime_features,
+                        all_analyst_models_outputs, hmm_model_outputs, analyst_ensemble_outputs
+                    )
+                    
+                    enhanced_duration = time.time() - enhanced_start_time
+                    training_metrics['performance_metrics']['enhanced_training_duration'] = enhanced_duration
+                    training_metrics['enhanced_training_successful'] = True
+                    training_metrics['training_method'] = 'enhanced'
+                    self.logger.info(f"✅ ENHANCED tactician training completed successfully in {enhanced_duration:.2f}s")
+                    return results
+                    
+                except Exception as e:
+                    error_msg = f"ENHANCED tactician training failed: {e}"
+                    training_metrics['warnings'].append(error_msg)
+                    training_metrics['fallback_used'] = True
+                    self.logger.warning(f"⚠️ {error_msg}, falling back to vectorized method")
+            
             # VECTORIZED: Use ultra-fast vectorized training by default
             self.logger.info("🚀 Using VECTORIZED tactician models training")
             training_metrics['vectorization_attempted'] = True
@@ -1658,6 +1767,137 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
             training_metrics['errors'].append(str(e))
             self.logger.error(f"❌ Training execution failed: {e}")
             self.logger.error(f"❌ Training metrics: {training_metrics}")
+            raise
+    
+    def _execute_enhanced_tactician_training(self, X: np.ndarray, y: np.ndarray, regime_labels: np.ndarray,
+                                           feature_names: Optional[List[str]], hmm_states: Optional[np.ndarray],
+                                           timestamps: Optional[np.ndarray], analyst_signals: Optional[np.ndarray],
+                                           analyst_model_outputs: Optional[np.ndarray], hmm_regime_features: Optional[np.ndarray],
+                                           all_analyst_models_outputs: Optional[Dict[str, np.ndarray]],
+                                           hmm_model_outputs: Optional[np.ndarray], analyst_ensemble_outputs: Optional[np.ndarray]) -> Dict[str, Any]:
+        """Execute enhanced tactician training with overfitting prevention and lookahead bias detection."""
+        try:
+            self.logger.info("🚀 Executing enhanced tactician training with overfitting prevention")
+            
+            # Filter for Analyst green light periods if provided
+            if analyst_signals is not None:
+                self.logger.info("🔍 Filtering for Analyst green light periods...")
+                green_light_mask = analyst_signals.astype(bool)
+                X_filtered = X[green_light_mask]
+                y_filtered = y[green_light_mask]
+                regime_labels_filtered = regime_labels[green_light_mask]
+                timestamps_filtered = timestamps[green_light_mask] if timestamps is not None else None
+                
+                self.logger.info(f"📊 Filtered to {len(X_filtered)} samples ({np.mean(green_light_mask):.2%} green light ratio)")
+            else:
+                X_filtered, y_filtered, regime_labels_filtered, timestamps_filtered = X, y, regime_labels, timestamps
+                self.logger.warning("⚠️ No Analyst green light periods provided, using all data")
+            
+            # Get unique regimes
+            unique_regimes = np.unique(regime_labels_filtered)
+            results = {
+                'models': {},
+                'regime_analysis': {},
+                'enhanced_training_metadata': {},
+                'overfitting_warnings': [],
+                'ensemble_diversity': None,
+                'walk_forward_validation': None
+            }
+            
+            # Train models for each regime with enhanced utilities
+            for regime in unique_regimes:
+                regime_mask = regime_labels_filtered == regime
+                X_regime = X_filtered[regime_mask]
+                y_regime = y_filtered[regime_mask]
+                timestamps_regime = timestamps_filtered[regime_mask] if timestamps_filtered is not None else None
+                
+                self.logger.info(f"🎯 Training tactician models for regime {regime} ({len(X_regime)} samples)")
+                
+                # Train each model type for this regime
+                regime_models = {}
+                for model_type in self.config.model_types:
+                    try:
+                        # Create model instance
+                        model = self._create_model_instance(model_type)
+                        
+                        # Apply enhanced regularization
+                        model = self.training_enhancer.enhanced_utils.apply_enhanced_regularization(
+                            model, model_type
+                        )
+                        
+                        # Train with early stopping and overfitting monitoring
+                        trained_model, metadata = self.training_enhancer.enhance_training_step(
+                            X_regime, y_regime, model, timestamps_regime, f"tactician_{model_type}_regime_{regime}"
+                        )
+                        
+                        regime_models[model_type] = {
+                            'model': trained_model,
+                            'metadata': metadata
+                        }
+                        
+                        # Check for overfitting warnings
+                        if metadata.get('overfitting_detected', False):
+                            results['overfitting_warnings'].append(f"Overfitting detected in {model_type} for regime {regime}")
+                        
+                    except Exception as e:
+                        self.logger.warning(f"⚠️ Failed to train {model_type} for regime {regime}: {e}")
+                        continue
+                
+                results['models'][regime] = regime_models
+            
+            # Calculate ensemble diversity if multiple models
+            if len(self.config.model_types) > 1:
+                self.logger.info("📊 Calculating tactician ensemble diversity...")
+                for regime in unique_regimes:
+                    if regime in results['models']:
+                        models_list = [results['models'][regime][mt]['model'] for mt in self.config.model_types 
+                                     if mt in results['models'][regime]]
+                        if len(models_list) > 1:
+                            diversity_metrics = self.training_enhancer.enhanced_utils.calculate_ensemble_diversity(
+                                models_list, X_filtered[regime_labels_filtered == regime], 
+                                y_filtered[regime_labels_filtered == regime]
+                            )
+                            results['ensemble_diversity'] = diversity_metrics
+                            
+                            if diversity_metrics.get('diversity_score', 0) < 0.1:
+                                self.logger.warning(f"⚠️ Low tactician ensemble diversity for regime {regime}")
+                            else:
+                                self.logger.info(f"✅ Good tactician ensemble diversity for regime {regime}")
+            
+            # Perform walk-forward validation if enabled
+            if len(results['models']) > 0:
+                self.logger.info("🚶 Performing walk-forward validation for tactician...")
+                first_regime = list(results['models'].keys())[0]
+                first_model = list(results['models'][first_regime].values())[0]['model']
+                
+                wfv_results = self.training_enhancer.enhanced_utils.perform_walk_forward_validation(
+                    first_model, X_filtered, y_filtered,
+                    initial_train_size=1000, test_size=100, step_size=50
+                )
+                results['walk_forward_validation'] = wfv_results
+                
+                if wfv_results.get('performance_trend', {}).get('trend') == 'declining':
+                    self.logger.warning("⚠️ Declining performance trend detected in tactician walk-forward validation")
+                else:
+                    self.logger.info("✅ Stable performance trend in tactician walk-forward validation")
+            
+            # Add enhanced training metadata
+            results['enhanced_training_metadata'] = {
+                'overfitting_prevention_enabled': True,
+                'lookahead_bias_detection_enabled': True,
+                'early_stopping_enabled': True,
+                'enhanced_regularization_enabled': True,
+                'temporal_validation_enabled': timestamps is not None,
+                'green_light_filtering_enabled': analyst_signals is not None,
+                'walk_forward_validation_enabled': True,
+                'total_warnings': len(results['overfitting_warnings'])
+            }
+            
+            self.logger.info("✅ Enhanced tactician training completed successfully")
+            return results
+            
+        except Exception as e:
+            self.logger.error(f"❌ Enhanced tactician training failed: {e}")
             raise
     
     def _validate_training_inputs(

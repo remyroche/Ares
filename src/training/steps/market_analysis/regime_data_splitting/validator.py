@@ -259,7 +259,7 @@ class Step4RegimeDataSplittingValidator(BaseValidator):
         """Validate prerequisites for Step 4 using BaseValidator methods."""
         validation_result = {'validation_passed': True, 'warnings': [], 'errors': [], 'details': {}}
         try:
-            step03_output_dir = Path('data/hmm_regimes')
+            step03_output_dir = Path('generated/market_analysis/hmm_regimes')
             step03_files = list(step03_output_dir.glob(f'{exchange}_{symbol}_{timeframe}_composite_clusters.parquet'))
             if not step03_files:
                 validation_result['validation_passed'] = False
@@ -283,7 +283,7 @@ class Step4RegimeDataSplittingValidator(BaseValidator):
         """Validate Step 4 output files and content using BaseValidator methods."""
         validation_result = {'validation_passed': True, 'warnings': [], 'errors': [], 'details': {}}
         try:
-            output_dir = Path('historical_data') / exchange.lower() / symbol.lower() / 'regime_splits'
+            output_dir = Path('generated/market_analysis') / exchange.lower() / symbol.lower() / 'regime_splits'
             expected_files = [f'{exchange}_{symbol}_{timeframe}_unified_regime_data.parquet']
             missing_files = []
             existing_files = []

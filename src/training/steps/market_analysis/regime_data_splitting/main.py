@@ -2253,8 +2253,8 @@ class RegimeDataSplittingStep:
         """Create unified dataset with regime labels and return dataset info."""
         try:
             data = data.sort_values('timestamp').reset_index(drop = True)
-            training_dir = ensure_directory(Path(data_dir) / exchange.lower() / symbol.lower() / 'regime_splits')
-            models_dir = Path(data_dir) / exchange.lower() / symbol.lower() / 'models'
+            training_dir = ensure_directory(Path("generated/market_analysis") / exchange.lower() / symbol.lower() / 'regime_splits')
+            models_dir = Path("generated/market_analysis") / exchange.lower() / symbol.lower() / 'models'
             if not self._save_unified_dataset(data, training_dir, exchange, symbol, timeframe):
                 return None
             if not self._save_regime_statistics(data, regime_ids, training_dir, exchange, symbol, timeframe):
@@ -2611,7 +2611,7 @@ class RegimeDataSplittingStep:
                     'lookback_preservation': 'Full lookback periods maintained for all features'
                 }
             }
-            metadata_file = Path(data_dir) / 'training' / f'{exchange}_{symbol}_{timeframe}_regime_metadata.json'
+            metadata_file = Path("generated/market_analysis") / 'training' / f'{exchange}_{symbol}_{timeframe}_regime_metadata.json'
             safe_json_dump(metadata, metadata_file, indent = 2)
             self.logger.info(f'✅ Regime metadata saved: {metadata_file}')
         except Exception as e:

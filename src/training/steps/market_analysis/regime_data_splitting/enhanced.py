@@ -113,7 +113,7 @@ class HMMRegimeTagger:
     def load_trained_models(self, symbol: str, exchange: str, timeframe: str, data_dir: str) -> bool:
         """Load trained HMM models."""
         try:
-            models_dir = Path(data_dir) / 'models' / 'hmm'
+            models_dir = Path("generated/market_analysis") / 'models' / 'hmm'
             
             # Load base models
             base_models_dir = models_dir / 'base_models'

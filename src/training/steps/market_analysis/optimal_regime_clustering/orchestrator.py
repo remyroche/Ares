@@ -74,7 +74,7 @@ def detect_latest_hmm_results(symbol: str = "ETHUSDT", exchange: str = "binance"
                 output_dir = data_path_obj.parent / "optimal_clusters"
             else:
                 # Use standard output location
-                output_dir = Path(f"optimal_clusters/{exchange}/{symbol}/{timeframe}")
+                output_dir = Path(f"generated/market_analysis/optimal_clusters/{exchange}/{symbol}/{timeframe}")
 
             logger.info(f"✅ Detected HMM results: {data_path}")
             logger.info(f"📁 Output directory: {output_dir}")

@@ -312,7 +312,7 @@ class OrchestratorConfig:
     # Serialization Settings
     save_intermediate_results: bool = True
     serialization_format: str = 'parquet'  # 'json', 'pickle', 'parquet'
-    artifacts_directory: str = 'artifacts/pid_features'
+    artifacts_directory: str = 'generated/market_analysis/pid_features'
     
     # Performance Settings
     enable_profiling: bool = True

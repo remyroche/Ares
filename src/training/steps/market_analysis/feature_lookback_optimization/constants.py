@@ -120,11 +120,11 @@ class FileConstants:
     CSV_EXTENSION: str = ".csv"
     
     # Directory names
-    REPORTS_DIR: str = "reports"
+    REPORTS_DIR: str = "outcomes/market_analysis"
     METRICS_DIR: str = "metrics"
     VISUALIZATIONS_DIR: str = "visualizations"
     INSIGHTS_DIR: str = "insights"
-    ARTIFACTS_DIR: str = "artifacts"
+    ARTIFACTS_DIR: str = "generated/market_analysis"
     
     # File naming patterns
     TIMESTAMP_FORMAT: str = "%Y%m%d_%H%M%S"

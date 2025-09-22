@@ -6,20 +6,14 @@ Enhanced HMM models training with comprehensive validation, error handling, and 
 New streamlined approach using common_utils/ ML training pipeline.
 """
 
-# Streamlined HMM Training (Recommended)
-from .streamlined_hmm_training import (
-    StreamlinedHMMTrainingStep,
-    create_streamlined_hmm_training,
-    execute_streamlined_hmm_training
-)
+# Streamlined HMM Training (Recommended) - Complete migration to common_utils pipeline
+# Now available directly in hmm_models_training_enhanced.py
 
-# Legacy enhanced training (for backward compatibility)
+# Streamlined HMM Training (Recommended) - Complete migration to common_utils pipeline
 from .hmm_models_training_enhanced import (
-    HMMModelsTrainingEnhanced,
+    StreamlinedHMMTrainingStep,
     create_enhanced_hmm_models_training,
-    execute_enhanced_hmm_models_training,
-    TrainingMetrics,
-    ModelResult
+    execute_enhanced_hmm_models_training
 )
 
 from .validation_framework import (
@@ -121,13 +115,8 @@ from .overfitting_reporting import (
 )
 
 __all__ = [
-    # Streamlined HMM Training (Recommended)
+    # Streamlined HMM Training (Recommended) - Complete migration to common_utils pipeline
     'StreamlinedHMMTrainingStep',
-    'create_streamlined_hmm_training',
-    'execute_streamlined_hmm_training',
-
-    # Legacy enhanced training (for backward compatibility)
-    'HMMModelsTrainingEnhanced',
     'create_enhanced_hmm_models_training',
     'execute_enhanced_hmm_models_training',
     

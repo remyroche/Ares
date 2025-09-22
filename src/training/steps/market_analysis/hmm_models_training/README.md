@@ -2,14 +2,13 @@
 
 Enhanced HMM models training with comprehensive validation, error handling, and reporting.
 
-## Streamlined Approach (Recommended)
+## Complete Migration to Streamlined Approach ✅
 
-The new streamlined HMM training leverages the common_utils/ ML training pipeline for maximum efficiency and consistency.
+The HMM training has been **completely migrated** to leverage the common_utils/ ML training pipeline for maximum efficiency and consistency.
 
 ### Files
 
-- **`streamlined_hmm_training.py`** - New streamlined training class using common_utils/ pipeline
-- **`hmm_models_training_enhanced.py`** - Legacy enhanced training (backward compatibility)
+- **`hmm_models_training_enhanced.py`** - Streamlined training class using common_utils/ pipeline (PRIMARY)
 - **`validation_framework.py`** - Comprehensive validation framework
 - **`enhanced_reporting.py`** - Enhanced reporting system
 - **`__init__.py`** - Module exports and imports
@@ -38,67 +37,65 @@ The new streamlined HMM training leverages the common_utils/ ML training pipelin
 
 ## Usage
 
-### Streamlined Approach (Recommended)
+### Primary Approach (Streamlined - Complete Migration)
 
 ```python
 from src.training.steps.market_analysis.hmm_models_training import (
-    create_streamlined_hmm_training,
-    execute_streamlined_hmm_training
+    create_enhanced_hmm_models_training,
+    execute_enhanced_hmm_models_training
 )
 
-# Simple execution
-results = execute_streamlined_hmm_training(
+# Simple execution with ensemble models included
+results = execute_enhanced_hmm_models_training(
     X, y, regime_labels,
     feature_names=feature_names,
     hmm_states=hmm_states
 )
 
-# Or with custom config
+# Or with custom config including ensemble models
 from src.utils.ml_common.config.base_training_config import HMMTrainingConfig
 config = HMMTrainingConfig(
-    model_types=["logistic_regression", "lightgbm", "random_forest"],
+    model_types=[
+        # Base models
+        "logistic_regression", "lightgbm", "random_forest", "xgboost", "catboost",
+        # Ensemble models
+        "voting_classifier", "stacking_classifier", "bagging_classifier",
+        "ada_boost_classifier", "extra_trees_classifier",
+        # Deep learning models
+        "tabnet_classifier", "neural_network_classifier"
+    ],
     hpo_trials=100,
     enable_multi_objective=True
 )
 
-training_step = create_streamlined_hmm_training(config)
+training_step = create_enhanced_hmm_models_training(config)
 results = training_step.execute(X, y, regime_labels, feature_names)
 ```
 
-### Legacy Approach (For Backward Compatibility)
+**Key Features:**
+- ✅ **15m timeframe enforcement** - automatic HMM state recognition
+- ✅ **Ensemble models included** - voting, stacking, bagging, ada boost, extra trees
+- ✅ **Deep learning models** - TabNet and neural networks when available
+- ✅ **HMM state focus** - optimized for state recognition, not prediction
+- ✅ **Common_utils pipeline** - leverages robust ML training infrastructure
 
-```python
-from src.training.steps.market_analysis.hmm_models_training import (
-    create_enhanced_hmm_models_training,
-    validate_hmm_training_inputs,
-    ValidationLevel
-)
+## Migration Complete ✅
 
-# Legacy approach still available
-validation_report = validate_hmm_training_inputs(
-    X, y, regime_labels,
-    validation_level=ValidationLevel.STANDARD
-)
+### Complete Migration to Common_Utils Pipeline
+The HMM training has been **completely migrated** to leverage the common_utils/ ML training pipeline:
 
-if validation_report.overall_result.value == "pass":
-    training_step = create_enhanced_hmm_models_training(config)
-    results = training_step.execute(X, y, regime_labels, feature_names)
-```
+- ✅ **`hmm_models_training_enhanced.py`** - NOW the streamlined implementation
+- ✅ **90%+ reduction in custom code** - leverages BaseTrainingStep inheritance
+- ✅ **Universal validation, HPO, and reporting** from common_utils
+- ✅ **HMM state recognition focus** with 15m timeframe enforcement
+- ✅ **Ensemble models included** - voting, stacking, bagging, ada boost, extra trees
+- ✅ **Deep learning support** - TabNet and neural networks when available
 
-## Migration from Old Code
-
-### New Streamlined Approach
-The new streamlined approach significantly reduces custom code by leveraging the common_utils/ ML training pipeline:
-
-- ✅ **`streamlined_hmm_training.py`** (new) - 90%+ reduction in custom code
-- ✅ Uses common BaseTrainingStep inheritance
-- ✅ Leverages universal validation, HPO, and reporting
-- ✅ Focuses specifically on HMM state recognition
-- ✅ Enforces 15m timeframe for consistency
-
-### Legacy Code
-- ✅ **`hmm_models_training_enhanced.py`** - Available for backward compatibility
-- ❌ Consider migrating to streamlined approach for better maintainability
+### What Changed
+- **Complete file replacement** - `hmm_models_training_enhanced.py` now contains the streamlined implementation
+- **Ensemble models added** - comprehensive model types for robust state recognition
+- **Single-step migration** - no gradual transition needed
+- **Backward compatibility maintained** - existing function names preserved
 
 ## Benefits
 
@@ -122,15 +119,23 @@ The new streamlined approach significantly reduces custom code by leveraging the
 ### Streamlined Approach
 The streamlined approach automatically configures:
 - **Timeframe**: 15m (enforced for HMM state recognition)
-- **Model types**: logistic_regression, lightgbm, random_forest
-- **HPO**: Enabled with HMM-specific search spaces
+- **Model types**: 12 comprehensive models including ensembles and deep learning
+- **HPO**: Enabled with HMM-specific search spaces for all model types
 - **Validation**: Universal validation integration
 - **Reporting**: Common reporting pipeline
 
 ### Custom Configuration
 ```python
 config = HMMTrainingConfig(
-    model_types=["logistic_regression", "lightgbm"],  # Custom model selection
+    model_types=[
+        # Base models
+        "logistic_regression", "lightgbm", "random_forest", "xgboost", "catboost",
+        # Ensemble models
+        "voting_classifier", "stacking_classifier", "bagging_classifier",
+        "ada_boost_classifier", "extra_trees_classifier",
+        # Deep learning models
+        "tabnet_classifier", "neural_network_classifier"
+    ],
     hpo_trials=200,                                   # Custom HPO trials
     enable_multi_objective=False,                     # Disable multi-objective
     objectives=["accuracy", "f1_score"],              # Custom objectives

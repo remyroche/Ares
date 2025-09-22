@@ -37,7 +37,6 @@ class BaseTrainingConfig:
     enable_overfitting_prevention: bool = True
     overfitting_threshold: float = 0.1
     
-<<<<<<< HEAD
     # Enhanced training utilities
     enable_enhanced_training: bool = True
     enable_early_stopping: bool = True
@@ -78,7 +77,6 @@ class BaseTrainingConfig:
     # Universal validation settings (from main branch)
     enable_validation: bool = True
     enable_overfitting_detection: bool = True
-    enable_temporal_validation: bool = True
     enable_timeframe_validation: bool = True
     validation_failure_threshold: float = 0.5
     fail_on_validation_error: bool = False

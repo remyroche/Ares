@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Configuration management for code analysis."""
 
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Union
 from dataclasses import dataclass
 from pathlib import Path
-import logging
+
+from src.common.config.loader import save_to_file as _unified_save_to_file, load_from_file as _unified_load_from_file
 
 
 @dataclass
@@ -40,6 +41,9 @@ class CodeQualityConfig:
             output_dir=config_dict.get("output_dir", "analysis_results"),
             analysis_config=analysis_config
         )
+
+    def save_to_file(self, filepath: Union[str, Path]) -> None:
+        _unified_save_to_file(self, filepath)
 
 
 @dataclass
@@ -144,21 +148,5 @@ def get_default_config() -> AnalysisConfig:
 
 
 def load_config(config_file: str) -> CodeQualityConfig:
-    """Load configuration from a YAML or JSON file."""
-    import yaml
-    import json
-    from pathlib import Path
-    
-    config_path = Path(config_file)
-    if not config_path.exists():
-        raise FileNotFoundError(f"Configuration file not found: {config_file}")
-    
-    with open(config_path, 'r', encoding='utf-8') as f:
-        if config_path.suffix.lower() in ['.yaml', '.yml']:
-            config_dict = yaml.safe_load(f)
-        elif config_path.suffix.lower() == '.json':
-            config_dict = json.load(f)
-        else:
-            raise ValueError(f"Unsupported configuration file format: {config_path.suffix}")
-    
-    return CodeQualityConfig.from_dict(config_dict)
+    """Load configuration from a YAML or JSON file using the unified loader."""
+    return _unified_load_from_file(config_file, CodeQualityConfig)  # type: ignore[return-value]

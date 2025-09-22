@@ -188,9 +188,8 @@ class HMMEnhancedFeatureCreator:
             return X_enhanced
             
         except Exception as e:
-            tprint(f"⚠️ Enhanced feature creation failed: {e}")
-            # Fallback to original features
-            return X
+            tprint(f"❌ Enhanced feature creation failed: {e}")
+            raise ValueError(f"Enhanced feature generation failed: {e}. Cannot proceed without proper feature engineering.")
     
     @staticmethod
     def get_enhanced_feature_names(original_feature_count: int, original_feature_names: Optional[List[str]] = None) -> List[str]:

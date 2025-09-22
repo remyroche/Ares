@@ -332,6 +332,11 @@ class DataQualityUtilities:
     def _handle_missing_values(self, data: pd.DataFrame, method: str) -> Tuple[pd.DataFrame, Dict[str, Any]]:
         """Handle missing values using specified method."""
         report = {'operation': 'missing_value_handling', 'method': method}
+        # Strategy:
+        # - 'drop_rows': fast drop when few rows have NaNs
+        # - 'drop_columns': drop columns with >50% NaNs
+        # - 'mean_median': numeric median, categorical mode
+        # - 'knn': KNNImputer for numeric features when many NaNs
 
         try:
             if method == 'auto':

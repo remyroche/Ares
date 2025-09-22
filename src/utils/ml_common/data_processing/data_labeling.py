@@ -44,7 +44,8 @@ from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer, M1CPUOptim
 
 # Import ML Common utilities for cross-validation
 from ..validation.cv_utils import TemporalCrossValidator, PurgedKFold
-# from .validation_utils import ValidationFramework  # Not available
+# Validation framework: use unified interface when validation is needed.
+# from src.utils.validation.unified_framework import UnifiedValidationFramework  # Optional at call sites
 # from .pareto import ParetoFrontAnalyzer  # Causes circular import
 
 logger = logging.getLogger(__name__)
@@ -206,9 +207,7 @@ class EnhancedDataLabeler:
             self.data_processor = DataProcessingUtils()
             self.logger.debug("✅ Data processing utilities initialized")
             
-            # self.logger.debug("🔧 Common utilities not available")
-            # self.common_utils = CommonUtilities()
-            # self.logger.debug("✅ Common utilities initialized")
+            # Common utilities optional: keep disabled to avoid import errors
             
             init_time = time.time() - start_time
             self.logger.info(f"✅ All utility managers initialized successfully in {init_time:.3f}s")

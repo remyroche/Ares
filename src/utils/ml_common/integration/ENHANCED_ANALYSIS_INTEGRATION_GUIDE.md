@@ -315,6 +315,11 @@ if analysis['bootstrap_analysis']['stability_score'] < 0.7:
 ### Issue: Enhanced Analysis Not Available
 ```python
 # Check availability
+try:
+    ENHANCED_ANALYSIS_AVAILABLE = True  # Set by integration at runtime
+except NameError:
+    ENHANCED_ANALYSIS_AVAILABLE = False
+
 if not ENHANCED_ANALYSIS_AVAILABLE:
     print("Enhanced analysis tools not available - using standard evaluation")
     # Fall back to basic evaluation

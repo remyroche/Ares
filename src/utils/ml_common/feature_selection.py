@@ -55,7 +55,6 @@ from ..caching import intelligent_caching
 from .optimization.memory_optimization import MemoryEfficientTraining
 from .utils.shared_cache import SharedMLCache, shared_cache
 from .validation.stability import StabilityAnalyzer
-# from ...training.utils.feature_selection.base_framework import AdaptiveThresholding  # Class not available
 
 # Enhanced dependency management with fast fail
 try:
@@ -225,7 +224,6 @@ class FeatureSelectionFramework:
             
             # Stability and thresholding
             self.stability_analyzer = StabilityAnalyzer()
-            # self.adaptive_thresholding = AdaptiveThresholding()  # Class not available
             _LOGGER.info("📈 Stability and thresholding tools initialized")
             
             # Setup optimization settings

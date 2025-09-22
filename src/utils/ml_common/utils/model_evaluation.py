@@ -150,14 +150,30 @@ class ModelEvaluationUtilities:
             # ROC-AUC (if binary classification)
             if len(np.unique(y_true)) == 2:
                 try:
-                    # For binary classification, try to get probability predictions
-                    # If not available, use decision function
-                    if hasattr(kwargs.get('model', {}), 'predict_proba'):
-                        y_prob = kwargs['model'].predict_proba(y_pred.reshape(-1, 1))[:, 1]
-                        metrics['roc_auc'] = roc_auc_score(y_true, y_prob)
-                    else:
-                        # Use predictions directly for AUC calculation
-                        metrics['roc_auc'] = roc_auc_score(y_true, y_pred)
+                    model = kwargs.get('model')
+                    y_scores = None
+                    if model is not None:
+                        # Prefer predict_proba if available
+                        if hasattr(model, 'predict_proba'):
+                            try:
+                                y_scores = model.predict_proba(kwargs.get('X_eval', None) or y_pred.reshape(-1, 1))
+                                if hasattr(y_scores, 'shape') and y_scores.shape[1] > 1:
+                                    y_scores = y_scores[:, 1]
+                                else:
+                                    y_scores = np.asarray(y_scores).ravel()
+                            except Exception:
+                                y_scores = None
+                        # Fallback to decision_function
+                        if y_scores is None and hasattr(model, 'decision_function'):
+                            try:
+                                y_scores = model.decision_function(kwargs.get('X_eval', None) or y_pred.reshape(-1, 1))
+                                y_scores = np.asarray(y_scores).ravel()
+                            except Exception:
+                                y_scores = None
+                    # If no model scores, try using y_pred directly if it looks probabilistic/continuous
+                    if y_scores is None:
+                        y_scores = np.asarray(y_pred).ravel()
+                    metrics['roc_auc'] = roc_auc_score(y_true, y_scores)
                 except Exception as e:
                     self.logger.warning(f"⚠️ ROC-AUC calculation failed: {e}")
                     metrics['roc_auc'] = None

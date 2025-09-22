@@ -16,26 +16,28 @@ from .hmm_models_training_enhanced import (
     execute_enhanced_hmm_models_training
 )
 
-from .validation_framework import (
-    HMMTrainingValidator,
-    ValidationLevel,
-    ValidationResult,
-    ValidationCheck,
-    ValidationReport,
-    validate_hmm_training_inputs,
-    validate_hmm_training_results
-)
+# Validation framework functionality moved to ml_commons HMMValidationPipeline
+# from .validation_framework import (  # DEPRECATED - use ml_commons validation instead
+#     HMMTrainingValidator,
+#     ValidationLevel,
+#     ValidationResult,
+#     ValidationCheck,
+#     ValidationReport,
+#     validate_hmm_training_inputs,
+#     validate_hmm_training_results
+# )
 
-from .enhanced_reporting import (
-    HMMTrainingReporter,
-    PerformanceMetrics,
-    ModelSummary,
-    TrainingSummary,
-    FeatureAnalysis,
-    RegimeAnalysis,
-    ComputationalMetrics,
-    generate_hmm_training_report
-)
+# Enhanced reporting functionality moved to ml_commons HMM evaluation pipeline
+# from .enhanced_reporting import (  # DEPRECATED - use ml_commons evaluation instead
+#     HMMTrainingReporter,
+#     PerformanceMetrics,
+#     ModelSummary,
+#     TrainingSummary,
+#     FeatureAnalysis,
+#     RegimeAnalysis,
+#     ComputationalMetrics,
+#     generate_hmm_training_report
+# )
 
 from .utils import (
     StandardizedLogger,
@@ -120,28 +122,28 @@ __all__ = [
     'create_enhanced_hmm_models_training',
     'execute_enhanced_hmm_models_training',
     
-    # Data structures
-    'TrainingMetrics',
-    'ModelResult',
-    'PerformanceMetrics',
-    'ModelSummary',
-    'TrainingSummary',
-    'FeatureAnalysis',
-    'RegimeAnalysis',
-    'ComputationalMetrics',
-    
-    # Validation framework
-    'HMMTrainingValidator',
-    'ValidationLevel',
-    'ValidationResult',
-    'ValidationCheck',
-    'ValidationReport',
-    'validate_hmm_training_inputs',
-    'validate_hmm_training_results',
-    
-    # Reporting
-    'HMMTrainingReporter',
-    'generate_hmm_training_report',
+    # Data structures - DEPRECATED: use ml_commons evaluation pipeline instead
+    # 'TrainingMetrics',
+    # 'ModelResult',
+    # 'PerformanceMetrics',
+    # 'ModelSummary',
+    # 'TrainingSummary',
+    # 'FeatureAnalysis',
+    # 'RegimeAnalysis',
+    # 'ComputationalMetrics',
+
+    # Validation framework - DEPRECATED: use ml_commons HMMValidationPipeline instead
+    # 'HMMTrainingValidator',
+    # 'ValidationLevel',
+    # 'ValidationResult',
+    # 'ValidationCheck',
+    # 'ValidationReport',
+    # 'validate_hmm_training_inputs',
+    # 'validate_hmm_training_results',
+
+    # Reporting - DEPRECATED: use ml_commons HMM evaluation pipeline instead
+    # 'HMMTrainingReporter',
+    # 'generate_hmm_training_report',
     
     # HMM Ensemble Training
     'HMMEnsembleTrainingComponent',

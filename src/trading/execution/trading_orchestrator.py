@@ -128,6 +128,12 @@ class TradingOrchestrator:
         self.trading_mode = TradingMode(config.get('trading_mode', 'paper'))
         self.account_balance = config.get('account_balance', 10000.0)
         
+        # Cross-asset trade coordination
+        self.trade_gate = self.config.get('trade_gate')
+
+        # Trade decision callbacks (for cross-asset manager integration)
+        self._on_trade_decision_callbacks: List[Any] = []
+
         # Performance tracking
         self.performance_metrics = {
             'total_sessions': 0,
@@ -481,6 +487,15 @@ class TradingOrchestrator:
         """Execute trading decision with comprehensive monitoring."""
         try:
             tprint_info(f"🔄 Executing {decision.action} order for {decision.symbol}")
+
+            # Cross-asset trade gate: serialize trade execution across symbols
+            gate_acquired = False
+            if self.trade_gate is not None:
+                gate_acquired = await self.trade_gate.acquire(self.symbol, decision)
+                if not gate_acquired:
+                    await self._trigger_trade_callbacks(decision, event="skipped_gate")
+                    tprint_warning("⚠️ Trade skipped due to global gate or risk checks")
+                    return
             
             # Prepare comprehensive trade data
             trade_data = {
@@ -530,6 +545,16 @@ class TradingOrchestrator:
             # Store decision with trade ID for outcome tracking
             decision.metadata['trade_id'] = trade_id
             self.trading_decisions.append(decision)
+
+            # Inform trade gate of active trade id
+            if self.trade_gate is not None and trade_id:
+                try:
+                    self.trade_gate.set_active_trade_id(trade_id)
+                except Exception:
+                    pass
+
+            # Trigger pre-execution callback
+            await self._trigger_trade_callbacks(decision, event="pre_execute")
             
             # Simulate execution (in real trading, this would place actual orders)
             execution_success = await self._simulate_order_execution(decision)
@@ -560,12 +585,22 @@ class TradingOrchestrator:
                 if self.current_session:
                     self.current_session.failed_trades += 1
                 self.performance_metrics['failed_trades'] += 1
+
+            # Trigger post-execution callback
+            await self._trigger_trade_callbacks(decision, event="post_execute", success=execution_success)
             
         except Exception as e:
             self.logger.error(f"❌ Trading decision execution failed: {e}")
             if self.current_session:
                 self.current_session.failed_trades += 1
             self.performance_metrics['failed_trades'] += 1
+        finally:
+            # Ensure gate is released
+            if self.trade_gate is not None:
+                try:
+                    await self.trade_gate.release(decision.metadata.get('trade_id'))
+                except Exception:
+                    pass
     
     async def _simulate_order_execution(self, decision: TradingDecision) -> bool:
         """Simulate order execution (replace with real execution in live trading)."""
@@ -757,6 +792,24 @@ class TradingOrchestrator:
     def get_trading_decisions(self, n: int = 100) -> List[TradingDecision]:
         """Get recent trading decisions."""
         return self.trading_decisions[-n:] if len(self.trading_decisions) >= n else self.trading_decisions.copy()
+
+    def add_trade_decision_callback(self, callback: Any) -> None:
+        """Register a callback to observe trade decision lifecycle events.
+        Callback signature: async|sync callback(decision: TradingDecision, event: str, **kwargs)
+        Events: 'skipped_gate' | 'pre_execute' | 'post_execute'
+        """
+        self._on_trade_decision_callbacks.append(callback)
+
+    async def _trigger_trade_callbacks(self, decision: TradingDecision, event: str, **kwargs):
+        for cb in self._on_trade_decision_callbacks:
+            try:
+                if asyncio.iscoroutinefunction(cb):
+                    await cb(decision, event=event, **kwargs)
+                else:
+                    cb(decision, event=event, **kwargs)
+            except Exception:
+                # Swallow to not interrupt trading flow
+                pass
 
 # Convenience functions
 

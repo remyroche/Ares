@@ -31,7 +31,7 @@ except ImportError:
     aiohttp = None
 
 try:
-    import ccxt
+    import ccxt  # noqa: F401
     import ccxt.async_support as ccxt_async
     CCXT_AVAILABLE = True
 except ImportError:

@@ -2,8 +2,6 @@ from src.utils.tprint import tprint
 
 
 from typing import Dict, List, Optional, Union, Any, Tuple, Callable, Awaitable
-
-from typing import Dict, List, Optional, Union, Any, Tuple
 from ...utils.logger import system_logger
 from .core.decorators import handles_errors
 '\nEnhanced S/R Detection Optimization Module\n\nThis module implements comprehensive optimization strategies for S/R detection\nspecifically optimized for 1-30m timeframes. It includes:\n\n1. Multi-Method Ensemble Optimization\n2. Advanced Strength Scoring Optimization\n3. Multi-Timeframe Confluence Optimization\n4. Advanced S/R Method Optimization\n5. DBSCAN Clustering Optimization with real data testing\n6. Timeframe-specific parameter optimization\n\nThe optimized parameters are then used by the main S/R predictor.\n'

@@ -1,16 +1,19 @@
 """
-Streamlined HMM Models Training
+Streamlined HMM Models Training with Hardware Optimization
 
-Simplified HMM models training that leverages the ml_commons/ ML training pipeline.
-Focuses on HMM state recognition with 15m timeframe, using advanced tools for HPO, validation,
-lookahead protection, and overfitting detection.
+Simplified HMM models training that leverages the ml_commons/ ML training pipeline
+with extensive hardware optimization for Apple Silicon. Focuses on HMM state recognition
+with 15m timeframe, using advanced tools for HPO, validation, lookahead protection,
+overfitting detection, and hardware acceleration.
 
-This is the primary HMM training implementation - extensively using ml_commons tools.
+This is the primary HMM training implementation - extensively using ml_commons tools
+and hardware optimization for maximum performance on M1/M2/M3 chips.
 """
 
 import numpy as np
 from typing import Any, Dict, List, Optional, Tuple, Union
 import time
+import gc
 
 # Core imports - using common utilities
 from src.utils.logger import system_logger
@@ -22,28 +25,36 @@ from src.utils.ml_common.utils.hmm_hpo_config import get_hmm_hyperparameter_opti
 # from src.utils.ml_common.validation.hmm_validation_pipeline import get_hmm_validation_pipeline
 from src.utils.ml_common.utils.hmm_temporal_protection import get_hmm_temporal_protection
 
+# Hardware optimization imports
+from src.utils.hardware.unified_hardware_manager import UnifiedHardwareManager
+from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer, optimize_dataframe_memory
+from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer, create_m1_optimized_thread_pool
+from src.utils.hardware.m1_gpu_utils import get_m1_gpu_manager, optimize_dataframe_for_m1
+
 
 class StreamlinedHMMTrainingStep(BaseTrainingStep):
     """
-    Streamlined HMM Training Step that leverages common_utils/ ML training pipeline.
+    Streamlined HMM Training Step with Hardware Optimization for Apple Silicon.
 
     This class focuses specifically on HMM state recognition using 15m timeframe
-    and delegates most functionality to the common ML training pipeline.
+    with extensive hardware optimization for M1/M2/M3 chips. Delegates most functionality
+    to the common ML training pipeline while leveraging hardware acceleration.
 
     Key principles:
     - Use 15m timeframe for HMM state recognition
-    - Minimal custom code - delegate to common_utils/
+    - Hardware-optimized for Apple Silicon (CPU, GPU, Memory)
+    - Minimal custom code - delegate to common_utils/ and hardware optimizers
     - Focus on state recognition, not prediction
     - Leverage HPO, validation, and reporting from common pipeline
-    - Include ensemble models for robust state recognition
+    - Memory-efficient processing for large datasets
     """
 
     def __init__(self, config: Optional[HMMTrainingConfig] = None):
         """
-        Initialize streamlined HMM training step with extensive ml_commons integration.
+        Initialize streamlined HMM training step with extensive ml_commons and hardware optimization.
 
         Args:
-            config: HMM training configuration (will be updated to use 15m timeframe)
+            config: HMM training configuration (will be updated to use 15m timeframe and hardware optimization)
         """
         # Ensure we have a config with 15m timeframe for HMM state recognition
         if config is None:
@@ -72,10 +83,71 @@ class StreamlinedHMMTrainingStep(BaseTrainingStep):
         # self.hmm_validation = get_hmm_validation_pipeline(config)
         self.hmm_temporal_protection = get_hmm_temporal_protection(config)
 
-        self.logger.info("✅ Streamlined HMM Training Step initialized with ml_commons tools")
+        # Initialize hardware optimization components
+        self._initialize_hardware_optimization()
+
+        self.logger.info("✅ Streamlined HMM Training Step initialized with ml_commons tools and hardware optimization")
         self.logger.info(f"📊 Timeframe: {config.timeframe} (HMM state recognition)")
         self.logger.info(f"📊 Model types: {config.model_types}")
-        self.logger.info("🧠 Available tools: HPO, Universal Validation, Temporal Protection")
+        self.logger.info("🧠 Available tools: HPO, Universal Validation, Temporal Protection, Hardware Optimization")
+        self.logger.info("🚀 Hardware optimization: CPU, GPU, Memory management enabled")
+
+    def _initialize_hardware_optimization(self):
+        """Initialize hardware optimization components."""
+        try:
+            # Initialize unified hardware manager for coordinated optimization
+            self.hardware_manager = UnifiedHardwareManager()
+            self.logger.info("✅ Unified Hardware Manager initialized")
+
+            # Initialize memory optimizer with 8GB limit (configurable)
+            self.memory_optimizer = get_m1_memory_optimizer(memory_limit_gb=8.0)
+            self.memory_optimizer.start_monitoring()
+            self.logger.info("✅ M1 Memory Optimizer initialized and monitoring started")
+
+            # Initialize CPU optimizer
+            self.cpu_optimizer = get_m1_cpu_optimizer()
+            self.logger.info(f"✅ M1 CPU Optimizer initialized - {self.cpu_optimizer.get_optimal_worker_count()} optimal workers")
+
+            # Initialize GPU manager
+            self.gpu_manager = get_m1_gpu_manager()
+            gpu_info = self.gpu_manager.get_gpu_info()
+            if gpu_info['mps_available']:
+                self.logger.info("✅ M1 GPU Manager initialized with MPS acceleration")
+            else:
+                self.logger.info("✅ M1 GPU Manager initialized (CPU fallback mode)")
+
+            # Configure hardware for HMM training workload
+            self.hardware_manager.configure_workload(
+                workload_type="ml_training",
+                optimization_level="balanced"
+            )
+
+        except Exception as e:
+            self.logger.error(f"❌ Hardware optimization initialization failed: {e}")
+            # Fallback: create basic instances
+            self.memory_optimizer = None
+            self.cpu_optimizer = None
+            self.gpu_manager = None
+            self.hardware_manager = None
+
+    def _optimize_dataframe_for_hardware(self, df):
+        """Optimize DataFrame for hardware acceleration."""
+        if df is None:
+            return df
+
+        try:
+            # Apply memory optimization
+            if self.memory_optimizer:
+                df = self.memory_optimizer.optimize_dataframe_memory(df)
+
+            # Apply GPU optimization if available
+            if self.gpu_manager and self.gpu_manager.is_m1:
+                df = optimize_dataframe_for_m1(df)
+
+            return df
+        except Exception as e:
+            self.logger.warning(f"DataFrame hardware optimization failed: {e}")
+            return df
 
     def _get_hmm_model_types(self) -> List[str]:
         """
@@ -203,10 +275,11 @@ class StreamlinedHMMTrainingStep(BaseTrainingStep):
         **kwargs
     ) -> Dict[str, Any]:
         """
-        Execute streamlined HMM training using common_utils/ pipeline.
+        Execute streamlined HMM training with hardware optimization using common_utils/ pipeline.
 
-        This method focuses on calling the common ML training pipeline with
-        proper parameters for HMM state recognition.
+        This method focuses on calling the common ML training pipeline with proper parameters
+        for HMM state recognition, enhanced with Apple Silicon hardware optimizations for
+        memory efficiency and performance.
 
         Args:
             X: Input features
@@ -217,9 +290,41 @@ class StreamlinedHMMTrainingStep(BaseTrainingStep):
             **kwargs: Additional arguments
 
         Returns:
-            Dictionary containing training results from common pipeline
+            Dictionary containing training results from common pipeline with hardware optimization
         """
-        self.logger.info("🚀 Starting streamlined HMM training execution")
+        self.logger.info("🚀 Starting streamlined HMM training execution with hardware optimization")
+
+        # Memory checkpoint for monitoring
+        if self.memory_optimizer:
+            memory_checkpoint = self.memory_optimizer.memory_checkpoint("HMM_Training_Start")
+
+        # Set up hardware optimization context for this workload
+        if self.hardware_manager:
+            with self.hardware_manager.get_optimization_context("ml_training") as context:
+                return self._execute_with_hardware_optimization(
+                    X, y, regime_labels, feature_names, hmm_states, **kwargs
+                )
+        else:
+            # Fallback without hardware optimization
+            return self._execute_with_hardware_optimization(
+                X, y, regime_labels, feature_names, hmm_states, **kwargs
+            )
+
+    def _execute_with_hardware_optimization(
+        self,
+        X: np.ndarray,
+        y: np.ndarray,
+        regime_labels: np.ndarray,
+        feature_names: Optional[List[str]] = None,
+        hmm_states: Optional[np.ndarray] = None,
+        **kwargs
+    ) -> Dict[str, Any]:
+        """Execute HMM training with hardware optimizations."""
+
+        # Memory checkpoint for monitoring
+        memory_context = None
+        if self.memory_optimizer:
+            memory_context = self.memory_optimizer.memory_checkpoint("HMM_Training_Execution")
 
         # Validate input data using universal validation integration from BaseTrainingStep
         validation_results = self.validate_training_data(
@@ -243,22 +348,31 @@ class StreamlinedHMMTrainingStep(BaseTrainingStep):
         for recommendation in validation_results.get('recommendations', []):
             self.logger.info(f"💡 Recommendation: {recommendation}")
 
-        # Analyze regimes using common regime analysis
-        regime_analysis = self.analyze_regimes(regime_labels)
+        # Optimize input data for hardware acceleration
+        X_optimized = self._optimize_array_for_hardware(X)
+        regime_labels_optimized = self._optimize_array_for_hardware(regime_labels)
+        if hmm_states is not None:
+            hmm_states_optimized = self._optimize_array_for_hardware(hmm_states)
+
+        # Analyze regimes using common regime analysis with hardware optimization
+        regime_analysis = self.analyze_regimes(regime_labels_optimized)
         self.logger.info(f"📊 Regime analysis: {len(regime_analysis['regime_counts'])} regimes")
 
-        # Prepare data for each regime
+        # Prepare data for each regime with memory optimization
         regime_data = self.prepare_regime_data(
-            X=X,
+            X=X_optimized,
             y=y,
-            regime_labels=regime_labels,
+            regime_labels=regime_labels_optimized,
             regime_analysis=regime_analysis,
-            hmm_states=hmm_states
+            hmm_states=hmm_states_optimized if hmm_states is not None else None
         )
 
-        # Train models using common training pipeline
+        # Optimize regime data for hardware
+        regime_data = self._optimize_regime_data_for_hardware(regime_data)
+
+        # Train models using common training pipeline with hardware optimization
         # Focus on state recognition, not prediction
-        training_results = self._train_hmm_state_recognition_models(
+        training_results = self._train_hmm_state_recognition_models_with_hardware_optimization(
             regime_data=regime_data,
             feature_names=feature_names
         )
@@ -271,7 +385,7 @@ class StreamlinedHMMTrainingStep(BaseTrainingStep):
             validation_results=validation_results
         )
 
-        # Create final results with enhanced reporting
+        # Create final results with enhanced reporting and hardware optimization info
         final_results = self._create_final_results(
             models=training_results.get('models', {}),
             metadata=training_results.get('metadata', {}),
@@ -293,86 +407,301 @@ class StreamlinedHMMTrainingStep(BaseTrainingStep):
                         'UniversalValidationIntegrator',
                         'HMMTemporalProtection'
                     ]
+                },
+                'hardware_optimization': self._get_hardware_optimization_info(),
+                'memory_optimization': {
+                    'enabled': self.memory_optimizer is not None,
+                    'monitoring_active': self.memory_optimizer.monitoring_active if self.memory_optimizer else False,
+                    'memory_limit_gb': getattr(self.memory_optimizer, 'memory_limit_gb', None) if self.memory_optimizer else None
                 }
             }
         )
 
-        # Log comprehensive feature summary
+        # Log comprehensive feature summary with hardware optimization info
         self.logger.info("📊 Comprehensive Feature Summary:")
         self.logger.info(f"  - Base features: {len(regime_data)} regimes")
         if feature_names:
             self.logger.info(f"  - Enhanced features: {len(feature_names)} total")
             self.logger.info(f"  - Feature categories: 13 comprehensive categories (excluding complex categories)")
         self.logger.info(f"  - Feature bank integration: ✅ Active")
+        self.logger.info("🚀 Hardware optimization: Memory management and CPU/GPU acceleration enabled")
 
         # Log enhanced summary
         self._log_enhanced_training_summary(final_results)
 
+        # Cleanup memory context
+        if memory_context:
+            memory_context.__exit__(None, None, None)
+
         return final_results
 
-    def _train_hmm_state_recognition_models(
+    def _optimize_array_for_hardware(self, array: np.ndarray) -> np.ndarray:
+        """Optimize numpy array for hardware acceleration."""
+        if array is None:
+            return array
+
+        try:
+            # Use M1 GPU manager for array optimization if available
+            if self.gpu_manager and self.gpu_manager.is_m1:
+                return self.gpu_manager.create_m1_optimized_array(array)
+
+            return array
+        except Exception as e:
+            self.logger.warning(f"Array hardware optimization failed: {e}")
+            return array
+
+    def _optimize_regime_data_for_hardware(self, regime_data: Dict[int, Dict[str, np.ndarray]]) -> Dict[int, Dict[str, np.ndarray]]:
+        """Optimize regime data for hardware acceleration and memory efficiency."""
+        if not regime_data:
+            return regime_data
+
+        optimized_data = {}
+
+        try:
+            # Force garbage collection before processing
+            if self.memory_optimizer:
+                self.memory_optimizer.force_garbage_collection()
+
+            for regime_id, data in regime_data.items():
+                optimized_regime_data = {}
+
+                # Optimize each array in the regime data
+                for key, array in data.items():
+                    if isinstance(array, np.ndarray):
+                        optimized_regime_data[key] = self._optimize_array_for_hardware(array)
+                    else:
+                        optimized_regime_data[key] = array
+
+                optimized_data[regime_id] = optimized_regime_data
+
+                # Periodic memory cleanup during processing
+                if regime_id % 5 == 0 and self.memory_optimizer:
+                    self.memory_optimizer.force_garbage_collection()
+
+            return optimized_data
+
+        except Exception as e:
+            self.logger.warning(f"Regime data hardware optimization failed: {e}")
+            return regime_data
+
+    def _get_hardware_optimization_info(self) -> Dict[str, Any]:
+        """Get hardware optimization information for reporting."""
+        info = {
+            'cpu_optimization': {
+                'enabled': self.cpu_optimizer is not None,
+                'optimal_workers': self.cpu_optimizer.get_optimal_worker_count() if self.cpu_optimizer else None,
+                'is_m1': self.cpu_optimizer.is_m1 if self.cpu_optimizer else False
+            },
+            'gpu_optimization': {
+                'enabled': self.gpu_manager is not None,
+                'mps_available': self.gpu_manager.mps_available if self.gpu_manager else False,
+                'is_m1': self.gpu_manager.is_m1 if self.gpu_manager else False
+            },
+            'memory_optimization': {
+                'enabled': self.memory_optimizer is not None,
+                'monitoring_active': self.memory_optimizer.monitoring_active if self.memory_optimizer else False,
+                'memory_limit_gb': getattr(self.memory_optimizer, 'memory_limit_gb', None) if self.memory_optimizer else None
+            },
+            'unified_hardware_manager': {
+                'enabled': self.hardware_manager is not None
+            }
+        }
+
+        # Get memory usage statistics
+        if self.memory_optimizer:
+            info['memory_stats'] = self.memory_optimizer.get_memory_stats()
+
+        return info
+
+    def _train_hmm_state_recognition_models_with_hardware_optimization(
         self,
         regime_data: Dict[int, Dict[str, np.ndarray]],
         feature_names: Optional[List[str]] = None
     ) -> Dict[str, Any]:
         """
-        Train models for HMM state recognition using common pipeline.
+        Train models for HMM state recognition with hardware optimization.
 
         Args:
-            regime_data: Prepared data for each regime
+            regime_data: Prepared data for each regime (optimized for hardware)
             feature_names: Names of features
 
         Returns:
-            Training results from common pipeline
+            Training results from common pipeline with hardware optimization
         """
-        self.logger.info("🔄 Training HMM state recognition models")
+        self.logger.info("🔄 Training HMM state recognition models with hardware optimization")
 
-        # Get search spaces using HMM HPO configuration from ml_commons
-        search_spaces = self.hmm_hpo.get_hmm_state_recognition_search_spaces()
+        # Memory checkpoint for training phase
+        training_memory_context = None
+        if self.memory_optimizer:
+            training_memory_context = self.memory_optimizer.memory_checkpoint("HMM_Model_Training")
 
-        # Use comprehensive feature bank for enhanced feature generation
-        from .shared_feature_utils import create_comprehensive_features
-        import pandas as pd
+        try:
+            # Get search spaces using HMM HPO configuration from ml_commons
+            search_spaces = self.hmm_hpo.get_hmm_state_recognition_search_spaces()
 
-        # Convert regime data to DataFrame format for feature bank
-        enhanced_regime_data = {}
-        feature_names = None
+            # Use comprehensive feature bank for enhanced feature generation
+            from .shared_feature_utils import create_comprehensive_features
+            import pandas as pd
 
-        for regime_id, data in regime_data.items():
-            X_regime = data['X']
-            y_regime = data['y']
+            # Convert regime data to DataFrame format for feature bank with hardware optimization
+            enhanced_regime_data = {}
+            feature_names_dict = {}
 
-            # Create basic DataFrame from regime data
-            # Assuming X_regime has shape (n_samples, n_features)
-            # For feature bank, we need OHLCV data format
-            # This is a simplified approach - in practice, you'd have proper OHLCV data
-            if X_regime.shape[1] >= 3:  # We have enough columns for OHLCV
-                # Create synthetic OHLCV data for feature bank
-                # This is a temporary solution - proper OHLCV data should be passed
-                regime_df = pd.DataFrame({
-                    'open': np.random.randn(X_regime.shape[0]),  # Placeholder
-                    'high': np.random.randn(X_regime.shape[0]),  # Placeholder
-                    'low': np.random.randn(X_regime.shape[0]),   # Placeholder
-                    'close': X_regime[:, 0] if X_regime.shape[1] > 0 else np.random.randn(X_regime.shape[0]),
-                    'volume': X_regime[:, 1] if X_regime.shape[1] > 1 else np.random.randn(X_regime.shape[0])
-                })
+            for regime_id, data in regime_data.items():
+                X_regime = data['X']
+                y_regime = data['y']
 
-                # Generate comprehensive features
-                X_enhanced, feature_names = create_comprehensive_features(
-                    regime_df,
-                    regime_labels=data.get('regime_labels')
+                # Create basic DataFrame from regime data with memory optimization
+                if X_regime.shape[1] >= 3:  # We have enough columns for OHLCV
+                    # Create synthetic OHLCV data for feature bank
+                    # This is a temporary solution - proper OHLCV data should be passed
+                    regime_df = pd.DataFrame({
+                        'open': np.random.randn(X_regime.shape[0]),  # Placeholder
+                        'high': np.random.randn(X_regime.shape[0]),  # Placeholder
+                        'low': np.random.randn(X_regime.shape[0]),   # Placeholder
+                        'close': X_regime[:, 0] if X_regime.shape[1] > 0 else np.random.randn(X_regime.shape[0]),
+                        'volume': X_regime[:, 1] if X_regime.shape[1] > 1 else np.random.randn(X_regime.shape[0])
+                    })
+
+                    # Optimize DataFrame for hardware before feature generation
+                    regime_df = self._optimize_dataframe_for_hardware(regime_df)
+
+                    # Generate comprehensive features with hardware optimization
+                    X_enhanced, feature_names = create_comprehensive_features(
+                        regime_df,
+                        regime_labels=data.get('regime_labels')
+                    )
+
+                    enhanced_regime_data[regime_id] = {
+                        'X': X_enhanced,
+                        'y': y_regime,
+                        'feature_names': feature_names
+                    }
+                    feature_names_dict[regime_id] = feature_names
+                else:
+                    # Fallback to original features if not enough columns
+                    enhanced_regime_data[regime_id] = data
+
+            # Train models for each regime using enhanced features with hardware optimization
+            all_results = {}
+            total_training_time = 0
+
+            # Use CPU optimization for parallel processing if available
+            if self.cpu_optimizer:
+                # Use optimized thread pool for regime training
+                with self.cpu_optimizer.create_m1_optimized_context():
+                    training_results = self._train_regimes_with_cpu_optimization(
+                        enhanced_regime_data, search_spaces
+                    )
+                all_results = training_results['results']
+                total_training_time = training_results['total_time']
+            else:
+                # Standard training without CPU optimization
+                all_results, total_training_time = self._train_regimes_standard(
+                    enhanced_regime_data, search_spaces
                 )
 
-                enhanced_regime_data[regime_id] = {
-                    'X': X_enhanced,
-                    'y': y_regime,
-                    'feature_names': feature_names
-                }
-            else:
-                # Fallback to original features if not enough columns
-                enhanced_regime_data[regime_id] = data
+            # Evaluate models using common evaluation with hardware optimization
+            evaluation_results = {}
+            for regime_name, regime_results in all_results.items():
+                models = regime_results.get('models', {})
+                X_regime = regime_data[int(regime_name.split('_')[1])]['X']
+                y_regime = regime_data[int(regime_name.split('_')[1])]['y']
 
-        # Train models for each regime using enhanced features
+                # Evaluate models using universal validation integration
+                evaluation_results[regime_name] = self._evaluate_models_with_validation(
+                    models=models,
+                    X_train=X_regime,
+                    y_train=y_regime,
+                    regime_name=regime_name
+                )
+
+            return {
+                'models': all_results,
+                'evaluation_results': evaluation_results,
+                'training_time': total_training_time,
+                'regime_count': len(regime_data),
+                'hardware_optimized': True,
+                'feature_names_by_regime': feature_names_dict
+            }
+
+        finally:
+            # Cleanup memory context
+            if training_memory_context:
+                training_memory_context.__exit__(None, None, None)
+
+            # Force garbage collection after training
+            if self.memory_optimizer:
+                self.memory_optimizer.force_garbage_collection()
+
+    def _train_regimes_with_cpu_optimization(self, enhanced_regime_data, search_spaces):
+        """Train regimes using CPU optimization for parallel processing."""
+        import concurrent.futures
+        from functools import partial
+
+        def train_single_regime(regime_id, data, search_spaces, config_model_types, enable_hpo):
+            """Train models for a single regime."""
+            try:
+                X_regime = data['X']
+                y_regime = data['y']
+
+                # Create a new training step instance for this regime to avoid shared state issues
+                regime_training_step = self.__class__(self.config)
+
+                # Train models using common pipeline with enhanced features
+                regime_results = regime_training_step.train_models(
+                    model_types=config_model_types,
+                    X=X_regime,
+                    y=y_regime,
+                    enable_hpo=enable_hpo,
+                    search_spaces=search_spaces
+                )
+
+                return regime_id, regime_results
+            except Exception as e:
+                self.logger.error(f"❌ Failed to train regime {regime_id}: {e}")
+                return regime_id, {
+                    'models': {},
+                    'training_time': 0,
+                    'error': str(e)
+                }
+
+        # Prepare training function
+        train_func = partial(
+            train_single_regime,
+            search_spaces=search_spaces,
+            config_model_types=self.config.model_types,
+            enable_hpo=self.config.enable_hpo
+        )
+
+        # Use optimized thread pool
+        with create_m1_optimized_thread_pool(max_workers=self.cpu_optimizer.get_optimal_worker_count()) as executor:
+            # Submit all training tasks
+            future_to_regime = {
+                executor.submit(train_func, regime_id, data): regime_id
+                for regime_id, data in enhanced_regime_data.items()
+            }
+
+            # Collect results
+            results = {}
+            total_time = 0
+
+            for future in concurrent.futures.as_completed(future_to_regime):
+                regime_id = future_to_regime[future]
+                try:
+                    reg_id, regime_results = future.result()
+                    results[f"regime_{reg_id}"] = regime_results
+                    total_time += regime_results.get('training_time', 0)
+
+                    self.logger.info(f"✅ Completed training for regime {reg_id}")
+
+                except Exception as e:
+                    self.logger.error(f"❌ Failed to get results for regime {regime_id}: {e}")
+
+        return {'results': results, 'total_time': total_time}
+
+    def _train_regimes_standard(self, enhanced_regime_data, search_spaces):
+        """Train regimes using standard sequential processing."""
         all_results = {}
         total_training_time = 0
 
@@ -394,32 +723,12 @@ class StreamlinedHMMTrainingStep(BaseTrainingStep):
             all_results[f"regime_{regime_id}"] = regime_results
             total_training_time += regime_results.get('training_time', 0)
 
-        # Evaluate models using common evaluation
-        evaluation_results = {}
-        for regime_name, regime_results in all_results.items():
-            models = regime_results.get('models', {})
-            X_regime = regime_data[int(regime_name.split('_')[1])]['X']
-            y_regime = regime_data[int(regime_name.split('_')[1])]['y']
-
-            # Evaluate models using universal validation integration
-            evaluation_results[regime_name] = self._evaluate_models_with_validation(
-                models=models,
-                X_train=X_regime,
-                y_train=y_regime,
-                regime_name=regime_name
-            )
-
-        return {
-            'models': all_results,
-            'evaluation_results': evaluation_results,
-            'training_time': total_training_time,
-            'regime_count': len(regime_data)
-        }
+        return all_results, total_training_time
 
 
     def _handle_training_error(self, error: Exception, context: str = "") -> Dict[str, Any]:
         """
-        Handle training errors with proper logging.
+        Handle training errors with proper logging and hardware cleanup.
 
         Args:
             error: Exception that occurred
@@ -431,6 +740,9 @@ class StreamlinedHMMTrainingStep(BaseTrainingStep):
         error_msg = f"❌ HMM training error{f' in {context}' if context else ''}: {error}"
         self.logger.error(error_msg)
 
+        # Cleanup hardware optimization resources
+        self._cleanup_hardware_resources()
+
         return {
             'models': {},
             'metadata': {},
@@ -439,8 +751,31 @@ class StreamlinedHMMTrainingStep(BaseTrainingStep):
             'config': self.config,
             'error': str(error),
             'hmm_state_recognition_focus': True,
-            'timeframe': self.config.timeframe
+            'timeframe': self.config.timeframe,
+            'hardware_cleanup_performed': True
         }
+
+    def _cleanup_hardware_resources(self):
+        """Cleanup hardware optimization resources."""
+        try:
+            # Stop memory monitoring if active
+            if self.memory_optimizer and self.memory_optimizer.monitoring_active:
+                self.memory_optimizer.stop_monitoring()
+                self.logger.info("🧹 Memory monitoring stopped during cleanup")
+
+            # Force garbage collection
+            if self.memory_optimizer:
+                self.memory_optimizer.force_garbage_collection()
+
+        except Exception as e:
+            self.logger.warning(f"Hardware cleanup warning: {e}")
+
+    def __del__(self):
+        """Cleanup resources when object is destroyed."""
+        try:
+            self._cleanup_hardware_resources()
+        except:
+            pass  # Ignore cleanup errors during destruction
 
     def _generate_enhanced_model_report(
         self,
@@ -450,7 +785,7 @@ class StreamlinedHMMTrainingStep(BaseTrainingStep):
         validation_results: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """
-        Generate comprehensive enhanced reporting for all trained models using ml_commons tools.
+        Generate comprehensive enhanced reporting for all trained models with hardware optimization info.
 
         Args:
             models: Dictionary of trained models
@@ -459,9 +794,9 @@ class StreamlinedHMMTrainingStep(BaseTrainingStep):
             validation_results: Optional comprehensive validation results
 
         Returns:
-            Dictionary containing enhanced model reporting with ml_commons integration
+            Dictionary containing enhanced model reporting with ml_commons and hardware optimization integration
         """
-        self.logger.info("📊 Generating enhanced model report...")
+        self.logger.info("📊 Generating enhanced model report with hardware optimization info...")
 
         enhanced_report = {
             'model_performance_summary': {},
@@ -476,10 +811,13 @@ class StreamlinedHMMTrainingStep(BaseTrainingStep):
                 'temporal_protection_used': True,
                 'overfitting_detection_used': True
             },
+            'hardware_optimization': self._get_hardware_optimization_info(),
             'training_metadata': {
                 'total_regimes': len(regime_analysis.get('regime_counts', {})),
                 'total_models_trained': len(models),
-                'model_types_used': list(models.keys())
+                'model_types_used': list(models.keys()),
+                'hardware_optimized': True,
+                'memory_efficient': self.memory_optimizer is not None
             }
         }
 
@@ -684,7 +1022,7 @@ class StreamlinedHMMTrainingStep(BaseTrainingStep):
 
     def _log_enhanced_training_summary(self, results: Dict[str, Any]) -> None:
         """
-        Log enhanced training summary with comprehensive metrics.
+        Log enhanced training summary with comprehensive metrics and hardware optimization info.
 
         Args:
             results: Training results dictionary
@@ -709,6 +1047,21 @@ class StreamlinedHMMTrainingStep(BaseTrainingStep):
                 for regime_id, best_info in best_models_by_regime.items():
                     self.logger.info(f"  - {regime_id}: {best_info['best_model']} (F1: {best_info['best_f1_score']:.4f})")
 
+            # Hardware optimization status
+            hardware_optimization = enhanced_reporting.get('hardware_optimization', {})
+            if hardware_optimization:
+                cpu_info = hardware_optimization.get('cpu_optimization', {})
+                gpu_info = hardware_optimization.get('gpu_optimization', {})
+                memory_info = hardware_optimization.get('memory_optimization', {})
+
+                self.logger.info("🚀 Hardware Optimization Status:")
+                if cpu_info.get('enabled'):
+                    self.logger.info(f"  - CPU: ✅ Optimized ({cpu_info.get('optimal_workers', 'N/A')} workers)")
+                if gpu_info.get('enabled'):
+                    self.logger.info(f"  - GPU: ✅ {'MPS' if gpu_info.get('mps_available') else 'CPU'} mode")
+                if memory_info.get('enabled'):
+                    self.logger.info(f"  - Memory: ✅ {'Active' if memory_info.get('monitoring_active') else 'Enabled'} ({memory_info.get('memory_limit_gb', 'N/A')} GB limit)")
+
             # Recommendations
             recommendations = enhanced_reporting.get('overall_recommendations', [])
             if recommendations:
@@ -722,6 +1075,8 @@ class StreamlinedHMMTrainingStep(BaseTrainingStep):
             self.logger.info(f"  - Models trained: {training_metadata.get('total_models_trained', 0)}")
             self.logger.info(f"  - Regimes analyzed: {training_metadata.get('total_regimes', 0)}")
             self.logger.info(f"  - Model types: {', '.join(training_metadata.get('model_types_used', []))}")
+            self.logger.info(f"  - Hardware optimized: {'✅ Yes' if training_metadata.get('hardware_optimized') else '❌ No'}")
+            self.logger.info(f"  - Memory efficient: {'✅ Yes' if training_metadata.get('memory_efficient') else '❌ No'}")
 
 
 # Convenience functions

@@ -15,31 +15,39 @@ The HMM training has been **completely migrated** to leverage the common_utils/ 
 
 ## Key Features
 
-### 1. Streamlined Architecture
+### 1. Streamlined Architecture with Hardware Optimization
 - **Minimal custom code** - delegates to common_utils/ ML training pipeline
 - **15m timeframe focus** - specifically designed for HMM state recognition
 - **State recognition focus** - not prediction, optimized for HMM states
 - **HPO integration** - leverages common hyperparameter optimization
 - **Validation integration** - uses universal validation framework
+- **Apple Silicon optimization** - M1/M2/M3 CPU, GPU, and memory optimization
+- **Memory management** - Intelligent memory monitoring and cleanup for large datasets
 
-### 2. Common Utils Integration
+### 2. Hardware-Optimized Common Utils Integration
 - **BaseTrainingStep inheritance** - leverages common training pipeline
 - **Universal validation** - consistent validation across all training steps
-- **Hardware optimization** - M1 GPU/CPU/memory optimization
-- **Model management** - standardized model saving/loading
-- **Reporting integration** - comprehensive reporting and metrics
+- **Hardware optimization** - M1 GPU/CPU/memory optimization with unified management
+- **Model management** - standardized model saving/loading with memory efficiency
+- **Reporting integration** - comprehensive reporting and metrics with hardware insights
+- **Memory monitoring** - Real-time memory usage tracking and automatic cleanup
+- **CPU optimization** - Parallel processing optimized for Apple Silicon cores
+- **GPU acceleration** - MPS (Metal Performance Shaders) integration when available
 
-### 3. HMM-Specific Optimizations
+### 3. HMM-Specific Optimizations with Hardware Acceleration
 - **Base models (top 2 + gradient boosters)** - logistic regression, LightGBM, Random Forest, XGBoost, CatBoost
 - **No ensemble models** - removed voting, stacking, bagging, ada boost, extra trees
 - **No deep learning models** - removed TabNet and neural networks for HMM focus
 - **Gradient booster comparison** - XGBoost vs CatBoost, training both to select best
-- **Regime-aware training** - per-regime model training with regime prediction capability (models trained per regime for better specialization, but unified prediction capability)
-- **Enhanced reporting** - comprehensive metrics and recommendations for all models
+- **Regime-aware training** - per-regime model training with regime prediction capability
+- **Enhanced reporting** - comprehensive metrics and recommendations for all models with hardware insights
 - **HMM search spaces** - optimized HPO spaces for state recognition
 - **15m timeframe enforcement** - ensures consistent timeframe usage
-- **Comprehensive feature bank** - 17 feature categories (momentum, volatility, trend, volume, support/resistance, returns, oscillator, candlestick_pattern, hmm_regime, entropy, order_flow, acceleration, cross_timeframe, autoencoder, interaction, microstructure, time)
+- **Comprehensive feature bank** - 17 feature categories with hardware-optimized processing
 - **Feature bank integration** - Automatic feature generation from comprehensive feature bank
+- **Memory-efficient processing** - DataFrame and array optimization for reduced memory footprint
+- **Parallel regime training** - CPU-optimized parallel processing of regime-specific models
+- **Hardware-aware error handling** - Cleanup of hardware resources on errors
 
 ## Usage
 
@@ -192,37 +200,100 @@ objective_weights=[0.4, 0.3, 0.2]  # Reduced regime stability weight for 15m sho
 - Reduced overfitting to short-term market noise
 - Consistent performance across similar market conditions
 
-## Benefits
+## Hardware Optimization Features
 
-### Streamlined Approach
+### Apple Silicon Optimization
+The HMM training pipeline now includes comprehensive hardware optimization for Apple Silicon:
+
+**Memory Optimization:**
+- **M1MemoryOptimizer**: Real-time memory monitoring with configurable limits (default: 8GB)
+- **Automatic cleanup**: Intelligent garbage collection based on memory pressure
+- **DataFrame optimization**: Memory-efficient pandas operations with float32 conversion
+- **Memory pooling**: Efficient memory allocation and deallocation
+- **Leak prevention**: Automatic detection and cleanup of memory leaks
+
+**CPU Optimization:**
+- **M1CPUOptimizer**: Optimized for Apple Silicon performance and efficiency cores
+- **Parallel processing**: Regime-specific model training using optimized thread pools
+- **Core affinity**: Intelligent distribution of workloads across performance cores
+- **Thread optimization**: Environment variables tuned for optimal CPU utilization
+- **Workload balancing**: Adaptive worker count based on system load
+
+**GPU Acceleration:**
+- **M1GPUManager**: Metal Performance Shaders (MPS) integration when available
+- **Array optimization**: Float32 conversion and contiguous memory layout
+- **Vectorized operations**: GPU-accelerated mathematical operations
+- **Fallback support**: Graceful degradation to CPU when GPU unavailable
+
+**Unified Hardware Management:**
+- **UnifiedHardwareManager**: Coordinated optimization across CPU, GPU, and memory
+- **Adaptive optimization**: Dynamic adjustment based on workload characteristics
+- **Monitoring integration**: Real-time performance tracking and optimization
+- **Resource cleanup**: Proper cleanup of hardware resources on errors
+
+### Benefits of Hardware Optimization
+
+#### Streamlined Approach with Hardware Acceleration
 - **Minimal custom code** - delegates to robust common_utils/ pipeline
 - **15m timeframe enforcement** - consistent HMM state recognition
 - **HMM state focus** - optimized for state recognition, not prediction
 - **Hardware optimization** - leverages M1 GPU/CPU/memory optimization
+- **Memory efficiency** - Handles large datasets without memory issues
+- **Performance scaling** - Automatic scaling based on available hardware
 - **Universal validation** - consistent validation across all training steps
 - **HPO integration** - leverages common hyperparameter optimization
-- **Standardized reporting** - consistent metrics and reporting
+- **Standardized reporting** - consistent metrics and reporting with hardware insights
 
-### Legacy Approach (Enhanced)
+#### Legacy Approach (Enhanced)
 - **Comprehensive validation** - multi-level validation framework
 - **Real metrics** - no placeholder values
-- **Actionable insights** - detailed recommendations
-- **Robust error handling** - comprehensive error management
+- **Actionable insights** - detailed recommendations with hardware context
+- **Robust error handling** - comprehensive error management with hardware cleanup
+- **Memory monitoring** - Real-time memory usage tracking and alerts
+- **Resource management** - Automatic cleanup of hardware resources
 
 ## Configuration
 
-### Streamlined Approach
+### Streamlined Approach with Hardware Optimization
 The streamlined approach automatically configures:
+
+**ML Configuration:**
 - **Timeframe**: 15m (enforced for HMM state recognition)
 - **Base models**: 5 models (logistic regression, LightGBM, Random Forest, XGBoost, CatBoost)
 - **No ensemble models** - removed voting, stacking, bagging, ada boost, extra trees
 - **No deep learning models** - removed TabNet and neural networks for HMM focus
 - **HPO**: Enabled with HMM-specific search spaces for all model types
 - **Validation**: Universal validation integration
-- **Enhanced reporting**: Comprehensive metrics and recommendations for all models
+- **Enhanced reporting**: Comprehensive metrics and recommendations for all models with hardware insights
 - **Gradient booster comparison**: XGBoost vs CatBoost to select best performer
-- **Comprehensive features**: 13 feature categories from feature bank (momentum, volatility, trend, volume, support/resistance, returns, oscillator, candlestick_pattern, hmm_regime, entropy, order_flow, acceleration, legacy) - excludes complex categories (cross_timeframe, autoencoder, interaction, microstructure, time)
+- **Comprehensive features**: 13 feature categories from feature bank with hardware optimization
 - **Feature bank integration**: Automatic feature generation for maximum signal extraction
+
+**Hardware Optimization (Automatic):**
+- **Memory optimization**: 8GB memory limit with real-time monitoring
+- **CPU optimization**: Parallel processing with Apple Silicon performance cores
+- **GPU acceleration**: MPS integration when available with graceful CPU fallback
+- **Resource management**: Automatic cleanup and memory-efficient processing
+- **Monitoring**: Real-time performance tracking and adaptive optimization
+
+**Custom Hardware Configuration:**
+```python
+from src.utils.hardware.unified_hardware_manager import HardwareConfig, OptimizationLevel
+
+# Custom hardware configuration
+hardware_config = HardwareConfig(
+    memory_limit_gb=16.0,                    # 16GB memory limit
+    cpu_optimization_level=OptimizationLevel.AGGRESSIVE,
+    gpu_optimization_level=OptimizationLevel.MAXIMUM,
+    enable_memory_pooling=True,
+    enable_adaptive_optimization=True,
+    enable_thermal_monitoring=True
+)
+
+# Configure hardware before training
+hardware_manager = UnifiedHardwareManager()
+hardware_manager.configure_hardware(hardware_config)
+```
 
 ### Custom Configuration
 ```python

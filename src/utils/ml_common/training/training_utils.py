@@ -24,12 +24,13 @@ from src.utils.ml_common.optimization import HierarchicalHPO, HierarchicalHPOCon
 from src.utils.ml_common.optimization.overfitting_prevention import OverfittingPrevention, OverfittingPreventionConfig
 from src.utils.ml_common.evaluation.evaluation_utils import EvaluationUtils
 
-# Import new comprehensive utilities
-from src.utils.ml_common.data_leakage_prevention import DataLeakagePrevention, DataLeakagePreventionConfig
-from src.utils.ml_common.overfitting_monitoring import OverfittingMonitoring, OverfittingMonitoringConfig
-from src.utils.ml_common.enhanced_validation import EnhancedValidation, EnhancedValidationConfig
-from src.utils.ml_common.hpo_overfitting_prevention import HPOOverfittingPrevention, HPOOverfittingPreventionConfig
-from src.utils.ml_common.model_complexity_analysis import ModelComplexityAnalyzer, ModelComplexityAnalysisConfig
+# Import universal validation integration
+from ..universal_validation_integration import (
+    get_validation_integrator,
+    validate_trained_model,
+    validate_hpo_trial,
+    ValidationIntegrationConfig
+)
 
 logger = system_logger.getChild('TrainingUtils')
 
@@ -58,12 +59,18 @@ class TrainingUtils:
             OverfittingPreventionConfig() if config.enable_overfitting_prevention else None
         )
 
-        # Initialize comprehensive ML utilities
-        self.data_leakage_prevention = DataLeakagePrevention(DataLeakagePreventionConfig())
-        self.overfitting_monitoring = OverfittingMonitoring(OverfittingMonitoringConfig())
-        self.enhanced_validation = EnhancedValidation(EnhancedValidationConfig())
-        self.hpo_overfitting_prevention = HPOOverfittingPrevention(HPOOverfittingPreventionConfig())
-        self.model_complexity_analyzer = ModelComplexityAnalyzer(ModelComplexityAnalysisConfig())
+        # Initialize universal validation integration
+        self.validation_integrator = get_validation_integrator(
+            ValidationIntegrationConfig(
+                enable_data_leakage_prevention=True,
+                enable_overfitting_monitoring=True,
+                enable_enhanced_validation=True,
+                enable_model_complexity_analysis=True,
+                enable_hpo_overfitting_prevention=True,
+                prefer_comprehensive_utilities=True,  # Use new utilities if available
+                fallback_to_existing=True  # Fall back to existing utilities if needed
+            )
+        )
 
         # Initialize hardware optimizers
         self.gpu_manager = get_m1_gpu_manager()
@@ -77,7 +84,7 @@ class TrainingUtils:
         if self.cpu_optimizer:
             logger.info("⚡ M1 CPU optimization enabled")
 
-        logger.info("✅ Comprehensive ML utilities initialized")
+        logger.info("✅ TrainingUtils initialized with universal validation integration")
     
     def create_model(
         self, 
@@ -580,27 +587,8 @@ class TrainingUtils:
         }
 
         try:
-            # Step 1: Data Leakage Prevention
-            self.logger.info("🔍 Step 1: Data Leakage Prevention")
-            leakage_results = self.data_leakage_prevention.validate_data_integrity(
-                X_train, y_train, timestamps
-            )
-
-            if not leakage_results.get('overall_valid', True):
-                results['warnings'].append("Data leakage detected - proceeding with caution")
-
-            results['data_leakage_analysis'] = leakage_results
-
-            # Step 2: Model Complexity Analysis
-            self.logger.info("🔍 Step 2: Model Complexity Analysis")
-            complexity_results = self.model_complexity_analyzer.analyze_model_complexity(
-                model_class(**model_params) if model_params else model_class(),
-                X_train, y_train, X_val, y_val, model_name, feature_names
-            )
-            results['model_complexity_analysis'] = complexity_results
-
-            # Step 3: Create and train model with regularization
-            self.logger.info("🔍 Step 3: Model Training with Regularization")
+            # Step 1: Create and train model with regularization
+            self.logger.info("🔍 Step 1: Model Training with Regularization")
             if model_params is None:
                 model_params = self.get_default_model_params(model_class.__name__)
 
@@ -610,42 +598,27 @@ class TrainingUtils:
             # Train model
             model.fit(X_train, y_train)
 
-            # Step 4: Comprehensive Monitoring
-            self.logger.info("🔍 Step 4: Comprehensive Performance Monitoring")
-            monitoring_results = self.overfitting_monitoring.monitor_model_performance(
-                model, X_train, y_train, X_val, y_val, X_test, y_test, model_name
-            )
-            results['overfitting_monitoring'] = monitoring_results
+            # Step 2: Comprehensive Validation using Universal Integrator
+            self.logger.info("🔍 Step 2: Comprehensive Validation")
 
-            # Step 5: Enhanced Validation
-            self.logger.info("🔍 Step 5: Enhanced Validation")
-            validation_results = self.enhanced_validation.perform_comprehensive_validation(
-                model, X_train, y_train, X_val, y_val, X_test, y_test, model_name, timestamps
+            # Use universal validation integrator for all validation tasks
+            validation_results = self.validation_integrator.validate_trained_model(
+                model, X_train, y_train, X_val, y_val, model_name, feature_names
             )
-            results['enhanced_validation'] = validation_results
 
-            # Step 6: Performance Metrics
-            self.logger.info("🔍 Step 6: Performance Metrics")
+            # Update results with validation data
+            results.update(validation_results)
+
+            # Step 3: Performance Metrics
+            self.logger.info("🔍 Step 3: Performance Metrics")
             performance_metrics = self.evaluate_models(
                 {model_name: model}, X_val, y_val,
                 is_classification=len(np.unique(y_train)) <= 10
             )
             results['performance_metrics'] = performance_metrics
 
-            # Step 7: Generate Recommendations
-            self.logger.info("🔍 Step 7: Generating Recommendations")
-            all_recommendations = []
-
-            # Collect recommendations from all analyses
-            all_recommendations.extend(leakage_results.get('prevention_report', {}).get('recommendations', []))
-            all_recommendations.extend(complexity_results.get('simplification_recommendations', []))
-            all_recommendations.extend(monitoring_results.get('recommendations', []))
-            all_recommendations.extend(validation_results.get('recommendations', []))
-
-            results['recommendations'] = list(set(all_recommendations))  # Remove duplicates
-
-            # Step 8: Overall Assessment
-            results['training_successful'] = self._assess_training_success(results)
+            # Step 4: Overall Assessment
+            results['training_successful'] = self._assess_training_success_unified(results)
 
             if results['training_successful']:
                 self.logger.info(f"✅ Comprehensive training completed successfully for {model_name}")
@@ -661,30 +634,38 @@ class TrainingUtils:
 
         return results
 
-    def _assess_training_success(self, results: Dict[str, Any]) -> bool:
-        """Assess overall training success based on all validation results."""
+    def _assess_training_success_unified(self, results: Dict[str, Any]) -> bool:
+        """Assess overall training success based on unified validation results."""
         try:
+            # Check overall assessment from universal integrator
+            overall_assessment = results.get('overall_assessment', {})
+            if overall_assessment:
+                return overall_assessment.get('overall_valid', True)
+
+            # Fallback to individual checks if universal assessment not available
             # Check data leakage
             leakage_analysis = results.get('data_leakage_analysis', {})
-            if not leakage_analysis.get('overall_valid', True):
+            if leakage_analysis and not leakage_analysis.get('overall_valid', True):
                 return False
 
             # Check model complexity
             complexity_analysis = results.get('model_complexity_analysis', {})
-            risk_level = complexity_analysis.get('overfitting_risk', 'low')
-            if risk_level in ['very_high', 'high']:
-                return False
+            if complexity_analysis:
+                risk_level = complexity_analysis.get('overfitting_risk', 'low')
+                if risk_level in ['very_high', 'high']:
+                    return False
 
             # Check overfitting monitoring
             monitoring_results = results.get('overfitting_monitoring', {})
-            if monitoring_results.get('overfitting_detected', False):
+            if monitoring_results and monitoring_results.get('overfitting_detected', False):
                 return False
 
             # Check enhanced validation
             validation_results = results.get('enhanced_validation', {})
-            validation_summary = validation_results.get('validation_summary', {})
-            if not validation_summary.get('overall_pass', True):
-                return False
+            if validation_results:
+                validation_summary = validation_results.get('validation_summary', {})
+                if not validation_summary.get('overall_pass', True):
+                    return False
 
             return True
 

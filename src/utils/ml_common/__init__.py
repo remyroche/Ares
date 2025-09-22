@@ -81,7 +81,21 @@ try:
         StabilityAnalyzer
     )
 
-    # New Comprehensive Utilities
+    # Universal Validation Integration (Recommended)
+    try:
+        from .universal_validation_integration import (
+            UniversalValidationIntegrator, ValidationIntegrationConfig,
+            get_validation_integrator, validate_trained_model, validate_hpo_trial
+        )
+    except ImportError as e:
+        UniversalValidationIntegrator = None
+        ValidationIntegrationConfig = None
+        get_validation_integrator = None
+        validate_trained_model = None
+        validate_hpo_trial = None
+        tprint(f"⚠️ Universal validation integration not available: {e}")
+
+    # Legacy Comprehensive Utilities (Still Available)
     try:
         from .data_leakage_prevention import (
             DataLeakagePrevention, DataLeakagePreventionConfig,
@@ -270,6 +284,10 @@ try:
         'ModelComplexityAnalyzer', 'ModelComplexityAnalysisConfig',
         'create_model_complexity_analyzer', 'analyze_model_complexity',
         'TrainingUtils',
+
+        # Universal Validation Integration
+        'UniversalValidationIntegrator', 'ValidationIntegrationConfig',
+        'get_validation_integrator', 'validate_trained_model', 'validate_hpo_trial',
 
         # Backward compatibility
         'tprint'

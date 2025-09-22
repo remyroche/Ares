@@ -1,21 +1,13 @@
 """
-Model Training Sub-Pipeline - Enhanced with Comprehensive Debugging
+Model Training Sub-Pipeline - Simplified
 
-This module provides the final model training sub-pipeline with 4 core steps:
+This module provides a streamlined model training sub-pipeline with core functionality:
 
-1. analyst_models_training - Per-regime individual model training with HPO, saving, and metrics
-2. analyst_ensemble_training - Per-regime ensemble training with HPO, saving, and metrics  
-3. tactician_models_training - All-regime individual model training with HPO, saving, and metrics
-4. tactician_ensemble_training - All-regime ensemble training with HPO, saving, and metrics
-
-ENHANCED FEATURES:
-- Comprehensive debugging and error tracking
-- Detailed validation at each step
-- Enhanced error reporting with system context
-- Dependency validation before execution
-- Data quality checks throughout pipeline
-- Resource monitoring and optimization
-- Silent failure prevention with explicit error propagation
+1. analyst_models_training - Individual model training with HPO and metrics
+2. analyst_ensemble_training - Ensemble training with HPO and metrics
+3. tactician_lookback_optimization - Lookback optimization for tactician models
+4. tactician_models_training - Individual tactician model training with HPO and metrics
+5. tactician_ensemble_training - Ensemble tactician training with HPO and metrics
 """
 
 import asyncio
@@ -23,235 +15,68 @@ import json
 import logging
 import pandas as pd
 import traceback
-import time
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional
 from datetime import datetime
 from pathlib import Path
 from enum import Enum
 from dataclasses import dataclass, field
 
 from src.utils.logger import system_logger
-from src.utils.tprint import tprint
 
-# Import additional tprint functions - fail fast if not available
+# Import tprint functions
 try:
-    from src.utils.tprint import tprint_warning, tprint_error, tprint_info, tprint_success, tprint_debug
-except ImportError as e:
-    raise ImportError(f"Extended tprint functions required but not available: {e}. "
-                     f"Please ensure src.utils.tprint is properly installed.")
+    from src.utils.tprint import tprint
+except ImportError:
+    # Fallback to print if tprint not available
+    tprint = print
 
-# Import enhanced debugging utilities
-try:
-    from src.training.utils.debug_utilities import TrainingDebugger, create_enhanced_error_handler
-    DEBUG_UTILITIES_AVAILABLE = True
-except ImportError as e:
-    tprint_warning(f"Debug utilities not available: {e}")
-    DEBUG_UTILITIES_AVAILABLE = False
-
-# Import universal validation integration for comprehensive validation
-try:
-    from src.utils.ml_common.training.universal_validation_integration import (
-        get_validation_integrator,
-        ValidationIntegrationConfig,
-        intelligently_select_utilities,
-        perform_data_leakage_check,
-        perform_enhanced_validation,
-        perform_complexity_analysis
-    )
-    UNIVERSAL_VALIDATION_AVAILABLE = True
-except ImportError as e:
-    tprint_warning(f"Universal validation integration not available: {e}")
-    UNIVERSAL_VALIDATION_AVAILABLE = False
-    get_validation_integrator = None
-    ValidationIntegrationConfig = None
-    intelligently_select_utilities = None
-    perform_data_leakage_check = None
-    perform_enhanced_validation = None
-    perform_complexity_analysis = None
-
-# Enhanced TrainingDebugger with universal validation integration
-class EnhancedTrainingDebugger:
-    """Enhanced training debugger with universal validation integration."""
+class SimpleDebugger:
+    """Simplified debugging utility."""
 
     def __init__(self, step_name, config=None):
-        """Initialize enhanced training debugger."""
+        """Initialize simple debugger."""
         self.step_name = step_name
         self.config = config
-        self.validation_integrator = None
 
-        # Initialize universal validation if available
-        if UNIVERSAL_VALIDATION_AVAILABLE:
-            try:
-                validation_config = ValidationIntegrationConfig(
-                    enable_validation=True,
-                    enable_overfitting_detection=True,
-                    enable_temporal_validation=True,
-                    enable_data_leakage_prevention=True,
-                    enable_enhanced_validation=True,
-                    enable_model_complexity_analysis=True,
-                    save_validation_reports=True,
-                    validation_report_directory=f"reports/validation/{step_name}",
-                    enable_validation_logging=True,
-                    auto_select_utilities=True
-                )
-                self.validation_integrator = get_validation_integrator(validation_config)
-                tprint_debug(f"✅ Universal validation integrated into {step_name} debugger")
-            except Exception as e:
-                tprint_warning(f"⚠️ Failed to initialize universal validation in debugger: {e}")
-
-    def comprehensive_validation(self, **kwargs) -> bool:
-        """Perform comprehensive validation using universal validation system."""
+    def validate_training_data(self, training_data: pd.DataFrame) -> bool:
+        """Basic training data validation."""
         try:
-            # Use universal validation if available
-            if self.validation_integrator and 'data_dir' in kwargs:
-                data_dir = kwargs['data_dir']
-                symbol = kwargs.get('symbol', 'BTCUSDT')
-                timeframe = kwargs.get('timeframe', '1m')
-                exchange = kwargs.get('exchange', 'binance')
+            if training_data is None or training_data.empty:
+                tprint(f"ERROR: Training data is None or empty for {self.step_name}")
+                return False
 
-                tprint_debug(f"🔍 Running comprehensive validation for {self.step_name}")
+            if training_data.isnull().sum().sum() > 0:
+                tprint(f"WARNING: Found missing values in {self.step_name} data")
+                return False
 
-                # Check data directory
-                data_path = Path(data_dir)
-                if not data_path.exists():
-                    tprint_warning(f"⚠️ Data directory does not exist: {data_dir}")
-                    return False
-
-                # Additional validation checks
-                validation_checks = []
-
-                # Check for required data files
-                required_files = [
-                    f"{data_dir}/processed/{symbol}_{exchange}_{timeframe}.parquet",
-                    f"{data_dir}/raw/{symbol}_{exchange}_{timeframe}.parquet"
-                ]
-
-                for file_path in required_files:
-                    if Path(file_path).exists():
-                        validation_checks.append(f"✅ {file_path.split('/')[-1]} found")
-                    else:
-                        validation_checks.append(f"❌ {file_path.split('/')[-1]} missing")
-
-                # Log validation results
-                for check in validation_checks:
-                    if "❌" in check:
-                        tprint_warning(check)
-                    else:
-                        tprint_debug(check)
-
-                # Check system resources
-                try:
-                    import psutil
-                    memory = psutil.virtual_memory()
-                    disk = psutil.disk_usage('/')
-
-                    if memory.available < 1024 * 1024 * 1024:  # Less than 1GB
-                        tprint_warning("⚠️ Low memory available")
-                    else:
-                        tprint_debug(f"✅ Memory available: {memory.available / 1024 / 1024 / 1024:.1f} GB")
-
-                    if disk.free < 1024 * 1024 * 1024:  # Less than 1GB
-                        tprint_warning("⚠️ Low disk space")
-                    else:
-                        tprint_debug(f"✅ Disk space available: {disk.free / 1024 / 1024 / 1024:.1f} GB")
-
-                except ImportError:
-                    tprint_debug("ℹ️ psutil not available for system checks")
-
-                return True
-
-            # Fallback to basic validation
-            tprint_debug(f"🔍 Running basic validation for {self.step_name}")
             return True
-
         except Exception as e:
-            tprint_error(f"❌ Validation failed for {self.step_name}: {e}")
+            tprint(f"ERROR: Data validation failed for {self.step_name}: {e}")
             return False
 
-    def validate_training_data(self, training_data: pd.DataFrame) -> object:
-        """Validate training data using universal validation system."""
-        class ValidationResult:
-            def __init__(self, is_valid: bool, error_message: str = "", suggestions: List[str] = None):
-                self.is_valid = is_valid
-                self.error_message = error_message
-                self.suggestions = suggestions or []
-
-        try:
-            if training_data is None:
-                return ValidationResult(False, "Training data is None", ["Check data loading"])
-
-            if training_data.empty:
-                return ValidationResult(False, "Training data is empty", ["Check data source"])
-
-            # Basic data quality checks
-            if training_data.isnull().sum().sum() > 0:
-                null_count = training_data.isnull().sum().sum()
-                suggestions = ["Handle missing values before training", "Check data preprocessing"]
-                return ValidationResult(False, f"Found {null_count} missing values", suggestions)
-
-            # Check for temporal integrity if timestamps exist
-            if 'timestamp' in training_data.columns or training_data.index.name == 'timestamp':
-                try:
-                    if UNIVERSAL_VALIDATION_AVAILABLE and self.validation_integrator:
-                        # Use universal validation for temporal checks
-                        if 'timestamp' in training_data.columns:
-                            timestamp_col = 'timestamp'
-                        else:
-                            timestamp_col = training_data.index.name
-
-                        leakage_result = perform_data_leakage_check(
-                            training_data, timestamp_col, dataset_name=f"{self.step_name}_data"
-                        )
-
-                        if leakage_result['leakage_detected']:
-                            return ValidationResult(
-                                False,
-                                f"Data leakage detected: {leakage_result['severity']}",
-                                [f"Fix data leakage: {rec}" for rec in leakage_result['recommendations']]
-                            )
-
-                except Exception as temporal_error:
-                    tprint_warning(f"⚠️ Temporal validation failed: {temporal_error}")
-
-            return ValidationResult(True, "", ["Data validation passed"])
-
-        except Exception as e:
-            return ValidationResult(False, str(e), ["Check data quality and format"])
-
     def debug_context(self, operation_name: str):
-        """Create debug context for operations."""
+        """Create simple debug context for operations."""
         from contextlib import contextmanager
+        import time
+
         @contextmanager
         def debug_context():
             start_time = time.time()
-            tprint_debug(f"🔄 Starting {operation_name} in {self.step_name}")
+            tprint(f"Starting {operation_name} in {self.step_name}")
 
             try:
                 yield
                 duration = time.time() - start_time
-                tprint_debug(f"✅ {operation_name} completed in {duration:.3f}s")
+                tprint(f"Completed {operation_name} in {duration:.3f}s")
             except Exception as e:
                 duration = time.time() - start_time
-                tprint_error(f"❌ {operation_name} failed after {duration:.3f}s: {e}")
+                tprint(f"FAILED {operation_name} after {duration:.3f}s: {e}")
                 raise
 
         return debug_context
 
-    def create_debug_report(self) -> Dict[str, Any]:
-        """Create comprehensive debug report."""
-        return {
-            'step_name': self.step_name,
-            'config': self.config,
-            'universal_validation_available': UNIVERSAL_VALIDATION_AVAILABLE,
-            'validation_integrator_available': self.validation_integrator is not None,
-            'timestamp': datetime.now().isoformat()
-        }
-
-# Use EnhancedTrainingDebugger if available, otherwise fallback to basic
-if DEBUG_UTILITIES_AVAILABLE:
-    TrainingDebugger = TrainingDebugger  # Use the imported one
-else:
-    TrainingDebugger = EnhancedTrainingDebugger  # Use our enhanced version
+# Use simple debugger
+TrainingDebugger = SimpleDebugger
 
 logger = system_logger.getChild('ModelTrainingSubPipeline')
 
@@ -384,278 +209,165 @@ class ModelTrainingSubPipeline:
             report_path = None
         
         return report_path
-    
+
+    def _create_simple_report(
+        self,
+        sub_pipeline_name: str,
+        config: SubPipelineConfig,
+        artifacts: Dict[str, Any],
+        execution_time: float,
+        status: str = "SUCCESS"
+    ) -> str:
+        """Create a simple report."""
+        timestamp = self._generate_datetime_stamp()
+        report_filename = f"{sub_pipeline_name}_report_{config.symbol}_{config.exchange}_{config.timeframe}_{timestamp}.json"
+        report_path = f"outcomes/model_training/{report_filename}"
+
+        # Ensure reports directory exists
+        Path("outcomes/model_training").mkdir(parents=True, exist_ok=True)
+
+        # Create simple report
+        report_data = {
+            "metadata": {
+                "sub_pipeline_name": sub_pipeline_name,
+                "timestamp": timestamp,
+                "execution_time_seconds": execution_time,
+                "status": status,
+                "config": {
+                    "symbol": config.symbol,
+                    "exchange": config.exchange,
+                    "timeframe": config.timeframe,
+                    "mode": config.mode.value,
+                    "data_dir": config.data_dir
+                }
+            },
+            "artifacts": artifacts,
+            "summary": {
+                "total_artifacts": len(artifacts),
+                "status": status,
+                "execution_time": execution_time
+            }
+        }
+
+        # Save report
+        try:
+            with open(report_path, 'w') as f:
+                json.dump(report_data, f, indent=2, default=str)
+            self.logger.info(f"Report saved: {report_path}")
+        except Exception as e:
+            self.logger.error(f"Failed to save report: {e}")
+            report_path = None
+
+        return report_path
+
     def _log_sub_pipeline_completion(
-        self, 
-        sub_pipeline_name: str, 
-        config: SubPipelineConfig, 
+        self,
+        sub_pipeline_name: str,
+        config: SubPipelineConfig,
         artifacts: Dict[str, Any],
         execution_time: float,
         status: str = "SUCCESS"
     ):
-        """Enhanced logging with comprehensive reporting."""
-        # Create comprehensive report
-        report_path = self._create_comprehensive_report(
+        """Simple logging with basic reporting."""
+        # Create simple report
+        report_path = self._create_simple_report(
             sub_pipeline_name, config, artifacts, execution_time, status
         )
-        
-        # Enhanced console logging
-        tprint("\n" + "="*80)
-        tprint(f"🎉 {sub_pipeline_name.upper().replace('_', ' ')} SUB-PIPELINE COMPLETED!")
-        tprint(f"⏱️  Execution Time: {execution_time:.2f} seconds")
-        tprint(f"📊 Status: {status}")
-        tprint("="*80)
-        
+
+        # Simple console logging
+        tprint(f"{sub_pipeline_name.upper()} completed in {execution_time:.2f}s - Status: {status}")
+
         if report_path:
-            tprint(f"📋 Comprehensive Report: {report_path}")
-        
-        tprint(f"📁 Generated Artifacts:")
-        
-        # Log different types of artifacts with appropriate emojis
-        for key, value in artifacts.items():
-            if isinstance(value, list) and value:
-                if 'model' in key.lower():
-                    for item in value:
-                        tprint(f"   🤖 {key.title()}: {config.data_dir}/models/{item}")
-                elif 'report' in key.lower():
-                    for item in value:
-                        tprint(f"   📋 {key.title()}: {config.data_dir}/{item}")
-                else:
-                    for item in value:
-                        tprint(f"   📊 {key.title()}: {config.data_dir}/{item}")
-            elif isinstance(value, dict) and value:
-                tprint(f"   📊 {key.title()}: {config.data_dir}/{key}.json")
-        
-        tprint(f"📊 Total Artifacts: {len(artifacts)} types generated")
-        
-        # Report silent failures if any
-        silent_failures = artifacts.get('silent_failures', [])
-        if silent_failures:
-            tprint(f"⚠️  Silent Failures Detected: {len(silent_failures)}")
-            for i, failure in enumerate(silent_failures, 1):
-                tprint(f"   {i}. {failure}")
-        else:
-            tprint(f"✅ No Silent Failures Detected")
-        
-        tprint("="*80 + "\n")
-        
-        # Enhanced logger output
-        self.logger.info(f"🎉 {sub_pipeline_name.upper().replace('_', ' ')} SUB-PIPELINE COMPLETED!")
-        self.logger.info(f"⏱️  Execution Time: {execution_time:.2f} seconds")
-        self.logger.info(f"📊 Status: {status}")
+            tprint(f"Report saved: {report_path}")
+
+        # Log artifacts count
+        total_artifacts = len([v for v in artifacts.values() if v])
+        tprint(f"Generated {total_artifacts} artifact types")
+
+        # Simple logger output
+        self.logger.info(f"{sub_pipeline_name} completed in {execution_time:.2f}s - Status: {status}")
         if report_path:
-            self.logger.info(f"📋 Comprehensive Report: {report_path}")
-        self.logger.info(f"📊 Total Artifacts: {len(artifacts)} types generated")
-        if silent_failures:
-            self.logger.warning(f"⚠️ Silent Failures: {len(silent_failures)} detected")
+            self.logger.info(f"Report: {report_path}")
     
     async def execute_sub_pipeline(
         self,
         sub_pipeline_name: str,
         config: Optional[SubPipelineConfig] = None
     ) -> SubPipelineResult:
-        """
-        Execute a specific sub-pipeline with comprehensive debugging and validation.
-        
-        Args:
-            sub_pipeline_name: Name of the sub-pipeline to execute
-            config: Optional configuration override
-            
-        Returns:
-            SubPipelineResult with execution details
-            
-        Raises:
-            ValueError: If sub-pipeline name is invalid
-            RuntimeError: If execution fails (fast-fail)
-        """
+        """Execute a specific sub-pipeline with basic validation and error handling."""
         config = config or self.config
-        
-        # Initialize enhanced debugger
+
+        # Initialize debugger
         debugger = TrainingDebugger(sub_pipeline_name, config.__dict__ if config else {})
-        
-        # Step 1: Initialization and validation
-        tprint(f"\n{'='*80}")
-        tprint(f"🚀 STARTING MODEL TRAINING SUB-PIPELINE: {sub_pipeline_name.upper()}")
-        tprint(f"📊 Mode: {config.mode.value.upper()} | Symbol: {config.symbol} | Exchange: {config.exchange} | Timeframe: {config.timeframe}")
-        tprint(f"{'='*80}")
-        
-        self.logger.info(f"🚀 Starting model training sub-pipeline: {sub_pipeline_name} (mode: {config.mode.value})")
-        
+
+        tprint(f"Starting {sub_pipeline_name} pipeline")
+        self.logger.info(f"Starting {sub_pipeline_name} pipeline")
+
         start_time = datetime.now()
         result = SubPipelineResult(
             sub_pipeline_name=sub_pipeline_name,
             status=SubPipelineStatus.RUNNING,
             start_time=start_time
         )
-        
+
         try:
-            with debugger.debug_context("sub_pipeline_execution"):
-                # Step 1: Pre-execution validation
-                tprint(f"🔍 STEP 1/8: Running comprehensive pre-execution validation...")
-                
-                if not debugger.comprehensive_validation(
-                    data_dir=config.data_dir,
-                    symbol=config.symbol,
-                    timeframe=config.timeframe,
-                    exchange=config.exchange
-                ):
-                    raise RuntimeError(f"Pre-execution validation failed for {sub_pipeline_name}")
-                
-                tprint(f"✅ Pre-execution validation completed successfully")
-                
-                # Step 2: Validate sub-pipeline exists
-                tprint(f"🔍 STEP 2/8: Validating sub-pipeline name...")
-                if sub_pipeline_name not in self.sub_pipelines:
-                    error_msg = f"Unknown sub-pipeline: {sub_pipeline_name}. Available: {list(self.sub_pipelines.keys())}"
-                    tprint_error(f"❌ VALIDATION FAILED: {error_msg}")
-                    self.logger.error(f"❌ {error_msg}")
-                    raise ValueError(error_msg)
-                tprint_success(f"✅ Sub-pipeline '{sub_pipeline_name}' validated successfully")
-                
-                # Step 3: Validate configuration
-                tprint(f"🔍 STEP 3/8: Validating configuration...")
-                if not self._validate_config(config):
-                    error_msg = "Invalid configuration provided"
-                    tprint_error(f"❌ CONFIGURATION VALIDATION FAILED: {error_msg}")
-                    self.logger.error(f"❌ {error_msg}")
-                    raise ValueError(error_msg)
-                tprint_success(f"✅ Configuration validated successfully")
-                
-                # Step 4: Load and validate training data
-                tprint(f"🔍 STEP 4/8: Loading and validating training data...")
-                training_data = await self._load_training_data(config)
-                
-                data_validation = debugger.validate_training_data(training_data)
-                if not data_validation.is_valid:
-                    error_msg = f"Training data validation failed: {data_validation.error_message}"
-                    tprint_error(f"❌ DATA VALIDATION FAILED: {error_msg}")
-                    
-                    # Log detailed suggestions
-                    if data_validation.suggestions:
-                        tprint_info("💡 Suggestions:")
-                        for suggestion in data_validation.suggestions:
-                            tprint_info(f"   - {suggestion}")
-                    
-                    raise RuntimeError(error_msg)
-                
-                tprint_success(f"✅ Training data validated: {len(training_data)} rows, {len(training_data.columns)} columns")
-                
-                # Step 5: System resource check
-                tprint(f"🔍 STEP 5/8: Checking system resources...")
-                resource_check = debugger.validate_system_resources(min_memory_gb=0.5, min_disk_gb=0.1)
-                if not resource_check.is_valid:
-                    tprint_warning(f"⚠️  System resources warning: {resource_check.error_message}")
-                else:
-                    tprint_success(f"✅ System resources sufficient")
-                
-                # Step 6: Execute the sub-pipeline
-                tprint(f"🔍 STEP 6/8: Executing {sub_pipeline_name} pipeline...")
-                pipeline_func = self.sub_pipelines[sub_pipeline_name]
-                
-                # Log execution start with timing
-                execution_start = datetime.now()
-                tprint_info(f"⏱️  Pipeline execution started at: {execution_start.strftime('%H:%M:%S')}")
-                
-                # Execute with detailed error tracking
-                try:
-                    artifacts = await pipeline_func(config)
-                except Exception as e:
-                    tprint_error(f"❌ Pipeline function execution failed: {str(e)}")
-                    tprint_debug(f"📋 Traceback:\n{traceback.format_exc()}")
-                    raise RuntimeError(f"Pipeline function '{sub_pipeline_name}' execution failed: {str(e)}") from e
-                
-                execution_end = datetime.now()
-                execution_duration = (execution_end - execution_start).total_seconds()
-                tprint_success(f"⏱️  Pipeline execution completed in: {execution_duration:.2f} seconds")
-                
-                # Step 7: Validate artifacts
-                tprint(f"🔍 STEP 7/8: Validating generated artifacts...")
-                if not self._validate_artifacts(artifacts, sub_pipeline_name):
-                    error_msg = f"Invalid artifacts generated by {sub_pipeline_name}"
-                    tprint_error(f"❌ ARTIFACT VALIDATION FAILED: {error_msg}")
-                    tprint_debug(f"📋 Generated artifacts: {artifacts}")
-                    self.logger.error(f"❌ {error_msg}")
-                    raise RuntimeError(error_msg)
-                tprint_success(f"✅ Artifacts validated successfully - {len(artifacts)} artifact types generated")
-                
-                # Log artifact details
-                for key, value in artifacts.items():
-                    if isinstance(value, (list, dict)) and value:
-                        tprint_debug(f"   📊 {key}: {len(value) if isinstance(value, (list, dict)) else 'N/A'} items")
-                
-                # Step 8: Detect silent failures
-                tprint(f"🔍 STEP 8/8: Detecting silent failures...")
-                silent_failures = self._detect_silent_failures(artifacts, sub_pipeline_name)
-                if silent_failures:
-                    tprint_warning(f"⚠️  {len(silent_failures)} silent failures detected:")
-                    for i, failure in enumerate(silent_failures, 1):
-                        tprint_warning(f"   {i}. {failure}")
-                    # Add silent failures to artifacts for reporting
-                    artifacts['silent_failures'] = silent_failures
-                else:
-                    tprint_success(f"✅ No silent failures detected")
-                
-                # Finalize result
-                end_time = datetime.now()
-                result.status = SubPipelineStatus.COMPLETED
-                result.end_time = end_time
-                result.duration_seconds = (end_time - start_time).total_seconds()
-                result.artifacts = artifacts
-                result.metadata = {
-                    'mode': config.mode.value,
-                    'symbol': config.symbol,
-                    'exchange': config.exchange,
-                    'timeframe': config.timeframe,
-                    'execution_duration_seconds': execution_duration,
-                    'data_rows': len(training_data) if training_data is not None else 0,
-                    'data_columns': len(training_data.columns) if training_data is not None else 0
-                }
-                
-                tprint_success(f"✅ All steps completed successfully!")
-                
-                # Enhanced logging with comprehensive reporting
-                self._log_sub_pipeline_completion(
-                    sub_pipeline_name, config, artifacts, result.duration_seconds, "SUCCESS"
-                )
-            
+            # Basic validation
+            if sub_pipeline_name not in self.sub_pipelines:
+                raise ValueError(f"Unknown sub-pipeline: {sub_pipeline_name}")
+
+            if not self._validate_config(config):
+                raise ValueError("Invalid configuration")
+
+            # Load and validate training data
+            training_data = await self._load_training_data(config)
+            if not debugger.validate_training_data(training_data):
+                raise RuntimeError("Training data validation failed")
+
+            # Execute the sub-pipeline
+            with debugger.debug_context("pipeline_execution"):
+                artifacts = await self.sub_pipelines[sub_pipeline_name](config)
+
+            # Validate artifacts
+            if not self._validate_artifacts(artifacts, sub_pipeline_name):
+                raise RuntimeError("Invalid artifacts generated")
+
+            # Finalize successful result
+            end_time = datetime.now()
+            result.status = SubPipelineStatus.COMPLETED
+            result.end_time = end_time
+            result.duration_seconds = (end_time - start_time).total_seconds()
+            result.artifacts = artifacts
+
+            # Log completion
+            self._log_sub_pipeline_completion(
+                sub_pipeline_name, config, artifacts, result.duration_seconds, "SUCCESS"
+            )
+
         except Exception as e:
             end_time = datetime.now()
             result.status = SubPipelineStatus.FAILED
             result.end_time = end_time
             result.duration_seconds = (end_time - start_time).total_seconds()
             result.error_message = str(e)
-            
-            # Enhanced error logging with comprehensive details
-            tprint_error(f"\n❌ SUB-PIPELINE EXECUTION FAILED!")
-            tprint_error(f"⏱️  Failed after: {result.duration_seconds:.2f} seconds")
-            tprint_error(f"🚨 Error Type: {type(e).__name__}")
-            tprint_error(f"🚨 Error Message: {str(e)}")
-            tprint_debug(f"📋 Full Traceback:\n{traceback.format_exc()}")
-            tprint_error(f"{'='*80}\n")
-            
-            self.logger.error(f"❌ Model training sub-pipeline {sub_pipeline_name} FAILED after {result.duration_seconds:.2f}s")
-            self.logger.error(f"❌ Error Type: {type(e).__name__}")
-            self.logger.error(f"❌ Error: {str(e)}")
-            self.logger.error(f"❌ Traceback: {traceback.format_exc()}")
-            
-            # Create comprehensive failure report
+
+            # Log failure
+            tprint(f"FAILED {sub_pipeline_name}: {e}")
+            self.logger.error(f"{sub_pipeline_name} failed: {e}")
+
+            # Create failure artifacts
             failure_artifacts = {
                 'error_type': type(e).__name__,
                 'error_message': str(e),
-                'traceback': traceback.format_exc(),
-                'debug_report': debugger.create_debug_report(),
-                'silent_failures': []
+                'traceback': traceback.format_exc()
             }
-            
             result.artifacts = failure_artifacts
-            
+
             self._log_sub_pipeline_completion(
                 sub_pipeline_name, config, failure_artifacts, result.duration_seconds, "FAILED"
             )
-            
-            # Fast-fail: Re-raise the exception with enhanced context
+
             raise RuntimeError(f"Sub-pipeline {sub_pipeline_name} failed: {str(e)}") from e
-        
+
         self.results.append(result)
         return result
     
@@ -719,111 +431,60 @@ class ModelTrainingSubPipeline:
             return None
     
     def _validate_config(self, config: SubPipelineConfig) -> bool:
-        """Validate configuration parameters with detailed logging."""
+        """Simple configuration validation."""
         try:
-            tprint(f"   🔍 Checking required fields...")
             # Check required fields
             if not config.symbol or not config.exchange or not config.timeframe:
-                missing_fields = []
-                if not config.symbol:
-                    missing_fields.append("symbol")
-                if not config.exchange:
-                    missing_fields.append("exchange")
-                if not config.timeframe:
-                    missing_fields.append("timeframe")
-                tprint(f"   ❌ Missing required fields: {missing_fields}")
-                self.logger.error(f"❌ Missing required config fields: {missing_fields}")
+                missing_fields = [f for f, v in [('symbol', config.symbol), ('exchange', config.exchange), ('timeframe', config.timeframe)] if not v]
+                tprint(f"ERROR: Missing required fields: {missing_fields}")
                 return False
-            tprint(f"   ✅ Required fields present: symbol={config.symbol}, exchange={config.exchange}, timeframe={config.timeframe}")
-            
-            tprint(f"   🔍 Checking data directory...")
+
             # Check data directory exists
             if not Path(config.data_dir).exists():
-                tprint(f"   ❌ Data directory does not exist: {config.data_dir}")
-                self.logger.error(f"❌ Data directory does not exist: {config.data_dir}")
+                tprint(f"ERROR: Data directory does not exist: {config.data_dir}")
                 return False
-            tprint(f"   ✅ Data directory exists: {config.data_dir}")
-            
-            tprint(f"   🔍 Validating timeframe...")
+
             # Check valid timeframe
             valid_timeframes = ['1m', '5m', '15m', '30m', '1h', '4h', '1d']
             if config.timeframe not in valid_timeframes:
-                tprint(f"   ❌ Invalid timeframe: {config.timeframe}. Valid options: {valid_timeframes}")
-                self.logger.error(f"❌ Invalid timeframe: {config.timeframe}. Valid: {valid_timeframes}")
+                tprint(f"ERROR: Invalid timeframe: {config.timeframe}")
                 return False
-            tprint(f"   ✅ Timeframe is valid: {config.timeframe}")
-            
-            tprint(f"   🔍 Checking execution mode...")
+
             # Check valid execution mode
             if not isinstance(config.mode, ExecutionMode):
-                tprint(f"   ❌ Invalid execution mode: {config.mode}")
-                self.logger.error(f"❌ Invalid execution mode: {config.mode}")
+                tprint(f"ERROR: Invalid execution mode: {config.mode}")
                 return False
-            tprint(f"   ✅ Execution mode is valid: {config.mode.value}")
-            
+
             return True
         except Exception as e:
-            tprint(f"   ❌ Configuration validation failed with exception: {e}")
-            self.logger.error(f"❌ Config validation failed: {e}")
+            tprint(f"ERROR: Configuration validation failed: {e}")
             return False
     
     def _validate_artifacts(self, artifacts: Dict[str, Any], sub_pipeline_name: str) -> bool:
-        """Validate generated artifacts with detailed logging."""
+        """Simple artifact validation."""
         try:
-            tprint(f"   🔍 Checking if artifacts were generated...")
             if not artifacts:
-                tprint(f"   ❌ No artifacts generated by {sub_pipeline_name}")
-                self.logger.error(f"❌ No artifacts generated by {sub_pipeline_name}")
+                tprint(f"ERROR: No artifacts generated by {sub_pipeline_name}")
                 return False
-            tprint(f"   ✅ {len(artifacts)} artifact types generated")
-            
-            tprint(f"   🔍 Checking artifact types...")
-            for artifact_type, artifact_value in artifacts.items():
-                if isinstance(artifact_value, list):
-                    tprint(f"   📊 {artifact_type}: {len(artifact_value)} items")
-                elif isinstance(artifact_value, dict):
-                    tprint(f"   📊 {artifact_type}: {len(artifact_value)} keys")
-                else:
-                    tprint(f"   📊 {artifact_type}: {type(artifact_value).__name__}")
-            
+
             # Check for required artifact types based on sub-pipeline
-            tprint(f"   🔍 Validating required artifacts for {sub_pipeline_name}...")
             required_artifacts = {
                 'analyst_model_training': ['models', 'metrics'],
                 'analyst_ensemble_training': ['models', 'metrics'],
                 'tactician_models_training': ['models', 'metrics'],
                 'tactician_ensemble_training': ['models', 'metrics']
             }
-            
+
             if sub_pipeline_name in required_artifacts:
                 required = required_artifacts[sub_pipeline_name]
-                tprint(f"   📋 Required artifacts: {required}")
-                
                 missing = [req for req in required if req not in artifacts]
                 if missing:
-                    tprint(f"   ❌ Missing required artifacts: {missing}")
-                    self.logger.error(f"❌ Missing required artifacts for {sub_pipeline_name}: {missing}")
+                    tprint(f"ERROR: Missing required artifacts for {sub_pipeline_name}: {missing}")
                     return False
-                
-                # Check if required artifacts have content
-                for req_artifact in required:
-                    if req_artifact in artifacts:
-                        artifact_content = artifacts[req_artifact]
-                        if isinstance(artifact_content, list) and len(artifact_content) == 0:
-                            tprint(f"   ⚠️  Warning: {req_artifact} is empty list")
-                        elif isinstance(artifact_content, dict) and len(artifact_content) == 0:
-                            tprint(f"   ⚠️  Warning: {req_artifact} is empty dict")
-                        else:
-                            tprint(f"   ✅ {req_artifact} has content")
-                
-                tprint(f"   ✅ All required artifacts present and validated")
-            else:
-                tprint(f"   ℹ️  No specific requirements defined for {sub_pipeline_name}")
-            
+
             return True
         except Exception as e:
-            tprint(f"   ❌ Artifact validation failed with exception: {e}")
-            self.logger.error(f"❌ Artifact validation failed: {e}")
+            tprint(f"ERROR: Artifact validation failed: {e}")
             return False
     
     async def execute_multiple_sub_pipelines(
@@ -1094,177 +755,29 @@ class ModelTrainingSubPipeline:
     # Sub-pipeline implementations
     
     async def _analyst_model_training_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
-        """Analyst model training sub-pipeline with enhanced error handling and reporting."""
-        tprint(f"   📊 ANALYST MODEL TRAINING PIPELINE STARTED")
-        self.logger.info("📊 Executing analyst model training pipeline")
-        
-        # Initialize artifacts with datetime-stamped filenames
-        timestamp = self._generate_datetime_stamp()
-        artifacts = {
-            'models': [],
-            'metrics': {},
-            'performance': {},
-            'temporal_features_used': False,
-            'temporal_feature_info': {},
-            'training_report': f"analyst_models_training_report_{config.symbol}_{config.exchange}_{config.timeframe}_{timestamp}.json"
-        }
-        
-        try:
-            # Step 1: Load temporal features
-            tprint(f"   🔍 Loading temporal features from MARKET_ANALYSIS stage...")
-            temporal_loaded = await self._load_temporal_features(config)
-            if temporal_loaded:
-                temporal_info = self._get_temporal_feature_info()
-                artifacts['temporal_features_used'] = True
-                artifacts['temporal_feature_info'] = temporal_info
-                tprint(f"   ✅ Loaded {temporal_info['count']} temporal features")
-                self.logger.info(f"✅ Using {temporal_info['count']} temporal features in analyst model training")
-            else:
-                tprint(f"   ⚠️  No temporal features loaded - proceeding with base features only")
-            
-            # Step 2: Check execution mode
-            if config.mode == ExecutionMode.BLANK:
-                tprint_error("❌ BLANK mode not supported - actual training required")
-                raise ValueError("BLANK mode is not supported. Actual model training is required for production use.")
-            
-            # Step 3: Import training module
-            tprint(f"   🔍 Importing analyst models training module...")
-            try:
-                from .analyst_models_training_refactored import AnalystModelsTrainingStepRefactored as AnalystModelsTrainingStep
-                tprint(f"   ✅ Successfully imported analyst models training module")
-            except ImportError as e:
-                error_msg = f"Analyst models trainer not available: {e}"
-                tprint(f"   ❌ IMPORT FAILED: {error_msg}")
-                self.logger.error(f"❌ {error_msg}")
-                raise RuntimeError(error_msg) from e
-            
-            # Step 4: Create enhanced configuration
-            tprint(f"   🔍 Creating enhanced configuration...")
-            enhanced_config = config.custom_params.copy() if config.custom_params else {}
-            if temporal_loaded:
-                enhanced_config['temporal_features_available'] = True
-                enhanced_config['temporal_feature_columns'] = list(self.temporal_features.keys())
-                enhanced_config['temporal_feature_metadata'] = self.temporal_feature_metadata
-                tprint(f"   ✅ Enhanced config with {len(self.temporal_features)} temporal features")
-            else:
-                tprint(f"   ✅ Using base configuration (no temporal features)")
-            
-            # Step 5: Initialize trainer
-            tprint(f"   🔍 Initializing analyst models trainer...")
-            trainer = AnalystModelsTrainingStep()
-            tprint(f"   ✅ Trainer initialized successfully")
-            
-            # Step 6: Execute training
-            tprint(f"   🔍 Executing analyst model training...")
-            training_start = datetime.now()
-            training_result = await trainer.execute(
-                training_input={
-                    'symbol': config.symbol,
-                    'exchange': config.exchange,
-                    'timeframe': config.timeframe,
-                    'data_dir': config.data_dir
-                },
-                pipeline_state={}
-            )
-            training_end = datetime.now()
-            training_duration = (training_end - training_start).total_seconds()
-            tprint(f"   ✅ Training completed in {training_duration:.2f} seconds")
-            
-            # Step 7: Process results
-            tprint(f"   🔍 Processing training results...")
-            models = training_result.get('models', [])
-            artifacts['models'] = [f"{model}_{timestamp}.pkl" if not model.endswith('.pkl') else f"{model.replace('.pkl', '')}_{timestamp}.pkl" for model in models]
-            artifacts['metrics'] = training_result.get('metrics', {})
-            artifacts['performance'] = training_result.get('performance', {})
-            
-            tprint(f"   ✅ Processed {len(artifacts['models'])} models, {len(artifacts['metrics'])} metrics, {len(artifacts['performance'])} performance indicators")
-            self.logger.info(f"✅ Analyst model training completed with {len(artifacts['models'])} models")
-            
-        except Exception as e:
-            error_msg = f"Analyst model training failed: {e}"
-            tprint(f"   ❌ TRAINING FAILED: {error_msg}")
-            self.logger.error(f"❌ {error_msg}")
-            raise RuntimeError(error_msg) from e
-        
-        tprint(f"   ✅ ANALYST MODEL TRAINING PIPELINE COMPLETED")
-        return artifacts
+        """Analyst model training sub-pipeline."""
+        return await self._generic_pipeline_execution(
+            "Analyst Model Training",
+            config,
+            "AnalystModelsTrainingStepRefactored",
+            "execute",
+            training_input={
+                'symbol': config.symbol,
+                'exchange': config.exchange,
+                'timeframe': config.timeframe,
+                'data_dir': config.data_dir
+            },
+            pipeline_state={}
+        )
     
     async def _analyst_ensemble_training_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
-        """Analyst Ensemble Training sub-pipeline with enhanced error handling and reporting."""
-        tprint(f"   🎭 ANALYST ENSEMBLE TRAINING PIPELINE STARTED")
-        self.logger.info("🎭 Executing analyst ensemble training pipeline (per-regime ensemble models)")
-        
-        # Initialize artifacts with datetime-stamped filenames
-        timestamp = self._generate_datetime_stamp()
-        artifacts = {
-            'models': [],
-            'metrics': {},
-            'performance': {},
-            'temporal_features_used': False,
-            'temporal_feature_info': {},
-            'training_report': f"analyst_ensemble_training_report_{config.symbol}_{config.exchange}_{config.timeframe}_{timestamp}.json"
-        }
-        
-        try:
-            # Step 1: Check execution mode
-            if config.mode == ExecutionMode.BLANK:
-                tprint_error("❌ BLANK mode not supported - actual ensemble training required")
-                raise ValueError("BLANK mode is not supported. Actual ensemble training is required for production use.")
-            
-            # Step 2: Import training module
-            tprint(f"   🔍 Importing analyst ensemble training module...")
-            try:
-                from .analyst_ensemble_training import AnalystEnsembleTrainingStep as AnalystEnsembleTrainer
-                tprint(f"   ✅ Successfully imported analyst ensemble training module")
-            except ImportError as e:
-                error_msg = f"Analyst ensemble trainer not available: {e}"
-                tprint(f"   ❌ IMPORT FAILED: {error_msg}")
-                self.logger.error(f"❌ {error_msg}")
-                raise RuntimeError(error_msg) from e
-            
-            # Step 3: Create enhanced configuration
-            tprint(f"   🔍 Creating enhanced configuration...")
-            enhanced_config = config.custom_params.copy() if config.custom_params else {}
-            tprint(f"   ✅ Configuration prepared with {len(enhanced_config)} custom parameters")
-            
-            # Step 4: Initialize trainer
-            tprint(f"   🔍 Initializing analyst ensemble trainer...")
-            trainer = AnalystEnsembleTrainer()
-            tprint(f"   ✅ Trainer initialized successfully")
-            
-            # Step 5: Execute training
-            tprint(f"   🔍 Executing analyst ensemble training...")
-            training_start = datetime.now()
-            training_result = await trainer.execute_analyst_ensemble_training(
-                symbol=config.symbol,
-                exchange=config.exchange,
-                timeframe=config.timeframe,
-                data_dir=config.data_dir,
-                force_rerun=config.force_rerun,
-                enhanced_config=enhanced_config
-            )
-            training_end = datetime.now()
-            training_duration = (training_end - training_start).total_seconds()
-            tprint(f"   ✅ Ensemble training completed in {training_duration:.2f} seconds")
-            
-            # Step 6: Process results
-            tprint(f"   🔍 Processing ensemble training results...")
-            models = training_result.get('models', [])
-            artifacts['models'] = [f"{model}_{timestamp}.pkl" if not model.endswith('.pkl') else f"{model.replace('.pkl', '')}_{timestamp}.pkl" for model in models]
-            artifacts['metrics'] = training_result.get('metrics', {})
-            artifacts['performance'] = training_result.get('performance', {})
-            
-            tprint(f"   ✅ Processed {len(artifacts['models'])} ensemble models, {len(artifacts['metrics'])} metrics, {len(artifacts['performance'])} performance indicators")
-            self.logger.info(f"✅ Analyst ensemble training completed with {len(artifacts['models'])} models")
-            
-        except Exception as e:
-            error_msg = f"Analyst ensemble training failed: {e}"
-            tprint(f"   ❌ ENSEMBLE TRAINING FAILED: {error_msg}")
-            self.logger.error(f"❌ {error_msg}")
-            raise RuntimeError(error_msg) from e
-        
-        tprint(f"   ✅ ANALYST ENSEMBLE TRAINING PIPELINE COMPLETED")
-        return artifacts
+        """Analyst Ensemble Training sub-pipeline."""
+        return await self._generic_pipeline_execution(
+            "Analyst Ensemble Training",
+            config,
+            "AnalystEnsembleTrainingStep",
+            "execute_analyst_ensemble_training"
+        )
     
     async def _tactician_lookback_optimization_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
         """Tactician lookback optimization sub-pipeline with enhanced error handling and reporting."""
@@ -1437,154 +950,88 @@ class ModelTrainingSubPipeline:
             raise RuntimeError(error_msg) from e
     
     async def _tactician_models_training_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
-        """Tactician model training sub-pipeline with enhanced error handling and reporting."""
-        tprint(f"   ⚔️ TACTICIAN MODELS TRAINING PIPELINE STARTED")
-        self.logger.info("⚔️ Executing tactician model training pipeline")
-        
-        # Initialize artifacts with datetime-stamped filenames
-        timestamp = self._generate_datetime_stamp()
-        artifacts = {
-            'models': [],
-            'metrics': {},
-            'performance': {},
-            'training_report': f"tactician_models_training_report_{config.symbol}_{config.exchange}_{config.timeframe}_{timestamp}.json"
-        }
-        
-        try:
-            # Step 1: Check execution mode
-            if config.mode == ExecutionMode.BLANK:
-                tprint_error("❌ BLANK mode not supported - actual tactician training required")
-                raise ValueError("BLANK mode is not supported. Actual tactician model training is required for production use.")
-            
-            # Step 2: Import training module
-            tprint(f"   🔍 Importing tactician models training module...")
-            try:
-                from .tactician_models_training_refactored import TacticianModelsTrainingStepRefactored as TacticianModelTrainer
-                tprint(f"   ✅ Successfully imported tactician models training module")
-            except ImportError as e:
-                error_msg = f"Tactician model trainer not available: {e}"
-                tprint(f"   ❌ IMPORT FAILED: {error_msg}")
-                self.logger.error(f"❌ {error_msg}")
-                raise RuntimeError(error_msg) from e
-            
-            # Step 3: Create enhanced configuration
-            tprint(f"   🔍 Creating enhanced configuration...")
-            enhanced_config = config.custom_params.copy() if config.custom_params else {}
-            tprint(f"   ✅ Configuration prepared with {len(enhanced_config)} custom parameters")
-            
-            # Step 4: Initialize trainer
-            tprint(f"   🔍 Initializing tactician models trainer...")
-            trainer = TacticianModelTrainer()
-            tprint(f"   ✅ Trainer initialized successfully")
-            
-            # Step 5: Execute training
-            tprint(f"   🔍 Executing tactician model training...")
-            training_start = datetime.now()
-            training_result = await trainer.execute(
-                training_input={
-                    'symbol': config.symbol,
-                    'exchange': config.exchange,
-                    'timeframe': config.timeframe,
-                    'data_dir': config.data_dir
-                },
-                pipeline_state=enhanced_config
-            )
-            training_end = datetime.now()
-            training_duration = (training_end - training_start).total_seconds()
-            tprint(f"   ✅ Tactician training completed in {training_duration:.2f} seconds")
-            
-            # Step 6: Process results
-            tprint(f"   🔍 Processing tactician training results...")
-            models = training_result.get('models', [])
-            artifacts['models'] = [f"{model}_{timestamp}.pkl" if not model.endswith('.pkl') else f"{model.replace('.pkl', '')}_{timestamp}.pkl" for model in models]
-            artifacts['metrics'] = training_result.get('metrics', {})
-            artifacts['performance'] = training_result.get('performance', {})
-            
-            tprint(f"   ✅ Processed {len(artifacts['models'])} tactician models, {len(artifacts['metrics'])} metrics, {len(artifacts['performance'])} performance indicators")
-            self.logger.info(f"✅ Tactician model training completed with {len(artifacts['models'])} models")
-            
-        except Exception as e:
-            error_msg = f"Tactician model training failed: {e}"
-            tprint(f"   ❌ TACTICIAN TRAINING FAILED: {error_msg}")
-            self.logger.error(f"❌ {error_msg}")
-            raise RuntimeError(error_msg) from e
-        
-        tprint(f"   ✅ TACTICIAN MODELS TRAINING PIPELINE COMPLETED")
-        return artifacts
+        """Tactician model training sub-pipeline."""
+        return await self._generic_pipeline_execution(
+            "Tactician Models Training",
+            config,
+            "TacticianModelsTrainingStepRefactored",
+            "execute",
+            training_input={
+                'symbol': config.symbol,
+                'exchange': config.exchange,
+                'timeframe': config.timeframe,
+                'data_dir': config.data_dir
+            },
+            pipeline_state=config.custom_params or {}
+        )
     
     async def _tactician_ensemble_training_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
-        """Tactician ensemble training sub-pipeline with enhanced error handling and reporting."""
-        tprint(f"   ⚔️🎯 TACTICIAN ENSEMBLE TRAINING PIPELINE STARTED")
-        self.logger.info("⚔️🎯 Executing tactician ensemble training pipeline")
-        
-        # Initialize artifacts with datetime-stamped filenames
+        """Tactician ensemble training sub-pipeline."""
+        return await self._generic_pipeline_execution(
+            "Tactician Ensemble Training",
+            config,
+            "TacticianEnsembleTrainingStep",
+            "execute_tactician_ensemble_training"
+        )
+
+    async def _generic_pipeline_execution(
+        self,
+        pipeline_name: str,
+        config: SubPipelineConfig,
+        trainer_class: str,
+        trainer_method: str = "execute",
+        **trainer_kwargs
+    ) -> Dict[str, Any]:
+        """Generic pipeline execution method to reduce code duplication."""
         timestamp = self._generate_datetime_stamp()
         artifacts = {
             'models': [],
             'metrics': {},
             'performance': {},
-            'training_report': f"tactician_ensemble_training_report_{config.symbol}_{config.exchange}_{config.timeframe}_{timestamp}.json"
+            'training_report': f"{pipeline_name.lower().replace('_', '_')}_report_{config.symbol}_{config.exchange}_{config.timeframe}_{timestamp}.json"
         }
-        
+
         try:
-            # Step 1: Check execution mode
+            # Check execution mode
             if config.mode == ExecutionMode.BLANK:
-                tprint_error("❌ BLANK mode not supported - actual ensemble training required")
-                raise ValueError("BLANK mode is not supported. Actual tactician ensemble training is required for production use.")
-            
-            # Step 2: Import training module
-            tprint(f"   🔍 Importing tactician ensemble training module...")
+                raise ValueError(f"BLANK mode not supported for {pipeline_name}")
+
+            # Import training module
+            trainer_module = f".{trainer_class.lower()}"
+            trainer_class_name = trainer_class
+
             try:
-                from .tactician_ensemble_training import TacticianEnsembleTrainingStep as TacticianEnsembleTrainer
-                tprint(f"   ✅ Successfully imported tactician ensemble training module")
+                module = __import__(trainer_module, fromlist=[trainer_class_name])
+                TrainerClass = getattr(module, trainer_class_name)
             except ImportError as e:
-                error_msg = f"Tactician ensemble trainer not available: {e}"
-                tprint(f"   ❌ IMPORT FAILED: {error_msg}")
-                self.logger.error(f"❌ {error_msg}")
-                raise RuntimeError(error_msg) from e
-            
-            # Step 3: Create enhanced configuration
-            tprint(f"   🔍 Creating enhanced configuration...")
-            enhanced_config = config.custom_params.copy() if config.custom_params else {}
-            tprint(f"   ✅ Configuration prepared with {len(enhanced_config)} custom parameters")
-            
-            # Step 4: Initialize trainer
-            tprint(f"   🔍 Initializing tactician ensemble trainer...")
-            trainer = TacticianEnsembleTrainer()
-            tprint(f"   ✅ Trainer initialized successfully")
-            
-            # Step 5: Execute training
-            tprint(f"   🔍 Executing tactician ensemble training...")
-            training_start = datetime.now()
-            training_result = await trainer.execute_tactician_ensemble_training(
+                raise RuntimeError(f"{trainer_class} not available: {e}")
+
+            # Initialize trainer
+            trainer = TrainerClass()
+
+            # Execute training
+            training_result = await getattr(trainer, trainer_method)(
                 symbol=config.symbol,
                 exchange=config.exchange,
                 timeframe=config.timeframe,
                 data_dir=config.data_dir,
                 force_rerun=config.force_rerun,
-                enhanced_config=enhanced_config
+                enhanced_config=config.custom_params or {},
+                **trainer_kwargs
             )
-            training_end = datetime.now()
-            training_duration = (training_end - training_start).total_seconds()
-            tprint(f"   ✅ Tactician ensemble training completed in {training_duration:.2f} seconds")
-            
-            # Step 6: Process results
-            tprint(f"   🔍 Processing tactician ensemble training results...")
+
+            # Process results
             models = training_result.get('models', [])
             artifacts['models'] = [f"{model}_{timestamp}.pkl" if not model.endswith('.pkl') else f"{model.replace('.pkl', '')}_{timestamp}.pkl" for model in models]
             artifacts['metrics'] = training_result.get('metrics', {})
             artifacts['performance'] = training_result.get('performance', {})
-            
-            tprint(f"   ✅ Processed {len(artifacts['models'])} tactician ensemble models, {len(artifacts['metrics'])} metrics, {len(artifacts['performance'])} performance indicators")
-            self.logger.info(f"✅ Tactician ensemble training completed with {len(artifacts['models'])} models")
-            
+
+            tprint(f"{pipeline_name} completed successfully")
+
         except Exception as e:
-            error_msg = f"Tactician ensemble training failed: {e}"
-            tprint(f"   ❌ TACTICIAN ENSEMBLE TRAINING FAILED: {error_msg}")
-            self.logger.error(f"❌ {error_msg}")
-            raise RuntimeError(error_msg) from e
-        
-        tprint(f"   ✅ TACTICIAN ENSEMBLE TRAINING PIPELINE COMPLETED")
+            tprint(f"{pipeline_name} failed: {e}")
+            raise RuntimeError(f"{pipeline_name} failed: {e}") from e
+
         return artifacts
     
     async def _load_market_data_1m(self, config: SubPipelineConfig) -> Optional[pd.DataFrame]:

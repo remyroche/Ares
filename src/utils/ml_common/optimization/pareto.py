@@ -605,8 +605,8 @@ def scalarize_financial_goals(
                     scaled_value = raw_value
                 
                 score += (weights[k] / total_w) * scaled_value
-            except Exception:
-                pass
+            except Exception as scale_err:
+                _LOGGER.debug(f"Scalarization failed for metric '{k}': {scale_err}")
         return float(score)
 
     # Fallback: if no financial keys present
@@ -688,7 +688,18 @@ class ParetoFrontAnalyzer:
         self.logger = _LOGGER
 
     def analyze(self, data):
-        """Basic analysis method."""
+        """Basic analysis method with safe defaults."""
+        try:
+            if not data or not isinstance(data, dict):
+                return {"pareto_front": [], "knee_point": None}
+            solutions = data.get("solutions", [])
+            objectives = data.get("objectives", {})
+            if solutions and objectives:
+                front = compute_pareto_front(solutions, objectives)
+                knee = select_knee_point(front, objectives)
+                return {"pareto_front": front, "knee_point": knee}
+        except Exception as analyze_err:
+            _LOGGER.debug(f"ParetoFrontAnalyzer analyze failed: {analyze_err}")
         return {"pareto_front": [], "knee_point": None}
 
 

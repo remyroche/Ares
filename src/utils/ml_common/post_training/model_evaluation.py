@@ -378,8 +378,8 @@ class ModelEvaluator:
             if y_pred_proba is not None and len(np.unique(y_test)) == 2:
                 try:
                     metrics.roc_auc = roc_auc_score(y_test, y_pred_proba[:, 1])
-                except:
-                    pass
+                except Exception as auc_err:
+                    self.logger.debug(f"ROC AUC calculation failed: {auc_err}")
             
         except Exception as e:
             self.logger.warning(f"⚠️ Error calculating classification metrics: {e}")

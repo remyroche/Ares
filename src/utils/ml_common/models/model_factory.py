@@ -24,7 +24,8 @@ from datetime import datetime
 
 # M1 Optimization imports
 from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer, M1MemoryOptimizer
-from src.utils.hardware.memory_optimization import get_memory_manager, MemoryMonitor
+from src.utils.hardware.m1_gpu_utils import get_m1_gpu_manager, M1GPUManager
+from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer, M1CPUOptimizer
 
 # Enhanced adaptive regularization imports
 try:
@@ -165,11 +166,11 @@ class EnhancedModelFactory:
         
         # Initialize M1 optimizers
         self.logger.debug("🔧 Initializing M1 optimizers...")
-        self.m1_gpu = get_m1_memory_optimizer() if self.config.get('enable_gpu_acceleration', True) else None
+        self.m1_gpu = get_m1_gpu_manager() if self.config.get('enable_gpu_acceleration', True) else None
         self.m1_memory = get_m1_memory_optimizer(
             memory_limit_gb=self.config.get('memory_limit_gb', 8.0)
         ) if self.config.get('enable_memory_optimization', True) else None
-        self.m1_cpu = get_memory_manager() if self.config.get('enable_parallel_processing', True) else None
+        self.m1_cpu = get_m1_cpu_optimizer() if self.config.get('enable_parallel_processing', True) else None
         
         self.logger.debug("✅ M1 optimizers initialized")
         

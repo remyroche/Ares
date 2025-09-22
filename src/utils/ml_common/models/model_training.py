@@ -330,8 +330,8 @@ class EnhancedModelTrainer:
                     else:
                         roc_auc = roc_auc_score(y_true, y_pred_proba, multi_class='ovr', average='macro')
                         log_loss_score = log_loss(y_true, y_pred_proba)
-                except Exception:
-                    pass
+                except Exception as proba_metric_err:
+                    self.logger.debug(f"Probability-based metric calculation failed: {proba_metric_err}")
             
             return {
                 'accuracy': float(accuracy),

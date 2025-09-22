@@ -275,7 +275,8 @@ class MemoryPoolManager:
                     self.memory_stats['pool_hits'] += 1
                     return obj
                 except Empty:
-                    pass
+                    # Nothing available in pool at the moment
+                    self.memory_stats['pool_misses'] += 1
             
             self.memory_stats['pool_misses'] += 1
             return None
@@ -294,8 +295,9 @@ class MemoryPoolManager:
             if not self.memory_pool.full():
                 try:
                     self.memory_pool.put_nowait(obj)
-                except:
-                    pass  # Pool is full, keep in active objects
+                except Exception as pool_err:
+                    # Pool is full or unavailable; keep in active objects
+                    self.logger.debug(f"Memory pool put_nowait failed: {pool_err}")
             
         except Exception as e:
             self.logger.error(f"❌ Failed to put object {object_id}: {e}")

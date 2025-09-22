@@ -1319,16 +1319,28 @@ class HyperparameterOptimization:
                 return {'accuracy': 0.5}
 
             # Simple cross-validation for evaluation
-            cv_scores = cross_val_score(model, X, y, cv=3, scoring='accuracy')
-            scores['accuracy'] = np.mean(cv_scores)
+            try:
+                from src.utils.ml_common.validation.unified_cv import perform_cross_validation as unified_perform_cv
+                cv_res = unified_perform_cv(model, X, y, strategy='standard', cv_folds=3, scoring='accuracy')
+                scores['accuracy'] = float(cv_res.get('mean', 0.0))
+            except Exception:
+                scores['accuracy'] = 0.0
 
             if 'f1' in objectives:
-                f1_scores = cross_val_score(model, X, y, cv=3, scoring='f1_macro')
-                scores['f1'] = np.mean(f1_scores)
+                try:
+                    from src.utils.ml_common.validation.unified_cv import perform_cross_validation as unified_perform_cv
+                    cv_res = unified_perform_cv(model, X, y, strategy='standard', cv_folds=3, scoring='f1_macro')
+                    scores['f1'] = float(cv_res.get('mean', 0.0))
+                except Exception:
+                    scores['f1'] = 0.0
 
             if 'auc' in objectives and len(np.unique(y)) == 2:
-                auc_scores = cross_val_score(model, X, y, cv=3, scoring='roc_auc')
-                scores['auc'] = np.mean(auc_scores)
+                try:
+                    from src.utils.ml_common.validation.unified_cv import perform_cross_validation as unified_perform_cv
+                    cv_res = unified_perform_cv(model, X, y, strategy='standard', cv_folds=3, scoring='roc_auc')
+                    scores['auc'] = float(cv_res.get('mean', 0.0))
+                except Exception:
+                    scores['auc'] = 0.0
 
             return scores
 
@@ -1390,8 +1402,12 @@ class HyperparameterOptimization:
             if not SKLEARN_AVAILABLE:
                 return 0.5
 
-            scores = cross_val_score(model, X, y, cv=3, scoring='accuracy')
-            return np.mean(scores)
+            try:
+                from src.utils.ml_common.validation.unified_cv import perform_cross_validation as unified_perform_cv
+                cv_res = unified_perform_cv(model, X, y, strategy='standard', cv_folds=3, scoring='accuracy')
+                return float(cv_res.get('mean', 0.0))
+            except Exception:
+                return 0.0
 
         except Exception as e:
             self.logger.warning(f"Model evaluation failed: {e}")

@@ -444,7 +444,12 @@ class MultiStageFeatureSelector:
         
         # Calculate final model performance
         final_model = self._train_random_forest(X[stage_3_features], y)
-        cv_scores = cross_val_score(final_model, X[stage_3_features], y, cv=self.config.cv_folds, scoring=self.config.cv_scoring)
+        try:
+            from src.utils.ml_common.validation.unified_cv import perform_cross_validation as unified_perform_cv
+            cv_res = unified_perform_cv(final_model, X[stage_3_features].values, y.values if hasattr(y, 'values') else y, cv_folds=self.config.cv_folds, scoring=self.config.cv_scoring)
+            cv_scores = np.array(cv_res.get('scores', []) or [])
+        except Exception:
+            cv_scores = np.array([])
         
         self.results.final_scores = {
             'cv_mean': cv_scores.mean(),

@@ -47,8 +47,13 @@ from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer, M1CPUOptim
 # Import HMM composite manager
 from src.utils.hmm_composite_manager import EnhancedHMMCompositeManager
 
-# Import ML Common utilities
-from .validation.cv_utils import TemporalCrossValidator, PurgedKFold
+# Import ML Common utilities (unified CV)
+from .validation.unified_cv import (
+    UnifiedCrossValidator,
+    perform_cross_validation,
+    temporal_cross_validation,
+    nested_cross_validation,
+)
 from src.utils.validation.unified_framework import UnifiedValidationFramework
 from .optimization.pareto import ParetoFrontAnalyzer
 from .ensembles.ensemble_manager import EnsembleManager, EnsembleConfig, EnsembleType

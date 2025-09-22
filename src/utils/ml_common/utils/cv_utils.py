@@ -38,8 +38,5 @@ def get_cross_validation_utilities() -> CrossValidationUtilities:
         _cv_instance = CrossValidationUtilities()
     return _cv_instance
 
-
-__all__ = [
-    'CrossValidationUtilities',
-    'get_cross_validation_utilities',
-]
+# Export key classes and functions
+__all__ = ['CrossValidationUtilities', 'get_cross_validation_utilities']

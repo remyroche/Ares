@@ -270,7 +270,7 @@ def enhanced_cross_validation(config: Optional[TrainingIntegrationConfig] = None
             cv_config.enable_temporal_splits = True
             cv_config.enable_lookahead_detection = True
             
-            # Use the enhanced training decorator
+            # Use the enhanced training decorator (downstream CV calls should delegate to unified CV)
             enhanced_decorator = enhanced_training(cv_config)
             enhanced_func = enhanced_decorator(func)
             

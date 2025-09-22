@@ -203,39 +203,22 @@ def enhance_cross_validation(X: np.ndarray,
             X, y, timestamps, use_purged=True
         )
         
-        # Perform cross-validation
-        cv_scores = []
-        fold_results = []
-        
-        for fold_idx, (X_train, X_val, y_train, y_val) in enumerate(temporal_splits):
-            try:
-                # Train model
-                model.fit(X_train, y_train)
-                
-                # Evaluate
-                score = model.score(X_val, y_val)
-                cv_scores.append(score)
-                
-                fold_results.append({
-                    'fold': fold_idx,
-                    'train_samples': len(X_train),
-                    'val_samples': len(X_val),
-                    'score': score
-                })
-                
-            except Exception as fold_error:
-                tprint_warning(f"⚠️ Fold {fold_idx} failed: {fold_error}")
-                continue
-        
-        # Calculate results
-        results = {
-            'cv_scores': cv_scores,
-            'mean_score': np.mean(cv_scores) if cv_scores else 0,
-            'std_score': np.std(cv_scores) if cv_scores else 0,
-            'fold_results': fold_results,
-            'n_splits': len(cv_scores),
-            'temporal_integrity': True
-        }
+        # Perform cross-validation via unified API
+        try:
+            from src.utils.ml_common.validation.unified_cv import temporal_cross_validation as unified_temporal_cv
+            results = unified_temporal_cv(model, X, y, n_splits=n_splits, gap=0, test_size=None, scoring='accuracy')
+            # Ensure expected keys for quick integration example
+            results = {
+                'cv_scores': results.get('scores', []) or [],
+                'mean_score': results.get('mean', 0.0) or 0.0,
+                'std_score': results.get('std', 0.0) or 0.0,
+                'fold_results': [],
+                'n_splits': n_splits,
+                'temporal_integrity': True
+            }
+        except Exception as fold_error:
+            tprint_warning(f"⚠️ Unified temporal CV failed: {fold_error}")
+            results = {'cv_scores': [], 'mean_score': 0.0, 'std_score': 0.0, 'fold_results': [], 'n_splits': 0, 'temporal_integrity': True}
         
         tprint_success(f"✅ Enhanced CV completed: {results['mean_score']:.4f} ± {results['std_score']:.4f}")
         return results

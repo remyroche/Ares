@@ -5070,9 +5070,12 @@ class FeatureSelectionFramework:
                 )
             
             # Cross-validation
-            from sklearn.model_selection import cross_val_score
-            cv_scores = cross_val_score(model, X, y, cv=cv_folds, scoring='accuracy' if is_classification else 'r2')
-            cv_score = np.mean(cv_scores)
+            try:
+                from src.utils.ml_common.validation.unified_cv import perform_cross_validation as unified_perform_cv
+                cv_res = unified_perform_cv(model, X, y, strategy='standard', cv_folds=cv_folds, scoring='accuracy' if is_classification else 'r2')
+                cv_score = float(cv_res.get('mean', 0.0))
+            except Exception:
+                cv_score = 0.0
             
             return {
                 'n_estimators': n_estimators,

@@ -57,7 +57,7 @@ from src.utils.ml_common.data_processing.regime_processing import RegimeProcesso
 from src.utils.ml_common.data_processing.feature_preparation import FeaturePreparator
 
 # Import comprehensive ML infrastructure
-from src.utils.ml_common.models.model_manager import ModelManager
+from src.utils.model_manager import ModelManager
 from src.utils.ml_common.optimization.hierarchical_hpo import HierarchicalHPO, HierarchicalHPOConfig, HPOPhaseConfig
 from src.utils.ml_common.optimization.overfitting_prevention import OverfittingPrevention, OverfittingPreventionConfig
 from src.utils.ml_common.ensembles.stacking_ensemble_manager import StackingEnsembleManager, StackingEnsembleConfig

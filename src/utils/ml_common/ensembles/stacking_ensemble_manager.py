@@ -301,9 +301,11 @@ class StackingEnsembleManager:
         eval_start_time = time.time()
         
         if X_val is not None and y_val is not None:
+            # Proper out-of-sample evaluation using provided holdout
             evaluation_results = self.stacking_model.evaluate_performance(X_val, y_val)
         else:
-            evaluation_results = self.stacking_model.evaluate_performance(X_train, y_train)
+            # Fall back to OOF-based evaluation rather than in-sample training data
+            evaluation_results = self.stacking_model.evaluate_oof_performance()
         
         eval_time = time.time() - eval_start_time
         self.logger.info(f"✅ Ensemble evaluation completed in {eval_time:.3f}s")

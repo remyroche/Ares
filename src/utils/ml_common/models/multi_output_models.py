@@ -46,6 +46,30 @@ from src.core.errors import (
     ValidationError, DataIntegrityError, TimeoutError
 )
 
+# CV and cloning utilities
+from sklearn.model_selection import TimeSeriesSplit
+from sklearn.base import clone as skl_clone
+import inspect
+
+# Purged CV (if available)
+try:
+    from src.utils.purged_kfold import PurgedKFoldTime  # type: ignore
+    _PURGED_AVAILABLE = True
+except Exception:
+    _PURGED_AVAILABLE = False
+
+# Overfitting prevention (regularization/early stopping settings)
+try:
+    from src.utils.ml_common.optimization.overfitting_prevention import (
+        OverfittingPrevention,
+        OverfittingPreventionConfig,
+    )
+    _OVERFITTING_AVAILABLE = True
+except Exception:
+    _OVERFITTING_AVAILABLE = False
+    OverfittingPrevention = None  # type: ignore
+    OverfittingPreventionConfig = None  # type: ignore
+
 logger = logging.getLogger(__name__)
 
 
@@ -301,6 +325,16 @@ class MultiOutputStackingModel(MultiOutputModel):
         self.y_train: Optional[np.ndarray] = None
         
         self.logger.info(f"✅ MultiOutputStackingModel initialized for {config.n_outputs} outputs")
+        # OOF storage
+        self._oof_base_predictions: Dict[str, np.ndarray] = {}
+        self._oof_meta_predictions: Optional[np.ndarray] = None
+        self._cv_splits: Optional[List[Tuple[np.ndarray, np.ndarray]]] = None
+        # Regularization helper
+        self._overfit_helper = (
+            OverfittingPrevention(OverfittingPreventionConfig())
+            if _OVERFITTING_AVAILABLE
+            else None
+        )
     
     def add_base_model(self, output_name: str, model_name: str, model: Any) -> None:
         """Add a base model for a specific output."""
@@ -355,161 +389,311 @@ class MultiOutputStackingModel(MultiOutputModel):
                 self.logger.warning(f"⚠️ Could not create default meta model for {output_name}: {e}")
     
     def fit(self, X: np.ndarray, y: np.ndarray) -> 'MultiOutputStackingModel':
-        """Fit the multi-output stacking model."""
-        
-        self.logger.info(f"🔄 Fitting MultiOutputStackingModel with {X.shape[0]} samples")
+        """Fit the multi-output stacking model with OUT-OF-FOLD stacking.
+
+        - Generate OOF base predictions using a purged time-series splitter when possible
+        - Train the meta-learner on OOF base predictions (optionally with original features passthrough)
+        - Fit final base models on full data for inference; meta is fit on OOF features
+        """
+
+        # Normalize inputs to pandas DataFrame/ndarray as needed
+        X_is_df = isinstance(X, pd.DataFrame)
+        y_is_df = isinstance(y, (pd.DataFrame, pd.Series))
+
+        if not X_is_df:
+            X_df = pd.DataFrame(X)
+        else:
+            X_df = X
+
+        if isinstance(y, pd.Series):
+            y_df = y.to_frame()
+        elif isinstance(y, pd.DataFrame):
+            y_df = y
+        else:
+            y_arr = y
+            if len(y_arr.shape) == 1:
+                y_arr = y_arr.reshape(-1, 1)
+            y_df = pd.DataFrame(y_arr)
+
+        self.logger.info(f"🔄 Fitting MultiOutputStackingModel with {len(X_df)} samples")
         start_time = time.time()
-        
+
         try:
-            # Handle 1D input data by reshaping to 2D
-            if len(y.shape) == 1:
-                self.logger.info(f"📊 Converting 1D target data from {y.shape} to ({y.shape[0]}, 1)")
-                y = y.reshape(-1, 1)
-                # Update config for single output
-                if self.config.n_outputs != 1:
-                    self.logger.info(f"📊 Updating config from {self.config.n_outputs} outputs to 1 output")
+            # Align outputs
+            if y_df.shape[1] != self.config.n_outputs:
+                if y_df.shape[1] == 1 and self.config.n_outputs != 1:
+                    # Single output provided; adjust config
                     self.config.n_outputs = 1
                     self.config.output_names = ["output_1"]
-                    # Update output weights to match the new number of outputs
                     self.output_weights = [1.0]
                     self.output_loss_weights = [1.0]
-            
-            # Ensure y is 2D for consistent indexing
-            if len(y.shape) != 2:
-                self.logger.error(f"❌ Target data must be 2D after reshaping, got {y.ndim}D shape: {y.shape}")
-                raise ValidationError(f"Invalid target data format: expected 2D, got {y.ndim}D")
-            
-            # Validate inputs after reshaping
-            self.logger.debug(f"📊 Validating output data with shape: {y.shape}")
-            if not self.validate_outputs(y):
-                self.logger.error(f"❌ Output validation failed for shape: {y.shape}")
+                elif self.config.n_outputs != y_df.shape[1]:
+                    self.logger.warning(
+                        f"⚠️ Adjusting output_names to match provided y columns: {y_df.shape[1]}"
+                    )
+                    self.config.n_outputs = y_df.shape[1]
+                    self.config.output_names = [f"output_{i+1}" for i in range(self.config.n_outputs)]
+
+            # Validate outputs
+            if not self.validate_outputs(y_df.values):
                 raise ValidationError("Invalid output data format")
-            
-            # Store training data
-            self.X_train = X
-            self.y_train = y
-            
-            # Calculate output correlations
-            output_correlations = self.calculate_output_correlations(y)
-            
-            # Train base models for each output
-            self.logger.info("🔄 Training base models...")
-            base_predictions = {}
-            
+
+            # Store training data for later reference
+            self.X_train = X_df.values if not X_is_df else X_df
+            self.y_train = y_df.values
+
+            # Calculate output correlations (on provided y)
+            output_correlations = self.calculate_output_correlations(y_df.values)
+
+            # Build CV splits (purged if possible)
+            self._cv_splits = self._build_time_series_splits(X_df, n_splits=self.config.cv_folds)
+            n_splits_actual = len(self._cv_splits)
+            self.logger.info(f"🔧 Using time-series CV with {n_splits_actual} folds (purged={_PURGED_AVAILABLE and isinstance(X_df.index, pd.DatetimeIndex)})")
+
+            # Generate OOF base predictions per output
+            self._oof_base_predictions = {}
+
             for output_idx, output_name in enumerate(self.config.output_names):
-                self.logger.debug(f"🔄 Training base models for output {output_name}...")
-                
+                self.logger.info(f"🔄 Generating OOF base predictions for {output_name}...")
+
+                # Ensure we have base models for this output
                 if output_name not in self.base_models or len(self.base_models[output_name]) == 0:
-                    self.logger.debug(f"🔧 Creating default base models for output {output_name}")
                     self._create_default_base_models(output_name)
-                
                 if output_name not in self.base_models or len(self.base_models[output_name]) == 0:
-                    self.logger.warning(f"⚠️ No base models for output {output_name}")
+                    self.logger.warning(f"⚠️ No base models configured for output {output_name}")
                     continue
-                
-                # Get target for this output with bounds checking
-                if y.shape[1] > output_idx:
-                    y_output = y[:, output_idx]
+
+                model_names = list(self.base_models[output_name].keys())
+                n_models = len(model_names)
+                Z_oof = np.zeros((len(X_df), n_models), dtype=float)
+
+                # Pull target for this output
+                if y_df.shape[1] > output_idx:
+                    y_output = y_df.iloc[:, output_idx].values
                 else:
-                    self.logger.error(f"❌ No target data for output {output_idx} (output {output_name}), expected {y.shape[1]} outputs")
+                    self.logger.error(f"❌ Missing target column for output index {output_idx}")
                     continue
-                
-                # Use base models (should already be trained)
-                output_predictions = []
-                for model_name, model in self.base_models[output_name].items():
-                    self.logger.debug(f"🔄 Using {model_name} for {output_name}...")
-                    
-                    # Check if model is already trained, if not train it
-                    try:
-                        # Try to make a prediction first to see if model is trained
-                        if hasattr(model, 'predict_proba'):
-                            pred = model.predict_proba(X)
-                            if pred.ndim > 1 and pred.shape[1] > 1:
-                                pred = pred[:, 1]  # Use positive class probability
-                        else:
-                            pred = model.predict(X)
-                        
-                        self.logger.debug(f"✅ Using pre-trained {model_name} for {output_name}")
-                        
-                    except (AttributeError, ValueError, Exception) as e:
-                        # Model not trained yet, train it now
-                        self.logger.debug(f"🔄 Training {model_name} for {output_name} (not pre-trained)...")
-                        model.fit(X, y_output)
-                        
-                        # Make predictions for meta-training
-                        if hasattr(model, 'predict_proba'):
-                            pred = model.predict_proba(X)
-                            if pred.ndim > 1 and pred.shape[1] > 1:
-                                pred = pred[:, 1]  # Use positive class probability
-                        else:
-                            pred = model.predict(X)
-                        
-                        self.logger.debug(f"✅ {model_name} trained for {output_name}")
-                    
-                    output_predictions.append(pred)
-                
-                # Store base predictions
-                base_predictions[output_name] = np.column_stack(output_predictions)
-                self.logger.info(f"✅ Base models trained for {output_name}: {len(output_predictions)} models")
-            
-            # Train meta models
-            self.logger.info("🔄 Training meta models...")
+
+                # Per-fold training for OOF base predictions
+                for fold_idx, (tr_idx, va_idx) in enumerate(self._cv_splits):
+                    X_tr, X_va = self._safe_index(X_df, tr_idx), self._safe_index(X_df, va_idx)
+                    y_tr, y_va = y_output[tr_idx], y_output[va_idx]
+
+                    for m_i, model_name in enumerate(model_names):
+                        model = self.base_models[output_name][model_name]
+                        model_fold = self._clone_and_regularize(model, model_name)
+                        # Fit with early stopping when supported
+                        self._fit_with_optional_early_stopping(model_fold, X_tr, y_tr, X_va, y_va, model_name)
+
+                        # Predict on validation fold
+                        pred = self._predict_1d(model_fold, X_va)
+                        Z_oof[va_idx, m_i] = pred
+
+                self._oof_base_predictions[output_name] = Z_oof
+                self.logger.info(f"✅ OOF base predictions ready for {output_name} (shape={Z_oof.shape})")
+
+            # Train meta models on OOF base predictions (+ passthrough original features)
+            self.logger.info("🔄 Training meta models on OOF features...")
+            oof_meta_preds_list = []
+
             for output_idx, output_name in enumerate(self.config.output_names):
+                if output_name not in self._oof_base_predictions:
+                    continue
+
+                # Ensure meta model exists
                 if output_name not in self.meta_models:
-                    self.logger.debug(f"🔧 Creating default meta model for output {output_name}")
                     self._create_default_meta_model(output_name)
-                
                 if output_name not in self.meta_models:
-                    self.logger.warning(f"⚠️ No meta model for output {output_name}")
+                    self.logger.warning(f"⚠️ No meta model available for output {output_name}")
                     continue
-                
-                if output_name not in base_predictions:
-                    self.logger.warning(f"⚠️ No base predictions for output {output_name}")
+
+                Z_oof = self._oof_base_predictions[output_name]
+                # Passthrough of original features
+                X_passthrough = X_df.values if isinstance(X_df, pd.DataFrame) else np.asarray(X_df)
+                meta_X = np.hstack([X_passthrough, Z_oof])
+                y_output = y_df.iloc[:, output_idx].values
+
+                # Create OOF meta predictions using same CV splits
+                meta_oof = np.zeros(len(X_df), dtype=float)
+                for fold_idx, (tr_idx, va_idx) in enumerate(self._cv_splits):
+                    meta_model_clone = self._clone_and_regularize(self.meta_models[output_name], type(self.meta_models[output_name]).__name__)
+                    X_tr_m, X_va_m = meta_X[tr_idx], meta_X[va_idx]
+                    y_tr_m, y_va_m = y_output[tr_idx], y_output[va_idx]
+                    # Early stopping if supported
+                    self._fit_with_optional_early_stopping(meta_model_clone, X_tr_m, y_tr_m, X_va_m, y_va_m, f"meta_{output_name}")
+                    meta_oof[va_idx] = self._predict_1d(meta_model_clone, X_va_m)
+
+                oof_meta_preds_list.append(meta_oof.reshape(-1, 1))
+
+                # Fit final META model on full OOF features (train on all OOF rows)
+                final_meta = self.meta_models[output_name]
+                final_meta = self._clone_and_regularize(final_meta, type(final_meta).__name__)
+                self._fit_with_optional_early_stopping(final_meta, meta_X, y_output, None, None, f"meta_full_{output_name}")
+                self.meta_models[output_name] = final_meta
+                self.logger.info(f"✅ Meta model trained (full OOF) for {output_name}")
+
+            # Stack OOF meta predictions for OOF evaluation
+            if oof_meta_preds_list:
+                self._oof_meta_predictions = np.column_stack(oof_meta_preds_list)
+            else:
+                self._oof_meta_predictions = None
+
+            # Finally, fit base models on FULL data for inference
+            for output_idx, output_name in enumerate(self.config.output_names):
+                if output_name not in self.base_models or len(self.base_models[output_name]) == 0:
                     continue
-                
-                # Get target for this output with bounds checking
-                if y.shape[1] > output_idx:
-                    y_output = y[:, output_idx]
-                else:
-                    self.logger.error(f"❌ No target data for output {output_idx} (output {output_name}), expected {y.shape[1]} outputs")
-                    continue
-                
-                # Train meta model on features + base model predictions
-                meta_model = self.meta_models[output_name]
-                
-                # Combine original features with base model predictions
-                meta_features = np.hstack([X, base_predictions[output_name]])
-                
-                # Train meta model
-                meta_model.fit(meta_features, y_output)
-                
-                self.logger.info(f"✅ Meta model trained for {output_name}")
-            
+                # Simple holdout for early stopping: last 10% as validation
+                n = len(X_df)
+                val_size = max(1, int(0.1 * n))
+                tr_idx = np.arange(0, n - val_size)
+                va_idx = np.arange(n - val_size, n)
+                X_tr, X_va = self._safe_index(X_df, tr_idx), self._safe_index(X_df, va_idx)
+                y_output = y_df.iloc[:, output_idx].values
+                y_tr, y_va = y_output[tr_idx], y_output[va_idx]
+
+                for model_name, model in list(self.base_models[output_name].items()):
+                    model_full = self._clone_and_regularize(model, model_name)
+                    self._fit_with_optional_early_stopping(model_full, X_tr, y_tr, X_va, y_va, model_name)
+                    self.base_models[output_name][model_name] = model_full
+
             # Update state
             self.is_fitted = True
-            
+
             # Record training history
             training_time = time.time() - start_time
             self.training_history.append({
                 'timestamp': datetime.now(),
                 'duration': training_time,
-                'n_samples': X.shape[0],
-                'n_features': X.shape[1],
-                'n_outputs': y.shape[1],
+                'n_samples': int(len(X_df)),
+                'n_features': int(X_df.shape[1]),
+                'n_outputs': int(y_df.shape[1]),
                 'base_models_per_output': {name: len(models) for name, models in self.base_models.items()},
                 'output_correlations': output_correlations.tolist() if output_correlations is not None else None
             })
-            
+
             self.logger.info(f"✅ MultiOutputStackingModel fitted in {training_time:.3f}s")
-            self.logger.info(f"📊 Trained {sum(len(models) for models in self.base_models.values())} base models")
-            self.logger.info(f"📊 Trained {len(self.meta_models)} meta models")
-            
+            self.logger.info(f"📊 OOF meta predictions available: {self._oof_meta_predictions is not None}")
             return self
-            
+
         except Exception as e:
             training_time = time.time() - start_time
             self.logger.error(f"❌ Failed to fit MultiOutputStackingModel after {training_time:.3f}s: {e}")
             raise
+
+    # --------------------- Internal utilities ---------------------
+    def _build_time_series_splits(self, X_df: pd.DataFrame, n_splits: int) -> List[Tuple[np.ndarray, np.ndarray]]:
+        """Create time-series CV splits; use purged splits when possible."""
+        splits: List[Tuple[np.ndarray, np.ndarray]] = []
+        try:
+            if _PURGED_AVAILABLE and isinstance(X_df.index, pd.DatetimeIndex):
+                splitter = PurgedKFoldTime(n_splits=n_splits)
+                for tr, va in splitter.split(X_df):
+                    splits.append((np.asarray(tr), np.asarray(va)))
+            else:
+                tscv = TimeSeriesSplit(n_splits=n_splits)
+                for tr, va in tscv.split(np.arange(len(X_df))):
+                    splits.append((np.asarray(tr), np.asarray(va)))
+        except Exception as e:
+            self.logger.warning(f"⚠️ Failed to build purged splits, falling back to TimeSeriesSplit: {e}")
+            tscv = TimeSeriesSplit(n_splits=n_splits)
+            for tr, va in tscv.split(np.arange(len(X_df))):
+                splits.append((np.asarray(tr), np.asarray(va)))
+        return splits
+
+    def _safe_index(self, X: Union[pd.DataFrame, np.ndarray], idx: np.ndarray) -> np.ndarray:
+        if isinstance(X, pd.DataFrame):
+            return X.iloc[idx].values
+        return X[idx]
+
+    def _clone_and_regularize(self, model: Any, model_type: str) -> Any:
+        """Clone model and apply regularization via OverfittingPrevention if available."""
+        try:
+            cloned = skl_clone(model) if hasattr(model, 'get_params') else model.__class__(**getattr(model, 'get_params', lambda: {})())
+        except Exception:
+            cloned = model
+        if self._overfit_helper is not None:
+            try:
+                return self._overfit_helper.apply_regularization(cloned, model_type)
+            except Exception:
+                return cloned
+        return cloned
+
+    def _fit_with_optional_early_stopping(
+        self,
+        model: Any,
+        X_tr: np.ndarray,
+        y_tr: np.ndarray,
+        X_va: Optional[np.ndarray],
+        y_va: Optional[np.ndarray],
+        model_name: str,
+    ) -> None:
+        """Fit model; if it supports eval_set/early_stopping, pass them."""
+        try:
+            sig = inspect.signature(model.fit)
+            kwargs = {}
+            if X_va is not None and y_va is not None:
+                # XGBoost / LightGBM pattern: eval_set, early_stopping_rounds
+                if 'eval_set' in sig.parameters:
+                    kwargs['eval_set'] = [(X_va, y_va)]
+                if 'early_stopping_rounds' in sig.parameters:
+                    kwargs['early_stopping_rounds'] = 50
+                if 'verbose' in sig.parameters:
+                    kwargs['verbose'] = False
+            # If no eval_set path, enable native sklearn early stopping parameters when available
+            try:
+                if hasattr(model, 'get_params') and hasattr(model, 'set_params'):
+                    params = model.get_params()
+                    updates = {}
+                    # Generic patience from prevention helper if available
+                    patience = 10
+                    tol = 1e-4
+                    if self._overfit_helper is not None:
+                        try:
+                            patience = int(getattr(self._overfit_helper.config, 'early_stopping_patience', 10))
+                            tol = float(getattr(self._overfit_helper.config, 'early_stopping_min_delta', 1e-4))
+                        except Exception:
+                            pass
+                    # Models with early_stopping flag (e.g., HistGradientBoosting, MLP, SGD)
+                    if 'early_stopping' in params and 'eval_set' not in kwargs:
+                        updates['early_stopping'] = True
+                    # Patience-like parameter
+                    if 'n_iter_no_change' in params:
+                        updates['n_iter_no_change'] = patience
+                    # Validation fraction for internal split if we have a validation set size
+                    if 'validation_fraction' in params:
+                        if X_va is not None and X_tr is not None:
+                            total = len(X_tr) + len(X_va)
+                            if total > 0:
+                                val_frac = max(0.05, min(0.2, len(X_va) / total))
+                                updates['validation_fraction'] = val_frac
+                        else:
+                            updates['validation_fraction'] = max(0.05, 0.1)
+                    # Tolerance mapping
+                    if 'tol' in params:
+                        updates['tol'] = tol
+                    if updates:
+                        model.set_params(**updates)
+            except Exception:
+                pass
+
+            model.fit(X_tr, y_tr, **kwargs)  # type: ignore[arg-type]
+        except Exception:
+            # Fallback simple fit
+            model.fit(X_tr, y_tr)
+
+    def _predict_1d(self, model: Any, X: np.ndarray) -> np.ndarray:
+        """Predict and return a 1D array, handling predict_proba when applicable."""
+        if hasattr(model, 'predict_proba'):
+            try:
+                proba = model.predict_proba(X)
+                if hasattr(proba, 'shape') and len(proba.shape) > 1 and proba.shape[1] > 1:
+                    return proba[:, 1].astype(float)
+                return np.asarray(proba).astype(float).ravel()
+            except Exception:
+                pass
+        pred = model.predict(X)
+        pred_arr = np.asarray(pred).astype(float)
+        return pred_arr.ravel()
     
     def predict(self, X: np.ndarray) -> np.ndarray:
         """Make predictions for all outputs."""
@@ -542,14 +726,9 @@ class MultiOutputStackingModel(MultiOutputModel):
                 
                 # Get base model predictions
                 base_predictions = []
+                X_arr = X.values if isinstance(X, pd.DataFrame) else X
                 for model_name, model in self.base_models[output_name].items():
-                    if hasattr(model, 'predict_proba'):
-                        pred = model.predict_proba(X)
-                        if pred.ndim > 1 and pred.shape[1] > 1:
-                            pred = pred[:, 1]  # Use positive class probability
-                    else:
-                        pred = model.predict(X)
-                    
+                    pred = self._predict_1d(model, X_arr)
                     base_predictions.append(pred)
                 
                 # Stack base predictions
@@ -560,7 +739,7 @@ class MultiOutputStackingModel(MultiOutputModel):
                 
                 # Get meta model prediction
                 meta_model = self.meta_models[output_name]
-                meta_pred = meta_model.predict(meta_features)
+                meta_pred = np.asarray(meta_model.predict(meta_features)).ravel()
                 
                 predictions.append(meta_pred)
                 self.logger.debug(f"✅ Predictions generated for {output_name}: {len(meta_pred)} samples")
@@ -646,8 +825,22 @@ class MultiOutputStackingModel(MultiOutputModel):
         self.logger.info(f"📊 Evaluating performance on {X.shape[0]} samples")
         
         try:
-            # Make predictions
-            y_pred = self.predict(X)
+            # If evaluating on training data and OOF meta predictions exist, prefer OOF
+            use_oof = False
+            if self._oof_meta_predictions is not None:
+                try:
+                    if X is self.X_train or (
+                        isinstance(X, (np.ndarray, pd.DataFrame))
+                        and (X.shape[0] == (self.X_train.shape[0] if isinstance(self.X_train, np.ndarray) else len(self.X_train)))
+                    ):
+                        use_oof = True
+                except Exception:
+                    use_oof = False
+
+            if use_oof:
+                y_pred = self._oof_meta_predictions
+            else:
+                y_pred = self.predict(X)
             
             # Ensure y and y_pred are 2D arrays for consistent indexing
             if len(y.shape) == 1:
@@ -723,6 +916,52 @@ class MultiOutputStackingModel(MultiOutputModel):
             
         except Exception as e:
             self.logger.error(f"❌ Failed to evaluate performance: {e}")
+            return {'error': str(e)}
+
+    def evaluate_oof_performance(self) -> Dict[str, Any]:
+        """Evaluate performance using stored OOF meta predictions if available."""
+        if self._oof_meta_predictions is None or self.y_train is None:
+            return {'error': 'OOF predictions not available'}
+        try:
+            y = self.y_train
+            y_pred = self._oof_meta_predictions
+            # Ensure 2D
+            if len(y.shape) == 1:
+                y = y.reshape(-1, 1)
+            if len(y_pred.shape) == 1:
+                y_pred = y_pred.reshape(-1, 1)
+
+            per_output_metrics = {}
+            overall_metrics = {}
+            num_outputs_to_process = min(y.shape[1], y_pred.shape[1])
+            for output_idx in range(num_outputs_to_process):
+                output_name = self.config.output_names[output_idx] if output_idx < len(self.config.output_names) else f"output_{output_idx+1}"
+                y_true_output = y[:, output_idx]
+                y_pred_output = y_pred[:, output_idx]
+                mse = np.mean((y_true_output - y_pred_output) ** 2)
+                mae = np.mean(np.abs(y_true_output - y_pred_output))
+                r2 = 1 - (np.sum((y_true_output - y_pred_output) ** 2) / np.sum((y_true_output - np.mean(y_true_output)) ** 2))
+                per_output_metrics[output_name] = {
+                    'mse': float(mse),
+                    'mae': float(mae),
+                    'r2': float(r2)
+                }
+                overall_metrics[f'{output_name}_mse'] = float(mse)
+                overall_metrics[f'{output_name}_mae'] = float(mae)
+                overall_metrics[f'{output_name}_r2'] = float(r2)
+
+            overall_metrics['overall_mse'] = float(np.mean([m['mse'] for m in per_output_metrics.values()]))
+            overall_metrics['overall_mae'] = float(np.mean([m['mae'] for m in per_output_metrics.values()]))
+            overall_metrics['overall_r2'] = float(np.mean([m['r2'] for m in per_output_metrics.values()]))
+
+            return {
+                'per_output_metrics': per_output_metrics,
+                'overall_metrics': overall_metrics,
+                'predictions': self._oof_meta_predictions,
+                'targets': self.y_train
+            }
+        except Exception as e:
+            self.logger.error(f"❌ OOF evaluation failed: {e}")
             return {'error': str(e)}
 
 

@@ -26,6 +26,14 @@ from datetime import datetime
 from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer, M1MemoryOptimizer
 from src.utils.hardware.memory_optimization import get_memory_manager, MemoryMonitor
 
+# Enhanced adaptive regularization imports
+try:
+    from src.training.steps.market_analysis.hmm_models_training.shared_utilities.unified_model_factory import UnifiedModelFactory
+    UNIFIED_MODEL_FACTORY_AVAILABLE = True
+except ImportError:
+    UNIFIED_MODEL_FACTORY_AVAILABLE = False
+    UnifiedModelFactory = None
+
 # Common utilities
 from src.utils.common_operations import (
     safe_json_dump, safe_json_load, safe_file_exists, ensure_directory,
@@ -1190,7 +1198,49 @@ def create_tactician_models() -> Dict[str, Any]:
         )
         models[name] = factory.create_model(config)
     
-    return models
+        return models
+
+    def create_model_with_adaptive_regularization(
+        self,
+        model_type: ModelType,
+        model_name: str,
+        regime_labels: Optional[np.ndarray] = None,
+        **custom_params
+    ) -> Tuple[Any, Dict[str, Any]]:
+        """
+        Create model with adaptive regularization based on dataset characteristics.
+
+        Args:
+            model_type: Type of model to create
+            model_name: Name for the model
+            regime_labels: Array of regime labels to analyze sample distribution
+            **custom_params: Additional model parameters
+
+        Returns:
+            Tuple of (model_instance, regularization_info_dict)
+        """
+        # Calculate adaptive regularization parameters
+        if UNIFIED_MODEL_FACTORY_AVAILABLE and UnifiedModelFactory is not None:
+            reg_info = UnifiedModelFactory._calculate_adaptive_regularization(regime_labels)
+        else:
+            # Fallback to basic regularization
+            reg_info = {
+                'reg_alpha': 0.1,
+                'reg_lambda': 0.1,
+                'dataset_size': 'unknown'
+            }
+
+        # Add adaptive regularization to custom parameters
+        adaptive_params = {
+            'reg_alpha': reg_info.get('reg_alpha', 0.1),
+            'reg_lambda': reg_info.get('reg_lambda', 0.1),
+            **custom_params
+        }
+
+        # Create model with adaptive parameters
+        model = self.create_model(model_type, model_name, **adaptive_params)
+
+        return model, reg_info
 
 
 def create_model_factory(config: Optional[Dict[str, Any]] = None) -> EnhancedModelFactory:

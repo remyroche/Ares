@@ -47,14 +47,14 @@ class StreamlinedHMMTrainingStep(BaseTrainingStep):
         """
         # Ensure we have a config with 15m timeframe for HMM state recognition
         if config is None:
+            # Do not reference self.* here; instance is not fully initialized yet
             config = HMMTrainingConfig(
                 model_name="streamlined_hmm_state_recognition",
                 timeframe="15m",  # Always use 15m for HMM state recognition
-                model_types=self._get_hmm_model_types(),
                 hpo_trials=50,
                 enable_multi_objective=True,
                 objectives=["accuracy", "f1_score", "regime_stability"],
-                objective_weights=[0.4, 0.3, 0.2]  # Reduced regime stability weight for 15m short-term predictions
+                objective_weights=[0.4, 0.3, 0.3]  # Normalized to sum to 1.0
             )
         else:
             # Override timeframe to ensure 15m for HMM state recognition
@@ -62,13 +62,31 @@ class StreamlinedHMMTrainingStep(BaseTrainingStep):
 
             # Ensure we have appropriate model types for state recognition
             if not hasattr(config, 'model_types') or len(config.model_types) == 0:
-                config.model_types = self._get_hmm_model_types()
+                # Will be finalized after HPO initialization
+                pass
 
         super().__init__(config)
         self.logger = system_logger.getChild('StreamlinedHMMTrainingStep')
 
         # Initialize ml_commons utilities for extensive functionality
         self.hmm_hpo = get_hmm_hyperparameter_optimizer(config)
+
+        # Fill/normalize config fields now that HPO is available
+        try:
+            if not getattr(self.config, 'model_types', None):
+                self.config.model_types = self.hmm_hpo.get_hmm_model_types()
+        except Exception:
+            # Fall back to defaults already provided by HMMTrainingConfig
+            pass
+
+        # Normalize objective weights for clarity if provided
+        try:
+            if getattr(self.config, 'objective_weights', None):
+                s = float(sum(self.config.objective_weights))
+                if s > 0:
+                    self.config.objective_weights = [w / s for w in self.config.objective_weights]
+        except Exception:
+            pass
         # self.hmm_validation = get_hmm_validation_pipeline(config)
         self.hmm_temporal_protection = get_hmm_temporal_protection(config)
 
@@ -116,17 +134,33 @@ class StreamlinedHMMTrainingStep(BaseTrainingStep):
             self.logger.info(f"📊 Evaluating {model_name} for {regime_name}")
 
             try:
-                # Use validation data from regime data (we'll use training data for validation here)
-                # In a real scenario, you'd have separate validation data
-                X_val = X_train  # For now, use training data as validation
-                y_val = y_train
+                # Create a proper validation split per regime with stratify fallback
+                from sklearn.model_selection import train_test_split
+                stratify_labels = None
+                try:
+                    # Use stratify only if each class has at least 2 samples
+                    unique, counts = np.unique(y_train, return_counts=True)
+                    if len(unique) > 1 and np.all(counts >= 2):
+                        stratify_labels = y_train
+                except Exception:
+                    stratify_labels = None
+
+                try:
+                    X_tr, X_val, y_tr, y_val = train_test_split(
+                        X_train, y_train, test_size=0.2, random_state=42, stratify=stratify_labels
+                    )
+                except ValueError:
+                    # Fallback to non-stratified split if stratification fails
+                    X_tr, X_val, y_tr, y_val = train_test_split(
+                        X_train, y_train, test_size=0.2, random_state=42, stratify=None
+                    )
 
                 # Use universal validation integrator for comprehensive evaluation
                 validation_result = self.validate_trained_model(
                     model=model,
-                    X_train=X_train,
+                    X_train=X_tr,
                     X_val=X_val,
-                    y_train=y_train,
+                    y_train=y_tr,
                     y_val=y_val,
                     timestamps=None,
                     feature_names=None,
@@ -330,47 +364,49 @@ class StreamlinedHMMTrainingStep(BaseTrainingStep):
         # Get search spaces using HMM HPO configuration from ml_commons
         search_spaces = self.hmm_hpo.get_hmm_state_recognition_search_spaces()
 
-        # Use comprehensive feature bank for enhanced feature generation
-        from .shared_feature_utils import create_comprehensive_features
+        # Feature engineering utilities
+        from .shared_feature_utils import (
+            create_enhanced_features_with_names,
+            create_comprehensive_features
+        )
         import pandas as pd
 
         # Convert regime data to DataFrame format for feature bank
         enhanced_regime_data = {}
-        feature_names = None
+        global_feature_names = feature_names
 
         for regime_id, data in regime_data.items():
             X_regime = data['X']
             y_regime = data['y']
 
-            # Create basic DataFrame from regime data
-            # Assuming X_regime has shape (n_samples, n_features)
-            # For feature bank, we need OHLCV data format
-            # This is a simplified approach - in practice, you'd have proper OHLCV data
-            if X_regime.shape[1] >= 3:  # We have enough columns for OHLCV
-                # Create synthetic OHLCV data for feature bank
-                # This is a temporary solution - proper OHLCV data should be passed
-                regime_df = pd.DataFrame({
-                    'open': np.random.randn(X_regime.shape[0]),  # Placeholder
-                    'high': np.random.randn(X_regime.shape[0]),  # Placeholder
-                    'low': np.random.randn(X_regime.shape[0]),   # Placeholder
-                    'close': X_regime[:, 0] if X_regime.shape[1] > 0 else np.random.randn(X_regime.shape[0]),
-                    'volume': X_regime[:, 1] if X_regime.shape[1] > 1 else np.random.randn(X_regime.shape[0])
-                })
-
-                # Generate comprehensive features
-                X_enhanced, feature_names = create_comprehensive_features(
+            # Prefer comprehensive feature-bank ONLY if a real OHLCV DataFrame is provided
+            regime_df = data.get('regime_df') if isinstance(data, dict) else None
+            if isinstance(regime_df, pd.DataFrame) and set(['open', 'high', 'low', 'close', 'volume']).issubset(regime_df.columns):
+                X_enhanced, fn = create_comprehensive_features(
                     regime_df,
                     regime_labels=data.get('regime_labels')
                 )
-
                 enhanced_regime_data[regime_id] = {
                     'X': X_enhanced,
                     'y': y_regime,
-                    'feature_names': feature_names
+                    'feature_names': fn
                 }
             else:
-                # Fallback to original features if not enough columns
-                enhanced_regime_data[regime_id] = data
+                # Deterministic engineered features without synthetic OHLCV
+                regime_labels_for_features = data.get('regime_labels')
+                if regime_labels_for_features is None or len(regime_labels_for_features) != len(X_regime):
+                    regime_labels_for_features = np.zeros(len(X_regime), dtype=int)
+
+                X_enhanced, fn = create_enhanced_features_with_names(
+                    X_regime,
+                    regime_labels_for_features,
+                    original_feature_names=global_feature_names
+                )
+                enhanced_regime_data[regime_id] = {
+                    'X': X_enhanced,
+                    'y': y_regime,
+                    'feature_names': fn
+                }
 
         # Train models for each regime using enhanced features
         all_results = {}
@@ -398,8 +434,9 @@ class StreamlinedHMMTrainingStep(BaseTrainingStep):
         evaluation_results = {}
         for regime_name, regime_results in all_results.items():
             models = regime_results.get('models', {})
-            X_regime = regime_data[int(regime_name.split('_')[1])]['X']
-            y_regime = regime_data[int(regime_name.split('_')[1])]['y']
+            # Use enhanced features for evaluation
+            X_regime = enhanced_regime_data[int(regime_name.split('_')[1])]['X']
+            y_regime = enhanced_regime_data[int(regime_name.split('_')[1])]['y']
 
             # Evaluate models using universal validation integration
             evaluation_results[regime_name] = self._evaluate_models_with_validation(
@@ -477,49 +514,59 @@ class StreamlinedHMMTrainingStep(BaseTrainingStep):
                 'overfitting_detection_used': True
             },
             'training_metadata': {
-                'total_regimes': len(regime_analysis.get('regime_counts', {})),
-                'total_models_trained': len(models),
-                'model_types_used': list(models.keys())
+                'total_regimes': int(len(regime_analysis.get('regime_counts', [])) if isinstance(regime_analysis.get('regime_counts', []), np.ndarray) else len(regime_analysis.get('regime_counts', {}))),
+                'total_models_trained': 0,
+                'model_types_used': []
             }
         }
 
-        # Generate performance summary for each model
-        for model_name, model_result in models.items():
-            if model_name in evaluation_results:
-                eval_result = evaluation_results[model_name]
+        # Build summaries across regimes
+        aggregate_model_metrics: Dict[str, Dict[str, List[float]]] = {}
+        model_types_used: set = set()
 
-                enhanced_report['model_performance_summary'][model_name] = {
-                    'accuracy': eval_result.get('accuracy', 0),
-                    'f1_score': eval_result.get('f1_score', 0),
-                    'precision': eval_result.get('precision', 0),
-                    'recall': eval_result.get('recall', 0),
-                    'training_time': eval_result.get('training_time', 0),
-                    'regime_specific_metrics': eval_result.get('regime_metrics', {}),
-                    'feature_importance_available': eval_result.get('feature_importance_available', False)
-                }
+        for regime_name, regime_evals in evaluation_results.items():
+            # regime_evals: Dict[model_name, { 'basic_metrics': {model_name: {...}}, 'validation': {...}, ... }]
+            for model_name, eval_result in regime_evals.items():
+                model_types_used.add(model_name)
+                if model_name not in aggregate_model_metrics:
+                    aggregate_model_metrics[model_name] = {
+                        'accuracy': [], 'f1_score': [], 'precision': [], 'recall': []
+                    }
+                basic = eval_result.get('basic_metrics', {})
+                model_basic = basic.get(model_name, {}) if isinstance(basic, dict) else {}
+                for k in ['accuracy', 'f1_score', 'precision', 'recall']:
+                    if k in model_basic:
+                        aggregate_model_metrics[model_name][k].append(model_basic[k])
+
+        # Fill model_performance_summary with averages
+        for model_name, metrics_lists in aggregate_model_metrics.items():
+            def _safe_mean(vals: List[float]) -> float:
+                return float(np.mean(vals)) if len(vals) > 0 else 0.0
+            enhanced_report['model_performance_summary'][model_name] = {
+                'avg_accuracy': _safe_mean(metrics_lists['accuracy']),
+                'avg_f1_score': _safe_mean(metrics_lists['f1_score']),
+                'avg_precision': _safe_mean(metrics_lists['precision']),
+                'avg_recall': _safe_mean(metrics_lists['recall'])
+            }
 
         # Generate regime-specific performance analysis
-        for regime_id, regime_data in regime_analysis.get('regime_data', {}).items():
+        # Regime-specific performance from evaluation_results directly
+        for regime_name, regime_evals in evaluation_results.items():
             regime_performance = {}
-
-            for model_name, model_result in models.items():
-                if model_name in evaluation_results:
-                    eval_result = evaluation_results[model_name]
-                    regime_metrics = eval_result.get('regime_metrics', {}).get(f'regime_{regime_id}', {})
-
-                    regime_performance[model_name] = {
-                        'accuracy': regime_metrics.get('accuracy', 0),
-                        'f1_score': regime_metrics.get('f1_score', 0),
-                        'precision': regime_metrics.get('precision', 0),
-                        'recall': regime_metrics.get('recall', 0),
-                        'samples': regime_data.get('n_samples', 0)
-                    }
-
-            enhanced_report['regime_specific_performance'][f'regime_{regime_id}'] = regime_performance
+            for model_name, eval_result in regime_evals.items():
+                basic = eval_result.get('basic_metrics', {})
+                model_basic = basic.get(model_name, {}) if isinstance(basic, dict) else {}
+                regime_performance[model_name] = {
+                    'accuracy': model_basic.get('accuracy', 0),
+                    'f1_score': model_basic.get('f1_score', 0),
+                    'precision': model_basic.get('precision', 0),
+                    'recall': model_basic.get('recall', 0)
+                }
+            enhanced_report['regime_specific_performance'][regime_name] = regime_performance
 
         # Generate model comparison across all regimes
         model_comparison = {}
-        for model_name in models.keys():
+        for model_name in model_types_used:
             accuracies = []
             f1_scores = []
 
@@ -542,19 +589,18 @@ class StreamlinedHMMTrainingStep(BaseTrainingStep):
 
         # Determine best models by regime
         for regime_id, regime_performance in enhanced_report['regime_specific_performance'].items():
-            best_model = max(regime_performance.keys(),
-                           key=lambda k: regime_performance[k]['f1_score'])
-            enhanced_report['best_models_by_regime'][regime_id] = {
-                'best_model': best_model,
-                'best_f1_score': regime_performance[best_model]['f1_score'],
-                'best_accuracy': regime_performance[best_model]['accuracy']
-            }
+            if regime_performance:
+                best_model = max(regime_performance.keys(), key=lambda k: regime_performance[k].get('f1_score', 0))
+                enhanced_report['best_models_by_regime'][regime_id] = {
+                    'best_model': best_model,
+                    'best_f1_score': regime_performance[best_model].get('f1_score', 0),
+                    'best_accuracy': regime_performance[best_model].get('accuracy', 0)
+                }
 
         # Generate recommendations
         if model_comparison:
             # Find overall best model
-            best_overall = max(model_comparison.keys(),
-                             key=lambda k: model_comparison[k]['avg_f1_score'])
+            best_overall = max(model_comparison.keys(), key=lambda k: model_comparison[k].get('avg_f1_score', 0))
 
             enhanced_report['overall_recommendations'] = [
                 f"Best overall model: {best_overall} (avg F1: {model_comparison[best_overall]['avg_f1_score']:.4f})",
@@ -574,6 +620,12 @@ class StreamlinedHMMTrainingStep(BaseTrainingStep):
             enhanced_report['validation_insights'] = self._generate_validation_insights(
                 validation_results, evaluation_results
             )
+
+        # Update training metadata
+        enhanced_report['training_metadata']['total_models_trained'] = sum(
+            len(r) for r in evaluation_results.values()
+        )
+        enhanced_report['training_metadata']['model_types_used'] = sorted(list(model_types_used))
 
         self.logger.info("✅ Enhanced model report generated with ml_commons integration")
         return enhanced_report

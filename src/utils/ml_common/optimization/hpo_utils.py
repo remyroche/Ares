@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from src.utils.tprint import tprint
 
 """
@@ -31,6 +33,10 @@ from concurrent.futures import ThreadPoolExecutor
 import time
 
 from .parallel_processing import ParallelProcessingCoordinator
+from .grid_utils import (
+    build_coarse_grid_from_search_space,
+    build_fine_grid_around_best,
+)
 from ...nonlinear_optimization_helpers import (
     NonLinearConfig, NonLinearParameterSampler, apply_nonlinear_scoring,
     create_enhanced_search_space
@@ -1425,20 +1431,20 @@ class HyperparameterOptimization:
                            cv_obj: Any, scoring: Union[str, Callable]) -> float:
         try:
             # Cap nested parallelism if possible
-            try:
-                if hasattr(model, 'set_params') and hasattr(model, 'get_params'):
-                    params = model.get_params()
-                    if 'n_jobs' in params:
-                        model.set_params(n_jobs=1)
-            except Exception:
-                pass
+                try:
+                    if hasattr(model, 'set_params') and hasattr(model, 'get_params'):
+                        params = model.get_params()
+                        if 'n_jobs' in params:
+                            model.set_params(n_jobs=1)
+                except Exception as e:
+                    self.logger.debug(f"n_jobs cap failed: {e}")
 
             fit_params = {}
             try:
                 if SKLEARN_AVAILABLE and len(np.unique(y)) <= 10:
                     fit_params['sample_weight'] = compute_sample_weight('balanced', y)
-            except Exception:
-                pass
+                except Exception as e:
+                    self.logger.debug(f"Manual CV evaluation failed, fallback to single-score: {e}")
             # Manual CV to handle sample_weight safely
             try:
                 fold_scores: list[float] = []
@@ -1463,8 +1469,8 @@ class HyperparameterOptimization:
                     fold_scores.append(float(score))
                 if fold_scores:
                     return float(np.mean(fold_scores))
-            except Exception:
-                pass
+            except Exception as e:
+                self.logger.debug(f"Manual CV loop failed: {e}")
             return 0.5
         except Exception as e:
             self.logger.warning(f"CV evaluation failed: {e}")
@@ -1650,7 +1656,7 @@ class HyperparameterOptimization:
             self.logger.info(f"🔍 Creating coarse grid with {grid_points} points per parameter")
             
             # Create coarse parameter grid
-            param_grid = self._coarse_grid_from_search_space(search_space, grid_points)
+            param_grid = build_coarse_grid_from_search_space(search_space, grid_points)
             self.logger.info(f"📊 Coarse grid size: {len(param_grid)} combinations")
             
             best_score = -np.inf
@@ -1701,7 +1707,7 @@ class HyperparameterOptimization:
             self.logger.info(f"🔍 Creating fine grid with {grid_points} points around best coarse parameters")
             
             # Create fine parameter grid around best coarse parameters
-            fine_grid = self._create_fine_parameter_grid_staged(search_space, best_coarse_params, grid_points)
+            fine_grid = build_fine_grid_around_best(search_space, best_coarse_params, grid_points)
             self.logger.info(f"📊 Fine grid size: {len(fine_grid)} combinations")
             
             best_score = -np.inf
@@ -1815,10 +1821,9 @@ class HyperparameterOptimization:
         try:
             self.logger.info(f"🎲 Performing fallback random search with {n_samples} samples")
             
-            # Generate random parameter combinations
-            sampled = self._generate_random_param_combinations(
-                self._coarse_grid_from_search_space(search_space, 3), n_samples
-            )
+            # Generate random parameter combinations using coarse grid and sampling
+            coarse = build_coarse_grid_from_search_space(search_space, 3)
+            sampled = coarse[:n_samples] if len(coarse) > n_samples else coarse
             
             best_score = -np.inf
             best_params = {}

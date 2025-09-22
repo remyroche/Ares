@@ -1,10 +1,10 @@
 """
-ML Common - Parallel Processing Optimizer Module
+Deprecated re-export. Use one of the canonical imports instead:
 
-This module provides parallel processing utilities for the ML Common package.
+- from src.utils.parallel_processing_optimizer import ParallelProcessor
+- from src.utils.ml_common.utils import ParallelProcessor
 """
 
-# Re-export from parent parallel_processing_optimizer
-from src.utils.parallel_processing_optimizer import ParallelProcessor
+from src.utils.parallel_processing_optimizer import ParallelProcessor  # kept for backward compatibility
 
 __all__ = ['ParallelProcessor']

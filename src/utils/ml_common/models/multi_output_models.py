@@ -80,6 +80,8 @@ class MultiOutputConfig:
     model_name: str
     n_outputs: int = 4
     output_names: List[str] = field(default_factory=lambda: ["output_1", "output_2", "output_3", "output_4"])
+    # Output format for predictions: 'array' or 'dict'
+    output_format: str = 'array'
     
     # Model configuration
     base_models: Dict[str, Any] = field(default_factory=dict)
@@ -195,7 +197,7 @@ class MultiOutputModel(ABC):
 
             # Initialize individual models for each output
             self.models = {}
-            self.fitted = True
+            self.is_fitted = True
 
             # Determine if this is a classification or regression task
             self.is_classification = self._determine_task_type(y_reshaped)
@@ -232,7 +234,7 @@ class MultiOutputModel(ABC):
     def predict(self, X: np.ndarray) -> np.ndarray:
         """Make predictions for all outputs."""
         try:
-            if not self.fitted:
+            if not self.is_fitted:
                 raise ValueError("Model must be fitted before making predictions")
 
             if not self.validate_inputs(X):
@@ -263,7 +265,7 @@ class MultiOutputModel(ABC):
                 }
 
             # Combine predictions into multi-output format
-            if self.config.output_format == 'array':
+            if getattr(self.config, 'output_format', 'array') == 'array':
                 result = np.column_stack(predictions)
             else:
                 # Return as dictionary
@@ -281,7 +283,7 @@ class MultiOutputModel(ABC):
     def predict_proba(self, X: np.ndarray) -> Optional[np.ndarray]:
         """Make probability predictions for all outputs."""
         try:
-            if not self.fitted:
+            if not self.is_fitted:
                 raise ValueError("Model must be fitted before making predictions")
 
             if not self.is_classification:
@@ -335,7 +337,7 @@ class MultiOutputModel(ABC):
                     }
 
             # Combine probabilities into multi-output format
-            if self.config.output_format == 'array':
+            if getattr(self.config, 'output_format', 'array') == 'array':
                 result = np.concatenate(probas, axis=1)
             else:
                 result = dict(zip(self.config.output_names, probas))
@@ -348,6 +350,97 @@ class MultiOutputModel(ABC):
         except Exception as e:
             self.logger.error(f"❌ Probability prediction failed: {e}")
             raise
+
+    # ===== Helper and validation methods =====
+    def validate_inputs(self, X: Any, y: Optional[np.ndarray] = None) -> bool:
+        """Validate input features (and optionally targets) for basic shape and type correctness."""
+        try:
+            # Validate X
+            if X is None:
+                self.logger.error("❌ Input features X is None")
+                return False
+            if isinstance(X, pd.DataFrame):
+                if X.shape[0] == 0 or X.shape[1] == 0:
+                    self.logger.error("❌ Input DataFrame has zero rows or columns")
+                    return False
+            else:
+                X_arr = np.asarray(X)
+                if X_arr.ndim != 2 or X_arr.shape[0] == 0 or X_arr.shape[1] == 0:
+                    self.logger.error(f"❌ Input array must be 2D with positive shape, got {X_arr.shape}")
+                    return False
+
+            # Validate y if provided
+            if y is not None:
+                y_arr = np.asarray(y)
+                if y_arr.ndim not in (1, 2):
+                    self.logger.error(f"❌ Target array must be 1D or 2D, got {y_arr.ndim}D")
+                    return False
+                # Check lengths
+                n_samples = X.shape[0] if isinstance(X, np.ndarray) else (len(X) if hasattr(X, '__len__') else None)
+                if n_samples is None or y_arr.shape[0] != n_samples:
+                    self.logger.error("❌ X and y sample size mismatch")
+                    return False
+            return True
+        except Exception as e:
+            self.logger.error(f"❌ Input validation failed: {e}")
+            return False
+
+    def _reshape_targets(self, y: np.ndarray) -> np.ndarray:
+        """Ensure targets are 2D and align with configured outputs; adjust config if needed."""
+        y_arr = np.asarray(y)
+        if y_arr.ndim == 1:
+            if self.config.n_outputs <= 1:
+                return y_arr.reshape(-1, 1)
+            # Duplicate single target across outputs for compatibility
+            return np.column_stack([y_arr] * self.config.n_outputs)
+        elif y_arr.ndim == 2:
+            # Align configuration with provided outputs if mismatched
+            if y_arr.shape[1] != self.config.n_outputs:
+                self.logger.warning(f"⚠️ Adjusting n_outputs from {self.config.n_outputs} to {y_arr.shape[1]}")
+                self.config.n_outputs = int(y_arr.shape[1])
+                self.config.output_names = [f"output_{i+1}" for i in range(self.config.n_outputs)]
+            return y_arr
+        else:
+            raise ValueError(f"Target array must be 1D or 2D, got shape {y_arr.shape}")
+
+    def _determine_task_type(self, y_2d: np.ndarray) -> bool:
+        """Determine if the problem is classification based on target characteristics.
+        Returns True for classification, False for regression.
+        """
+        try:
+            # Consider first output to determine task type
+            y_first = y_2d[:, 0]
+            unique_vals = np.unique(y_first)
+            # If all unique values are integers and few classes, treat as classification
+            is_integer_like = np.all(np.equal(np.mod(unique_vals, 1), 0))
+            return bool(is_integer_like and len(unique_vals) <= 10)
+        except Exception:
+            # Safe default: treat as regression
+            return False
+
+    def _create_single_output_model(self, output_index: int, y_target: np.ndarray) -> Any:
+        """Create a reasonable default model for a single output."""
+        try:
+            if self._determine_task_type(y_target.reshape(-1, 1)):
+                from sklearn.linear_model import LogisticRegression
+                return LogisticRegression(max_iter=1000)
+            else:
+                from sklearn.ensemble import RandomForestRegressor
+                return RandomForestRegressor(n_estimators=100, random_state=42, n_jobs=-1)
+        except Exception as e:
+            self.logger.warning(f"⚠️ Model creation failed for output {output_index}: {e}. Using LinearRegression fallback")
+            try:
+                from sklearn.linear_model import LinearRegression
+                return LinearRegression()
+            except Exception:
+                class DummyModel:
+                    def fit(self, X, y):
+                        self._mean = float(np.mean(y)) if len(y) else 0.0
+                        return self
+                    def predict(self, X):
+                        n = X.shape[0] if hasattr(X, 'shape') else len(X)
+                        return np.full(n, getattr(self, '_mean', 0.0))
+                return DummyModel()
     
     def validate_outputs(self, y: np.ndarray) -> bool:
         """Validate output data format."""

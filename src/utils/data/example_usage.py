@@ -16,13 +16,14 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from src.utils.data.historical_data_pipeline import HistoricalDataPipeline
 from src.utils.data.klines_parquet import get_klines_manager
+from src.utils.tprint import tprint
 from src.utils.logger import system_logger
 
 
 async def example_complete_pipeline():
     """Example: Run complete pipeline for ETHUSDT."""
-    print("🚀 Example: Complete Pipeline for ETHUSDT")
-    print("=" * 50)
+    tprint("🚀 Example: Complete Pipeline for ETHUSDT")
+    tprint("=" * 50)
     
     # Initialize pipeline
     pipeline = HistoricalDataPipeline("historical_data")
@@ -35,73 +36,73 @@ async def example_complete_pipeline():
     )
     
     if results["pipeline_success"]:
-        print("✅ Pipeline completed successfully!")
-        print(f"Steps completed: {results['steps_completed']}")
-        
+        tprint("✅ Pipeline completed successfully!")
+        tprint(f"Steps completed: {results['steps_completed']}")
+
         # Show summary
         for step, summary in results["summary"].items():
-            print(f"\n{step}: {summary}")
+            tprint(f"\n{step}: {summary}")
     else:
-        print(f"❌ Pipeline failed: {results['errors']}")
+        tprint(f"❌ Pipeline failed: {results['errors']}")
     
     return results
 
 
 def example_data_access():
     """Example: Access and analyze data."""
-    print("\n📊 Example: Data Access and Analysis")
-    print("=" * 50)
+    tprint("\n📊 Example: Data Access and Analysis")
+    tprint("=" * 50)
     
     # Get data manager
     manager = get_klines_manager("historical_data")
     
     # List available data
     available_data = manager.list_available_data()
-    print(f"Available data: {available_data}")
-    
+    tprint(f"Available data: {available_data}")
+
     if "ETHUSDT" in available_data:
         # Get data info
         info = manager.get_data_info("ETHUSDT", "1m", "raw")
-        print(f"\nRaw data info: {info}")
-        
+        tprint(f"\nRaw data info: {info}")
+
         if info["available"]:
             # Read a sample of data
             end_date = datetime.now()
             start_date = end_date - timedelta(days=7)  # Last 7 days
-            
+
             data = manager.read_data(
                 "ETHUSDT", "1m", start_date, end_date, "raw"
             )
-            
+
             if data is not None:
-                print(f"\nSample data shape: {data.shape}")
-                print(f"Columns: {list(data.columns)}")
-                print(f"Date range: {data.index.min()} to {data.index.max()}")
-                
+                tprint(f"\nSample data shape: {data.shape}")
+                tprint(f"Columns: {list(data.columns)}")
+                tprint(f"Date range: {data.index.min()} to {data.index.max()}")
+
                 # Show basic statistics
                 if 'close' in data.columns:
-                    print(f"\nClose price stats:")
-                    print(f"  Min: {data['close'].min():.2f}")
-                    print(f"  Max: {data['close'].max():.2f}")
-                    print(f"  Mean: {data['close'].mean():.2f}")
-                
+                    tprint(f"\nClose price stats:")
+                    tprint(f"  Min: {data['close'].min():.2f}")
+                    tprint(f"  Max: {data['close'].max():.2f}")
+                    tprint(f"  Mean: {data['close'].mean():.2f}")
+
                 if 'volume' in data.columns:
-                    print(f"\nVolume stats:")
-                    print(f"  Min: {data['volume'].min():.2f}")
-                    print(f"  Max: {data['volume'].max():.2f}")
-                    print(f"  Mean: {data['volume'].mean():.2f}")
+                    tprint(f"\nVolume stats:")
+                    tprint(f"  Min: {data['volume'].min():.2f}")
+                    tprint(f"  Max: {data['volume'].max():.2f}")
+                    tprint(f"  Mean: {data['volume'].mean():.2f}")
             else:
-                print("❌ Could not read data")
+                tprint("❌ Could not read data")
         else:
-            print("❌ No raw data available")
+            tprint("❌ No raw data available")
     else:
-        print("❌ No ETHUSDT data found")
+        tprint("❌ No ETHUSDT data found")
 
 
 def example_gap_detection():
     """Example: Gap detection and filling."""
-    print("\n🔍 Example: Gap Detection and Filling")
-    print("=" * 50)
+    tprint("\n🔍 Example: Gap Detection and Filling")
+    tprint("=" * 50)
     
     from src.utils.data.gap_detector import GapDetector
     
@@ -112,17 +113,17 @@ def example_gap_detection():
     gaps = detector.detect_gaps("ETHUSDT", "1m", max_gap_minutes=1)
     
     if gaps:
-        print(f"Found {len(gaps)} gaps:")
+        tprint(f"Found {len(gaps)} gaps:")
         for i, gap in enumerate(gaps, 1):
-            print(f"  Gap {i}: {gap['gap_start']} to {gap['gap_end']} ({gap['gap_minutes']:.1f} minutes)")
+            tprint(f"  Gap {i}: {gap['gap_start']} to {gap['gap_end']} ({gap['gap_minutes']:.1f} minutes)")
     else:
-        print("✅ No gaps found")
+        tprint("✅ No gaps found")
 
 
 def example_feature_engineering():
     """Example: Feature engineering."""
-    print("\n🔧 Example: Feature Engineering")
-    print("=" * 50)
+    tprint("\n🔧 Example: Feature Engineering")
+    tprint("=" * 50)
     
     from src.utils.data.feature_engineer import FeatureEngineer
     
@@ -135,24 +136,24 @@ def example_feature_engineering():
     )
     
     if results["success"]:
-        print("✅ Feature engineering completed!")
-        print(f"Source records: {results['source_records']}")
-        print(f"Featured records: {results['featured_records']}")
-        
+        tprint("✅ Feature engineering completed!")
+        tprint(f"Source records: {results['source_records']}")
+        tprint(f"Featured records: {results['featured_records']}")
+
         # Show resampling results
         for interval, result in results["resampling_results"].items():
             if result["success"]:
-                print(f"  {interval}: {result['records']} records")
+                tprint(f"  {interval}: {result['records']} records")
             else:
-                print(f"  {interval}: Failed - {result.get('error', 'Unknown error')}")
+                tprint(f"  {interval}: Failed - {result.get('error', 'Unknown error')}")
     else:
-        print(f"❌ Feature engineering failed: {results.get('error', 'Unknown error')}")
+        tprint(f"❌ Feature engineering failed: {results.get('error', 'Unknown error')}")
 
 
 def example_data_management():
     """Example: Data management operations."""
-    print("\n📁 Example: Data Management")
-    print("=" * 50)
+    tprint("\n📁 Example: Data Management")
+    tprint("=" * 50)
     
     manager = get_klines_manager("historical_data")
     
@@ -160,27 +161,27 @@ def example_data_management():
     stats = manager.get_data_statistics("ETHUSDT", "1m", "raw")
     
     if stats.get("available"):
-        print(f"Data statistics:")
-        print(f"  Files: {stats['files_count']}")
-        print(f"  Records: {stats['total_records']:,}")
-        print(f"  Size: {stats['file_size_mb']:.2f} MB")
-        print(f"  Columns: {len(stats['columns'])}")
-        
+        tprint(f"Data statistics:")
+        tprint(f"  Files: {stats['files_count']}")
+        tprint(f"  Records: {stats['total_records']:,}")
+        tprint(f"  Size: {stats['file_size_mb']:.2f} MB")
+        tprint(f"  Columns: {len(stats['columns'])}")
+
         if stats.get('price_range'):
             price_range = stats['price_range']
-            print(f"  Price range: {price_range['min']:.2f} - {price_range['max']:.2f}")
-        
+            tprint(f"  Price range: {price_range['min']:.2f} - {price_range['max']:.2f}")
+
         if stats.get('volume_stats'):
             volume_stats = stats['volume_stats']
-            print(f"  Volume range: {volume_stats['min']:.2f} - {volume_stats['max']:.2f}")
+            tprint(f"  Volume range: {volume_stats['min']:.2f} - {volume_stats['max']:.2f}")
     else:
-        print("❌ No data available for statistics")
+        tprint("❌ No data available for statistics")
 
 
 async def main():
     """Main example function."""
-    print("📚 Historical Data Pipeline Examples")
-    print("=" * 60)
+    tprint("📚 Historical Data Pipeline Examples")
+    tprint("=" * 60)
     
     try:
         # Example 1: Complete pipeline
@@ -198,10 +199,10 @@ async def main():
         # Example 5: Data management
         example_data_management()
         
-        print("\n🎉 All examples completed!")
-        
+        tprint("\n🎉 All examples completed!")
+
     except Exception as e:
-        print(f"❌ Example failed: {e}")
+        tprint(f"❌ Example failed: {e}")
         import traceback
         traceback.print_exc()
 

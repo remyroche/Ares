@@ -251,3 +251,24 @@ The enhanced training utilities are now fully integrated into the ml_common base
 **📊 Integration Status: FULLY WIRED IN ML_COMMON** ✅  
 **🚀 Ready for Production: YES** ✅  
 **🌍 Universal Benefits: ALL ML MODELS** ✅
+
+## Canonical imports and shims
+
+- Hyperparameter optimization (canonical):
+  - `from src.utils.ml_common.optimization.hpo_utils import HyperparameterOptimization`
+  - Backwards-compat shim: `from src.utils.ml_common.utils.hpo_utils import HyperparameterOptimization`
+
+- Memory optimization (canonical):
+  - `from src.utils.ml_common.utils.memory_optimization import MemoryEfficientTraining`
+  - Exposed alias: `from src.utils.ml_common.utils import MemoryOptimizer`
+
+- Cross-validation (canonical):
+  - `from src.utils.ml_common.validation.unified_cv import UnifiedCrossValidator, perform_cross_validation`
+  - Legacy names provided via `src.utils.ml_common.validation`: `TemporalCrossValidator` (alias of `UnifiedCrossValidator`)
+
+- Parallel processing:
+  - Prefer `from src.utils.parallel_processing_optimizer import ParallelProcessor`
+  - Or `from src.utils.ml_common.utils import ParallelProcessor`
+  - The re-export in `ml_common/parallel_processing_optimizer.py` is deprecated but retained for compatibility.
+
+Shims are kept for backward compatibility; new code should use canonical imports.

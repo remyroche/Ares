@@ -1548,94 +1548,32 @@ class AnalystModelsTrainingStepRefactored(PerRegimeTrainingStep):
                 self.progress_tracker.update_step("Enhanced Model Training", {"model_types": len(self.config.model_types)})
                 
                 # Enhanced training with overfitting prevention and lookahead bias detection
-                if ENHANCED_TRAINING_AVAILABLE and hasattr(self, 'training_enhancer'):
-                    tprint_info("🚀 Using ENHANCED analyst models training with overfitting prevention")
-                    training_successful = False
-                    results = None
-                    
-                    try:
-                        # Validate temporal data for lookahead bias
-                        if timestamps is not None:
-                            tprint_info("🔍 Validating temporal data for lookahead bias...")
-                            is_valid, warnings = self.training_enhancer.enhanced_utils.validate_temporal_data(
-                                X, y, timestamps, strict_mode=True
-                            )
-                            if warnings:
-                                for warning in warnings:
-                                    tprint_warning(f"⚠️ {warning}")
-                            if not is_valid:
-                                tprint_error("❌ Temporal data validation failed")
-                                raise ValueError("Lookahead bias detected in temporal data")
-                        
-                        # Use enhanced training with temporal integrity
-                        with tprint_timer("Enhanced Training", LogLevel.PERFORMANCE):
-                            with monitor_resources("Enhanced Training", self.logger):
-                                results = self._execute_enhanced_training(
-                                    X, y, regime_labels, feature_names, hmm_states, timestamps
-                                )
-                        
-                        training_successful = True
-                        tprint_success("✅ Enhanced training completed successfully")
-                        
-                    except Exception as e:
-                        tprint_warning(f"⚠️ Enhanced training failed: {e}, falling back to standard method")
-                        # Fallback to standard training
-                        results = self._execute_standard_training(
-                            X, y, regime_labels, feature_names, hmm_states
+                # Enforce enhanced training path only (fast-fail if unavailable)
+                if not ENHANCED_TRAINING_AVAILABLE or not hasattr(self, 'training_enhancer'):
+                    raise RuntimeError("Enhanced training utilities are required and must be available for Analyst training")
+
+                # Validate temporal data for lookahead bias
+                if timestamps is not None:
+                    tprint_info("🔍 Validating temporal data for lookahead bias...")
+                    is_valid, warnings = self.training_enhancer.enhanced_utils.validate_temporal_data(
+                        X, y, timestamps, strict_mode=True
+                    )
+                    if warnings:
+                        for warning in warnings:
+                            tprint_warning(f"⚠️ {warning}")
+                    if not is_valid:
+                        tprint_error("❌ Temporal data validation failed")
+                        raise ValueError("Lookahead bias detected in temporal data")
+
+                # Use enhanced training only
+                with tprint_timer("Enhanced Training", LogLevel.PERFORMANCE):
+                    with monitor_resources("Enhanced Training", self.logger):
+                        results = self._execute_enhanced_training(
+                            X, y, regime_labels, feature_names, hmm_states, timestamps
                         )
-                        training_successful = True
-                else:
-                    # VECTORIZED: Use ultra-fast vectorized training by default
-                    tprint_info("🚀 Using VECTORIZED analyst models training with hardware optimization")
-                    training_successful = False
-                    results = None
-                    
-                    try:
-                        with tprint_timer("Vectorized Training", LogLevel.PERFORMANCE):
-                            with monitor_resources("Vectorized Training", self.logger):
-                                results = super().execute_vectorized(
-                                    X=X,
-                                    y=y,
-                                    regime_labels=regime_labels,
-                                    feature_names=feature_names,
-                                    hmm_states=hmm_states,
-                                    is_classification=False,  # Analyst models are typically regression
-                                    symbol=None,  # Can be passed as kwargs
-                                    exchange=None,
-                                    timeframe=self.config.timeframe
-                                )
-                    
-                    if results.get('vectorized', False):
-                        tprint_success("✅ VECTORIZED analyst training completed successfully")
-                        training_successful = True
-                    else:
-                        tprint_warning("⚠️ VECTORIZED analyst training failed, falling back to standard method")
-                        raise Exception("Vectorized training returned non-vectorized results")
-                        
-                except Exception as e:
-                    self.error_handler.handle_error(e, "Vectorized Training", {
-                        'fallback_reason': str(e),
-                        'data_shape': X.shape,
-                        'regime_count': len(np.unique(regime_labels)),
-                        'hardware_status': hardware_status
-                    })
-                    
-                    tprint_warning(f"⚠️ VECTORIZED analyst training failed: {e}, falling back to standard method")
-                    
-                    with tprint_timer("Standard Training Fallback", LogLevel.PERFORMANCE):
-                        with monitor_resources("Standard Training Fallback", self.logger):
-                            results = super().execute(
-                                X=X,
-                                y=y,
-                                regime_labels=regime_labels,
-                                feature_names=feature_names,
-                                hmm_states=hmm_states,
-                                is_classification=False,  # Analyst models are typically regression
-                                symbol=None,  # Can be passed as kwargs
-                                exchange=None,
-                                timeframe=self.config.timeframe
-                            )
-                    training_successful = True
+
+                training_successful = True
+                tprint_success("✅ Enhanced training completed successfully")
                 
                 # Step 6: Post-processing and metadata enhancement
                 self.progress_tracker.update_step("Enhanced Post-processing", {"training_successful": training_successful})
@@ -1709,6 +1647,15 @@ class AnalystModelsTrainingStepRefactored(PerRegimeTrainingStep):
         try:
             tprint_info("🚀 Executing enhanced training with overfitting prevention")
             
+            # Optional vectorized/matrix-optimized preprocessing using matrix_operations if available
+            try:
+                from src.utils.matrix_operations import optimize_matrix_computations, validate_matrix_properties
+                validate_matrix_properties(X)
+                X = optimize_matrix_computations(X)
+            except Exception:
+                # Non-fatal; proceed without matrix optimization
+                pass
+
             # Get unique regimes
             unique_regimes = np.unique(regime_labels)
             results = {
@@ -1797,42 +1744,8 @@ class AnalystModelsTrainingStepRefactored(PerRegimeTrainingStep):
     
     def _execute_standard_training(self, X: np.ndarray, y: np.ndarray, regime_labels: np.ndarray, 
                                  feature_names: Optional[List[str]], hmm_states: Optional[np.ndarray]) -> Dict[str, Any]:
-        """Execute standard training as fallback."""
-        try:
-            tprint_info("🚀 Executing standard training (fallback)")
-            
-            # Use vectorized training if available
-            try:
-                results = super().execute_vectorized(
-                    X=X,
-                    y=y,
-                    regime_labels=regime_labels,
-                    feature_names=feature_names,
-                    hmm_states=hmm_states,
-                    is_classification=False,
-                    symbol=None,
-                    exchange=None,
-                    timeframe=self.config.timeframe
-                )
-            except Exception:
-                # Fallback to standard execute
-                results = super().execute(
-                    X=X,
-                    y=y,
-                    regime_labels=regime_labels,
-                    feature_names=feature_names,
-                    hmm_states=hmm_states,
-                    is_classification=False,
-                    symbol=None,
-                    exchange=None,
-                    timeframe=self.config.timeframe
-                )
-            
-            return results
-            
-        except Exception as e:
-            tprint_error(f"❌ Standard training failed: {e}")
-            raise
+        """Disabled: Standard training fallback is not allowed."""
+        raise RuntimeError("Standard/vectorized fallback path is disabled. Enhanced training is mandatory.")
     
     def _validate_input_data_enhanced(self, X: np.ndarray, y: np.ndarray, regime_labels: np.ndarray) -> Dict[str, Any]:
         """Enhanced input data validation with comprehensive error reporting and math validation."""

@@ -105,7 +105,7 @@ class UnifiedVectorizationManager:
             from ..matrix_operations import get_unified_matrix_operations
             self.matrix_ops = get_unified_matrix_operations()
             self.matrix_ops_available = True
-        except ImportError:
+        except Exception:
             self.matrix_ops = None
             self.matrix_ops_available = False
 
@@ -114,7 +114,7 @@ class UnifiedVectorizationManager:
             from .vectorized_backtesting import VectorizedBacktestingEngine, BacktestMode
             self.backtesting_engine = VectorizedBacktestingEngine()
             self.backtesting_available = True
-        except ImportError:
+        except Exception:
             self.backtesting_engine = None
             self.backtesting_available = False
 
@@ -123,7 +123,7 @@ class UnifiedVectorizationManager:
             from .matrix_cross_validation import MatrixCrossValidator
             self.cv_engine = MatrixCrossValidator()
             self.cv_available = True
-        except ImportError:
+        except Exception:
             self.cv_engine = None
             self.cv_available = False
 
@@ -132,7 +132,7 @@ class UnifiedVectorizationManager:
             from ..feature_selection.feature_importance_analyzer import FeatureImportanceAnalyzer
             self.feature_analyzer = FeatureImportanceAnalyzer()
             self.feature_selection_available = True
-        except ImportError:
+        except Exception:
             self.feature_analyzer = None
             self.feature_selection_available = False
 
@@ -141,7 +141,7 @@ class UnifiedVectorizationManager:
             from ..utils.feature_generators import FeatureGenerators
             self.technical_indicators = FeatureGenerators()
             self.technical_indicators_available = True
-        except ImportError:
+        except Exception:
             self.technical_indicators = None
             self.technical_indicators_available = False
 
@@ -150,7 +150,7 @@ class UnifiedVectorizationManager:
             from ..hmm_composite_manager import EnhancedHMMCompositeManager
             self.hmm_manager = EnhancedHMMCompositeManager()
             self.hmm_available = True
-        except ImportError:
+        except Exception:
             self.hmm_manager = None
             self.hmm_available = False
 

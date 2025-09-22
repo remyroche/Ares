@@ -31,7 +31,7 @@ __all__ = [
     'ParallelProcessor',
     
     # Caching
-    'UnifiedCache', 'get_unified_cache', 'cached',
+    'UnifiedCache', 'get_unified_cache', 'cached', 'SharedMLCache',
     
     # Threading
     'limit_blas_threads', 'get_thread_info', 'validate_thread_environment',

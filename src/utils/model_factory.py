@@ -8,8 +8,6 @@ from src.utils.ml_common.models.model_factory import (
     EnhancedModelFactory,
     ModelType,
     ModelConfig,
-    create_analyst_models,
-    create_tactician_models,
     create_model_factory,
 )
 
@@ -20,8 +18,6 @@ __all__ = [
     "EnhancedModelFactory",
     "ModelType",
     "ModelConfig",
-    "create_analyst_models",
-    "create_tactician_models",
     "create_model_factory",
     "UnifiedModelFactory",
 ]

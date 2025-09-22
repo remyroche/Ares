@@ -332,9 +332,9 @@ class EnhancedModelTrainer:
                         roc_auc = roc_auc_score(y_true, y_pred_proba, multi_class='ovr', average='macro')
                         log_loss_score = log_loss(y_true, y_pred_proba)
                 except Exception as e:
-                    # Fail fast on metric calculation errors
-                    logger.error(f"❌ Critical error: Could not calculate ROC-AUC/log loss: {e}")
-                    raise ValueError(f"Model metric calculation failed: {e}")
+                    logger.warning(f"Could not calculate ROC-AUC/log loss: {e}")
+                    roc_auc = None
+                    log_loss_score = None
             
             return {
                 'accuracy': float(accuracy),

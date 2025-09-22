@@ -18,6 +18,7 @@ from src.utils.logger import system_logger
 from src.utils.ml_common.config.base_training_config import HMMTrainingConfig
 from src.utils.ml_common.training.base_training_step import BaseTrainingStep
 from src.utils.ml_common.config.universal_timeframe_config import get_primary_timeframe
+from src.utils.ml_common.training.enhanced_training_utils import EnhancedTrainingUtils
 
 
 class StreamlinedHMMTrainingStep(BaseTrainingStep):
@@ -63,6 +64,9 @@ class StreamlinedHMMTrainingStep(BaseTrainingStep):
 
         super().__init__(config)
         self.logger = system_logger.getChild('StreamlinedHMMTrainingStep')
+
+        # Enhanced training utilities (lookahead, temporal CV, overfitting monitoring)
+        self.enhanced_training_utils = EnhancedTrainingUtils()
 
         self.logger.info("✅ Streamlined HMM Training Step initialized")
         self.logger.info(f"📊 Timeframe: {config.timeframe} (HMM state recognition)")
@@ -115,6 +119,21 @@ class StreamlinedHMMTrainingStep(BaseTrainingStep):
         """
         self.logger.info("🚀 Starting streamlined HMM training execution")
 
+        # Optional temporal validation (lookahead/leakage) using ml_common
+        timestamps = kwargs.get('timestamps')
+        try:
+            self.temporal_validation = None
+            if 'enhanced_training_utils' in self.__dict__:
+                valid_temporal, temporal_warnings = self.enhanced_training_utils.validate_temporal_data(
+                    X, y, timestamps, strict_mode=False
+                )
+                self.temporal_validation = {
+                    'valid': bool(valid_temporal),
+                    'warnings': temporal_warnings
+                }
+        except Exception as _e:
+            self.temporal_validation = {'valid': False, 'error': str(_e)}
+
         # Validate input data using common validation
         validation_results = self.validate_training_data(
             X=X,
@@ -151,6 +170,54 @@ class StreamlinedHMMTrainingStep(BaseTrainingStep):
             feature_names=feature_names
         )
 
+        # Validate best model per regime using universal validation integration
+        per_regime_validations: Dict[str, Any] = {}
+        try:
+            from sklearn.model_selection import train_test_split
+            for regime_name, regime_results in training_results.get('models', {}).items():
+                try:
+                    evals = training_results.get('evaluation_results', {}).get(regime_name, {})
+                    if not isinstance(evals, dict) or len(evals) == 0:
+                        continue
+                    def _score(m: str) -> Tuple[float, float]:
+                        md = evals.get(m, {}) or {}
+                        return (float(md.get('f1_score', 0.0)), float(md.get('accuracy', 0.0)))
+                    best_model_name = max(evals.keys(), key=_score)
+                    model_entry = regime_results.get('models', {}).get(best_model_name, {})
+                    model_obj = model_entry.get('model')
+                    if model_obj is None:
+                        continue
+                    # Extract regime id from name like "regime_3"
+                    try:
+                        regime_id = int(str(regime_name).split('_')[1])
+                    except Exception:
+                        continue
+                    regime_mask = (regime_labels == regime_id)
+                    # Basic guard against tiny splits
+                    if not hasattr(regime_mask, 'sum') or int(regime_mask.sum()) < 5:
+                        continue
+                    Xr = X[regime_mask]
+                    yr = y[regime_mask]
+                    stratify_vec = yr if len(np.unique(yr)) > 1 else None
+                    X_train, X_val, y_train, y_val = train_test_split(
+                        Xr, yr, test_size=0.2, random_state=42, stratify=stratify_vec
+                    )
+                    val_res = self.validate_trained_model(
+                        model=model_obj,
+                        X_train=X_train,
+                        X_val=X_val,
+                        y_train=y_train,
+                        y_val=y_val,
+                        feature_names=feature_names,
+                        model_name=f"{best_model_name}_{regime_name}",
+                        model_type=best_model_name
+                    )
+                    per_regime_validations[regime_name] = val_res
+                except Exception as _ve:
+                    per_regime_validations[regime_name] = {'valid': False, 'error': str(_ve)}
+        except Exception as _outer:
+            per_regime_validations['error'] = str(_outer)
+
         # Generate enhanced reporting for all models
         enhanced_reporting = self._generate_enhanced_model_report(
             models=training_results.get('models', {}),
@@ -170,7 +237,9 @@ class StreamlinedHMMTrainingStep(BaseTrainingStep):
                 'hmm_state_recognition_focus': True,
                 'timeframe': self.config.timeframe,
                 'model_types_used': self.config.model_types,
-                'enhanced_reporting': enhanced_reporting
+                'enhanced_reporting': enhanced_reporting,
+                'temporal_validation': getattr(self, 'temporal_validation', None),
+                'model_validations': per_regime_validations
             }
         )
 

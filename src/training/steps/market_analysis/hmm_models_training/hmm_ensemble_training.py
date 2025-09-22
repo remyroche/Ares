@@ -107,6 +107,7 @@ except ImportError:
 try:
     from src.utils.ml_common.config.base_training_config import EnsembleTrainingConfig
     from src.utils.ml_common.training.ensemble_training_step import EnsembleTrainingStep
+    from src.utils.ml_common.training.enhanced_training_utils import EnhancedTrainingUtils
     ML_COMMON_AVAILABLE = True
 except ImportError:
     ML_COMMON_AVAILABLE = False
@@ -307,6 +308,11 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
             
             # Initialize parent class
             super().__init__(config, enable_vectorization=enable_vectorization and VECTORIZED_TRAINING_AVAILABLE)
+            # Initialize enhanced training utilities (lookahead, temporal CV, regularization helpers)
+            try:
+                self.enhanced_training_utils = EnhancedTrainingUtils()
+            except Exception:
+                self.enhanced_training_utils = None
             
             # Initialize tracking variables
             self.training_stats = {
@@ -826,6 +832,21 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
                 'execution_time': time.time() - execution_start_time,
                 'validation_failed': True
             }
+        # Optional temporal validation using ml_common enhanced utilities
+        try:
+            timestamps = locals().get('timestamps') or None
+            if self.enhanced_training_utils is not None:
+                tv_valid, tv_warnings = self.enhanced_training_utils.validate_temporal_data(
+                    X, y, timestamps=timestamps, strict_mode=False
+                )
+                self._temporal_validation_global = {
+                    'valid': bool(tv_valid),
+                    'warnings': tv_warnings
+                }
+            else:
+                self._temporal_validation_global = {'valid': True, 'warnings': []}
+        except Exception as _tv_err:
+            self._temporal_validation_global = {'valid': False, 'error': str(_tv_err)}
         
         # Use memory checkpoint for large operations AFTER validation
         with memory_checkpoint("hmm_ensemble_training_main"):
@@ -920,6 +941,57 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
                 # Step 7: Generate comprehensive report using common utilities
                 execution_time = time.time() - execution_start_time
                 results = self._generate_comprehensive_report(results, execution_time, base_hmm_models, hmm_training_metrics)
+
+                # Attach ml_common temporal validation and per-regime model validations
+                try:
+                    results['temporal_validation'] = getattr(self, '_temporal_validation_global', None)
+                    from sklearn.model_selection import train_test_split as _ts_split
+                    per_regime_validations: Dict[Any, Any] = {}
+                    diversity_by_regime: Dict[Any, Any] = {}
+                    if isinstance(results.get('models'), dict):
+                        for _regime, _ens_entry in results['models'].items():
+                            try:
+                                _manager = _ens_entry.get('ensemble_manager') if isinstance(_ens_entry, dict) else None
+                                if _manager is None:
+                                    continue
+                                # Build regime split
+                                _mask = (regime_labels == _regime)
+                                if int(getattr(_mask, 'sum', lambda: 0)()) < 5:
+                                    continue
+                                _Xr = X[_mask]
+                                _yr = y[_mask]
+                                _strat = _yr if len(np.unique(_yr)) > 1 else None
+                                _Xtr, _Xva, _ytr, _yva = _ts_split(_Xr, _yr, test_size=0.2, random_state=42, stratify=_strat)
+                                _vres = self.validate_trained_model(
+                                    model=_manager,
+                                    X_train=_Xtr,
+                                    X_val=_Xva,
+                                    y_train=_ytr,
+                                    y_val=_yva,
+                                    feature_names=feature_names,
+                                    model_name=f"ensemble_regime_{_regime}",
+                                    model_type=str(self.config.model_name)
+                                )
+                                per_regime_validations[_regime] = _vres
+
+                                # Optional: ensemble diversity on base models if available
+                                try:
+                                    if self.enhanced_training_utils is not None and isinstance(_ens_entry, dict) and 'base_models' in _ens_entry:
+                                        _base_models = _ens_entry['base_models']
+                                        if isinstance(_base_models, dict) and len(_base_models) >= 2:
+                                            _div = self.enhanced_training_utils.calculate_ensemble_diversity(
+                                                models=list(_base_models.values()), X=_Xr, y=_yr
+                                            )
+                                            diversity_by_regime[_regime] = _div
+                                except Exception:
+                                    pass
+                            except Exception as _perr:
+                                per_regime_validations[_regime] = {'valid': False, 'error': str(_perr)}
+                    results['model_validations'] = per_regime_validations
+                    if diversity_by_regime:
+                        results['ensemble_diversity'] = diversity_by_regime
+                except Exception:
+                    pass
 
                 tprint(f"✅ HMM ensemble training completed successfully in {execution_time:.2f}s")
                 tprint(f"🧠 Memory optimization: {memory_stats}")

@@ -16,9 +16,10 @@ logger = logging.getLogger(__name__)
 
 # Import HMM components
 try:
-    from ...training.steps.market_analysis.hmm_clustering.enhanced_hmm_clustering import (
-        EnhancedHMMClustering, HMMClusteringResult, run_hmm_clustering_analysis
-    )
+    # enhanced_hmm_clustering module no longer exists - replaced by component system
+    # from ...training.steps.market_analysis.hmm_clustering.enhanced_hmm_clustering import (
+    #     EnhancedHMMClustering, HMMClusteringResult, run_hmm_clustering_analysis
+    # )
     from ..categories.hmm_performance_metrics import (
         HMMPerformanceMetricsFeatureGenerator,
         create_hmm_performance_features_from_result,

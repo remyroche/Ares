@@ -30,7 +30,8 @@ from src.utils.logger import system_logger
 # Import existing HMM components (with error handling)
 try:
     from src.training.steps.market_analysis.components.hmm_regime_discovery import HMMRegimeDiscoveryComponent
-    from src.training.steps.market_analysis.components.hmm_clustering import HMMClusteringComponent
+    # HMMClusteringComponent no longer exists - replaced by OptimalRegimeClusteringComponent
+    # from src.training.steps.market_analysis.components.hmm_clustering import HMMClusteringComponent
     HMM_AVAILABLE = True
 except ImportError as e:
     system_logger.warning(f"HMM components not available: {e}")

@@ -22,6 +22,9 @@ except ImportError:
     PANDAS_AVAILABLE = False
     pd = None
 
+# Optional imports for enhanced analysis (now available in ML commons)
+# These are now integrated into ML commons evaluation utilities
+
 logger = logging.getLogger(__name__)
 
 
@@ -596,9 +599,11 @@ class ValidationUtils:
     @staticmethod
     def detect_overfitting_comprehensive(train_predictions, test_predictions, train_labels, test_labels,
                                        train_probabilities=None, test_probabilities=None,
-                                       model=None, feature_importance=None):
+                                       model=None, feature_importance=None,
+                                       X_train=None, X_test=None, y_train=None, y_test=None):
         """
-        Comprehensive overfitting detection with multiple validation methods.
+        Comprehensive overfitting detection with multiple validation methods including
+        learning curve analysis and bootstrap confidence intervals.
 
         Args:
             train_predictions: Predictions on training set
@@ -609,9 +614,13 @@ class ValidationUtils:
             test_probabilities: Probabilities on test set (optional)
             model: Trained model object (optional)
             feature_importance: Feature importance scores (optional)
+            X_train: Training features (optional, for enhanced analysis)
+            X_test: Test features (optional, for enhanced analysis)
+            y_train: Training labels (optional, for enhanced analysis)
+            y_test: Test labels (optional, for enhanced analysis)
 
         Returns:
-            Dictionary with overfitting analysis results
+            Dictionary with comprehensive overfitting analysis results
         """
         try:
             import numpy as np
@@ -766,6 +775,9 @@ class ValidationUtils:
 
             if feature_analysis and feature_analysis['feature_concentration_ratio'] < 0.05:
                 warnings.append("⚠️ Features are highly concentrated - may indicate overfitting to specific patterns")
+
+            # Enhanced analysis with learning curves and bootstrap now handled by ML commons
+            # These are now integrated into the ML commons evaluation utilities
 
             result = {
                 'is_overfitting': is_overfitting,

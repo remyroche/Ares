@@ -84,6 +84,41 @@ class RegimeAnalysis:
 
 
 @dataclass
+class LearningCurveAnalysis:
+    """Learning curve analysis results."""
+    learning_rate: str
+    convergence_stability: str
+    overfitting_risk: str
+    training_efficiency: str
+    max_score_gap: float
+    final_score_gap: float
+    early_learning_slope: float
+    convergence_stability_score: float
+    train_sizes: List[float]
+    train_scores_mean: List[float]
+    train_scores_std: List[float]
+    val_scores_mean: List[float]
+    val_scores_std: List[float]
+    score_gaps: List[float]
+    final_train_accuracy: Optional[float] = None
+    final_validation_accuracy: Optional[float] = None
+    test_accuracy: Optional[float] = None
+    anomalies: Optional[List[Dict[str, Any]]] = None
+
+
+@dataclass
+class BootstrapAnalysis:
+    """Bootstrap confidence interval analysis results."""
+    stability_score: float
+    stability_level: str
+    overfitting_probability: float
+    overfitting_risk: str
+    confidence_intervals: Dict[str, Dict[str, Union[float, str]]]
+    stability_scores: Dict[str, float]
+    n_successful_bootstrap: int
+
+
+@dataclass
 class ComputationalMetrics:
     """Computational performance metrics."""
     total_execution_time: float
@@ -99,16 +134,16 @@ class HMMTrainingReporter:
     Enhanced reporter for HMM training with comprehensive metrics and insights.
     """
     
-    def __init__(self, output_dir: str = "artifacts"):
+    def __init__(self, output_dir: str = "outcomes/market_analysis"):
         """
         Initialize enhanced reporter.
-        
+
         Args:
             output_dir: Directory to save reports
         """
         self.output_dir = Path(output_dir)
         ensure_directory(self.output_dir)
-        
+
         tprint(f"✅ Enhanced Reporter initialized (output: {self.output_dir})")
     
     def generate_comprehensive_report(
@@ -140,10 +175,19 @@ class HMMTrainingReporter:
             regime_analysis = self._analyze_regimes(training_results)
             computational_metrics = self._calculate_computational_metrics(training_results)
             
+            # Extract learning curve and bootstrap summaries
+            learning_curve_summary = None
+            bootstrap_summary = None
+
+            if isinstance(training_results, dict):
+                learning_curve_summary = training_results.get('learning_curve_analysis', {}).get('summary')
+                bootstrap_summary = training_results.get('bootstrap_analysis', {}).get('summary')
+
             # Generate insights and recommendations
             insights = self._generate_insights(
-                model_summaries, training_summary, feature_analysis, 
-                regime_analysis, computational_metrics
+                model_summaries, training_summary, feature_analysis,
+                regime_analysis, computational_metrics,
+                learning_curve_summary, bootstrap_summary
             )
             
             # Create comprehensive report
@@ -177,10 +221,13 @@ class HMMTrainingReporter:
                 "feature_analysis": asdict(feature_analysis),
                 "regime_analysis": asdict(regime_analysis),
                 "computational_metrics": asdict(computational_metrics),
+                "learning_curve_analysis": self._extract_learning_curve_analysis(training_results),
+                "bootstrap_analysis": self._extract_bootstrap_analysis(training_results),
                 "validation_results": self._process_validation_report(validation_report),
                 "insights_and_recommendations": insights,
                 "quality_metrics": self._calculate_quality_metrics(
-                    model_summaries, feature_analysis, regime_analysis
+                    model_summaries, feature_analysis, regime_analysis,
+                    learning_curve_summary, bootstrap_summary
                 )
             }
             
@@ -441,11 +488,135 @@ class HMMTrainingReporter:
             }
         }
     
+    def _extract_learning_curve_analysis(self, training_results: Dict[str, Any]) -> Dict[str, Any]:
+        """Extract learning curve analysis from training results."""
+        try:
+            # Get learning curve analysis from model results
+            model_results = training_results.get('model_results', {})
+            learning_curve_results = {}
+
+            for model_name, model_result in model_results.items():
+                if hasattr(model_result, 'validation_results') and model_result.validation_results:
+                    validation_results = model_result.validation_results
+                    if 'learning_curve_analysis' in validation_results:
+                        learning_curve_results[model_name] = validation_results['learning_curve_analysis']
+
+            # Return consolidated learning curve analysis
+            if learning_curve_results:
+                return {
+                    "status": "available",
+                    "model_analyses": learning_curve_results,
+                    "summary": self._summarize_learning_curves(learning_curve_results)
+                }
+            else:
+                return {"status": "not_available"}
+
+        except Exception as e:
+            return {"status": "extraction_error", "error": str(e)}
+
+    def _extract_bootstrap_analysis(self, training_results: Dict[str, Any]) -> Dict[str, Any]:
+        """Extract bootstrap analysis from training results."""
+        try:
+            # Get bootstrap analysis from model results
+            model_results = training_results.get('model_results', {})
+            bootstrap_results = {}
+
+            for model_name, model_result in model_results.items():
+                if hasattr(model_result, 'validation_results') and model_result.validation_results:
+                    validation_results = model_result.validation_results
+                    if 'bootstrap_analysis' in validation_results:
+                        bootstrap_results[model_name] = validation_results['bootstrap_analysis']
+
+            # Return consolidated bootstrap analysis
+            if bootstrap_results:
+                return {
+                    "status": "available",
+                    "model_analyses": bootstrap_results,
+                    "summary": self._summarize_bootstrap_analyses(bootstrap_results)
+                }
+            else:
+                return {"status": "not_available"}
+
+        except Exception as e:
+            return {"status": "extraction_error", "error": str(e)}
+
+    def _summarize_learning_curves(self, learning_curve_results: Dict[str, Any]) -> Dict[str, Any]:
+        """Summarize learning curve analyses across models."""
+        if not learning_curve_results:
+            return {}
+
+        # Collect all learning curve metrics
+        overfitting_risks = []
+        convergence_stabilities = []
+        training_efficiencies = []
+        anomalies = []
+
+        for model_name, analysis in learning_curve_results.items():
+            if isinstance(analysis, dict) and 'error' not in analysis:
+                overfitting_risks.append(analysis.get('overfitting_risk', 'unknown'))
+                convergence_stabilities.append(analysis.get('convergence_stability', 'unknown'))
+                training_efficiencies.append(analysis.get('training_efficiency', 'unknown'))
+                if 'anomalies' in analysis and analysis['anomalies']:
+                    anomalies.extend(analysis['anomalies'])
+
+        # Create summary
+        summary = {
+            "overfitting_risk_distribution": self._count_occurrences(overfitting_risks),
+            "convergence_stability_distribution": self._count_occurrences(convergence_stabilities),
+            "training_efficiency_distribution": self._count_occurrences(training_efficiencies),
+            "total_anomalies": len(anomalies),
+            "anomaly_types": self._count_anomaly_types(anomalies) if anomalies else {}
+        }
+
+        return summary
+
+    def _summarize_bootstrap_analyses(self, bootstrap_results: Dict[str, Any]) -> Dict[str, Any]:
+        """Summarize bootstrap analyses across models."""
+        if not bootstrap_results:
+            return {}
+
+        # Collect all bootstrap metrics
+        stability_scores = []
+        overfitting_probabilities = []
+        stability_levels = []
+
+        for model_name, analysis in bootstrap_results.items():
+            if isinstance(analysis, dict) and 'error' not in analysis:
+                stability_scores.append(analysis.get('stability_score', 0.0))
+                overfitting_probabilities.append(analysis.get('overfitting_probability', 0.0))
+                stability_levels.append(analysis.get('stability_level', 'unknown'))
+
+        # Create summary
+        summary = {
+            "average_stability_score": np.mean(stability_scores) if stability_scores else 0.0,
+            "max_stability_score": np.max(stability_scores) if stability_scores else 0.0,
+            "min_stability_score": np.min(stability_scores) if stability_scores else 0.0,
+            "average_overfitting_probability": np.mean(overfitting_probabilities) if overfitting_probabilities else 0.0,
+            "stability_level_distribution": self._count_occurrences(stability_levels)
+        }
+
+        return summary
+
+    def _count_occurrences(self, items: List[str]) -> Dict[str, int]:
+        """Count occurrences of each item in a list."""
+        counts = {}
+        for item in items:
+            counts[item] = counts.get(item, 0) + 1
+        return counts
+
+    def _count_anomaly_types(self, anomalies: List[Dict[str, Any]]) -> Dict[str, int]:
+        """Count occurrences of each anomaly type."""
+        counts = {}
+        for anomaly in anomalies:
+            anomaly_type = anomaly.get('type', 'unknown')
+            counts[anomaly_type] = counts.get(anomaly_type, 0) + 1
+        return counts
+
     def _process_validation_report(self, validation_report: Optional[Any]) -> Dict[str, Any]:
         """Process validation report if available."""
         if validation_report is None:
             return {"status": "not_available"}
-        
+
         try:
             if hasattr(validation_report, 'overall_result'):
                 return {
@@ -467,7 +638,9 @@ class HMMTrainingReporter:
         training_summary: TrainingSummary,
         feature_analysis: FeatureAnalysis,
         regime_analysis: RegimeAnalysis,
-        computational_metrics: ComputationalMetrics
+        computational_metrics: ComputationalMetrics,
+        learning_curve_summary: Optional[Dict[str, Any]] = None,
+        bootstrap_summary: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """Generate actionable insights and recommendations."""
         insights = {
@@ -475,6 +648,8 @@ class HMMTrainingReporter:
             "feature_insights": [],
             "regime_insights": [],
             "computational_insights": [],
+            "learning_curve_insights": [],
+            "bootstrap_insights": [],
             "recommendations": [],
             "next_steps": []
         }
@@ -510,11 +685,63 @@ class HMMTrainingReporter:
             insights["regime_insights"].append("Limited number of regimes may not capture market complexity")
             insights["recommendations"].append("Consider increasing the number of regimes or improving regime detection")
         
+        # Learning curve insights
+        if learning_curve_summary:
+            # Overfitting risk insights
+            overfitting_dist = learning_curve_summary.get('overfitting_risk_distribution', {})
+            if overfitting_dist.get('high', 0) > 0:
+                insights["learning_curve_insights"].append(f"{overfitting_dist.get('high', 0)} models show high overfitting risk from learning curves")
+                insights["recommendations"].append("High overfitting risk detected - increase regularization significantly")
+
+            if overfitting_dist.get('medium', 0) > 0:
+                insights["learning_curve_insights"].append(f"{overfitting_dist.get('medium', 0)} models show moderate overfitting risk from learning curves")
+                insights["recommendations"].append("Moderate overfitting risk detected - consider regularization adjustment")
+
+            # Convergence stability insights
+            stability_dist = learning_curve_summary.get('convergence_stability_distribution', {})
+            if stability_dist.get('low', 0) > 0:
+                insights["learning_curve_insights"].append(f"{stability_dist.get('low', 0)} models show poor convergence stability")
+                insights["recommendations"].append("Poor convergence stability - consider adjusting learning rate or model architecture")
+
+            # Training efficiency insights
+            efficiency_dist = learning_curve_summary.get('training_efficiency_distribution', {})
+            if efficiency_dist.get('underfitting', 0) > 0:
+                insights["learning_curve_insights"].append(f"{efficiency_dist.get('underfitting', 0)} models show signs of underfitting")
+                insights["recommendations"].append("Underfitting detected - consider increasing model capacity or adjusting hyperparameters")
+
+            # Anomaly insights
+            total_anomalies = learning_curve_summary.get('total_anomalies', 0)
+            if total_anomalies > 0:
+                anomaly_types = learning_curve_summary.get('anomaly_types', {})
+                insights["learning_curve_insights"].append(f"Detected {total_anomalies} learning curve anomalies")
+                for anomaly_type, count in anomaly_types.items():
+                    insights["learning_curve_insights"].append(f"  - {anomaly_type}: {count} instances")
+
+        # Bootstrap insights
+        if bootstrap_summary:
+            # Stability insights
+            avg_stability = bootstrap_summary.get('average_stability_score', 0.0)
+            if avg_stability < 0.6:
+                insights["bootstrap_insights"].append(f"Average model stability is low ({avg_stability:.3f})")
+                insights["recommendations"].append("Low model stability detected - consider ensemble methods or more robust algorithms")
+
+            # Overfitting probability insights
+            avg_overfitting_prob = bootstrap_summary.get('average_overfitting_probability', 0.0)
+            if avg_overfitting_prob > 0.5:
+                insights["bootstrap_insights"].append(f"High average overfitting probability ({avg_overfitting_prob:.1%})")
+                insights["recommendations"].append(f"High overfitting probability ({avg_overfitting_prob:.1%}) - implement stronger regularization")
+
+            # Stability level distribution insights
+            stability_dist = bootstrap_summary.get('stability_level_distribution', {})
+            if stability_dist.get('low', 0) > 0:
+                insights["bootstrap_insights"].append(f"{stability_dist.get('low', 0)} models have low stability level")
+                insights["recommendations"].append("Low stability models detected - review model selection criteria")
+
         # Computational insights
         if computational_metrics.average_training_time > 60:
             insights["computational_insights"].append("Training time is high - consider optimization")
             insights["recommendations"].append("Use faster algorithms or reduce model complexity")
-        
+
         if computational_metrics.memory_peak_usage_mb > 1000:
             insights["computational_insights"].append("High memory usage detected")
             insights["recommendations"].append("Consider memory optimization or batch processing")
@@ -534,18 +761,46 @@ class HMMTrainingReporter:
         self,
         model_summaries: List[ModelSummary],
         feature_analysis: FeatureAnalysis,
-        regime_analysis: RegimeAnalysis
+        regime_analysis: RegimeAnalysis,
+        learning_curve_summary: Optional[Dict[str, Any]] = None,
+        bootstrap_summary: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """Calculate overall quality metrics."""
         successful_models = [m for m in model_summaries if m.status == "success"]
         
+        # Calculate learning curve quality score
+        learning_curve_quality = 0.8  # Default good score
+        if learning_curve_summary:
+            overfitting_dist = learning_curve_summary.get('overfitting_risk_distribution', {})
+            if overfitting_dist.get('high', 0) > 0:
+                learning_curve_quality = 0.4  # High overfitting risk reduces quality
+            elif overfitting_dist.get('medium', 0) > 0:
+                learning_curve_quality = 0.6  # Medium overfitting risk
+
+        # Calculate bootstrap quality score
+        bootstrap_quality = 0.8  # Default good score
+        if bootstrap_summary:
+            avg_stability = bootstrap_summary.get('average_stability_score', 0.0)
+            avg_overfitting_prob = bootstrap_summary.get('average_overfitting_probability', 0.0)
+
+            if avg_stability < 0.6:
+                bootstrap_quality = 0.4  # Low stability reduces quality
+            elif avg_stability < 0.8:
+                bootstrap_quality = 0.6  # Moderate stability
+
+            if avg_overfitting_prob > 0.5:
+                bootstrap_quality = min(bootstrap_quality, 0.5)  # High overfitting probability
+
         return {
             "overall_quality_score": self._calculate_overall_quality_score(
-                model_summaries, feature_analysis, regime_analysis
+                model_summaries, feature_analysis, regime_analysis,
+                learning_curve_summary, bootstrap_summary
             ),
             "model_reliability": len(successful_models) / max(len(model_summaries), 1),
             "feature_quality": feature_analysis.feature_stability_score,
             "regime_quality": regime_analysis.regime_balance_score,
+            "learning_curve_quality": learning_curve_quality,
+            "bootstrap_quality": bootstrap_quality,
             "data_quality": 0.85,  # Could be calculated from validation results
             "training_robustness": 1.0 - np.std([m.performance.accuracy for m in successful_models]) if successful_models else 0.0
         }
@@ -554,7 +809,9 @@ class HMMTrainingReporter:
         self,
         model_summaries: List[ModelSummary],
         feature_analysis: FeatureAnalysis,
-        regime_analysis: RegimeAnalysis
+        regime_analysis: RegimeAnalysis,
+        learning_curve_summary: Optional[Dict[str, Any]] = None,
+        bootstrap_summary: Optional[Dict[str, Any]] = None
     ) -> float:
         """Calculate overall quality score (0-1)."""
         successful_models = [m for m in model_summaries if m.status == "success"]
@@ -562,26 +819,51 @@ class HMMTrainingReporter:
         if not successful_models:
             return 0.0
         
-        # Performance component (40%)
+        # Performance component (25%)
         avg_accuracy = np.mean([m.performance.accuracy for m in successful_models])
         performance_score = min(avg_accuracy, 1.0)
-        
-        # Reliability component (30%)
+
+        # Reliability component (20%)
         reliability_score = len(successful_models) / len(model_summaries)
-        
-        # Feature quality component (20%)
+
+        # Feature quality component (15%)
         feature_score = feature_analysis.feature_stability_score
-        
+
         # Regime quality component (10%)
         regime_score = regime_analysis.regime_balance_score
-        
+
+        # Learning curve quality component (15%)
+        learning_curve_score = 0.8  # Default good score
+        if learning_curve_summary:
+            overfitting_dist = learning_curve_summary.get('overfitting_risk_distribution', {})
+            if overfitting_dist.get('high', 0) > 0:
+                learning_curve_score = 0.4  # High overfitting risk reduces score
+            elif overfitting_dist.get('medium', 0) > 0:
+                learning_curve_score = 0.6  # Medium overfitting risk
+
+        # Bootstrap quality component (15%)
+        bootstrap_score = 0.8  # Default good score
+        if bootstrap_summary:
+            avg_stability = bootstrap_summary.get('average_stability_score', 0.0)
+            avg_overfitting_prob = bootstrap_summary.get('average_overfitting_probability', 0.0)
+
+            if avg_stability < 0.6:
+                bootstrap_score = 0.4  # Low stability reduces score
+            elif avg_stability < 0.8:
+                bootstrap_score = 0.6  # Moderate stability
+
+            if avg_overfitting_prob > 0.5:
+                bootstrap_score = min(bootstrap_score, 0.5)  # High overfitting probability
+
         overall_score = (
-            0.4 * performance_score +
-            0.3 * reliability_score +
-            0.2 * feature_score +
-            0.1 * regime_score
+            0.25 * performance_score +
+            0.20 * reliability_score +
+            0.15 * feature_score +
+            0.10 * regime_score +
+            0.15 * learning_curve_score +
+            0.15 * bootstrap_score
         )
-        
+
         return overall_score
     
     def _save_report(self, report: Dict[str, Any], kwargs: Dict[str, Any]):
@@ -630,7 +912,7 @@ class HMMTrainingReporter:
 def generate_hmm_training_report(
     training_results: Dict[str, Any],
     config: Any,
-    output_dir: str = "artifacts",
+    output_dir: str = "outcomes/market_analysis",
     validation_report: Optional[Any] = None,
     **kwargs
 ) -> Dict[str, Any]:

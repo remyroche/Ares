@@ -63,7 +63,7 @@ class FeatureSelectionConfig:
     # Output settings
     save_models: bool = True
     save_analysis: bool = True
-    output_directory: str = "outcomes"
+    output_directory: str = "outcomes/market_analysis"
     verbose: bool = True
 
 @dataclass

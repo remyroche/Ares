@@ -27,7 +27,7 @@ class OptimizationReporter:
     for optimization results and performance metrics.
     """
     
-    def __init__(self, output_dir: str = "reports"):
+    def __init__(self, output_dir: str = "outcomes/market_analysis"):
         """Initialize the optimization reporter."""
         self.logger = logger.getChild('OptimizationReporter')
         self.output_dir = Path(output_dir)

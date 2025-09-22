@@ -114,11 +114,12 @@ class ReportingSettings:
 # File and path constants
 class PathConstants:
     """File and path constants."""
-    
-    DEFAULT_OUTPUT_DIR = "artifacts"
+
+    DEFAULT_OUTPUT_DIR = "outcomes/market_analysis"
+    DEFAULT_DATA_DIR = "generated/market_analysis"
     MODELS_SUBDIR = "models"
     REPORTS_SUBDIR = "reports"
-    
+
     # File extensions
     MODEL_EXTENSION = ".pkl"
     METADATA_EXTENSION = ".json"

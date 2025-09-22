@@ -48,6 +48,17 @@ from .shared_feature_utils import create_enhanced_features_with_names
 from src.utils.ml_common.config.base_training_config import HMMTrainingConfig
 from src.utils.ml_common.training.base_training_step import BaseTrainingStep
 
+# Import universal validation components
+from src.utils.ml_common.validation import (
+    validate_ml_model,
+    get_ml_validator,
+    UniversalMLValidationConfig
+)
+from src.utils.ml_common.config.universal_timeframe_config import get_primary_timeframe
+from src.utils.ml_common.reporting import process_validation_with_reporting
+
+# Note: Enhanced components now use universal validation from ml_common
+
 # Feature generation system imports
 try:
     from src.feature_generation.core.feature_bank import get_global_feature_bank
@@ -200,59 +211,139 @@ except ImportError as e:
                 if model_type == 'lightgbm' or model_type == 'lgbm':
                     if not ML_LIBRARIES_STATUS.get('lightgbm', False):
                         raise ImportError(f"LightGBM not available for model type: {model_type}")
-                    import lightgbm
-                    # Enhanced regularization for LightGBM to prevent overfitting
-                    return lightgbm.LGBMClassifier(
-                        n_estimators=100,
-                        learning_rate=0.05,    # Reduced learning rate
-                        max_depth=4,           # Limited depth for regularization
-                        num_leaves=15,         # Limited leaves per tree
-                        min_child_samples=20,  # Minimum samples per child
-                        min_child_weight=0.1,  # Minimum sum of hessian per child
-                        reg_alpha=0.1,         # L1 regularization
-                        reg_lambda=0.1,        # L2 regularization
-                        feature_fraction=0.8,  # Use 80% of features per tree
-                        bagging_fraction=0.8,  # Use 80% of data per tree
-                        bagging_freq=1,        # Enable bagging
-                        random_state=42,
-                        **kwargs
-                    )
+
+                    # Use ML commons EnhancedModelFactory with adaptive regularization
+                    try:
+                        from src.utils.ml_common.models.model_factory import EnhancedModelFactory, ModelType
+                        model, reg_info = EnhancedModelFactory().create_model_with_adaptive_regularization(
+                            ModelType.LIGHTGBM_CLASSIFIER,
+                            'lightgbm_classifier',
+                            regime_labels=kwargs.get('regime_labels'),  # Pass regime labels for adaptive regularization
+                            n_estimators=100,
+                            learning_rate=0.05,    # Reduced learning rate
+                            max_depth=4,           # Limited depth for regularization
+                            num_leaves=15,         # Limited leaves per tree
+                            min_child_samples=20,  # Minimum samples per child
+                            min_child_weight=0.1,  # Minimum sum of hessian per child
+                            feature_fraction=0.8,  # Use 80% of features per tree
+                            bagging_fraction=0.8,  # Use 80% of data per tree
+                            bagging_freq=1,        # Enable bagging
+                            random_state=42,
+                            **kwargs
+                        )
+                    except ImportError:
+                        # Fallback to direct model creation if ML commons not available
+                        import lightgbm
+                        model = lightgbm.LGBMClassifier(
+                            n_estimators=100,
+                            learning_rate=0.05,    # Reduced learning rate
+                            max_depth=4,           # Limited depth for regularization
+                            num_leaves=15,         # Limited leaves per tree
+                            min_child_samples=20,  # Minimum samples per child
+                            min_child_weight=0.1,  # Minimum sum of hessian per child
+                            feature_fraction=0.8,  # Use 80% of features per tree
+                            bagging_fraction=0.8,  # Use 80% of data per tree
+                            bagging_freq=1,        # Enable bagging
+                            random_state=42,
+                            **kwargs
+                        )
+                        reg_info = {'dataset_size': 'unknown', 'reg_alpha': 0.1, 'reg_lambda': 0.1}
+
+                    # Log adaptive regularization info
+                    if 'dataset_size' in reg_info:
+                        logger.info(f"LightGBM adaptive regularization: dataset_size={reg_info['dataset_size']}, "
+                                   f"reg_alpha={reg_info['reg_alpha']:.3f}, reg_lambda={reg_info['reg_lambda']:.3f}")
+
+                    return model
                 elif model_type == 'xgboost':
                     if not ML_LIBRARIES_STATUS.get('xgboost', False):
                         raise ImportError(f"XGBoost not available for model type: {model_type}")
-                    import xgboost
-                    # Enhanced regularization for XGBoost to prevent overfitting
-                    return xgboost.XGBClassifier(
-                        n_estimators=100,
-                        learning_rate=0.05,    # Reduced learning rate
-                        max_depth=4,           # Limited depth for regularization
-                        min_child_weight=5,    # Minimum sum of hessian per child
-                        reg_alpha=0.1,         # L1 regularization
-                        reg_lambda=0.1,        # L2 regularization
-                        subsample=0.8,         # Use 80% of data per tree
-                        colsample_bytree=0.8,  # Use 80% of features per tree
-                        colsample_bylevel=0.8, # Use 80% of features per level
-                        colsample_bynode=0.8,  # Use 80% of features per node
-                        random_state=42,
-                        **kwargs
-                    )
+
+                    # Use ML commons EnhancedModelFactory with adaptive regularization
+                    try:
+                        from src.utils.ml_common.models.model_factory import EnhancedModelFactory, ModelType
+                        model, reg_info = EnhancedModelFactory().create_model_with_adaptive_regularization(
+                            ModelType.XGBOOST_CLASSIFIER,
+                            'xgboost_classifier',
+                            regime_labels=kwargs.get('regime_labels'),  # Pass regime labels for adaptive regularization
+                            n_estimators=100,
+                            learning_rate=0.05,    # Reduced learning rate
+                            max_depth=4,           # Limited depth for regularization
+                            min_child_weight=5,    # Minimum sum of hessian per child
+                            subsample=0.8,         # Use 80% of data per tree
+                            colsample_bytree=0.8,  # Use 80% of features per tree
+                            colsample_bylevel=0.8, # Use 80% of features per level
+                            colsample_bynode=0.8,  # Use 80% of features per node
+                            random_state=42,
+                            **kwargs
+                        )
+                    except ImportError:
+                        # Fallback to direct model creation if ML commons not available
+                        import xgboost
+                        model = xgboost.XGBClassifier(
+                            n_estimators=100,
+                            learning_rate=0.05,    # Reduced learning rate
+                            max_depth=4,           # Limited depth for regularization
+                            min_child_weight=5,    # Minimum sum of hessian per child
+                            subsample=0.8,         # Use 80% of data per tree
+                            colsample_bytree=0.8,  # Use 80% of features per tree
+                            colsample_bylevel=0.8, # Use 80% of features per level
+                            colsample_bynode=0.8,  # Use 80% of features per node
+                            random_state=42,
+                            **kwargs
+                        )
+                        reg_info = {'dataset_size': 'unknown', 'reg_alpha': 0.1, 'reg_lambda': 0.1}
+
+                    # Log adaptive regularization info
+                    if 'dataset_size' in reg_info:
+                        logger.info(f"XGBoost adaptive regularization: dataset_size={reg_info['dataset_size']}, "
+                                   f"reg_alpha={reg_info['reg_alpha']:.3f}, reg_lambda={reg_info['reg_lambda']:.3f}")
+
+                    return model
                 elif model_type in ['random_forest', 'rf']:
                     if not ML_LIBRARIES_STATUS.get('sklearn', False):
                         raise ImportError(f"Scikit-learn not available for model type: {model_type}")
-                    from sklearn.ensemble import RandomForestClassifier
-                    # Enhanced regularization to prevent overfitting
-                    return RandomForestClassifier(
-                        n_estimators=100,
-                        max_depth=6,           # Reduced depth for better regularization
-                        min_samples_split=20,  # Increased to require more samples to split
-                        min_samples_leaf=10,   # Increased to require more samples per leaf
-                        max_features='sqrt',   # Limit features per split (sqrt for better regularization)
-                        min_impurity_decrease=0.01,  # Stop splitting if impurity decrease is too small
-                        ccp_alpha=0.001,       # Cost-complexity pruning for post-pruning regularization
-                        random_state=42,
-                        n_jobs=-1,
-                        **kwargs
-                    )
+                    # Use ML commons EnhancedModelFactory with adaptive regularization
+                    try:
+                        from src.utils.ml_common.models.model_factory import EnhancedModelFactory, ModelType
+                        model, reg_info = EnhancedModelFactory().create_model_with_adaptive_regularization(
+                            ModelType.RANDOM_FOREST_CLASSIFIER,
+                            'random_forest_classifier',
+                            regime_labels=kwargs.get('regime_labels'),  # Pass regime labels for adaptive regularization
+                            n_estimators=100,
+                            max_depth=6,           # Reduced depth for better regularization
+                            min_samples_split=20,  # Increased to require more samples to split
+                            min_samples_leaf=10,   # Increased to require more samples per leaf
+                            max_features='sqrt',   # Limit features per split (sqrt for better regularization)
+                            min_impurity_decrease=0.01,  # Stop splitting if impurity decrease is too small
+                            ccp_alpha=0.001,       # Cost-complexity pruning for post-pruning regularization
+                            random_state=42,
+                            n_jobs=-1,
+                            **kwargs
+                        )
+                    except ImportError:
+                        # Fallback to direct model creation if ML commons not available
+                        from sklearn.ensemble import RandomForestClassifier
+                        model = RandomForestClassifier(
+                            n_estimators=100,
+                            max_depth=6,           # Reduced depth for better regularization
+                            min_samples_split=20,  # Increased to require more samples to split
+                            min_samples_leaf=10,   # Increased to require more samples per leaf
+                            max_features='sqrt',   # Limit features per split (sqrt for better regularization)
+                            min_impurity_decrease=0.01,  # Stop splitting if impurity decrease is too small
+                            ccp_alpha=0.001,       # Cost-complexity pruning for post-pruning regularization
+                            random_state=42,
+                            n_jobs=-1,
+                            **kwargs
+                        )
+                        reg_info = {'dataset_size': 'unknown', 'reg_alpha': 0.1, 'reg_lambda': 0.1}
+
+                    # Log adaptive regularization info
+                    if 'dataset_size' in reg_info:
+                        logger.info(f"RandomForest adaptive regularization: dataset_size={reg_info['dataset_size']}, "
+                                   f"reg_alpha={reg_info['reg_alpha']:.3f}, reg_lambda={reg_info['reg_lambda']:.3f}")
+
+                    return model
                 # elif model_type in ['logistic_regression', 'lr']:  # REMOVED LOGISTIC REGRESSION
                 #     if not ML_LIBRARIES_STATUS.get('sklearn', False):
                 #         raise ImportError(f"Scikit-learn not available for model type: {model_type}")
@@ -386,7 +477,7 @@ except ImportError as e:
                 return False
 
         @staticmethod
-        def validate_train_test_split(X_train, X_test, y_train, y_test, temporal_check: bool = False) -> tuple[bool, str]:
+        def validate_train_test_split(X_train, X_test, y_train, y_test, temporal_check: bool = True) -> tuple[bool, str]:
             """Basic train/test split validation."""
             try:
                 if len(X_train) == 0 or len(X_test) == 0:
@@ -501,7 +592,7 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
                 
             config = HMMTrainingConfig(
                 model_name="hmm_models_enhanced",
-                timeframe="15m",
+                timeframe=get_primary_timeframe(),
                 n_features=100,
                 sequence_length=20,
                 n_regimes=3,
@@ -1372,40 +1463,16 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
                 else:
                     X_df = X  # Already a DataFrame
 
-                # Ensure a monotonically increasing integer index if no timestamp exists
-                try:
-                    if not hasattr(X_df.index, "is_monotonic_increasing") or not X_df.index.is_monotonic_increasing:
-                        X_df = X_df.copy()
-                        X_df.index = np.arange(len(X_df))
-                except Exception:
-                    X_df = X_df.copy()
-                    X_df.index = np.arange(len(X_df))
+                            # Check split integrity
+                            if SHARED_UTILITIES_AVAILABLE:
+                                is_split_valid, split_message = ValidationUtils.validate_train_test_split(
+                                    X_train, X_test, y_train, y_test, temporal_check=True
+                                )
+                            else:
+                                # Basic split validation if shared utilities not available
+                                is_split_valid = True
+                                split_message = "Split validation skipped - shared utilities not available"
 
-                # Create a single time-aware holdout split
-                if use_purged_kfold:
-                    splitter = PurgedKFoldTime(n_splits=5)
-                    # Use last split as holdout to simulate final OOS evaluation
-                    last_train_idx, last_val_idx = None, None
-                    for train_idx, val_idx in splitter.split(X_df):
-                        last_train_idx, last_val_idx = train_idx, val_idx
-                    train_idx, test_idx = last_train_idx, last_val_idx
-                else:
-                    # Fallback to simple chronological split
-                    tscv = TimeSeriesSplit(n_splits=5)
-                    last = list(tscv.split(X_df))[-1]
-                    train_idx, test_idx = last[0], last[1]
-
-                X_train, X_test = X_df.iloc[train_idx].values, X_df.iloc[test_idx].values
-                y_train, y_test = y[train_idx], y[test_idx]
-
-                # Basic integrity checks
-                if SHARED_UTILITIES_AVAILABLE:
-                    is_split_valid, split_message = ValidationUtils.validate_train_test_split(
-                        X_train, X_test, y_train, y_test, temporal_check=True
-                    )
-                else:
-                    is_split_valid = True
-                    split_message = "Split validation skipped - shared utilities not available"
 
                 if not is_split_valid:
                     raise ValueError(f"Invalid time-series split: {split_message}")
@@ -1555,66 +1622,66 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
                             except Exception as e:
                                 tprint(f"⚠️ Error handling cluster assignments: {e}")
 
-                            # Comprehensive overfitting detection
-                            if SHARED_UTILITIES_AVAILABLE:
-                                overfitting_analysis = ValidationUtils.detect_overfitting_comprehensive(
-                                    train_predictions=train_predictions,
-                                    test_predictions=test_predictions,
-                                    train_labels=y_train,
-                                    test_labels=y_test,
-                                    train_probabilities=None,
-                                    test_probabilities=None,
-                                    model=model,
-                                    feature_importance=feature_importance
-                                )
-                            else:
-                                overfitting_analysis = {
-                                    'is_overfitting': False,
-                                    'accuracy_gap': float(abs(train_accuracy - test_accuracy)),
-                                    'train_accuracy': float(train_accuracy),
-                                    'test_accuracy': float(test_accuracy),
-                                    'warnings': ['Overfitting detection skipped - shared utilities not available']
-                                }
-
+                            # Enhanced overfitting detection with early stopping
+                            overfitting_detector = get_overfitting_detector()
+                            overfitting_reporter = get_overfitting_reporter()
+                            
                             # Get probabilities if available for enhanced analysis
+                            train_probabilities = None
+                            test_probabilities = None
                             if hasattr(model, 'predict_proba'):
                                 try:
                                     train_probabilities = model.predict_proba(X_train)
                                     test_probabilities = model.predict_proba(X_test)
-                                    overfitting_analysis = ValidationUtils.detect_overfitting_comprehensive(
-                                        train_predictions=train_predictions,
-                                        test_predictions=test_predictions,
-                                        train_labels=y_train,
-                                        test_labels=y_test,
-                                        train_probabilities=train_probabilities,
-                                        test_probabilities=test_probabilities,
-                                        model=model,
-                                        feature_importance=feature_importance
-                                    )
                                 except Exception:
                                     pass
+                            
+                            # Comprehensive overfitting analysis
+                            overfitting_analysis = overfitting_detector.comprehensive_overfitting_analysis(
+                                train_predictions=train_predictions,
+                                val_predictions=test_predictions,
+                                train_labels=y_train,
+                                val_labels=y_test,
+                                train_probabilities=train_probabilities,
+                                val_probabilities=test_probabilities,
+                                feature_importance=feature_importance
+                            )
+                            
+                            # Generate comprehensive report
+                            overfitting_report = overfitting_detector.generate_comprehensive_report(
+                                overfitting_analysis=overfitting_analysis,
+                                model_name=model_name,
+                                fold_number=None
+                            )
 
-                            # Enhanced overfitting reporting
-                            if overfitting_analysis['is_overfitting']:
-                                severity = overfitting_analysis['severity']
-                                tprint(f"⚠️ OVERFITTING DETECTED ({severity.upper()} severity):")
-                                tprint(f"   Train accuracy: {overfitting_analysis['train_accuracy']:.4f}")
-                                tprint(f"   Test accuracy: {overfitting_analysis['test_accuracy']:.4f}")
-                                tprint(f"   Accuracy gap: {overfitting_analysis['accuracy_gap']:.4f}")
-                                tprint(f"   F1 gap: {overfitting_analysis['f1_gap']:.4f}")
-
-                                if overfitting_analysis['warnings']:
-                                    for warning in overfitting_analysis['warnings']:
-                                        tprint(f"   {warning}")
-
-                                if overfitting_analysis['recommendations']:
-                                    tprint(f"   📋 Recommendations:")
-                                    for rec in overfitting_analysis['recommendations'][:3]:  # Show top 3
-                                        tprint(f"      • {rec}")
+                            # Enhanced overfitting reporting with comprehensive analysis
+                            if overfitting_report.is_overfitting:
+                                tprint(f"🚨 OVERFITTING DETECTED ({overfitting_report.severity.upper()} severity)")
+                                tprint(f"   Confidence Level: {overfitting_report.confidence_level:.2f}")
+                                tprint(f"   Train Accuracy: {overfitting_report.train_accuracy:.4f}")
+                                tprint(f"   Val Accuracy:   {overfitting_report.val_accuracy:.4f}")
+                                tprint(f"   Accuracy Gap:   {overfitting_report.accuracy_gap:.4f}")
+                                tprint(f"   F1 Gap:         {overfitting_report.f1_gap:.4f}")
+                                
+                                if overfitting_report.indicators:
+                                    tprint(f"   Indicators ({len(overfitting_report.indicators)}):")
+                                    for indicator in overfitting_report.indicators:
+                                        tprint(f"     • {indicator}")
+                                
+                                if overfitting_report.warnings:
+                                    tprint("   Warnings:")
+                                    for warning in overfitting_report.warnings[:5]:  # Show top 5
+                                        tprint(f"     {warning}")
+                                
+                                if overfitting_report.recommendations:
+                                    tprint("   Recommendations:")
+                                    for rec in overfitting_report.recommendations[:5]:  # Show top 5
+                                        tprint(f"     {rec}")
                             else:
-                                # Calculate accuracy gap for display
-                                accuracy_gap = train_accuracy - test_accuracy
-                                tprint(f"✅ Model generalization validated: Train={train_accuracy:.4f}, Test={test_accuracy:.4f}, Gap={accuracy_gap:.4f}")
+                                tprint(f"✅ No overfitting detected - Model generalization looks good")
+                                tprint(f"   Train Accuracy: {overfitting_report.train_accuracy:.4f}")
+                                tprint(f"   Val Accuracy:   {overfitting_report.val_accuracy:.4f}")
+                                tprint(f"   Accuracy Gap:   {overfitting_report.accuracy_gap:.4f}")
 
                             # Use test set predictions for final metrics and store OOS
                             predictions = test_predictions
@@ -1867,7 +1934,7 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
         
         try:
             # Create save directory using common operations
-            save_dir = Path("artifacts") / "models" / model_type / symbol / exchange / timeframe
+            save_dir = Path("generated/market_analysis") / "models" / model_type / symbol / exchange / timeframe
             if not ensure_directory(save_dir):
                 tprint(f"❌ Failed to create save directory: {save_dir}")
                 return saved_paths

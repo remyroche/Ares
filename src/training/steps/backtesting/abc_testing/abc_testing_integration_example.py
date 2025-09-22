@@ -163,7 +163,7 @@ class ABCTestingIntegrationExample:
             
             # Results Visualization
             self.visualization_config = VisualizationConfig(
-                output_dir=str(self.config_dir / "reports"),
+                output_dir="outcomes/backtesting/abc_integration",
                 format="html",
                 enable_interactive=True,
                 include_statistical_tests=True,
@@ -396,7 +396,7 @@ class ABCTestingIntegrationExample:
         """Save test results to disk."""
         try:
             # Create results directory
-            results_dir = self.config_dir / "results" / test_name
+            results_dir = Path("generated/backtesting") / "abc_integration" / test_name
             results_dir.mkdir(parents=True, exist_ok=True)
             
             # Save results as JSON

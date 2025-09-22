@@ -128,9 +128,47 @@ class OptimalClusteringConfig:
     hmm_max_states: int = 8  # Maximum HMM states to consider
     hmm_state_prob_threshold: float = 0.6  # Minimum state probability threshold
 
+    # ===== ENHANCED CLUSTERING PARAMETERS =====
+
+    # Enhanced 4D frontier optimization
+    enable_enhanced_clustering: bool = True  # Enable enhanced clustering with 4D frontiers
+    enable_frontier_optimization: bool = True  # Enable 4D frontier establishment
+    enable_regime_transfer_optimization: bool = True  # Enable CV-based regime transfers
+    frontier_optimization_iterations: int = 5  # Number of frontier optimization iterations
+
+    # Enhanced quality thresholds
+    enhanced_min_silhouette_score: float = 0.35  # Enhanced Silhouette threshold
+    enhanced_min_calinski_harabasz_score: float = 200.0  # Enhanced CH threshold
+    enhanced_min_davies_bouldin_score: float = 1.3  # Enhanced DB threshold (lower = better)
+
+    # Enhanced CV optimization
+    enhanced_cv_optimization_enabled: bool = True  # Enable enhanced CV optimization
+    enhanced_cv_outlier_mitigation: bool = True  # Use MAD for outlier mitigation
+    enhanced_cv_similarity_threshold: float = 0.1  # Minimum CV similarity benefit for transfers
+
+    # Enhanced cluster size targeting (5% average)
+    enhanced_target_avg_cluster_pct: float = 0.05  # 5% average cluster size
+    enhanced_size_constraint_ratio: float = 1.5  # 50% size difference limit for transfers
+
+    # Enhanced frontier types
+    enhanced_frontier_types: List[str] = field(default_factory=lambda: [
+        'volume_volatility', 'momentum_trend', 'volume_momentum',
+        'volatility_trend', 'cross_dimensional'
+    ])
+
+    # Enhanced transfer optimization
+    enhanced_transfer_batch_size: float = 0.1  # 10% batch processing
+    enhanced_transfer_benefit_threshold: float = 0.1  # Minimum benefit for transfers
+    enhanced_convergence_threshold: int = 0  # Stop if no transfers in iteration
+
+    # Enhanced matrix operations
+    enhanced_matrix_operations_enabled: bool = True  # Use enhanced matrix operations
+    enhanced_memory_optimization: bool = True  # Enable memory optimization for large datasets
+    enhanced_gpu_acceleration: bool = False  # Enable GPU acceleration if available
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert config to dictionary."""
-        return {
+        base_dict = {
             'target_n_clusters': self.target_n_clusters,
             'target_coverage_pct': self.target_coverage_pct,
             'max_noise_pct': self.max_noise_pct,
@@ -151,6 +189,41 @@ class OptimalClusteringConfig:
                 'stability_threshold': self.stability_threshold
             }
         }
+
+        # Add enhanced clustering parameters
+        enhanced_dict = {
+            'enable_enhanced_clustering': self.enable_enhanced_clustering,
+            'enable_frontier_optimization': self.enable_frontier_optimization,
+            'enable_regime_transfer_optimization': self.enable_regime_transfer_optimization,
+            'frontier_optimization_iterations': self.frontier_optimization_iterations,
+            'enhanced_quality_metrics': {
+                'min_silhouette_score': self.enhanced_min_silhouette_score,
+                'min_calinski_harabasz_score': self.enhanced_min_calinski_harabasz_score,
+                'min_davies_bouldin_score': self.enhanced_min_davies_bouldin_score
+            },
+            'enhanced_cv_optimization': {
+                'enabled': self.enhanced_cv_optimization_enabled,
+                'outlier_mitigation': self.enhanced_cv_outlier_mitigation,
+                'similarity_threshold': self.enhanced_cv_similarity_threshold
+            },
+            'enhanced_cluster_sizing': {
+                'target_avg_cluster_pct': self.enhanced_target_avg_cluster_pct,
+                'size_constraint_ratio': self.enhanced_size_constraint_ratio
+            },
+            'enhanced_frontier_config': {
+                'frontier_types': self.enhanced_frontier_types,
+                'transfer_batch_size': self.enhanced_transfer_batch_size,
+                'transfer_benefit_threshold': self.enhanced_transfer_benefit_threshold,
+                'convergence_threshold': self.enhanced_convergence_threshold
+            },
+            'enhanced_matrix_operations': {
+                'enabled': self.enhanced_matrix_operations_enabled,
+                'memory_optimization': self.enhanced_memory_optimization,
+                'gpu_acceleration': self.enhanced_gpu_acceleration
+            }
+        }
+
+        return {**base_dict, **enhanced_dict}
 
     @classmethod
     def create_default(cls) -> 'OptimalClusteringConfig':
@@ -179,12 +252,55 @@ class OptimalClusteringConfig:
         # REMOVED: bootstrap_iterations - removed for performance
         return config
 
+    @classmethod
+    def create_enhanced_clustering(cls) -> 'OptimalClusteringConfig':
+        """Create enhanced clustering configuration with 4D frontier optimization."""
+        config = cls()
+
+        # Enable all enhanced features
+        config.enable_enhanced_clustering = True
+        config.enable_frontier_optimization = True
+        config.enable_regime_transfer_optimization = True
+        config.frontier_optimization_iterations = 5
+
+        # Enhanced quality thresholds
+        config.enhanced_min_silhouette_score = 0.35
+        config.enhanced_min_calinski_harabasz_score = 200.0
+        config.enhanced_min_davies_bouldin_score = 1.3
+
+        # Enhanced CV optimization
+        config.enhanced_cv_optimization_enabled = True
+        config.enhanced_cv_outlier_mitigation = True
+        config.enhanced_cv_similarity_threshold = 0.1
+
+        # Enhanced cluster sizing (5% average)
+        config.enhanced_target_avg_cluster_pct = 0.05
+        config.enhanced_size_constraint_ratio = 1.5
+
+        # Enhanced frontier configuration
+        config.enhanced_frontier_types = [
+            'volume_volatility', 'momentum_trend', 'volume_momentum',
+            'volatility_trend', 'cross_dimensional'
+        ]
+        config.enhanced_transfer_batch_size = 0.1
+        config.enhanced_transfer_benefit_threshold = 0.1
+        config.enhanced_convergence_threshold = 0
+
+        # Enhanced matrix operations
+        config.enhanced_matrix_operations_enabled = True
+        config.enhanced_memory_optimization = True
+        config.enhanced_gpu_acceleration = False
+
+        return config
+
 def get_clustering_config(mode: str = "default") -> OptimalClusteringConfig:
     """Get clustering configuration based on mode."""
     if mode == "high_quality":
         return OptimalClusteringConfig.create_high_quality()
     elif mode == "fast_processing":
         return OptimalClusteringConfig.create_fast_processing()
+    elif mode == "enhanced":
+        return OptimalClusteringConfig.create_enhanced_clustering()
     else:
         return OptimalClusteringConfig.create_default()
 
@@ -192,3 +308,4 @@ def get_clustering_config(mode: str = "default") -> OptimalClusteringConfig:
 DEFAULT_CONFIG = get_clustering_config("default")
 HIGH_QUALITY_CONFIG = get_clustering_config("high_quality")
 FAST_CONFIG = get_clustering_config("fast_processing")
+ENHANCED_CONFIG = get_clustering_config("enhanced")

@@ -234,7 +234,7 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                 min_samples_per_regime=1000,
                 enable_data_augmentation=True,
                 augmentation_method="smote",
-                model_save_path="./models/tactician_models",
+                model_save_path="generated/model_training/models/tactician_models",
                 evaluation_metrics=["mse", "mae", "r2", "mape", "smape"],
                 use_single_model=True,
                 single_model_name="tactician_unified_model",
@@ -2687,7 +2687,7 @@ if __name__ == "__main__":
         hpo_n_trials=50,  # Reduced for demo
         enable_hpo=True,
         save_models=True,
-        model_save_path="./models/tactician_models_enhanced",
+        model_save_path="generated/model_training/models/tactician_models_enhanced",
         use_single_model=True,
         single_model_name="tactician_unified_model",
         enable_ensemble_training=True,

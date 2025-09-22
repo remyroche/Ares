@@ -313,7 +313,7 @@ class RegimeHandler:
             Success status
         """
         try:
-            output_dir = ensure_directory(Path(data_dir) / 'regime_results' / step_name)
+            output_dir = ensure_directory(Path("generated/market_analysis") / 'regime_results' / step_name)
             for regime_id, result in results.items():
                 if result is None:
                     continue
@@ -355,7 +355,7 @@ class RegimeHandler:
             Dictionary mapping regime IDs to results
         """
         try:
-            results_dir = Path(data_dir) / 'regime_results' / step_name
+            results_dir = Path("generated/market_analysis") / 'regime_results' / step_name
             if not results_dir.exists():
                 self.logger.warning(f'⚠️ No results directory found: {results_dir}')
                 return {}

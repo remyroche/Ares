@@ -139,7 +139,7 @@ class MultiModelTPSLExample:
             
             # Results Visualization
             self.visualization_config = VisualizationConfig(
-                output_dir=str(self.config_dir / "reports"),
+                output_dir="outcomes/backtesting/multi_model_tpsl",
                 format="html",
                 enable_interactive=True,
                 include_statistical_tests=True,
@@ -459,7 +459,7 @@ class MultiModelTPSLExample:
             }
             
             # Save TPSL report
-            tpsl_report_file = self.config_dir / "reports" / "tpsl_performance_analysis.json"
+            tpsl_report_file = Path("outcomes/backtesting") / "multi_model_tpsl_performance_analysis.json"
             tpsl_report_file.parent.mkdir(parents=True, exist_ok=True)
             
             with open(tpsl_report_file, 'w') as f:
@@ -473,7 +473,7 @@ class MultiModelTPSLExample:
     async def _save_test_results(self, results: Any, tpsl_analysis: Dict[str, Any], test_name: str) -> None:
         """Save comprehensive test results."""
         try:
-            results_dir = self.config_dir / "results" / test_name
+            results_dir = Path("generated/backtesting") / "multi_model_tpsl" / test_name
             results_dir.mkdir(parents=True, exist_ok=True)
             
             # Save main results

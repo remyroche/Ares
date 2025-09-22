@@ -29,6 +29,13 @@ except ImportError:
 
 from src.utils.logger import system_logger
 
+# Import universal validation integration
+from ..training.universal_validation_integration import (
+    get_validation_integrator,
+    validate_hpo_trial,
+    ValidationIntegrationConfig
+)
+
 logger = system_logger.getChild('HierarchicalHPO')
 
 @dataclass
@@ -75,6 +82,14 @@ class HierarchicalHPOConfig:
     validation_split: float = 0.2
     test_split: float = 0.1
     enable_time_series_cv: bool = True
+    
+    # Universal validation settings
+    enable_validation: bool = True
+    enable_overfitting_detection: bool = True
+    enable_temporal_validation: bool = True
+    enable_timeframe_validation: bool = True
+    validation_failure_threshold: float = 0.5
+    fail_on_validation_error: bool = False
 
 class HierarchicalHPO:
     """
@@ -99,9 +114,32 @@ class HierarchicalHPO:
         self.phase2_result: Optional[HPOPhaseResult] = None
         self.final_models: Dict[str, Any] = {}
         
+        # Initialize validation integration
+        self._initialize_validation_integration()
+        
         # Create cache directory
         if self.config.enable_caching:
             Path(self.config.cache_dir).mkdir(parents=True, exist_ok=True)
+    
+    def _initialize_validation_integration(self):
+        """Initialize universal validation integration for HPO."""
+        # Create validation configuration
+        validation_config = ValidationIntegrationConfig(
+            enable_validation=self.config.enable_validation,
+            enable_overfitting_detection=self.config.enable_overfitting_detection,
+            enable_temporal_validation=self.config.enable_temporal_validation,
+            enable_timeframe_validation=self.config.enable_timeframe_validation,
+            validation_failure_threshold=self.config.validation_failure_threshold,
+            fail_on_validation_error=self.config.fail_on_validation_error,
+            save_validation_reports=True,
+            validation_report_directory=f"{self.config.cache_dir}/validation_reports",
+            enable_validation_logging=True
+        )
+        
+        # Initialize validation integrator
+        self.validation_integrator = get_validation_integrator(validation_config)
+        
+        logger.info("✅ Universal validation integration initialized for HPO")
         
         self.logger.info("✅ Hierarchical HPO initialized")
     

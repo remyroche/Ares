@@ -29,6 +29,15 @@ from src.utils.common_operations import (
     safe_dataframe_operation, safe_divide, safe_float, safe_int,
     ensure_directory, memory_checkpoint, optimize_memory, get_memory_usage
 )
+
+# Import universal validation components from ml_common
+from src.utils.ml_common.validation import (
+    validate_ml_model,
+    get_ml_validator,
+    UniversalMLValidationConfig
+)
+from src.utils.ml_common.config.universal_timeframe_config import get_primary_timeframe
+from src.utils.ml_common.reporting import process_validation_with_reporting
 try:
     from src.utils.common_operations import (
         validate_dataframe, validate_finite, validate_positive, validate_range, 
@@ -136,6 +145,17 @@ try:
         MemoryTracker
     )
     from .shared_utilities.training_error_handler import TrainingMetrics, ModelResult
+
+    # Enhanced analysis utilities (now integrated into ML commons)
+    try:
+        from src.utils.ml_common.evaluation.enhanced_learning_curve_analysis import EnhancedLearningCurveAnalyzer
+        from src.utils.ml_common.evaluation.enhanced_bootstrap_confidence_intervals import EnhancedBootstrapConfidenceIntervalAnalyzer
+        ENHANCED_ANALYSIS_AVAILABLE = True
+    except ImportError:
+        EnhancedLearningCurveAnalyzer = None
+        EnhancedBootstrapConfidenceIntervalAnalyzer = None
+        ENHANCED_ANALYSIS_AVAILABLE = False
+
     SHARED_UTILITIES_AVAILABLE = True
     tprint("✅ Shared utilities loaded successfully")
 except ImportError as e:
@@ -252,11 +272,11 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
             if config is None:
                 config = EnsembleTrainingConfig(
                     model_name="hmm_ensemble_models",
-                    timeframe="15m",
+                    timeframe=get_primary_timeframe(),
                     min_samples_per_regime=500,  # 🔧 Reduced from 1000 to 500 for better regime coverage
                     enable_data_augmentation=True,
                     augmentation_method="smote",
-                    model_save_path="./models/hmm_ensemble_models",
+                    model_save_path="./generated/market_analysis/models/hmm_ensemble_models",
                     evaluation_metrics=["accuracy", "precision", "recall", "f1_score", "log_loss"]
                 )
                 tprint("📋 Using default configuration for HMM ensemble training (classification)")
@@ -2352,10 +2372,10 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
         # Get model paths from artifacts directory - use correct path where models are actually saved
         symbol = getattr(self.config, 'symbol', 'ETHUSDT')
         exchange = getattr(self.config, 'exchange', 'binance')
-        timeframe = getattr(self.config, 'timeframe', '15m')  # HMM models are trained on 15m timeframe
+        timeframe = getattr(self.config, 'timeframe', get_primary_timeframe())  # HMM models use standardized timeframe
 
         # Use the correct path where hmm_models_training actually saves models
-        base_models_dir = Path("models/hmm_ensemble_models")
+        base_models_dir = Path("generated/market_analysis/models/hmm_ensemble_models")
         
         if not base_models_dir.exists():
             tprint(f"❌ Base models directory not found: {base_models_dir}")
@@ -3130,12 +3150,12 @@ if __name__ == "__main__":
     # Create configuration
     config = EnsembleTrainingConfig(
         model_name="hmm_ensemble_models",
-        timeframe="15m",
+        timeframe=get_primary_timeframe(),
         model_types=["catboost", "elastic_net", "ensemble_rf"],
         hpo_n_trials=50,  # Reduced for demo
         enable_hpo=True,
         save_models=True,
-        model_save_path="./models/hmm_ensemble_models_refactored"
+        model_save_path="./generated/market_analysis/models/hmm_ensemble_models_refactored"
     )
     
     # Create training component with common utilities

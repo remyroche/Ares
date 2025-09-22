@@ -381,7 +381,7 @@ class ABTestingStep:
     
     async def _load_strategy_data(self, strategy_name: str) -> pd.DataFrame:
         """Load existing strategy data."""
-        strategy_file = self.data_dir / "backtesting_results" / f"{strategy_name}_results.parquet"
+        strategy_file = Path("outcomes/backtesting") / f"{strategy_name}_results.parquet"
         
         if safe_file_exists(strategy_file):
             self.logger.info(f"📁 Loading {strategy_name} strategy data: {strategy_file}")
@@ -908,7 +908,7 @@ class ABTestingStep:
         self.logger.info("💾 Saving results...")
         
         # Create output directory
-        output_dir = self.data_dir / "backtesting_results" / "ab_testing"
+        output_dir = Path("outcomes/backtesting") / "ab_testing"
         ensure_directory(output_dir)
         
         # Save main results

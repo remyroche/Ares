@@ -201,25 +201,25 @@ class TrainingUtils:
         return model, validation_results
     
     def create_model(
-        self, 
-        model_type: str, 
+        self,
+        model_type: str,
         model_name: str,
         model_params: Optional[Dict[str, Any]] = None
     ) -> Any:
         """
         Create a model instance using the model factory.
-        
+
         Args:
             model_type: Type of model to create
             model_name: Name for the model
             model_params: Optional model parameters
-            
+
         Returns:
             Created model instance
         """
         if model_params is None:
             model_params = {}
-        
+
         # Map string model type to ModelType enum
         model_type_enum = self._map_string_to_model_type(model_type)
 
@@ -228,14 +228,163 @@ class TrainingUtils:
             model_name=model_name,
             model_params=model_params
         )
-        
+
         model = self.model_factory.create_model(model_config)
-        
+
         # Apply overfitting prevention if enabled
         if self.config.enable_overfitting_prevention:
             model = self.overfitting_prevention.apply_regularization(model, model_type)
-        
+
         return model
+
+    def create_oof_stacking_ensemble(
+        self,
+        base_models: Dict[str, Any],
+        ensemble_name: str = "oof_stacking_ensemble",
+        n_outputs: int = 4,
+        output_names: Optional[List[str]] = None,
+        enable_temporal_validation: bool = True,
+        cv_folds: int = 5
+    ) -> Any:
+        """
+        Create OOF stacking ensemble with proper temporal validation.
+
+        Args:
+            base_models: Dictionary of base models for each output
+            ensemble_name: Name for the ensemble
+            n_outputs: Number of outputs
+            output_names: Names of outputs
+            enable_temporal_validation: Whether to use temporal validation
+            cv_folds: Number of CV folds
+
+        Returns:
+            OOF stacking ensemble manager
+        """
+        if output_names is None:
+            output_names = [f"output_{i+1}" for i in range(n_outputs)]
+
+        # Import OOF stacking ensemble manager
+        from src.utils.ml_common.ensembles.oof_stacking_ensemble_manager import (
+            OOFStackingEnsembleManager,
+            OOFStackingEnsembleConfig
+        )
+
+        # Create configuration
+        ensemble_config = OOFStackingEnsembleConfig(
+            ensemble_name=ensemble_name,
+            output_dir=f"./models/{ensemble_name}",
+            n_outputs=n_outputs,
+            output_names=output_names,
+            base_models=base_models,
+            enable_out_of_fold=True,
+            enable_temporal_validation=enable_temporal_validation,
+            cv_folds=cv_folds,
+            enable_early_stopping=True,
+            early_stopping_rounds=50
+        )
+
+        # Create ensemble manager
+        ensemble_manager = OOFStackingEnsembleManager(ensemble_config)
+
+        # Add base models to ensemble
+        for output_name, models in base_models.items():
+            for model_name, model in models.items():
+                ensemble_manager.add_base_model(output_name, model_name, model)
+
+        logger.info(f"✅ OOF Stacking ensemble created: {ensemble_name}")
+        return ensemble_manager
+
+    def train_oof_stacking_ensemble(
+        self,
+        ensemble_manager: Any,
+        X: np.ndarray,
+        y: np.ndarray,
+        model_name: str = "oof_ensemble",
+        model_type: str = "stacking",
+        timestamps: Optional[np.ndarray] = None,
+        feature_names: Optional[List[str]] = None
+    ) -> Tuple[Any, Dict[str, Any]]:
+        """
+        Train OOF stacking ensemble with validation.
+
+        Args:
+            ensemble_manager: OOF stacking ensemble manager
+            X: Training features
+            y: Training targets
+            model_name: Name of the model
+            model_type: Type of model
+            timestamps: Optional timestamps for temporal validation
+            feature_names: Optional feature names
+
+        Returns:
+            Tuple of (trained_ensemble, validation_results)
+        """
+        # Use universal validation integration
+        utility_selections = intelligently_select_utilities(
+            X, y, model_type, "training", len(X), X.shape[1]
+        )
+
+        logger.info(f"Utility selections for OOF stacking: {utility_selections}")
+
+        # Start overfitting monitoring if selected
+        monitoring_session_id = None
+        if utility_selections['utilities_selected'].get('overfitting_monitoring', False):
+            monitoring_session_id = start_monitoring_session(f"{model_name}_oof_training", model_type)
+
+        # Perform data leakage check if selected
+        if utility_selections['utilities_selected'].get('data_leakage_prevention', False):
+            if timestamps is not None:
+                # Create temporary DataFrame for leakage check
+                temp_data = pd.DataFrame(X, index=pd.to_datetime(timestamps))
+                leakage_results = perform_data_leakage_check(
+                    temp_data, 'timestamp', dataset_name=f"{model_name}_training"
+                )
+                if leakage_results['leakage_detected']:
+                    logger.warning(f"Data leakage detected: {leakage_results}")
+
+        # Train the ensemble
+        trained_ensemble = ensemble_manager.fit(X, y)
+
+        # Perform comprehensive validation
+        validation_results = self.validate_trained_model(
+            model=trained_ensemble,
+            X_train=X,
+            X_val=X,  # For OOF ensemble, we use training data since CV is already done
+            y_train=y,
+            y_val=y,
+            timestamps=timestamps,
+            feature_names=feature_names,
+            model_name=model_name,
+            model_type=model_type
+        )
+
+        # Perform enhanced validation if selected
+        if utility_selections['utilities_selected'].get('enhanced_validation', False):
+            enhanced_validation = perform_enhanced_validation(
+                trained_ensemble, X, y, model_name, model_type, is_classification=True
+            )
+            validation_results['enhanced_validation'] = enhanced_validation
+
+        # Perform complexity analysis if selected
+        if utility_selections['utilities_selected'].get('model_complexity_analysis', False):
+            complexity_analysis = perform_complexity_analysis(
+                trained_ensemble, X, y, model_name, model_type
+            )
+            validation_results['complexity_analysis'] = complexity_analysis
+
+        # End monitoring session if active
+        if monitoring_session_id:
+            end_monitoring_session(monitoring_session_id)
+
+        # Log validation results
+        if validation_results['valid']:
+            logger.info(f"✅ OOF Stacking ensemble {model_name} trained and validated successfully")
+        else:
+            logger.warning(f"⚠️ OOF Stacking ensemble {model_name} trained but validation failed")
+            for issue in validation_results.get('critical_issues', []):
+                logger.error(f"Critical issue: {issue}")
+
+        return trained_ensemble, validation_results
 
     def _map_string_to_model_type(self, model_type_str: str) -> 'ModelType':
         """

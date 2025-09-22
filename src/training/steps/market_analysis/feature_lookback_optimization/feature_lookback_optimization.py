@@ -78,7 +78,8 @@ try:
     from src.utils.ml_common.data_processing.feature_preparation import (
         FeaturePreparator
     )
-    from src.utils.ml_common.optimization.config import CONFIG as OptimizationConfig
+    # Use unified config system instead of legacy optimization CONFIG
+    from src.common.config.loader import load_from_file as _load_config_dict
     from src.utils.ml_common.validation.cv import (
         purged_time_series_splits, PurgedSplitConfig
     )

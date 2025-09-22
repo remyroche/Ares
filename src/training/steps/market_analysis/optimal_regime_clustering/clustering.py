@@ -94,6 +94,33 @@ class OptimalRegimeClusterer:
                 centroids.append(np.mean(X[idx], axis=0))
         return np.vstack(centroids), unique_labels
 
+    def _assign_noise_to_nearest(self, X: np.ndarray, labels: np.ndarray, centers: Optional[np.ndarray] = None,
+                                 center_labels: Optional[np.ndarray] = None) -> np.ndarray:
+        """Reassign any negative labels to nearest existing clusters to ensure full coverage."""
+        if labels is None or labels.size == 0:
+            return labels
+        new_labels = labels.copy()
+        noise_idx = np.where(new_labels < 0)[0]
+        if noise_idx.size == 0:
+            return new_labels
+        if centers is None or center_labels is None or centers.size == 0 or center_labels.size == 0:
+            centers, center_labels = self._compute_centroids(X, new_labels)
+        if centers is None or centers.size == 0 or center_labels is None or center_labels.size == 0:
+            # Fallback: assign all to 0 if we cannot compute centers
+            new_labels[noise_idx] = 0
+            return new_labels
+        # Compute distances from noise points to centers
+        pts = X[noise_idx]
+        # Euclidean distances
+        x2 = np.sum(pts * pts, axis=1, keepdims=True)
+        c2 = np.sum(centers * centers, axis=1, keepdims=True).T
+        dots = pts @ centers.T
+        d2 = x2 + c2 - 2.0 * dots
+        np.maximum(d2, 0.0, out=d2)
+        nn = np.argmin(d2, axis=1)
+        new_labels[noise_idx] = center_labels[nn]
+        return new_labels
+
     def _size_cv(self, labels: np.ndarray) -> float:
         counts = [np.sum(labels == l) for l in np.unique(labels) if l >= 0]
         if len(counts) == 0:
@@ -101,6 +128,50 @@ class OptimalRegimeClusterer:
         mean = float(np.mean(counts))
         std = float(np.std(counts))
         return float(std / (mean + 1e-12))
+
+    def _compute_transition_matrix(self, labels: np.ndarray, uniq_labels: Optional[np.ndarray] = None) -> Tuple[np.ndarray, Dict[int, int]]:
+        """Compute transition count matrix across consecutive labels (non-negative only)."""
+        if labels is None or labels.size < 2:
+            return np.zeros((0, 0), dtype=np.int64), {}
+        if uniq_labels is None:
+            uniq_labels = np.array([l for l in np.unique(labels) if l >= 0], dtype=int)
+        label_to_idx = {int(l): i for i, l in enumerate(uniq_labels)}
+        k = len(uniq_labels)
+        T = np.zeros((k, k), dtype=np.int64)
+        prev = labels[:-1]
+        next_ = labels[1:]
+        for a, b in zip(prev, next_):
+            if a < 0 or b < 0:
+                continue
+            ia = label_to_idx.get(int(a))
+            ib = label_to_idx.get(int(b))
+            if ia is None or ib is None:
+                continue
+            T[ia, ib] += 1
+        return T, label_to_idx
+
+    def _mutual_transition_strength(self, T: np.ndarray, i: int, j: int) -> float:
+        """Return symmetric flow strength normalized by external flow: s / (s + ext)."""
+        if T.size == 0:
+            return 0.0
+        s = float(T[i, j] + T[j, i])
+        out_i = float(T[i, :].sum())
+        in_i = float(T[:, i].sum())
+        out_j = float(T[j, :].sum())
+        in_j = float(T[:, j].sum())
+        ext = max(0.0, (out_i + in_i + out_j + in_j) - 2.0 * s)
+        denom = s + ext
+        return float(s / denom) if denom > 0 else 0.0
+
+    def _temporal_coherence_gain(self, T: np.ndarray, i: int, j: int) -> float:
+        """Gain in self-coherence if i and j are merged: (i→j + j→i) / (out_i + out_j)."""
+        if T.size == 0:
+            return 0.0
+        s = float(T[i, j] + T[j, i])
+        out_i = float(T[i, :].sum())
+        out_j = float(T[j, :].sum())
+        denom = out_i + out_j
+        return float(s / denom) if denom > 0 else 0.0
 
     def _stable_kmeans_selection(self, X: np.ndarray, n_clusters: int) -> Tuple[np.ndarray, KMeans]:
         """Run multiple seeds and pick the best KMeans by size-penalized objective."""
@@ -228,73 +299,64 @@ class OptimalRegimeClusterer:
             C, uniq = self._compute_centroids(X, labels)
             if C.size == 0:
                 break
-            # choose nearest pair (max similarity for cosine)
             metric = getattr(self.config, 'merge_similarity_metric', 'cosine')
             if metric == 'cosine':
                 Cn = C / (np.linalg.norm(C, axis=1, keepdims=True) + 1e-12)
                 sims_mat = Cn @ Cn.T
                 np.fill_diagonal(sims_mat, -np.inf)
-                i, j = np.unravel_index(np.argmax(sims_mat), sims_mat.shape)
-                pair_sim = float(sims_mat[i, j])
             else:
                 dists = np.linalg.norm(C[:, None, :] - C[None, :, :], axis=2)
                 np.fill_diagonal(dists, np.inf)
-                i, j = np.unravel_index(np.argmin(dists), dists.shape)
-                pair_sim = float(-dists[i, j])
-
-            # size check
+            # Transition-aware scoring
+            T, label_to_idx = self._compute_transition_matrix(labels, uniq)
             counts = {int(l): int(np.sum(labels == l)) for l in uniq}
-            a, b = int(uniq[i]), int(uniq[j])
-            merged_size = counts[a] + counts[b]
-            size_ok = merged_size <= max(upper, 1.0)
-
-            # gating based on similarity percentile
-            easy_pair = pair_sim >= easy_thr
-
-            # Merge acceptance criterion: if size_ok or if easy_pair, else try to find next best pair by masking and retry
-            attempts = 0
-            attempted_pairs = set()
-            while not size_ok and attempts < len(uniq) * 2:
-                attempted_pairs.add((i, j))
-                if metric == 'cosine':
-                    sims_mat[i, j] = -np.inf
-                    sims_mat[j, i] = -np.inf
-                    i, j = np.unravel_index(np.argmax(sims_mat), sims_mat.shape)
-                    pair_sim = float(sims_mat[i, j])
-                else:
-                    dists[i, j] = np.inf
-                    dists[j, i] = np.inf
-                    i, j = np.unravel_index(np.argmin(dists), dists.shape)
-                    pair_sim = float(-dists[i, j])
-                a, b = int(uniq[i]), int(uniq[j])
-                merged_size = counts[a] + counts[b]
-                size_ok = merged_size <= max(upper, 1.0)
-                easy_pair = pair_sim >= easy_thr
-                attempts += 1
-
-            # If still not size_ok, accept the best available pair only if easy_pair (high similarity) to avoid poor merges
-            if size_ok or easy_pair:
-                new_labels = self._merge_two_clusters(labels, a, b)
-                # silhouette-based guardrail: avoid severe degradation
-                try:
-                    sil_before = silhouette_score(X, labels) if len(np.unique(labels)) > 1 else -1.0
-                    sil_after = silhouette_score(X, new_labels) if len(np.unique(new_labels)) > 1 else -1.0
-                    degrade = sil_after - sil_before
-                    if easy_pair or degrade >= -0.01:
-                        labels = new_labels
+            # Build candidate list with weighted objective
+            candidates = []
+            for i in range(C.shape[0]):
+                for j in range(i + 1, C.shape[0]):
+                    a, b = int(uniq[i]), int(uniq[j])
+                    merged_size = counts[a] + counts[b]
+                    size_ok = merged_size <= max(upper, 1.0)
+                    if metric == 'cosine':
+                        pair_sim = float(sims_mat[i, j])
+                        feature_score = (pair_sim + 1.0) * 0.5
                     else:
-                        # mask this pair and continue
-                        if metric == 'cosine':
-                            sims_mat[i, j] = -np.inf
-                            sims_mat[j, i] = -np.inf
-                        else:
-                            dists[i, j] = np.inf
-                            dists[j, i] = np.inf
-                        continue
-                except Exception:
-                    labels = new_labels
-            else:
+                        dist = float(dists[i, j])
+                        feature_score = 1.0 / (1.0 + max(dist, 0.0))
+                    # Temporal components
+                    mi = self._mutual_transition_strength(T, i, j)
+                    tg = self._temporal_coherence_gain(T, i, j)
+                    # Weights: 80% feature similarity, 10% mutual transition, 10% temporal coherence gain
+                    merge_score = 0.80 * feature_score + 0.10 * mi + 0.10 * tg
+                    candidates.append((merge_score, i, j, size_ok))
+            if not candidates:
                 break
+            # Prefer size_ok candidates; then by highest score
+            candidates.sort(key=lambda x: (not x[3], -x[0]))
+            _, i, j, _ = candidates[0]
+            a, b = int(uniq[i]), int(uniq[j])
+
+            new_labels = self._merge_two_clusters(labels, a, b)
+            try:
+                sil_before = silhouette_score(X, labels) if len(np.unique(labels)) > 1 else -1.0
+                sil_after = silhouette_score(X, new_labels) if len(np.unique(new_labels)) > 1 else -1.0
+                degrade = sil_after - sil_before
+                if degrade >= -0.01:
+                    labels = new_labels
+                else:
+                    # Remove this pair and try next best
+                    # Mark this pair as unusable
+                    for idx, cand in enumerate(candidates):
+                        if cand[1] == i and cand[2] == j:
+                            candidates.pop(idx)
+                            break
+                    if not candidates:
+                        break
+                    _, i2, j2, _ = candidates[0]
+                    a2, b2 = int(uniq[i2]), int(uniq[j2])
+                    labels = self._merge_two_clusters(labels, a2, b2)
+            except Exception:
+                labels = new_labels
 
         # Final size enforcement
         labels = self._capacity_constrained_assignment(
@@ -478,7 +540,7 @@ class OptimalRegimeClusterer:
 
             # Calculate statistics and metrics
             statistics = calculate_cluster_statistics(final_labels, self.config.to_dict())
-            quality_metrics = calculate_cluster_quality_metrics(features, final_labels)
+            quality_metrics = calculate_cluster_quality_metrics(features, final_labels, feature_metadata)
 
             # Validate results
             validation = validate_cluster_quality(statistics, quality_metrics, self.config.to_dict())
@@ -535,7 +597,7 @@ class OptimalRegimeClusterer:
 
             # Calculate statistics and metrics
             statistics = calculate_cluster_statistics(labels, self.config.to_dict())
-            quality_metrics = calculate_cluster_quality_metrics(features, labels)
+            quality_metrics = calculate_cluster_quality_metrics(features, labels, feature_metadata)
 
             # Validate results
             validation = validate_cluster_quality(statistics, quality_metrics, self.config.to_dict())
@@ -568,7 +630,7 @@ class OptimalRegimeClusterer:
             raise
 
     def _noise_reduction_clustering(self, features: np.ndarray) -> np.ndarray:
-        """Perform noise reduction clustering using HDBSCAN.
+        """Perform initial clustering pass; all points remain covered by reassignment.
 
         Args:
             features: Feature matrix
@@ -577,7 +639,7 @@ class OptimalRegimeClusterer:
             Noise-reduced labels
         """
         try:
-            self.logger.info("Performing noise reduction clustering...")
+            self.logger.info("Performing initial clustering pass...")
 
             # Use HDBSCAN for noise reduction
             try:
@@ -588,15 +650,16 @@ class OptimalRegimeClusterer:
                     cluster_selection_epsilon=self.config.cluster_selection_epsilon
                 )
                 labels = clusterer.fit_predict(features)
-                self.logger.info(f"HDBSCAN found {len(np.unique(labels[labels != -1]))} clusters")
+                labels = self._assign_noise_to_nearest(features, labels)
+                self.logger.info(f"Initial pass produced {len(np.unique(labels))} clusters")
                 return labels
             except ImportError:
-                self.logger.warning("HDBSCAN not available, using DBSCAN for noise reduction")
+                self.logger.warning("HDBSCAN not available, using DBSCAN for initial pass")
                 return self._dbscan_clustering(features)
 
         except Exception as e:
             self.logger.warning(f"Error in noise reduction clustering: {e}")
-            return np.full(len(features), -1)  # All noise
+            return self._assign_noise_to_nearest(features, np.zeros(len(features), dtype=int))
 
     def _main_clustering(self, features: np.ndarray) -> np.ndarray:
         """Perform main clustering using K-means.
@@ -668,7 +731,8 @@ class OptimalRegimeClusterer:
             )
 
             labels = clusterer.fit_predict(features)
-            self.logger.info(f"DBSCAN found {len(np.unique(labels[labels != -1]))} clusters")
+            labels = self._assign_noise_to_nearest(features, labels)
+            self.logger.info(f"DBSCAN produced {len(np.unique(labels))} clusters")
             return labels
 
         except Exception as e:
@@ -693,11 +757,11 @@ class OptimalRegimeClusterer:
             Cluster labels
         """
         try:
-            # First use DBSCAN for noise reduction
+            # First clustering pass
             dbscan_labels = self._dbscan_clustering(features)
 
-            # Identify core points (non-noise)
-            core_mask = dbscan_labels != -1
+            # Identify core points (treat all as covered)
+            core_mask = np.ones(len(features), dtype=bool)
             noise_mask = ~core_mask
 
             if core_mask.sum() == 0:
@@ -711,8 +775,8 @@ class OptimalRegimeClusterer:
             # Combine results
             final_labels = np.full(len(features), -1)
             final_labels[core_mask] = core_labels
-
-            self.logger.info(f"Hybrid clustering: {len(np.unique(core_labels))} clusters on {core_mask.sum()} core points")
+            final_labels = self._assign_noise_to_nearest(features, final_labels)
+            self.logger.info(f"Hybrid clustering: {len(np.unique(final_labels))} clusters")
             return final_labels
 
         except Exception as e:
@@ -738,11 +802,11 @@ class OptimalRegimeClusterer:
             # Start with main clustering results
             final_labels = main_labels.copy()
 
-            # Remove noise points identified by noise reduction
-            if len(np.unique(noise_labels)) > 1:
-                noise_mask = noise_labels == -1
-                if noise_mask.any():
-                    final_labels[noise_mask] = -1
+            # Ensure full coverage by reassigning any negative labels
+            if noise_labels is not None and noise_labels.size == len(final_labels):
+                if np.any(noise_labels < 0):
+                    C, uniq = self._compute_centroids(features, final_labels)
+                    final_labels = self._assign_noise_to_nearest(features, final_labels, centers=C, center_labels=uniq)
 
             # Optimize cluster sizes if needed
             if self.config.adaptive_clustering:
@@ -905,7 +969,34 @@ class OptimalRegimeClusterer:
         topk = np.argsort(dists, axis=1)[:, :min(3, k)]
         cnts = np.bincount(current, minlength=k)
 
-        # Phase A: raise to lower bound
+        # ---- Temporal coherence helpers (time-aware costs) ----
+        def temporal_penalty_for_assignment(i: int, target: int) -> float:
+            # Penalty for increasing boundaries around position i when assigning to target
+            left = current[i - 1] if i > 0 else target
+            right = current[i + 1] if i < n - 1 else target
+            before = int(current[i] != left) + int(current[i] != right)
+            after = int(target != left) + int(target != right)
+            delta = after - before
+            return float(max(0, delta) / 2.0)  # in [0,1]
+
+        def dwell_alignment_penalty(i: int, target: int) -> float:
+            # Lower penalty if neighbors already belong to target cluster
+            same = 0
+            if i > 0 and current[i - 1] == target:
+                same += 1
+            if i < n - 1 and current[i + 1] == target:
+                same += 1
+            return float(1.0 - same / 2.0)  # 0 if both neighbors same as target, 0.5 if one, 1.0 if none
+
+        def composite_cost(i: int, target: int) -> float:
+            base = float(dists[i, target])
+            denom = float(dists[i, topk[i][0]]) if topk.shape[1] >= 1 else (float(np.max(dists[i])) + 1e-12)
+            base_norm = base / (denom + 1e-12)
+            tpen = temporal_penalty_for_assignment(i, target)
+            dpen = dwell_alignment_penalty(i, target)
+            return 0.80 * base_norm + 0.15 * tpen + 0.05 * dpen
+
+        # Phase A: raise to lower bound (time-aware cost)
         for _ in range(5):
             deficits = [(c, lower - cnts[c]) for c in range(k) if cnts[c] < lower]
             if not deficits:
@@ -919,8 +1010,9 @@ class OptimalRegimeClusterer:
                     donor_ok = candidates
                 if donor_ok.size == 0:
                     continue
-                deltas = dists[donor_ok, c] - dists[donor_ok, current[donor_ok]]
-                order = np.argsort(deltas)
+                # Select by composite time-aware cost
+                comp = np.array([composite_cost(int(idx), int(c)) for idx in donor_ok])
+                order = np.argsort(comp)
                 to_move = donor_ok[order][:need]
                 for idx in to_move:
                     old = current[idx]
@@ -935,7 +1027,7 @@ class OptimalRegimeClusterer:
             dists, centroids = compute_dists(current)
             topk = np.argsort(dists, axis=1)[:, :min(3, k)]
 
-        # Phase B: reduce above upper
+        # Phase B: reduce above upper (time-aware cost)
         for _ in range(5):
             overs = [(c, cnts[c] - upper) for c in range(k) if cnts[c] > upper]
             if not overs:
@@ -949,16 +1041,16 @@ class OptimalRegimeClusterer:
                 best_alt = np.full(indices.shape[0], -1, dtype=int)
                 alt_cost = np.full(indices.shape[0], np.inf, dtype=float)
                 for idx_i, i in enumerate(indices):
+                    # evaluate a few nearest alternatives
                     for alt in topk[i]:
                         if alt == c or cnts[alt] >= upper:
                             continue
-                        cost = dists[i, alt]
+                        cost = composite_cost(int(i), int(alt))
                         if cost < alt_cost[idx_i]:
                             alt_cost[idx_i] = cost
                             best_alt[idx_i] = alt
-                stay_cost = dists[indices, c]
-                regret = alt_cost - stay_cost
-                order = np.argsort(regret)
+                # prefer lowest composite cost moves
+                order = np.argsort(alt_cost)
                 moved = 0
                 for idx in order:
                     if moved >= excess:

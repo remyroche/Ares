@@ -1593,13 +1593,13 @@ class AnalystModelsTrainingStepRefactored(PerRegimeTrainingStep):
                     try:
                         with tprint_timer("Vectorized Training", LogLevel.PERFORMANCE):
                             with monitor_resources("Vectorized Training", self.logger):
-                                results = super().execute_vectorized(
+                    results = super().execute_vectorized(
                                     X=X,
                                     y=y,
                                     regime_labels=regime_labels,
                                     feature_names=feature_names,
-                                    hmm_states=hmm_states,
-                                    is_classification=False,  # Analyst models are typically regression
+                        hmm_states=hmm_states,
+                        is_classification=True,
                                     symbol=None,  # Can be passed as kwargs
                                     exchange=None,
                                     timeframe=self.config.timeframe
@@ -1630,7 +1630,7 @@ class AnalystModelsTrainingStepRefactored(PerRegimeTrainingStep):
                                 regime_labels=regime_labels,
                                 feature_names=feature_names,
                                 hmm_states=hmm_states,
-                                is_classification=False,  # Analyst models are typically regression
+                                is_classification=True,
                                 symbol=None,  # Can be passed as kwargs
                                 exchange=None,
                                 timeframe=self.config.timeframe

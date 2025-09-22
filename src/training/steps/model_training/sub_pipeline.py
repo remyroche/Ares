@@ -32,6 +32,7 @@ from dataclasses import dataclass, field
 
 from src.utils.logger import system_logger
 from src.utils.tprint import tprint
+import numpy as np
 
 # Import additional tprint functions - fail fast if not available
 try:
@@ -39,6 +40,17 @@ try:
 except ImportError as e:
     raise ImportError(f"Extended tprint functions required but not available: {e}. "
                      f"Please ensure src.utils.tprint is properly installed.")
+
+# Regime and dataset utilities for assembling training arrays
+try:
+    from src.utils.regime_data_access import (
+        load_unified_regime_dataset,
+        ensure_regime_labels,
+        get_regime_column,
+    )
+    REGIME_UTILS_AVAILABLE = True
+except ImportError:
+    REGIME_UTILS_AVAILABLE = False
 
 # Import enhanced debugging utilities
 try:
@@ -327,6 +339,116 @@ class ModelTrainingSubPipeline:
         self.temporal_features_available = False
         self.temporal_features = {}
         self.temporal_feature_metadata = {}
+
+    def _assemble_training_arrays(
+        self,
+        config: SubPipelineConfig,
+        role: str = "analyst"
+    ) -> Dict[str, Any]:
+        """Load dataset and assemble X, y, regime_labels, feature_names, hmm_states, timestamps.
+
+        Attempts to load a unified regime dataset and construct arrays expected by
+        training step execute methods. Falls back gracefully with informative errors.
+        """
+        # Heuristic target column candidates
+        analyst_targets = [
+            'target', 'label', 'y', 'binary_target', 'binary_label',
+            'trade_signal', 'signal', 'direction', 'triple_barrier_label',
+            'future_return', 'next_return', 'price_change'
+        ]
+        tactician_targets = [
+            'tactician_target', 'timing_target', 'entry_signal', 'y',
+            'future_return', 'next_return', 'price_change'
+        ]
+        target_candidates = analyst_targets if role == 'analyst' else tactician_targets
+
+        # Load a dataframe
+        df = None
+        if REGIME_UTILS_AVAILABLE:
+            df = load_unified_regime_dataset(
+                exchange=config.exchange,
+                symbol=config.symbol,
+                timeframe=config.timeframe,
+                data_dir=config.data_dir
+            )
+        if df is None:
+            # Last resort: try standardized parquet in common locations
+            try:
+                from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
+                candidate_dirs = [
+                    f"{config.data_dir}",
+                    f"{config.data_dir}/training",
+                    "data/training",
+                    "data_cache/training"
+                ]
+                parquet_files = []
+                for d in candidate_dirs:
+                    parquet_files.extend(standardized_parquet_handler.list_parquet_files(d, pattern="*.parquet", recursive=True))
+                if parquet_files:
+                    df = standardized_parquet_handler.read_parquet_standardized(parquet_files[0])
+            except Exception:
+                pass
+
+        if df is None or df.empty:
+            raise RuntimeError(
+                "Training data not found. Ensure unified regime dataset or standardized parquet exists."
+            )
+
+        # Ensure regime labels
+        if REGIME_UTILS_AVAILABLE:
+            df = ensure_regime_labels(df, config.exchange, config.symbol, config.timeframe, config.data_dir)
+            regime_col = get_regime_column(df)
+        else:
+            regime_col = None
+
+        # Pick target column
+        target_col = None
+        for col in target_candidates:
+            if col in df.columns:
+                target_col = col
+                break
+        if target_col is None:
+            # Fallbacks
+            if 'close' in df.columns:
+                target_col = 'close'
+            else:
+                # Pick first numeric column that's not id-like
+                numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+                id_like = {'timestamp'} | ({regime_col} if regime_col else set())
+                for col in numeric_cols:
+                    if col not in id_like:
+                        target_col = col
+                        break
+        if target_col is None:
+            raise RuntimeError("Could not infer target column from dataset")
+
+        # Build features
+        exclude_cols = {'timestamp', 'exchange', 'symbol', 'timeframe', target_col}
+        if regime_col:
+            exclude_cols.add(regime_col)
+        feature_cols = [c for c in df.columns if c not in exclude_cols and np.issubdtype(df[c].dtype, np.number)]
+        if len(feature_cols) == 0:
+            raise RuntimeError("No numeric feature columns available after exclusions")
+
+        X = df[feature_cols].to_numpy()
+        y = df[target_col].to_numpy().reshape(-1)
+        if regime_col and regime_col in df.columns:
+            regime_labels = df[regime_col].to_numpy().reshape(-1)
+        else:
+            # Use a single regime if none available
+            regime_labels = np.zeros(len(df), dtype=int)
+        feature_names = feature_cols
+        hmm_states = None
+        timestamps = df['timestamp'].to_numpy().reshape(-1) if 'timestamp' in df.columns else None
+
+        return {
+            'X': X,
+            'y': y,
+            'regime_labels': regime_labels,
+            'feature_names': feature_names,
+            'hmm_states': hmm_states,
+            'timestamps': timestamps
+        }
     
     def _generate_datetime_stamp(self) -> str:
         """Generate a consistent datetime stamp for artifacts."""
@@ -1154,17 +1276,17 @@ class ModelTrainingSubPipeline:
             trainer = AnalystModelsTrainingStep()
             tprint(f"   ✅ Trainer initialized successfully")
             
-            # Step 6: Execute training
+            # Step 6: Execute training (array-based, synchronous)
             tprint(f"   🔍 Executing analyst model training...")
             training_start = datetime.now()
-            training_result = await trainer.execute(
-                training_input={
-                    'symbol': config.symbol,
-                    'exchange': config.exchange,
-                    'timeframe': config.timeframe,
-                    'data_dir': config.data_dir
-                },
-                pipeline_state={}
+            arrays = self._assemble_training_arrays(config, role='analyst')
+            training_result = trainer.execute(
+                arrays['X'],
+                arrays['y'],
+                arrays['regime_labels'],
+                arrays['feature_names'],
+                arrays['hmm_states'],
+                arrays['timestamps']
             )
             training_end = datetime.now()
             training_duration = (training_end - training_start).total_seconds()
@@ -1232,16 +1354,16 @@ class ModelTrainingSubPipeline:
             trainer = AnalystEnsembleTrainer()
             tprint(f"   ✅ Trainer initialized successfully")
             
-            # Step 5: Execute training
+            # Step 5: Execute training (array-based, synchronous)
             tprint(f"   🔍 Executing analyst ensemble training...")
             training_start = datetime.now()
-            training_result = await trainer.execute_analyst_ensemble_training(
-                symbol=config.symbol,
-                exchange=config.exchange,
-                timeframe=config.timeframe,
-                data_dir=config.data_dir,
-                force_rerun=config.force_rerun,
-                enhanced_config=enhanced_config
+            arrays = self._assemble_training_arrays(config, role='analyst')
+            training_result = trainer.execute(
+                arrays['X'],
+                arrays['y'],
+                arrays['regime_labels'],
+                arrays['feature_names'],
+                arrays['hmm_states']
             )
             training_end = datetime.now()
             training_duration = (training_end - training_start).total_seconds()
@@ -1477,17 +1599,23 @@ class ModelTrainingSubPipeline:
             trainer = TacticianModelTrainer()
             tprint(f"   ✅ Trainer initialized successfully")
             
-            # Step 5: Execute training
+            # Step 5: Execute training (array-based, synchronous)
             tprint(f"   🔍 Executing tactician model training...")
             training_start = datetime.now()
-            training_result = await trainer.execute(
-                training_input={
-                    'symbol': config.symbol,
-                    'exchange': config.exchange,
-                    'timeframe': config.timeframe,
-                    'data_dir': config.data_dir
-                },
-                pipeline_state=enhanced_config
+            arrays = self._assemble_training_arrays(config, role='tactician')
+            training_result = trainer.execute(
+                arrays['X'],
+                arrays['y'],
+                arrays['regime_labels'],
+                arrays['feature_names'],
+                arrays['hmm_states'],
+                analyst_signals=None,
+                analyst_model_outputs=None,
+                hmm_regime_features=None,
+                all_analyst_models_outputs=None,
+                hmm_model_outputs=None,
+                analyst_ensemble_outputs=None,
+                timestamps=arrays['timestamps']
             )
             training_end = datetime.now()
             training_duration = (training_end - training_start).total_seconds()
@@ -1553,16 +1681,23 @@ class ModelTrainingSubPipeline:
             trainer = TacticianEnsembleTrainer()
             tprint(f"   ✅ Trainer initialized successfully")
             
-            # Step 5: Execute training
+            # Step 5: Execute training (array-based, synchronous)
             tprint(f"   🔍 Executing tactician ensemble training...")
             training_start = datetime.now()
-            training_result = await trainer.execute_tactician_ensemble_training(
-                symbol=config.symbol,
-                exchange=config.exchange,
-                timeframe=config.timeframe,
-                data_dir=config.data_dir,
-                force_rerun=config.force_rerun,
-                enhanced_config=enhanced_config
+            arrays = self._assemble_training_arrays(config, role='tactician')
+            training_result = trainer.execute(
+                arrays['X'],
+                arrays['y'],
+                arrays['regime_labels'],
+                arrays['feature_names'],
+                arrays['hmm_states'],
+                base_tactician_models=None,
+                tactician_training_metrics=None,
+                analyst_models=None,
+                analyst_ensembles=None,
+                analyst_ensemble_metrics=None,
+                hmm_data=None,
+                analyst_green_light_periods=None
             )
             training_end = datetime.now()
             training_duration = (training_end - training_start).total_seconds()

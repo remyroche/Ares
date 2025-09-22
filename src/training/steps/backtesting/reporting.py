@@ -505,7 +505,7 @@ class ReportingStep:
         ]
         
         for step_name, directory_name in result_files:
-            result_file = self.data_dir / "backtesting_results" / directory_name / f"{self.config.symbol}_{self.config.exchange}_{step_name}_results.json"
+            result_file = Path("outcomes/backtesting") / directory_name / f"{self.config.symbol}_{self.config.exchange}_{step_name}_results.json"
             
             if safe_file_exists(result_file):
                 try:
@@ -529,9 +529,9 @@ class ReportingStep:
         
         # Try to load from various possible locations
         possible_files = [
-            self.data_dir / "backtesting_results" / f"{self.config.symbol}_{self.config.exchange}_equity_curve.parquet",
-            self.data_dir / "backtesting_results" / "basic_pre" / f"{self.config.symbol}_{self.config.exchange}_baseline_equity_curve.parquet",
-            self.data_dir / "backtesting_results" / "basic_post" / f"{self.config.symbol}_{self.config.exchange}_optimized_equity_curve.parquet"
+            Path("outcomes/backtesting") / f"{self.config.symbol}_{self.config.exchange}_equity_curve.parquet",
+            Path("outcomes/backtesting") / "basic_pre" / f"{self.config.symbol}_{self.config.exchange}_baseline_equity_curve.parquet",
+            Path("outcomes/backtesting") / "basic_post" / f"{self.config.symbol}_{self.config.exchange}_optimized_equity_curve.parquet"
         ]
         
         for file_path in possible_files:
@@ -548,9 +548,9 @@ class ReportingStep:
         
         # Try to load from various possible locations
         possible_files = [
-            self.data_dir / "backtesting_results" / f"{self.config.symbol}_{self.config.exchange}_trade_log.parquet",
-            self.data_dir / "backtesting_results" / "basic_pre" / f"{self.config.symbol}_{self.config.exchange}_baseline_trade_log.parquet",
-            self.data_dir / "backtesting_results" / "basic_post" / f"{self.config.symbol}_{self.config.exchange}_optimized_trade_log.parquet"
+            Path("outcomes/backtesting") / f"{self.config.symbol}_{self.config.exchange}_trade_log.parquet",
+            Path("outcomes/backtesting") / "basic_pre" / f"{self.config.symbol}_{self.config.exchange}_baseline_trade_log.parquet",
+            Path("outcomes/backtesting") / "basic_post" / f"{self.config.symbol}_{self.config.exchange}_optimized_trade_log.parquet"
         ]
         
         for file_path in possible_files:
@@ -818,7 +818,7 @@ class ReportingStep:
     
     async def _generate_report(self, report_type: ReportType, backtesting_results: Dict[str, Any]) -> Tuple[str, Dict[str, Any]]:
         """Generate a specific type of report."""
-        output_dir = self.data_dir / "backtesting_results" / "reports"
+        output_dir = Path("outcomes/backtesting") / "reports"
         ensure_directory(output_dir)
         
         if report_type == ReportType.EXECUTIVE_SUMMARY:
@@ -996,7 +996,7 @@ class ReportingStep:
     
     async def _generate_combined_report(self, generated_reports: Dict[str, str], report_summaries: Dict[str, Dict[str, Any]], backtesting_results: Dict[str, Any]) -> str:
         """Generate combined report from all individual reports."""
-        output_dir = self.data_dir / "backtesting_results" / "reports"
+        output_dir = Path("outcomes/backtesting") / "reports"
         combined_report_path = output_dir / f"{self.config.symbol}_{self.config.exchange}_combined_report.{self.config.output_format}"
         
         # Create combined report content
@@ -1767,7 +1767,7 @@ class ReportingStep:
         self.logger.info("💾 Saving results...")
         
         # Create output directory
-        output_dir = self.data_dir / "backtesting_results" / "comprehensive_reporting"
+        output_dir = Path("outcomes/backtesting") / "comprehensive_reporting"
         ensure_directory(output_dir)
         
         # Save main results

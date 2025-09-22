@@ -1867,7 +1867,7 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
         
         try:
             # Create save directory using common operations
-            save_dir = Path("artifacts") / "models" / model_type / symbol / exchange / timeframe
+            save_dir = Path("generated/market_analysis") / "models" / model_type / symbol / exchange / timeframe
             if not ensure_directory(save_dir):
                 tprint(f"❌ Failed to create save directory: {save_dir}")
                 return saved_paths

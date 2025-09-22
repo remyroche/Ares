@@ -139,7 +139,7 @@ class TPSLOptimizationExample:
             
             # Results Visualization
             self.visualization_config = VisualizationConfig(
-                output_dir=str(self.config_dir / "reports"),
+                output_dir="outcomes/backtesting/tpsl_optimization",
                 format="html",
                 enable_interactive=True,
                 include_statistical_tests=True,
@@ -478,7 +478,7 @@ class TPSLOptimizationExample:
                 }
             
             # Save optimization report
-            optimization_report_file = self.config_dir / "reports" / "tpsl_optimization_report.json"
+            optimization_report_file = Path("outcomes/backtesting") / "tpsl_optimization_report.json"
             optimization_report_file.parent.mkdir(parents=True, exist_ok=True)
             
             with open(optimization_report_file, 'w') as f:
@@ -494,7 +494,7 @@ class TPSLOptimizationExample:
                                        optimization_config: Dict[str, Any]) -> None:
         """Save comprehensive optimization results."""
         try:
-            results_dir = self.config_dir / "results" / optimization_config["test_name"]
+            results_dir = Path("generated/backtesting") / "tpsl_optimization" / optimization_config["test_name"]
             results_dir.mkdir(parents=True, exist_ok=True)
             
             # Save main results

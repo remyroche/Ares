@@ -151,10 +151,10 @@ class ModelTrainingSubPipeline:
         """Create a comprehensive report with datetime stamp."""
         timestamp = self._generate_datetime_stamp()
         report_filename = f"{sub_pipeline_name}_report_{config.symbol}_{config.exchange}_{config.timeframe}_{timestamp}.json"
-        report_path = f"{config.data_dir}/reports/{report_filename}"
+        report_path = f"outcomes/model_training/{report_filename}"
         
         # Ensure reports directory exists
-        Path(f"{config.data_dir}/reports").mkdir(parents=True, exist_ok=True)
+        Path("outcomes/model_training").mkdir(parents=True, exist_ok=True)
         
         # Create comprehensive report
         report_data = {

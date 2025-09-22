@@ -2405,7 +2405,7 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
         """Save optimization results."""
         try:
             self.logger.info(f"💾 Saving optimization results for {exchange}_{symbol}")
-            optimization_dir = f'{data_dir}/optimization_results'
+            optimization_dir = f'generated/backtesting/optimization_results'
             os.makedirs(optimization_dir, exist_ok=True)
             self.logger.info(f"📁 Optimization directory: {optimization_dir}")
             

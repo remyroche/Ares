@@ -271,7 +271,7 @@ class ConsolidatedBacktestingStep:
         if self.config.model_save_config is None:
             self.config.model_save_config = ModelSaveConfig(
                 model_name=f"{self.config.symbol}_model",
-                output_dir=f"{self.config.output_dir}/models",
+                output_dir="generated/backtesting/models",
                 enable_memory_optimization=self.config.enable_memory_optimization,
                 memory_limit_gb=self.config.memory_limit_gb,
                 max_workers=self.config.max_workers
@@ -285,7 +285,7 @@ class ConsolidatedBacktestingStep:
                 symbol=self.config.symbol,
                 exchange=self.config.exchange,
                 timeframe=self.config.timeframe,
-                output_dir=f"{self.config.output_dir}/analytics",
+                output_dir="outcomes/backtesting/analytics",
                 enable_gpu_acceleration=self.config.enable_gpu_acceleration,
                 enable_memory_optimization=self.config.enable_memory_optimization,
                 enable_parallel_processing=self.config.enable_parallel_processing,
@@ -595,29 +595,29 @@ class ConsolidatedBacktestingStep:
         """Save comprehensive results to disk."""
         
         # Save main results
-        results_file = f"{self.config.output_dir}/{self.config.symbol}_consolidated_backtesting_results.json"
+        results_file = f"outcomes/backtesting/{self.config.symbol}_consolidated_backtesting_results.json"
         await safe_json_dump(results_file, results.__dict__)
         results.output_files.append(results_file)
         self.logger.info(f"💾 Results saved to {results_file}")
         
         # Save individual component results
         if results.backtesting_results:
-            backtesting_file = f"{self.config.output_dir}/{self.config.symbol}_backtesting_results.json"
+            backtesting_file = f"outcomes/backtesting/{self.config.symbol}_backtesting_results.json"
             await safe_json_dump(backtesting_file, results.backtesting_results.__dict__)
             results.output_files.append(backtesting_file)
         
         if results.monte_carlo_results:
-            mc_file = f"{self.config.output_dir}/{self.config.symbol}_monte_carlo_results.json"
+            mc_file = f"outcomes/backtesting/{self.config.symbol}_monte_carlo_results.json"
             await safe_json_dump(mc_file, results.monte_carlo_results.__dict__)
             results.output_files.append(mc_file)
         
         if results.ab_test_results:
-            ab_file = f"{self.config.output_dir}/{self.config.symbol}_ab_test_results.json"
+            ab_file = f"outcomes/backtesting/{self.config.symbol}_ab_test_results.json"
             await safe_json_dump(ab_file, results.ab_test_results.__dict__)
             results.output_files.append(ab_file)
         
         if results.analytics_report:
-            analytics_file = f"{self.config.output_dir}/{self.config.symbol}_analytics_report.json"
+            analytics_file = f"outcomes/backtesting/{self.config.symbol}_analytics_report.json"
             await safe_json_dump(analytics_file, results.analytics_report)
             results.output_files.append(analytics_file)
         

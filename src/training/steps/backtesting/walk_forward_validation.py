@@ -897,7 +897,7 @@ class WalkForwardValidationStep:
         self.logger.info("💾 Saving results...")
         
         # Create output directory
-        output_dir = self.data_dir / "backtesting_results" / "walk_forward"
+        output_dir = Path("outcomes/backtesting") / "walk_forward"
         ensure_directory(output_dir)
         
         # Save main results

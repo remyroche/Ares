@@ -287,7 +287,7 @@ class BasicBacktestingPostStep:
             baseline_file = Path(self.config.baseline_results_path)
         else:
             # Default path
-            baseline_file = self.data_dir / "backtesting_results" / "basic_pre" / f"{self.config.symbol}_{self.config.exchange}_basic_backtesting_pre_results.json"
+            baseline_file = Path("outcomes/backtesting") / "basic_pre" / f"{self.config.symbol}_{self.config.exchange}_basic_backtesting_pre_results.json"
         
         if safe_file_exists(baseline_file):
             self.logger.info(f"📁 Loading baseline results: {baseline_file}")
@@ -566,7 +566,7 @@ class BasicBacktestingPostStep:
         self.logger.info("💾 Saving results...")
         
         # Create output directory
-        output_dir = self.data_dir / "backtesting_results" / "basic_post"
+        output_dir = Path("outcomes/backtesting") / "basic_post"
         ensure_directory(output_dir)
         
         # Save main results

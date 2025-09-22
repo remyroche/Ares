@@ -139,6 +139,9 @@ class TradingOrchestrator:
             'avg_session_duration': 0.0
         }
 
+        # Callbacks for cross-asset trading
+        self.on_trade_decision_callbacks: List[Callable[[TradingDecision], None]] = []
+
     async def initialize(self) -> bool:
         """
         Initialize all trading components.
@@ -481,7 +484,10 @@ class TradingOrchestrator:
         """Execute trading decision with comprehensive monitoring."""
         try:
             tprint_info(f"🔄 Executing {decision.action} order for {decision.symbol}")
-            
+
+            # Trigger trade decision callbacks before execution
+            await self._trigger_trade_decision_callbacks(decision)
+
             # Prepare comprehensive trade data
             trade_data = {
                 'symbol': decision.symbol,
@@ -757,6 +763,28 @@ class TradingOrchestrator:
     def get_trading_decisions(self, n: int = 100) -> List[TradingDecision]:
         """Get recent trading decisions."""
         return self.trading_decisions[-n:] if len(self.trading_decisions) >= n else self.trading_decisions.copy()
+
+    def add_trade_decision_callback(self, callback: Callable[[TradingDecision], None]):
+        """Add a callback for trade decisions."""
+        self.on_trade_decision_callbacks.append(callback)
+        tprint_info(f"✅ Added trade decision callback (total: {len(self.on_trade_decision_callbacks)})")
+
+    def remove_trade_decision_callback(self, callback: Callable[[TradingDecision], None]):
+        """Remove a trade decision callback."""
+        if callback in self.on_trade_decision_callbacks:
+            self.on_trade_decision_callbacks.remove(callback)
+            tprint_info(f"✅ Removed trade decision callback (remaining: {len(self.on_trade_decision_callbacks)})")
+
+    async def _trigger_trade_decision_callbacks(self, decision: TradingDecision):
+        """Trigger trade decision callbacks."""
+        for callback in self.on_trade_decision_callbacks:
+            try:
+                if asyncio.iscoroutinefunction(callback):
+                    await callback(decision)
+                else:
+                    callback(decision)
+            except Exception as e:
+                tprint_warning(f"⚠️ Trade decision callback failed: {e}")
 
 # Convenience functions
 

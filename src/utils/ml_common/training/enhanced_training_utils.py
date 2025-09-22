@@ -56,11 +56,11 @@ except ImportError:
     tprint_warning("⚠️ Lookahead bias detector not available")
 
 try:
-    from src.utils.ml_common.validation.cv_utils import CrossValidationUtilities, PurgedKFold
+    from src.utils.ml_common.validation.unified_cv import UnifiedCrossValidator
     CV_UTILS_AVAILABLE = True
 except ImportError:
     CV_UTILS_AVAILABLE = False
-    tprint_warning("⚠️ CV utilities not available")
+    tprint_warning("⚠️ Unified CV utilities not available")
 
 # Initialize logger
 logger = logging.getLogger(__name__)
@@ -154,10 +154,10 @@ class EnhancedTrainingUtils:
             
             # Initialize CV utilities
             if CV_UTILS_AVAILABLE:
-                self.cv_utils = CrossValidationUtilities()
-                tprint_success("✅ CV utilities initialized")
+                self.cv_utils = UnifiedCrossValidator()
+                tprint_success("✅ Unified CV utilities initialized")
             else:
-                tprint_warning("⚠️ CV utilities not available")
+                tprint_warning("⚠️ Unified CV utilities not available")
                 
         except Exception as e:
             tprint_error(f"❌ Component initialization failed: {e}")
@@ -254,18 +254,26 @@ class EnhancedTrainingUtils:
         """
         try:
             if use_purged and self.purged_cv_config.enabled:
-                # Use purged cross-validation
-                if CV_UTILS_AVAILABLE and self.cv_utils:
-                    purged_cv = PurgedKFold(
-                        n_splits=self.purged_cv_config.n_splits,
-                        purge_pct=self.purged_cv_config.purge_pct
-                    )
-                    
-                    for train_idx, test_idx in purged_cv.split(X, y):
+                # Use unified temporal cross-validation with gap as a proxy for purging
+                try:
+                    import inspect
+                    from src.utils.ml_common.validation.unified_cv import UnifiedCrossValidator
+                    ucv = UnifiedCrossValidator()
+                    # approximate gap from purge_pct relative to fold size
+                    approx_fold_size = max(1, len(X) // (self.purged_cv_config.n_splits + 1))
+                    gap = max(0, int(approx_fold_size * self.purged_cv_config.purge_pct))
+                    tscv = None
+                    # Build a generator of indices similar to TimeSeriesSplit
+                    from sklearn.model_selection import TimeSeriesSplit
+                    if 'test_size' in inspect.signature(TimeSeriesSplit).parameters:
+                        tscv = TimeSeriesSplit(n_splits=self.purged_cv_config.n_splits, gap=gap, test_size=approx_fold_size)
+                    else:
+                        tscv = TimeSeriesSplit(n_splits=self.purged_cv_config.n_splits, gap=gap)
+                    for train_idx, test_idx in tscv.split(X):
                         yield X[train_idx], X[test_idx], y[train_idx], y[test_idx]
-                else:
-                    # Fallback to TimeSeriesSplit
-                    tprint_warning("⚠️ Purged CV not available, using TimeSeriesSplit")
+                except Exception:
+                    # Fallback to TimeSeriesSplit without purging
+                    tprint_warning("⚠️ Unified purged CV not available, using TimeSeriesSplit")
                     use_purged = False
             
             if not use_purged:

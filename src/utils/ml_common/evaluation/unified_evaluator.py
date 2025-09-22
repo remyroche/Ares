@@ -109,14 +109,16 @@ def compute_classification_metrics(
     try:
         cm = confusion_matrix(y_true, y_pred)
         metrics["confusion_matrix"] = cm.tolist()
-    except Exception:
-        pass
+    except Exception as e:
+        _logger.error(f"❌ Critical error: Could not compute confusion matrix: {e}")
+        raise ValueError(f"Confusion matrix calculation failed: {e}")
 
     try:
         report = classification_report(y_true, y_pred, output_dict=True)
         metrics["classification_report"] = report
-    except Exception:
-        pass
+    except Exception as e:
+        _logger.error(f"❌ Critical error: Could not generate classification report: {e}")
+        raise ValueError(f"Classification report generation failed: {e}")
 
     # Probability-based metrics
     if y_prob is not None:

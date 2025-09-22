@@ -101,16 +101,16 @@ def analyze_splits(
             fold["train_class_counts"] = {int(k): int(v) for k, v in zip(u, c)}
             _LOGGER.debug(f"📊 Train classes: {fold['train_class_counts']}")
         except Exception as e:
-            _LOGGER.warning(f"⚠️ Failed to analyze train class counts for fold {i}: {e}")
-            fold["train_class_counts"] = {}  # Set empty dict as fallback
+            _LOGGER.error(f"❌ Critical error: Failed to analyze train class counts for fold {i}: {e}")
+            raise ValueError(f"CV fold {i} train class analysis failed: {e}")
             
         try:
             u, c = np.unique(y.iloc[va], return_counts=True)
             fold["val_class_counts"] = {int(k): int(v) for k, v in zip(u, c)}
             _LOGGER.debug(f"📊 Val classes: {fold['val_class_counts']}")
         except Exception as e:
-            _LOGGER.warning(f"⚠️ Failed to analyze val class counts for fold {i}: {e}")
-            fold["val_class_counts"] = {}  # Set empty dict as fallback
+            _LOGGER.error(f"❌ Critical error: Failed to analyze val class counts for fold {i}: {e}")
+            raise ValueError(f"CV fold {i} validation class analysis failed: {e}")
             
         if is_time and len(tr) > 0 and len(va) > 0:
             temporal_ok = bool(X.index[tr][-1] < X.index[va][0])
@@ -176,9 +176,8 @@ def validate_cv_integrity(
                     ok = False
                     issues.append(f"fold_{i}: single-class val")
             except Exception as e:
-                _LOGGER.warning(f"⚠️ Failed to check class counts for fold {i}: {e}")
-                # Assume OK if we can't check
-                pass
+                _LOGGER.error(f"❌ Critical error: Failed to check class counts for fold {i}: {e}")
+                raise ValueError(f"CV fold {i} class count validation failed: {e}")
         if is_time and len(tr) > 0 and len(va) > 0:
             if not (X.index[tr][-1] < X.index[va][0]):
                 ok = False

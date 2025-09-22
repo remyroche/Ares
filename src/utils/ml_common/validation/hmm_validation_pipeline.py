@@ -445,9 +445,8 @@ class HMMValidationPipeline:
                     train_probabilities = model.predict_proba(X_train)
                     val_probabilities = model.predict_proba(X_val)
                 except Exception as e:
-                    self.logger.debug(f"Could not get probabilities from model: {e}")
-                    train_probabilities = None
-                    val_probabilities = None
+                    self.logger.error(f"❌ Critical error: Could not get probabilities from model: {e}")
+                    raise ValueError(f"Model probability extraction failed: {e}")
 
             # Calculate metrics using sklearn
             from sklearn.metrics import (

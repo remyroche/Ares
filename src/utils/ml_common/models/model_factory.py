@@ -1112,7 +1112,9 @@ class EnhancedModelFactory:
                     m1_params.update(gpu_params)
                     self.logger.debug(f"🚀 Added GPU acceleration parameters: {gpu_params}")
                 else:
-                    self.logger.debug("ℹ️ Model doesn't support GPU acceleration parameters")
+                    # If GPU acceleration was requested but not supported, this is a configuration error
+                    self.logger.error("❌ Critical error: GPU acceleration requested but not supported by model")
+                    raise ValueError("GPU acceleration requested but model doesn't support GPU parameters")
             
             # Apply parameters
             if m1_params:

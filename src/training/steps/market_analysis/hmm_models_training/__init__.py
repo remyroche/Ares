@@ -2,14 +2,18 @@
 HMM Models Training Module
 
 Enhanced HMM models training with comprehensive validation, error handling, and reporting.
+
+New streamlined approach using common_utils/ ML training pipeline.
 """
 
+# Streamlined HMM Training (Recommended) - Complete migration to common_utils pipeline
+# Now available directly in hmm_models_training_enhanced.py
+
+# Streamlined HMM Training (Recommended) - Complete migration to common_utils pipeline
 from .hmm_models_training_enhanced import (
-    HMMModelsTrainingEnhanced,
+    StreamlinedHMMTrainingStep,
     create_enhanced_hmm_models_training,
-    execute_enhanced_hmm_models_training,
-    TrainingMetrics,
-    ModelResult
+    execute_enhanced_hmm_models_training
 )
 
 from .validation_framework import (
@@ -111,8 +115,8 @@ from .overfitting_reporting import (
 )
 
 __all__ = [
-    # Main training class
-    'HMMModelsTrainingEnhanced',
+    # Streamlined HMM Training (Recommended) - Complete migration to common_utils pipeline
+    'StreamlinedHMMTrainingStep',
     'create_enhanced_hmm_models_training',
     'execute_enhanced_hmm_models_training',
     

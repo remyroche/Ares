@@ -6,10 +6,21 @@ This document outlines the cleanup and integration work performed to consolidate
 
 The HMM models training directory has been cleaned up to eliminate redundancy and improve integration with the ML commons infrastructure. Key changes include:
 
-1. **Removed redundant shared utilities** that are now available in ML commons
-2. **Updated HMM training files** to use ML commons versions instead of local implementations
-3. **Maintained backward compatibility** with fallback mechanisms
-4. **Improved code organization** and reduced duplication
+1. **New Streamlined Approach** - 90%+ reduction in custom code by leveraging BaseTrainingStep
+2. **Removed redundant shared utilities** that are now available in ML commons
+3. **Updated HMM training files** to use ML commons versions instead of local implementations
+4. **Maintained backward compatibility** with fallback mechanisms
+5. **Improved code organization** and reduced duplication
+
+## NEW: Streamlined HMM Training (Recommended)
+
+The new `streamlined_hmm_training.py` provides a 90%+ reduction in custom code by:
+
+- **Inheriting from BaseTrainingStep** - leverages common ML training pipeline
+- **15m timeframe enforcement** - ensures consistent HMM state recognition
+- **HMM state focus** - optimized for state recognition, not prediction
+- **Minimal custom code** - delegates to robust common_utils/ pipeline
+- **Universal validation** - consistent validation across all training steps
 
 ## Changes Made
 

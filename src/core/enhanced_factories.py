@@ -10,7 +10,7 @@ from .core.dependency_injection import DependencyContainer
 from .database.firestore_manager import FirestoreManager
 from .database.influxdb_manager import InfluxDBManager
 from src.interfaces.base_interfaces import IAnalyst, IExchangeClient, IPerformanceReporter, IStateManager, IStrategist, ISupervisor, ITactician
-from .supervisor.performance_reporter import PerformanceReporter
+from src.trading.reporting.performance_reporter import PerformanceReporter
 from .utils.logger import system_logger
 from .utils.state_manager import StateManager
 import logging

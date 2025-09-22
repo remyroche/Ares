@@ -113,12 +113,7 @@ def test_advanced_weighting_system():
     quality_profile = evaluator.evaluate_comprehensive_quality(
         features=features,
         labels=labels,
-        timestamps=np.array(timestamps),
-        domain_constraints={
-            'volatility_bounds': (0.1, 0.5),
-            'volume_ranges': (0.5, 3.0),
-            'trend_stability': 0.7
-        }
+        timestamps=np.array(timestamps)
     )
 
     # Display results
@@ -155,12 +150,7 @@ def test_multi_objective_optimization():
     objective_scores = optimizer.optimize_multi_objective(
         features=features,
         labels=labels,
-        timestamps=np.array(timestamps),
-        domain_constraints={
-            'volatility_bounds': (0.1, 0.5),
-            'volume_ranges': (0.5, 3.0),
-            'trend_stability': 0.7
-        }
+        timestamps=np.array(timestamps)
     )
 
     # Display results
@@ -193,21 +183,13 @@ def test_time_series_aware_metrics():
     logger.info(f"   Temporal Consistency: {temporal_metric.value:.4f}")
     logger.info(f"   Stability Over Time: {stability_metric.value:.4f}")
 
-    # Test with domain constraints
-    domain_constraints = {
-        'volatility_bounds': (0.1, 0.5),
-        'volume_ranges': (0.5, 3.0),
-        'trend_stability': 0.7
-    }
-
-    domain_metric = evaluator._evaluate_domain_constraints(features, labels, domain_constraints)
-
-    logger.info(f"   Domain Fitness: {domain_metric.value:.4f}")
+    # Domain constraints removed - no longer needed
+    logger.info("   Domain Fitness: Removed from objectives")
 
     return {
         'temporal_consistency': temporal_metric.value,
         'stability_over_time': stability_metric.value,
-        'domain_fitness': domain_metric.value
+        'domain_fitness': 'Removed'
     }
 
 def test_batch_transfer_processing():
@@ -291,18 +273,23 @@ def demonstrate_improvements():
     logger.info("")
 
     # Summary
-    logger.info("📈 SUMMARY OF IMPROVEMENTS")
+    logger.info("📈 UPDATED MULTI-OBJECTIVE OPTIMIZATION")
     logger.info("=" * 60)
     logger.info("✅ Advanced Weighting: Implemented with adaptive weight adjustment")
     logger.info("✅ Time-Series Awareness: Added temporal consistency and stability metrics")
-    logger.info("✅ Multi-Objective: Enhanced with 9 objectives including interpretability")
-    logger.info("✅ Domain Fitness: Implemented financial domain constraints")
+    logger.info("✅ Multi-Objective: Streamlined to 5 core objectives:")
+    logger.info("   • Cohesion (0.4): Cluster cohesion quality")
+    logger.info("   • Separation (0.3): Cluster separation quality")
+    logger.info("   • Stability (0.1): Bootstrap stability analysis")
+    logger.info("   • Interpretability (0.1): Cluster explainability")
+    logger.info("   • Stability Over Time (0.1): Temporal stability")
+    logger.info("✅ Removed Objectives: Information, Efficiency, Temporal Consistency, Domain Fitness")
     logger.info("✅ Batch Processing: Confirmed 5 iterations with 10% batch processing")
     logger.info("")
     logger.info("🎯 Key Benefits:")
     logger.info("   • Robust quality evaluation with confidence intervals")
     logger.info("   • Temporal stability analysis for time-series data")
-    logger.info("   • Domain-specific constraints for financial data")
+    logger.info("   • Focused optimization on core clustering objectives")
     logger.info("   • Adaptive processing with early convergence detection")
     logger.info("   • Comprehensive interpretability assessment")
 

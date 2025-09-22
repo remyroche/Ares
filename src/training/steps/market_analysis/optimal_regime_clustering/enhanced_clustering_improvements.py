@@ -9,9 +9,6 @@ import numpy as np
 import pandas as pd
 from typing import Dict, List, Any, Optional, Tuple, Callable
 from sklearn.metrics import silhouette_score, calinski_harabasz_score, davies_bouldin_score
-from sklearn.feature_selection import mutual_info_regression
-from scipy.stats import entropy
-from scipy.spatial.distance import jensenshannon
 import warnings
 import logging
 from dataclasses import dataclass
@@ -821,47 +818,27 @@ class AdvancedMultiObjectiveOptimizer:
         return {
             'separation': {
                 'function': self._objective_separation,
-                'weight': 0.25,
+                'weight': 0.3,
                 'description': 'Cluster separation quality'
             },
             'cohesion': {
                 'function': self._objective_cohesion,
-                'weight': 0.20,
+                'weight': 0.4,
                 'description': 'Cluster cohesion quality'
             },
             'stability': {
                 'function': self._objective_stability,
-                'weight': 0.12,
-                'description': 'Cluster stability over time'
-            },
-            'information': {
-                'function': self._objective_information,
-                'weight': 0.12,
-                'description': 'Information preservation'
-            },
-            'efficiency': {
-                'function': self._objective_efficiency,
-                'weight': 0.08,
-                'description': 'Computational efficiency'
+                'weight': 0.1,
+                'description': 'Bootstrap stability analysis'
             },
             'interpretability': {
                 'function': self._objective_interpretability,
-                'weight': 0.08,
+                'weight': 0.1,
                 'description': 'Cluster interpretability'
-            },
-            'domain_fitness': {
-                'function': self._objective_domain_fitness,
-                'weight': 0.06,
-                'description': 'Domain-specific fitness'
-            },
-            'temporal_consistency': {
-                'function': self._objective_temporal_consistency,
-                'weight': 0.04,
-                'description': 'Temporal consistency'
             },
             'stability_over_time': {
                 'function': self._objective_stability_over_time,
-                'weight': 0.05,
+                'weight': 0.1,
                 'description': 'Stability of clusters over time periods'
             }
         }
@@ -875,9 +852,9 @@ class AdvancedMultiObjectiveOptimizer:
         Args:
             features: Feature matrix
             labels: Cluster labels
-            original_features: Original features
+            original_features: Original features (not used)
             timestamps: Time information
-            domain_constraints: Domain-specific constraints
+            domain_constraints: Domain-specific constraints (not used)
 
         Returns:
             Dictionary of objective scores
@@ -887,19 +864,30 @@ class AdvancedMultiObjectiveOptimizer:
 
             for obj_name, obj_config in self.objectives.items():
                 try:
-                    score = obj_config['function'](
-                        features, labels, original_features, timestamps, domain_constraints
-                    )
+                    # Call appropriate function based on objective name
+                    if obj_name == 'separation':
+                        score = self._objective_separation(features, labels, None, None, None)
+                    elif obj_name == 'cohesion':
+                        score = self._objective_cohesion(features, labels, None, None, None)
+                    elif obj_name == 'stability':
+                        score = self._objective_stability(features, labels, None, None, None)
+                    elif obj_name == 'interpretability':
+                        score = self._objective_interpretability(features, labels, None, None, None)
+                    elif obj_name == 'stability_over_time':
+                        score = self._objective_stability_over_time(features, labels, None, timestamps, None)
+                    else:
+                        score = 0.5  # Default neutral score
+
                     objective_scores[obj_name] = score
                 except Exception as e:
                     logger.warning(f"Objective {obj_name} calculation failed: {e}")
-                    objective_scores[obj_name] = 0.0
+                    objective_scores[obj_name] = 0.5
 
             return objective_scores
 
         except Exception as e:
             logger.error(f"Multi-objective optimization failed: {e}")
-            return {name: 0.0 for name in self.objectives.keys()}
+            return {name: 0.5 for name in self.objectives.keys()}
 
     def _objective_separation(self, features: np.ndarray, labels: np.ndarray,
                             original_features: Optional[np.ndarray], timestamps: Optional[np.ndarray],
@@ -1036,89 +1024,6 @@ class AdvancedMultiObjectiveOptimizer:
         except Exception:
             return 0.5
 
-    def _objective_information(self, features: np.ndarray, labels: np.ndarray,
-                             original_features: Optional[np.ndarray], timestamps: Optional[np.ndarray],
-                             domain_constraints: Optional[Dict[str, Any]]) -> float:
-        """Calculate information preservation objective."""
-        try:
-            if original_features is None:
-                return 0.5  # Neutral score if no original features
-
-            mask = labels != -1
-            if mask.sum() < 2:
-                return 0.5
-
-            clean_features = features[mask]
-            clean_original = original_features[mask]
-            clean_labels = labels[mask]
-
-            # Calculate mutual information preservation per cluster
-            preservation_scores = []
-
-            for label in np.unique(clean_labels):
-                cluster_mask = clean_labels == label
-                cluster_features = clean_features[cluster_mask]
-                cluster_original = clean_original[cluster_mask]
-
-                if len(cluster_features) < 2 or len(cluster_original) < 2:
-                    continue
-
-                # Calculate mutual information between original and transformed features
-                cluster_preservation = 0.0
-                valid_calculations = 0
-
-                for i in range(min(cluster_features.shape[1], cluster_original.shape[1])):
-                    try:
-                        # Use mutual information regression for each feature
-                        mi = mutual_info_regression(
-                            cluster_original[:, i:i+1],
-                            cluster_features[:, i]
-                        )[0]
-                        cluster_preservation += mi
-                        valid_calculations += 1
-                    except:
-                        continue
-
-                if valid_calculations > 0:
-                    preservation_scores.append(cluster_preservation / valid_calculations)
-
-            if not preservation_scores:
-                return 0.5
-
-            return float(np.mean(preservation_scores))
-
-        except Exception:
-            return 0.5
-
-    def _objective_efficiency(self, features: np.ndarray, labels: np.ndarray,
-                            original_features: Optional[np.ndarray], timestamps: Optional[np.ndarray],
-                            domain_constraints: Optional[Dict[str, Any]]) -> float:
-        """Calculate computational efficiency objective."""
-        try:
-            n_samples, n_features = features.shape
-
-            # Time complexity score (simplified)
-            # Penalize large datasets and high dimensionality
-            time_score = 1.0 / (1.0 + n_samples * n_features * np.log(n_samples + 1))
-
-            # Memory efficiency score
-            # Estimate memory usage based on dataset size
-            estimated_memory_mb = (n_samples * n_features * 8) / (1024 * 1024)  # Assume 8 bytes per value
-            memory_score = 1.0 / (1.0 + estimated_memory_mb / 1000)  # Penalty for large memory usage
-
-            # Scalability score
-            # Prefer algorithms that scale well with data size
-            if n_samples > 10000:
-                scalability_score = 0.3  # Lower score for very large datasets
-            elif n_samples > 1000:
-                scalability_score = 0.6
-            else:
-                scalability_score = 0.9
-
-            return 0.5 * time_score + 0.3 * memory_score + 0.2 * scalability_score
-
-        except Exception:
-            return 0.5
 
     def _objective_interpretability(self, features: np.ndarray, labels: np.ndarray,
                                   original_features: Optional[np.ndarray], timestamps: Optional[np.ndarray],
@@ -1179,106 +1084,7 @@ class AdvancedMultiObjectiveOptimizer:
         except Exception:
             return 0.5
 
-    def _objective_domain_fitness(self, features: np.ndarray, labels: np.ndarray,
-                                original_features: Optional[np.ndarray], timestamps: Optional[np.ndarray],
-                                domain_constraints: Optional[Dict[str, Any]]) -> float:
-        """Calculate domain fitness objective for financial data."""
-        try:
-            if domain_constraints is None:
-                return 0.5  # Neutral score if no domain constraints
 
-            fitness_scores = []
-
-            # Volatility clustering constraint
-            if 'volatility_bounds' in domain_constraints:
-                volatility_score = self._check_volatility_constraints(features, labels, domain_constraints)
-                fitness_scores.append(volatility_score)
-
-            # Volume distribution constraint
-            if 'volume_ranges' in domain_constraints:
-                volume_score = self._check_volume_constraints(features, labels, domain_constraints)
-                fitness_scores.append(volume_score)
-
-            # Trend stability constraint
-            if 'trend_stability' in domain_constraints:
-                trend_score = self._check_trend_consistency(features, labels, domain_constraints)
-                fitness_scores.append(trend_score)
-
-            # Sharpe ratio optimization
-            sharpe_score = self._calculate_sharpe_ratio_fitness(features, labels)
-            fitness_scores.append(sharpe_score)
-
-            # Risk-adjusted return metrics
-            risk_score = self._calculate_risk_adjusted_fitness(features, labels)
-            fitness_scores.append(risk_score)
-
-            return float(np.mean(fitness_scores)) if fitness_scores else 0.5
-
-        except Exception:
-            return 0.5
-
-    def _objective_temporal_consistency(self, features: np.ndarray, labels: np.ndarray,
-                                      original_features: Optional[np.ndarray], timestamps: Optional[np.ndarray],
-                                      domain_constraints: Optional[Dict[str, Any]]) -> float:
-        """Calculate temporal consistency objective."""
-        try:
-            if timestamps is None:
-                return 0.5  # Neutral score if no timestamps
-
-            mask = labels != -1
-            if mask.sum() < 5:
-                return 0.5
-
-            clean_features = features[mask]
-            clean_labels = labels[mask]
-            clean_timestamps = timestamps[mask]
-
-            # Sort by time
-            sort_indices = np.argsort(clean_timestamps)
-            sorted_features = clean_features[sort_indices]
-            sorted_labels = clean_labels[sort_indices]
-
-            # Calculate consistency over time windows
-            n_windows = min(5, len(sorted_features) // 10)
-            if n_windows < 2:
-                return 0.5
-
-            window_size = len(sorted_features) // n_windows
-            consistency_scores = []
-
-            for i in range(n_windows - 1):
-                window1_start = i * window_size
-                window1_end = (i + 1) * window_size
-                window2_start = (i + 1) * window_size
-                window2_end = min((i + 2) * window_size, len(sorted_features))
-
-                if window1_end <= window1_start or window2_end <= window2_start:
-                    continue
-
-                window1_labels = sorted_labels[window1_start:window1_end]
-                window2_labels = sorted_labels[window2_start:window2_end]
-
-                # Calculate Jaccard similarity between consecutive windows
-                if len(window1_labels) > 0 and len(window2_labels) > 0:
-                    unique_labels = np.unique(np.concatenate([window1_labels, window2_labels]))
-                    overlap_matrix = np.zeros((len(unique_labels), 2))
-
-                    for j, label in enumerate(unique_labels):
-                        overlap_matrix[j, 0] = np.sum(window1_labels == label)
-                        overlap_matrix[j, 1] = np.sum(window2_labels == label)
-
-                    # Calculate stability as intersection over union
-                    total_mass = np.sum(overlap_matrix)
-                    if total_mass > 0:
-                        intersection = np.sum(np.minimum(overlap_matrix[:, 0], overlap_matrix[:, 1]))
-                        union = np.sum(np.maximum(overlap_matrix[:, 0], overlap_matrix[:, 1]))
-                        jaccard = intersection / union if union > 0 else 0.0
-                        consistency_scores.append(jaccard)
-
-            return float(np.mean(consistency_scores)) if consistency_scores else 0.5
-
-        except Exception:
-            return 0.5
 
     def _objective_stability_over_time(self, features: np.ndarray, labels: np.ndarray,
                                      original_features: Optional[np.ndarray], timestamps: Optional[np.ndarray],
@@ -1344,159 +1150,6 @@ class AdvancedMultiObjectiveOptimizer:
         except Exception:
             return 0.5
 
-    # Helper methods for domain fitness
-    def _check_volatility_constraints(self, features: np.ndarray, labels: np.ndarray,
-                                    domain_constraints: Dict[str, Any]) -> float:
-        """Check if clusters satisfy volatility constraints."""
-        try:
-            volatility_bounds = domain_constraints['volatility_bounds']
-            min_volatility, max_volatility = volatility_bounds
-
-            unique_labels = np.unique(labels)
-            constraint_satisfaction = []
-
-            for label in unique_labels:
-                cluster_mask = labels == label
-                cluster_features = features[cluster_mask]
-
-                if len(cluster_features) < 2:
-                    continue
-
-                # Calculate volatility for this cluster (using standard deviation)
-                cluster_volatility = np.mean(np.std(cluster_features, axis=0))
-
-                # Check if within bounds
-                if min_volatility <= cluster_volatility <= max_volatility:
-                    constraint_satisfaction.append(1.0)
-                else:
-                    constraint_satisfaction.append(0.0)
-
-            return np.mean(constraint_satisfaction) if constraint_satisfaction else 0.0
-
-        except Exception:
-            return 0.5
-
-    def _check_volume_constraints(self, features: np.ndarray, labels: np.ndarray,
-                                domain_constraints: Dict[str, Any]) -> float:
-        """Check if clusters satisfy volume constraints."""
-        try:
-            volume_ranges = domain_constraints['volume_ranges']
-
-            # Assuming volume is the first feature
-            volume_feature = features[:, 0] if features.shape[1] > 0 else np.zeros(len(features))
-
-            unique_labels = np.unique(labels)
-            constraint_satisfaction = []
-
-            for label in unique_labels:
-                cluster_mask = labels == label
-                cluster_volumes = volume_feature[cluster_mask]
-
-                if len(cluster_volumes) < 2:
-                    continue
-
-                # Check volume distribution
-                mean_volume = np.mean(cluster_volumes)
-                if volume_ranges[0] <= mean_volume <= volume_ranges[1]:
-                    constraint_satisfaction.append(1.0)
-                else:
-                    constraint_satisfaction.append(0.0)
-
-            return np.mean(constraint_satisfaction) if constraint_satisfaction else 0.0
-
-        except Exception:
-            return 0.5
-
-    def _check_trend_consistency(self, features: np.ndarray, labels: np.ndarray,
-                               domain_constraints: Dict[str, Any]) -> float:
-        """Check trend consistency within clusters."""
-        try:
-            trend_stability = domain_constraints['trend_stability']
-
-            unique_labels = np.unique(labels)
-            consistency_scores = []
-
-            for label in unique_labels:
-                cluster_mask = labels == label
-                cluster_features = features[cluster_mask]
-
-                if len(cluster_features) < 5:
-                    continue
-
-                # Calculate trend stability using autocorrelation
-                # For simplicity, use variance of consecutive differences
-                if cluster_features.shape[1] > 2:  # Assuming trend is in feature index 2
-                    trend_feature = cluster_features[:, 2]
-                    differences = np.diff(trend_feature)
-                    stability = 1.0 / (1.0 + np.var(differences))
-                    consistency_scores.append(stability)
-
-            return np.mean(consistency_scores) if consistency_scores else 0.5
-
-        except Exception:
-            return 0.5
-
-    def _calculate_sharpe_ratio_fitness(self, features: np.ndarray, labels: np.ndarray) -> float:
-        """Calculate Sharpe ratio-based fitness for financial clusters."""
-        try:
-            unique_labels = np.unique(labels)
-            sharpe_scores = []
-
-            for label in unique_labels:
-                cluster_mask = labels == label
-                cluster_features = features[cluster_mask]
-
-                if len(cluster_features) < 2:
-                    continue
-
-                # Calculate returns (simplified - using feature differences)
-                if cluster_features.shape[1] > 1:
-                    # Assume feature 1 is price-like for return calculation
-                    returns = np.diff(cluster_features[:, 1])
-                    if len(returns) > 0:
-                        mean_return = np.mean(returns)
-                        std_return = np.std(returns)
-                        sharpe = mean_return / (std_return + 1e-6)  # Sharpe ratio
-                        sharpe_scores.append(sharpe)
-
-            if not sharpe_scores:
-                return 0.5
-
-            # Normalize Sharpe ratios (higher is better)
-            mean_sharpe = np.mean(sharpe_scores)
-            return float(np.tanh(mean_sharpe))  # Scale to [-1, 1] range
-
-        except Exception:
-            return 0.5
-
-    def _calculate_risk_adjusted_fitness(self, features: np.ndarray, labels: np.ndarray) -> float:
-        """Calculate risk-adjusted return fitness."""
-        try:
-            unique_labels = np.unique(labels)
-            risk_scores = []
-
-            for label in unique_labels:
-                cluster_mask = labels == label
-                cluster_features = features[cluster_mask]
-
-                if len(cluster_features) < 2:
-                    continue
-
-                # Calculate maximum drawdown (simplified)
-                if cluster_features.shape[1] > 1:
-                    # Use cumulative product to simulate portfolio value
-                    values = np.cumprod(1 + np.diff(cluster_features[:, 1]) / cluster_features[:-1, 1])
-                    if len(values) > 1:
-                        # Calculate drawdown
-                        peak = np.maximum.accumulate(values)
-                        drawdown = np.min((values / peak) - 1)
-                        risk_score = 1.0 / (1.0 + abs(drawdown))  # Lower drawdown = higher score
-                        risk_scores.append(risk_score)
-
-            return np.mean(risk_scores) if risk_scores else 0.5
-
-        except Exception:
-            return 0.5
 
 
 class BatchTransferProcessor:
@@ -1717,15 +1370,11 @@ def create_multi_objective_config() -> Dict[str, Any]:
         'objective_normalization': 'minmax',
         'pareto_front_analysis': False,
         'objective_weights': {
-            'separation': 0.25,
-            'cohesion': 0.20,
-            'stability': 0.12,
-            'information': 0.12,
-            'efficiency': 0.08,
-            'interpretability': 0.08,
-            'domain_fitness': 0.06,
-            'temporal_consistency': 0.04,
-            'stability_over_time': 0.05  # New objective with small weight
+            'separation': 0.3,
+            'cohesion': 0.4,
+            'stability': 0.1,
+            'interpretability': 0.1,
+            'stability_over_time': 0.1
         }
     }
 

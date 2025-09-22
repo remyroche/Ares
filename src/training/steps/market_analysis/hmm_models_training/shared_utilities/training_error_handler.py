@@ -8,6 +8,9 @@ HMM training components.
 from typing import Any, Dict, List, Optional
 from dataclasses import dataclass
 import time
+from src.utils.ml_common.monitoring.enhanced_error_detector import (
+    get_global_error_detector,
+)
 
 
 @dataclass
@@ -64,13 +67,37 @@ class TrainingErrorHandler:
         error_traceback = traceback.format_exc()
         detailed_error_message = f"Failed to create {model_type}: {str(error)}"
         
+        # Record with global enhanced detector for unified monitoring/classification
+        detector = get_global_error_detector()
+        classification = detector.detect_and_classify_error(
+            error,
+            {
+                'component': 'hmm_training_model_creation',
+                'model_type': model_type,
+            },
+        )
+        suggestions_msg = (
+            f"Suggested actions: {', '.join(classification.suggested_actions)}"
+            if getattr(classification, 'suggested_actions', None)
+            else 'Suggested actions: none'
+        )
+        classification_msg = (
+            f"Classification => severity={classification.severity.value}, "
+            f"category={classification.category.value}, "
+            f"confidence={classification.classification_confidence:.2f}"
+        )
+        
         return ModelResult(
             model=None,
             metrics=TrainingMetrics(
                 error_message=detailed_error_message,
                 training_time=0.0,
-                warnings=[f"Full traceback: {error_traceback}"]
-            )
+                warnings=[
+                    f"Full traceback: {error_traceback}",
+                    classification_msg,
+                    suggestions_msg,
+                ],
+            ),
         )
     
     @staticmethod
@@ -92,13 +119,38 @@ class TrainingErrorHandler:
         error_traceback = traceback.format_exc()
         detailed_error_message = f"Failed to train {model_type}: {str(error)}"
         
+        # Record with global enhanced detector for unified monitoring/classification
+        detector = get_global_error_detector()
+        classification = detector.detect_and_classify_error(
+            error,
+            {
+                'component': 'hmm_training',
+                'model_type': model_type,
+                'execution_time': training_time,
+            },
+        )
+        suggestions_msg = (
+            f"Suggested actions: {', '.join(classification.suggested_actions)}"
+            if getattr(classification, 'suggested_actions', None)
+            else 'Suggested actions: none'
+        )
+        classification_msg = (
+            f"Classification => severity={classification.severity.value}, "
+            f"category={classification.category.value}, "
+            f"confidence={classification.classification_confidence:.2f}"
+        )
+        
         return ModelResult(
             model=None,
             metrics=TrainingMetrics(
                 error_message=detailed_error_message,
                 training_time=training_time,
-                warnings=[f"Full traceback: {error_traceback}"]
-            )
+                warnings=[
+                    f"Full traceback: {error_traceback}",
+                    classification_msg,
+                    suggestions_msg,
+                ],
+            ),
         )
     
     @staticmethod
@@ -113,12 +165,33 @@ class TrainingErrorHandler:
         Returns:
             ModelResult with error information
         """
+        # Record with global enhanced detector for unified monitoring/classification
+        detector = get_global_error_detector()
+        classification = detector.detect_and_classify_error(
+            error,
+            {
+                'component': 'hmm_training_validation',
+                'model_type': validation_type,
+            },
+        )
+        classification_msg = (
+            f"Classification => severity={classification.severity.value}, "
+            f"category={classification.category.value}, "
+            f"confidence={classification.classification_confidence:.2f}"
+        )
+        suggestions_msg = (
+            f"Suggested actions: {', '.join(classification.suggested_actions)}"
+            if getattr(classification, 'suggested_actions', None)
+            else 'Suggested actions: none'
+        )
+        
         return ModelResult(
             model=None,
             metrics=TrainingMetrics(
                 error_message=f"Validation failed for {validation_type}: {str(error)}",
-                training_time=0.0
-            )
+                training_time=0.0,
+                warnings=[classification_msg, suggestions_msg],
+            ),
         )
     
     @staticmethod
@@ -133,10 +206,31 @@ class TrainingErrorHandler:
         Returns:
             ModelResult with error information
         """
+        # Record with global enhanced detector for unified monitoring/classification
+        detector = get_global_error_detector()
+        classification = detector.detect_and_classify_error(
+            error,
+            {
+                'component': 'hmm_feature_selection',
+                'model_type': 'feature_selection',
+            },
+        )
+        classification_msg = (
+            f"Classification => severity={classification.severity.value}, "
+            f"category={classification.category.value}, "
+            f"confidence={classification.classification_confidence:.2f}"
+        )
+        suggestions_msg = (
+            f"Suggested actions: {', '.join(classification.suggested_actions)}"
+            if getattr(classification, 'suggested_actions', None)
+            else 'Suggested actions: none'
+        )
+        
         return ModelResult(
             model=None,
             metrics=TrainingMetrics(
                 error_message=f"Feature selection failed: {str(error)}. Using fallback features: {len(fallback_features)}",
-                training_time=0.0
-            )
+                training_time=0.0,
+                warnings=[classification_msg, suggestions_msg],
+            ),
         )

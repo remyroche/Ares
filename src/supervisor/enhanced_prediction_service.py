@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 import joblib
 from src.config.enhanced_prediction_service_config import get_enhanced_prediction_service_config
-from src.utils.caching import intelligent_caching
+from src.utils.unified_cache import cached
 from src.utils.enhanced_error_handler import handle_errors_with_tracking
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import error, warning, failed, initialization_error
@@ -22,7 +22,6 @@ from src.utils.performance_utils import PerformanceMonitor, global_monitor
 from src.utils.tracing import with_tracing_span
 from src.utils.validation import validate_data_quality
 # ML Common utilities
-from src.utils.ml_common.model_evaluation import ModelEvaluationUtilities
 from src.utils.ml_common.model_registry import ModelRegistry
 from src.utils.ml_common.data_quality import DataQualityUtilities
 from src.utils.ml_common.pipeline_orchestrator import MLPipelineOrchestrator
@@ -101,7 +100,7 @@ class EnhancedPredictionService:
 
     @handles_errors(fallback = False)
     @with_tracing_span('load_analyst_ml_models')
-    @intelligent_caching(cache_key='analyst_ml_models')
+    @cached(key_func=lambda self: 'analyst_ml_models')
     async def _load_analyst_ml_models(self) -> None:
         """Load Analyst ML models (higher timeframe) from steps 6-14."""
         try:
@@ -132,7 +131,7 @@ class EnhancedPredictionService:
 
     @handles_errors(fallback = False)
     @with_tracing_span('load_tactician_ml_models')
-    @intelligent_caching(cache_key='tactician_ml_models')
+    @cached(key_func=lambda self: 'tactician_ml_models')
     async def _load_tactician_ml_models(self) -> None:
         """Load Tactician ML models (lower timeframe) from steps 6-14."""
         try:

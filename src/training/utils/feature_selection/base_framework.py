@@ -14,13 +14,7 @@ from datetime import datetime
 import logging
 from functools import partial
 
-# Define SHARED_CACHE_AVAILABLE early to avoid import issues
-SHARED_CACHE_AVAILABLE = False
-try:
-    from src.utils.ml_common.utils.shared_cache import SharedMLCache, shared_cache
-    SHARED_CACHE_AVAILABLE = True
-except ImportError:
-    SHARED_CACHE_AVAILABLE = False
+from src.utils.unified_cache import get_unified_cache
 from concurrent.futures import ThreadPoolExecutor
 import warnings
 import time
@@ -39,10 +33,8 @@ try:
         safe_correlation_matrix, safe_matrix_multiply, get_unified_matrix_operations
     )
     from src.utils.performance_utils import PerformanceMonitor, performance_timer, memory_monitor
-    from src.utils.caching import intelligent_caching
     from src.utils.ml_common.utils.memory_optimization import M1MemoryOptimizer, MemoryEfficientProcessor
 
-# SHARED_CACHE_AVAILABLE is already defined at the top of the file
     from src.utils.ml_common.validation.validation_utils import validate_data_quality, validate_feature_matrix
     from src.utils.ml_common.validation.stability import StabilityAnalyzer
     from src.utils.ml_common.validation.thresholding import AdaptiveThresholding
@@ -102,27 +94,6 @@ except ImportError as e:
     class MemoryEfficientProcessor:
         pass
 
-    # SharedMLCache fallback only used if import failed
-    if not SHARED_CACHE_AVAILABLE:
-        class SharedMLCache:
-            def __init__(self):
-                self.logger = logging.getLogger(__name__)
-
-            def get_cached_value(self, key):
-                return None
-
-            def set_cached_value(self, key, value):
-                pass
-
-            def get_stats(self):
-                return {'cache_enabled': False}
-
-        def shared_cache():
-            return None
-    else:
-        # Use real shared_cache function
-        pass
-
     def validate_data_quality(data):
         return True
 
@@ -134,9 +105,6 @@ except ImportError as e:
 
     class AdaptiveThresholding:
         pass
-
-    def intelligent_caching():
-        return lambda func: func
 
     class ParallelProcessor:
         def __init__(self, max_workers=4, chunk_size=10000):
@@ -320,13 +288,9 @@ class BaseFeatureSelectionFramework:
             self.memory_processor = MemoryEfficientProcessor()
             _LOGGER.info("🧠 Memory optimization tools initialized")
             
-            # Caching and shared resources
-            if SHARED_CACHE_AVAILABLE:
-                self.shared_cache = SharedMLCache.get()  # Use singleton
-                _LOGGER.info("💾 Shared cache initialized (real)")
-            else:
-                self.shared_cache = SharedMLCache()  # Use fallback
-                _LOGGER.info("💾 Shared cache initialized (fallback)")
+            # Caching and shared resources (Unified)
+            self.shared_cache = get_unified_cache(namespace="ml_common_feature_selection")
+            _LOGGER.info("💾 Unified cache initialized for feature selection")
             
             # Stability and thresholding
             self.stability_analyzer = StabilityAnalyzer()
@@ -428,10 +392,7 @@ class BaseFeatureSelectionFramework:
             if self.cache_enabled and hasattr(self, 'shared_cache'):
                 cache_key = self._generate_cache_key(method_name, args, kwargs)
                 try:
-                    # Use the SharedMLCache singleton instance
-                    from src.utils.ml_common.utils.shared_cache import SharedMLCache
-                    cache_instance = SharedMLCache.get()
-                    cached_result = cache_instance.get_cached_value(cache_key)
+                    cached_result = self.shared_cache.get(cache_key)
                     if cached_result is not None:
                         _LOGGER.debug(f"🎯 Cache hit for {method_name}")
                         return cached_result
@@ -448,12 +409,8 @@ class BaseFeatureSelectionFramework:
             # Cache result
             if self.cache_enabled and hasattr(self, 'shared_cache'):
                 try:
-                    # Use the SharedMLCache singleton instance
-                    from src.utils.ml_common.utils.shared_cache import SharedMLCache
-                    cache_instance = SharedMLCache.get()
-                    if hasattr(cache_instance, 'set_cached_value') and callable(getattr(cache_instance, 'set_cached_value')):
-                        cache_instance.set_cached_value(cache_key, result)
-                        _LOGGER.debug(f"💾 Cached result for {method_name}")
+                    self.shared_cache.set(cache_key, result)
+                    _LOGGER.debug(f"💾 Cached result for {method_name}")
                 except Exception as e:
                     _LOGGER.debug(f"Cache storage failed: {e}")
             
@@ -730,12 +687,7 @@ class BaseFeatureSelectionFramework:
         
         # Add cache stats if available
         try:
-            from src.utils.ml_common.utils.shared_cache import SharedMLCache
-            cache_instance = SharedMLCache.get()
-            if hasattr(cache_instance, 'get_stats'):
-                stats['cache_stats'] = cache_instance.get_stats()
-            else:
-                stats['cache_stats'] = {'status': 'no_stats_method'}
+            stats['cache_stats'] = self.shared_cache.get_stats() if hasattr(self, 'shared_cache') else {'status': 'disabled'}
         except Exception as e:
             stats['cache_stats'] = {'error': str(e)}
         

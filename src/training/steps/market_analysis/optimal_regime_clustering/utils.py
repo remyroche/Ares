@@ -210,7 +210,8 @@ def calculate_cluster_statistics(labels: np.ndarray, config: Dict[str, Any]) -> 
         logger.error(f"Error calculating cluster statistics: {e}")
         raise
 
-def calculate_cluster_quality_metrics(features: np.ndarray, labels: np.ndarray) -> Dict[str, float]:
+def calculate_cluster_quality_metrics(features: np.ndarray, labels: np.ndarray,
+                                      feature_metadata: Optional[Dict[str, Any]] = None) -> Dict[str, float]:
     """Calculate comprehensive cluster quality metrics.
 
     Args:
@@ -238,6 +239,102 @@ def calculate_cluster_quality_metrics(features: np.ndarray, labels: np.ndarray) 
                 metrics['silhouette'] = 0.0
                 metrics['calinski_harabasz'] = 0.0
                 metrics['davies_bouldin'] = float('inf')
+
+            # Cluster-size coefficient of variation (CV) across non-noise clusters
+            unique_clean = np.unique(clean_labels)
+            if unique_clean.size > 1:
+                size_counts = np.array([np.sum(clean_labels == lab) for lab in unique_clean], dtype=float)
+                mean_count = float(np.mean(size_counts))
+                if mean_count > 0:
+                    metrics['cluster_size_coefficient_of_variation'] = float(np.std(size_counts) / (mean_count + 1e-12))
+                else:
+                    metrics['cluster_size_coefficient_of_variation'] = 0.0
+            else:
+                metrics['cluster_size_coefficient_of_variation'] = 0.0
+
+            # Within-cluster feature CV (overall and by dimension) using unscaled features if available
+            try:
+                if feature_metadata is not None and 'scaler' in feature_metadata and 'feature_columns' in feature_metadata:
+                    scaler = feature_metadata['scaler']
+                    feature_columns = feature_metadata['feature_columns']
+                    # Reconstruct unscaled features from StandardScaler parameters
+                    if hasattr(scaler, 'scale_') and hasattr(scaler, 'mean_') and scaler.scale_ is not None:
+                        unscaled_features = clean_features * scaler.scale_ + scaler.mean_
+                    else:
+                        # Fallback: if scaler params not available, use features as-is
+                        unscaled_features = clean_features
+
+                    # Build dimension index mapping
+                    dim_to_indices: Dict[str, List[int]] = {
+                        'volume': [], 'volatility': [], 'momentum': [], 'trend': []
+                    }
+                    for idx, col in enumerate(feature_columns):
+                        col_l = str(col).lower()
+                        if 'volume' in col_l:
+                            dim_to_indices['volume'].append(idx)
+                        if 'volatility' in col_l or 'std' in col_l:
+                            dim_to_indices['volatility'].append(idx)
+                        if 'momentum' in col_l:
+                            dim_to_indices['momentum'].append(idx)
+                        if 'trend' in col_l:
+                            dim_to_indices['trend'].append(idx)
+
+                    # Helper to compute per-feature CV within a cluster, with stability guards
+                    def feature_cv(values: np.ndarray) -> float:
+                        mean_v = float(np.mean(values))
+                        std_v = float(np.std(values))
+                        denom = abs(mean_v) if abs(mean_v) > 1e-12 else 1e-12
+                        return float(std_v / denom)
+
+                    unique_clusters = np.unique(clean_labels)
+                    n_samples_total = unscaled_features.shape[0]
+
+                    # Overall within-cluster feature CV (all features)
+                    weighted_cv_sum = 0.0
+                    weighted_count = 0
+                    for lab in unique_clusters:
+                        idx = clean_labels == lab
+                        if np.sum(idx) <= 1:
+                            continue
+                        cluster_feats = unscaled_features[idx]
+                        # Compute CV per feature then mean across features
+                        cvs = []
+                        for j in range(cluster_feats.shape[1]):
+                            cvs.append(feature_cv(cluster_feats[:, j]))
+                        cluster_cv = float(np.mean(cvs)) if cvs else 0.0
+                        weight = float(np.sum(idx)) / max(1.0, n_samples_total)
+                        weighted_cv_sum += cluster_cv * weight
+                        weighted_count += weight
+
+                    if weighted_count > 0:
+                        metrics['within_cluster_feature_cv_overall'] = float(weighted_cv_sum / weighted_count)
+                    else:
+                        metrics['within_cluster_feature_cv_overall'] = 0.0
+
+                    # By-dimension CVs
+                    for dim_name, indices in dim_to_indices.items():
+                        if not indices:
+                            continue
+                        weighted_cv_sum_dim = 0.0
+                        weighted_count_dim = 0.0
+                        for lab in unique_clusters:
+                            idx = clean_labels == lab
+                            if np.sum(idx) <= 1:
+                                continue
+                            cluster_feats_dim = unscaled_features[idx][:, indices]
+                            cvs_dim = []
+                            for j in range(cluster_feats_dim.shape[1]):
+                                cvs_dim.append(feature_cv(cluster_feats_dim[:, j]))
+                            cluster_cv_dim = float(np.mean(cvs_dim)) if cvs_dim else 0.0
+                            weight = float(np.sum(idx)) / max(1.0, n_samples_total)
+                            weighted_cv_sum_dim += cluster_cv_dim * weight
+                            weighted_count_dim += weight
+                        if weighted_count_dim > 0:
+                            metrics[f'within_cluster_feature_cv_{dim_name}'] = float(weighted_cv_sum_dim / weighted_count_dim)
+                        else:
+                            metrics[f'within_cluster_feature_cv_{dim_name}'] = 0.0
+            except Exception as cv_err:
+                logger.warning(f"Error computing within-cluster feature CV metrics: {cv_err}")
         else:
             metrics['silhouette'] = 0.0
             metrics['calinski_harabasz'] = 0.0
@@ -624,12 +721,14 @@ def create_cluster_summary_report(stats: ClusterStatistics, quality_metrics: Dic
         Summary report dictionary
     """
     try:
-        # Calculate sample counts correctly
-        total_non_noise_samples = stats.cluster_sizes.sum() if len(stats.cluster_sizes) > 0 else 0
-        # Calculate total samples from the coverage percentage and non-noise samples
+        # Calculate sample counts accurately
+        total_non_noise_samples = int(stats.cluster_sizes.sum()) if len(stats.cluster_sizes) > 0 else 0
+        # Derive total_samples using coverage percentage while avoiding rounding drift
         if stats.coverage_percentage > 0:
-            total_samples = int(total_non_noise_samples / stats.coverage_percentage)
-            noise_samples = total_samples - total_non_noise_samples
+            estimated_total = total_non_noise_samples / max(stats.coverage_percentage, 1e-12)
+            # Round to nearest int for readability, then recompute noise exactly
+            total_samples = int(round(estimated_total))
+            noise_samples = max(0, total_samples - total_non_noise_samples)
         else:
             total_samples = total_non_noise_samples
             noise_samples = 0
@@ -645,6 +744,8 @@ def create_cluster_summary_report(stats: ClusterStatistics, quality_metrics: Dic
                 'noise_samples': noise_samples,
                 'coverage_percentage': float(stats.coverage_percentage),
                 'noise_percentage': float(stats.noise_percentage),
+                'coverage_samples': int(total_non_noise_samples),
+                'noise_samples': int(noise_samples),
                 'is_valid': validation.is_valid
             },
             'cluster_distribution': {

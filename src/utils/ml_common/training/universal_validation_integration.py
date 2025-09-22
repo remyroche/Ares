@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 Universal Validation Integration for ML Training Pipelines
 
@@ -183,16 +185,32 @@ class ValidationIntegrationConfig:
             }
 
         # Initialize default configurations if not provided
-        if self.data_leakage_config is None:
-            self.data_leakage_config = DataLeakageConfig()
-        if self.overfitting_monitoring_config is None:
-            self.overfitting_monitoring_config = OverfittingMonitoringConfig()
-        if self.enhanced_validation_config is None:
-            self.enhanced_validation_config = EnhancedValidationConfig()
-        if self.hpo_overfitting_prevention_config is None:
-            self.hpo_overfitting_prevention_config = HPOOverfittingPreventionConfig()
-        if self.model_complexity_config is None:
-            self.model_complexity_config = ModelComplexityConfig()
+        # Only instantiate configs if corresponding classes are available
+        try:
+            if self.data_leakage_config is None and 'DataLeakageConfig' in globals() and DataLeakageConfig is not None:
+                self.data_leakage_config = DataLeakageConfig()
+        except Exception:
+            pass
+        try:
+            if self.overfitting_monitoring_config is None and 'OverfittingMonitoringConfig' in globals() and OverfittingMonitoringConfig is not None:
+                self.overfitting_monitoring_config = OverfittingMonitoringConfig()
+        except Exception:
+            pass
+        try:
+            if self.enhanced_validation_config is None and 'EnhancedValidationConfig' in globals() and EnhancedValidationConfig is not None:
+                self.enhanced_validation_config = EnhancedValidationConfig()
+        except Exception:
+            pass
+        try:
+            if self.hpo_overfitting_prevention_config is None and 'HPOOverfittingPreventionConfig' in globals() and HPOOverfittingPreventionConfig is not None:
+                self.hpo_overfitting_prevention_config = HPOOverfittingPreventionConfig()
+        except Exception:
+            pass
+        try:
+            if self.model_complexity_config is None and 'ModelComplexityConfig' in globals() and ModelComplexityConfig is not None:
+                self.model_complexity_config = ModelComplexityConfig()
+        except Exception:
+            pass
 
 class UniversalValidationIntegrator:
     """Integrates universal validation into ML training pipelines."""
@@ -211,12 +229,32 @@ class UniversalValidationIntegrator:
         self.temporal_validator = get_temporal_validator()
         self.timeframe_manager = get_timeframe_manager()
 
-        # Initialize new utility components
-        self.data_leakage_prevention = get_data_leakage_prevention(self.config.data_leakage_config)
-        self.overfitting_monitor = get_overfitting_monitor(self.config.overfitting_monitoring_config)
-        self.enhanced_validator = get_enhanced_validator(self.config.enhanced_validation_config)
-        self.hpo_prevention = get_hpo_with_overfitting_prevention(self.config.hpo_overfitting_prevention_config)
-        self.complexity_analyzer = get_model_complexity_analyzer(self.config.model_complexity_config)
+        # Initialize new utility components (guarded)
+        self.data_leakage_prevention = (
+            get_data_leakage_prevention(self.config.data_leakage_config)
+            if 'get_data_leakage_prevention' in globals() and callable(get_data_leakage_prevention)
+            else None
+        )
+        self.overfitting_monitor = (
+            get_overfitting_monitor(self.config.overfitting_monitoring_config)
+            if 'get_overfitting_monitor' in globals() and callable(get_overfitting_monitor)
+            else None
+        )
+        self.enhanced_validator = (
+            get_enhanced_validator(self.config.enhanced_validation_config)
+            if 'get_enhanced_validator' in globals() and callable(get_enhanced_validator)
+            else None
+        )
+        self.hpo_prevention = (
+            get_hpo_with_overfitting_prevention(self.config.hpo_overfitting_prevention_config)
+            if 'get_hpo_with_overfitting_prevention' in globals() and callable(get_hpo_with_overfitting_prevention)
+            else None
+        )
+        self.complexity_analyzer = (
+            get_model_complexity_analyzer(self.config.model_complexity_config)
+            if 'get_model_complexity_analyzer' in globals() and callable(get_model_complexity_analyzer)
+            else None
+        )
 
         # Initialize reporting integration
         self.reporting_integrator = get_validation_reporting_integrator()

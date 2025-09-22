@@ -238,7 +238,7 @@ class EnsembleTrainingStep(BaseTrainingStep):
 
             # Log validation results with comprehensive details
             if validation_results['valid']:
-                self.logger.info(f"✅ Ensemble validation passed: {validation_results['validation_score']:.4f".4f"
+                self.logger.info(f"✅ Ensemble validation passed: {validation_results['validation_score']:.4f}")
                 # Log additional validation details if available
                 if 'enhanced_validation' in validation_results:
                     enhanced = validation_results['enhanced_validation']
@@ -913,9 +913,15 @@ class EnsembleTrainingStep(BaseTrainingStep):
                 oof_scores = ensemble_manager.get_oof_scores()
 
                 # Aggregate OOF predictions for this regime
-                if regime in oof_predictions:
+                if regime in oof_predictions and isinstance(oof_predictions[regime], dict) and len(oof_predictions[regime]) > 0:
                     # Use OOF predictions instead of new predictions
-                    y_pred = np.array(list(oof_predictions[regime].values())).mean(axis=0)
+                    try:
+                        y_pred = np.array(list(oof_predictions[regime].values())).mean(axis=0)
+                    except Exception:
+                        # Fallback: concatenate and average last axis if values are arrays
+                        vals = list(oof_predictions[regime].values())
+                        y_stack = np.column_stack([np.asarray(v).ravel() for v in vals])
+                        y_pred = y_stack.mean(axis=1)
 
                     # Calculate metrics using OOF predictions
                     metrics = self.evaluation_utils.calculate_metrics(
@@ -932,7 +938,8 @@ class EnsembleTrainingStep(BaseTrainingStep):
 
                     evaluation_results[regime] = metrics
 
-                    self.logger.info(f"✅ Regime {regime} evaluated using OOF predictions: {oof_scores.get(regime, 0.0):.4f".4f"                else:
+                    self.logger.info(f"✅ Regime {regime} evaluated using OOF predictions: {oof_scores.get(regime, 0.0):.4f}")
+                else:
                     # Fallback to regular predictions if OOF not available
                     self.logger.warning(f"⚠️ OOF predictions not available for regime {regime}, using regular predictions")
                     y_pred = ensemble_manager.predict(regime_X)

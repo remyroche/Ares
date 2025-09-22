@@ -1069,7 +1069,7 @@ class EnhancedHMMRegimeDetector:
             extended_regime_labels[processed_indices] = regime_labels
             
             # Forward fill for initial missing values, then backward fill
-            extended_series = pd.Series(extended_regime_labels)
+            extended_series = pd.Series(extended_regime_labels, index=data.index)
             extended_series = extended_series.ffill().bfill()
             
             # If still NaN (shouldn't happen with proper forward/backward fill), use mode
@@ -1078,7 +1078,10 @@ class EnhancedHMMRegimeDetector:
                 fill_value = mode_value[0] if len(mode_value) > 0 else 0
                 extended_series = extended_series.fillna(fill_value)
             
-            regime_labels = extended_series.values.astype(int)
+            try:
+                regime_labels = extended_series.values.astype(int)
+            except Exception:
+                regime_labels = np.round(extended_series.values).astype(int)
 
         # Create result DataFrame
         result = data.copy()

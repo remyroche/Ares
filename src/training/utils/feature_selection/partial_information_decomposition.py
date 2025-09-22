@@ -43,7 +43,7 @@ try:
     from src.utils.data.validation.validators import CrossStepValidator
     from src.utils.matrix_operations.unified_operations import get_unified_matrix_operations
     from src.utils.hardware.unified_hardware_manager import get_unified_hardware_manager, WorkloadType, OptimizationLevel
-    from src.utils.caching import get_cache_manager
+    from src.utils.unified_cache import get_unified_cache
     UTILITIES_AVAILABLE = True
 except ImportError as e:
     logging.warning(f"Some utilities not available: {e}")
@@ -442,7 +442,7 @@ class PartialInformationDecomposition:
         # Initialize utility components if available
         if UTILITIES_AVAILABLE:
             try:
-                self.cache_manager = get_cache_manager()
+                self.cache_manager = get_unified_cache(namespace="pid")
                 self.matrix_ops = get_unified_matrix_operations()
                 self.hardware_manager = get_unified_hardware_manager()
             except Exception as e:

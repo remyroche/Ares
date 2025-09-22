@@ -45,6 +45,11 @@ from src.core.errors import (
     ConfigurationError, ModelTrainingError
 )
 from src.utils.logger import system_logger
+from src.utils.ml_common.evaluation.unified_evaluator import (
+    compute_classification_metrics,
+    compute_regression_metrics,
+    compute_sharpe_ratio,
+)
 
 # ML metrics
 from sklearn.metrics import (
@@ -368,18 +373,12 @@ class ModelEvaluator:
                                               y_pred_proba: Optional[np.ndarray], metrics: EvaluationMetrics):
         """Calculate classification metrics."""
         try:
-            # Basic classification metrics
-            metrics.accuracy = accuracy_score(y_test, y_pred)
-            metrics.precision = precision_score(y_test, y_pred, average='weighted', zero_division=0)
-            metrics.recall = recall_score(y_test, y_pred, average='weighted', zero_division=0)
-            metrics.f1_score = f1_score(y_test, y_pred, average='weighted', zero_division=0)
-            
-            # ROC AUC if probabilities are available
-            if y_pred_proba is not None and len(np.unique(y_test)) == 2:
-                try:
-                    metrics.roc_auc = roc_auc_score(y_test, y_pred_proba[:, 1])
-                except:
-                    pass
+            all_metrics = compute_classification_metrics(y_test, y_pred, y_pred_proba)
+            metrics.accuracy = all_metrics.get('accuracy')
+            metrics.precision = all_metrics.get('precision')
+            metrics.recall = all_metrics.get('recall')
+            metrics.f1_score = all_metrics.get('f1_score')
+            metrics.roc_auc = all_metrics.get('roc_auc')
             
         except Exception as e:
             self.logger.warning(f"⚠️ Error calculating classification metrics: {e}")
@@ -388,10 +387,11 @@ class ModelEvaluator:
     async def _calculate_regression_metrics(self, y_test: np.ndarray, y_pred: np.ndarray, metrics: EvaluationMetrics):
         """Calculate regression metrics."""
         try:
-            metrics.mse = mean_squared_error(y_test, y_pred)
-            metrics.rmse = np.sqrt(metrics.mse)
-            metrics.mae = mean_absolute_error(y_test, y_pred)
-            metrics.r2_score = r2_score(y_test, y_pred)
+            all_metrics = compute_regression_metrics(y_test, y_pred)
+            metrics.mse = all_metrics.get('mse')
+            metrics.rmse = all_metrics.get('rmse')
+            metrics.mae = all_metrics.get('mae')
+            metrics.r2_score = all_metrics.get('r2')
             
         except Exception as e:
             self.logger.warning(f"⚠️ Error calculating regression metrics: {e}")
@@ -406,9 +406,7 @@ class ModelEvaluator:
             if len(returns) > 0:
                 # Sharpe ratio
                 if self.config.enable_sharpe_ratio:
-                    returns_std = np.std(returns)
-                    if returns_std > 0:
-                        metrics.sharpe_ratio = np.mean(returns) / returns_std
+                    metrics.sharpe_ratio = compute_sharpe_ratio(returns)
                 
                 # Win rate
                 if self.config.enable_win_rate:

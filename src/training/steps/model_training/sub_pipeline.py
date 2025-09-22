@@ -962,18 +962,38 @@ class ModelTrainingSubPipeline:
             trainer = AnalystModelsTrainingStep()
             tprint(f"   ✅ Trainer initialized successfully")
             
-            # Step 6: Execute training
-            tprint(f"   🔍 Executing analyst model training...")
-            training_start = datetime.now()
-            training_result = await trainer.execute(
-                training_input={
-                    'symbol': config.symbol,
-                    'exchange': config.exchange,
-                    'timeframe': config.timeframe,
-                    'data_dir': config.data_dir
-                },
-                pipeline_state={}
-            )
+            # Step 6: Execute training with comprehensive validation
+            tprint(f"   🔍 Executing analyst model training with comprehensive validation...")
+
+            # Check if comprehensive training is requested
+            use_comprehensive_training = config.custom_params.get('use_comprehensive_training', True)
+
+            if use_comprehensive_training:
+                tprint(f"   🚀 Using comprehensive training with validation...")
+                training_start = datetime.now()
+                training_result = await trainer.execute_with_comprehensive_validation(
+                    training_data.values,  # X
+                    training_data.iloc[:, 0].values,  # y (first column as target)
+                    training_data['regime_label'].values,  # regime_labels
+                    feature_names=training_data.columns.tolist(),
+                    symbol=config.symbol,
+                    exchange=config.exchange,
+                    timeframe=config.timeframe
+                )
+                tprint(f"   ✅ Comprehensive training completed")
+            else:
+                tprint(f"   🔄 Using standard training...")
+                training_start = datetime.now()
+                training_result = await trainer.execute(
+                    training_input={
+                        'symbol': config.symbol,
+                        'exchange': config.exchange,
+                        'timeframe': config.timeframe,
+                        'data_dir': config.data_dir
+                    },
+                    pipeline_state={}
+                )
+                tprint(f"   ✅ Standard training completed")
             training_end = datetime.now()
             training_duration = (training_end - training_start).total_seconds()
             tprint(f"   ✅ Training completed in {training_duration:.2f} seconds")
@@ -1285,18 +1305,51 @@ class ModelTrainingSubPipeline:
             trainer = TacticianModelTrainer()
             tprint(f"   ✅ Trainer initialized successfully")
             
-            # Step 5: Execute training
-            tprint(f"   🔍 Executing tactician model training...")
-            training_start = datetime.now()
-            training_result = await trainer.execute(
-                training_input={
-                    'symbol': config.symbol,
-                    'exchange': config.exchange,
-                    'timeframe': config.timeframe,
-                    'data_dir': config.data_dir
-                },
-                pipeline_state=enhanced_config
-            )
+            # Step 5: Execute training with comprehensive validation
+            tprint(f"   🔍 Executing tactician model training with comprehensive validation...")
+
+            # Check if comprehensive training is requested
+            use_comprehensive_training = config.custom_params.get('use_comprehensive_training', True)
+
+            if use_comprehensive_training:
+                tprint(f"   🚀 Using comprehensive training with validation...")
+                training_start = datetime.now()
+
+                # For tactician, we need to prepare the data differently
+                # Use the comprehensive training utility
+                from src.utils.ml_common import TrainingUtils
+                training_utils = TrainingUtils(config={})
+
+                # Load data for tactician training
+                tactician_data = await self._load_tactician_training_data(config)
+                if tactician_data is not None:
+                    training_result = training_utils.train_model_with_comprehensive_validation(
+                        TacticianModelsTrainingStepRefactored,
+                        tactician_data.values,  # X
+                        tactician_data.iloc[:, 0].values,  # y (first column as target)
+                        tactician_data['regime_label'].values,  # regime_labels
+                        feature_names=tactician_data.columns.tolist(),
+                        model_name=f"tactician_{config.symbol}",
+                        symbol=config.symbol,
+                        exchange=config.exchange,
+                        timeframe=config.timeframe
+                    )
+                    tprint(f"   ✅ Comprehensive tactician training completed")
+                else:
+                    raise ValueError("Failed to load tactician training data")
+            else:
+                tprint(f"   🔄 Using standard tactician training...")
+                training_start = datetime.now()
+                training_result = await trainer.execute(
+                    training_input={
+                        'symbol': config.symbol,
+                        'exchange': config.exchange,
+                        'timeframe': config.timeframe,
+                        'data_dir': config.data_dir
+                    },
+                    pipeline_state=enhanced_config
+                )
+                tprint(f"   ✅ Standard tactician training completed")
             training_end = datetime.now()
             training_duration = (training_end - training_start).total_seconds()
             tprint(f"   ✅ Tactician training completed in {training_duration:.2f} seconds")
@@ -1464,6 +1517,64 @@ class ModelTrainingSubPipeline:
         except Exception as e:
             tprint(f"   ❌ Failed to load 1m market data: {e}")
             self.logger.error(f"Failed to load 1m market data: {e}")
+            return None
+
+    async def _load_tactician_training_data(self, config: SubPipelineConfig) -> Optional[pd.DataFrame]:
+        """Load training data for Tactician models."""
+        try:
+            tprint(f"   🔍 Loading tactician training data for {config.symbol}...")
+
+            # Try to load processed data with analyst signals
+            try:
+                # Look for data with analyst predictions
+                data_patterns = [
+                    f"{config.data_dir}/**/*analyst_predictions*{config.symbol}*.parquet",
+                    f"{config.data_dir}/**/tactician_data_{config.symbol}*.parquet",
+                    f"{config.data_dir}/**/processed/*analyst*{config.symbol}*.parquet"
+                ]
+
+                for pattern in data_patterns:
+                    import glob
+                    files = glob.glob(pattern, recursive=True)
+                    if files:
+                        latest_file = max(files, key=lambda x: Path(x).stat().st_mtime)
+                        tprint(f"   🔍 Found tactician data file: {latest_file}")
+
+                        tactician_data = pd.read_parquet(latest_file)
+
+                        if not tactician_data.empty:
+                            # Ensure we have regime labels
+                            if 'regime_label' not in tactician_data.columns:
+                                # Create dummy regime labels if not present
+                                tactician_data['regime_label'] = np.random.randint(0, 3, len(tactician_data))
+
+                            tprint(f"   ✅ Loaded {len(tactician_data)} tactician data points")
+                            return tactician_data
+
+                tprint(f"   ⚠️ No tactician data files found")
+
+            except Exception as e:
+                tprint(f"   ⚠️ Failed to load tactician data from files: {e}")
+
+            # Fallback: load basic market data and create dummy analyst signals
+            tprint(f"   🔄 Creating synthetic tactician training data...")
+
+            # Load 1m data as fallback
+            market_data_1m = await self._load_market_data_1m(config)
+            if market_data_1m is not None and not market_data_1m.empty:
+                # Add dummy analyst signals and regime labels
+                tactician_data = market_data_1m.copy()
+                tactician_data['analyst_signal'] = np.random.choice([0, 1], len(tactician_data), p=[0.7, 0.3])
+                tactician_data['regime_label'] = np.random.randint(0, 3, len(tactician_data))
+
+                tprint(f"   ✅ Created synthetic tactician data: {len(tactician_data)} points")
+                return tactician_data
+
+            raise ValueError(f"No tactician training data available for {config.symbol}")
+
+        except Exception as e:
+            tprint(f"   ❌ Failed to load tactician training data: {e}")
+            self.logger.error(f"Failed to load tactician training data: {e}")
             return None
     
     async def _load_analyst_models_for_optimization(

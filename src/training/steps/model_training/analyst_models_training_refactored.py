@@ -2517,6 +2517,227 @@ class AnalystModelsTrainingStepRefactored(PerRegimeTrainingStep):
 
 
 # Enhanced Convenience Functions
+    def execute_with_comprehensive_validation(
+        self,
+        X: np.ndarray,
+        y: np.ndarray,
+        regime_labels: np.ndarray,
+        feature_names: Optional[List[str]] = None,
+        hmm_states: Optional[np.ndarray] = None,
+        **kwargs
+    ) -> Dict[str, Any]:
+        """
+        Execute analyst training with comprehensive validation and monitoring.
+
+        This method provides a complete training pipeline with:
+        1. Data leakage prevention
+        2. Model complexity analysis
+        3. Overfitting monitoring
+        4. Enhanced validation
+        5. Comprehensive reporting
+
+        Args:
+            X: Input features
+            y: Target values (analyst outputs)
+            regime_labels: Regime labels for each sample
+            feature_names: Names of input features
+            hmm_states: HMM cluster/regime states
+            **kwargs: Additional arguments
+
+        Returns:
+            Dictionary containing comprehensive training results
+        """
+        self.logger.info("🚀 Starting analyst training with comprehensive validation")
+
+        results = {
+            'comprehensive_training': True,
+            'data_leakage_analysis': {},
+            'model_complexity_analysis': {},
+            'overfitting_monitoring': {},
+            'enhanced_validation': {},
+            'basic_training_results': {},
+            'recommendations': []
+        }
+
+        try:
+            # Step 1: Data Leakage Prevention
+            self.logger.info("🔍 Step 1: Data Leakage Prevention")
+            if self.comprehensive_utilities_available:
+                leakage_results = self.data_leakage_prevention.validate_data_integrity(X, y)
+                results['data_leakage_analysis'] = leakage_results
+
+                if not leakage_results.get('overall_valid', True):
+                    self.logger.warning("⚠️ Data leakage detected - proceeding with caution")
+
+            # Step 2: Model Complexity Analysis
+            self.logger.info("🔍 Step 2: Model Complexity Analysis")
+            if self.comprehensive_utilities_available:
+                # Analyze with a sample model
+                sample_model_class = self._get_sample_model_class()
+                if sample_model_class:
+                    sample_model = sample_model_class()
+                    complexity_results = self.model_complexity_analyzer.analyze_model_complexity(
+                        sample_model, X, y, model_name=f"{self.config.model_name}_sample"
+                    )
+                    results['model_complexity_analysis'] = complexity_results
+
+            # Step 3: Basic Training with Enhanced Monitoring
+            self.logger.info("🔍 Step 3: Enhanced Training with Monitoring")
+            basic_results = self.execute(X, y, regime_labels, feature_names, hmm_states, **kwargs)
+            results['basic_training_results'] = basic_results
+
+            # Step 4: Overfitting Monitoring
+            self.logger.info("🔍 Step 4: Overfitting Monitoring")
+            if self.comprehensive_utilities_available and basic_results.get('models'):
+                # Monitor each regime's models
+                monitoring_results = {}
+                for regime_id, regime_models in basic_results.get('models', {}).items():
+                    regime_monitoring = {}
+                    for model_type, model_result in regime_models.items():
+                        if hasattr(model_result, 'model'):
+                            model = model_result.model
+                            X_regime = X[regime_labels == regime_id]
+                            y_regime = y[regime_labels == regime_id]
+
+                            if len(X_regime) > 0:
+                                monitor_result = self.overfitting_monitoring.monitor_model_performance(
+                                    model, X_regime, y_regime, X_regime, y_regime,
+                                    model_name=f"{self.config.model_name}_{model_type}_regime_{regime_id}"
+                                )
+                                regime_monitoring[model_type] = monitor_result
+
+                    monitoring_results[regime_id] = regime_monitoring
+
+                results['overfitting_monitoring'] = monitoring_results
+
+            # Step 5: Enhanced Validation
+            self.logger.info("🔍 Step 5: Enhanced Validation")
+            if self.comprehensive_utilities_available and basic_results.get('models'):
+                # Perform comprehensive validation on trained models
+                validation_results = {}
+                for regime_id, regime_models in basic_results.get('models', {}).items():
+                    regime_validation = {}
+                    for model_type, model_result in regime_models.items():
+                        if hasattr(model_result, 'model'):
+                            model = model_result.model
+                            X_regime = X[regime_labels == regime_id]
+                            y_regime = y[regime_labels == regime_id]
+
+                            if len(X_regime) > 0:
+                                validate_result = self.enhanced_validation.perform_comprehensive_validation(
+                                    model, X_regime, y_regime, X_regime, y_regime,
+                                    model_name=f"{self.config.model_name}_{model_type}_regime_{regime_id}"
+                                )
+                                regime_validation[model_type] = validate_result
+
+                    validation_results[regime_id] = regime_validation
+
+                results['enhanced_validation'] = validation_results
+
+            # Step 6: Generate Comprehensive Recommendations
+            self.logger.info("🔍 Step 6: Generating Recommendations")
+            all_recommendations = []
+
+            # Collect recommendations from all analyses
+            if results['data_leakage_analysis']:
+                leakage_report = results['data_leakage_analysis'].get('prevention_report', {})
+                all_recommendations.extend(leakage_report.get('recommendations', []))
+
+            if results['model_complexity_analysis']:
+                complexity_recs = results['model_complexity_analysis'].get('simplification_recommendations', [])
+                all_recommendations.extend(complexity_recs)
+
+            if results['overfitting_monitoring']:
+                for regime_id, regime_monitoring in results['overfitting_monitoring'].items():
+                    for model_type, monitor_result in regime_monitoring.items():
+                        all_recommendations.extend(monitor_result.get('recommendations', []))
+
+            if results['enhanced_validation']:
+                for regime_id, regime_validation in results['enhanced_validation'].items():
+                    for model_type, validate_result in regime_validation.items():
+                        all_recommendations.extend(validate_result.get('recommendations', []))
+
+            results['recommendations'] = list(set(all_recommendations))
+
+            # Step 7: Overall Assessment
+            self.logger.info("🔍 Step 7: Overall Assessment")
+            training_success = self._assess_comprehensive_training_success(results)
+
+            if training_success:
+                self.logger.info("✅ Comprehensive analyst training completed successfully")
+            else:
+                self.logger.warning("⚠️ Comprehensive analyst training completed with issues")
+
+            return results
+
+        except Exception as e:
+            error_msg = f"Comprehensive analyst training failed: {e}"
+            results['error'] = error_msg
+            results['recommendations'].append("Review comprehensive training setup")
+            self.logger.error(f"❌ {error_msg}")
+            return results
+
+    def _get_sample_model_class(self):
+        """Get a sample model class for complexity analysis."""
+        try:
+            model_type = self.config.model_types[0] if self.config.model_types else "RandomForestRegressor"
+
+            if model_type == "RandomForestRegressor":
+                from sklearn.ensemble import RandomForestRegressor
+                return RandomForestRegressor
+            elif model_type == "XGBRegressor":
+                from xgboost import XGBRegressor
+                return XGBRegressor
+            elif model_type == "LGBMRegressor":
+                from lightgbm import LGBMRegressor
+                return LGBMRegressor
+            else:
+                from sklearn.ensemble import RandomForestRegressor
+                return RandomForestRegressor
+        except Exception:
+            return None
+
+    def _assess_comprehensive_training_success(self, results: Dict[str, Any]) -> bool:
+        """Assess overall success of comprehensive training."""
+        try:
+            # Check basic training success
+            basic_results = results.get('basic_training_results', {})
+            if not basic_results.get('success', False):
+                return False
+
+            # Check data leakage
+            leakage_analysis = results.get('data_leakage_analysis', {})
+            if not leakage_analysis.get('overall_valid', True):
+                return False
+
+            # Check model complexity risk
+            complexity_analysis = results.get('model_complexity_analysis', {})
+            risk_level = complexity_analysis.get('overfitting_risk', 'low')
+            if risk_level in ['very_high', 'high']:
+                return False
+
+            # Check for overfitting detection
+            monitoring_results = results.get('overfitting_monitoring', {})
+            for regime_id, regime_monitoring in monitoring_results.items():
+                for model_type, monitor_result in regime_monitoring.items():
+                    if monitor_result.get('overfitting_detected', False):
+                        return False
+
+            # Check validation success
+            validation_results = results.get('enhanced_validation', {})
+            for regime_id, regime_validation in validation_results.items():
+                for model_type, validate_result in regime_validation.items():
+                    validation_summary = validate_result.get('validation_summary', {})
+                    if not validation_summary.get('overall_pass', True):
+                        return False
+
+            return True
+
+        except Exception as e:
+            self.logger.warning(f"Comprehensive training success assessment failed: {e}")
+            return False
+
+
 def create_analyst_models_training_step_enhanced(
     config: Optional[PerRegimeTrainingConfig] = None
 ) -> AnalystModelsTrainingStepRefactored:

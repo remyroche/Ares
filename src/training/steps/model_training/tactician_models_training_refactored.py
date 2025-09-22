@@ -2493,3 +2493,65 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"❌ Failed to create enhanced tactician training step: {e}")
         print("This demonstrates the enhanced error handling capabilities")
+
+
+# Add comprehensive training method to TacticianModelsTrainingStepRefactored
+def execute_with_comprehensive_validation_tactician(
+    X: np.ndarray,
+    y: np.ndarray,
+    regime_labels: np.ndarray,
+    feature_names: Optional[List[str]] = None,
+    hmm_states: Optional[np.ndarray] = None,
+    **kwargs
+) -> Dict[str, Any]:
+    """
+    Execute tactician training with comprehensive validation and monitoring.
+
+    This is a standalone function that uses the comprehensive utilities
+    to provide enhanced training for tactician models.
+
+    Args:
+        X: Input features
+        y: Target values
+        regime_labels: Regime labels for each sample
+        feature_names: Names of input features
+        hmm_states: HMM cluster/regime states
+        **kwargs: Additional arguments
+
+    Returns:
+        Dictionary containing comprehensive training results
+    """
+    from src.utils.ml_common import TrainingUtils
+
+    logger = logging.getLogger('TacticianComprehensiveTraining')
+    logger.info("🚀 Starting tactician training with comprehensive validation")
+
+    results = {
+        'comprehensive_training': True,
+        'data_leakage_analysis': {},
+        'model_complexity_analysis': {},
+        'overfitting_monitoring': {},
+        'enhanced_validation': {},
+        'basic_training_results': {},
+        'recommendations': []
+    }
+
+    try:
+        # Initialize comprehensive training utilities
+        training_utils = TrainingUtils(config={})
+
+        # Use the unified comprehensive training method
+        comprehensive_results = training_utils.train_model_with_comprehensive_validation(
+            TacticianModelsTrainingStepRefactored, X, y, regime_labels, feature_names, hmm_states,
+            model_name="comprehensive_tactician",
+            **kwargs
+        )
+
+        return comprehensive_results
+
+    except Exception as e:
+        error_msg = f"Comprehensive tactician training failed: {e}"
+        results['error'] = error_msg
+        results['recommendations'].append("Review comprehensive training setup")
+        logger.error(f"❌ {error_msg}")
+        return results

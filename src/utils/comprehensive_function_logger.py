@@ -14,7 +14,7 @@ from typing import Any, Callable, Dict, List, Optional, Union
 from contextvars import ContextVar
 import uuid
 
-from src.utils.logger import system_logger
+from src.utils.logger import get_logger
 import numpy as np
 
 # Import global monitor for function call tracking
@@ -88,7 +88,7 @@ def log_function_call(
             log_message += f" | {', '.join(context_parts)}"
     
     # Log with appropriate level
-    logger = system_logger.getChild('FunctionLogger')
+    logger = get_logger('FunctionLogger')
     if level.upper() == "DEBUG":
         logger.debug(log_message)
     elif level.upper() == "WARNING":
@@ -223,7 +223,7 @@ async def _execute_with_comprehensive_logging(
             )
             
             # Log full traceback for debugging
-            system_logger.getChild('FunctionLogger').debug(
+            get_logger('FunctionLogger').debug(
                 f"Full traceback for {module_name}.{func_name}:\n{traceback.format_exc()}"
             )
 
@@ -314,7 +314,7 @@ def _execute_with_comprehensive_logging_sync(
             )
 
             # Log full traceback for debugging
-            system_logger.getChild('FunctionLogger').debug(
+            get_logger('FunctionLogger').debug(
                 f"Full traceback for {module_name}.{func_name}:\n{traceback.format_exc()}"
             )
 
@@ -392,7 +392,7 @@ def log_internal_call(caller_func: str, called_func: str, message: str = "", **k
         if context_parts:
             log_message += f" | {', '.join(context_parts)}"
     
-    system_logger.getChild('FunctionLogger').info(log_message)
+    get_logger('FunctionLogger').info(log_message)
 
 def log_step_progress(step_name: str, progress_message: str, **kwargs) -> None:
     """Log step progress with consistent formatting."""
@@ -406,7 +406,7 @@ def log_step_progress(step_name: str, progress_message: str, **kwargs) -> None:
         if context_parts:
             log_message += f" | {', '.join(context_parts)}"
     
-    system_logger.getChild('StepLogger').info(log_message)
+    get_logger('StepLogger').info(log_message)
 
 def log_data_operation(operation: str, data_info: str, **kwargs) -> None:
     """Log data operations with consistent formatting."""
@@ -420,7 +420,7 @@ def log_data_operation(operation: str, data_info: str, **kwargs) -> None:
         if context_parts:
             log_message += f" | {', '.join(context_parts)}"
     
-    system_logger.getChild('DataLogger').info(log_message)
+    get_logger('DataLogger').info(log_message)
 
 # Convenience decorators for different logging levels
 def log_all_calls(func: Callable) -> Callable:

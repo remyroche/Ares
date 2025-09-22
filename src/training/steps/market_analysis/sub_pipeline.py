@@ -15,6 +15,12 @@ This module provides the complete market analysis sub-pipeline with exactly 12 r
 10. feature_lookback_optimization - Optimize feature lookback periods
 11. pid_based_feature_generation - PID-based feature generation with interaction, polynomial, and cross-timeframe features
 12. final_feature_selection - Final multi-stage feature selection (120→100→80→60)
+
+Refactoring Status:
+- ✅ Extracted step handlers for better separation of concerns
+- ✅ Simplified configuration management
+- ✅ Enhanced validation logic
+- ✅ Improved data preparation flow
 """
 
 from typing import Any, Dict, List, Optional, Tuple
@@ -141,6 +147,461 @@ class SubPipelineResult:
         """Get execution time in seconds."""
         return self.duration_seconds or 0.0
 
+
+class BaseStepHandler:
+    """Base class for step handlers to provide common functionality."""
+
+    def __init__(self, pipeline_manager):
+        self.pipeline_manager = pipeline_manager
+        self.logger = pipeline_manager.logger.getChild(self.__class__.__name__)
+
+    async def execute_step(self, step_name: str, config: SubPipelineConfig) -> SubPipelineResult:
+        """Execute a single step using the pipeline manager."""
+        return await self.pipeline_manager.execute_sub_pipeline(step_name, config)
+
+    def update_pipeline_state(self, key: str, value: Any) -> None:
+        """Update the pipeline state with new data."""
+        self.pipeline_manager._current_pipeline_state[key] = value
+
+    def extract_results(self, result: SubPipelineResult, key: str) -> Any:
+        """Extract data from a step result."""
+        return result.artifacts.get(key, {})
+
+
+class SRStepHandler(BaseStepHandler):
+    """Handler for Support/Resistance related steps (1-3)."""
+
+    async def execute_sr_steps(self, config: SubPipelineConfig) -> Dict[str, Any]:
+        """Execute SR parameter optimization, detection, and clustering."""
+        self.logger.info('🎯 ===== STARTING SR STEPS GROUP =====')
+
+        results = {}
+
+        # Stage 1: SR Parameter Optimization
+        self.logger.info('🎯 Executing Stage 1: SR Parameter Optimization')
+        param_optimization_result = await self.execute_step('sr_parameter_optimization', config)
+        is_success, error_info = self.pipeline_manager._validate_sub_pipeline_result(
+            param_optimization_result, "SR Parameter Optimization"
+        )
+        if not is_success:
+            raise ValueError(error_info)
+
+        # Extract and store results
+        sr_optimization_result = self.extract_results(param_optimization_result, 'sr_parameter_optimization_result')
+        results['optimized_parameters'] = sr_optimization_result.get('optimized_parameters', {})
+        results['quality_thresholds'] = sr_optimization_result.get('quality_thresholds', {})
+        results['parameter_optimization_metrics'] = sr_optimization_result.get('parameter_optimization_metrics', {})
+
+        # Update pipeline state
+        self.update_pipeline_state('optimized_parameters', results['optimized_parameters'])
+        self.update_pipeline_state('quality_thresholds', results['quality_thresholds'])
+
+        # Stage 2: SR Detection
+        self.logger.info('📊 Executing Stage 2: SR Detection')
+        sr_detection_result = await self.execute_step('sr_detection', config)
+        is_success, error_info = self.pipeline_manager._validate_sub_pipeline_result(
+            sr_detection_result, "SR Detection"
+        )
+        if not is_success:
+            raise ValueError(error_info)
+
+        sr_detection_data = self.extract_results(sr_detection_result, 'sr_detection_result')
+        results['sr_levels'] = sr_detection_data.get('sr_levels', {})
+        results['detection_metrics'] = sr_detection_data.get('detection_metrics', {})
+
+        self.update_pipeline_state('sr_levels', results['sr_levels'])
+
+        # Stage 3: SR Clustering
+        self.logger.info('🔗 Executing Stage 3: SR Clustering')
+        sr_clustering_result = await self.execute_step('sr_clustering', config)
+        is_success, error_info = self.pipeline_manager._validate_sub_pipeline_result(
+            sr_clustering_result, "SR Clustering"
+        )
+        if not is_success:
+            raise ValueError(error_info)
+
+        sr_clustering_data = self.extract_results(sr_clustering_result, 'sr_clustering_result')
+        results['sr_clusters'] = sr_clustering_data.get('sr_clusters', {})
+        results['clustering_metrics'] = sr_clustering_data.get('clustering_metrics', {})
+
+        self.update_pipeline_state('sr_clusters', results['sr_clusters'])
+
+        return results
+
+
+class HMMStepHandler(BaseStepHandler):
+    """Handler for HMM related steps (4-7)."""
+
+    async def execute_hmm_steps(self, config: SubPipelineConfig) -> Dict[str, Any]:
+        """Execute HMM regime discovery, clustering, training, and ensemble."""
+        self.logger.info('🔍 ===== STARTING HMM STEPS GROUP =====')
+
+        results = {}
+
+        # Stage 4: HMM Regime Discovery
+        self.logger.info('🔍 Executing Stage 4: HMM Regime Discovery')
+        hmm_regime_discovery_result = await self.execute_step('hmm_regime_discovery', config)
+        is_success, error_info = self.pipeline_manager._validate_sub_pipeline_result(
+            hmm_regime_discovery_result, "HMM Regime Discovery"
+        )
+        if not is_success:
+            raise ValueError(error_info)
+
+        hmm_regime_data = self.extract_results(hmm_regime_discovery_result, 'hmm_regime_discovery_result')
+        results['regime_models'] = hmm_regime_data.get('regime_models', {})
+        results['regime_assignments'] = hmm_regime_data.get('regime_assignments', {})
+        results['regime_metrics'] = hmm_regime_data.get('regime_metrics', {})
+
+        self.update_pipeline_state('regime_models', results['regime_models'])
+        self.update_pipeline_state('regime_assignments', results['regime_assignments'])
+
+        # Stage 5: HMM Clustering
+        self.logger.info('🎯 Executing Stage 5: HMM Clustering')
+        hmm_clustering_result = await self.execute_step('hmm_clustering', config)
+        is_success, error_info = self.pipeline_manager._validate_sub_pipeline_result(
+            hmm_clustering_result, "HMM Clustering"
+        )
+        if not is_success:
+            raise ValueError(error_info)
+
+        hmm_clustering_data = self.extract_results(hmm_clustering_result, 'optimal_regime_clustering_result')
+        results['hmm_clusters'] = hmm_clustering_data.get('hmm_clusters', {})
+        results['hmm_clustering_metrics'] = hmm_clustering_data.get('hmm_clustering_metrics', {})
+
+        cluster_assignments = hmm_clustering_data.get('cluster_assignments', [])
+        self.update_pipeline_state('hmm_clusters', hmm_clustering_data)
+        self.update_pipeline_state('cluster_assignments', cluster_assignments)
+
+        # Prepare data for HMM Models Training
+        await self.pipeline_manager.data_preparation.prepare_hmm_training_data(results)
+
+        # Stage 6: HMM Models Training
+        self.logger.info('🏋️ Executing Stage 6: HMM Models Training')
+        hmm_models_training_result = await self.execute_step('hmm_models_training', config)
+        is_success, error_info = self.pipeline_manager._validate_sub_pipeline_result(
+            hmm_models_training_result, "HMM Models Training"
+        )
+        if not is_success:
+            raise ValueError(error_info)
+
+        hmm_models_data = self.extract_results(hmm_models_training_result, 'hmm_models_training_result')
+        results['hmm_models'] = hmm_models_data.get('hmm_models', {})
+        results['hmm_training_metrics'] = hmm_models_data.get('hmm_training_metrics', {})
+
+        self.update_pipeline_state('hmm_models', results['hmm_models'])
+
+        # Stage 7: HMM Ensemble Training
+        self.logger.info('🎭 Executing Stage 7: HMM Ensemble Training')
+        hmm_ensemble_training_result = await self.execute_step('hmm_ensemble_training', config)
+        is_success, error_info = self.pipeline_manager._validate_sub_pipeline_result(
+            hmm_ensemble_training_result, "HMM Ensemble Training"
+        )
+        if not is_success:
+            raise ValueError(error_info)
+
+        hmm_ensemble_data = self.extract_results(hmm_ensemble_training_result, 'hmm_ensemble_training_result')
+        results['hmm_ensemble'] = hmm_ensemble_data.get('hmm_ensemble', {})
+        results['hmm_ensemble_metrics'] = hmm_ensemble_data.get('hmm_ensemble_metrics', {})
+
+        self.update_pipeline_state('hmm_ensemble', results['hmm_ensemble'])
+
+        return results
+
+
+
+class DataProcessingStepHandler(BaseStepHandler):
+    """Handler for data processing steps (8-12)."""
+
+    async def execute_data_processing_steps(self, config: SubPipelineConfig, data: Any) -> Dict[str, Any]:
+        """Execute regime data splitting, labeling, feature optimization, and selection."""
+        self.logger.info('✂️ ===== STARTING DATA PROCESSING STEPS GROUP =====')
+
+        results = {}
+
+        # Stage 8: Regime Data Splitting
+        self.logger.info('✂️ Executing Stage 8: Regime Data Splitting')
+        regime_data_splitting_result = await self.execute_step('regime_data_splitting', config)
+        is_success, error_info = self.pipeline_manager._validate_sub_pipeline_result(
+            regime_data_splitting_result, "Regime Data Splitting"
+        )
+        if not is_success:
+            raise ValueError(error_info)
+
+        regime_splitting_data = self.extract_results(regime_data_splitting_result, 'regime_data_splitting_result')
+        results['regime_data'] = regime_splitting_data.get('regime_data', {})
+        results['regime_stats'] = regime_splitting_data.get('regime_stats', {})
+
+        self.update_pipeline_state('regime_data', results['regime_data'])
+
+        # Stage 9: Multi-Horizon Labeling
+        self.logger.info('🎯 Executing Stage 9: Multi-Horizon Labeling')
+        await self._execute_multi_horizon_labeling(config, data, results)
+
+        # Stage 10: Feature Lookback Optimization
+        self.logger.info('⚙️ Executing Stage 10: Feature Lookback Optimization')
+        feature_lookback_optimization_result = await self.execute_step('feature_lookback_optimization', config)
+        is_success, error_info = self.pipeline_manager._validate_sub_pipeline_result(
+            feature_lookback_optimization_result, "Feature Lookback Optimization"
+        )
+        if not is_success:
+            raise ValueError(error_info)
+
+        feature_optimization_data = self.extract_results(
+            feature_lookback_optimization_result, 'feature_lookback_optimization_result'
+        )
+        results['optimized_features'] = feature_optimization_data.get('optimized_features', {})
+        results['optimization_metrics'] = feature_optimization_data.get('optimization_metrics', {})
+
+        self.update_pipeline_state('optimized_features', results['optimized_features'])
+
+        # Stage 11: PID-Based Feature Generation
+        self.logger.info('🔧 Executing Stage 11: PID-Based Feature Generation')
+        pid_based_feature_generation_result = await self.execute_step('pid_based_feature_generation', config)
+        is_success, error_info = self.pipeline_manager._validate_sub_pipeline_result(
+            pid_based_feature_generation_result, "PID-Based Feature Generation"
+        )
+        if not is_success:
+            raise ValueError(error_info)
+
+        pid_feature_data = self.extract_results(
+            pid_based_feature_generation_result, 'pid_based_feature_generation_result'
+        )
+
+        results['pid_based_features'] = {
+            'combined_features': pid_feature_data.get('combined_features', {}),
+            'combined_feature_names': pid_feature_data.get('combined_feature_names', []),
+            'feature_importance_scores': pid_feature_data.get('feature_importance_scores', {}),
+            'interaction_features': pid_feature_data.get('interaction_result', {}),
+            'polynomial_features': pid_feature_data.get('polynomial_result', {}),
+            'cross_timeframe_features': pid_feature_data.get('cross_timeframe_result', {})
+        }
+
+        results['pid_feature_metrics'] = {
+            'generation_summary': pid_feature_data.get('generation_summary', {}),
+            'quality_metrics': {
+                'overall_quality_score': pid_feature_data.get('overall_quality_score', 0.0),
+                'feature_diversity_score': pid_feature_data.get('feature_diversity_score', 0.0),
+                'redundancy_score': pid_feature_data.get('redundancy_score', 0.0),
+                'stability_score': pid_feature_data.get('stability_score', 0.0)
+            },
+            'optimization_metrics': {
+                'optimization_used': pid_feature_data.get('optimization_used', False),
+                'matrix_ops_used': pid_feature_data.get('matrix_ops_used', False),
+                'lookback_integration': pid_feature_data.get('lookback_integration', {})
+            },
+            'validation_result': pid_feature_data.get('validation_result', {}),
+            'total_features_generated': pid_feature_data.get('total_features_generated', 0),
+            'generation_status': pid_feature_data.get('generation_status', 'unknown')
+        }
+
+        # Stage 12: Final Feature Selection
+        self.logger.info('🎯 ===== STARTING FINAL FEATURE SELECTION =====')
+        self.logger.info('🎯 Executing Stage 12: Final Feature Selection')
+        final_feature_selection_result = await self.execute_step('final_feature_selection', config)
+        is_success, error_info = self.pipeline_manager._validate_sub_pipeline_result(
+            final_feature_selection_result, "Final Feature Selection"
+        )
+        if not is_success:
+            raise ValueError(error_info)
+
+        final_selection_data = self.extract_results(
+            final_selection_data, 'final_feature_selection_result'
+        )
+
+        results['final_feature_selection'] = {
+            'symbol': final_selection_data.get('symbol'),
+            'exchange': final_selection_data.get('exchange'),
+            'timeframe': final_selection_data.get('timeframe'),
+            'data_dir': final_selection_data.get('data_dir'),
+            'feature_selection_config': final_selection_data.get('feature_selection_config', {}),
+            'execution_mode': final_selection_data.get('execution_mode', 'component'),
+            'success': final_selection_data.get('success', True),
+            'stage_reduction': final_selection_data.get('stage_reduction', {
+                'initial': 120, 'stage_1': 100, 'stage_2': 80, 'stage_3': 60
+            })
+        }
+
+        return results
+
+    async def _execute_multi_horizon_labeling(self, config: SubPipelineConfig, data: Any, results: Dict[str, Any]) -> None:
+        """Execute multi-horizon labeling step."""
+        try:
+            from src.training.steps.market_analysis.multi_horizon_sub_pipeline_adapter import execute_multi_horizon_labeling_step
+
+            labeling_config = config.custom_params.get('multi_horizon_labeling', {})
+
+            multi_horizon_labeling_result = execute_multi_horizon_labeling_step(
+                data=data,
+                regime_labels=self.pipeline_manager._current_pipeline_state.get('regime_labels'),
+                config=labeling_config,
+                symbol=config.symbol,
+                exchange=config.exchange,
+                timeframe=config.timeframe,
+                mode=config.mode.value
+            )
+
+            # Validate result
+            if isinstance(multi_horizon_labeling_result, dict):
+                if multi_horizon_labeling_result.get('status', 'failed') != 'completed':
+                    raise ValueError("Multi-Horizon Labeling failed")
+            else:
+                if multi_horizon_labeling_result.status != 'completed':
+                    raise ValueError("Multi-Horizon Labeling failed")
+
+            # Extract data
+            multi_horizon_data = multi_horizon_labeling_result.artifacts.get('multi_horizon_labeling_result', {})
+            results['labeled_data'] = multi_horizon_data.get('labeled_data', {})
+            results['labeling_metrics'] = multi_horizon_data.get('labeling_metrics', {})
+
+            # Update pipeline state
+            self.update_pipeline_state('labeled_data', results['labeled_data'])
+            self.update_pipeline_state('multi_horizon_labeling_result', multi_horizon_data)
+
+        except Exception as e:
+            self.logger.error(f"Multi-Horizon Labeling execution failed: {e}")
+            raise ValueError(f"Multi-Horizon Labeling execution failed: {e}")
+
+
+class ConfigurationValidator:
+    """Validates and manages configuration for the market analysis pipeline."""
+
+    @staticmethod
+    def validate_sub_pipeline_config(config: SubPipelineConfig) -> Tuple[bool, Optional[str]]:
+        """Validate sub-pipeline configuration."""
+        try:
+            if not config.symbol:
+                return False, "Symbol is required"
+            if not config.exchange:
+                return False, "Exchange is required"
+            if not config.timeframe:
+                return False, "Timeframe is required"
+            return True, None
+        except Exception as e:
+            return False, f"Configuration validation failed: {e}"
+
+    @staticmethod
+    def convert_old_config(config: Dict[str, Any]) -> SubPipelineConfig:
+        """Convert old config format to SubPipelineConfig."""
+        # Extract relevant configuration
+        sr_config = config.get('sr_optimization', {})
+        training_mode = config.get('training_mode', 'full')
+
+        # Determine execution mode
+        mode_map = {
+            'light': ExecutionMode.LIGHT,
+            'blank': ExecutionMode.BLANK
+        }
+        mode = mode_map.get(training_mode, ExecutionMode.FULL)
+
+        # Create SubPipelineConfig
+        return SubPipelineConfig(
+            mode=mode,
+            symbol=config.get('symbol', 'BTCUSDT'),
+            exchange=config.get('exchange', 'binance'),
+            timeframe=config.get('timeframe', '1m'),
+            data_dir=config.get('data_dir', './data'),
+            start_date=config.get('start_date'),
+            end_date=config.get('end_date'),
+            force_rerun=config.get('force_rerun', False),
+            parallel_processing=config.get('parallel_processing', True),
+            max_workers=config.get('max_workers', 4),
+            validation_enabled=config.get('validation_enabled', True),
+            monitoring_enabled=config.get('monitoring_enabled', True),
+            fast_mode=config.get('fast_mode', False),
+            skip_next_pipeline=config.get('skip_next_pipeline', False),
+            custom_params=config.get('custom_params', {})
+        )
+
+    @staticmethod
+    def convert_to_component_config(sub_config: SubPipelineConfig) -> ComponentConfig:
+        """Convert SubPipelineConfig to ComponentConfig."""
+        return ComponentConfig(
+            symbol=sub_config.symbol,
+            exchange=sub_config.exchange,
+            timeframe=sub_config.timeframe,
+            data_dir=sub_config.data_dir,
+            start_date=sub_config.start_date,
+            end_date=sub_config.end_date,
+            force_rerun=sub_config.force_rerun,
+            validation_enabled=sub_config.validation_enabled,
+            monitoring_enabled=sub_config.monitoring_enabled,
+            fast_mode=sub_config.fast_mode,
+            custom_params=sub_config.custom_params
+        )
+
+
+class DataPreparationService:
+    """Service for preparing and managing data throughout the pipeline."""
+
+    def __init__(self, pipeline_manager):
+        self.pipeline_manager = pipeline_manager
+        self.logger = pipeline_manager.logger.getChild('DataPreparationService')
+
+    async def prepare_hmm_training_data(self, results: Dict[str, Any]) -> None:
+        """Prepare data for HMM models training."""
+        self.logger.info('📊 Preparing data for HMM Models Training...')
+
+        try:
+            # Extract features
+            features = self._extract_features(results)
+            feature_names = results.get('optimized_features', {}).get('feature_names', [])
+
+            # Extract targets
+            targets = self._extract_targets(results)
+
+            # Extract regime labels
+            regime_labels = self._extract_regime_labels(results)
+
+            # Update pipeline state
+            self.pipeline_manager._current_pipeline_state.update({
+                'features': features,
+                'targets': targets,
+                'regime_labels': regime_labels,
+                'feature_names': feature_names
+            })
+
+            # Log data availability
+            self.logger.info(f"📊 Data prepared for HMM Models Training:")
+            self.logger.info(f"   - Features: {'✅' if features is not None else '❌'}")
+            self.logger.info(f"   - Targets: {'✅' if targets is not None else '❌'}")
+            self.logger.info(f"   - Regime Labels: {'✅' if regime_labels is not None else '❌'}")
+            self.logger.info(f"   - Feature Names: {len(feature_names) if feature_names else 0}")
+
+        except Exception as e:
+            self.logger.error(f"❌ Failed to prepare data for HMM Models Training: {e}")
+            raise ValueError(f"Data preparation failed for HMM Models Training: {e}")
+
+    def _extract_features(self, results: Dict[str, Any]) -> Optional[Any]:
+        """Extract features from results."""
+        if 'optimized_features' in results and results['optimized_features']:
+            features_data = results['optimized_features']
+            if isinstance(features_data, dict) and 'features' in features_data:
+                return features_data['features']
+
+        if 'pid_based_features' in results:
+            pid_features = results['pid_based_features']
+            if isinstance(pid_features, dict) and 'combined_features' in pid_features:
+                return pid_features['combined_features']
+
+        return None
+
+    def _extract_targets(self, results: Dict[str, Any]) -> Optional[Any]:
+        """Extract targets from results."""
+        if 'labeled_data' in results and results['labeled_data']:
+            labeled_data = results['labeled_data']
+            if isinstance(labeled_data, dict) and 'labels' in labeled_data:
+                return labeled_data['labels']
+        return None
+
+    def _extract_regime_labels(self, results: Dict[str, Any]) -> Optional[Any]:
+        """Extract regime labels from results."""
+        if 'regime_assignments' in results and results['regime_assignments']:
+            regime_data = results['regime_assignments']
+            if isinstance(regime_data, dict) and 'regime_labels' in regime_data:
+                return regime_data['regime_labels']
+        return None
+
+
 class MarketAnalysisSubPipeline:
     """
     Market Analysis Sub-Pipeline Manager.
@@ -173,7 +634,16 @@ class MarketAnalysisSubPipeline:
         
         # Initialize component factory
         self.component_factory = ComponentFactory()
-        
+
+        # Initialize step handlers
+        self.sr_handler = SRStepHandler(self)
+        self.hmm_handler = HMMStepHandler(self)
+        self.data_processing_handler = DataProcessingStepHandler(self)
+
+        # Initialize services
+        self.config_validator = ConfigurationValidator()
+        self.data_preparation = DataPreparationService(self)
+
         # Initialize pipeline state for component communication
         self._current_data = None
         self._current_pipeline_state = {}
@@ -228,54 +698,11 @@ class MarketAnalysisSubPipeline:
     
     def _convert_to_component_config(self, sub_config: SubPipelineConfig) -> ComponentConfig:
         """Convert SubPipelineConfig to ComponentConfig."""
-        return ComponentConfig(
-            symbol=sub_config.symbol,
-            exchange=sub_config.exchange,
-            timeframe=sub_config.timeframe,
-            data_dir=sub_config.data_dir,
-            start_date=sub_config.start_date,
-            end_date=sub_config.end_date,
-            force_rerun=sub_config.force_rerun,
-            validation_enabled=sub_config.validation_enabled,
-            monitoring_enabled=sub_config.monitoring_enabled,
-            fast_mode=sub_config.fast_mode,
-            custom_params=sub_config.custom_params
-        )
-    
+        return self.config_validator.convert_to_component_config(sub_config)
+
     def _convert_old_config(self, config: Dict[str, Any]) -> SubPipelineConfig:
         """Convert old config format to SubPipelineConfig."""
-        # Extract relevant configuration
-        sr_config = config.get('sr_optimization', {})
-        training_mode = config.get('training_mode', 'full')
-        
-        # Determine execution mode
-        if training_mode == 'light':
-            mode = ExecutionMode.LIGHT
-        elif training_mode == 'blank':
-            mode = ExecutionMode.BLANK
-        else:
-            mode = ExecutionMode.FULL
-        
-        # Create SubPipelineConfig
-        sub_config = SubPipelineConfig(
-            mode=mode,
-            symbol=config.get('symbol', 'BTCUSDT'),
-            exchange=config.get('exchange', 'binance'),
-            timeframe=config.get('timeframe', '1m'),
-            data_dir=config.get('data_dir', './data'),
-            start_date=config.get('start_date'),
-            end_date=config.get('end_date'),
-            force_rerun=config.get('force_rerun', False),
-            parallel_processing=config.get('parallel_processing', True),
-            max_workers=config.get('max_workers', 4),
-            validation_enabled=config.get('validation_enabled', True),
-            monitoring_enabled=config.get('monitoring_enabled', True),
-            fast_mode=config.get('fast_mode', False),
-            skip_next_pipeline=config.get('skip_next_pipeline', False),
-            custom_params=config.get('custom_params', {})
-        )
-        
-        return sub_config
+        return self.config_validator.convert_old_config(config)
 
     async def execute_all_steps_from_start(
         self, 
@@ -369,336 +796,43 @@ class MarketAnalysisSubPipeline:
             results = {}
             
             # ===== SR STEPS GROUP =====
-            self.logger.info('🎯 ===== STARTING SR STEPS GROUP =====')
-            
-            # Stage 1: SR Parameter Optimization (BEFORE detection and clustering)
-            self.logger.info('🎯 Executing Stage 1: SR Parameter Optimization')
-            param_optimization_result = await self.execute_sub_pipeline('sr_parameter_optimization', self.config)
-            is_success, error_info = self._validate_sub_pipeline_result(param_optimization_result, "SR Parameter Optimization")
-            if not is_success:
-                return error_info
-            
-            # Extract data from consolidated artifact
-            sr_optimization_result = param_optimization_result.artifacts.get('sr_parameter_optimization_result', {})
-            results['optimized_parameters'] = sr_optimization_result.get('optimized_parameters', {})
-            results['quality_thresholds'] = sr_optimization_result.get('quality_thresholds', {})
-            results['parameter_optimization_metrics'] = sr_optimization_result.get('parameter_optimization_metrics', {})
-            
-            # Update pipeline state for next components
-            self._current_pipeline_state.update({
-                'optimized_parameters': results['optimized_parameters'],
-                'quality_thresholds': results['quality_thresholds']
-            })
-            
-            # Stage 2: SR Detection (using optimized parameters)
-            self.logger.info('📊 Executing Stage 2: SR Detection')
-            sr_detection_result = await self.execute_sub_pipeline('sr_detection', self.config)
-            is_success, error_info = self._validate_sub_pipeline_result(sr_detection_result, "SR Detection")
-            if not is_success:
-                return error_info
-            
-            # Extract data from consolidated artifact
-            sr_detection_data = sr_detection_result.artifacts.get('sr_detection_result', {})
-            results['sr_levels'] = sr_detection_data.get('sr_levels', {})
-            results['detection_metrics'] = sr_detection_data.get('detection_metrics', {})
-            
-            # Update pipeline state for next components
-            self._current_pipeline_state.update({
-                'sr_levels': results['sr_levels']
-            })
-            
-            # Stage 3: SR Clustering (using detected levels)
-            self.logger.info('🔗 Executing Stage 3: SR Clustering')
-            sr_clustering_result = await self.execute_sub_pipeline('sr_clustering', self.config)
-            is_success, error_info = self._validate_sub_pipeline_result(sr_clustering_result, "SR Clustering")
-            if not is_success:
-                return error_info
-            
-            # Extract data from consolidated artifact
-            sr_clustering_data = sr_clustering_result.artifacts.get('sr_clustering_result', {})
-            results['sr_clusters'] = sr_clustering_data.get('sr_clusters', {})
-            results['clustering_metrics'] = sr_clustering_data.get('clustering_metrics', {})
-            
-            # Update pipeline state for next components
-            self._current_pipeline_state.update({
-                'sr_clusters': results['sr_clusters']
-            })
-            
+            try:
+                sr_results = await self.sr_handler.execute_sr_steps(self.config)
+                results.update(sr_results)
+            except ValueError as e:
+                self.logger.error(f"❌ SR Steps failed: {e}")
+                return {
+                    'success': False,
+                    'error': str(e),
+                    'execution_time': sum(result.execution_time for result in self.results),
+                    'completed_stages': len(self.results)
+                }
+
             # ===== HMM STEPS GROUP =====
-            self.logger.info('🔍 ===== STARTING HMM STEPS GROUP =====')
-            
-            # Stage 4: HMM Regime Discovery
-            self.logger.info('🔍 Executing Stage 4: HMM Regime Discovery')
-            hmm_regime_discovery_result = await self.execute_sub_pipeline('hmm_regime_discovery', self.config)
-            is_success, error_info = self._validate_sub_pipeline_result(hmm_regime_discovery_result, "HMM Regime Discovery")
-            if not is_success:
-                return error_info
-            
-            # Extract data from consolidated artifact
-            hmm_regime_data = hmm_regime_discovery_result.artifacts.get('hmm_regime_discovery_result', {})
-            results['regime_models'] = hmm_regime_data.get('regime_models', {})
-            results['regime_assignments'] = hmm_regime_data.get('regime_assignments', {})
-            results['regime_metrics'] = hmm_regime_data.get('regime_metrics', {})
-            
-            # Update pipeline state for next components
-            self._current_pipeline_state.update({
-                'regime_models': results['regime_models'],
-                'regime_assignments': results['regime_assignments']
-            })
-            
-            # Stage 5: HMM Clustering
-            self.logger.info('🎯 Executing Stage 5: HMM Clustering')
-            hmm_clustering_result = await self.execute_sub_pipeline('hmm_clustering', self.config)
-            is_success, error_info = self._validate_sub_pipeline_result(hmm_clustering_result, "HMM Clustering")
-            if not is_success:
-                return error_info
-            
-            # Extract data from consolidated artifact
-            hmm_clustering_data = hmm_clustering_result.artifacts.get('optimal_regime_clustering_result', {})
-            results['hmm_clusters'] = hmm_clustering_data.get('hmm_clusters', {})
-            results['hmm_clustering_metrics'] = hmm_clustering_data.get('hmm_clustering_metrics', {})
-            
-            # Update pipeline state for next components
-            cluster_assignments = hmm_clustering_data.get('cluster_assignments', [])
-            self._current_pipeline_state.update({
-                'hmm_clusters': hmm_clustering_data,  # Store the full result
-                'cluster_assignments': cluster_assignments  # Make cluster_assignments directly accessible
-            })
-            
-            # Prepare data for HMM Models Training
-            self.logger.info('📊 Preparing data for HMM Models Training...')
             try:
-                # Extract features from optimized_features or pid_based_features
-                features = None
-                feature_names = []
-                
-                if 'optimized_features' in results and results['optimized_features']:
-                    features_data = results['optimized_features']
-                    if isinstance(features_data, dict) and 'features' in features_data:
-                        features = features_data['features']
-                        feature_names = features_data.get('feature_names', [])
-                
-                if features is None and 'pid_based_features' in results:
-                    pid_features = results['pid_based_features']
-                    if isinstance(pid_features, dict) and 'combined_features' in pid_features:
-                        features = pid_features['combined_features']
-                        feature_names = pid_features.get('combined_feature_names', [])
-                
-                # Extract targets from labeled_data
-                targets = None
-                if 'labeled_data' in results and results['labeled_data']:
-                    labeled_data = results['labeled_data']
-                    if isinstance(labeled_data, dict) and 'labels' in labeled_data:
-                        targets = labeled_data['labels']
-                
-                # Extract regime labels from regime assignments
-                regime_labels = None
-                if 'regime_assignments' in results and results['regime_assignments']:
-                    regime_data = results['regime_assignments']
-                    if isinstance(regime_data, dict) and 'regime_labels' in regime_data:
-                        regime_labels = regime_data['regime_labels']
-                
-                # Update pipeline state with prepared data
-                self._current_pipeline_state.update({
-                    'features': features,
-                    'targets': targets,
-                    'regime_labels': regime_labels,
-                    'feature_names': feature_names
-                })
-                
-                # Log data availability for debugging
-                self.logger.info(f"📊 Data prepared for HMM Models Training:")
-                self.logger.info(f"   - Features: {'✅' if features is not None else '❌'}")
-                self.logger.info(f"   - Targets: {'✅' if targets is not None else '❌'}")
-                self.logger.info(f"   - Regime Labels: {'✅' if regime_labels is not None else '❌'}")
-                self.logger.info(f"   - Feature Names: {len(feature_names) if feature_names else 0}")
-                
-            except Exception as e:
-                self.logger.error(f"❌ Failed to prepare data for HMM Models Training: {e}")
-                return self._create_error_result("Data preparation failed for HMM Models Training", str(e))
-            
-            # Stage 6: HMM Models Training
-            self.logger.info('🏋️ Executing Stage 6: HMM Models Training')
-            hmm_models_training_result = await self.execute_sub_pipeline('hmm_models_training', self.config)
-            is_success, error_info = self._validate_sub_pipeline_result(hmm_models_training_result, "HMM Models Training")
-            if not is_success:
-                return error_info
-            
-            # Extract data from consolidated artifact
-            hmm_models_data = hmm_models_training_result.artifacts.get('hmm_models_training_result', {})
-            results['hmm_models'] = hmm_models_data.get('hmm_models', {})
-            results['hmm_training_metrics'] = hmm_models_data.get('hmm_training_metrics', {})
-            
-            # Update pipeline state for next components
-            self._current_pipeline_state.update({
-                'hmm_models': results['hmm_models']
-            })
-            
-            # Stage 7: HMM Ensemble Training
-            self.logger.info('🎭 Executing Stage 7: HMM Ensemble Training')
-            hmm_ensemble_training_result = await self.execute_sub_pipeline('hmm_ensemble_training', self.config)
-            is_success, error_info = self._validate_sub_pipeline_result(hmm_ensemble_training_result, "HMM Ensemble Training")
-            if not is_success:
-                return error_info
-            
-            # Extract data from consolidated artifact
-            hmm_ensemble_data = hmm_ensemble_training_result.artifacts.get('hmm_ensemble_training_result', {})
-            results['hmm_ensemble'] = hmm_ensemble_data.get('hmm_ensemble', {})
-            results['hmm_ensemble_metrics'] = hmm_ensemble_data.get('hmm_ensemble_metrics', {})
-            
-            # Update pipeline state for next components
-            self._current_pipeline_state.update({
-                'hmm_ensemble': results['hmm_ensemble']
-            })
-            
+                hmm_results = await self.hmm_handler.execute_hmm_steps(self.config)
+                results.update(hmm_results)
+            except ValueError as e:
+                self.logger.error(f"❌ HMM Steps failed: {e}")
+                return {
+                    'success': False,
+                    'error': str(e),
+                    'execution_time': sum(result.execution_time for result in self.results),
+                    'completed_stages': len(self.results)
+                }
+
             # ===== DATA PROCESSING STEPS GROUP =====
-            self.logger.info('✂️ ===== STARTING DATA PROCESSING STEPS GROUP =====')
-            
-            # Stage 8: Regime Data Splitting
-            self.logger.info('✂️ Executing Stage 8: Regime Data Splitting')
-            regime_data_splitting_result = await self.execute_sub_pipeline('regime_data_splitting', self.config)
-            is_success, error_info = self._validate_sub_pipeline_result(regime_data_splitting_result, "Regime Data Splitting")
-            if not is_success:
-                return error_info
-            
-            # Extract data from consolidated artifact
-            regime_splitting_data = regime_data_splitting_result.artifacts.get('regime_data_splitting_result', {})
-            results['regime_data'] = regime_splitting_data.get('regime_data', {})
-            results['regime_stats'] = regime_splitting_data.get('regime_stats', {})
-            
-            # Update pipeline state for next components
-            self._current_pipeline_state.update({
-                'regime_data': results['regime_data']
-            })
-            
-            # Stage 9: Multi-Horizon Labeling
-            self.logger.info('🎯 Executing Stage 9: Multi-Horizon Labeling')
             try:
-                from src.training.steps.market_analysis.multi_horizon_sub_pipeline_adapter import execute_multi_horizon_labeling_step
-                
-                # Extract labeling configuration
-                labeling_config = self.config.custom_params.get('multi_horizon_labeling', {})
-                
-                multi_horizon_labeling_result = execute_multi_horizon_labeling_step(
-                    data=data,
-                    regime_labels=self._current_pipeline_state.get('regime_labels'),
-                    config=labeling_config,
-                    symbol=self.config.symbol,
-                    exchange=self.config.exchange,
-                    timeframe=self.config.timeframe,
-                    mode=self.config.mode.value
-                )
-                
-                # Check if the result is already a dictionary (from multi_horizon adapter)
-                if isinstance(multi_horizon_labeling_result, dict):
-                    # It's already a dictionary result from the adapter
-                    result_status = multi_horizon_labeling_result.get('status', 'failed')
-                    if result_status != 'completed':
-                        return self._create_error_result("Multi-Horizon Labeling failed", multi_horizon_labeling_result)
-                else:
-                    # It's a MockResult object, use the status attribute
-                    if multi_horizon_labeling_result.status != 'completed':
-                        return self._create_error_result("Multi-Horizon Labeling failed", multi_horizon_labeling_result.artifacts)
-                    
-            except Exception as e:
-                self.logger.error(f"Multi-Horizon Labeling execution failed: {e}")
-                return self._create_error_result("Multi-Horizon Labeling execution failed", str(e))
-            
-            # Extract data from consolidated artifact
-            multi_horizon_data = multi_horizon_labeling_result.artifacts.get('multi_horizon_labeling_result', {})
-            results['labeled_data'] = multi_horizon_data.get('labeled_data', {})
-            results['labeling_metrics'] = multi_horizon_data.get('labeling_metrics', {})
-            
-            # Update pipeline state for next components
-            self._current_pipeline_state.update({
-                'labeled_data': results['labeled_data'],
-                'multi_horizon_labeling_result': multi_horizon_data  # Add for PID component compatibility
-            })
-            
-            # Stage 10: Feature Lookback Optimization
-            self.logger.info('⚙️ Executing Stage 10: Feature Lookback Optimization')
-            feature_lookback_optimization_result = await self.execute_sub_pipeline('feature_lookback_optimization', self.config)
-            is_success, error_info = self._validate_sub_pipeline_result(feature_lookback_optimization_result, "Feature Lookback Optimization")
-            if not is_success:
-                return error_info
-            
-            # Extract data from consolidated artifact
-            feature_optimization_data = feature_lookback_optimization_result.artifacts.get('feature_lookback_optimization_result', {})
-            results['optimized_features'] = feature_optimization_data.get('optimized_features', {})
-            results['optimization_metrics'] = feature_optimization_data.get('optimization_metrics', {})
-            
-            # Update pipeline state for next components
-            self._current_pipeline_state.update({
-                'optimized_features': results['optimized_features']
-            })
-            
-            # Stage 11: PID-Based Feature Generation
-            self.logger.info('🔧 Executing Stage 11: PID-Based Feature Generation')
-            pid_based_feature_generation_result = await self.execute_sub_pipeline('pid_based_feature_generation', self.config)
-            is_success, error_info = self._validate_sub_pipeline_result(pid_based_feature_generation_result, "PID-Based Feature Generation")
-            if not is_success:
-                return error_info
-            
-            # Extract data from consolidated artifact
-            pid_feature_data = pid_based_feature_generation_result.artifacts.get('pid_based_feature_generation_result', {})
-            
-            # Extract comprehensive PID-based feature generation results
-            results['pid_based_features'] = {
-                'combined_features': pid_feature_data.get('combined_features', {}),
-                'combined_feature_names': pid_feature_data.get('combined_feature_names', []),
-                'feature_importance_scores': pid_feature_data.get('feature_importance_scores', {}),
-                'interaction_features': pid_feature_data.get('interaction_result', {}),
-                'polynomial_features': pid_feature_data.get('polynomial_result', {}),
-                'cross_timeframe_features': pid_feature_data.get('cross_timeframe_result', {})
-            }
-            
-            results['pid_feature_metrics'] = {
-                'generation_summary': pid_feature_data.get('generation_summary', {}),
-                'quality_metrics': {
-                    'overall_quality_score': pid_feature_data.get('overall_quality_score', 0.0),
-                    'feature_diversity_score': pid_feature_data.get('feature_diversity_score', 0.0),
-                    'redundancy_score': pid_feature_data.get('redundancy_score', 0.0),
-                    'stability_score': pid_feature_data.get('stability_score', 0.0)
-                },
-                'optimization_metrics': {
-                    'optimization_used': pid_feature_data.get('optimization_used', False),
-                    'matrix_ops_used': pid_feature_data.get('matrix_ops_used', False),
-                    'lookback_integration': pid_feature_data.get('lookback_integration', {})
-                },
-                'validation_result': pid_feature_data.get('validation_result', {}),
-                'total_features_generated': pid_feature_data.get('total_features_generated', 0),
-                'generation_status': pid_feature_data.get('generation_status', 'unknown')
-            }
-
-            # ===== FINAL FEATURE SELECTION STEP =====
-            self.logger.info('🎯 ===== STARTING FINAL FEATURE SELECTION =====')
-
-            # Stage 12: Final Feature Selection
-            self.logger.info('🎯 Executing Stage 12: Final Feature Selection')
-            final_feature_selection_result = await self.execute_sub_pipeline('final_feature_selection', self.config)
-            is_success, error_info = self._validate_sub_pipeline_result(final_feature_selection_result, "Final Feature Selection")
-            if not is_success:
-                return error_info
-
-            # Extract data from consolidated artifact
-            final_selection_data = final_feature_selection_result.artifacts.get('final_feature_selection_result', {})
-
-            # Extract final feature selection results
-            results['final_feature_selection'] = {
-                'symbol': final_selection_data.get('symbol'),
-                'exchange': final_selection_data.get('exchange'),
-                'timeframe': final_selection_data.get('timeframe'),
-                'data_dir': final_selection_data.get('data_dir'),
-                'feature_selection_config': final_selection_data.get('feature_selection_config', {}),
-                'execution_mode': final_selection_data.get('execution_mode', 'component'),
-                'success': final_selection_data.get('success', True),
-                'stage_reduction': final_selection_data.get('stage_reduction', {
-                    'initial': 120,
-                    'stage_1': 100,
-                    'stage_2': 80,
-                    'stage_3': 60
-                })
-            }
+                data_processing_results = await self.data_processing_handler.execute_data_processing_steps(self.config, data)
+                results.update(data_processing_results)
+            except ValueError as e:
+                self.logger.error(f"❌ Data Processing Steps failed: {e}")
+                return {
+                    'success': False,
+                    'error': str(e),
+                    'execution_time': sum(result.execution_time for result in self.results),
+                    'completed_stages': len(self.results)
+                }
 
             # Final success
             self.logger.info('🎉 Market Analysis Sub-Pipeline completed successfully')
@@ -723,12 +857,9 @@ class MarketAnalysisSubPipeline:
     
     def validate_config(self):
         """Validate the sub-pipeline configuration."""
-        if not self.config.symbol:
-            raise ValueError("Symbol is required")
-        if not self.config.exchange:
-            raise ValueError("Exchange is required")
-        if not self.config.timeframe:
-            raise ValueError("Timeframe is required")
+        is_valid, error_msg = self.config_validator.validate_sub_pipeline_config(self.config)
+        if not is_valid:
+            raise ValueError(error_msg)
     
     def get_status(self):
         """Get the current status of the sub-pipeline."""

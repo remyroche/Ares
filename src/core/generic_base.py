@@ -5,7 +5,6 @@ Generic base classes with proper type constraints for reusable components.
 from abc import ABC, abstractmethod
 from typing import Generic, Protocol, TypeVar, runtime_checkable
 from src.custom_types import ConfigDict, PerformanceMetrics, TradingComponent
-import logging
 
 ConfigT = TypeVar('ConfigT', bound = ConfigDict)
 DataT = TypeVar('DataT')
@@ -128,7 +127,7 @@ class GenericAsyncManager(Generic[ComponentT], AsyncContextManager):
         await self.start()
         return self
 
-    async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+    async def __aexit__(self, exc_type: Any, exc_val: Any, _exc_tb: Any) -> None:
         """Exit async context."""
         await self.stop()
 

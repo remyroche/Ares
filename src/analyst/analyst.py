@@ -44,7 +44,6 @@ from src.utils.performance_utils import PerformanceMonitor, global_monitor
 from src.utils.caching import intelligent_caching
 # Live trading validation
 from src.utils.trading_decorators import validate_trading_inputs
-from src.utils.error_handler import handle_trading_errors
 
 
 # Import dual model system and other components

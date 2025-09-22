@@ -49,7 +49,6 @@ except ImportError:
     TacticianModelTrainer = None
 from utils.dependency_manager import get_dependency_manager
 from utils.dependency_manager import optional_package
-from utils.dependency_manager import requires_package
 from utils.logger import setup_logging
 from utils.logger import system_logger
 from src.utils.lookahead_bias_detector import get_global_detector

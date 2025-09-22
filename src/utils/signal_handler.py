@@ -354,3 +354,16 @@ def setup_signal_handlers() -> SignalHandler:
     except Exception as e:
         tprint(f'Warning: Signal handler initialization failed: {e}')
     return signal_handler
+
+# Backward compatibility: deprecated alias to support legacy references
+# Prefer importing and using `SignalHandler` directly.
+SimpleSignalHandler = SignalHandler
+
+# Explicit exports
+__all__ = [
+    'SignalHandler',
+    'setup_signal_handler',
+    'setup_signal_handlers',
+    'GracefulShutdown',
+    'SimpleSignalHandler',  # deprecated alias
+]

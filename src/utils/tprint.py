@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 """
-Enhanced Timestamped Print Utility - Production-Ready Version
+Enhanced Timestamped Print Utility - Production-Ready Version with Auto-Logging
 
 This module provides a comprehensive tprint function suite that adds timestamps to print statements
 with advanced features including configuration, thread safety, performance optimization, and
@@ -16,6 +16,8 @@ Key Features:
 - Structured logging with JSON output
 - Context managers for structured logging
 - Memory-efficient string formatting
+- Automatic logging of all print statements to both tprint and Python logging
+- Custom print function that integrates with logging systems
 """
 
 import sys
@@ -31,6 +33,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from enum import Enum
 import functools
+import io
 
 # Try to import colorama for colored output
 try:
@@ -48,10 +51,26 @@ except ImportError:
 # Import existing numba timestamps for compatibility
 try:
     from .numba_timestamps import (
-        NUMBA_AVAILABLE, 
-        get_numba_timestamp, 
+        NUMBA_AVAILABLE,
+        get_numba_timestamp,
         get_detailed_timestamp,
-        get_simple_timestamp
+        get_simple_timestamp,
+        numba_print_with_timestamp,
+        numba_print_detailed,
+        numba_print_simple,
+        numba_print_progress,
+        numba_print_performance,
+        numba_print_error,
+        numba_print_warning,
+        numba_print_info,
+        numba_print_debug,
+        get_numba_timestamp_string,
+        get_numba_detailed_timestamp_string,
+        get_numba_simple_timestamp_string,
+        numba_timer_start,
+        numba_timer_elapsed,
+        numba_print_timing,
+        NumbaTimestampFormatter
     )
 except ImportError:
     NUMBA_AVAILABLE = False
@@ -61,6 +80,91 @@ except ImportError:
         return datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
     def get_simple_timestamp():
         return datetime.now().strftime('%H:%M:%S.%f')[:-3]
+
+    # Fallback functions for non-numba environments
+    def numba_print_with_timestamp(message: str) -> None:
+        """Fallback print with timestamp."""
+        timestamp = get_numba_timestamp()
+        tprint(f"[{timestamp}] {message}")
+
+    def numba_print_detailed(message: str) -> None:
+        """Fallback detailed print with timestamp."""
+        timestamp = get_detailed_timestamp()
+        tprint(f"[{timestamp}] {message}")
+
+    def numba_print_simple(message: str) -> None:
+        """Fallback simple print with timestamp."""
+        timestamp = get_simple_timestamp()
+        tprint(f"[{timestamp}] {message}")
+
+    def numba_print_progress(step: int, total: int, message: str) -> None:
+        """Fallback progress print with timestamp."""
+        timestamp = get_numba_timestamp()
+        progress = (step / total) * 100 if total > 0 else 0
+        tprint(f"[{timestamp}] Progress: {step}/{total} ({progress:.1f}%) - {message}")
+
+    def numba_print_performance(operation: str, duration: float) -> None:
+        """Fallback performance print with timestamp."""
+        timestamp = get_numba_timestamp()
+        tprint(f"[{timestamp}] Performance: {operation} took {duration:.3f}s")
+
+    def numba_print_error(error_msg: str) -> None:
+        """Fallback error print with timestamp."""
+        timestamp = get_numba_timestamp()
+        tprint(f"[{timestamp}] ERROR: {error_msg}")
+
+    def numba_print_warning(warning_msg: str) -> None:
+        """Fallback warning print with timestamp."""
+        timestamp = get_numba_timestamp()
+        tprint(f"[{timestamp}] WARNING: {warning_msg}")
+
+    def numba_print_info(info_msg: str) -> None:
+        """Fallback info print with timestamp."""
+        timestamp = get_numba_timestamp()
+        tprint(f"[{timestamp}] INFO: {info_msg}")
+
+    def numba_print_debug(debug_msg: str) -> None:
+        """Fallback debug print with timestamp."""
+        timestamp = get_numba_timestamp()
+        tprint(f"[{timestamp}] DEBUG: {debug_msg}")
+
+    def get_numba_timestamp_string() -> str:
+        """Fallback timestamp string."""
+        return get_numba_timestamp()
+
+    def get_numba_detailed_timestamp_string() -> str:
+        """Fallback detailed timestamp string."""
+        return get_detailed_timestamp()
+
+    def get_numba_simple_timestamp_string() -> str:
+        """Fallback simple timestamp string."""
+        return get_simple_timestamp()
+
+    def numba_timer_start() -> float:
+        """Fallback timer start."""
+        return time.perf_counter()
+
+    def numba_timer_elapsed(start_time: float) -> float:
+        """Fallback timer elapsed."""
+        return time.perf_counter() - start_time
+
+    def numba_print_timing(operation: str, start_time: float) -> None:
+        """Fallback timing print."""
+        elapsed = numba_timer_elapsed(start_time)
+        numba_print_performance(operation, elapsed)
+
+    class NumbaTimestampFormatter:
+        """Fallback Numba-compatible timestamp formatter."""
+        def __init__(self, format_string: str = '%H:%M:%S'):
+            self.format_string = format_string
+
+        def get_timestamp(self) -> str:
+            """Get current timestamp as string."""
+            return datetime.now().strftime(self.format_string)
+
+        def get_timestamp_with_microseconds(self) -> str:
+            """Get current timestamp with microseconds."""
+            return datetime.now().strftime('%H:%M:%S.%f')[:-3]  # Remove last 3 digits for milliseconds
 
 
 class LogLevel(Enum):
@@ -116,7 +220,14 @@ class TPrintConfig:
     # Integration
     integrate_with_logging: bool = True
     log_to_python_logger: bool = False
-    
+
+    # Auto-logging configuration
+    auto_log_prints: bool = True
+    print_log_level: LogLevel = LogLevel.INFO
+    capture_print_to_tprint: bool = True
+    print_capture_level: LogLevel = LogLevel.INFO
+    auto_replace_print: bool = False  # Set to True to auto-replace built-in print on import
+
     # Color scheme
     colors: Dict[LogLevel, str] = field(default_factory=lambda: {
         LogLevel.DEBUG: Fore.CYAN,
@@ -169,10 +280,27 @@ class TPrintManager:
             # Create a custom logger for tprint
             self.logger = logging.getLogger('tprint')
             if not self.logger.handlers:
-                handler = logging.StreamHandler()
-                formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-                handler.setFormatter(formatter)
-                self.logger.addHandler(handler)
+                # Try to use the structured logging formatter if available
+                try:
+                    from .structured_logging import get_json_formatter
+                    formatter = get_json_formatter()
+                    handler = logging.StreamHandler()
+                    handler.setFormatter(formatter)
+                    self.logger.addHandler(handler)
+                except ImportError:
+                    # Fallback to basic formatter
+                    handler = logging.StreamHandler()
+                    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+                    handler.setFormatter(formatter)
+                    self.logger.addHandler(handler)
+
+                # Also add the correlation ID filter if available
+                try:
+                    from .structured_logging import CorrelationIdFilter
+                    self.logger.addFilter(CorrelationIdFilter())
+                except ImportError:
+                    pass
+
                 self.logger.setLevel(logging.DEBUG)
     
     def _get_timestamp(self) -> str:
@@ -245,7 +373,8 @@ class TPrintManager:
 
         if self.config.output_to_console:
             try:
-                print(colored_message, **kwargs)
+                # Use original print to avoid recursion with captured stdout
+                _original_print(colored_message, **kwargs)
             except BrokenPipeError:
                 # Handle broken pipe gracefully (e.g., when piping output)
                 import sys
@@ -285,11 +414,42 @@ class TPrintManager:
             timestamp = self._get_timestamp()
             first_arg = str(args[0])
             message = f"[{timestamp}] {first_arg}"
-            
+
             if len(args) > 1:
                 message += " " + " ".join(str(arg) for arg in args[1:])
-        
+
         self._write_to_outputs(message, LogLevel.INFO, **kwargs)
+
+    def _log_print_statement(self, *args, **kwargs):
+        """Log print statements to tprint and Python logging."""
+        if not self.config.auto_log_prints:
+            return
+
+        # Prevent recursion when we're already capturing stdout
+        if hasattr(kwargs, '_recursion_guard') and kwargs.get('_recursion_guard'):
+            return
+
+        # Format the message
+        if not args:
+            message = ""
+        else:
+            message = " ".join(str(arg) for arg in args)
+
+        # Filter out recursion guard from kwargs
+        filtered_kwargs = {k: v for k, v in kwargs.items() if k != '_recursion_guard'}
+
+        # Log to tprint if enabled
+        if self.config.capture_print_to_tprint:
+            self._write_to_outputs(f"[PRINT] {message}", self.config.print_capture_level, **filtered_kwargs)
+
+        # Log to Python logging if enabled
+        if self.config.log_to_python_logger:
+            try:
+                log_level = getattr(logging, self.config.print_log_level.value, logging.INFO)
+                self.logger.log(log_level, f"[PRINT] {message}")
+            except Exception:
+                # Silently handle logger errors
+                pass
     
     def close(self):
         """Close file handles and cleanup."""
@@ -307,10 +467,40 @@ def configure_tprint(config: TPrintConfig) -> None:
     global _global_manager
     _global_manager = TPrintManager(config)
 
+    # Auto-replace print if configured
+    if config.auto_replace_print:
+        replace_builtin_print()
+    else:
+        restore_builtin_print()
+
 
 def get_tprint_config() -> TPrintConfig:
     """Get current tprint configuration."""
     return _global_manager.config
+
+
+def enable_auto_print_logging(enable: bool = True):
+    """Enable or disable automatic logging of print statements.
+
+    Args:
+        enable: Whether to enable automatic print logging
+    """
+    config = _global_manager.config
+    config.auto_log_prints = enable
+    config.auto_replace_print = enable
+    configure_tprint(config)
+
+
+def set_print_log_level(level: LogLevel):
+    """Set the log level for print statement logging.
+
+    Args:
+        level: Log level to use for print statements
+    """
+    config = _global_manager.config
+    config.print_log_level = level
+    config.print_capture_level = level
+    configure_tprint(config)
 
 
 @contextmanager
@@ -597,6 +787,109 @@ def tprint_numba_compatible(*args, **kwargs) -> None:
         tprint(*args, **kwargs)
 
 
+# Custom print function that automatically logs to tprint and logging
+def tprint_print(*args, **kwargs):
+    """
+    Custom print function that automatically logs to tprint and Python logging.
+    This replaces the built-in print function to ensure all output is captured.
+
+    Args:
+        *args: Arguments to print
+        **kwargs: Keyword arguments for print function
+    """
+    # Call the original print function
+    print(*args, **kwargs)
+
+    # Also log to tprint and logging if enabled
+    _global_manager._log_print_statement(*args, **kwargs)
+
+
+# Store original print function to avoid recursion
+import builtins
+_original_print = builtins.print
+
+# Enhanced print function with auto-logging
+def enhanced_print(*args, **kwargs):
+    """
+    Enhanced print function that automatically logs all print statements.
+
+    Args:
+        *args: Arguments to print
+        **kwargs: Keyword arguments for print function
+    """
+    # Call the original print function to avoid recursion
+    _original_print(*args, **kwargs)
+
+    # Log to tprint and logging if enabled
+    _global_manager._log_print_statement(*args, **kwargs)
+
+
+# Function to replace built-in print with enhanced version
+def replace_builtin_print():
+    """Replace the built-in print function with our enhanced version."""
+    import builtins
+    builtins.print = enhanced_print
+
+
+# Function to restore original print function
+def restore_builtin_print():
+    """Restore the original built-in print function."""
+    import builtins
+    builtins.print = _original_print
+
+
+# Context manager for automatic print capture
+import io
+import sys
+from contextlib import contextmanager
+
+@contextmanager
+def capture_print_to_tprint():
+    """
+    Context manager that captures all print statements and redirects them to tprint.
+
+    Usage:
+        with capture_print_to_tprint():
+            print("This will be captured and logged to tprint")
+    """
+    # Store original stdout
+    original_stdout = sys.stdout
+
+    # Create a custom stdout that captures print statements
+    class CaptureStdout(io.StringIO):
+        def write(self, s):
+            if s.strip():  # Only log non-empty strings
+                # Check if we're already in a logging context to prevent recursion
+                if not getattr(self, '_in_logging_context', False):
+                    self._in_logging_context = True
+                    try:
+                        _global_manager._log_print_statement(s.strip(), _recursion_guard=True)
+                    finally:
+                        self._in_logging_context = False
+            return super().write(s)
+
+        def flush(self):
+            return super().flush()
+
+    # Replace stdout temporarily
+    captured_stdout = CaptureStdout()
+    sys.stdout = captured_stdout
+
+    try:
+        yield captured_stdout
+    finally:
+        # Restore original stdout
+        sys.stdout = original_stdout
+
+
+# Auto-replacement on import if configured
+def _auto_setup_print_capture():
+    """Auto-setup print capture if configured."""
+    config = _global_manager.config
+    if config.auto_log_prints and hasattr(config, 'auto_replace_print') and config.auto_replace_print:
+        replace_builtin_print()
+
+
 # Cleanup function
 def cleanup_tprint():
     """Cleanup tprint resources."""
@@ -607,7 +900,7 @@ def cleanup_tprint():
 __all__ = [
     # Core functions
     'tprint',
-    'tprint_debug', 
+    'tprint_debug',
     'tprint_info',
     'tprint_warning',
     'tprint_error',
@@ -618,7 +911,14 @@ __all__ = [
     'tprint_with_level',
     'tprint_batch',
     'tprint_numba_compatible',
-    
+
+    # Enhanced print functions
+    'enhanced_print',
+    'tprint_print',
+    'replace_builtin_print',
+    'restore_builtin_print',
+    'capture_print_to_tprint',
+
     # Configuration and management
     'configure_tprint',
     'get_tprint_config',
@@ -626,17 +926,41 @@ __all__ = [
     'tprint_timer',
     'tprint_logged',
     'cleanup_tprint',
-    
+    'enable_auto_print_logging',
+    'set_print_log_level',
+    '_auto_setup_print_capture',
+
     # Classes and enums
     'TPrintConfig',
     'TPrintManager',
     'LogLevel',
     'TimestampFormat',
-    
+
     # Backward compatibility
     'timestamped_print',
-    
+
     # Integration
     'NUMBA_AVAILABLE',
     'COLORAMA_AVAILABLE',
+
+    # Numba compatibility exports
+    'numba_print_with_timestamp',
+    'numba_print_detailed',
+    'numba_print_simple',
+    'numba_print_progress',
+    'numba_print_performance',
+    'numba_print_error',
+    'numba_print_warning',
+    'numba_print_info',
+    'numba_print_debug',
+    'get_numba_timestamp_string',
+    'get_numba_detailed_timestamp_string',
+    'get_numba_simple_timestamp_string',
+    'numba_timer_start',
+    'numba_timer_elapsed',
+    'numba_print_timing',
+    'NumbaTimestampFormatter',
 ]
+
+# Auto-setup print capture if configured
+_auto_setup_print_capture()

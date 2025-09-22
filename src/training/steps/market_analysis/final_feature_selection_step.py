@@ -40,7 +40,7 @@ class FinalFeatureSelectionStep:
             rf_n_estimators=self.config.get('rf_n_estimators', 100),
             cv_folds=self.config.get('cv_folds', 5),
             save_analysis=self.config.get('save_analysis', True),
-            output_directory=self.config.get('output_directory', "final_feature_selection"),
+            output_directory=self.config.get('output_directory', "outcomes/market_analysis"),
             verbose=self.config.get('verbose', True)
         )
         
@@ -292,7 +292,7 @@ class FinalFeatureSelectionStep:
         """Save feature selection results."""
         
         try:
-            output_dir = Path(data_dir) / "final_feature_selection"
+            output_dir = Path("generated/market_analysis") / "final_feature_selection"
             output_dir.mkdir(parents=True, exist_ok=True)
             
             # Save final selected features

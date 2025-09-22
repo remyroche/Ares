@@ -1366,14 +1366,22 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
                                 tprint(f"⚠️ Memory usage critical ({current_memory_pct:.1f}%) - skipping {model_type}")
                                 raise MemoryError(f"Insufficient memory for {model_type} training")
                             
-                            # Enhanced: Add proper train/test split for validation
-                            from sklearn.model_selection import train_test_split
-                            from sklearn.metrics import accuracy_score
+                # Enhanced: Add proper time-series holdout with PurgedKFold/TimeSeriesSplit
+                from sklearn.model_selection import TimeSeriesSplit
+                from sklearn.metrics import accuracy_score
+                try:
+                    # Prefer PurgedKFoldTime when possible for embargo/purge handling
+                    from src.utils.purged_kfold import PurgedKFoldTime
+                    use_purged_kfold = True
+                except Exception:
+                    use_purged_kfold = False
 
-                            # Validate train/test split integrity
-                            X_train, X_test, y_train, y_test = train_test_split(
-                                X, y, test_size=0.3, random_state=42, stratify=y
-                            )
+                # Build an index-aware DataFrame view if possible (required by PurgedKFoldTime)
+                if isinstance(X, np.ndarray):
+                    import pandas as pd
+                    X_df = pd.DataFrame(X)
+                else:
+                    X_df = X  # Already a DataFrame
 
                             # Check split integrity
                             if SHARED_UTILITIES_AVAILABLE:
@@ -1385,19 +1393,20 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
                                 is_split_valid = True
                                 split_message = "Split validation skipped - shared utilities not available"
 
-                            if not is_split_valid:
-                                raise ValueError(f"Invalid train/test split: {split_message}")
 
-                            # Train model on training set only
-                            model.fit(X_train, y_train)
+                if not is_split_valid:
+                    raise ValueError(f"Invalid time-series split: {split_message}")
 
-                            # Get predictions on both train and test sets for validation
-                            train_predictions = model.predict(X_train)
-                            test_predictions = model.predict(X_test)
+                # Train on training window only
+                model.fit(X_train, y_train)
 
-                            # Calculate metrics for both sets
-                            train_accuracy = accuracy_score(y_train, train_predictions)
-                            test_accuracy = accuracy_score(y_test, test_predictions)
+                # Predictions on both in-sample (train) and out-of-sample (test)
+                train_predictions = model.predict(X_train)
+                test_predictions = model.predict(X_test)
+
+                # Metrics
+                train_accuracy = accuracy_score(y_train, train_predictions)
+                test_accuracy = accuracy_score(y_test, test_predictions)
 
                             # Get feature importance before overfitting detection
                             feature_importance = None
@@ -1594,8 +1603,11 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
                                 tprint(f"   Val Accuracy:   {overfitting_report.val_accuracy:.4f}")
                                 tprint(f"   Accuracy Gap:   {overfitting_report.accuracy_gap:.4f}")
 
-                            # Use test set predictions for final metrics
+                            # Use test set predictions for final metrics and store OOS
                             predictions = test_predictions
+                            oos_metrics = {
+                                'oos_accuracy': float(test_accuracy)
+                            }
                             
                             # Get hyperparameters
                             hyperparameters = None
@@ -1687,6 +1699,11 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
                 
                 # Calculate accuracy using safe math operations (use test set predictions)
                 accuracy = safe_divide(np.sum(predictions == y_test), len(y_test), 0.0)
+                # Store OOS accuracy in metrics.test_accuracy for report wiring
+                try:
+                    metrics.test_accuracy = float(accuracy)
+                except Exception:
+                    pass
                 
                 # Use evaluation utilities if available
                 if ML_EVALUATION_AVAILABLE and self.evaluation_utils is not None:
@@ -1787,7 +1804,8 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
                     feature_importance=feature_importance,
                     predictions=predictions,
                     probabilities=probabilities,
-                    hyperparameters=hyperparameters
+                    hyperparameters=hyperparameters,
+                    overfitting_analysis=overfitting_analysis
                 )
             
             except Exception as e:
@@ -1836,7 +1854,7 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
         
         try:
             # Create save directory using common operations
-            save_dir = Path("artifacts") / "models" / model_type / symbol / exchange / timeframe
+            save_dir = Path("generated/market_analysis") / "models" / model_type / symbol / exchange / timeframe
             if not ensure_directory(save_dir):
                 tprint(f"❌ Failed to create save directory: {save_dir}")
                 return saved_paths
@@ -1905,6 +1923,10 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
                     "circuit_breaker_failures": self.circuit_breaker.failure_count
                 },
                 "model_performance": {},
+                "generalization": {
+                    "oos_accuracy_by_model": {},
+                    "overfitting_by_model": {}
+                },
                 "feature_analysis": {
                     "total_features": results.get('total_features', 0),
                     "selected_features": results.get('selected_features', 0),
@@ -1952,6 +1974,27 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
                         "error": metrics.error_message,
                         "warnings": metrics.warnings
                     }
+
+                    # Add OOS metrics and overfitting analysis if available
+                    try:
+                        if hasattr(metrics, 'test_accuracy') and metrics.test_accuracy is not None:
+                            report["generalization"]["oos_accuracy_by_model"][model_name] = float(metrics.test_accuracy)
+                    except Exception:
+                        pass
+
+                    try:
+                        if hasattr(model_result, 'overfitting_analysis') and model_result.overfitting_analysis is not None:
+                            # store a concise subset
+                            ofa = model_result.overfitting_analysis
+                            report["generalization"]["overfitting_by_model"][model_name] = {
+                                "is_overfitting": bool(ofa.get('is_overfitting', False)),
+                                "severity": ofa.get('severity', 'none'),
+                                "accuracy_gap": float(ofa.get('accuracy_gap', 0.0)),
+                                "train_accuracy": float(ofa.get('train_accuracy', 0.0)),
+                                "test_accuracy": float(ofa.get('test_accuracy', 0.0))
+                            }
+                    except Exception:
+                        pass
                     
                     if metrics.error_message is None:
                         accuracies.append(metrics.accuracy)

@@ -74,7 +74,7 @@ class MarketAnalysisTripleBarrierConfig:
     # Output settings
     save_intermediate_results: bool = True
     save_optimization_results: bool = True
-    output_directory: str = 'data_cache/triple_barrier_results'
+    output_directory: str = 'generated/market_analysis/triple_barrier_results'
 
 class EnhancedMarketAnalysisWithTripleBarrier:
     """

@@ -265,7 +265,7 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
                     min_samples_per_regime=500,  # 🔧 Reduced from 1000 to 500 for better regime coverage
                     enable_data_augmentation=True,
                     augmentation_method="smote",
-                    model_save_path="./models/hmm_ensemble_models",
+                    model_save_path="./generated/market_analysis/models/hmm_ensemble_models",
                     evaluation_metrics=["accuracy", "precision", "recall", "f1_score", "log_loss"]
                 )
                 tprint("📋 Using default configuration for HMM ensemble training (classification)")
@@ -2364,7 +2364,7 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
         timeframe = getattr(self.config, 'timeframe', get_primary_timeframe())  # HMM models use standardized timeframe
 
         # Use the correct path where hmm_models_training actually saves models
-        base_models_dir = Path("models/hmm_ensemble_models")
+        base_models_dir = Path("generated/market_analysis/models/hmm_ensemble_models")
         
         if not base_models_dir.exists():
             tprint(f"❌ Base models directory not found: {base_models_dir}")
@@ -3144,7 +3144,7 @@ if __name__ == "__main__":
         hpo_n_trials=50,  # Reduced for demo
         enable_hpo=True,
         save_models=True,
-        model_save_path="./models/hmm_ensemble_models_refactored"
+        model_save_path="./generated/market_analysis/models/hmm_ensemble_models_refactored"
     )
     
     # Create training component with common utilities

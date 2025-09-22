@@ -99,16 +99,16 @@ class HMMTrainingReporter:
     Enhanced reporter for HMM training with comprehensive metrics and insights.
     """
     
-    def __init__(self, output_dir: str = "artifacts"):
+    def __init__(self, output_dir: str = "outcomes/market_analysis"):
         """
         Initialize enhanced reporter.
-        
+
         Args:
             output_dir: Directory to save reports
         """
         self.output_dir = Path(output_dir)
         ensure_directory(self.output_dir)
-        
+
         tprint(f"✅ Enhanced Reporter initialized (output: {self.output_dir})")
     
     def generate_comprehensive_report(
@@ -630,7 +630,7 @@ class HMMTrainingReporter:
 def generate_hmm_training_report(
     training_results: Dict[str, Any],
     config: Any,
-    output_dir: str = "artifacts",
+    output_dir: str = "outcomes/market_analysis",
     validation_report: Optional[Any] = None,
     **kwargs
 ) -> Dict[str, Any]:

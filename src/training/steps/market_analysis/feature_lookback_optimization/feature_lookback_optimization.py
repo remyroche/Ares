@@ -405,7 +405,7 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
         
         # Initialize reporter
         self.reporter = OptimizationReporter(
-            output_dir=f"reports/feature_lookback_optimization/{self.config.symbol}_{self.config.exchange}_{self.config.timeframe}"
+            output_dir=f"outcomes/market_analysis/feature_lookback_optimization/{self.config.symbol}_{self.config.exchange}_{self.config.timeframe}"
         )
         
         # Initialize validation framework

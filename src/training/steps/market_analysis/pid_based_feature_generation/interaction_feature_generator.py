@@ -177,7 +177,7 @@ class InteractionResult(BaseFeatureResult):
     interaction_features: Dict[str, np.ndarray] = field(default_factory=dict)
     feature_names: List[str] = field(default_factory=list)
     interaction_scores: Dict[str, float] = field(default_factory=dict)
-    pid_analysis: Optional[PIDResult] = None
+    pid_analysis: Optional['PIDResult'] = None
     
     # Metadata
     total_features_generated: int = 0

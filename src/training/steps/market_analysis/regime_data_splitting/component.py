@@ -1382,7 +1382,7 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
         """Save artifacts to files using common serialization utilities."""
         try:
             # Create artifacts directory
-            artifacts_dir = Path("artifacts/regime_data_splitting")
+            artifacts_dir = Path("generated/market_analysis/regime_data_splitting")
             artifacts_dir.mkdir(parents=True, exist_ok=True)
             
             # Save regime data splitting result as parquet
@@ -1394,7 +1394,7 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                     self.logger.info(f"💾 Saved regime market data to {parquet_path}")
             
             # Save report as JSON
-            report_path = artifacts_dir / "regime_splitting_report.json"
+            report_path = Path("outcomes/market_analysis") / "regime_splitting_report.json"
             self.serializer.save(artifacts['regime_splitting_report'], str(report_path))
             self.logger.info(f"💾 Saved regime splitting report to {report_path}")
             

@@ -38,7 +38,7 @@ class ModelSerializer:
         self.logger = system_logger.getChild('model_serializer')
         self.compression = self.config.get('compression', True)
         self.protocol_version = self.config.get('pickle_protocol', pickle.HIGHEST_PROTOCOL)
-        self.base_dir = Path(self.config.get('base_dir', 'models'))
+        self.base_dir = Path(self.config.get('base_dir', 'generated/market_analysis/models'))
         self.format_handlers = {'pickle': self._save_pickle, 'joblib': self._save_joblib, 'onnx': self._save_onnx, 'json': self._save_json}
 
         # Initialize artifact and version managers

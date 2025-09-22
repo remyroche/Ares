@@ -21,7 +21,7 @@ from src.utils.ml_common.config.base_training_config import BaseTrainingConfig
 from src.utils.ml_common.data_processing.regime_processing import RegimeProcessor
 from src.utils.ml_common.data_processing.feature_preparation import FeaturePreparator
 from src.utils.ml_common.training.training_utils import TrainingUtils
-from src.utils.ml_common.models.model_manager import ModelManager
+from src.utils.model_manager import ModelManager
 from src.utils.ml_common.evaluation.evaluation_utils import EvaluationUtils
 
 # Import universal validation integration

@@ -35,6 +35,7 @@ import time
 
 from ..math_validation import safe_divide
 from ..common_operations import create_fallback_logger
+from src.utils.ml_common.utils import SharedMLCache  # self-import ok for type exposure
 from src.utils.parallel_processing_optimizer import ParallelProcessor
 from src.utils.hardware.memory_optimization import MemoryMonitor
 from src.utils.common_utilities import safe_dataframe_operation

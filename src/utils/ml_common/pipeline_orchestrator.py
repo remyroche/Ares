@@ -31,7 +31,7 @@ import queue
 import threading
 
 from ..common_operations import create_fallback_logger
-from src.utils.parallel_processing_optimizer import ParallelProcessor
+from src.utils.ml_common.utils import ParallelProcessor
 from src.utils.common_utilities import safe_dataframe_operation
 
 logger = logging.getLogger(__name__)

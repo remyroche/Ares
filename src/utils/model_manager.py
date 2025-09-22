@@ -111,15 +111,21 @@ class ModelManager:
     """
     Enhanced model manager with comprehensive error handling and type safety.
     """
-    def __init__(self, config: dict[str, Any] | None = None) -> None:
+    def __init__(self, config: dict[str, Any] | None = None, save_path: str | None = None, save_format: str = "joblib", database_manager: Any | None = None, performance_reporter: Any | None = None) -> None:
         """
-        Initialize model manager with enhanced type safety.
+        Initialize model manager with flexible configuration.
 
         Args:
-            config: Configuration dictionary
+            config: Optional configuration dictionary
+            save_path: Optional base directory for training-oriented save/load
+            save_format: Default model persistence format ('joblib', 'pickle', 'h5')
+            database_manager: Optional dependency for backward compatibility
+            performance_reporter: Optional dependency for backward compatibility
         """
         self.config: dict[str, Any] = config or {}
         self.logger = system_logger.getChild("ModelManager")
+        self.database_manager = database_manager
+        self.performance_reporter = performance_reporter
 
         # Model management
         self.models: dict[str, dict[str, Any]] = {}
@@ -127,14 +133,24 @@ class ModelManager:
         self.active_model: str | None = None
 
         # Configuration
-        self.model_config: dict[str, Any] = self.config.get("model_manager", {})
-        self.models_dir: str = self.model_config.get("models_directory", "models")
-        self.metadata_file: str = self.model_config.get(
-            "metadata_file",
-            "model_metadata.json",
-        )
-        self.auto_backup: bool = bool(self.model_config.get("auto_backup", True))
-        self.max_models: int = int(self.model_config.get("max_models", 10))
+        self.model_config: dict[str, Any] = self.config.get("model_manager", {}) if isinstance(self.config, dict) else {}
+        # Apply defaults immediately so the manager is usable without initialize()
+        self.model_config.setdefault("models_directory", "models")
+        self.model_config.setdefault("metadata_file", "model_metadata.json")
+        self.model_config.setdefault("auto_backup", True)
+        self.model_config.setdefault("max_models", 10)
+        self.model_config.setdefault("supported_formats", [".joblib", ".pkl", ".h5"])
+        self.models_dir: str = save_path or str(self.model_config.get("models_directory"))
+        self.metadata_file: str = str(self.model_config.get("metadata_file"))
+        self.auto_backup: bool = bool(self.model_config.get("auto_backup"))
+        self.max_models: int = int(self.model_config.get("max_models"))
+        self.save_format: str = save_format or "joblib"
+        # Base path used by training-style persistence APIs
+        try:
+            os.makedirs(self.models_dir, exist_ok=True)
+        except Exception:
+            pass
+        self._save_base_path = self.models_dir
 
     @handles_errors(
         error_handlers={
@@ -380,11 +396,28 @@ class ModelManager:
         """
         # Ensure NumPy RNG pickles created under different versions can be loaded
         _enable_numpy_rng_unpickle_compat(self.logger)
-        if model_name not in self.models:
-            self.logger.error(missing(f"Model {model_name} not found"))
-            return None
-
-        model_path = self.models[model_name]["path"]
+        # Try from registry first
+        if model_name in self.models:
+            model_path = self.models[model_name]["path"]
+        else:
+            # Fallback: resolve from models directory by scanning supported formats
+            model_path = None
+            supported_formats: list[str] = self.model_config.get(
+                "supported_formats",
+                [".joblib", ".pkl", ".h5"],
+            )
+            try:
+                if os.path.isdir(self.models_dir):
+                    for file in os.listdir(self.models_dir):
+                        name, ext = os.path.splitext(file)
+                        if name == model_name and ext in supported_formats:
+                            model_path = os.path.join(self.models_dir, file)
+                            break
+            except Exception as e:
+                self.logger.warning(f"Could not scan models directory: {e}")
+            if not model_path:
+                self.logger.error(missing(f"Model {model_name} not found"))
+                return None
 
         # Load model based on file extension
         model: Any
@@ -460,6 +493,286 @@ class ModelManager:
         except Exception as e:
             self.logger.error(error(f"Prediction failed: {e}"))
             return {"error": str(e)}
+
+    @handles_errors(
+        exceptions=(Exception,),
+        default_return=[],
+        context="available models listing",
+    )
+    async def list_available_models(self) -> list[str]:
+        """List available models in the models directory by supported formats."""
+        supported_formats: list[str] = self.model_config.get(
+            "supported_formats",
+            [".joblib", ".pkl", ".h5"],
+        )
+        names: set[str] = set()
+        if os.path.isdir(self.models_dir):
+            for file in os.listdir(self.models_dir):
+                name, ext = os.path.splitext(file)
+                if ext in supported_formats:
+                    names.add(name)
+        return sorted(names)
+
+    @handles_errors(
+        exceptions=(Exception,),
+        default_return={"status": "error"},
+        context="generic prediction",
+    )
+    async def get_prediction(self, model: Any, data: Any) -> dict[str, Any]:
+        """
+        Generic prediction helper that attempts to call the model's predict method.
+        Returns a standardized dictionary structure.
+        """
+        prediction_result: Any = None
+        if model is None:
+            return {"status": "error", "error": "model_is_none"}
+        # Try common predict methods
+        if hasattr(model, "predict"):
+            try:
+                prediction_result = model.predict(data)
+            except Exception as e:
+                self.logger.warning(f"Model predict failed: {e}")
+        elif hasattr(model, "__call__"):
+            try:
+                prediction_result = model(data)
+            except Exception as e:
+                self.logger.warning(f"Model call failed: {e}")
+        # Normalize output
+        try:
+            if hasattr(prediction_result, "tolist"):
+                normalized = prediction_result.tolist()
+            else:
+                normalized = prediction_result
+        except Exception:
+            normalized = None
+        return {
+            "status": "ok" if prediction_result is not None else "unknown",
+            "predictions": normalized,
+            "timestamp": datetime.now().isoformat(),
+        }
+
+    # ===== Training-oriented persistence utilities (ML Common compatibility) =====
+
+    def save_models(
+        self,
+        models: dict[str, Any],
+        model_type: str,
+        symbol: str | None = None,
+        exchange: str | None = None,
+        timeframe: str | None = None,
+        regime: int | None = None,
+    ) -> list[str]:
+        """Save multiple models under a structured directory layout."""
+        base_dir = self._save_base_path
+        model_type = str(model_type)
+        # Determine directory
+        model_dir = os.path.join(base_dir, model_type, f"regime_{regime}" if regime is not None else "")
+        os.makedirs(model_dir, exist_ok=True)
+
+        saved_paths: list[str] = []
+        for model_name, model in models.items():
+            parts = [str(model_type), str(model_name)]
+            if symbol:
+                parts.append(str(symbol))
+            if exchange:
+                parts.append(str(exchange))
+            if timeframe:
+                parts.append(str(timeframe))
+            filename = "_".join(parts) + f".{self.save_format}"
+            model_path = os.path.join(model_dir, filename)
+            try:
+                if self.save_format == "joblib":
+                    joblib.dump(model, model_path)
+                elif self.save_format == "pickle":
+                    with open(model_path, "wb") as f:
+                        pickle.dump(model, f)
+                elif self.save_format == "h5":
+                    if hasattr(model, "save"):
+                        model.save(model_path)
+                    else:
+                        # Fallback
+                        joblib.dump(model, os.path.splitext(model_path)[0] + ".joblib")
+                else:
+                    raise ValueError(f"Unsupported save format: {self.save_format}")
+                saved_paths.append(model_path)
+                self.logger.debug(f"Saved {model_name} to {model_path}")
+            except Exception as e:
+                self.logger.error(f"Failed to save {model_name}: {e}")
+        if saved_paths:
+            self.logger.info(f"Saved {len(saved_paths)} models to {model_dir}")
+        return saved_paths
+
+    def load_models(
+        self,
+        model_type: str,
+        symbol: str | None = None,
+        exchange: str | None = None,
+        timeframe: str | None = None,
+        regime: int | None = None,
+    ) -> dict[str, Any]:
+        """Load models for a given type and optional regime."""
+        base_dir = self._save_base_path
+        model_type = str(model_type)
+        model_dir = os.path.join(base_dir, model_type, f"regime_{regime}" if regime is not None else "")
+        if not os.path.isdir(model_dir):
+            self.logger.warning(f"Model directory not found: {model_dir}")
+            return {}
+        loaded: dict[str, Any] = {}
+        for file in os.listdir(model_dir):
+            if not file.endswith(self.save_format):
+                continue
+            model_path = os.path.join(model_dir, file)
+            try:
+                if self.save_format == "joblib":
+                    model = joblib.load(model_path)
+                elif self.save_format == "pickle":
+                    with open(model_path, "rb") as f:
+                        model = pickle.load(f)
+                elif self.save_format == "h5":
+                    model = h5py.File(model_path, "r")
+                else:
+                    raise ValueError(f"Unsupported save format: {self.save_format}")
+                loaded[os.path.splitext(file)[0]] = model
+                self.logger.debug(f"Loaded model from {model_path}")
+            except Exception as e:
+                self.logger.error(f"Failed to load {file}: {e}")
+        self.logger.info(f"Loaded {len(loaded)} models from {model_dir}")
+        return loaded
+
+    def save_metadata(
+        self,
+        metadata: dict[str, Any],
+        model_type: str,
+        symbol: str | None = None,
+        exchange: str | None = None,
+        timeframe: str | None = None,
+        regime: int | None = None,
+    ) -> str:
+        """Save metadata JSON next to models for a given type and regime."""
+        base_dir = self._save_base_path
+        model_type = str(model_type)
+        model_dir = os.path.join(base_dir, model_type, f"regime_{regime}" if regime is not None else "")
+        os.makedirs(model_dir, exist_ok=True)
+        parts = [model_type, "metadata"]
+        if symbol:
+            parts.append(symbol)
+        if exchange:
+            parts.append(exchange)
+        if timeframe:
+            parts.append(timeframe)
+        metadata_path = os.path.join(model_dir, "_".join(parts) + ".json")
+        payload = dict(metadata or {})
+        payload["saved_at"] = datetime.now().isoformat()
+        with open(metadata_path, "w") as f:
+            json.dump(payload, f, indent=2, default=str)
+        self.logger.info(f"Saved metadata to {metadata_path}")
+        return metadata_path
+
+    def load_metadata(
+        self,
+        model_type: str,
+        symbol: str | None = None,
+        exchange: str | None = None,
+        timeframe: str | None = None,
+        regime: int | None = None,
+    ) -> dict[str, Any] | None:
+        """Load metadata JSON for a given type and regime if present."""
+        base_dir = self._save_base_path
+        model_type = str(model_type)
+        model_dir = os.path.join(base_dir, model_type, f"regime_{regime}" if regime is not None else "")
+        parts = [model_type, "metadata"]
+        if symbol:
+            parts.append(symbol)
+        if exchange:
+            parts.append(exchange)
+        if timeframe:
+            parts.append(timeframe)
+        metadata_path = os.path.join(model_dir, "_".join(parts) + ".json")
+        if not os.path.exists(metadata_path):
+            self.logger.warning(f"Metadata file not found: {metadata_path}")
+            return None
+        try:
+            with open(metadata_path) as f:
+                return json.load(f)
+        except Exception as e:
+            self.logger.error(f"Failed to load metadata: {e}")
+            return None
+
+    def get_model_metadata(
+        self,
+        model: Any,
+        model_name: str,
+        training_time: float = 0.0,
+        optimization_time: float = 0.0,
+        samples: int = 0,
+        features: int = 0,
+    ) -> dict[str, Any]:
+        """Extract common metadata fields from a model instance."""
+        metadata: dict[str, Any] = {
+            "model_name": model_name,
+            "model_type": type(model).__name__,
+            "training_time": float(training_time),
+            "optimization_time": float(optimization_time),
+            "samples": int(samples),
+            "features": int(features),
+            "created_at": datetime.now().isoformat(),
+        }
+        if hasattr(model, "get_params"):
+            try:
+                metadata["model_params"] = model.get_params()
+            except Exception:
+                pass
+        if hasattr(model, "feature_importances_"):
+            try:
+                metadata["feature_importances"] = getattr(model, "feature_importances_").tolist()  # type: ignore[no-any-return]
+            except Exception:
+                pass
+        if hasattr(model, "n_features_in_"):
+            try:
+                metadata["n_features_in"] = int(getattr(model, "n_features_in_"))
+            except Exception:
+                pass
+        return metadata
+
+    def cleanup_old_models(
+        self,
+        model_type: str,
+        keep_latest: int = 5,
+        symbol: str | None = None,
+        exchange: str | None = None,
+        timeframe: str | None = None,
+    ) -> int:
+        """Delete older model files, keeping only the latest modified ones."""
+        base_dir = self._save_base_path
+        model_dir = os.path.join(base_dir, model_type)
+        if not os.path.isdir(model_dir):
+            return 0
+        # Build pattern components
+        def match(file: str) -> bool:
+            if not file.endswith(self.save_format):
+                return False
+            if symbol and symbol not in file:
+                return False
+            if exchange and exchange not in file:
+                return False
+            if timeframe and timeframe not in file:
+                return False
+            return True
+        files = [os.path.join(model_dir, f) for f in os.listdir(model_dir) if match(f)]
+        if len(files) <= keep_latest:
+            return 0
+        files.sort(key=lambda p: os.stat(p).st_mtime, reverse=True)
+        deleted = 0
+        for path in files[keep_latest:]:
+            try:
+                os.unlink(path)
+                deleted += 1
+                self.logger.debug(f"Deleted old model: {path}")
+            except Exception as e:
+                self.logger.warning(f"Failed to delete {path}: {e}")
+        if deleted:
+            self.logger.info(f"Cleaned up {deleted} old model files")
+        return deleted
 
     @handles_errors(
         exceptions=(ValueError, AttributeError),

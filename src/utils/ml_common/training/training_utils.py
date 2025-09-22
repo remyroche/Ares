@@ -59,19 +59,6 @@ class TrainingUtils:
             OverfittingPreventionConfig() if config.enable_overfitting_prevention else None
         )
 
-        # Initialize universal validation integration
-        self.validation_integrator = get_validation_integrator(
-            ValidationIntegrationConfig(
-                enable_data_leakage_prevention=True,
-                enable_overfitting_monitoring=True,
-                enable_enhanced_validation=True,
-                enable_model_complexity_analysis=True,
-                enable_hpo_overfitting_prevention=True,
-                prefer_comprehensive_utilities=True,  # Use new utilities if available
-                fallback_to_existing=True  # Fall back to existing utilities if needed
-            )
-        )
-
         # Initialize hardware optimizers
         self.gpu_manager = get_m1_gpu_manager()
         self.memory_optimizer = get_m1_memory_optimizer()
@@ -84,8 +71,138 @@ class TrainingUtils:
         if self.cpu_optimizer:
             logger.info("⚡ M1 CPU optimization enabled")
 
+        # Initialize validation integration
+        self._initialize_validation_integration()
+
         logger.info("✅ TrainingUtils initialized with universal validation integration")
-    
+
+    def _initialize_validation_integration(self):
+        """Initialize universal validation integration."""
+        # Create validation configuration based on training config
+        validation_config = ValidationIntegrationConfig(
+            enable_data_leakage_prevention=getattr(self.config, 'enable_data_leakage_prevention', True),
+            enable_overfitting_monitoring=getattr(self.config, 'enable_overfitting_monitoring', True),
+            enable_enhanced_validation=getattr(self.config, 'enable_enhanced_validation', True),
+            enable_model_complexity_analysis=getattr(self.config, 'enable_model_complexity_analysis', True),
+            enable_hpo_overfitting_prevention=getattr(self.config, 'enable_hpo_overfitting_prevention', True),
+            prefer_comprehensive_utilities=getattr(self.config, 'prefer_comprehensive_utilities', True),
+            fallback_to_existing=getattr(self.config, 'fallback_to_existing', True),
+            generate_detailed_reports=getattr(self.config, 'generate_detailed_reports', True),
+            save_validation_artifacts=getattr(self.config, 'save_validation_artifacts', True),
+            validation_report_path=getattr(self.config, 'validation_report_path', "validation_reports")
+        )
+
+        # Initialize validation integrator
+        self.validation_integrator = get_validation_integrator(validation_config)
+
+        logger.info("✅ Universal validation integration initialized in TrainingUtils")
+
+    def train_model_with_validation(
+        self,
+        model: Any,
+        X_train: np.ndarray,
+        X_val: np.ndarray,
+        y_train: np.ndarray,
+        y_val: np.ndarray,
+        model_name: str = "unknown",
+        model_type: str = "unknown",
+        timestamps: Optional[np.ndarray] = None,
+        feature_names: Optional[List[str]] = None
+    ) -> Tuple[Any, Dict[str, Any]]:
+        """
+        Train model with automatic validation.
+
+        Args:
+            model: Model to train
+            X_train: Training features
+            X_val: Validation features
+            y_train: Training labels
+            y_val: Validation labels
+            model_name: Name of the model
+            model_type: Type of model
+            timestamps: Optional timestamps for temporal validation
+            feature_names: Optional feature names
+
+        Returns:
+            Tuple[Any, Dict]: (trained_model, validation_results)
+        """
+        # Train the model
+        model.fit(X_train, y_train)
+
+        # Validate the trained model
+        validation_results = validate_trained_model(
+            model=model,
+            X_train=X_train,
+            X_val=X_val,
+            y_train=y_train,
+            y_val=y_val,
+            model_name=model_name,
+            feature_names=feature_names
+        )
+
+        # Log validation results
+        if validation_results['valid']:
+            logger.info(f"✅ Model {model_name} trained and validated successfully")
+        else:
+            logger.warning(f"⚠️ Model {model_name} trained but validation failed")
+            for issue in validation_results.get('critical_issues', []):
+                logger.error(f"Critical issue: {issue}")
+
+        return model, validation_results
+
+    def validate_hpo_trial_with_validation(
+        self,
+        model: Any,
+        X_train: np.ndarray,
+        X_val: np.ndarray,
+        y_train: np.ndarray,
+        y_val: np.ndarray,
+        trial_params: Dict[str, Any],
+        model_name: str = "unknown",
+        model_type: str = "unknown",
+        trial_number: int = 0
+    ) -> Tuple[Any, Dict[str, Any]]:
+        """
+        Train model for HPO trial with validation.
+
+        Args:
+            model: Model to train
+            X_train: Training features
+            X_val: Validation features
+            y_train: Training labels
+            y_val: Validation labels
+            trial_params: HPO trial parameters
+            model_name: Name of the model
+            model_type: Type of model
+            trial_number: HPO trial number
+
+        Returns:
+            Tuple[Any, Dict]: (trained_model, validation_results)
+        """
+        # Train the model
+        model.fit(X_train, y_train)
+
+        # Validate the HPO trial
+        validation_results = validate_hpo_trial(
+            model_class=type(model),
+            params=trial_params,
+            X_train=X_train,
+            X_val=X_val,
+            y_train=y_train,
+            y_val=y_val,
+            model_name=model_name
+        )
+
+        # Log validation results
+        if validation_results['valid']:
+            logger.info(f"✅ HPO trial {trial_number} for {model_name} trained and validated successfully")
+        else:
+            logger.warning(f"⚠️ HPO trial {trial_number} for {model_name} trained but validation failed")
+            if validation_results.get('should_prune', False):
+                logger.info(f"Trial should be pruned: {validation_results.get('prune_reason', 'Unknown')}")
+
+        return model, validation_results
+
     def create_model(
         self, 
         model_type: str, 

@@ -548,28 +548,7 @@ class EnhancedModelFactory:
         
         return TimeSeriesTransformer(**model_config.model_params)
     
-    def _create_tcn_model(self, model_config: ModelConfig) -> Any:
-        """Create TCN model."""
-        
-        # This is a placeholder implementation
-        # In practice, you would implement a custom TCN class
-        class TCN:
-            def __init__(self, **kwargs):
-                self.params = kwargs
-                self.is_fitted = False
-            
-            def fit(self, X, y):
-                # Placeholder implementation
-                self.is_fitted = True
-                return self
-            
-            def predict(self, X):
-                if not self.is_fitted:
-                    raise ValueError("Model not fitted")
-                # Placeholder implementation
-                return np.zeros(len(X))
-        
-        return TCN(**model_config.model_params)
+    
     
     def _create_lstm_model(self, model_config: ModelConfig) -> Any:
         """Create LSTM model."""
@@ -1139,108 +1118,7 @@ class EnhancedModelFactory:
         self.logger.info("🗑️ Cleared model registry")
 
 
-# Convenience functions for easy model creation
-def create_analyst_models() -> Dict[str, Any]:
-    """Create all Analyst (5m) models."""
-    factory = EnhancedModelFactory()
-    models = {}
     
-    # Analyst fixed models
-    analyst_models = {
-        "tft": ModelType.TEMPORAL_FUSION_TRANSFORMER,  # Temporal Fusion Transformer
-        "tabnet": ModelType.TABNET,  # TabNet for interpretable feature selection
-        "hist_gb": ModelType.HIST_GRADIENT_BOOSTING,  # HistGradientBoosting
-        "extratrees": ModelType.EXTRA_TREES  # ExtraTrees for fast meta-model
-    }
-    
-    for name, model_type in analyst_models.items():
-        config = ModelConfig(
-            model_type=model_type,
-            model_name=f"analyst_{name}",
-            is_multi_output=True,
-            n_outputs=4,
-            output_names=["signal_strength", "confidence", "risk_score", "regime_label"]
-        )
-        models[name] = factory.create_model(config)
-    
-    return models
-
-
-def create_tactician_models() -> Dict[str, Any]:
-    """Create all Tactician (1m) models with ElasticNetCV as the primary linear model."""
-    factory = EnhancedModelFactory()
-    models = {}
-    
-    # Tactician models including ElasticNetCV
-    tactician_models = {
-        "tabnet_attention": ModelType.TABNET_ATTENTION,  # TabNet with attention
-        "xgboost_custom": ModelType.XGBOOST_CUSTOM,  # XGBoost with custom objectives
-        "hist_gb": ModelType.HIST_GRADIENT_BOOSTING,  # HistGradientBoosting
-        "elastic_net_cv": ModelType.ELASTIC_NET_CV,  # ElasticNetCV with automatic parameter optimization
-        "elastic_quantile": ModelType.ELASTIC_NET_QUANTILE  # ElasticNet with quantile regression
-    }
-    
-    for name, model_type in tactician_models.items():
-        config = ModelConfig(
-            model_type=model_type,
-            model_name=f"tactician_{name}",
-            is_multi_output=True,
-            n_outputs=4,
-            output_names=["entry_timing", "position_size", "stop_loss", "take_profit"],
-            model_params={
-                # ElasticNetCV specific parameters for tactician models
-                'alphas': [0.01, 0.1, 1.0, 10.0],
-                'l1_ratio': [0.1, 0.3, 0.5, 0.7, 0.9],
-                'cv': 5,
-                'max_iter': 1000,
-                'random_state': 42
-            } if model_type == ModelType.ELASTIC_NET_CV else {}
-        )
-        models[name] = factory.create_model(config)
-    
-        return models
-
-    def create_model_with_adaptive_regularization(
-        self,
-        model_type: ModelType,
-        model_name: str,
-        regime_labels: Optional[np.ndarray] = None,
-        **custom_params
-    ) -> Tuple[Any, Dict[str, Any]]:
-        """
-        Create model with adaptive regularization based on dataset characteristics.
-
-        Args:
-            model_type: Type of model to create
-            model_name: Name for the model
-            regime_labels: Array of regime labels to analyze sample distribution
-            **custom_params: Additional model parameters
-
-        Returns:
-            Tuple of (model_instance, regularization_info_dict)
-        """
-        # Calculate adaptive regularization parameters
-        if UNIFIED_MODEL_FACTORY_AVAILABLE and UnifiedModelFactory is not None:
-            reg_info = UnifiedModelFactory._calculate_adaptive_regularization(regime_labels)
-        else:
-            # Fallback to basic regularization
-            reg_info = {
-                'reg_alpha': 0.1,
-                'reg_lambda': 0.1,
-                'dataset_size': 'unknown'
-            }
-
-        # Add adaptive regularization to custom parameters
-        adaptive_params = {
-            'reg_alpha': reg_info.get('reg_alpha', 0.1),
-            'reg_lambda': reg_info.get('reg_lambda', 0.1),
-            **custom_params
-        }
-
-        # Create model with adaptive parameters
-        model = self.create_model(model_type, model_name, **adaptive_params)
-
-        return model, reg_info
 
 
 def create_model_factory(config: Optional[Dict[str, Any]] = None) -> EnhancedModelFactory:

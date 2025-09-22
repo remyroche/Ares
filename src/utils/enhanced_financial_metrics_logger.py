@@ -10,7 +10,6 @@ This module extends the existing financial_metrics_logger to provide:
 
 import logging
 
-import sys
 
 from datetime import datetime
 from pathlib import Path
@@ -154,25 +153,18 @@ class EnhancedFinancialMetricsLogger:
     
     def _setup_enhanced_logger(self):
         """Setup the enhanced financial metrics logger."""
-        # Enhanced financial metrics logger
-        self.logger = logging.getLogger('EnhancedFinancialMetrics')
+        # Enhanced financial metrics logger via central system
+        self.logger = get_logger('EnhancedFinancialMetrics')
         self.logger.setLevel(logging.INFO)
         
         # Clear existing handlers
         self.logger.handlers.clear()
         
-        # Create formatter
+        # Create formatter for file outputs (console handled by central logger)
         formatter = logging.Formatter(
             '%(asctime)s | %(name)s | %(levelname)s | %(message)s',
             datefmt='%Y-%m-%d %H:%M:%S'
         )
-        
-        # Console handler
-        if self.enable_console:
-            console_handler = logging.StreamHandler(sys.stdout)
-            console_handler.setLevel(logging.INFO)
-            console_handler.setFormatter(formatter)
-            self.logger.addHandler(console_handler)
         
         # File handler with timestamp
         if self.enable_file:
@@ -189,8 +181,8 @@ class EnhancedFinancialMetricsLogger:
             file_handler.setFormatter(formatter)
             self.logger.addHandler(file_handler)
         
-        # Prevent propagation to avoid duplicate logs
-        self.logger.propagate = False
+        # Propagate to central logger handlers for console output
+        self.logger.propagate = True
     
     def validate_regime_data(self, 
                            data: pd.DataFrame, 

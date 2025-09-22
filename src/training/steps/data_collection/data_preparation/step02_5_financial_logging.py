@@ -10,7 +10,7 @@ import logging
 from typing import Dict, Any, Optional, List
 
 # Core imports
-from src.utils.logger import system_logger
+from src.utils.logger import get_logger
 
 # Required utility modules
 from src.utils.common_operations import (
@@ -57,7 +57,7 @@ except ImportError:
     get_enhanced_financial_metrics_logger = None
     validate_and_log_regime_data = None
 
-logger = system_logger.getChild('Step025Financiallogging')
+logger = get_logger('Step025Financiallogging')
 
 class Step025FinancialloggingFinancialLogger:
     """Independent financial metrics logger for Step02.5_5 with enhanced regime logging."""

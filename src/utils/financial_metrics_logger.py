@@ -7,7 +7,6 @@ file naming and specialized formatting for trading and financial data.
 
 import logging
 
-import sys
 import json
 import csv
 from datetime import datetime
@@ -155,25 +154,18 @@ class FinancialMetricsLogger:
     
     def _setup_loggers(self):
         """Setup the financial metrics loggers."""
-        # Main financial metrics logger
-        self.logger = logging.getLogger('FinancialMetrics')
+        # Main financial metrics logger via central system
+        self.logger = get_logger('FinancialMetrics')
         self.logger.setLevel(logging.INFO)
         
         # Clear existing handlers
         self.logger.handlers.clear()
         
-        # Create formatter
+        # Create formatter for file outputs (console handled by central logger)
         formatter = logging.Formatter(
             '%(asctime)s | %(name)s | %(levelname)s | %(message)s',
             datefmt='%Y-%m-%d %H:%M:%S'
         )
-        
-        # Console handler
-        if self.enable_console:
-            console_handler = logging.StreamHandler(sys.stdout)
-            console_handler.setLevel(logging.INFO)
-            console_handler.setFormatter(formatter)
-            self.logger.addHandler(console_handler)
         
         # File handler with timestamp
         if self.enable_file:
@@ -190,8 +182,8 @@ class FinancialMetricsLogger:
             file_handler.setFormatter(formatter)
             self.logger.addHandler(file_handler)
         
-        # Prevent propagation to avoid duplicate logs
-        self.logger.propagate = False
+        # Propagate to central logger handlers for console output
+        self.logger.propagate = True
     
     def _get_csv_file_path(self, metric_type: str) -> Path:
         """Get CSV file path for a specific metric type."""

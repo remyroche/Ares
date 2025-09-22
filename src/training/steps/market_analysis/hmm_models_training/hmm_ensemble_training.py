@@ -2,8 +2,8 @@
 HMM Ensemble Training Component
 
 This component handles per-regime ensemble training of HMM models using common dependencies.
-The HMM Ensemble operates on 1h timeframe and combines individual HMM models
-to create robust ensemble predictions for market regime detection.
+By default the pipeline uses a 15m timeframe (via universal timeframe config),
+but the effective timeframe is configurable and logged consistently.
 
 Enhanced with vectorized training capabilities for improved performance.
 Refactored to use common utilities for better maintainability and performance.
@@ -257,7 +257,11 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
             self.hmm_temporal_protection = get_hmm_temporal_protection(config)
             self.overfitting_detector = get_overfitting_detector()
             self.lookahead_protection = LookaheadProtection()
-            self.model_evaluation_utils = ModelEvaluationUtils()
+            try:
+                from src.utils.ml_common.evaluation.model_evaluation_utils import ModelEvaluationUtils as _MEU
+                self.model_evaluation_utils = _MEU()
+            except Exception:
+                self.model_evaluation_utils = None
             
             # Initialize advanced hardware optimizers from hardware/ directory
             if HARDWARE_OPTIMIZATIONS_AVAILABLE:

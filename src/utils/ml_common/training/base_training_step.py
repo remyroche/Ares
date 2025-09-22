@@ -131,9 +131,25 @@ class BaseTrainingStep(ABC):
         """
         # Split data for validation
         from sklearn.model_selection import train_test_split
-        X_train, X_val, y_train, y_val = train_test_split(
-            X, y, test_size=0.2, random_state=42, stratify=y
-        )
+        # Use stratified split only if every class has at least 2 samples; otherwise fallback
+        stratify_labels = None
+        try:
+            unique, counts = np.unique(y, return_counts=True)
+            if len(unique) > 1 and np.all(counts >= 2):
+                stratify_labels = y
+        except Exception:
+            stratify_labels = None
+
+        try:
+            X_train, X_val, y_train, y_val = train_test_split(
+                X, y, test_size=self.config.validation_split if hasattr(self.config, 'validation_split') else 0.2,
+                random_state=42, stratify=stratify_labels
+            )
+        except ValueError:
+            X_train, X_val, y_train, y_val = train_test_split(
+                X, y, test_size=self.config.validation_split if hasattr(self.config, 'validation_split') else 0.2,
+                random_state=42, stratify=None
+            )
         
         # Validate training data
         validation_results = self.validation_integrator.validate_training_data(

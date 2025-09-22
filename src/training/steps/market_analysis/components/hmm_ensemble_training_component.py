@@ -108,19 +108,24 @@ class HMMEnsembleTrainingComponent(BaseMarketAnalysisComponent):
             if 'hmm_metrics' in pipeline_state:
                 hmm_training_metrics = pipeline_state['hmm_metrics']
 
-            # Load cluster assignments directly from HMM training input file
+            # Load cluster assignments from HMM training input file (parameterized)
             cluster_assignments = None
             try:
                 import glob
                 import pickle
+                import os
 
-                # Find the latest HMM training input file
-                hmm_input_pattern = "optimal_clusters/binance/ETHUSDT/15m/market_analysis_hmm_training_input_ETHUSDT_BINANCE_15m_*.pkl"
-                hmm_input_files = glob.glob(hmm_input_pattern)
+                symbol = getattr(self.config, 'symbol', pipeline_state.get('symbol', 'ETHUSDT'))
+                exchange = getattr(self.config, 'exchange', pipeline_state.get('exchange', 'BINANCE')).lower()
+                timeframe = getattr(self.config, 'timeframe', pipeline_state.get('timeframe', '15m'))
+
+                # Build pattern using parameters
+                pattern = f"optimal_clusters/{exchange.lower()}/{symbol}/{timeframe}/market_analysis_hmm_training_input_{symbol}_{exchange.upper()}_{timeframe}_*.pkl"
+                hmm_input_files = glob.glob(pattern)
 
                 if hmm_input_files:
-                    # Get the most recent file
-                    latest_file = max(hmm_input_files, key=lambda x: x.split('_')[-1].replace('.pkl', ''))
+                    # Choose most recent by modification time
+                    latest_file = max(hmm_input_files, key=lambda p: os.path.getmtime(p))
                     tprint(f"🔍 Loading cluster assignments from latest HMM training input file: {latest_file}")
 
                     with open(latest_file, 'rb') as f:
@@ -129,13 +134,15 @@ class HMMEnsembleTrainingComponent(BaseMarketAnalysisComponent):
                     if 'cluster_assignments' in hmm_input_data:
                         cluster_assignments = hmm_input_data['cluster_assignments']
                         tprint(f"✅ Loaded {len(cluster_assignments)} cluster assignments from HMM training input file")
-                        tprint(f"📊 Cluster assignments shape: {cluster_assignments.shape}, Unique clusters: {len(set(cluster_assignments))}")
+                        try:
+                            uniques = len(set(cluster_assignments))
+                            tprint(f"📊 Cluster assignments shape: {getattr(cluster_assignments, 'shape', ('n/a',))}, Unique clusters: {uniques}")
+                        except Exception:
+                            pass
                     else:
-                        tprint(f"❌ No cluster_assignments found in HMM training input file")
-                        raise ValueError("No cluster_assignments found in HMM training input file")
+                        raise ValueError("No cluster_assignments found in HMM training input file contents")
                 else:
-                    tprint(f"❌ No HMM training input files found matching pattern: {hmm_input_pattern}")
-                    raise ValueError("No HMM training input files found")
+                    raise ValueError(f"No HMM training input files found matching pattern: {pattern}")
 
             except Exception as e:
                 tprint(f"❌ Error loading cluster assignments from HMM training input file: {e}")

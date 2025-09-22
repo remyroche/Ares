@@ -41,15 +41,8 @@ try:
 except ImportError:
     GPU_AVAILABLE = False
 
-try:
-    # from src.utils.hardware.m1_memory_optimizer import (  # type: ignore
-    #     auto_skim_memory, smart_memory_allocation,
-    #     memory_skim_decorator, auto_memory_skim_decorator,
-    #     auto_memory_skim_context, smart_memory_context
-    # )
-    MEMORY_OPTIMIZER_AVAILABLE = False
-except ImportError:
-    MEMORY_OPTIMIZER_AVAILABLE = False
+# Memory optimizer integration is optional and currently disabled to avoid import cycles
+MEMORY_OPTIMIZER_AVAILABLE = False
 
 
 try:

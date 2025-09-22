@@ -44,9 +44,7 @@ from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer, M1CPUOptim
 
 # Import ML Common utilities for cross-validation
 from ..validation.cv_utils import TemporalCrossValidator, PurgedKFold
-# Validation framework: use unified interface when validation is needed.
-# from src.utils.validation.unified_framework import UnifiedValidationFramework  # Optional at call sites
-# from .pareto import ParetoFrontAnalyzer  # Causes circular import
+# Validation framework note: use unified interface at call sites if needed.
 
 logger = logging.getLogger(__name__)
 

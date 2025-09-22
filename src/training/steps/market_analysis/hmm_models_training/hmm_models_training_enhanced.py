@@ -72,29 +72,19 @@ class StreamlinedHMMTrainingStep(BaseTrainingStep):
         """
         Get HMM-specific model types optimized for state recognition.
 
-        Base models: logistic_regression, lightgbm, random_forest (top 2)
-        Ensemble models: voting, stacking, bagging, ada boost, extra trees, xgboost (best of XGBoost/CatBoost)
+        Base models: logistic_regression, lightgbm, random_forest (top 2) + xgboost, catboost (compare both)
+        No ensemble models or deep learning models for HMM state recognition.
 
         Returns:
             List of model types optimized for HMM state recognition
         """
         return [
-            # Base models for state recognition (top 2)
-            "logistic_regression",
-            "lightgbm",
-            "random_forest",
-
-            # Ensemble models for robust state recognition
-            "voting_classifier",        # Voting ensemble
-            "stacking_classifier",      # Stacking ensemble
-            "bagging_classifier",       # Bagging ensemble
-            "ada_boost_classifier",     # AdaBoost ensemble
-            "extra_trees_classifier",   # Extra Trees ensemble
-            "xgboost",                  # XGBoost as ensemble model (best of XGBoost/CatBoost)
-
-            # Deep learning models (if available)
-            "tabnet_classifier",        # TabNet
-            "neural_network_classifier"  # Simple NN
+            # Base models for state recognition (top 2 + gradient boosters to compare)
+            "logistic_regression",  # Interpretable linear model
+            "lightgbm",             # Fast, efficient gradient boosting
+            "random_forest",        # Robust ensemble tree model
+            "xgboost",              # XGBoost gradient boosting
+            "catboost"              # CatBoost gradient boosting (compare with XGBoost)
         ]
 
     def execute(
@@ -161,7 +151,14 @@ class StreamlinedHMMTrainingStep(BaseTrainingStep):
             feature_names=feature_names
         )
 
-        # Create final results
+        # Generate enhanced reporting for all models
+        enhanced_reporting = self._generate_enhanced_model_report(
+            models=training_results.get('models', {}),
+            evaluation_results=training_results.get('evaluation_results', {}),
+            regime_analysis=regime_analysis
+        )
+
+        # Create final results with enhanced reporting
         final_results = self._create_final_results(
             models=training_results.get('models', {}),
             metadata=training_results.get('metadata', {}),
@@ -172,11 +169,13 @@ class StreamlinedHMMTrainingStep(BaseTrainingStep):
                 'validation_results': validation_results,
                 'hmm_state_recognition_focus': True,
                 'timeframe': self.config.timeframe,
-                'model_types_used': self.config.model_types
+                'model_types_used': self.config.model_types,
+                'enhanced_reporting': enhanced_reporting
             }
         )
 
-        self._log_training_summary(final_results, "HMM State Recognition", len(training_results.get('models', {})))
+        # Log enhanced summary
+        self._log_enhanced_training_summary(final_results)
 
         return final_results
 
@@ -251,7 +250,7 @@ class StreamlinedHMMTrainingStep(BaseTrainingStep):
             Dictionary of search spaces for each model type
         """
         return {
-            # Base models (top 2)
+            # Base models for HMM state recognition
             'logistic_regression': {
                 'C': {'type': 'float', 'low': 0.001, 'high': 10.0, 'log': True},
                 'penalty': {'type': 'categorical', 'choices': ['l1', 'l2', 'elasticnet']},
@@ -274,39 +273,7 @@ class StreamlinedHMMTrainingStep(BaseTrainingStep):
                 'max_features': {'type': 'categorical', 'choices': ['sqrt', 'log2', None]},
                 'bootstrap': {'type': 'categorical', 'choices': [True, False]}
             },
-
-            # Ensemble models
-            'voting_classifier': {
-                'voting': {'type': 'categorical', 'choices': ['hard', 'soft']},
-                'weights': {'type': 'categorical', 'choices': [None, 'balanced']},
-                'flatten_transform': {'type': 'categorical', 'choices': [True, False]}
-            },
-            'stacking_classifier': {
-                'n_estimators': {'type': 'int', 'low': 50, 'high': 300},
-                'learning_rate': {'type': 'float', 'low': 0.01, 'high': 0.3, 'log': True},
-                'max_depth': {'type': 'int', 'low': 3, 'high': 8},
-                'subsample': {'type': 'float', 'low': 0.6, 'high': 1.0}
-            },
-            'bagging_classifier': {
-                'n_estimators': {'type': 'int', 'low': 10, 'high': 100},
-                'max_samples': {'type': 'float', 'low': 0.6, 'high': 1.0},
-                'max_features': {'type': 'float', 'low': 0.6, 'high': 1.0},
-                'bootstrap': {'type': 'categorical', 'choices': [True, False]}
-            },
-            'ada_boost_classifier': {
-                'n_estimators': {'type': 'int', 'low': 50, 'high': 300},
-                'learning_rate': {'type': 'float', 'low': 0.01, 'high': 1.0, 'log': True},
-                'algorithm': {'type': 'categorical', 'choices': ['SAMME', 'SAMME.R']}
-            },
-            'extra_trees_classifier': {
-                'n_estimators': {'type': 'int', 'low': 100, 'high': 1000},
-                'max_depth': {'type': 'int', 'low': 5, 'high': 20},
-                'min_samples_split': {'type': 'int', 'low': 2, 'high': 20},
-                'min_samples_leaf': {'type': 'int', 'low': 1, 'high': 10},
-                'max_features': {'type': 'categorical', 'choices': ['sqrt', 'log2', None]},
-                'bootstrap': {'type': 'categorical', 'choices': [True, False]}
-            },
-            'xgboost': {  # XGBoost as ensemble model (best of XGBoost/CatBoost)
+            'xgboost': {
                 'n_estimators': {'type': 'int', 'low': 500, 'high': 2000},
                 'learning_rate': {'type': 'float', 'low': 0.01, 'high': 0.2, 'log': True},
                 'max_depth': {'type': 'int', 'low': 4, 'high': 10},
@@ -315,20 +282,11 @@ class StreamlinedHMMTrainingStep(BaseTrainingStep):
                 'reg_alpha': {'type': 'float', 'low': 0.0, 'high': 1.0},
                 'reg_lambda': {'type': 'float', 'low': 0.0, 'high': 1.0}
             },
-
-            # Deep learning models
-            'tabnet_classifier': {
-                'n_d': {'type': 'int', 'low': 32, 'high': 128},
-                'n_a': {'type': 'int', 'low': 32, 'high': 128},
-                'n_steps': {'type': 'int', 'low': 3, 'high': 10},
-                'gamma': {'type': 'float', 'low': 1.0, 'high': 2.0},
-                'lambda_sparse': {'type': 'float', 'low': 0.0001, 'high': 0.01, 'log': True}
-            },
-            'neural_network_classifier': {
-                'hidden_layer_sizes': {'type': 'categorical', 'choices': [(50,), (100,), (50, 50), (100, 50)]},
-                'activation': {'type': 'categorical', 'choices': ['relu', 'tanh', 'logistic']},
-                'alpha': {'type': 'float', 'low': 0.0001, 'high': 0.01, 'log': True},
-                'learning_rate_init': {'type': 'float', 'low': 0.001, 'high': 0.1, 'log': True}
+            'catboost': {
+                'n_estimators': {'type': 'int', 'low': 500, 'high': 2000},
+                'learning_rate': {'type': 'float', 'low': 0.01, 'high': 0.2, 'log': True},
+                'depth': {'type': 'int', 'low': 4, 'high': 10},
+                'l2_leaf_reg': {'type': 'float', 'low': 1.0, 'high': 10.0}
             }
         }
 
@@ -356,6 +314,168 @@ class StreamlinedHMMTrainingStep(BaseTrainingStep):
             'hmm_state_recognition_focus': True,
             'timeframe': self.config.timeframe
         }
+
+    def _generate_enhanced_model_report(
+        self,
+        models: Dict[str, Any],
+        evaluation_results: Dict[str, Any],
+        regime_analysis: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Generate comprehensive enhanced reporting for all trained models.
+
+        Args:
+            models: Dictionary of trained models
+            evaluation_results: Evaluation results for each model
+            regime_analysis: Regime analysis results
+
+        Returns:
+            Dictionary containing enhanced model reporting
+        """
+        self.logger.info("📊 Generating enhanced model report...")
+
+        enhanced_report = {
+            'model_performance_summary': {},
+            'regime_specific_performance': {},
+            'model_comparison': {},
+            'best_models_by_regime': {},
+            'overall_recommendations': [],
+            'training_metadata': {
+                'total_regimes': len(regime_analysis.get('regime_counts', {})),
+                'total_models_trained': len(models),
+                'model_types_used': list(models.keys())
+            }
+        }
+
+        # Generate performance summary for each model
+        for model_name, model_result in models.items():
+            if model_name in evaluation_results:
+                eval_result = evaluation_results[model_name]
+
+                enhanced_report['model_performance_summary'][model_name] = {
+                    'accuracy': eval_result.get('accuracy', 0),
+                    'f1_score': eval_result.get('f1_score', 0),
+                    'precision': eval_result.get('precision', 0),
+                    'recall': eval_result.get('recall', 0),
+                    'training_time': eval_result.get('training_time', 0),
+                    'regime_specific_metrics': eval_result.get('regime_metrics', {}),
+                    'feature_importance_available': eval_result.get('feature_importance_available', False)
+                }
+
+        # Generate regime-specific performance analysis
+        for regime_id, regime_data in regime_analysis.get('regime_data', {}).items():
+            regime_performance = {}
+
+            for model_name, model_result in models.items():
+                if model_name in evaluation_results:
+                    eval_result = evaluation_results[model_name]
+                    regime_metrics = eval_result.get('regime_metrics', {}).get(f'regime_{regime_id}', {})
+
+                    regime_performance[model_name] = {
+                        'accuracy': regime_metrics.get('accuracy', 0),
+                        'f1_score': regime_metrics.get('f1_score', 0),
+                        'precision': regime_metrics.get('precision', 0),
+                        'recall': regime_metrics.get('recall', 0),
+                        'samples': regime_data.get('n_samples', 0)
+                    }
+
+            enhanced_report['regime_specific_performance'][f'regime_{regime_id}'] = regime_performance
+
+        # Generate model comparison across all regimes
+        model_comparison = {}
+        for model_name in models.keys():
+            accuracies = []
+            f1_scores = []
+
+            for regime_perf in enhanced_report['regime_specific_performance'].values():
+                if model_name in regime_perf:
+                    accuracies.append(regime_perf[model_name]['accuracy'])
+                    f1_scores.append(regime_perf[model_name]['f1_score'])
+
+            if accuracies:
+                model_comparison[model_name] = {
+                    'avg_accuracy': np.mean(accuracies),
+                    'std_accuracy': np.std(accuracies),
+                    'min_accuracy': min(accuracies),
+                    'max_accuracy': max(accuracies),
+                    'avg_f1_score': np.mean(f1_scores),
+                    'std_f1_score': np.std(f1_scores)
+                }
+
+        enhanced_report['model_comparison'] = model_comparison
+
+        # Determine best models by regime
+        for regime_id, regime_performance in enhanced_report['regime_specific_performance'].items():
+            best_model = max(regime_performance.keys(),
+                           key=lambda k: regime_performance[k]['f1_score'])
+            enhanced_report['best_models_by_regime'][regime_id] = {
+                'best_model': best_model,
+                'best_f1_score': regime_performance[best_model]['f1_score'],
+                'best_accuracy': regime_performance[best_model]['accuracy']
+            }
+
+        # Generate recommendations
+        if model_comparison:
+            # Find overall best model
+            best_overall = max(model_comparison.keys(),
+                             key=lambda k: model_comparison[k]['avg_f1_score'])
+
+            enhanced_report['overall_recommendations'] = [
+                f"Best overall model: {best_overall} (avg F1: {model_comparison[best_overall]['avg_f1_score']:.4f})",
+                "XGBoost vs CatBoost comparison: Both models trained, select best performer per regime",
+                "Consider ensemble of top 2 models (logistic_regression + lightgbm) for robustness",
+                "Monitor regime-specific performance for model drift detection"
+            ]
+
+            # Add regime-specific recommendations
+            for regime_id, best_info in enhanced_report['best_models_by_regime'].items():
+                enhanced_report['overall_recommendations'].append(
+                    f"Regime {regime_id}: Use {best_info['best_model']} (F1: {best_info['best_f1_score']:.4f})"
+                )
+
+        self.logger.info("✅ Enhanced model report generated")
+        return enhanced_report
+
+    def _log_enhanced_training_summary(self, results: Dict[str, Any]) -> None:
+        """
+        Log enhanced training summary with comprehensive metrics.
+
+        Args:
+            results: Training results dictionary
+        """
+        enhanced_reporting = results.get('enhanced_reporting', {})
+
+        if enhanced_reporting:
+            self.logger.info("📊 Enhanced Training Summary:")
+
+            # Overall performance
+            model_comparison = enhanced_reporting.get('model_comparison', {})
+            if model_comparison:
+                best_model = max(model_comparison.keys(),
+                               key=lambda k: model_comparison[k]['avg_f1_score'])
+                best_f1 = model_comparison[best_model]['avg_f1_score']
+                self.logger.info(f"🏆 Best overall model: {best_model} (avg F1: {best_f1:.4f})")
+
+            # Regime-specific insights
+            best_models_by_regime = enhanced_reporting.get('best_models_by_regime', {})
+            if best_models_by_regime:
+                self.logger.info("📊 Best models by regime:")
+                for regime_id, best_info in best_models_by_regime.items():
+                    self.logger.info(f"  - {regime_id}: {best_info['best_model']} (F1: {best_info['best_f1_score']:.4f})")
+
+            # Recommendations
+            recommendations = enhanced_reporting.get('overall_recommendations', [])
+            if recommendations:
+                self.logger.info("💡 Key recommendations:")
+                for rec in recommendations[:3]:  # Show top 3 recommendations
+                    self.logger.info(f"  - {rec}")
+
+            # Training metadata
+            training_metadata = enhanced_reporting.get('training_metadata', {})
+            self.logger.info("📈 Training completed:")
+            self.logger.info(f"  - Models trained: {training_metadata.get('total_models_trained', 0)}")
+            self.logger.info(f"  - Regimes analyzed: {training_metadata.get('total_regimes', 0)}")
+            self.logger.info(f"  - Model types: {', '.join(training_metadata.get('model_types_used', []))}")
 
 
 # Convenience functions

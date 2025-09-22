@@ -85,16 +85,13 @@ def test_complete_migration():
     start_time = time.time()
 
     try:
-        # Test with optimized model types (top 2 base + ensemble models)
+        # Test with optimized model types (top 2 + gradient boosters)
         config = HMMTrainingConfig(
             model_name="complete_migration_test",
             timeframe="15m",  # Should be enforced
             model_types=[
-                # Base models (top 2)
-                "logistic_regression", "lightgbm", "random_forest",
-                # Ensemble models
-                "voting_classifier", "stacking_classifier", "bagging_classifier",
-                "ada_boost_classifier", "extra_trees_classifier", "xgboost"
+                # Base models (top 2 + gradient boosters to compare)
+                "logistic_regression", "lightgbm", "random_forest", "xgboost", "catboost"
             ],
             hpo_trials=10,  # Reduced for testing
             enable_multi_objective=True,
@@ -120,10 +117,10 @@ def test_complete_migration():
         print(f"📊 Timeframe enforced: {results.get('timeframe', 'unknown')}")
         print(f"📊 Model types used: {len(results.get('model_types_used', []))} models")
 
-        # Check that ensemble models are included
+        # Check that gradient booster models are included for comparison
         model_types_used = results.get('model_types_used', [])
-        ensemble_models = [m for m in model_types_used if 'ensemble' in m.lower() or 'voting' in m.lower() or 'stacking' in m.lower() or 'bagging' in m.lower() or 'ada_boost' in m.lower() or 'extra_trees' in m.lower() or 'xgboost' in m.lower()]
-        print(f"📊 Ensemble models included: {len(ensemble_models)} - {ensemble_models}")
+        gradient_boosters = [m for m in model_types_used if 'xgb' in m.lower() or 'catboost' in m.lower()]
+        print(f"📊 Gradient boosters for comparison: {len(gradient_boosters)} - {gradient_boosters}")
 
         if results.get('timeframe') == '15m':
             print("✅ 15m timeframe enforcement working correctly")
@@ -185,8 +182,11 @@ def test_complete_migration():
     print("🎉 Complete migration tests passed successfully!")
     print("\n📊 Summary:")
     print("- ✅ Streamlined HMM training with complete migration")
-    print("- ✅ Base models optimized to top 2 (logistic_regression, lightgbm, random_forest)")
-    print("- ✅ Ensemble models include XGBoost as best of XGBoost/CatBoost")
+    print("- ✅ Base models: top 2 + gradient boosters (logistic_regression, lightgbm, random_forest, xgboost, catboost)")
+    print("- ✅ No ensemble models (removed voting, stacking, bagging, ada boost, extra trees)")
+    print("- ✅ No deep learning models (removed TabNet, neural networks)")
+    print("- ✅ Gradient boosters trained for comparison (XGBoost vs CatBoost)")
+    print("- ✅ Enhanced reporting included for all models")
     print("- ✅ 15m timeframe enforcement working")
     print("- ✅ HMM state recognition focus confirmed")
     print("- ✅ BaseTrainingStep inheritance verified")

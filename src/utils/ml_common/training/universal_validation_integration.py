@@ -29,6 +29,12 @@ from ..config.universal_timeframe_config import (
     validate_timeframe_consistency
 )
 
+# Import reporting integration
+from ..reporting.validation_reporting_integration import (
+    get_validation_reporting_integrator,
+    process_validation_with_reporting
+)
+
 logger = logging.getLogger(__name__)
 
 @dataclass
@@ -79,6 +85,9 @@ class UniversalValidationIntegrator:
         self.overfitting_detector = get_overfitting_detector()
         self.temporal_validator = get_temporal_validator()
         self.timeframe_manager = get_timeframe_manager()
+        
+        # Initialize reporting integration
+        self.reporting_integrator = get_validation_reporting_integrator()
         
         # Create validation report directory
         if self.config.save_validation_reports:
@@ -281,6 +290,17 @@ class UniversalValidationIntegrator:
                 'valid': validation_results['valid'],
                 'critical_issues': len(validation_report.critical_issues)
             })
+            
+            # Process with reporting system
+            if self.config.save_validation_reports:
+                self.reporting_integrator.process_validation_report(
+                    validation_report=validation_report,
+                    model_name=model_name,
+                    model_type=model_type,
+                    fold_number=fold_number,
+                    validation_duration=None,  # Could be calculated if needed
+                    model_metadata={'config': self.config.__dict__}
+                )
             
             # Log validation results
             if self.config.enable_validation_logging:

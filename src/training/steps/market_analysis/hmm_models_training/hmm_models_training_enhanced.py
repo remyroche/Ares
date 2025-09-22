@@ -48,12 +48,16 @@ from .shared_feature_utils import create_enhanced_features_with_names
 from src.utils.ml_common.config.base_training_config import HMMTrainingConfig
 from src.utils.ml_common.training.base_training_step import BaseTrainingStep
 
-# New enhanced components
-from .timeframe_config import get_timeframe_config, validate_timeframe_consistency, get_primary_timeframe
-from .early_stopping import get_early_stopping_config, get_overfitting_detector, EarlyStoppingMonitor
-from .temporal_validation import get_temporal_config, get_temporal_validator, get_temporal_cv
-from .temporal_cross_validation import get_temporal_cv_config, get_validation_pipeline
-from .overfitting_reporting import get_overfitting_reporter, OverfittingReporter
+# Import universal validation components
+from src.utils.ml_common.validation import (
+    validate_ml_model,
+    get_ml_validator,
+    UniversalMLValidationConfig
+)
+from src.utils.ml_common.config.universal_timeframe_config import get_primary_timeframe
+from src.utils.ml_common.reporting import process_validation_with_reporting
+
+# Note: Enhanced components now use universal validation from ml_common
 
 # Feature generation system imports
 try:

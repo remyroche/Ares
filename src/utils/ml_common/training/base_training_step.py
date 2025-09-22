@@ -218,6 +218,17 @@ class BaseTrainingStep(ABC):
         
         self.training_results['validation_results'][model_name] = validation_results
         
+        # Process validation with reporting system
+        if self.config.save_validation_reports:
+            from ..reporting.validation_reporting_integration import process_validation_with_reporting
+            process_validation_with_reporting(
+                validation_report=validation_results,
+                model_name=model_name,
+                model_type=model_type,
+                fold_number=fold_number,
+                model_metadata={'training_step': self.__class__.__name__}
+            )
+        
         return validation_results
     
     def get_validation_summary(self) -> Dict[str, Any]:

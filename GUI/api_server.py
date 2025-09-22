@@ -47,7 +47,7 @@ try:
     from src.monitoring.ml_monitor import MLMonitor
     from src.monitoring.performance_dashboard import PerformanceDashboard
     from src.monitoring.performance_monitor import PerformanceMonitor
-    from src.supervisor.performance_reporter import PerformanceReporter
+    from src.trading.reporting.performance_reporter import PerformanceReporter
     from src.utils.state_manager import StateManager
 
     ares_config = AresConfig()

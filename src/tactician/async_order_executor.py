@@ -13,12 +13,9 @@ from typing import Any
 from uuid import uuid4
 import optuna
 try:
-    from src.supervisor.performance_reporter import PerformanceReporter, setup_performance_reporter
+    from src.trading.reporting.performance_reporter import PerformanceReporter
 except Exception:
     PerformanceReporter = None
-
-    def setup_performance_reporter(*_a, **_k) -> None:
-        return None
 from src.tactician.enhanced_order_manager import EnhancedOrderManager, OrderRequest, OrderSide, OrderType
 from ...utils.logger import system_logger
 from src.utils.warning_symbols import failed, missing, invalid
@@ -124,7 +121,8 @@ class AsyncOrderExecutor:
             self.logger.info('Initializing Async Order Executor...')
             self.order_manager = EnhancedOrderManager(self.config)
             await self.order_manager.initialize()
-            self.performance_reporter = await setup_performance_reporter(self.config)
+            # Optional: instantiate trading performance reporter if available
+            self.performance_reporter = PerformanceReporter(self.config) if PerformanceReporter else None
             if not self._validate_configuration():
                 self.logger.error(invalid('Invalid order executor configuration'))
                 return False

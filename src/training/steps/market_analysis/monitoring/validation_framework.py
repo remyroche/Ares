@@ -849,3 +849,15 @@ def comprehensive_validation(validator: ComprehensiveValidationFramework):
         
         return async_wrapper if asyncio.iscoroutinefunction(func) else sync_wrapper
     return decorator
+
+# --- Consolidation shim (re-export unified implementation) ---
+try:
+    from src.utils.validation.unified_framework import (
+        ComprehensiveValidationFramework as _UnifiedComprehensiveValidationFramework,
+        comprehensive_validation as _unified_comprehensive_validation,
+    )
+    ComprehensiveValidationFramework = _UnifiedComprehensiveValidationFramework
+    comprehensive_validation = _unified_comprehensive_validation
+except Exception:
+    # Fallback to legacy implementation above if unified framework unavailable
+    pass

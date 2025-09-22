@@ -343,6 +343,17 @@ class ValidationFramework:
         
         tprint(f"✅ Optimization validation completed: {'PASSED' if is_valid else 'FAILED'}")
         return is_valid, validation_results
+ 
+# --- Consolidation shim (re-export unified implementation) ---
+try:
+    from src.utils.validation.unified_framework import (
+        FeatureLookbackValidationFramework as _UnifiedFeatureLookbackValidationFramework,
+    )
+    # Alias for backward compatibility: local ValidationFramework references mapped to unified one
+    ValidationFramework = _UnifiedFeatureLookbackValidationFramework
+except Exception:
+    # Fallback to legacy implementation above if unified framework unavailable
+    pass
     
     def validate_pipeline_state(self, pipeline_state: Dict[str, Any]) -> Tuple[bool, List[ValidationResult]]:
         """

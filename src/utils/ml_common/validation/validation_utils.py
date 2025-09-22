@@ -84,6 +84,14 @@ class ValidationFramework:
         """Basic data validation."""
         return True
 
+# --- Consolidation shim: prefer unified framework implementation ---
+try:
+    from src.utils.validation.unified_framework import UnifiedValidationFramework as _UnifiedValidationFramework
+    ValidationFramework = _UnifiedValidationFramework  # type: ignore
+except Exception:
+    # Fallback to the simple placeholder above if unified framework unavailable
+    pass
+
 
 class ConfigurationValidator:
     """Configuration validation with fast fail mechanisms."""

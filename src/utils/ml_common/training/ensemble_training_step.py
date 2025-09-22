@@ -20,41 +20,20 @@ import time
 from datetime import datetime, timedelta
 import warnings
 
-from src.utils.ml_common.training.base_training_step import BaseTrainingStep
-from src.utils.ml_common.config.base_training_config import EnsembleTrainingConfig
-from src.utils.ml_common.ensembles import StackingEnsembleManager, StackingEnsembleConfig
+from .base_training_step import BaseTrainingStep
+from ..config.base_training_config import EnsembleTrainingConfig
+from ..ensembles import StackingEnsembleManager, StackingEnsembleConfig
 
 # Import vectorized training manager
 try:
-    from src.utils.ml_common.training.vectorized_training_manager import VectorizedTrainingManager
+    from .vectorized_training_manager import VectorizedTrainingManager
     VECTORIZED_TRAINING_AVAILABLE = True
 except ImportError:
     VECTORIZED_TRAINING_AVAILABLE = False
     VectorizedTrainingManager = None
 
-# Enhanced training utilities
-try:
-    from src.utils.ml_common.training.enhanced_training_utils import (
-        EnhancedTrainingUtils,
-        EarlyStoppingConfig,
-        PurgedCVConfig,
-        OverfittingMonitorConfig,
-        RegularizationConfig
-    )
-    from src.utils.ml_common.training.training_integration import (
-        TrainingStepEnhancer,
-        TrainingIntegrationConfig
-    )
-    ENHANCED_TRAINING_AVAILABLE = True
-except ImportError:
-    ENHANCED_TRAINING_AVAILABLE = False
-    EnhancedTrainingUtils = None
-    TrainingStepEnhancer = None
-    EarlyStoppingConfig = None
-    PurgedCVConfig = None
-    OverfittingMonitorConfig = None
-    RegularizationConfig = None
-    TrainingIntegrationConfig = None
+# Enhanced training utilities are now available from BaseTrainingStep
+# No need to import separately - use self.enhanced_training_available
 
 logger = logging.getLogger(__name__)
 
@@ -93,11 +72,6 @@ class EnsembleTrainingStep(BaseTrainingStep):
         self.ensemble_models = {}
         self.ensemble_metadata = {}
         
-        # Enhanced training utilities
-        self.enhanced_training_available = ENHANCED_TRAINING_AVAILABLE
-        self.training_enhancer = None
-        self.enhanced_training_config = None
-        
         # Initialize enhanced training utilities
         if self.enhanced_training_available:
             self._initialize_enhanced_training_utilities()
@@ -122,7 +96,10 @@ class EnsembleTrainingStep(BaseTrainingStep):
         self.logger.info("✅ Enhanced Ensemble Training Step initialized")
     
     def _initialize_enhanced_training_utilities(self):
-        """Initialize enhanced training utilities for overfitting prevention and lookahead bias detection."""
+        """Initialize enhanced training utilities for ensemble training (inherited from BaseTrainingStep)."""
+        # Enhanced training utilities are already available from base class
+        # Can access via self.enhanced_training_utils, self.training_enhancer, etc.
+        self.logger.info("✅ Enhanced training utilities initialized for ensemble training")
         try:
             # Create enhanced training configuration for Ensemble
             self.enhanced_training_config = TrainingIntegrationConfig(

@@ -19,36 +19,15 @@ import time
 from datetime import datetime, timedelta
 import warnings
 
-from src.utils.ml_common.training.base_training_step import BaseTrainingStep
-from src.utils.ml_common.config.base_training_config import PerRegimeTrainingConfig
+from .base_training_step import BaseTrainingStep
+from ..config.base_training_config import PerRegimeTrainingConfig
 
-# Enhanced training utilities
-try:
-    from src.utils.ml_common.training.enhanced_training_utils import (
-        EnhancedTrainingUtils,
-        EarlyStoppingConfig,
-        PurgedCVConfig,
-        OverfittingMonitorConfig,
-        RegularizationConfig
-    )
-    from src.utils.ml_common.training.training_integration import (
-        TrainingStepEnhancer,
-        TrainingIntegrationConfig
-    )
-    ENHANCED_TRAINING_AVAILABLE = True
-except ImportError:
-    ENHANCED_TRAINING_AVAILABLE = False
-    EnhancedTrainingUtils = None
-    TrainingStepEnhancer = None
-    EarlyStoppingConfig = None
-    PurgedCVConfig = None
-    OverfittingMonitorConfig = None
-    RegularizationConfig = None
-    TrainingIntegrationConfig = None
+# Enhanced training utilities are now available from BaseTrainingStep
+# No need to import separately - use self.enhanced_training_available
 
 # Universal validation integration
 try:
-    from src.utils.ml_common.training.universal_validation_integration import (
+    from ..universal_validation_integration import (
         get_validation_integrator,
         ValidationIntegrationConfig,
         intelligently_select_utilities,
@@ -115,9 +94,9 @@ class PerRegimeTrainingStep(BaseTrainingStep):
         self.validation_integrator = None
         self.validation_config = None
 
-        # Initialize enhanced training utilities
-        if self.enhanced_training_available:
-            self._initialize_enhanced_training_utilities()
+        # Initialize enhanced training utilities (inherited from BaseTrainingStep)
+        # Enhanced training utilities are already available from base class
+        # Can access via self.enhanced_training_utils, self.training_enhancer, etc.
 
         # Initialize universal validation integration
         if self.universal_validation_available:
@@ -126,7 +105,10 @@ class PerRegimeTrainingStep(BaseTrainingStep):
         self.logger.info("✅ Enhanced Per-Regime Training Step initialized")
     
     def _initialize_enhanced_training_utilities(self):
-        """Initialize enhanced training utilities for overfitting prevention and lookahead bias detection."""
+        """Initialize enhanced training utilities for per-regime training (inherited from BaseTrainingStep)."""
+        # Enhanced training utilities are already available from base class
+        # Can access via self.enhanced_training_utils, self.training_enhancer, etc.
+        self.logger.info("✅ Enhanced training utilities initialized for per-regime training")
         try:
             # Create enhanced training configuration
             self.enhanced_training_config = TrainingIntegrationConfig(

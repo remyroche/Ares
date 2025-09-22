@@ -3,6 +3,8 @@ Enhanced Validation for ML Common
 
 Comprehensive model validation procedures with multiple validation strategies,
 bootstrap confidence intervals, and robustness testing.
+
+This module is now consolidated with unified_cv.py for all cross-validation functionality.
 """
 
 import numpy as np
@@ -13,12 +15,14 @@ from datetime import datetime
 import logging
 from pathlib import Path
 import json
-from sklearn.model_selection import cross_val_score, StratifiedKFold, KFold
-from sklearn.metrics import make_scorer, accuracy_score, f1_score, precision_score, recall_score
+from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
 from scipy import stats
 import warnings
 
 logger = logging.getLogger(__name__)
+
+# Import unified cross-validation for all CV operations
+from .unified_cv import UnifiedCrossValidator, UnifiedCVResult, perform_cross_validation
 
 @dataclass
 class EnhancedValidationConfig:
@@ -249,12 +253,16 @@ class EnhancedValidator:
                                  is_classification: bool,
                                  cv_folds: int,
                                  random_state: int) -> Dict[str, Any]:
-        """Perform cross-validation with appropriate strategy (delegates to unified CV)."""
+        """Perform cross-validation using unified CV system."""
         try:
-            from src.utils.ml_common.validation.unified_cv import perform_cross_validation as unified_perform_cv
-
+            # Use unified cross-validation
             strategy = "standard"
-            result = unified_perform_cv(
+            if self.config.cv_strategy == "stratified":
+                strategy = "stratified"
+            elif self.config.cv_strategy == "temporal":
+                strategy = "temporal"
+
+            result = perform_cross_validation(
                 model,
                 X,
                 y,
@@ -262,12 +270,17 @@ class EnhancedValidator:
                 cv_folds=cv_folds,
                 scoring="accuracy" if is_classification else "r2",
                 random_state=random_state,
-                stratified=is_classification if self.config.cv_strategy == "stratified" else False,
+                stratified=is_classification if strategy == "stratified" else None,
+                temporal_gap=getattr(self.config, 'temporal_gap', 0),
+                temporal_test_size=getattr(self.config, 'temporal_test_size', None)
             )
 
+            # Extract results from unified format
             scores = result.get('scores', []) or []
             mean_score = float(result.get('mean', np.mean(scores) if len(scores) else 0.0))
             std_score = float(result.get('std', np.std(scores) if len(scores) else 0.0))
+
+            # Calculate confidence interval
             n = len(scores) if len(scores) else cv_folds
             confidence_interval = (
                 mean_score - 1.96 * std_score / np.sqrt(max(1, n)),
@@ -446,8 +459,7 @@ class EnhancedValidator:
             # Overfitting test using cross-validation
             if self.config.test_for_overfitting:
                 try:
-                    from src.utils.ml_common.validation.unified_cv import perform_cross_validation as unified_perform_cv
-                    cv_res = unified_perform_cv(model, X, y, strategy='standard', cv_folds=5, scoring='accuracy' if is_classification else 'r2')
+                    cv_res = perform_cross_validation(model, X, y, strategy='standard', cv_folds=5, scoring='accuracy' if is_classification else 'r2')
                     cv_scores = np.array(cv_res.get('scores', []) or [])
                     cv_mean = float(cv_res.get('mean', np.mean(cv_scores) if cv_scores.size else 0.0))
                     cv_std = float(cv_res.get('std', np.std(cv_scores) if cv_scores.size else 0.0))

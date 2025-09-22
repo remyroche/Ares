@@ -157,12 +157,8 @@ try:
         'ParetoFront', 'ParetoFrontAnalyzer',
         'RegimeSpecificTPSLOptimizer',
         
-        # Data Processing
-        'DataLabeler', 'LabelingConfig',
-        'DataQualityChecker', 'QualityReport',
-        'RegimeDataProcessor',
-        'MultiTimeframeTrainer',
-        'SRFeatureIntegrator',
+        # Data Processing (lazy-loaded getters)
+        'EnhancedDataLabelerGetter', 'LabelingConfigGetter',
         
         # Validation
         'ConfigurationValidator',

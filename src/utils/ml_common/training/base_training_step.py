@@ -32,6 +32,50 @@ from .universal_validation_integration import (
     ValidationIntegrationConfig
 )
 
+# Import enhanced training utilities (lazy loading)
+def _get_enhanced_training_utils():
+    """Lazy import enhanced training utilities."""
+    try:
+        from .enhanced_training_utils import (
+            EnhancedTrainingUtils,
+            EarlyStoppingConfig,
+            PurgedCVConfig,
+            OverfittingMonitorConfig,
+            RegularizationConfig
+        )
+        return {
+            'EnhancedTrainingUtils': EnhancedTrainingUtils,
+            'EarlyStoppingConfig': EarlyStoppingConfig,
+            'PurgedCVConfig': PurgedCVConfig,
+            'OverfittingMonitorConfig': OverfittingMonitorConfig,
+            'RegularizationConfig': RegularizationConfig
+        }
+    except ImportError:
+        return {
+            'EnhancedTrainingUtils': None,
+            'EarlyStoppingConfig': None,
+            'PurgedCVConfig': None,
+            'OverfittingMonitorConfig': None,
+            'RegularizationConfig': None
+        }
+
+def _get_training_integration():
+    """Lazy import training integration utilities."""
+    try:
+        from .training_integration import (
+            TrainingStepEnhancer,
+            TrainingIntegrationConfig
+        )
+        return {
+            'TrainingStepEnhancer': TrainingStepEnhancer,
+            'TrainingIntegrationConfig': TrainingIntegrationConfig
+        }
+    except ImportError:
+        return {
+            'TrainingStepEnhancer': None,
+            'TrainingIntegrationConfig': None
+        }
+
 logger = system_logger.getChild('BaseTrainingStep')
 
 
@@ -58,11 +102,31 @@ class BaseTrainingStep(ABC):
         
         # Initialize validation integration
         self._initialize_validation_integration()
-        
+
+        # Initialize enhanced training utilities (lazy loading)
+        self._initialize_enhanced_training()
+
         # Training results
         self.training_results = {}
-        
+
         self.logger.info("✅ Base Training Step initialized")
+
+    def _initialize_enhanced_training(self):
+        """Initialize enhanced training utilities with lazy loading."""
+        # Get enhanced training utilities
+        enhanced_utils = _get_enhanced_training_utils()
+        training_integration = _get_training_integration()
+
+        self.enhanced_training_available = enhanced_utils['EnhancedTrainingUtils'] is not None
+        self.enhanced_training_utils = enhanced_utils['EnhancedTrainingUtils']
+        self.training_enhancer = training_integration['TrainingStepEnhancer']
+        self.enhanced_training_config = training_integration['TrainingIntegrationConfig']
+
+        # Initialize training step enhancer if available
+        if self.training_enhancer:
+            self.logger.info("✅ Enhanced training utilities initialized")
+        else:
+            self.logger.info("⚠️ Enhanced training utilities not available (optional)")
     
     def _initialize_common_components(self):
         """Initialize common components using existing utilities."""

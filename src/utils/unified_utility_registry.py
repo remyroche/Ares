@@ -112,6 +112,7 @@ class UtilityRegistry:
         
         # Initialize with core utilities
         self._register_core_utilities()
+        self._register_ml_common_utilities()
     
     def _register_core_utilities(self):
         """Register core utility functions and classes."""
@@ -273,6 +274,59 @@ class UtilityRegistry:
                 health_report['health_status'] = 'warning'
             
             return health_report
+
+    def _register_ml_common_utilities(self):
+        """Register ML Common utilities."""
+        try:
+            # Import ML Common utilities
+            from src.utils.ml_common import (
+                UnifiedCrossValidator, UnifiedCVResult, perform_cross_validation,
+                EnhancedValidator, EnhancedValidationConfig,
+                get_enhanced_validator, validate_model_comprehensively
+            )
+
+            # Register cross-validation utilities
+            self.register(
+                "unified_cross_validator",
+                UnifiedCrossValidator,
+                UtilityCategory.ML_COMMON,
+                description="Unified cross-validation system",
+                performance_impact="medium",
+                memory_usage="medium"
+            )
+
+            self.register(
+                "perform_cross_validation",
+                perform_cross_validation,
+                UtilityCategory.ML_COMMON,
+                description="Perform cross-validation with multiple strategies",
+                performance_impact="medium",
+                memory_usage="medium"
+            )
+
+            # Register enhanced validation utilities
+            self.register(
+                "enhanced_validator",
+                EnhancedValidator,
+                UtilityCategory.ML_COMMON,
+                description="Comprehensive model validation system",
+                performance_impact="high",
+                memory_usage="high"
+            )
+
+            self.register(
+                "get_enhanced_validator",
+                get_enhanced_validator,
+                UtilityCategory.ML_COMMON,
+                description="Get enhanced validator instance",
+                performance_impact="low",
+                memory_usage="low"
+            )
+
+            logger.info("✅ ML Common utilities registered in utility registry")
+
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to register ML Common utilities: {e}")
 
 class UtilityFactory:
     """Factory for creating utility instances with dependency injection."""
@@ -446,6 +500,59 @@ def get_utility_health_report() -> Dict[str, Any]:
 
 def get_utility_usage_stats() -> Dict[str, Dict[str, Any]]:
     """Get usage statistics for all utilities."""
+    def _register_ml_common_utilities(self):
+        """Register ML Common utilities."""
+        try:
+            # Import ML Common utilities
+            from src.utils.ml_common import (
+                UnifiedCrossValidator, UnifiedCVResult, perform_cross_validation,
+                EnhancedValidator, EnhancedValidationConfig,
+                get_enhanced_validator, validate_model_comprehensively
+            )
+
+            # Register cross-validation utilities
+            self.register(
+                "unified_cross_validator",
+                UnifiedCrossValidator,
+                UtilityCategory.ML_COMMON,
+                description="Unified cross-validation system",
+                performance_impact="medium",
+                memory_usage="medium"
+            )
+
+            self.register(
+                "perform_cross_validation",
+                perform_cross_validation,
+                UtilityCategory.ML_COMMON,
+                description="Perform cross-validation with multiple strategies",
+                performance_impact="medium",
+                memory_usage="medium"
+            )
+
+            # Register enhanced validation utilities
+            self.register(
+                "enhanced_validator",
+                EnhancedValidator,
+                UtilityCategory.ML_COMMON,
+                description="Comprehensive model validation system",
+                performance_impact="high",
+                memory_usage="high"
+            )
+
+            self.register(
+                "get_enhanced_validator",
+                get_enhanced_validator,
+                UtilityCategory.ML_COMMON,
+                description="Get enhanced validator instance",
+                performance_impact="low",
+                memory_usage="low"
+            )
+
+            logger.info("✅ ML Common utilities registered in utility registry")
+
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to register ML Common utilities: {e}")
+
     return get_utility_registry().get_usage_stats()
 
 __all__ = [

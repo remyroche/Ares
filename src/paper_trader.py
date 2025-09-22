@@ -3,7 +3,7 @@ from src.utils.tprint import tprint
 from .utils.compat import handle_specific_errors
 from .core.error_classes import execution_error, initialization_error, validation_error
 from .utils.logger import system_logger
-from .core.decorators import handles_errors
+from .utils.decorators import handles_errors, log_call, log_execution_time, traced
 from .utils.warning_symbols import invalid
 from .monitoring.enhanced_monitoring_orchestrator import EnhancedMonitoringOrchestrator
 import numpy as np
@@ -14,8 +14,6 @@ PaperTrader for training and testnet trading.
 Uses Binance testnet via BinanceExchange for all operations.
 """
 from datetime import datetime
-
-# Removed trading_decorators imports - using core decorators instead
 from enum import Enum
 from typing import Any, Dict, List
 from dataclasses import dataclass
@@ -40,18 +38,6 @@ from .config.constants import (
     DEFAULT_MAX_POSITION_SIZE,
     DEFAULT_SLIPPAGE_RATE,
 )
-from .utils.decorators import (
-    handles_errors,
-    log_call,
-    log_execution_time,
-    traced,
-)
-from .utils.compat import handle_specific_errors
-from .utils.logger import system_logger
-import logging
-import os
-import pandas as pd
-import time
 
 class ExecutionMode(Enum):
     """Execution mode enumeration."""

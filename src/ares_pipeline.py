@@ -8,10 +8,8 @@ from pathlib import Path
 import signal
 import sys
 from typing import Any
-from typing import TYPE_CHECKING
 
 from analyst.analyst import Analyst
-from config import get_dual_model_config
 from config.environment import get_environment_settings
 from core.config_service import ConfigurationService
 from core.decorators import handles_errors
@@ -27,7 +25,6 @@ from interfaces.base_interfaces import ITactician
 from interfaces.event_bus import EventBus
 from monitoring.auto_monitoring_launcher import get_auto_monitoring
 from monitoring.auto_monitoring_launcher import launch_auto_monitoring
-from monitoring.auto_monitoring_launcher import stop_auto_monitoring
 from monitoring.enhanced_monitoring_orchestrator import EnhancedMonitoringOrchestrator
 from monitoring.performance_dashboard import PerformanceDashboard
 from monitoring.performance_dashboard import setup_performance_dashboard
@@ -51,8 +48,8 @@ from utils.dependency_manager import get_dependency_manager
 from utils.dependency_manager import optional_package
 from utils.logger import setup_logging
 from utils.logger import system_logger
-from src.utils.lookahead_bias_detector import get_global_detector
 from utils.observability import init_observability
+from src.utils.lookahead_bias_detector import get_global_detector
 from utils.regime_transition_handler import RegimeTransitionHandler
 from utils.regime_transition_handler import handle_regime_transition
 from utils.regime_transition_handler import set_global_handler
@@ -66,8 +63,6 @@ from utils.warning_symbols import warning
 project_root = Path(__file__).parent.parent
 if str(project_root) not in sys.path:
     sys.path.append(str(project_root))
-if TYPE_CHECKING:
-    pass
 
 class AresPipeline:
     """
@@ -91,7 +86,7 @@ class AresPipeline:
         self.supervisor: ISupervisor | None = None
         self.state_manager: IStateManager | None = None
         self.event_bus: IEventBus | None = None
-        self.dual_model_system: DualModelSystem | None = None
+        self.dual_model_system = None
         self.performance_monitor: PerformanceMonitor | None = None
         self.performance_dashboard: PerformanceDashboard | None = None
         self.enhanced_monitoring: EnhancedMonitoringOrchestrator | None = None
@@ -495,47 +490,6 @@ class AresPipeline:
             else:
                 tprint('   ❌ Tactician component not available')
                 self.logger.error('   ❌ Tactician component not available')
-            tprint('🤖 Step 4: Dual Model System Decision Making')
-            self.logger.info('🤖 Step 4: Dual Model System Decision Making')
-            if self.dual_model_system:
-                tprint('   🧠 Making trading decisions with dual model system...')
-                self.logger.info('   🧠 Making trading decisions with dual model system...')
-                market_data = pd.DataFrame({'open': [100.0] * 100, 'high': [101.0] * 100, 'low': [99.0] * 100, 'close': [100.5] * 100, 'volume': [1000.0] * 100})
-                current_price = 100.5
-                decision_result = await self.dual_model_system.make_trading_decision(market_data = market_data, current_price = current_price)
-                if decision_result:
-                    tprint('   ✅ Dual model system decision completed successfully')
-                    self.logger.info('   ✅ Dual model system decision completed successfully')
-                    integrated_decision = await self._integrate_dual_model_with_tactician(dual_model_decision = decision_result, market_data = market_data, current_price = current_price)
-                    action = decision_result.get('action', 'UNKNOWN')
-                    analyst_confidence = decision_result.get('analyst_confidence', 0.0)
-                    tactician_confidence = decision_result.get('tactician_confidence', 0.0)
-                    final_confidence = decision_result.get('final_confidence', 0.0)
-                    position_size = integrated_decision.get('position_sizing', {}).get('final_position_size', 0.0)
-                    leverage = integrated_decision.get('leverage_sizing', {}).get('final_leverage', 1.0)
-                    tprint(f'   📊 Decision: {action}, Analyst: {analyst_confidence:.3f}, Tactician: {tactician_confidence:.3f}, Final: {final_confidence:.3f}')
-                    tprint(f'   💰 Position Size: {position_size:.4f}, Leverage: {leverage:.2f}x')
-                    self.logger.info(f'   📊 Decision: {action}, Analyst: {analyst_confidence:.3f}, Tactician: {tactician_confidence:.3f}, Final: {final_confidence:.3f}')
-                    self.logger.info(f'   💰 Position Size: {position_size:.4f}, Leverage: {leverage:.2f}x')
-                    
-                    # Record trade decision in enhanced monitoring system
-                    await self._record_trade_decision_in_monitoring(decision_result, integrated_decision, market_data, current_price)
-                    if self.dual_model_system.should_trigger_training():
-                        tprint('   🔄 Model training conditions met - triggering training...')
-                        self.logger.info('   🔄 Model training conditions met - triggering training...')
-                        training_result = await self.dual_model_system.trigger_model_training(market_data = market_data, force_training = False)
-                        if training_result.get('success', False):
-                            tprint('   ✅ Model training completed successfully')
-                            self.logger.info('   ✅ Model training completed successfully')
-                        else:
-                            tprint(f"   ⚠️ Model training failed: {training_result.get('error', 'Unknown error')}")
-                            self.logger.warning(f"   ⚠️ Model training failed: {training_result.get('error', 'Unknown error')}")
-                else:
-                    tprint('   ⚠️ Dual model system decision had issues')
-                    self.logger.warning('   ⚠️ Dual model system decision had issues')
-            else:
-                tprint('   ❌ Dual model system not available')
-                self.logger.error('   ❌ Dual model system not available')
             tprint('👁️ Step 5: Supervision and Monitoring')
             self.logger.info('👁️ Step 5: Supervision and Monitoring')
             if self.supervisor:
@@ -559,91 +513,7 @@ class AresPipeline:
             self.logger.exception('Error executing pipeline cycle')
             raise
 
-    async def _integrate_dual_model_with_tactician(self, dual_model_decision: dict[str, Any], market_data: pd.DataFrame, current_price: float) -> dict[str, Any]:
-        """
-        Integrate dual model system decisions with tactician for position sizing and leverage.
 
-        Args:
-            dual_model_decision: Decision from dual model system
-            market_data: Current market data
-            current_price: Current market price
-
-        Returns:
-            dict[str, Any]: Integrated tactical decision
-        """
-        try:
-            if not self.tactician or not dual_model_decision:
-                return {'error': 'Tactician or dual model decision not available'}
-            analyst_confidence = dual_model_decision.get('analyst_confidence', 0.5)
-            tactician_confidence = dual_model_decision.get('tactician_confidence', 0.5)
-            final_confidence = dual_model_decision.get('final_confidence', 0.5)
-            normalized_confidence = dual_model_decision.get('normalized_confidence', 0.5)
-            ml_predictions = {'price_target_confidences': {'0.25%': analyst_confidence, '0.5%': analyst_confidence * 0.9, '0.75%': analyst_confidence * 0.8, '1.0%': analyst_confidence * 0.7}, 'adversarial_confidences': {'0.25%': 1.0 - tactician_confidence, '0.5%': (1.0 - tactician_confidence) * 0.9, '0.75%': (1.0 - tactician_confidence) * 0.8, '1.0%': (1.0 - tactician_confidence) * 0.7}, 'directional_analysis': {'primary_direction': dual_model_decision.get('direction', 'HOLD'), 'primary_confidence': final_confidence, 'magnitude_levels': [0.25, 0.5, 0.75, 1.0]}}
-            position_sizer = getattr(self.tactician, 'position_sizer', None)
-            if position_sizer:
-                position_size_result = await position_sizer.calculate_position_size(ml_predictions = ml_predictions, current_price = current_price, account_balance = 1000.0, analyst_confidence = analyst_confidence, tactician_confidence = tactician_confidence)
-            else:
-                position_size_result = {'final_position_size': 0.0, 'error': 'Position sizer not available'}
-            leverage_sizer = getattr(self.tactician, 'leverage_sizer', None)
-            if leverage_sizer:
-                leverage_result = await leverage_sizer.calculate_leverage(ml_predictions = ml_predictions, current_price = current_price, target_direction = dual_model_decision.get('action', 'HOLD'), analyst_confidence = analyst_confidence, tactician_confidence = tactician_confidence)
-            else:
-                leverage_result = {'final_leverage': 1.0, 'error': 'Leverage sizer not available'}
-            integrated_decision = {**dual_model_decision, 'position_sizing': position_size_result, 'leverage_sizing': leverage_result, 'integrated': True, 'timestamp': datetime.now().isoformat()}
-            self.logger.info(f"Integrated dual model decision with tactician - Position: {position_size_result.get('final_position_size', 0.0)}, Leverage: {leverage_result.get('final_leverage', 1.0)}")
-            return integrated_decision
-        except Exception as e:
-            self.logger.exception('Error integrating dual model with tactician')
-            return {'error': str(e), 'dual_model_decision': dual_model_decision, 'integrated': False}
-
-    async def _record_trade_decision_in_monitoring(self, decision_result: dict[str, Any], integrated_decision: dict[str, Any], market_data: pd.DataFrame, current_price: float) -> None:
-        """
-        Record trade decision in enhanced monitoring system.
-
-        Args:
-            decision_result: Decision from dual model system
-            integrated_decision: Integrated tactical decision
-            market_data: Current market data
-            current_price: Current market price
-        """
-        try:
-            if not self.enhanced_monitoring:
-                return
-
-            # Get trading mode from environment
-            trading_mode = os.environ.get('TRADING_MODE', 'PAPER').upper()
-            
-            # Create comprehensive trade decision context
-            trade_decision = {
-                'timestamp': datetime.now(),
-                'trading_mode': trading_mode,
-                'exchange': 'BINANCE',  # Default exchange
-                'symbol': 'ETHUSDT',    # Default symbol
-                'price': current_price,
-                'action': decision_result.get('action', 'HOLD'),
-                'confidence': decision_result.get('final_confidence', 0.0),
-                'analyst_confidence': decision_result.get('analyst_confidence', 0.0),
-                'tactician_confidence': decision_result.get('tactician_confidence', 0.0),
-                'position_size': integrated_decision.get('position_sizing', {}).get('final_position_size', 0.0),
-                'leverage': integrated_decision.get('leverage_sizing', {}).get('final_leverage', 1.0),
-                'market_data': market_data.to_dict() if not market_data.empty else {},
-                'decision_metadata': {
-                    'dual_model_decision': decision_result,
-                    'integrated_decision': integrated_decision,
-                    'cycle_count': self.cycle_count
-                }
-            }
-
-            # Record the trade decision using auto monitoring launcher
-            if self.auto_monitoring_launcher:
-                await self.auto_monitoring_launcher.capture_trade_decision(trade_decision)
-            elif self.enhanced_monitoring:
-                await self.enhanced_monitoring.record_comprehensive_trade_decision(trade_decision)
-            
-            self.logger.info('📊 Trade decision recorded in enhanced monitoring system')
-            
-        except Exception as e:
-            self.logger.exception(f'Error recording trade decision in monitoring: {e}')
 
     def get_pipeline_status(self) -> dict[str, Any]:
         """
@@ -652,13 +522,7 @@ class AresPipeline:
         Returns:
             Dict[str, Any]: Pipeline status information
         """
-        status = {'is_running': self.is_running, 'start_time': self.start_time, 'cycle_count': self.cycle_count, 'last_cycle_time': self.last_cycle_time, 'components': {'analyst': self.analyst is not None, 'strategist': self.strategist is not None, 'tactician': self.tactician is not None, 'supervisor': self.supervisor is not None, 'state_manager': self.state_manager is not None, 'event_bus': self.event_bus is not None, 'dual_model_system': self.dual_model_system is not None, 'enhanced_monitoring': self.enhanced_monitoring is not None, 'auto_monitoring_launcher': self.auto_monitoring_launcher is not None}}
-        if self.dual_model_system:
-            try:
-                dual_model_status = self.dual_model_system.get_system_info()
-                status['dual_model_system_status'] = dual_model_status
-            except Exception as e:
-                status['dual_model_system_status'] = {'error': str(e)}
+        status = {'is_running': self.is_running, 'start_time': self.start_time, 'cycle_count': self.cycle_count, 'last_cycle_time': self.last_cycle_time, 'components': {'analyst': self.analyst is not None, 'strategist': self.strategist is not None, 'tactician': self.tactician is not None, 'supervisor': self.supervisor is not None, 'state_manager': self.state_manager is not None, 'event_bus': self.event_bus is not None, 'enhanced_monitoring': self.enhanced_monitoring is not None, 'auto_monitoring_launcher': self.auto_monitoring_launcher is not None}}
         if self.performance_monitor:
             try:
                 performance_status = self.performance_monitor.get_performance_summary()
@@ -695,8 +559,6 @@ class AresPipeline:
                 await self.auto_monitoring_launcher.stop()
             if self.enhanced_monitoring:
                 await self.enhanced_monitoring.stop()
-            if self.dual_model_system:
-                await self.dual_model_system.stop()
             if self.performance_dashboard:
                 await self.performance_dashboard.stop()
             if self.performance_monitor:
@@ -723,7 +585,7 @@ class AresPipeline:
     async def _initialize_dual_model_system(self) -> None:
         """Initialize training steps system."""
         try:
-            if TRAINING_STEPS_AVAILABLE:
+            if TRAINING_STEPS_AVAILABLE and GeneralModelTrainer is not None:
                 # Initialize the new training steps components
                 self.dual_model_system = GeneralModelTrainer(self.config)
                 self.logger.info('✅ Training Steps System initialized successfully')
@@ -732,7 +594,7 @@ class AresPipeline:
                 self.logger.info("   📊 Analyst Model Trainer available")
                 self.logger.info("   📊 Tactician Model Trainer available")
             else:
-                self.logger.warning('Dual Model System not available')
+                self.logger.warning('Dual Model System not available - training steps not loaded')
         except Exception:
             self.logger.exception('Error initializing dual model system')
 
@@ -841,16 +703,6 @@ class AresPipeline:
             self.logger.exception(f'Error checking dependencies: {e}')
             raise
 
-    def _get_dual_model_config(self) -> dict[str, Any]:
-        """Get dual model system configuration."""
-        try:
-            dual_model_config = get_dual_model_config()
-            if dual_model_config:
-                return {'dual_model_system': dual_model_config}
-            return {'dual_model_system': {'analyst_timeframes': ['30m', '15m', '5m'], 'tactician_timeframes': ['1m'], 'analyst_confidence_threshold': 0.5, 'tactician_confidence_threshold': 0.6, 'enter_signal_validity_duration': 120, 'signal_check_interval': 10, 'neutral_signal_threshold': 0.5, 'close_signal_threshold': 0.4, 'position_close_confidence_threshold': 0.6, 'enable_ensemble_analysis': True}}
-        except Exception:
-            self.logger.exception('Error getting dual model config')
-            return {'dual_model_system': {'analyst_timeframes': ['30m', '15m', '5m'], 'tactician_timeframes': ['1m'], 'analyst_confidence_threshold': 0.5, 'tactician_confidence_threshold': 0.6, 'enter_signal_validity_duration': 120, 'signal_check_interval': 10, 'neutral_signal_threshold': 0.5, 'close_signal_threshold': 0.4, 'position_close_confidence_threshold': 0.6, 'enable_ensemble_analysis': True}}
 
 async def main() -> None:
     """Main entry point for the Ares Pipeline."""

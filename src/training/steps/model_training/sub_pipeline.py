@@ -47,19 +47,211 @@ try:
 except ImportError as e:
     tprint_warning(f"Debug utilities not available: {e}")
     DEBUG_UTILITIES_AVAILABLE = False
-    
-    # Fallback debugger
-    class TrainingDebugger:
-        def __init__(self, step_name, config=None):
-            self.step_name = step_name
-        def comprehensive_validation(self, **kwargs):
+
+# Import universal validation integration for comprehensive validation
+try:
+    from src.utils.ml_common.training.universal_validation_integration import (
+        get_validation_integrator,
+        ValidationIntegrationConfig,
+        intelligently_select_utilities,
+        perform_data_leakage_check,
+        perform_enhanced_validation,
+        perform_complexity_analysis
+    )
+    UNIVERSAL_VALIDATION_AVAILABLE = True
+except ImportError as e:
+    tprint_warning(f"Universal validation integration not available: {e}")
+    UNIVERSAL_VALIDATION_AVAILABLE = False
+    get_validation_integrator = None
+    ValidationIntegrationConfig = None
+    intelligently_select_utilities = None
+    perform_data_leakage_check = None
+    perform_enhanced_validation = None
+    perform_complexity_analysis = None
+
+# Enhanced TrainingDebugger with universal validation integration
+class EnhancedTrainingDebugger:
+    """Enhanced training debugger with universal validation integration."""
+
+    def __init__(self, step_name, config=None):
+        """Initialize enhanced training debugger."""
+        self.step_name = step_name
+        self.config = config
+        self.validation_integrator = None
+
+        # Initialize universal validation if available
+        if UNIVERSAL_VALIDATION_AVAILABLE:
+            try:
+                validation_config = ValidationIntegrationConfig(
+                    enable_validation=True,
+                    enable_overfitting_detection=True,
+                    enable_temporal_validation=True,
+                    enable_data_leakage_prevention=True,
+                    enable_enhanced_validation=True,
+                    enable_model_complexity_analysis=True,
+                    save_validation_reports=True,
+                    validation_report_directory=f"reports/validation/{step_name}",
+                    enable_validation_logging=True,
+                    auto_select_utilities=True
+                )
+                self.validation_integrator = get_validation_integrator(validation_config)
+                tprint_debug(f"✅ Universal validation integrated into {step_name} debugger")
+            except Exception as e:
+                tprint_warning(f"⚠️ Failed to initialize universal validation in debugger: {e}")
+
+    def comprehensive_validation(self, **kwargs) -> bool:
+        """Perform comprehensive validation using universal validation system."""
+        try:
+            # Use universal validation if available
+            if self.validation_integrator and 'data_dir' in kwargs:
+                data_dir = kwargs['data_dir']
+                symbol = kwargs.get('symbol', 'BTCUSDT')
+                timeframe = kwargs.get('timeframe', '1m')
+                exchange = kwargs.get('exchange', 'binance')
+
+                tprint_debug(f"🔍 Running comprehensive validation for {self.step_name}")
+
+                # Check data directory
+                data_path = Path(data_dir)
+                if not data_path.exists():
+                    tprint_warning(f"⚠️ Data directory does not exist: {data_dir}")
+                    return False
+
+                # Additional validation checks
+                validation_checks = []
+
+                # Check for required data files
+                required_files = [
+                    f"{data_dir}/processed/{symbol}_{exchange}_{timeframe}.parquet",
+                    f"{data_dir}/raw/{symbol}_{exchange}_{timeframe}.parquet"
+                ]
+
+                for file_path in required_files:
+                    if Path(file_path).exists():
+                        validation_checks.append(f"✅ {file_path.split('/')[-1]} found")
+                    else:
+                        validation_checks.append(f"❌ {file_path.split('/')[-1]} missing")
+
+                # Log validation results
+                for check in validation_checks:
+                    if "❌" in check:
+                        tprint_warning(check)
+                    else:
+                        tprint_debug(check)
+
+                # Check system resources
+                try:
+                    import psutil
+                    memory = psutil.virtual_memory()
+                    disk = psutil.disk_usage('/')
+
+                    if memory.available < 1024 * 1024 * 1024:  # Less than 1GB
+                        tprint_warning("⚠️ Low memory available")
+                    else:
+                        tprint_debug(f"✅ Memory available: {memory.available / 1024 / 1024 / 1024:.1f} GB")
+
+                    if disk.free < 1024 * 1024 * 1024:  # Less than 1GB
+                        tprint_warning("⚠️ Low disk space")
+                    else:
+                        tprint_debug(f"✅ Disk space available: {disk.free / 1024 / 1024 / 1024:.1f} GB")
+
+                except ImportError:
+                    tprint_debug("ℹ️ psutil not available for system checks")
+
+                return True
+
+            # Fallback to basic validation
+            tprint_debug(f"🔍 Running basic validation for {self.step_name}")
             return True
-        def debug_context(self, operation_name):
-            from contextlib import contextmanager
-            @contextmanager
-            def dummy_context():
+
+        except Exception as e:
+            tprint_error(f"❌ Validation failed for {self.step_name}: {e}")
+            return False
+
+    def validate_training_data(self, training_data: pd.DataFrame) -> object:
+        """Validate training data using universal validation system."""
+        class ValidationResult:
+            def __init__(self, is_valid: bool, error_message: str = "", suggestions: List[str] = None):
+                self.is_valid = is_valid
+                self.error_message = error_message
+                self.suggestions = suggestions or []
+
+        try:
+            if training_data is None:
+                return ValidationResult(False, "Training data is None", ["Check data loading"])
+
+            if training_data.empty:
+                return ValidationResult(False, "Training data is empty", ["Check data source"])
+
+            # Basic data quality checks
+            if training_data.isnull().sum().sum() > 0:
+                null_count = training_data.isnull().sum().sum()
+                suggestions = ["Handle missing values before training", "Check data preprocessing"]
+                return ValidationResult(False, f"Found {null_count} missing values", suggestions)
+
+            # Check for temporal integrity if timestamps exist
+            if 'timestamp' in training_data.columns or training_data.index.name == 'timestamp':
+                try:
+                    if UNIVERSAL_VALIDATION_AVAILABLE and self.validation_integrator:
+                        # Use universal validation for temporal checks
+                        if 'timestamp' in training_data.columns:
+                            timestamp_col = 'timestamp'
+                        else:
+                            timestamp_col = training_data.index.name
+
+                        leakage_result = perform_data_leakage_check(
+                            training_data, timestamp_col, dataset_name=f"{self.step_name}_data"
+                        )
+
+                        if leakage_result['leakage_detected']:
+                            return ValidationResult(
+                                False,
+                                f"Data leakage detected: {leakage_result['severity']}",
+                                [f"Fix data leakage: {rec}" for rec in leakage_result['recommendations']]
+                            )
+
+                except Exception as temporal_error:
+                    tprint_warning(f"⚠️ Temporal validation failed: {temporal_error}")
+
+            return ValidationResult(True, "", ["Data validation passed"])
+
+        except Exception as e:
+            return ValidationResult(False, str(e), ["Check data quality and format"])
+
+    def debug_context(self, operation_name: str):
+        """Create debug context for operations."""
+        from contextlib import contextmanager
+        @contextmanager
+        def debug_context():
+            start_time = time.time()
+            tprint_debug(f"🔄 Starting {operation_name} in {self.step_name}")
+
+            try:
                 yield
-            return dummy_context()
+                duration = time.time() - start_time
+                tprint_debug(f"✅ {operation_name} completed in {duration:.3f}s")
+            except Exception as e:
+                duration = time.time() - start_time
+                tprint_error(f"❌ {operation_name} failed after {duration:.3f}s: {e}")
+                raise
+
+        return debug_context
+
+    def create_debug_report(self) -> Dict[str, Any]:
+        """Create comprehensive debug report."""
+        return {
+            'step_name': self.step_name,
+            'config': self.config,
+            'universal_validation_available': UNIVERSAL_VALIDATION_AVAILABLE,
+            'validation_integrator_available': self.validation_integrator is not None,
+            'timestamp': datetime.now().isoformat()
+        }
+
+# Use EnhancedTrainingDebugger if available, otherwise fallback to basic
+if DEBUG_UTILITIES_AVAILABLE:
+    TrainingDebugger = TrainingDebugger  # Use the imported one
+else:
+    TrainingDebugger = EnhancedTrainingDebugger  # Use our enhanced version
 
 logger = system_logger.getChild('ModelTrainingSubPipeline')
 

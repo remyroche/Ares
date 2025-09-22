@@ -407,21 +407,45 @@ class EnhancedTrainingUtils:
             model.fit(X_train, y_train)
             return model, {'early_stopping_applied': False, 'error': str(e)}
     
-    def _apply_neural_network_early_stopping(self, 
-                                           model: Any, 
-                                           X_train: np.ndarray, 
+    def _apply_neural_network_early_stopping(self,
+                                           model: Any,
+                                           X_train: np.ndarray,
                                            y_train: np.ndarray,
-                                           X_val: np.ndarray, 
+                                           X_val: np.ndarray,
                                            y_val: np.ndarray) -> Tuple[Any, Dict[str, Any]]:
-        """Apply early stopping to neural network models."""
+        """Apply early stopping to neural network models using enhanced system."""
         try:
-            # This would need to be implemented based on the specific neural network framework
-            # For now, use standard training
-            model.fit(X_train, y_train)
-            return model, {'early_stopping_applied': False, 'note': 'Neural network early stopping not implemented'}
-            
+            # Import enhanced early stopping
+            from .enhanced_early_stopping import apply_enhanced_early_stopping, get_early_stopping_config
+
+            # Create early stopping config
+            config = get_early_stopping_config(
+                enabled=True,
+                patience=self.early_stopping_config.patience,
+                min_delta=self.early_stopping_config.min_delta,
+                mode=self.early_stopping_config.mode,
+                monitor=self.early_stopping_config.monitor,
+                nn_learning_rate=0.001,
+                nn_batch_size=32,
+                nn_epochs=100
+            )
+
+            # Apply enhanced early stopping
+            trained_model, result = apply_enhanced_early_stopping(
+                model, X_train, y_train, X_val, y_val, 'neural_network', config
+            )
+
+            return trained_model, {
+                'early_stopping_applied': result.early_stopping_applied,
+                'best_epoch': result.best_epoch,
+                'best_score': result.best_score,
+                'training_stopped': result.training_stopped,
+                'reason': result.reason
+            }
+
         except Exception as e:
-            tprint_warning(f"⚠️ Neural network early stopping failed: {e}")
+            tprint_warning(f"⚠️ Enhanced neural network early stopping failed: {e}")
+            # Fallback to standard training
             model.fit(X_train, y_train)
             return model, {'early_stopping_applied': False, 'error': str(e)}
     
@@ -433,36 +457,31 @@ class EnhancedTrainingUtils:
                                     y_val: np.ndarray) -> Tuple[Any, Dict[str, Any]]:
         """Apply generic early stopping for other models."""
         try:
-            # For models that don't support built-in early stopping,
-            # we can implement manual early stopping by monitoring validation performance
-            best_score = float('inf') if self.early_stopping_config.mode == 'min' else float('-inf')
-            best_model = None
-            patience_counter = 0
-            
-            # This is a simplified implementation
-            # In practice, you'd need to implement iterative training
-            model.fit(X_train, y_train)
-            
-            # Evaluate on validation set
-            if hasattr(model, 'predict'):
-                y_pred = model.predict(X_val)
-                if self.early_stopping_config.monitor == 'validation_loss':
-                    score = mean_squared_error(y_val, y_pred)
-                else:
-                    score = r2_score(y_val, y_pred)
-                
-                if (self.early_stopping_config.mode == 'min' and score < best_score) or \
-                   (self.early_stopping_config.mode == 'max' and score > best_score):
-                    best_score = score
-                    best_model = clone(model)
-                    patience_counter = 0
-                else:
-                    patience_counter += 1
-            
-            return best_model if best_model else model, {
-                'early_stopping_applied': True,
-                'best_score': best_score,
-                'patience_counter': patience_counter
+            # Use enhanced early stopping system for generic models
+            from .enhanced_early_stopping import apply_enhanced_early_stopping, get_early_stopping_config
+
+            # Create early stopping config
+            config = get_early_stopping_config(
+                enabled=True,
+                patience=self.early_stopping_config.patience,
+                min_delta=self.early_stopping_config.min_delta,
+                mode=self.early_stopping_config.mode,
+                monitor=self.early_stopping_config.monitor,
+                generic_check_frequency=1,
+                generic_max_iterations=100
+            )
+
+            # Apply enhanced early stopping
+            trained_model, result = apply_enhanced_early_stopping(
+                model, X_train, y_train, X_val, y_val, 'generic', config
+            )
+
+            return trained_model, {
+                'early_stopping_applied': result.early_stopping_applied,
+                'best_epoch': result.best_epoch,
+                'best_score': result.best_score,
+                'training_stopped': result.training_stopped,
+                'reason': result.reason
             }
             
         except Exception as e:

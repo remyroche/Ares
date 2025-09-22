@@ -12,6 +12,14 @@ from typing import Any, Dict, List, Optional, Tuple, Callable
 
 import numpy as np
 
+# Initialize logger early to ensure availability in import error handlers
+try:
+    from ..logger import get_logger
+    _LOGGER = get_logger("MLCommon.Thresholding")
+except Exception:
+    import logging
+    _LOGGER = logging.getLogger("MLCommon.Thresholding")
+
 # Import torch for GPU acceleration
 try:
     import torch
@@ -46,12 +54,6 @@ if not SKLEARN_AVAILABLE:
     raise ImportError("Scikit-learn is required for thresholding utilities")
 
 # Import M1 utilities for enhanced performance
-try:
-    from ..logger import get_logger
-    _LOGGER = get_logger("MLCommon.Thresholding")
-except Exception:
-    import logging
-    _LOGGER = logging.getLogger("MLCommon.Thresholding")
 
 # Import M1 utilities
 try:

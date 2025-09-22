@@ -1638,8 +1638,14 @@ class FeatureSelectionFramework:
             
             # Memory optimization
             if config['memory_optimization']:
-                # Memory optimization handled by unified matrix operations
-                pass
+                # Trigger garbage collection and log memory stats if available
+                try:
+                    import gc
+                    gc.collect()
+                    if 'memory_stats' in locals():
+                        _LOGGER.debug(f"Memory stats post-optimization: {memory_stats}")
+                except Exception as mem_opt_err:
+                    _LOGGER.debug(f"Memory optimization noop/fallback: {mem_opt_err}")
             
             _LOGGER.info(f"🎉 Hierarchical pipeline completed successfully!")
             _LOGGER.info(f"📊 Final result: {len(final_features)}/{features_target_count} target features")

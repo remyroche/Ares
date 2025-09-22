@@ -136,6 +136,17 @@ try:
         MemoryTracker
     )
     from .shared_utilities.training_error_handler import TrainingMetrics, ModelResult
+
+    # Enhanced analysis utilities
+    try:
+        from .shared_utilities.learning_curve_analysis import LearningCurveAnalyzer
+        from .shared_utilities.bootstrap_confidence_intervals import BootstrapConfidenceIntervalAnalyzer
+        ENHANCED_ANALYSIS_AVAILABLE = True
+    except ImportError:
+        LearningCurveAnalyzer = None
+        BootstrapConfidenceIntervalAnalyzer = None
+        ENHANCED_ANALYSIS_AVAILABLE = False
+
     SHARED_UTILITIES_AVAILABLE = True
     tprint("✅ Shared utilities loaded successfully")
 except ImportError as e:

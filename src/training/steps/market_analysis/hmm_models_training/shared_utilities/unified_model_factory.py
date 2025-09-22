@@ -2,20 +2,82 @@
 Unified Model Factory
 
 Provides centralized model creation with standardized configurations
-across all HMM training components. Thread-safe implementation.
+across all HMM training components. Thread-safe implementation with
+enhanced regularization for small datasets.
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union, Tuple
 import warnings
 import threading
 from copy import deepcopy
+import numpy as np
 
 warnings.filterwarnings('ignore')
 
 
 class UnifiedModelFactory:
     """Thread-safe unified factory for creating model instances with standardized configuration."""
-    
+
+    # Enhanced regularization thresholds
+    SMALL_DATASET_THRESHOLD = 100  # samples per regime
+    MEDIUM_DATASET_THRESHOLD = 500  # samples per regime
+
+    # Regularization scaling factors for small datasets
+    SMALL_DATASET_REG_MULTIPLIER = 2.0
+    MEDIUM_DATASET_REG_MULTIPLIER = 1.5
+
+    @classmethod
+    def _calculate_adaptive_regularization(cls, regime_labels: Optional[np.ndarray] = None) -> Dict[str, float]:
+        """
+        Calculate adaptive regularization parameters based on dataset size.
+
+        Args:
+            regime_labels: Array of regime labels to analyze sample distribution
+
+        Returns:
+            Dictionary with adaptive regularization parameters
+        """
+        base_reg_alpha = 0.1
+        base_reg_lambda = 0.1
+
+        if regime_labels is None:
+            return {
+                'reg_alpha': base_reg_alpha,
+                'reg_lambda': base_reg_lambda,
+                'dataset_size': 'unknown'
+            }
+
+        # Calculate samples per regime
+        unique_regimes, regime_counts = np.unique(regime_labels, return_counts=True)
+        min_samples_per_regime = np.min(regime_counts)
+        avg_samples_per_regime = np.mean(regime_counts)
+
+        # Determine regularization scaling based on dataset size
+        if min_samples_per_regime < cls.SMALL_DATASET_THRESHOLD:
+            # Small dataset: increase regularization significantly
+            reg_multiplier = cls.SMALL_DATASET_REG_MULTIPLIER
+            dataset_size = 'small'
+        elif min_samples_per_regime < cls.MEDIUM_DATASET_THRESHOLD:
+            # Medium dataset: moderate increase in regularization
+            reg_multiplier = cls.MEDIUM_DATASET_REG_MULTIPLIER
+            dataset_size = 'medium'
+        else:
+            # Large dataset: use base regularization
+            reg_multiplier = 1.0
+            dataset_size = 'large'
+
+        adaptive_reg_alpha = base_reg_alpha * reg_multiplier
+        adaptive_reg_lambda = base_reg_lambda * reg_multiplier
+
+        return {
+            'reg_alpha': adaptive_reg_alpha,
+            'reg_lambda': adaptive_reg_lambda,
+            'dataset_size': dataset_size,
+            'min_samples_per_regime': int(min_samples_per_regime),
+            'avg_samples_per_regime': float(avg_samples_per_regime),
+            'reg_multiplier': reg_multiplier
+        }
+
     _model_configs = {
         'lightgbm': {
             'class': 'lightgbm.LGBMClassifier',
@@ -119,11 +181,44 @@ class UnifiedModelFactory:
             # Merge default and custom parameters
             params = {**config['default_params'], **custom_params}
             return model_class(**params)
-            
+
         except ImportError as e:
             raise ImportError(f"Failed to import {model_type} model: {e}")
         except Exception as e:
             raise ValueError(f"Failed to create {model_type} model: {e}")
+
+    @classmethod
+    def create_model_with_adaptive_regularization(
+        cls,
+        model_type: str,
+        regime_labels: Optional[np.ndarray] = None,
+        **custom_params
+    ) -> Tuple[Any, Dict[str, Any]]:
+        """
+        Create model instance with adaptive regularization based on dataset size.
+
+        Args:
+            model_type: Type of model to create
+            regime_labels: Array of regime labels to analyze sample distribution
+            **custom_params: Additional model parameters
+
+        Returns:
+            Tuple of (model_instance, regularization_info_dict)
+        """
+        # Calculate adaptive regularization parameters
+        reg_info = cls._calculate_adaptive_regularization(regime_labels)
+
+        # Add adaptive regularization to custom parameters
+        adaptive_params = {
+            'reg_alpha': reg_info['reg_alpha'],
+            'reg_lambda': reg_info['reg_lambda'],
+            **custom_params
+        }
+
+        # Create model with adaptive parameters
+        model = cls.create_model(model_type, **adaptive_params)
+
+        return model, reg_info
     
     @classmethod
     def get_available_models(cls) -> List[str]:

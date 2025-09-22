@@ -22,6 +22,21 @@ except ImportError:
     PANDAS_AVAILABLE = False
     pd = None
 
+# Optional imports for enhanced analysis
+try:
+    from .learning_curve_analysis import LearningCurveAnalyzer
+    LEARNING_CURVE_AVAILABLE = True
+except ImportError:
+    LEARNING_CURVE_AVAILABLE = False
+    LearningCurveAnalyzer = None
+
+try:
+    from .bootstrap_confidence_intervals import BootstrapConfidenceIntervalAnalyzer
+    BOOTSTRAP_AVAILABLE = True
+except ImportError:
+    BOOTSTRAP_AVAILABLE = False
+    BootstrapConfidenceIntervalAnalyzer = None
+
 logger = logging.getLogger(__name__)
 
 
@@ -596,9 +611,11 @@ class ValidationUtils:
     @staticmethod
     def detect_overfitting_comprehensive(train_predictions, test_predictions, train_labels, test_labels,
                                        train_probabilities=None, test_probabilities=None,
-                                       model=None, feature_importance=None):
+                                       model=None, feature_importance=None,
+                                       X_train=None, X_test=None, y_train=None, y_test=None):
         """
-        Comprehensive overfitting detection with multiple validation methods.
+        Comprehensive overfitting detection with multiple validation methods including
+        learning curve analysis and bootstrap confidence intervals.
 
         Args:
             train_predictions: Predictions on training set
@@ -609,9 +626,13 @@ class ValidationUtils:
             test_probabilities: Probabilities on test set (optional)
             model: Trained model object (optional)
             feature_importance: Feature importance scores (optional)
+            X_train: Training features (optional, for enhanced analysis)
+            X_test: Test features (optional, for enhanced analysis)
+            y_train: Training labels (optional, for enhanced analysis)
+            y_test: Test labels (optional, for enhanced analysis)
 
         Returns:
-            Dictionary with overfitting analysis results
+            Dictionary with comprehensive overfitting analysis results
         """
         try:
             import numpy as np
@@ -767,6 +788,63 @@ class ValidationUtils:
             if feature_analysis and feature_analysis['feature_concentration_ratio'] < 0.05:
                 warnings.append("⚠️ Features are highly concentrated - may indicate overfitting to specific patterns")
 
+            # Enhanced analysis with learning curves and bootstrap
+            learning_curve_analysis = {}
+            bootstrap_analysis = {}
+
+            # Learning curve analysis
+            if (LEARNING_CURVE_AVAILABLE and model is not None and
+                X_train is not None and X_test is not None and
+                y_train is not None and y_test is not None):
+
+                try:
+                    analyzer = LearningCurveAnalyzer(random_state=42)
+                    learning_curve_analysis = analyzer.analyze_learning_curve(
+                        model, X_train, y_train, X_test, y_test
+                    )
+
+                    # Add learning curve recommendations
+                    if learning_curve_analysis.get('overfitting_risk') == 'high':
+                        recommendations.append("Learning curve shows high overfitting risk - increase regularization")
+                    elif learning_curve_analysis.get('overfitting_risk') == 'medium':
+                        recommendations.append("Learning curve shows moderate overfitting risk - monitor closely")
+
+                    if learning_curve_analysis.get('training_efficiency') == 'underfitting':
+                        recommendations.append("Learning curve suggests underfitting - consider increasing model capacity")
+
+                except Exception as e:
+                    logger.warning(f"Learning curve analysis failed: {e}")
+                    learning_curve_analysis = {'error': str(e)}
+
+            # Bootstrap confidence interval analysis
+            if (BOOTSTRAP_AVAILABLE and model is not None and
+                X_train is not None and X_test is not None and
+                y_train is not None and y_test is not None):
+
+                try:
+                    bootstrap_analyzer = BootstrapConfidenceIntervalAnalyzer(
+                        n_bootstrap=500,  # Reduced for speed
+                        confidence_level=0.95,
+                        n_jobs=-1
+                    )
+
+                    bootstrap_analysis = bootstrap_analyzer.analyze_model_stability(
+                        model, np.vstack([X_train, X_test]), np.concatenate([y_train, y_test])
+                    )
+
+                    # Add bootstrap-based recommendations
+                    if bootstrap_analysis.get('overfitting_probability', 0) > 0.7:
+                        recommendations.append("Bootstrap analysis shows high overfitting probability - increase regularization significantly")
+                    elif bootstrap_analysis.get('overfitting_probability', 0) > 0.4:
+                        recommendations.append("Bootstrap analysis shows moderate overfitting probability - consider regularization adjustment")
+
+                    if bootstrap_analysis.get('stability_level') == 'low':
+                        recommendations.append("Model stability is low - consider ensemble methods or more robust algorithms")
+
+                except Exception as e:
+                    logger.warning(f"Bootstrap analysis failed: {e}")
+                    bootstrap_analysis = {'error': str(e)}
+
             result = {
                 'is_overfitting': is_overfitting,
                 'severity': severity,
@@ -784,6 +862,8 @@ class ValidationUtils:
                 'log_loss_gap': float(log_loss_gap) if log_loss_gap is not None else None,
                 'confidence_analysis': confidence_analysis,
                 'feature_analysis': feature_analysis,
+                'learning_curve_analysis': learning_curve_analysis,
+                'bootstrap_analysis': bootstrap_analysis,
                 'recommendations': recommendations,
                 'warnings': warnings,
                 'validation_score': test_accuracy  # Overall validation score for model selection
@@ -796,7 +876,9 @@ class ValidationUtils:
                 'error': str(e),
                 'is_overfitting': False,
                 'severity': 'unknown',
-                'warnings': [f"⚠️ Overfitting detection failed: {e}"]
+                'warnings': [f"⚠️ Overfitting detection failed: {e}"],
+                'learning_curve_analysis': {'error': str(e)},
+                'bootstrap_analysis': {'error': str(e)}
             }
 
     @staticmethod

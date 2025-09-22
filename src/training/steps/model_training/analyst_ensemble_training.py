@@ -175,7 +175,7 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
                     min_samples_per_regime=1000,
                     enable_data_augmentation=True,
                     augmentation_method="smote",
-                    model_save_path="./models/analyst_ensemble_models_5m",
+                    model_save_path="generated/model_training/models/analyst_ensemble_models_5m",
                     evaluation_metrics=["mse", "mae", "r2", "mape", "smape"]
                 )
                 tprint_success("✅ Default configuration created successfully")

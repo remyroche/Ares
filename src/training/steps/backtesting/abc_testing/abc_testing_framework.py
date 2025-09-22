@@ -1014,7 +1014,7 @@ class ABCTestingFramework:
         self.logger.info("💾 Saving results...")
         
         # Create output directory
-        output_dir = self.data_dir / "abc_testing_results" / self.config.test_name
+        output_dir = Path("outcomes/backtesting") / "abc_testing" / self.config.test_name
         ensure_directory(output_dir)
         
         # Save main results

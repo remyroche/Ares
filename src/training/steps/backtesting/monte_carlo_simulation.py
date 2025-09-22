@@ -648,7 +648,7 @@ class MonteCarloSimulationStep:
         self.logger.info("💾 Saving results...")
         
         # Create output directory
-        output_dir = self.data_dir / "backtesting_results" / "monte_carlo"
+        output_dir = Path("outcomes/backtesting") / "monte_carlo"
         ensure_directory(output_dir)
         
         # Save main results

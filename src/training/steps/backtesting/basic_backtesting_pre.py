@@ -997,7 +997,7 @@ class BasicBacktestingPreStep:
         self.logger.info("💾 Saving results...")
         
         # Create output directory
-        output_dir = self.data_dir / "backtesting_results" / "basic_pre"
+        output_dir = Path("outcomes/backtesting") / "basic_pre"
         ensure_directory(output_dir)
         
         # Save main results

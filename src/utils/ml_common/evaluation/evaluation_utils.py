@@ -17,6 +17,23 @@ from sklearn.metrics import (
 from src.utils.math_validation import safe_divide, safe_log, validate_finite
 from src.utils.logger import system_logger
 
+# Enhanced analysis imports
+try:
+    from src.utils.ml_common.evaluation.enhanced_learning_curve_analysis import EnhancedLearningCurveAnalyzer, LearningCurveAnalysisResult
+    ENHANCED_LEARNING_CURVE_AVAILABLE = True
+except ImportError:
+    ENHANCED_LEARNING_CURVE_AVAILABLE = False
+    EnhancedLearningCurveAnalyzer = None
+    LearningCurveAnalysisResult = None
+
+try:
+    from src.utils.ml_common.evaluation.enhanced_bootstrap_confidence_intervals import EnhancedBootstrapConfidenceIntervalAnalyzer, BootstrapAnalysisResult
+    ENHANCED_BOOTSTRAP_AVAILABLE = True
+except ImportError:
+    ENHANCED_BOOTSTRAP_AVAILABLE = False
+    EnhancedBootstrapConfidenceIntervalAnalyzer = None
+    BootstrapAnalysisResult = None
+
 logger = system_logger.getChild('EvaluationUtils')
 
 
@@ -384,5 +401,183 @@ def create_evaluation_report(results: Dict[str, Any], output_path: Optional[str]
             logger.info(f"✅ Evaluation report saved to {output_path}")
         except Exception as e:
             logger.warning(f"⚠️ Failed to save evaluation report: {e}")
-    
+
     return report
+
+    def analyze_learning_curves(
+        self,
+        model: Any,
+        X_train: np.ndarray,
+        y_train: np.ndarray,
+        X_test: np.ndarray,
+        y_test: np.ndarray,
+        train_sizes: Optional[np.ndarray] = None,
+        cv_folds: int = 5,
+        scoring: str = 'accuracy'
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Perform comprehensive learning curve analysis using enhanced analyzer.
+
+        Args:
+            model: Trained model instance
+            X_train: Training features
+            y_train: Training labels
+            X_test: Test features
+            y_test: Test labels
+            train_sizes: Training sizes to test
+            cv_folds: Number of cross-validation folds
+            scoring: Scoring metric to use
+
+        Returns:
+            Dictionary with learning curve analysis results or None if not available
+        """
+        if not ENHANCED_LEARNING_CURVE_AVAILABLE:
+            logger.warning("⚠️ Enhanced learning curve analysis not available")
+            return None
+
+        try:
+            analyzer = EnhancedLearningCurveAnalyzer(random_state=42, n_jobs=-1)
+            result = analyzer.analyze_learning_curve(
+                model, X_train, y_train, X_test, y_test, train_sizes, cv_folds, scoring
+            )
+
+            # Convert dataclass to dictionary for compatibility
+            if isinstance(result, LearningCurveAnalysisResult):
+                return {
+                    'learning_rate': result.learning_rate,
+                    'convergence_stability': result.convergence_stability,
+                    'overfitting_risk': result.overfitting_risk,
+                    'training_efficiency': result.training_efficiency,
+                    'max_score_gap': result.max_score_gap,
+                    'final_score_gap': result.final_score_gap,
+                    'early_learning_slope': result.early_learning_slope,
+                    'convergence_stability_score': result.convergence_stability_score,
+                    'train_sizes': result.train_sizes,
+                    'train_scores_mean': result.train_scores_mean,
+                    'train_scores_std': result.train_scores_std,
+                    'val_scores_mean': result.val_scores_mean,
+                    'val_scores_std': result.val_scores_std,
+                    'score_gaps': result.score_gaps,
+                    'final_train_score': result.final_train_score,
+                    'final_validation_score': result.final_validation_score,
+                    'test_score': result.test_score,
+                    'anomalies': result.anomalies,
+                    'recommendations': result.recommendations
+                }
+            else:
+                return result
+
+        except Exception as e:
+            logger.error(f"Learning curve analysis failed: {e}")
+            return None
+
+    def analyze_bootstrap_confidence_intervals(
+        self,
+        model: Any,
+        X: np.ndarray,
+        y: np.ndarray,
+        train_size: float = 0.7,
+        scoring_metrics: List[str] = None
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Perform bootstrap confidence interval analysis using enhanced analyzer.
+
+        Args:
+            model: Trained model instance
+            X: Feature matrix
+            y: Target labels
+            train_size: Fraction of data to use for training in each bootstrap
+            scoring_metrics: List of metrics to evaluate
+
+        Returns:
+            Dictionary with bootstrap analysis results or None if not available
+        """
+        if not ENHANCED_BOOTSTRAP_AVAILABLE:
+            logger.warning("⚠️ Enhanced bootstrap analysis not available")
+            return None
+
+        if scoring_metrics is None:
+            scoring_metrics = ['accuracy', 'f1', 'precision', 'recall']
+
+        try:
+            analyzer = EnhancedBootstrapConfidenceIntervalAnalyzer(
+                n_bootstrap=100,  # Reduced from 1000 to 100 for efficiency
+                confidence_level=0.95,
+                n_jobs=-1
+            )
+
+            result = analyzer.analyze_model_stability(model, X, y, train_size, scoring_metrics)
+
+            # Convert dataclass to dictionary for compatibility
+            if isinstance(result, BootstrapAnalysisResult):
+                return {
+                    'stability_score': result.stability_score,
+                    'stability_level': result.stability_level,
+                    'overfitting_probability': result.overfitting_probability,
+                    'overfitting_risk': result.overfitting_risk,
+                    'confidence_intervals': result.confidence_intervals,
+                    'stability_scores': result.stability_scores,
+                    'n_successful_bootstrap': result.n_successful_bootstrap,
+                    'recommendations': result.recommendations
+                }
+            else:
+                return result
+
+        except Exception as e:
+            logger.error(f"Bootstrap confidence interval analysis failed: {e}")
+            return None
+
+    def comprehensive_enhanced_analysis(
+        self,
+        model: Any,
+        X_train: np.ndarray,
+        y_train: np.ndarray,
+        X_test: np.ndarray,
+        y_test: np.ndarray,
+        X_full: Optional[np.ndarray] = None,
+        y_full: Optional[np.ndarray] = None
+    ) -> Dict[str, Any]:
+        """
+        Perform comprehensive enhanced analysis combining all available tools.
+
+        Args:
+            model: Trained model instance
+            X_train: Training features
+            y_train: Training labels
+            X_test: Test features
+            y_test: Test labels
+            X_full: Full feature matrix (for bootstrap analysis)
+            y_full: Full target labels (for bootstrap analysis)
+
+        Returns:
+            Dictionary with comprehensive enhanced analysis results
+        """
+        results = {
+            'enhanced_analysis_available': ENHANCED_LEARNING_CURVE_AVAILABLE or ENHANCED_BOOTSTRAP_AVAILABLE,
+            'learning_curve_analysis': None,
+            'bootstrap_analysis': None,
+            'combined_recommendations': []
+        }
+
+        # Perform learning curve analysis
+        if ENHANCED_LEARNING_CURVE_AVAILABLE:
+            learning_curve_results = self.analyze_learning_curves(
+                model, X_train, y_train, X_test, y_test
+            )
+            if learning_curve_results:
+                results['learning_curve_analysis'] = learning_curve_results
+                results['combined_recommendations'].extend(learning_curve_results.get('recommendations', []))
+
+        # Perform bootstrap confidence interval analysis
+        if ENHANCED_BOOTSTRAP_AVAILABLE and X_full is not None and y_full is not None:
+            bootstrap_results = self.analyze_bootstrap_confidence_intervals(
+                model, X_full, y_full
+            )
+            if bootstrap_results:
+                results['bootstrap_analysis'] = bootstrap_results
+                results['combined_recommendations'].extend(bootstrap_results.get('recommendations', []))
+
+        # Remove duplicate recommendations
+        results['combined_recommendations'] = list(set(results['combined_recommendations']))
+
+        return results

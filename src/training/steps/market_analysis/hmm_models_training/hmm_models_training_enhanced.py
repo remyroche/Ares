@@ -211,59 +211,139 @@ except ImportError as e:
                 if model_type == 'lightgbm' or model_type == 'lgbm':
                     if not ML_LIBRARIES_STATUS.get('lightgbm', False):
                         raise ImportError(f"LightGBM not available for model type: {model_type}")
-                    import lightgbm
-                    # Enhanced regularization for LightGBM to prevent overfitting
-                    return lightgbm.LGBMClassifier(
-                        n_estimators=100,
-                        learning_rate=0.05,    # Reduced learning rate
-                        max_depth=4,           # Limited depth for regularization
-                        num_leaves=15,         # Limited leaves per tree
-                        min_child_samples=20,  # Minimum samples per child
-                        min_child_weight=0.1,  # Minimum sum of hessian per child
-                        reg_alpha=0.1,         # L1 regularization
-                        reg_lambda=0.1,        # L2 regularization
-                        feature_fraction=0.8,  # Use 80% of features per tree
-                        bagging_fraction=0.8,  # Use 80% of data per tree
-                        bagging_freq=1,        # Enable bagging
-                        random_state=42,
-                        **kwargs
-                    )
+
+                    # Use ML commons EnhancedModelFactory with adaptive regularization
+                    try:
+                        from src.utils.ml_common.models.model_factory import EnhancedModelFactory, ModelType
+                        model, reg_info = EnhancedModelFactory().create_model_with_adaptive_regularization(
+                            ModelType.LIGHTGBM_CLASSIFIER,
+                            'lightgbm_classifier',
+                            regime_labels=kwargs.get('regime_labels'),  # Pass regime labels for adaptive regularization
+                            n_estimators=100,
+                            learning_rate=0.05,    # Reduced learning rate
+                            max_depth=4,           # Limited depth for regularization
+                            num_leaves=15,         # Limited leaves per tree
+                            min_child_samples=20,  # Minimum samples per child
+                            min_child_weight=0.1,  # Minimum sum of hessian per child
+                            feature_fraction=0.8,  # Use 80% of features per tree
+                            bagging_fraction=0.8,  # Use 80% of data per tree
+                            bagging_freq=1,        # Enable bagging
+                            random_state=42,
+                            **kwargs
+                        )
+                    except ImportError:
+                        # Fallback to direct model creation if ML commons not available
+                        import lightgbm
+                        model = lightgbm.LGBMClassifier(
+                            n_estimators=100,
+                            learning_rate=0.05,    # Reduced learning rate
+                            max_depth=4,           # Limited depth for regularization
+                            num_leaves=15,         # Limited leaves per tree
+                            min_child_samples=20,  # Minimum samples per child
+                            min_child_weight=0.1,  # Minimum sum of hessian per child
+                            feature_fraction=0.8,  # Use 80% of features per tree
+                            bagging_fraction=0.8,  # Use 80% of data per tree
+                            bagging_freq=1,        # Enable bagging
+                            random_state=42,
+                            **kwargs
+                        )
+                        reg_info = {'dataset_size': 'unknown', 'reg_alpha': 0.1, 'reg_lambda': 0.1}
+
+                    # Log adaptive regularization info
+                    if 'dataset_size' in reg_info:
+                        logger.info(f"LightGBM adaptive regularization: dataset_size={reg_info['dataset_size']}, "
+                                   f"reg_alpha={reg_info['reg_alpha']:.3f}, reg_lambda={reg_info['reg_lambda']:.3f}")
+
+                    return model
                 elif model_type == 'xgboost':
                     if not ML_LIBRARIES_STATUS.get('xgboost', False):
                         raise ImportError(f"XGBoost not available for model type: {model_type}")
-                    import xgboost
-                    # Enhanced regularization for XGBoost to prevent overfitting
-                    return xgboost.XGBClassifier(
-                        n_estimators=100,
-                        learning_rate=0.05,    # Reduced learning rate
-                        max_depth=4,           # Limited depth for regularization
-                        min_child_weight=5,    # Minimum sum of hessian per child
-                        reg_alpha=0.1,         # L1 regularization
-                        reg_lambda=0.1,        # L2 regularization
-                        subsample=0.8,         # Use 80% of data per tree
-                        colsample_bytree=0.8,  # Use 80% of features per tree
-                        colsample_bylevel=0.8, # Use 80% of features per level
-                        colsample_bynode=0.8,  # Use 80% of features per node
-                        random_state=42,
-                        **kwargs
-                    )
+
+                    # Use ML commons EnhancedModelFactory with adaptive regularization
+                    try:
+                        from src.utils.ml_common.models.model_factory import EnhancedModelFactory, ModelType
+                        model, reg_info = EnhancedModelFactory().create_model_with_adaptive_regularization(
+                            ModelType.XGBOOST_CLASSIFIER,
+                            'xgboost_classifier',
+                            regime_labels=kwargs.get('regime_labels'),  # Pass regime labels for adaptive regularization
+                            n_estimators=100,
+                            learning_rate=0.05,    # Reduced learning rate
+                            max_depth=4,           # Limited depth for regularization
+                            min_child_weight=5,    # Minimum sum of hessian per child
+                            subsample=0.8,         # Use 80% of data per tree
+                            colsample_bytree=0.8,  # Use 80% of features per tree
+                            colsample_bylevel=0.8, # Use 80% of features per level
+                            colsample_bynode=0.8,  # Use 80% of features per node
+                            random_state=42,
+                            **kwargs
+                        )
+                    except ImportError:
+                        # Fallback to direct model creation if ML commons not available
+                        import xgboost
+                        model = xgboost.XGBClassifier(
+                            n_estimators=100,
+                            learning_rate=0.05,    # Reduced learning rate
+                            max_depth=4,           # Limited depth for regularization
+                            min_child_weight=5,    # Minimum sum of hessian per child
+                            subsample=0.8,         # Use 80% of data per tree
+                            colsample_bytree=0.8,  # Use 80% of features per tree
+                            colsample_bylevel=0.8, # Use 80% of features per level
+                            colsample_bynode=0.8,  # Use 80% of features per node
+                            random_state=42,
+                            **kwargs
+                        )
+                        reg_info = {'dataset_size': 'unknown', 'reg_alpha': 0.1, 'reg_lambda': 0.1}
+
+                    # Log adaptive regularization info
+                    if 'dataset_size' in reg_info:
+                        logger.info(f"XGBoost adaptive regularization: dataset_size={reg_info['dataset_size']}, "
+                                   f"reg_alpha={reg_info['reg_alpha']:.3f}, reg_lambda={reg_info['reg_lambda']:.3f}")
+
+                    return model
                 elif model_type in ['random_forest', 'rf']:
                     if not ML_LIBRARIES_STATUS.get('sklearn', False):
                         raise ImportError(f"Scikit-learn not available for model type: {model_type}")
-                    from sklearn.ensemble import RandomForestClassifier
-                    # Enhanced regularization to prevent overfitting
-                    return RandomForestClassifier(
-                        n_estimators=100,
-                        max_depth=6,           # Reduced depth for better regularization
-                        min_samples_split=20,  # Increased to require more samples to split
-                        min_samples_leaf=10,   # Increased to require more samples per leaf
-                        max_features='sqrt',   # Limit features per split (sqrt for better regularization)
-                        min_impurity_decrease=0.01,  # Stop splitting if impurity decrease is too small
-                        ccp_alpha=0.001,       # Cost-complexity pruning for post-pruning regularization
-                        random_state=42,
-                        n_jobs=-1,
-                        **kwargs
-                    )
+                    # Use ML commons EnhancedModelFactory with adaptive regularization
+                    try:
+                        from src.utils.ml_common.models.model_factory import EnhancedModelFactory, ModelType
+                        model, reg_info = EnhancedModelFactory().create_model_with_adaptive_regularization(
+                            ModelType.RANDOM_FOREST_CLASSIFIER,
+                            'random_forest_classifier',
+                            regime_labels=kwargs.get('regime_labels'),  # Pass regime labels for adaptive regularization
+                            n_estimators=100,
+                            max_depth=6,           # Reduced depth for better regularization
+                            min_samples_split=20,  # Increased to require more samples to split
+                            min_samples_leaf=10,   # Increased to require more samples per leaf
+                            max_features='sqrt',   # Limit features per split (sqrt for better regularization)
+                            min_impurity_decrease=0.01,  # Stop splitting if impurity decrease is too small
+                            ccp_alpha=0.001,       # Cost-complexity pruning for post-pruning regularization
+                            random_state=42,
+                            n_jobs=-1,
+                            **kwargs
+                        )
+                    except ImportError:
+                        # Fallback to direct model creation if ML commons not available
+                        from sklearn.ensemble import RandomForestClassifier
+                        model = RandomForestClassifier(
+                            n_estimators=100,
+                            max_depth=6,           # Reduced depth for better regularization
+                            min_samples_split=20,  # Increased to require more samples to split
+                            min_samples_leaf=10,   # Increased to require more samples per leaf
+                            max_features='sqrt',   # Limit features per split (sqrt for better regularization)
+                            min_impurity_decrease=0.01,  # Stop splitting if impurity decrease is too small
+                            ccp_alpha=0.001,       # Cost-complexity pruning for post-pruning regularization
+                            random_state=42,
+                            n_jobs=-1,
+                            **kwargs
+                        )
+                        reg_info = {'dataset_size': 'unknown', 'reg_alpha': 0.1, 'reg_lambda': 0.1}
+
+                    # Log adaptive regularization info
+                    if 'dataset_size' in reg_info:
+                        logger.info(f"RandomForest adaptive regularization: dataset_size={reg_info['dataset_size']}, "
+                                   f"reg_alpha={reg_info['reg_alpha']:.3f}, reg_lambda={reg_info['reg_lambda']:.3f}")
+
+                    return model
                 # elif model_type in ['logistic_regression', 'lr']:  # REMOVED LOGISTIC REGRESSION
                 #     if not ML_LIBRARIES_STATUS.get('sklearn', False):
                 #         raise ImportError(f"Scikit-learn not available for model type: {model_type}")

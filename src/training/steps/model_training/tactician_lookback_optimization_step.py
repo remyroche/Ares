@@ -27,18 +27,10 @@ from .tactician_lookback_optimization import (
     optimize_tactician_lookbacks, create_tactician_lookback_config
 )
 
-# Import ML common utilities
-try:
-    from src.utils.ml_common.config import PerRegimeTrainingConfig
-    from src.utils.ml_common.training import BaseTrainingStep
-    ML_COMMON_AVAILABLE = True
-except ImportError:
-    ML_COMMON_AVAILABLE = False
-    # Create fallback base class
-    class BaseTrainingStep:
-        def __init__(self, config):
-            self.config = config
-            self.logger = system_logger.getChild('BaseTrainingStep')
+# Import ML common utilities (required; avoid redefining BaseTrainingStep)
+from src.utils.ml_common.config import PerRegimeTrainingConfig
+from src.utils.ml_common.training import BaseTrainingStep
+ML_COMMON_AVAILABLE = True
 
 # Import model loading utilities
 try:

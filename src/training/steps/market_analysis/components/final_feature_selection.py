@@ -54,10 +54,69 @@ class FinalFeatureSelectionComponent(BaseMarketAnalysisComponent):
             if symbol is None:
                 raise ValueError("Symbol must be provided in config or pipeline state")
 
-            # Resolve exchange from config or pipeline state
-            exchange = getattr(self.config, 'exchange', None)
-            if exchange is None and 'exchange' in pipeline_state:
-                exchange = pipeline_state['exchange']
+    def _load_model_specific_config(self, model_type: str) -> Dict[str, Any]:
+        """Load model-specific configuration from YAML file."""
+        try:
+            import yaml
+            from pathlib import Path
+
+            # Try to load from the feature selection config file
+            config_path = Path("/workspace/src/config/feature_selection_config.yaml")
+            if config_path.exists():
+                with open(config_path, 'r') as f:
+                    config_data = yaml.safe_load(f)
+
+                if config_data and 'feature_selection' in config_data:
+                    fs_config = config_data['feature_selection']
+
+                    # Check if model has a specific profile
+                    if 'model_profiles' in fs_config and model_type in fs_config['model_profiles']:
+                        model_config = fs_config['model_profiles'][model_type]
+
+                        # Map YAML config to expected format
+                        stage_targets = [
+                            model_config.get('target_features', 80) - 20,  # stage_1_target
+                            model_config.get('target_features', 80) - 15,  # stage_2_target
+                            model_config.get('target_features', 80) - 10   # stage_3_target
+                        ]
+
+                        return {
+                            'target_features': model_config.get('target_features', 80),
+                            'min_features': model_config.get('min_features', 60),
+                            'max_features': model_config.get('max_features', 100),
+                            'stage_targets': stage_targets,
+                            'priority_categories': model_config.get('priority_categories', ['momentum', 'volatility', 'microstructure'])
+                        }
+
+                    # Use default settings if no model profile found
+                    elif model_type == 'default':
+                        return {
+                            'target_features': fs_config.get('target_features', 80),
+                            'min_features': fs_config.get('min_features', 60),
+                            'max_features': fs_config.get('max_features', 100),
+                            'stage_targets': [95, 75, 65],
+                            'priority_categories': ['momentum', 'volatility', 'microstructure']
+                        }
+
+            # Fallback to hardcoded defaults if YAML loading fails
+            self.logger.warning(f"⚠️ Could not load model-specific config for {model_type}, using defaults")
+            return {
+                'target_features': 80,
+                'min_features': 60,
+                'max_features': 100,
+                'stage_targets': [95, 75, 65],
+                'priority_categories': ['momentum', 'volatility', 'microstructure']
+            }
+
+        except Exception as e:
+            self.logger.error(f"❌ Error loading model-specific config for {model_type}: {e}")
+            return {
+                'target_features': 80,
+                'min_features': 60,
+                'max_features': 100,
+                'stage_targets': [95, 75, 65],
+                'priority_categories': ['momentum', 'volatility', 'microstructure']
+            }
             if exchange is None:
                 exchange = 'binance'  # Default exchange
 
@@ -74,18 +133,6 @@ class FinalFeatureSelectionComponent(BaseMarketAnalysisComponent):
                 data_dir = pipeline_state['data_dir']
             if data_dir is None:
                 data_dir = 'historical_data'  # Default data directory
-
-            # Prepare configuration for final feature selection
-            final_feature_selection_config = {
-                'initial_features': self.config.custom_params.get('initial_features', 120) if self.config.custom_params else 120,
-                'stage_1_target': self.config.custom_params.get('stage_1_target', 100) if self.config.custom_params else 100,
-                'stage_2_target': self.config.custom_params.get('stage_2_target', 80) if self.config.custom_params else 80,
-                'stage_3_target': self.config.custom_params.get('stage_3_target', 60) if self.config.custom_params else 60,
-                'rf_n_estimators': self.config.custom_params.get('rf_n_estimators', 100) if self.config.custom_params else 100,
-                'cv_folds': self.config.custom_params.get('cv_folds', 5) if self.config.custom_params else 5,
-                'save_analysis': self.config.custom_params.get('save_analysis', True) if self.config.custom_params else True,
-                'verbose': self.config.custom_params.get('verbose', True) if self.config.custom_params else True
-            }
 
             # Execute final feature selection
             success = await run_final_feature_selection_step(

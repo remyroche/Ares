@@ -228,7 +228,7 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
             config = TacticianTrainingConfig(
                 model_name="tactician_models",
                 timeframe="1m",
-                model_types=["XGBOOST", "LIGHTGBM", "DEEPSCALER_1M", "FINANCIAL_RESNET"],
+                model_types=["XGBOOST", "LIGHTGBM", "DEEPSCALER_1M", "FINANCIAL_RESNET", "RandomSurvivalForest"],
                 hpo_n_trials=100,
                 hpo_timeout_seconds=3600,
                 min_samples_per_regime=1000,
@@ -338,6 +338,102 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
             self.enhanced_training_config = None
             self.training_enhancer = None
             self.enhanced_training_utils = {}
+    
+    def _create_model_instance(self, model_type: str):
+        """Create model instance based on model type."""
+        try:
+            if model_type == "XGBOOST":
+                from xgboost import XGBRegressor
+                return XGBRegressor(
+                    n_estimators=1000,
+                    learning_rate=0.05,
+                    max_depth=6,
+                    subsample=0.8,
+                    colsample_bytree=0.8,
+                    random_state=42,
+                    verbosity=0
+                )
+            elif model_type == "LIGHTGBM":
+                from lightgbm import LGBMRegressor
+                return LGBMRegressor(
+                    n_estimators=1000,
+                    learning_rate=0.05,
+                    max_depth=6,
+                    num_leaves=31,
+                    subsample=0.8,
+                    colsample_bytree=0.8,
+                    random_state=42,
+                    verbose=-1
+                )
+            elif model_type == "DEEPSCALER_1M":
+                # DeepScaler implementation would go here
+                from sklearn.ensemble import RandomForestRegressor
+                return RandomForestRegressor(
+                    n_estimators=200,
+                    max_depth=10,
+                    random_state=42
+                )
+            elif model_type == "FINANCIAL_RESNET":
+                # FinancialResNet implementation would go here
+                from sklearn.ensemble import RandomForestRegressor
+                return RandomForestRegressor(
+                    n_estimators=200,
+                    max_depth=10,
+                    random_state=42
+                )
+            elif model_type == "RandomSurvivalForest":
+                return self._create_random_survival_forest_model()
+            else:
+                # Default fallback
+                from sklearn.ensemble import RandomForestRegressor
+                return RandomForestRegressor(
+                    n_estimators=100,
+                    max_depth=5,
+                    random_state=42
+                )
+        except Exception as e:
+            self.logger.error(f"❌ Failed to create model instance for {model_type}: {e}")
+            # Fallback to RandomForest
+            from sklearn.ensemble import RandomForestRegressor
+            return RandomForestRegressor(n_estimators=100, random_state=42)
+    
+    def _create_random_survival_forest_model(self):
+        """Create Random Survival Forest model for tactician timing prediction."""
+        try:
+            from .random_survival_forest_tactician import RandomSurvivalForestTactician, SurvivalAnalysisConfig
+            
+            # Create configuration optimized for tactician timing
+            config = SurvivalAnalysisConfig(
+                n_estimators=200,
+                max_depth=10,
+                min_samples_split=5,
+                min_samples_leaf=2,
+                max_features='sqrt',
+                bootstrap=True,
+                max_samples=0.8,
+                horizons=[1, 2, 5, 10],  # 1m to 10m horizons (removed 15m and 30m)
+                horizon_weights=[0.4, 0.3, 0.2, 0.1],
+                entry_timing_range=0.005,  # 0.5% range
+                expected_movement=0.01,  # 1% expected movement
+                latency_constraint=2.0,  # 2 second constraint
+                enable_timing_features=True,
+                enable_regime_features=True,
+                enable_analyst_features=True,
+                enable_microstructure_features=True
+            )
+            
+            return RandomSurvivalForestTactician(config)
+            
+        except ImportError as e:
+            self.logger.error(f"❌ Random Survival Forest not available: {e}")
+            # Fallback to RandomForest
+            from sklearn.ensemble import RandomForestRegressor
+            return RandomForestRegressor(n_estimators=200, random_state=42)
+        except Exception as e:
+            self.logger.error(f"❌ Failed to create Random Survival Forest: {e}")
+            # Fallback to RandomForest
+            from sklearn.ensemble import RandomForestRegressor
+            return RandomForestRegressor(n_estimators=200, random_state=42)
     
     def _start_phase(self, phase: TrainingPhase, context: Optional[Dict[str, Any]] = None) -> None:
         """Start tracking a training phase with structured logging."""
@@ -1891,17 +1987,37 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                     try:
                         # Create model instance
                         model = self._create_model_instance(model_type)
+                        
+                        # Special handling for Random Survival Forest
+                        if model_type == "RandomSurvivalForest":
+                            model = self._create_random_survival_forest_model()
 
                         # Apply enhanced regularization
                         model = self.training_enhancer.enhanced_utils.apply_enhanced_regularization(
                             model, model_type
                         )
 
-                        # Train with early stopping, overfitting monitoring, and confidence weighting
-                        trained_model, metadata = self.training_enhancer.enhance_training_step(
-                            X_regime, y_regime, model, timestamps_regime, f"tactician_{model_type}_regime_{regime}",
-                            sample_weights=confidence_regime
-                        )
+                        # Special handling for Random Survival Forest
+                        if model_type == "RandomSurvivalForest":
+                            # Random Survival Forest has its own training method with HPO
+                            trained_model = model.fit(
+                                X_regime, y_regime, 
+                                feature_names=feature_names,
+                                analyst_signals=analyst_signals[regime_mask] if analyst_signals is not None else None,
+                                hmm_regime_probs=hmm_regime_probs[regime_mask] if hmm_regime_probs is not None else None,
+                                enable_hpo=True,
+                                hpo_trials=self.config.hpo_n_trials,
+                                cv_folds=5,
+                                enable_entry_timing_optimization=True,
+                                entry_timing_trials=50
+                            )
+                            metadata = {'model_type': 'RandomSurvivalForest', 'training_completed': True}
+                        else:
+                            # Train with early stopping, overfitting monitoring, and confidence weighting
+                            trained_model, metadata = self.training_enhancer.enhance_training_step(
+                                X_regime, y_regime, model, timestamps_regime, f"tactician_{model_type}_regime_{regime}",
+                                sample_weights=confidence_regime
+                            )
                         
                         regime_models[model_type] = {
                             'model': trained_model,

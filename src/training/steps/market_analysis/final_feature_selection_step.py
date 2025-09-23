@@ -44,6 +44,12 @@ class FinalFeatureSelectionStep:
             verbose=self.config.get('verbose', True)
         )
         
+        # Initialize model-specific feature selection
+        self.model_specific_selection = self.config.get('enable_model_specific_selection', True)
+        self.target_models = self.config.get('target_models', [
+            'advanced_mamba_hybrid', 'financial_resnet', 'deepscaler', 'nbeats'
+        ])
+        
         self.logger.info("🚀 FinalFeatureSelectionStep initialized")
     
     @log_all_calls
@@ -89,7 +95,10 @@ class FinalFeatureSelectionStep:
             X, y = self._prepare_data(feature_data, target_data)
             
             # Run feature selection
-            selection_result = await self._run_feature_selection(X, y, symbol, exchange, timeframe)
+            if self.model_specific_selection:
+                selection_result = await self._run_model_specific_selection(X, y, symbol, exchange, timeframe)
+            else:
+                selection_result = await self._run_feature_selection(X, y, symbol, exchange, timeframe)
             
             # Save results
             await self._save_selection_results(selection_result, symbol, exchange, timeframe, data_dir)
@@ -286,6 +295,58 @@ class FinalFeatureSelectionStep:
             result.is_unsupervised = True
         
         return result
+    
+    async def _run_model_specific_selection(self, X: pd.DataFrame, y: Optional[pd.Series],
+                                           symbol: str, exchange: str, timeframe: str) -> Any:
+        """Run model-specific feature selection for each target model."""
+        
+        self.logger.info("🔍 Running model-specific feature selection")
+        self.logger.info(f"   📊 Input: {len(X)} samples, {len(X.columns)} features")
+        self.logger.info(f"   🎯 Target models: {self.target_models}")
+        
+        # Import model-specific selector
+        from src.utils.ml_common.model_specific_feature_selection import create_model_specific_selector
+        
+        model_results = {}
+        
+        # Run selection for each target model
+        for model_type in self.target_models:
+            self.logger.info(f"🔄 Selecting features for {model_type}")
+            
+            try:
+                # Create model-specific selector
+                selector = create_model_specific_selector(model_type)
+                
+                # Run selection in thread pool
+                loop = asyncio.get_event_loop()
+                result = await loop.run_in_executor(
+                    None,
+                    selector.select_features_for_model,
+                    X, y, model_type
+                )
+                
+                model_results[model_type] = result
+                self.logger.info(f"✅ {model_type}: {len(result['selected_features'])} features selected")
+                
+            except Exception as e:
+                self.logger.error(f"❌ Feature selection failed for {model_type}: {e}")
+                model_results[model_type] = {
+                    'selected_features': [],
+                    'selection_report': {'error': str(e)},
+                    'model_type': model_type,
+                    'selection_time': 0
+                }
+        
+        # Create combined result
+        combined_result = type('CombinedResult', (), {
+            'model_results': model_results,
+            'selection_time': sum(r.get('selection_time', 0) for r in model_results.values()),
+            'total_models': len(self.target_models),
+            'successful_models': len([r for r in model_results.values() if r.get('selected_features')])
+        })()
+        
+        self.logger.info("✅ Model-specific feature selection completed")
+        return combined_result
     
     async def _save_selection_results(self, selection_result: Any, symbol: str, exchange: str,
                                     timeframe: str, data_dir: str) -> None:

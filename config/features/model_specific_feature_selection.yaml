@@ -1,0 +1,199 @@
+# Model-Specific Feature Selection Configuration
+# Optimized feature selection strategies for advanced time series forecasting models
+
+model_specific_selection:
+  # Enable model-specific feature selection
+  enabled: true
+  
+  # Target models for feature selection
+  target_models:
+    - advanced_mamba_hybrid
+    - financial_resnet
+    - deepscaler
+    - deepscaler_1m
+    - nbeats
+    - NBEATS
+    - tcn
+    - lstm
+    - temporal_fusion_transformer
+
+  # Model-specific feature targets
+  feature_targets:
+    advanced_mamba_hybrid: 150
+    financial_resnet: 100
+    deepscaler: 80
+    deepscaler_1m: 80
+    nbeats: 70
+    NBEATS: 70
+    tcn: 90
+    lstm: 100
+    temporal_fusion_transformer: 120
+
+  # Feature category weights by model type
+  model_feature_weights:
+    advanced_mamba_hybrid:
+      cross_timeframe_features: 0.4
+      temporal_features: 0.25
+      technical_indicators: 0.2
+      regime_features: 0.1
+      microstructure_features: 0.05
+      
+    financial_resnet:
+      regime_features: 0.35
+      technical_indicators: 0.3
+      temporal_features: 0.2
+      microstructure_features: 0.15
+      
+    deepscaler:
+      technical_indicators: 0.5
+      temporal_features: 0.3
+      other_features: 0.2
+      
+    nbeats:
+      temporal_features: 0.4
+      technical_indicators: 0.35
+      regime_features: 0.15
+      other_features: 0.1
+
+  # Selection strategy parameters
+  selection_strategy:
+    # Use regime-aware selection for financial models
+    use_regime_aware_selection: true
+    
+    # Use temporal features for time series models
+    use_temporal_features: true
+    
+    # Use cross-timeframe features for multi-timeframe models
+    use_cross_timeframe_features: true
+    
+    # Use microstructure features for high-frequency models
+    use_microstructure_features: true
+    
+    # Feature importance thresholds
+    min_importance_threshold: 0.001
+    correlation_threshold: 0.95
+    stability_threshold: 0.7
+    
+    # Model-specific parameters
+    mamba_state_expansion: 4
+    resnet_blocks: [32, 64, 128]
+    nbeats_backcast_length: 100
+    deepscaler_layers: 4
+
+  # Feature category definitions
+  feature_categories:
+    technical_indicators:
+      - rsi
+      - macd
+      - bb_
+      - atr
+      - stoch
+      - roc
+      - momentum
+      - sma
+      - ema
+      - wma
+      - vwap
+      - obv
+      - mfi
+      - adx
+      
+    regime_features:
+      - regime
+      - cluster
+      - state
+      - hmm
+      - volatility_regime
+      - trend_regime
+      - volume_regime
+      - momentum_regime
+      
+    temporal_features:
+      - lag_
+      - lead_
+      - diff_
+      - pct_change
+      - rolling_
+      - expanding_
+      - ewm_
+      - seasonal_
+      - trend_
+      
+    microstructure_features:
+      - spread
+      - imbalance
+      - flow
+      - tick
+      - orderbook
+      - bid_ask
+      - volume_imbalance
+      - trade_size
+      
+    cross_timeframe_features:
+      - 1m_
+      - 5m_
+      - 15m_
+      - 30m_
+      - 1h_
+      - 4h_
+      - 1d_
+      - cross_tf_
+      - multi_tf_
+      
+    interaction_features:
+      - momentum_volatility
+      - volume_price
+      - spread_volume
+      - regime_momentum
+      - tf_interaction
+
+  # Validation and quality control
+  validation:
+    # Minimum feature count as percentage of target
+    min_feature_ratio: 0.8
+    
+    # Maximum correlation between selected features
+    max_correlation: 0.95
+    
+    # Minimum variance for selected features
+    min_variance: 0.001
+    
+    # Stability requirements
+    require_stability: true
+    stability_threshold: 0.7
+    
+    # Performance validation
+    enable_cv_validation: true
+    cv_folds: 5
+    cv_scoring: "neg_mean_squared_error"
+
+  # Output and reporting
+  output:
+    # Save model-specific feature sets
+    save_model_features: true
+    
+    # Generate selection reports
+    generate_reports: true
+    
+    # Save feature importance analysis
+    save_importance_analysis: true
+    
+    # Output directory
+    output_dir: "generated/model_specific_features"
+    
+    # Report formats
+    report_formats: ["json", "yaml", "csv"]
+
+# Integration with existing pipeline
+pipeline_integration:
+  # Enable in final feature selection step
+  enable_in_final_step: true
+  
+  # Enable in training pipeline
+  enable_in_training: true
+  
+  # Fallback to general selection if model-specific fails
+  enable_fallback: true
+  
+  # Logging level for model-specific selection
+  log_level: "INFO"

@@ -111,6 +111,17 @@ class FeatureSelectionFramework:
         'neural_network': 150,
         'deep_learning': 200,
         
+        # Advanced time series models - optimized for financial forecasting
+        'advanced_mamba_hybrid': 150,  # Optimal for multi-timeframe fusion
+        'financial_resnet': 100,       # Optimal for regime-aware classification
+        'deepscaler': 80,              # Optimal for scaling/normalization tasks
+        'deepscaler_1m': 80,           # 1m precision variant
+        'nbeats': 70,                  # Optimal for trend/seasonality decomposition
+        'NBEATS': 70,                  # Case variant
+        'tcn': 90,                     # Temporal Convolutional Networks
+        'lstm': 100,                   # LSTM networks
+        'temporal_fusion_transformer': 120,  # TFT models
+        
         # Ensemble methods
         'voting_classifier': 100,
         'stacking_classifier': 120,

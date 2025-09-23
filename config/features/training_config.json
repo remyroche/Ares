@@ -11,6 +11,19 @@
     "phase1_target_features": 150,
     "enable_mrmr": true,
     "enable_rf_importance": true,
+    "enable_model_specific_selection": true,
+    "target_models": [
+      "advanced_mamba_hybrid",
+      "financial_resnet", 
+      "deepscaler",
+      "nbeats"
+    ],
+    "model_specific_targets": {
+      "advanced_mamba_hybrid": 150,
+      "financial_resnet": 100,
+      "deepscaler": 80,
+      "nbeats": 70
+    },
     "phase2_targets": [
       100,
       80,

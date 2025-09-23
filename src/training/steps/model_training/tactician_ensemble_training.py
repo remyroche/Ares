@@ -48,7 +48,15 @@ try:
         tprint_debug, tprint_progress, tprint_performance, tprint_structured,
         tprint_timer, LogLevel
     )
-    TPRINT_AVAILABLE = True
+    
+    # Import NAS integration for Tactician
+    from src.training.steps.model_training.tactician_nas_integration import (
+        TacticianNASIntegration, TacticianNASConfig, create_tactician_nas_model
+    )
+    NAS_AVAILABLE = True
+except ImportError as e:
+    print(f"❌ CRITICAL: Failed to import NAS integration: {e}")
+    NAS_AVAILABLE = False
 except ImportError as e:
     print(f"❌ CRITICAL ERROR: tprint is required but not available: {e}")
     print("❌ This is a critical dependency for enhanced logging. Please install tprint.")
@@ -211,7 +219,7 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
     Enhanced Features:
     - 1m base timeframe with cross-timeframe features (50+ features)
     - HMM + Analyst outputs integration for comprehensive context
-    - XGBoost + RandomForest + CatBoost + Elastic Net base models with LightGBM meta-learner
+    - XGBoost + RandomForest + CatBoost + Elastic Net + NAS base models with LightGBM meta-learner
     - All-regime training but only on Analyst green light periods
     - Runs every 30 seconds for live trading
     - Decides WHEN we trade based on expected 0.3% price change (micro movements)
@@ -535,7 +543,7 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
         - 1m base timeframe with cross-timeframe features (50+ features)
         - HMM + Analyst outputs + all model predictions integration
         - Enhanced filtering: confidence > 0.5 + 45 min after confidence drops
-        - XGBoost + RandomForest + CatBoost + Elastic Net base models with LightGBM meta-learner
+        - XGBoost + RandomForest + CatBoost + Elastic Net + NAS base models with LightGBM meta-learner
         - All-regime training with realistic trading condition simulation
         - Decides WHEN we trade based on expected 0.3% price change (micro movements)
 
@@ -2030,6 +2038,96 @@ def create_tactician_ensemble_training_step(
 ) -> TacticianEnsembleTrainingStep:
     """Create Tactician ensemble training step."""
     return TacticianEnsembleTrainingStep(config)
+
+
+def integrate_nas_in_tactician_ensemble(X_train: np.ndarray, 
+                                      y_train: np.ndarray,
+                                      X_val: np.ndarray, 
+                                      y_val: np.ndarray,
+                                      regime_labels: Optional[np.ndarray] = None,
+                                      regime_features: Optional[np.ndarray] = None) -> Dict[str, Any]:
+    """
+    Integrate NAS model as DeepScaler1m replacement in Tactician ensemble.
+    
+    Args:
+        X_train: Training features (1m timeframe)
+        y_train: Training labels (trading signals)
+        X_val: Validation features
+        y_val: Validation labels
+        regime_labels: Regime labels for regime-aware optimization (optional)
+        regime_features: Regime-specific features (volatility, volume, trend, momentum) (optional)
+        
+    Returns:
+        Updated base models dictionary with NAS replacing DeepScaler1m
+    """
+    tprint_info("🧠 Integrating NAS model as DeepScaler1m replacement in Tactician ensemble...")
+    
+    if not NAS_AVAILABLE:
+        tprint_error("❌ NAS integration not available - using original base models")
+        return {
+            "xgboost": "XGBoost",
+            "lightgbm": "LightGBM", 
+            "FinancialResNet": "FinancialResNet",
+            "RSF": "RandomSurvivalForest"
+        }
+    
+    try:
+        # Configure NAS for Tactician (1m timeframe, all regimes)
+        nas_config = TacticianNASConfig(
+            n_trials=30,  # Reduced for faster training
+            timeout_seconds=1800,  # 30 minutes max
+            max_layers=6,  # Shallow networks for 1m timeframe speed
+            max_units=256,  # Moderate complexity
+            min_units=32,  # Minimum for meaningful learning
+            objectives=['accuracy', 'efficiency', 'robustness'],
+            objective_weights=[0.5, 0.3, 0.2],  # Balance for 1m timeframe
+            enable_regime_awareness=True,
+            early_stopping_patience=10
+        )
+        
+        # Create NAS model
+        tprint_info("🔍 Creating NAS model for Tactician ensemble...")
+        nas_model = create_tactician_nas_model(
+            X_train=X_train, y_train=y_train,
+            X_val=X_val, y_val=y_val,
+            config=nas_config,
+            regime_labels=regime_labels,
+            regime_features=regime_features
+        )
+        
+        if nas_model is None:
+            tprint_error("❌ NAS model creation failed - using original base models")
+            return {
+                "xgboost": "XGBoost",
+                "lightgbm": "LightGBM", 
+                "FinancialResNet": "FinancialResNet",
+                "RSF": "RandomSurvivalForest"
+            }
+        
+        # Updated base models with NAS replacing DeepScaler1m
+        updated_base_models = {
+            "xgboost": "XGBoost",
+            "lightgbm": "LightGBM",
+            "nas_optimized": nas_model,  # ← REPLACES DeepScaler1m
+            "FinancialResNet": "FinancialResNet",
+            "RSF": "RandomSurvivalForest"
+        }
+        
+        tprint_success("✅ NAS model integrated successfully as DeepScaler1m replacement")
+        tprint_info(f"📊 Updated base models: {list(updated_base_models.keys())}")
+        tprint_info("🎯 NAS model optimized for 1m timeframe with regime awareness")
+        
+        return updated_base_models
+        
+    except Exception as e:
+        tprint_error(f"❌ NAS integration failed: {e}")
+        tprint_info("🔄 Falling back to original base models...")
+        return {
+            "xgboost": "XGBoost",
+            "lightgbm": "LightGBM", 
+            "FinancialResNet": "FinancialResNet",
+            "RSF": "RandomSurvivalForest"
+        }
 
 
 def execute_tactician_ensemble_training(

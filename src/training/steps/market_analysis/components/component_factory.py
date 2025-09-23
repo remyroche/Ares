@@ -10,7 +10,7 @@ from .sr_parameter_optimization import SRParameterOptimizationComponent
 from .sr_detection import SRDetectionComponent
 from .sr_clustering import SRClusteringComponent
 from .hmm_regime_discovery import HMMRegimeDiscoveryComponent
-from .optimal_regime_clustering import OptimalRegimeClusteringComponent
+from ..hmm_clustering.components.clustering_component import OptimalRegimeClusteringComponent
 # HMM training components moved to hmm_models_training module
 # from .hmm_models_training import HMMModelsTrainingComponent
 from .hmm_ensemble_training_component import HMMEnsembleTrainingComponent

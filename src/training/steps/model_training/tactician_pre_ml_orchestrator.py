@@ -354,18 +354,21 @@ class TacticianPreMLOrchestrator:
             if not signal_separation_result['success']:
                 raise ValueError(f"Signal separation failed: {signal_separation_result['error']}")
 
+            result.tagged_market_data = signal_separation_result['tagged_market_data']
             result.long_signals = signal_separation_result['long_signals']
             result.short_signals = signal_separation_result['short_signals']
             result.combined_signals = signal_separation_result['combined_signals']
             result.signal_separation_completed = True
 
-            tprint_success(f"✅ Signal separation completed: {len(result.long_signals)} long, {len(result.short_signals)} short samples")
+            tprint_success(f"✅ Signal tagging completed: {signal_separation_result['long_tagged_count']} long, {signal_separation_result['short_tagged_count']} short tagged samples")
+            tprint_info(f"🔄 Using tagging approach - full lookback periods preserved for indicator calculations")
 
             # Step 2: Optimize feature lookback periods for each signal type
             if self.feature_optimizer:
                 tprint_info("🔍 Step 2: Optimizing feature lookback periods...")
+                # Use tagged market data which includes full lookback periods
                 lookback_result = await self._optimize_feature_lookbacks(
-                    result.long_signals, result.short_signals, market_data, feature_names
+                    result.tagged_market_data, result.tagged_market_data, result.tagged_market_data, feature_names
                 )
 
                 result.long_optimized_lookbacks = lookback_result['long_lookbacks']
@@ -379,9 +382,18 @@ class TacticianPreMLOrchestrator:
             # Step 3: Generate PID-based features for each signal type
             if self.pid_orchestrator:
                 tprint_info("🎯 Step 3: Generating PID-based features...")
+
+                # Include HMM and Analyst outputs in feature names
+                extended_feature_names = feature_names.copy()
+                extended_feature_names.extend([
+                    'hmm_regime', 'hmm_regime_prob', 'hmm_regime_confidence',
+                    'analyst_signal', 'analyst_confidence', 'analyst_prediction',
+                    'analyst_long_prob', 'analyst_short_prob', 'analyst_neutral_prob'
+                ])
+
                 pid_result = await self._generate_pid_features(
-                    result.long_signals, result.short_signals,
-                    market_data, feature_names,
+                    result.tagged_market_data, result.tagged_market_data,
+                    result.tagged_market_data, extended_feature_names,
                     result.long_optimized_lookbacks, result.short_optimized_lookbacks
                 )
 
@@ -397,8 +409,8 @@ class TacticianPreMLOrchestrator:
             if self.horizon_labeler:
                 tprint_info("🏷️ Step 4: Applying multi-horizon profit labeling...")
                 labeling_result = await self._apply_horizon_labeling(
-                    result.long_signals, result.short_signals,
-                    market_data, result.long_pid_features, result.short_pid_features
+                    result.tagged_market_data, result.tagged_market_data,
+                    result.tagged_market_data, result.long_pid_features, result.short_pid_features
                 )
 
                 result.long_labeled_targets = labeling_result['long_targets']
@@ -413,7 +425,7 @@ class TacticianPreMLOrchestrator:
             if self.feature_selector:
                 tprint_info("🎯 Step 5: Selecting final features...")
                 selection_result = await self._select_final_features(
-                    result.long_signals, result.short_signals,
+                    result.tagged_market_data, result.tagged_market_data,
                     result.long_pid_features, result.short_pid_features,
                     result.long_labeled_targets, result.short_labeled_targets
                 )
@@ -429,7 +441,7 @@ class TacticianPreMLOrchestrator:
             # Step 6: Prepare training data for both signal types
             tprint_info("📚 Step 6: Preparing training data...")
             training_data_result = await self._prepare_training_data(
-                result.long_signals, result.short_signals,
+                result.tagged_market_data, result.tagged_market_data,
                 result.long_pid_features, result.short_pid_features,
                 result.long_labeled_targets, result.short_labeled_targets,
                 result.long_selected_features, result.short_selected_features
@@ -472,7 +484,7 @@ class TacticianPreMLOrchestrator:
         analyst_signals: pd.DataFrame,
         market_data: pd.DataFrame
     ) -> Dict[str, Any]:
-        """Separate Analyst signals into long/short with confidence filtering."""
+        """Separate Analyst signals into long/short with confidence filtering and preserve full lookback periods."""
         try:
             tprint_info("🔍 Separating Analyst signals by direction and confidence...")
 
@@ -507,14 +519,24 @@ class TacticianPreMLOrchestrator:
             else:
                 confidence_threshold = self.config.min_analyst_confidence
 
-            # Initialize result containers
+            # Initialize result containers - now using tagging approach
+            tagged_market_data = market_data.copy()
+
+            # Initialize tag columns
+            tagged_market_data['analyst_signal_time'] = pd.NaT
+            tagged_market_data['analyst_confidence'] = 0.0
+            tagged_market_data['signal_direction'] = 'none'
+            tagged_market_data['signal_target_end_time'] = pd.NaT
+            tagged_market_data['signal_horizon_minutes'] = 0
+
+            # Initialize result containers for filtered data
             long_signals_list = []
             short_signals_list = []
             combined_signals_list = []
 
             # Process each signal timestamp
             for idx, row in analyst_signals.iterrows():
-                timestamp = row['timestamp']
+                signal_timestamp = row['timestamp']
 
                 # Find confidence value
                 confidence = 0.0
@@ -523,62 +545,92 @@ class TacticianPreMLOrchestrator:
 
                 # Check if confidence meets threshold
                 if confidence >= confidence_threshold:
-                    # Find subsequent 45 minutes of market data
-                    subsequent_data = market_data[
-                        (market_data['timestamp'] >= timestamp) &
-                        (market_data['timestamp'] <= timestamp + timedelta(minutes=self.config.subsequent_minutes))
+                    # Calculate target end time (signal + 45 minutes)
+                    target_end_time = signal_timestamp + timedelta(minutes=self.config.subsequent_minutes)
+
+                    # Tag all data points from this signal timestamp onwards with full lookback
+                    # This preserves the historical data needed for indicators
+                    signal_mask = tagged_market_data['timestamp'] >= signal_timestamp
+                    tagged_market_data.loc[signal_mask, 'analyst_signal_time'] = signal_timestamp
+                    tagged_market_data.loc[signal_mask, 'analyst_confidence'] = confidence
+                    tagged_market_data.loc[signal_mask, 'signal_target_end_time'] = target_end_time
+                    tagged_market_data.loc[signal_mask, 'signal_horizon_minutes'] = self.config.subsequent_minutes
+
+                    # Determine signal direction from available columns
+                    signal_direction = self._determine_signal_direction(row, signal_columns)
+
+                    if signal_direction == SignalDirection.LONG:
+                        tagged_market_data.loc[signal_mask, 'signal_direction'] = 'long'
+                        tprint_debug(f"📈 Tagged long signal at {signal_timestamp} with confidence {confidence:.3f}")
+                    elif signal_direction == SignalDirection.SHORT:
+                        tagged_market_data.loc[signal_mask, 'signal_direction'] = 'short'
+                        tprint_debug(f"📉 Tagged short signal at {signal_timestamp} with confidence {confidence:.3f}")
+                    else:
+                        # Combined or neutral signal
+                        tagged_market_data.loc[signal_mask, 'signal_direction'] = 'combined'
+                        tprint_debug(f"⚖️ Tagged combined signal at {signal_timestamp} with confidence {confidence:.3f}")
+
+                    # Also create filtered views for specific analysis (but keep full data for training)
+                    # Extract the 45-minute window for separate analysis if needed
+                    window_data = market_data[
+                        (market_data['timestamp'] >= signal_timestamp) &
+                        (market_data['timestamp'] <= target_end_time)
                     ].copy()
 
-                    if len(subsequent_data) > 0:
-                        # Add signal metadata to subsequent data
-                        subsequent_data['analyst_signal_time'] = timestamp
-                        subsequent_data['analyst_confidence'] = confidence
-
-                        # Determine signal direction from available columns
-                        signal_direction = self._determine_signal_direction(row, signal_columns)
+                    if len(window_data) > 0:
+                        # Add signal metadata to window data
+                        window_data['analyst_signal_time'] = signal_timestamp
+                        window_data['analyst_confidence'] = confidence
+                        window_data['signal_target_end_time'] = target_end_time
+                        window_data['signal_horizon_minutes'] = self.config.subsequent_minutes
 
                         if signal_direction == SignalDirection.LONG:
-                            subsequent_data['signal_direction'] = 'long'
-                            long_signals_list.append(subsequent_data)
-                            tprint_debug(f"📈 Added long signal at {timestamp} with confidence {confidence:.3f}")
+                            window_data['signal_direction'] = 'long'
+                            long_signals_list.append(window_data)
                         elif signal_direction == SignalDirection.SHORT:
-                            subsequent_data['signal_direction'] = 'short'
-                            short_signals_list.append(subsequent_data)
-                            tprint_debug(f"📉 Added short signal at {timestamp} with confidence {confidence:.3f}")
+                            window_data['signal_direction'] = 'short'
+                            short_signals_list.append(window_data)
                         else:
-                            # Combined or neutral signal
-                            subsequent_data['signal_direction'] = 'combined'
-                            combined_signals_list.append(subsequent_data)
-                            tprint_debug(f"⚖️ Added combined signal at {timestamp} with confidence {confidence:.3f}")
-                    else:
-                        tprint_debug(f"⚠️ No market data found for {timestamp} (45-minute window)")
+                            window_data['signal_direction'] = 'combined'
+                            combined_signals_list.append(window_data)
                 else:
-                    tprint_debug(f"⏭️ Skipping signal at {timestamp} - confidence {confidence:.3f} below threshold {confidence_threshold}")
+                    tprint_debug(f"⏭️ Skipping signal at {signal_timestamp} - confidence {confidence:.3f} below threshold {confidence_threshold}")
 
-            # Combine all data for each signal type
-            long_df = pd.concat(long_signals_list, ignore_index=True) if long_signals_list else pd.DataFrame()
-            short_df = pd.concat(short_signals_list, ignore_index=True) if short_signals_list else pd.DataFrame()
-            combined_df = pd.concat(combined_signals_list, ignore_index=True) if combined_signals_list else pd.DataFrame()
+            # Combine window data for each signal type (for analysis/debugging)
+            long_window_df = pd.concat(long_signals_list, ignore_index=True) if long_signals_list else pd.DataFrame()
+            short_window_df = pd.concat(short_signals_list, ignore_index=True) if short_signals_list else pd.DataFrame()
+            combined_window_df = pd.concat(combined_signals_list, ignore_index=True) if combined_signals_list else pd.DataFrame()
 
             # Calculate quality scores
-            long_quality = self._calculate_data_quality(long_df)
-            short_quality = self._calculate_data_quality(short_df)
+            long_quality = self._calculate_data_quality(long_window_df)
+            short_quality = self._calculate_data_quality(short_window_df)
+
+            # Count tagged signals
+            long_tagged_count = len(tagged_market_data[tagged_market_data['signal_direction'] == 'long'])
+            short_tagged_count = len(tagged_market_data[tagged_market_data['signal_direction'] == 'short'])
+            combined_tagged_count = len(tagged_market_data[tagged_market_data['signal_direction'] == 'combined'])
 
             result = {
                 'success': True,
-                'long_signals': long_df,
-                'short_signals': short_df,
-                'combined_signals': combined_df,
-                'long_count': len(long_df),
-                'short_count': len(short_df),
-                'combined_count': len(combined_df),
+                'tagged_market_data': tagged_market_data,  # Full data with tags and lookback periods
+                'long_signals': long_window_df,  # 45-minute windows for analysis
+                'short_signals': short_window_df,  # 45-minute windows for analysis
+                'combined_signals': combined_window_df,  # 45-minute windows for analysis
+                'long_count': len(long_window_df),
+                'short_count': len(short_window_df),
+                'combined_count': len(combined_window_df),
+                'long_tagged_count': long_tagged_count,
+                'short_tagged_count': short_tagged_count,
+                'combined_tagged_count': combined_tagged_count,
                 'long_quality_score': long_quality,
                 'short_quality_score': short_quality,
-                'total_processed': len(analyst_signals)
+                'total_processed': len(analyst_signals),
+                'tagging_approach': True  # Indicates we're using tagging with full lookback
             }
 
-            tprint_success(f"✅ Signal separation completed: {result['long_count']} long, {result['short_count']} short, {result['combined_count']} combined")
+            tprint_success(f"✅ Signal tagging completed: {result['long_tagged_count']} long, {result['short_tagged_count']} short, {result['combined_tagged_count']} combined tagged samples")
             tprint_info(f"📊 Quality scores: Long={result['long_quality_score']:.3f}, Short={result['short_quality_score']:.3f}")
+            tprint_info(f"🔄 Using tagging approach - full lookback periods preserved for indicator calculations")
 
             return result
 
@@ -587,6 +639,7 @@ class TacticianPreMLOrchestrator:
             return {
                 'success': False,
                 'error': str(e),
+                'tagged_market_data': pd.DataFrame(),
                 'long_signals': pd.DataFrame(),
                 'short_signals': pd.DataFrame(),
                 'combined_signals': pd.DataFrame()
@@ -1122,8 +1175,8 @@ class TacticianPreMLOrchestrator:
 
     async def _prepare_training_data(
         self,
-        long_signals: pd.DataFrame,
-        short_signals: pd.DataFrame,
+        tagged_market_data: pd.DataFrame,
+        market_data: pd.DataFrame,
         long_pid_features: OrchestratorResult,
         short_pid_features: OrchestratorResult,
         long_targets: Dict[str, np.ndarray],
@@ -1131,7 +1184,7 @@ class TacticianPreMLOrchestrator:
         long_selected_features: List[str],
         short_selected_features: List[str]
     ) -> Dict[str, Any]:
-        """Prepare final training data for both signal types."""
+        """Prepare final training data for both signal types using tagged market data."""
         try:
             tprint_info("📚 Preparing final training data for both signal types...")
 
@@ -1143,12 +1196,16 @@ class TacticianPreMLOrchestrator:
 
             start_time = tprint_timer()
 
+            # Filter tagged market data by signal type for training
+            long_tagged_data = tagged_market_data[tagged_market_data['signal_direction'] == 'long'].copy()
+            short_tagged_data = tagged_market_data[tagged_market_data['signal_direction'] == 'short'].copy()
+
             # Prepare long training data
-            if not long_signals.empty and long_pid_features and long_targets and long_selected_features:
+            if not long_tagged_data.empty and long_pid_features and long_targets and long_selected_features:
                 try:
                     tprint_info("📈 Preparing long training data...")
                     long_data = await self._prepare_signal_training_data(
-                        long_signals, long_pid_features, long_targets,
+                        long_tagged_data, long_pid_features, long_targets,
                         long_selected_features, "long"
                     )
                     result['long_data'] = long_data
@@ -1157,14 +1214,14 @@ class TacticianPreMLOrchestrator:
                     tprint_error(f"❌ Long training data preparation failed: {e}")
                     result['long_data'] = pd.DataFrame()
             else:
-                tprint_info("⏭️ Skipping long training data preparation - missing components")
+                tprint_info(f"⏭️ Skipping long training data preparation - missing components (data: {len(long_tagged_data)}, features: {long_pid_features is not None}, targets: {len(long_targets)}, selected: {len(long_selected_features)})")
 
             # Prepare short training data
-            if not short_signals.empty and short_pid_features and short_targets and short_selected_features:
+            if not short_tagged_data.empty and short_pid_features and short_targets and short_selected_features:
                 try:
                     tprint_info("📉 Preparing short training data...")
                     short_data = await self._prepare_signal_training_data(
-                        short_signals, short_pid_features, short_targets,
+                        short_tagged_data, short_pid_features, short_targets,
                         short_selected_features, "short"
                     )
                     result['short_data'] = short_data
@@ -1173,7 +1230,7 @@ class TacticianPreMLOrchestrator:
                     tprint_error(f"❌ Short training data preparation failed: {e}")
                     result['short_data'] = pd.DataFrame()
             else:
-                tprint_info("⏭️ Skipping short training data preparation - missing components")
+                tprint_info(f"⏭️ Skipping short training data preparation - missing components (data: {len(short_tagged_data)}, features: {short_pid_features is not None}, targets: {len(short_targets)}, selected: {len(short_selected_features)})")
 
             result['preparation_time'] = tprint_timer(start_time)
             tprint_performance("Training data preparation", result['preparation_time'])

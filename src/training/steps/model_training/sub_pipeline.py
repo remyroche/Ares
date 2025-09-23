@@ -399,6 +399,10 @@ class ModelTrainingSubPipeline:
             'tactician_models_training': self._tactician_models_training_pipeline,
             'tactician_ensemble_training': self._tactician_ensemble_training_pipeline,
         }
+
+        # Add aliases for backward compatibility
+        self.sub_pipelines['tactician_model_training'] = self._tactician_models_training_pipeline
+        self.sub_pipelines['tactician_ensemble_training'] = self._tactician_ensemble_training_pipeline
         
         # Initialize temporal feature integration
         self.temporal_features_available = False
@@ -1023,9 +1027,11 @@ class ModelTrainingSubPipeline:
             required_artifacts = {
                 'analyst_model_training': ['models', 'metrics'],
             'analyst_ensemble_training': ['models', 'metrics'],
-            'tactician_pre_ml_orchestration': ['orchestration_result', 'long_training_data', 'short_training_data'],
+            'tactician_pre_ml_orchestration': ['orchestration_result', 'long_training_data', 'short_training_data', 'tagged_market_data'],
             'tactician_dual_training': ['training_result', 'long_base_models', 'short_base_models', 'long_ensemble_models', 'short_ensemble_models', 'models', 'metrics'],
             'tactician_models_training': ['models', 'metrics'],
+            'tactician_ensemble_training': ['models', 'metrics'],
+            'tactician_model_training': ['models', 'metrics'],
             'tactician_ensemble_training': ['models', 'metrics']
             }
             

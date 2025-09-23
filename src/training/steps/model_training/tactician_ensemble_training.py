@@ -211,7 +211,7 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
     Enhanced Features:
     - 1m base timeframe with cross-timeframe features (50+ features)
     - HMM + Analyst outputs integration for comprehensive context
-    - XGBoost + RandomForest + CatBoost + Elastic Net base models with LightGBM meta-learner
+    - XGBoost + RandomForest + CatBoost + Elastic Net + NAS base models with LightGBM meta-learner
     - All-regime training but only on Analyst green light periods
     - Runs every 30 seconds for live trading
     - Decides WHEN we trade based on expected 0.3% price change (micro movements)
@@ -535,7 +535,7 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
         - 1m base timeframe with cross-timeframe features (50+ features)
         - HMM + Analyst outputs + all model predictions integration
         - Enhanced filtering: confidence > 0.5 + 45 min after confidence drops
-        - XGBoost + RandomForest + CatBoost + Elastic Net base models with LightGBM meta-learner
+        - XGBoost + RandomForest + CatBoost + Elastic Net + NAS base models with LightGBM meta-learner
         - All-regime training with realistic trading condition simulation
         - Decides WHEN we trade based on expected 0.3% price change (micro movements)
 

@@ -1026,6 +1026,25 @@ class TacticianPreMLOrchestrator:
                     'long_features_with_hmm': len(result.long_selected_features),
                     'short_features_with_hmm': len(result.short_selected_features),
                     'feature_integration_complete': True
+                },
+                'evaluation_metrics': {
+                    'long_training_accuracy': getattr(result, 'long_training_accuracy', 0.0),
+                    'short_training_accuracy': getattr(result, 'short_training_accuracy', 0.0),
+                    'long_validation_accuracy': getattr(result, 'long_validation_accuracy', 0.0),
+                    'short_validation_accuracy': getattr(result, 'short_validation_accuracy', 0.0),
+                    'long_f1_score': getattr(result, 'long_f1_score', 0.0),
+                    'short_f1_score': getattr(result, 'short_f1_score', 0.0),
+                    'long_precision': getattr(result, 'long_precision', 0.0),
+                    'short_precision': getattr(result, 'short_precision', 0.0),
+                    'long_recall': getattr(result, 'long_recall', 0.0),
+                    'short_recall': getattr(result, 'short_recall', 0.0),
+                    'long_roc_auc': getattr(result, 'long_roc_auc', 0.0),
+                    'short_roc_auc': getattr(result, 'short_roc_auc', 0.0),
+                    'long_sharpe_ratio': getattr(result, 'long_sharpe_ratio', 0.0),
+                    'short_sharpe_ratio': getattr(result, 'short_sharpe_ratio', 0.0),
+                    'long_max_drawdown': getattr(result, 'long_max_drawdown', 0.0),
+                    'short_max_drawdown': getattr(result, 'short_max_drawdown', 0.0),
+                    'evaluation_completed': getattr(result, 'evaluation_completed', False)
                 }
             }
 
@@ -1051,6 +1070,7 @@ class TacticianPreMLOrchestrator:
             quality = report['data_quality_metrics']
             performance = report['performance_metrics']
             integration = report['model_integration_metrics']
+            evaluation = report.get('evaluation_metrics', {})
 
             tprint_info("=" * 80)
             tprint_info("🎯 TACTICIAN PRE-ML ORCHESTRATION SUMMARY")
@@ -1109,6 +1129,31 @@ class TacticianPreMLOrchestrator:
                 tprint_info(f"  📊 Input Samples: {orchestration['input_samples']}")
                 tprint_info(f"  📈 Long Samples: {orchestration['long_samples_processed']}")
                 tprint_info(f"  📉 Short Samples: {orchestration['short_samples_processed']}")
+
+            # Log evaluation metrics if available
+            if evaluation and evaluation.get('evaluation_completed', False):
+                tprint_info("\n🎯 Model Evaluation Metrics:")
+                tprint_info(f"  📈 Long Training Accuracy: {evaluation['long_training_accuracy']:.4f}")
+                tprint_info(f"  📉 Short Training Accuracy: {evaluation['short_training_accuracy']:.4f}")
+                tprint_info(f"  ✅ Long Validation Accuracy: {evaluation['long_validation_accuracy']:.4f}")
+                tprint_info(f"  ✅ Short Validation Accuracy: {evaluation['short_validation_accuracy']:.4f}")
+                tprint_info(f"  🎯 Long F1 Score: {evaluation['long_f1_score']:.4f}")
+                tprint_info(f"  🎯 Short F1 Score: {evaluation['short_f1_score']:.4f}")
+                tprint_info(f"  📊 Long Precision: {evaluation['long_precision']:.4f}")
+                tprint_info(f"  📊 Short Precision: {evaluation['short_precision']:.4f}")
+                tprint_info(f"  📈 Long Recall: {evaluation['long_recall']:.4f}")
+                tprint_info(f"  📉 Short Recall: {evaluation['short_recall']:.4f}")
+                tprint_info(f"  📈 Long ROC-AUC: {evaluation['long_roc_auc']:.4f}")
+                tprint_info(f"  📉 Short ROC-AUC: {evaluation['short_roc_auc']:.4f}")
+                tprint_info(f"  💰 Long Sharpe Ratio: {evaluation['long_sharpe_ratio']:.4f}")
+                tprint_info(f"  💰 Short Sharpe Ratio: {evaluation['short_sharpe_ratio']:.4f}")
+                tprint_info(f"  📉 Long Max Drawdown: {evaluation['long_max_drawdown']:.4f}")
+                tprint_info(f"  📉 Short Max Drawdown: {evaluation['short_max_drawdown']:.4f}")
+            else:
+                tprint_info("\n📊 Evaluation Status:")
+                tprint_info(f"  ✅ Evaluation Completed: {'Yes' if evaluation.get('evaluation_completed', False) else 'No'}")
+                if not evaluation.get('evaluation_completed', False):
+                    tprint_info(f"  ⚠️ Evaluation metrics not available yet (pre-ML orchestration step)")
 
             tprint_info("=" * 80)
 

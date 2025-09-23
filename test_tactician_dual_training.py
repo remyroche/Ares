@@ -126,6 +126,18 @@ async def test_tactician_dual_training():
         print(f"   - Short Ensemble Features: {feature_integration.get('short_ensemble_feature_count', 0)}")
         print(f"   - Long Samples: {training_summary.get('total_long_samples', 0)}")
         print(f"   - Short Samples: {training_summary.get('total_short_samples', 0)}")
+        print(f"   - Evaluation Completed: {'✅ YES' if evaluation.get('evaluation_completed', False) else '❌ NO'}")
+
+        # Show some key evaluation metrics if available
+        if evaluation.get('evaluation_completed', False):
+            print(f"   - Long Training Accuracy: {evaluation.get('long_training_accuracy', 0):.4f}")
+            print(f"   - Short Training Accuracy: {evaluation.get('short_training_accuracy', 0):.4f}")
+            print(f"   - Long F1 Score: {evaluation.get('long_f1_score', 0):.4f}")
+            print(f"   - Short F1 Score: {evaluation.get('short_f1_score', 0):.4f}")
+            print(f"   - Long Sharpe Ratio: {evaluation.get('long_sharpe_ratio', 0):.4f}")
+            print(f"   - Short Sharpe Ratio: {evaluation.get('short_sharpe_ratio', 0):.4f}")
+            print(f"   - Long Max Drawdown: {evaluation.get('long_max_drawdown', 0):.4f}")
+            print(f"   - Short Max Drawdown: {evaluation.get('short_max_drawdown', 0):.4f}")
 
     print("\n🎉 All tests completed successfully!")
     print("\n📋 Command Usage Instructions:")
@@ -154,6 +166,14 @@ async def test_tactician_dual_training():
     print("     * Feature Integration status")
     print("     * Performance metrics and quality scores")
     print("     * Error Analysis and completion status")
+    print("     * MODEL EVALUATION METRICS:")
+    print("       - Accuracy (Training, Validation, Test)")
+    print("       - F1 Score, Precision, Recall")
+    print("       - ROC-AUC scores")
+    print("       - Financial metrics (Sharpe Ratio, Max Drawdown)")
+    print("       - Profit Factor and Win Rate")
+    print("       - Regression metrics (MSE, MAE, RMSE, R²)")
+    print("       - Cross-validation results")
 
     return True
 

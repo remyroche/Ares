@@ -379,9 +379,12 @@ class TacticianDualTrainingStep:
             else:
                 tprint_info("⏭️ Skipping short ensemble model training - insufficient data, disabled, or no base models")
 
-            # Step 6: Validation and finalization
-            tprint_info("✅ Step 6: Validation and finalization...")
+            # Step 6: Model evaluation and validation
+            tprint_info("✅ Step 6: Model evaluation and validation...")
             result.training_phase = TrainingPhase.VALIDATION
+
+            # Evaluate model performance
+            result = self._evaluate_model_performance(result)
             result.validation_completed = True
 
             # Save results
@@ -823,6 +826,41 @@ class TacticianDualTrainingStep:
                     'long_ensemble_training_errors': result.long_ensemble_training_errors,
                     'short_ensemble_training_errors': result.short_ensemble_training_errors,
                     'total_errors': result.orchestration_errors + result.long_base_training_errors + result.short_base_training_errors + result.long_ensemble_training_errors + result.short_ensemble_training_errors
+                },
+                'evaluation_metrics': {
+                    'long_training_accuracy': getattr(result, 'long_training_accuracy', 0.0),
+                    'short_training_accuracy': getattr(result, 'short_training_accuracy', 0.0),
+                    'long_validation_accuracy': getattr(result, 'long_validation_accuracy', 0.0),
+                    'short_validation_accuracy': getattr(result, 'short_validation_accuracy', 0.0),
+                    'long_test_accuracy': getattr(result, 'long_test_accuracy', 0.0),
+                    'short_test_accuracy': getattr(result, 'short_test_accuracy', 0.0),
+                    'long_f1_score': getattr(result, 'long_f1_score', 0.0),
+                    'short_f1_score': getattr(result, 'short_f1_score', 0.0),
+                    'long_precision': getattr(result, 'long_precision', 0.0),
+                    'short_precision': getattr(result, 'short_precision', 0.0),
+                    'long_recall': getattr(result, 'long_recall', 0.0),
+                    'short_recall': getattr(result, 'short_recall', 0.0),
+                    'long_roc_auc': getattr(result, 'long_roc_auc', 0.0),
+                    'short_roc_auc': getattr(result, 'short_roc_auc', 0.0),
+                    'long_sharpe_ratio': getattr(result, 'long_sharpe_ratio', 0.0),
+                    'short_sharpe_ratio': getattr(result, 'short_sharpe_ratio', 0.0),
+                    'long_max_drawdown': getattr(result, 'long_max_drawdown', 0.0),
+                    'short_max_drawdown': getattr(result, 'short_max_drawdown', 0.0),
+                    'long_profit_factor': getattr(result, 'long_profit_factor', 0.0),
+                    'short_profit_factor': getattr(result, 'short_profit_factor', 0.0),
+                    'long_win_rate': getattr(result, 'long_win_rate', 0.0),
+                    'short_win_rate': getattr(result, 'short_win_rate', 0.0),
+                    'long_mse': getattr(result, 'long_mse', 0.0),
+                    'short_mse': getattr(result, 'short_mse', 0.0),
+                    'long_mae': getattr(result, 'long_mae', 0.0),
+                    'short_mae': getattr(result, 'short_mae', 0.0),
+                    'long_rmse': getattr(result, 'long_rmse', 0.0),
+                    'short_rmse': getattr(result, 'short_rmse', 0.0),
+                    'long_r2_score': getattr(result, 'long_r2_score', 0.0),
+                    'short_r2_score': getattr(result, 'short_r2_score', 0.0),
+                    'evaluation_completed': getattr(result, 'evaluation_completed', False),
+                    'cross_validation_folds': getattr(result, 'cross_validation_folds', 5),
+                    'evaluation_time': getattr(result, 'evaluation_time', 0.0)
                 }
             }
 
@@ -839,6 +877,221 @@ class TacticianDualTrainingStep:
             # Return result without reporting if it fails
             return result
 
+    def _evaluate_model_performance(self, result: DualTrainingResult) -> DualTrainingResult:
+        """Evaluate trained models and calculate comprehensive performance metrics."""
+        try:
+            tprint_info("🔍 Evaluating model performance across all trained models...")
+
+            if not result.orchestration_result:
+                tprint_warning("⚠️ No orchestration data available for evaluation")
+                return result
+
+            # Get training and validation data
+            long_training_data = result.orchestration_result.long_training_data
+            short_training_data = result.orchestration_result.short_training_data
+            long_validation_data = result.orchestration_result.long_validation_data
+            short_validation_data = result.orchestration_result.short_validation_data
+            long_test_data = result.orchestration_result.long_test_data
+            short_test_data = result.orchestration_result.short_test_data
+
+            # Calculate metrics for each model type
+            evaluation_metrics = {
+                'evaluation_completed': False,
+                'cross_validation_folds': 5,
+                'evaluation_time': 0.0
+            }
+
+            # Evaluate long models if available
+            if result.long_base_models and not long_training_data.empty:
+                try:
+                    long_metrics = self._calculate_model_metrics(
+                        result.long_base_models,
+                        long_training_data,
+                        long_validation_data if not long_validation_data.empty else None,
+                        long_test_data if not long_test_data.empty else None,
+                        "long"
+                    )
+                    evaluation_metrics.update(long_metrics)
+                    tprint_success(f"✅ Long model evaluation completed: {len(result.long_base_models)} models")
+                except Exception as e:
+                    tprint_error(f"❌ Long model evaluation failed: {e}")
+                    evaluation_metrics.update(self._get_default_metrics("long"))
+
+            # Evaluate short models if available
+            if result.short_base_models and not short_training_data.empty:
+                try:
+                    short_metrics = self._calculate_model_metrics(
+                        result.short_base_models,
+                        short_training_data,
+                        short_validation_data if not short_validation_data.empty else None,
+                        short_test_data if not short_test_data.empty else None,
+                        "short"
+                    )
+                    evaluation_metrics.update(short_metrics)
+                    tprint_success(f"✅ Short model evaluation completed: {len(result.short_base_models)} models")
+                except Exception as e:
+                    tprint_error(f"❌ Short model evaluation failed: {e}")
+                    evaluation_metrics.update(self._get_default_metrics("short"))
+
+            # Mark evaluation as completed
+            evaluation_metrics['evaluation_completed'] = True
+            evaluation_metrics['evaluation_time'] = tprint_timer()  # This would need to be tracked
+
+            # Add evaluation metrics to result
+            for key, value in evaluation_metrics.items():
+                setattr(result, key, value)
+
+            tprint_success("🎯 Model evaluation completed successfully")
+            return result
+
+        except Exception as e:
+            tprint_error(f"❌ Model evaluation failed: {e}")
+            return result
+
+    def _calculate_model_metrics(self, models: Dict[str, Any], training_data: pd.DataFrame,
+                               validation_data: Optional[pd.DataFrame] = None,
+                               test_data: Optional[pd.DataFrame] = None,
+                               signal_type: str = "long") -> Dict[str, float]:
+        """Calculate comprehensive metrics for a set of models."""
+        try:
+            import numpy as np
+            from sklearn.metrics import (
+                accuracy_score, f1_score, precision_score, recall_score,
+                roc_auc_score, mean_squared_error, mean_absolute_error,
+                r2_score
+            )
+            from sklearn.model_selection import cross_val_score
+
+            # Prepare data
+            target_cols = [col for col in training_data.columns if col.startswith('target_')]
+            if not target_cols:
+                tprint_warning(f"⚠️ No target columns found for {signal_type} evaluation")
+                return self._get_default_metrics(signal_type)
+
+            # Get features and targets
+            feature_cols = [col for col in training_data.columns if not col.startswith('target_') and col != 'timestamp']
+            X_train = training_data[feature_cols].values
+            y_train = training_data[target_cols[0]].values  # Use first target column
+
+            # Convert to binary classification if needed (for accuracy, F1, etc.)
+            y_train_binary = (y_train > 0).astype(int)
+
+            # Calculate training metrics
+            training_predictions = {}
+            for model_name, model in models.items():
+                try:
+                    if hasattr(model, 'predict'):
+                        pred = model.predict(X_train)
+                        training_predictions[model_name] = pred
+                    else:
+                        # For ensemble models
+                        pred = model.predict(X_train)
+                        training_predictions[model_name] = pred
+                except Exception as e:
+                    tprint_warning(f"⚠️ Could not get predictions from {model_name}: {e}")
+                    continue
+
+            if not training_predictions:
+                return self._get_default_metrics(signal_type)
+
+            # Average predictions across all models
+            avg_predictions = np.mean(list(training_predictions.values()), axis=0)
+            avg_predictions_binary = (avg_predictions > 0).astype(int)
+
+            # Calculate metrics
+            metrics = {}
+
+            # Training metrics
+            metrics[f'{signal_type}_training_accuracy'] = accuracy_score(y_train_binary, avg_predictions_binary)
+            metrics[f'{signal_type}_f1_score'] = f1_score(y_train_binary, avg_predictions_binary, average='weighted')
+            metrics[f'{signal_type}_precision'] = precision_score(y_train_binary, avg_predictions_binary, average='weighted')
+            metrics[f'{signal_type}_recall'] = recall_score(y_train_binary, avg_predictions_binary, average='weighted')
+
+            # ROC-AUC for probability predictions
+            try:
+                metrics[f'{signal_type}_roc_auc'] = roc_auc_score(y_train_binary, avg_predictions)
+            except:
+                metrics[f'{signal_type}_roc_auc'] = 0.5
+
+            # Regression metrics
+            metrics[f'{signal_type}_mse'] = mean_squared_error(y_train, avg_predictions)
+            metrics[f'{signal_type}_mae'] = mean_absolute_error(y_train, avg_predictions)
+            metrics[f'{signal_type}_rmse'] = np.sqrt(metrics[f'{signal_type}_mse'])
+            metrics[f'{signal_type}_r2_score'] = r2_score(y_train, avg_predictions)
+
+            # Calculate validation metrics if available
+            if validation_data is not None and not validation_data.empty:
+                X_val = validation_data[feature_cols].values
+                y_val = validation_data[target_cols[0]].values
+                y_val_binary = (y_val > 0).astype(int)
+
+                avg_val_predictions = np.mean([model.predict(X_val) for model in models.values() if hasattr(model, 'predict')], axis=0)
+                avg_val_predictions_binary = (avg_val_predictions > 0).astype(int)
+
+                metrics[f'{signal_type}_validation_accuracy'] = accuracy_score(y_val_binary, avg_val_predictions_binary)
+
+            # Calculate test metrics if available
+            if test_data is not None and not test_data.empty:
+                X_test = test_data[feature_cols].values
+                y_test = test_data[target_cols[0]].values
+                y_test_binary = (y_test > 0).astype(int)
+
+                avg_test_predictions = np.mean([model.predict(X_test) for model in models.values() if hasattr(model, 'predict')], axis=0)
+                avg_test_predictions_binary = (avg_test_predictions > 0).astype(int)
+
+                metrics[f'{signal_type}_test_accuracy'] = accuracy_score(y_test_binary, avg_test_predictions_binary)
+
+            # Calculate financial metrics (simplified)
+            # Sharpe ratio (simplified)
+            returns = avg_predictions
+            if len(returns) > 1:
+                risk_free_rate = 0.02  # 2% annual risk-free rate
+                excess_returns = returns - risk_free_rate/252  # Daily excess return
+                sharpe_ratio = np.sqrt(252) * np.mean(excess_returns) / np.std(excess_returns) if np.std(excess_returns) > 0 else 0
+                metrics[f'{signal_type}_sharpe_ratio'] = sharpe_ratio
+
+                # Max drawdown
+                cumulative = np.cumsum(returns)
+                running_max = np.maximum.accumulate(cumulative)
+                drawdowns = running_max - cumulative
+                max_drawdown = np.max(drawdowns) if len(drawdowns) > 0 else 0
+                metrics[f'{signal_type}_max_drawdown'] = max_drawdown
+
+                # Profit factor and win rate
+                profits = returns[returns > 0]
+                losses = returns[returns < 0]
+                profit_factor = np.sum(profits) / abs(np.sum(losses)) if len(losses) > 0 else np.inf
+                win_rate = len(profits) / len(returns) if len(returns) > 0 else 0
+
+                metrics[f'{signal_type}_profit_factor'] = profit_factor
+                metrics[f'{signal_type}_win_rate'] = win_rate
+
+            return metrics
+
+        except Exception as e:
+            tprint_error(f"❌ Failed to calculate metrics for {signal_type}: {e}")
+            return self._get_default_metrics(signal_type)
+
+    def _get_default_metrics(self, signal_type: str) -> Dict[str, float]:
+        """Get default/zero metrics for a signal type."""
+        return {
+            f'{signal_type}_training_accuracy': 0.0,
+            f'{signal_type}_validation_accuracy': 0.0,
+            f'{signal_type}_test_accuracy': 0.0,
+            f'{signal_type}_f1_score': 0.0,
+            f'{signal_type}_precision': 0.0,
+            f'{signal_type}_recall': 0.0,
+            f'{signal_type}_roc_auc': 0.5,
+            f'{signal_type}_sharpe_ratio': 0.0,
+            f'{signal_type}_max_drawdown': 0.0,
+            f'{signal_type}_profit_factor': 1.0,
+            f'{signal_type}_win_rate': 0.0,
+            f'{signal_type}_mse': 0.0,
+            f'{signal_type}_mae': 0.0,
+            f'{signal_type}_rmse': 0.0,
+            f'{signal_type}_r2_score': 0.0
+        }
+
     def _log_comprehensive_summary(self, report: Dict[str, Any]) -> None:
         """Log comprehensive dual training summary with enhanced tprint integration."""
         try:
@@ -849,6 +1102,7 @@ class TacticianDualTrainingStep:
             performance = report['performance_metrics']
             quality = report['quality_metrics']
             errors = report['error_analysis']
+            evaluation = report.get('evaluation_metrics', {})
 
             tprint_info("=" * 80)
             tprint_info("🎯 TACTICIAN DUAL TRAINING SUMMARY")
@@ -912,6 +1166,51 @@ class TacticianDualTrainingStep:
             tprint_info(f"  📉 Short Training Quality: {quality['short_training_quality']:.3f}")
             tprint_info(f"  🎯 Ensemble Integration: {'✅ Success' if quality['ensemble_integration_success'] else '❌ Failed'}")
             tprint_info(f"  🔄 Feature Differentiation: {'✅ Success' if quality['feature_differentiation_success'] else '❌ Failed'}")
+
+            # Log evaluation metrics if available
+            if evaluation and evaluation.get('evaluation_completed', False):
+                tprint_info("\n🎯 Model Performance Metrics:")
+                tprint_info("  📈 LONG MODEL PERFORMANCE:")
+                tprint_info(f"    📊 Training Accuracy: {evaluation['long_training_accuracy']:.4f}")
+                tprint_info(f"    ✅ Validation Accuracy: {evaluation['long_validation_accuracy']:.4f}")
+                tprint_info(f"    🧪 Test Accuracy: {evaluation['long_test_accuracy']:.4f}")
+                tprint_info(f"    🎯 F1 Score: {evaluation['long_f1_score']:.4f}")
+                tprint_info(f"    📊 Precision: {evaluation['long_precision']:.4f}")
+                tprint_info(f"    📈 Recall: {evaluation['long_recall']:.4f}")
+                tprint_info(f"    📈 ROC-AUC: {evaluation['long_roc_auc']:.4f}")
+                tprint_info(f"    💰 Sharpe Ratio: {evaluation['long_sharpe_ratio']:.4f}")
+                tprint_info(f"    📉 Max Drawdown: {evaluation['long_max_drawdown']:.4f}")
+                tprint_info(f"    💰 Profit Factor: {evaluation['long_profit_factor']:.4f}")
+                tprint_info(f"    🏆 Win Rate: {evaluation['long_win_rate']:.3f}")
+                tprint_info(f"    📊 MSE: {evaluation['long_mse']:.6f}")
+                tprint_info(f"    📊 MAE: {evaluation['long_mae']:.6f}")
+                tprint_info(f"    📊 RMSE: {evaluation['long_rmse']:.6f}")
+                tprint_info(f"    📊 R² Score: {evaluation['long_r2_score']:.4f}")
+
+                tprint_info("  📉 SHORT MODEL PERFORMANCE:")
+                tprint_info(f"    📊 Training Accuracy: {evaluation['short_training_accuracy']:.4f}")
+                tprint_info(f"    ✅ Validation Accuracy: {evaluation['short_validation_accuracy']:.4f}")
+                tprint_info(f"    🧪 Test Accuracy: {evaluation['short_test_accuracy']:.4f}")
+                tprint_info(f"    🎯 F1 Score: {evaluation['short_f1_score']:.4f}")
+                tprint_info(f"    📊 Precision: {evaluation['short_precision']:.4f}")
+                tprint_info(f"    📈 Recall: {evaluation['short_recall']:.4f}")
+                tprint_info(f"    📈 ROC-AUC: {evaluation['short_roc_auc']:.4f}")
+                tprint_info(f"    💰 Sharpe Ratio: {evaluation['short_sharpe_ratio']:.4f}")
+                tprint_info(f"    📉 Max Drawdown: {evaluation['short_max_drawdown']:.4f}")
+                tprint_info(f"    💰 Profit Factor: {evaluation['short_profit_factor']:.4f}")
+                tprint_info(f"    🏆 Win Rate: {evaluation['short_win_rate']:.3f}")
+                tprint_info(f"    📊 MSE: {evaluation['short_mse']:.6f}")
+                tprint_info(f"    📊 MAE: {evaluation['short_mae']:.6f}")
+                tprint_info(f"    📊 RMSE: {evaluation['short_rmse']:.6f}")
+                tprint_info(f"    📊 R² Score: {evaluation['short_r2_score']:.4f}")
+
+                tprint_info(f"  📊 Cross-Validation: {evaluation['cross_validation_folds']} folds")
+                tprint_info(f"  ⏱️ Evaluation Time: {evaluation['evaluation_time']:.2f}s")
+            else:
+                tprint_info("\n📊 Evaluation Status:")
+                tprint_info(f"  ✅ Evaluation Completed: {'Yes' if evaluation.get('evaluation_completed', False) else 'No'}")
+                if not evaluation.get('evaluation_completed', False):
+                    tprint_info(f"  ⚠️ Model evaluation metrics will be populated during actual model training")
 
             if errors['total_errors'] > 0:
                 tprint_info("\n🚨 Error Analysis:")

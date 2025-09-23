@@ -542,11 +542,9 @@ class HMMTrainingPipeline:
                 tprint_info(f"📊 MSM Score: {clustering_result.msm_score".3f"}")
                 return regime_labels
             else:
-                tprint_warning(f"⚠️ MSM clustering failed, falling back to KMeans: {clustering_result.error_message}")
-                # Fallback to KMeans
-                from sklearn.cluster import KMeans
-                kmeans = KMeans(n_clusters=self.n_regimes, random_state=42, n_init=10)
-                return kmeans.fit_predict(X_scaled)
+                # Fast fail - do not fall back to KMeans
+                tprint_error(f"❌ MSM clustering failed with fast fail: {clustering_result.error_message}")
+                raise RuntimeError(f"MSM clustering failed: {clustering_result.error_message}")
 
         except Exception as e:
             tprint_error(f"❌ Failed to create enhanced regime labels using MSM: {e}")

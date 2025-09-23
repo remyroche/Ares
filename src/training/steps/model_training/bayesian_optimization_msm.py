@@ -48,29 +48,29 @@ class MSMOptimizationObjective(Enum):
 
 @dataclass
 class MSMOptimizationConfig:
-    """Configuration for MSM Bayesian optimization."""
-    n_trials: int = 50
-    timeout: int = 3600  # 1 hour
+    """Configuration for MSM Bayesian optimization - optimized for efficiency."""
+    n_trials: int = 15  # Reduced for computational efficiency
+    timeout: int = 300  # 5 minutes max - much more efficient
     random_state: int = 42
-    n_jobs: int = 1
+    n_jobs: int = -1  # Use all available cores
     optimization_objective: str = "msm_score"
     use_skopt: bool = True  # Use scikit-optimize instead of Optuna
-    early_stopping_patience: int = 10
-    early_stopping_min_delta: float = 0.001
+    early_stopping_patience: int = 5  # Reduced patience for faster convergence
+    early_stopping_min_delta: float = 0.01  # Larger delta for faster stopping
 
-    # MSM parameter bounds
-    n_states_min: int = 5
-    n_states_max: int = 50
+    # MSM parameter bounds - optimized ranges
+    n_states_min: int = 8
+    n_states_max: int = 25  # Reduced range for efficiency
     lag_time_min: int = 1
-    lag_time_max: int = 20
-    connectivity_threshold_min: float = 0.01
-    connectivity_threshold_max: float = 0.5
-    ergodic_cutoff_min: float = 1e-8
-    ergodic_cutoff_max: float = 1e-3
+    lag_time_max: int = 10  # Reduced range for efficiency
+    connectivity_threshold_min: float = 0.05
+    connectivity_threshold_max: float = 0.3  # Narrower range for efficiency
+    ergodic_cutoff_min: float = 1e-6
+    ergodic_cutoff_max: float = 1e-4  # Narrower range for efficiency
 
 
 class MSMBayesianOptimizer:
-    """Bayesian optimization for MSM parameters."""
+    """Bayesian optimization for MSM parameters - computationally efficient implementation."""
 
     def __init__(self, config: MSMOptimizationConfig):
         """Initialize MSM Bayesian optimizer.
@@ -84,16 +84,18 @@ class MSMBayesianOptimizer:
         if not SKOPT_AVAILABLE and not OPTUNA_AVAILABLE:
             raise ImportError("Either scikit-optimize or Optuna must be installed for Bayesian optimization")
 
-        # Track optimization history
+        # Track optimization history - limit memory usage
         self.optimization_history = []
         self.best_params = None
         self.best_score = -np.inf
+        self.early_stopping_counter = 0
+        self.early_stopping_best_score = -np.inf
 
-        self.logger.info(f"✅ MSM Bayesian Optimizer initialized with {config.n_trials} trials")
+        self.logger.info(f"✅ MSM Bayesian Optimizer initialized with {config.n_trials} trials, timeout {config.timeout}s")
 
     def optimize(self, X: np.ndarray, y: Optional[np.ndarray] = None,
                 evaluation_function: Optional[Callable] = None) -> Dict[str, Any]:
-        """Perform Bayesian optimization of MSM parameters.
+        """Perform Bayesian optimization of MSM parameters - with efficiency optimizations.
 
         Args:
             X: Feature matrix
@@ -106,16 +108,26 @@ class MSMBayesianOptimizer:
         start_time = time.time()
 
         try:
+            # Check if we should use subsampled data for efficiency
+            if len(X) > 10000:
+                X_sampled, y_sampled = self._subsample_data(X, y, max_samples=5000)
+                self.logger.info(f"📊 Using subsampled data: {len(X_sampled)} samples for efficiency")
+            else:
+                X_sampled, y_sampled = X, y
+
             if self.config.use_skopt and SKOPT_AVAILABLE:
-                results = self._optimize_skopt(X, y, evaluation_function)
+                results = self._optimize_skopt(X_sampled, y_sampled, evaluation_function)
             elif OPTUNA_AVAILABLE:
-                results = self._optimize_optuna(X, y, evaluation_function)
+                results = self._optimize_optuna(X_sampled, y_sampled, evaluation_function)
             else:
                 raise RuntimeError("Neither scikit-optimize nor Optuna is available")
 
             execution_time = time.time() - start_time
 
-            # Store optimization results
+            # Store optimization results - limit history size for memory efficiency
+            if len(self.optimization_history) > 100:
+                self.optimization_history = self.optimization_history[-50:]  # Keep last 50
+
             results['execution_time'] = execution_time
             results['optimization_history'] = self.optimization_history
 
@@ -265,6 +277,30 @@ class MSMBayesianOptimizer:
         except Exception as e:
             self.logger.warning(f"⚠️ MSM parameter evaluation failed: {e}")
             return -1.0
+
+    def _subsample_data(self, X: np.ndarray, y: Optional[np.ndarray],
+                       max_samples: int = 5000) -> Tuple[np.ndarray, Optional[np.ndarray]]:
+        """Subsample data for computational efficiency.
+
+        Args:
+            X: Feature matrix
+            y: Target values
+            max_samples: Maximum number of samples to use
+
+        Returns:
+            Tuple of (X_subsampled, y_subsampled)
+        """
+        n_samples = min(len(X), max_samples)
+        indices = np.random.choice(len(X), n_samples, replace=False)
+
+        X_subsampled = X[indices]
+
+        if y is not None:
+            y_subsampled = y[indices] if len(y) == len(X) else None
+        else:
+            y_subsampled = None
+
+        return X_subsampled, y_subsampled
 
     def _calculate_msm_score(self, result: Any, X: np.ndarray, y: Optional[np.ndarray] = None) -> float:
         """Calculate MSM score based on optimization objective.
@@ -463,11 +499,11 @@ class AttentionNetworkOptimizer:
             return -1.0
 
 
-class EnsembleWeightsOptimizer:
-    """Bayesian optimization for ensemble weights."""
+class MetaLearnerOptimizer:
+    """Bayesian optimization for meta-learner hyperparameters."""
 
     def __init__(self, config: Dict[str, Any]):
-        """Initialize ensemble weights optimizer.
+        """Initialize meta-learner optimizer.
 
         Args:
             config: Optimization configuration
@@ -475,11 +511,11 @@ class EnsembleWeightsOptimizer:
         self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
 
-    def optimize(self, models: List[Any], X: np.ndarray, y: np.ndarray) -> Dict[str, Any]:
-        """Optimize ensemble weights.
+    def optimize(self, base_models: List[Any], X: np.ndarray, y: np.ndarray) -> Dict[str, Any]:
+        """Optimize meta-learner hyperparameters.
 
         Args:
-            models: List of base models
+            base_models: List of base models for stacking
             X: Feature matrix
             y: Target values
 
@@ -488,104 +524,154 @@ class EnsembleWeightsOptimizer:
         """
         try:
             if SKOPT_AVAILABLE:
-                return self._optimize_skopt(models, X, y)
+                return self._optimize_skopt(base_models, X, y)
             elif OPTUNA_AVAILABLE:
-                return self._optimize_optuna(models, X, y)
+                return self._optimize_optuna(base_models, X, y)
             else:
                 raise RuntimeError("Neither scikit-optimize nor Optuna is available")
 
         except Exception as e:
-            self.logger.error(f"❌ Ensemble weights optimization failed: {e}")
+            self.logger.error(f"❌ Meta-learner optimization failed: {e}")
             return {
                 'success': False,
                 'error': str(e),
-                'best_weights': None,
+                'best_params': None,
                 'best_score': None
             }
 
-    def _optimize_skopt(self, models: List[Any], X: np.ndarray, y: np.ndarray) -> Dict[str, Any]:
+    def _optimize_skopt(self, base_models: List[Any], X: np.ndarray, y: np.ndarray) -> Dict[str, Any]:
         """Optimize using scikit-optimize."""
-        n_models = len(models)
-
-        # Define parameter space (weights for each model)
-        dimensions = [Real(low=0.0, high=1.0, name=f'weight_{i}') for i in range(n_models)]
+        # Define parameter space for meta-learner
+        dimensions = [
+            Categorical(['xgboost', 'lightgbm', 'elasticnet'], name='meta_learner_type'),
+            Integer(low=50, high=500, name='n_estimators'),
+            Real(low=0.01, high=0.3, name='learning_rate'),
+            Integer(low=3, high=10, name='max_depth'),
+            Real(low=0.1, high=1.0, name='subsample'),
+            Real(low=0.1, high=1.0, name='colsample_bytree'),
+            Real(low=0.0, high=0.3, name='reg_alpha'),
+            Real(low=0.0, high=0.3, name='reg_lambda')
+        ]
 
         @use_named_args(dimensions)
         def objective(**params):
-            weights = np.array([params[f'weight_{i}'] for i in range(n_models)])
-            weights = weights / np.sum(weights)  # Normalize weights
-            return self._evaluate_ensemble_weights(models, X, y, weights)
+            return self._evaluate_meta_learner(base_models, X, y, params)
 
         # Perform optimization
         result = gp_minimize(
             func=objective,
             dimensions=dimensions,
-            n_calls=self.config.get('n_trials', 50),
+            n_calls=self.config.get('n_trials', 30),
             random_state=self.config.get('random_state', 42)
         )
 
-        # Extract best weights
-        best_weights = np.array([result.x[i] for i in range(n_models)])
-        best_weights = best_weights / np.sum(best_weights)
+        # Extract best parameters
+        best_params = dict(zip([dim.name for dim in dimensions], result.x))
         best_score = -result.fun
 
         return {
             'success': True,
             'best_score': best_score,
-            'best_weights': best_weights,
+            'best_params': best_params,
             'optimization_results': result
         }
 
-    def _optimize_optuna(self, models: List[Any], X: np.ndarray, y: np.ndarray) -> Dict[str, Any]:
+    def _optimize_optuna(self, base_models: List[Any], X: np.ndarray, y: np.ndarray) -> Dict[str, Any]:
         """Optimize using Optuna."""
         study = create_study(direction='maximize')
-        n_models = len(models)
 
         def objective(trial: Trial):
-            weights = np.array([trial.suggest_float(f'weight_{i}', 0.0, 1.0) for i in range(n_models)])
-            weights = weights / np.sum(weights)  # Normalize weights
-            score = self._evaluate_ensemble_weights(models, X, y, weights)
+            params = {
+                'meta_learner_type': trial.suggest_categorical('meta_learner_type', ['xgboost', 'lightgbm', 'elasticnet']),
+                'n_estimators': trial.suggest_int('n_estimators', 50, 500),
+                'learning_rate': trial.suggest_float('learning_rate', 0.01, 0.3),
+                'max_depth': trial.suggest_int('max_depth', 3, 10),
+                'subsample': trial.suggest_float('subsample', 0.1, 1.0),
+                'colsample_bytree': trial.suggest_float('colsample_bytree', 0.1, 1.0),
+                'reg_alpha': trial.suggest_float('reg_alpha', 0.0, 0.3),
+                'reg_lambda': trial.suggest_float('reg_lambda', 0.0, 0.3)
+            }
+
+            score = self._evaluate_meta_learner(base_models, X, y, params)
             return score
 
-        study.optimize(objective, n_trials=self.config.get('n_trials', 50))
-
-        # Extract best weights
-        best_weights = np.array([study.best_params[f'weight_{i}'] for i in range(n_models)])
-        best_weights = best_weights / np.sum(best_weights)
+        study.optimize(objective, n_trials=self.config.get('n_trials', 30))
 
         return {
             'success': True,
             'best_score': study.best_value,
-            'best_weights': best_weights,
+            'best_params': study.best_params,
             'optimization_results': study
         }
 
-    def _evaluate_ensemble_weights(self, models: List[Any], X: np.ndarray,
-                                 y: np.ndarray, weights: np.ndarray) -> float:
-        """Evaluate ensemble with given weights.
+    def _evaluate_meta_learner(self, base_models: List[Any], X: np.ndarray,
+                              y: np.ndarray, params: Dict[str, Any]) -> float:
+        """Evaluate meta-learner with given parameters.
 
         Args:
-            models: List of base models
+            base_models: List of base models
             X: Feature matrix
             y: Target values
-            weights: Model weights
+            params: Meta-learner parameters
 
         Returns:
             Score (higher is better)
         """
         try:
-            # Get predictions from each model
-            predictions = np.column_stack([model.predict(X) for model in models])
+            from sklearn.model_selection import cross_val_score
+            from sklearn.ensemble import StackingRegressor
+            from sklearn.linear_model import ElasticNetCV
+            from xgboost import XGBRegressor
+            from lightgbm import LGBMRegressor
 
-            # Weighted ensemble prediction
-            ensemble_pred = np.sum(predictions * weights, axis=1)
+            # Create base estimators (simplified for efficiency)
+            estimators = [(f'model_{i}', model) for i, model in enumerate(base_models)]
 
-            # Calculate score
-            from sklearn.metrics import r2_score
-            return r2_score(y, ensemble_pred)
+            # Create meta-learner based on type
+            if params['meta_learner_type'] == 'xgboost':
+                meta_learner = XGBRegressor(
+                    n_estimators=params['n_estimators'],
+                    learning_rate=params['learning_rate'],
+                    max_depth=params['max_depth'],
+                    subsample=params['subsample'],
+                    colsample_bytree=params['colsample_bytree'],
+                    reg_alpha=params['reg_alpha'],
+                    reg_lambda=params['reg_lambda'],
+                    random_state=42,
+                    verbosity=0
+                )
+            elif params['meta_learner_type'] == 'lightgbm':
+                meta_learner = LGBMRegressor(
+                    n_estimators=params['n_estimators'],
+                    learning_rate=params['learning_rate'],
+                    max_depth=params['max_depth'],
+                    subsample=params['subsample'],
+                    colsample_bytree=params['colsample_bytree'],
+                    reg_alpha=params['reg_alpha'],
+                    reg_lambda=params['reg_lambda'],
+                    random_state=42,
+                    verbosity=-1
+                )
+            else:  # elasticnet
+                meta_learner = ElasticNetCV(
+                    cv=3,
+                    random_state=42,
+                    max_iter=1000
+                )
+
+            # Create stacking ensemble
+            stacking_ensemble = StackingRegressor(
+                estimators=estimators,
+                final_estimator=meta_learner,
+                cv=3  # Reduced for efficiency
+            )
+
+            # Evaluate using cross-validation
+            scores = cross_val_score(stacking_ensemble, X, y, cv=3, scoring='r2')
+            return np.mean(scores)
 
         except Exception as e:
-            self.logger.warning(f"⚠️ Ensemble weights evaluation failed: {e}")
+            self.logger.warning(f"⚠️ Meta-learner evaluation failed: {e}")
             return -1.0
 
 
@@ -627,12 +713,12 @@ def optimize_attention_network(X: np.ndarray, y: np.ndarray, base_model: Any,
     return optimizer.optimize(X, y, base_model)
 
 
-def optimize_ensemble_weights(models: List[Any], X: np.ndarray, y: np.ndarray,
-                             config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    """Optimize ensemble weights using Bayesian optimization.
+def optimize_meta_learner(base_models: List[Any], X: np.ndarray, y: np.ndarray,
+                         config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Optimize meta-learner hyperparameters using Bayesian optimization.
 
     Args:
-        models: List of base models
+        base_models: List of base models for stacking ensemble
         X: Feature matrix
         y: Target values
         config: Optimization configuration
@@ -641,10 +727,10 @@ def optimize_ensemble_weights(models: List[Any], X: np.ndarray, y: np.ndarray,
         Dictionary with optimization results
     """
     if config is None:
-        config = {'n_trials': 50, 'random_state': 42}
+        config = {'n_trials': 30, 'random_state': 42}
 
-    optimizer = EnsembleWeightsOptimizer(config)
-    return optimizer.optimize(models, X, y)
+    optimizer = MetaLearnerOptimizer(config)
+    return optimizer.optimize(base_models, X, y)
 
 
 def optimize_deepscaler_parameters(X: np.ndarray, y: np.ndarray,

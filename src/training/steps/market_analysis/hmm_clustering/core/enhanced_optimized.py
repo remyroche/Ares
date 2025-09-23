@@ -288,7 +288,7 @@ class EnhancedMatrixOptimizedClusterer(BaseClusterer):
             Initial cluster labels
         """
         try:
-            # Try MSM clustering first
+            # Try MSM clustering first - fast fail if unsuccessful
             try:
                 from .msm_clustering import MSMClusterer
 
@@ -307,9 +307,14 @@ class EnhancedMatrixOptimizedClusterer(BaseClusterer):
                 if result.success:
                     self.logger.info(f"✅ Initial MSM clustering: {result.labels.shape[0]} states, MSM Score: {result.msm_score".3f"}")
                     return result.labels
+                else:
+                    # Fast fail if MSM clustering fails
+                    raise RuntimeError(f"MSM clustering failed: {result.error_message}")
 
             except Exception as msm_error:
-                self.logger.warning(f"⚠️ MSM clustering failed, falling back to K-means: {msm_error}")
+                # Fast fail - do not fall back to K-means
+                self.logger.error(f"❌ MSM clustering failed with fast fail: {msm_error}")
+                raise RuntimeError(f"MSM clustering failed: {msm_error}")
 
             # Use enhanced K-means with matrix operations
             n_clusters = min(20, max(2, features_4d.shape[0] // 50))

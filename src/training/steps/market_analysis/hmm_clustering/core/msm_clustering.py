@@ -118,12 +118,15 @@ class MSMClusterer(BaseClusterer):
                 n_init=10
             )
 
-    def cluster(self, features: np.ndarray, optimize_parameters: bool = True) -> ClusteringResult:
+    def cluster(self, features: np.ndarray, optimize_parameters: bool = True,
+                generate_report: bool = True, report_path: Optional[str] = None) -> ClusteringResult:
         """Perform MSM clustering on the given features.
 
         Args:
             features: Feature matrix to cluster
             optimize_parameters: Whether to use Bayesian optimization for parameters
+            generate_report: Whether to generate MSM-specific metrics report
+            report_path: Optional path to save the report
 
         Returns:
             MSMClusteringResult with clustering results
@@ -178,6 +181,10 @@ class MSMClusterer(BaseClusterer):
                     'parameter_optimization': optimize_parameters
                 }
             )
+
+            # Generate MSM-specific report if requested
+            if generate_report:
+                self._generate_msm_report(clustering_result, features, execution_time, report_path)
 
             self.logger.info(f"✅ MSM clustering completed in {execution_time".2f"}s with {self.msm_config.n_states} states")
             return clustering_result
@@ -601,6 +608,58 @@ class MSMClusterer(BaseClusterer):
         except Exception as e:
             self.logger.warning(f"⚠️ MSM parameter optimization failed: {e}")
             return None
+
+    def _generate_msm_report(self, clustering_result: MSMClusteringResult, features: np.ndarray,
+                            execution_time: float, report_path: Optional[str] = None) -> None:
+        """Generate comprehensive MSM-specific metrics report.
+
+        Args:
+            clustering_result: MSM clustering result
+            features: Feature matrix used for clustering
+            execution_time: Clustering execution time
+            report_path: Optional path to save the report
+        """
+        try:
+            from .msm_metrics import MSMSpecificMetrics, MSMReport
+
+            # Initialize MSM metrics analyzer
+            msm_metrics = MSMSpecificMetrics(self.config)
+
+            # Generate comprehensive report
+            msm_report = msm_metrics.analyze_msm_results(clustering_result, features)
+
+            # Add to clustering result metadata for access by calling code
+            if hasattr(clustering_result, 'metadata'):
+                clustering_result.metadata['msm_report'] = msm_metrics.generate_summary_report(msm_report)
+
+            # Save detailed report if path provided
+            if report_path:
+                success = msm_metrics.save_report(msm_report, report_path)
+                if success:
+                    self.logger.info(f"✅ MSM report saved to {report_path}")
+                else:
+                    self.logger.warning(f"⚠️ Failed to save MSM report to {report_path}")
+            else:
+                # Generate default report path
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                default_path = f"./reports/msm_report_{timestamp}.json"
+                success = msm_metrics.save_report(msm_report, default_path)
+                if success:
+                    self.logger.info(f"✅ MSM report saved to {default_path}")
+
+            # Log key MSM metrics
+            summary = msm_metrics.generate_summary_report(msm_report)
+            self.logger.info(f"📊 MSM Metrics Summary:")
+            self.logger.info(f"   - MSM Score: {summary['msm_score']:.4f}")
+            self.logger.info(f"   - Number of Regimes: {summary['n_regimes']}")
+            self.logger.info(f"   - Spectral Radius: {summary['spectral_radius']:.4f}")
+            self.logger.info(f"   - Transition Entropy: {summary['transition_entropy']:.4f}")
+            self.logger.info(f"   - Connectivity Score: {summary['connectivity_score']:.4f}")
+            self.logger.info(f"   - Regime Stability Ratio: {summary['regime_stability_ratio']:.4f}")
+            self.logger.info(f"   - Optimization Used: {summary['optimization_used']}")
+
+        except Exception as e:
+            self.logger.warning(f"⚠️ MSM report generation failed: {e}")
 
     def _create_msm_result(self, labels: np.ndarray, features: np.ndarray, execution_time: float,
                           transition_matrix: np.ndarray, eigenvalues: np.ndarray, eigenvectors: np.ndarray,

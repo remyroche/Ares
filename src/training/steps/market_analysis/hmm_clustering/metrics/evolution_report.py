@@ -34,6 +34,15 @@ except ImportError:
 from .basic_metrics import BasicClusteringMetrics, BasicMetricsResult
 from .detailed_metrics import DetailedClusteringMetrics, DetailedMetricsResult
 
+# Import MSM-specific metrics if available
+try:
+    from .msm_metrics import MSMSpecificMetrics, MSMReport
+    MSM_METRICS_AVAILABLE = True
+except ImportError:
+    MSM_METRICS_AVAILABLE = False
+    MSMSpecificMetrics = None
+    MSMReport = None
+
 logger = logging.getLogger(__name__)
 
 

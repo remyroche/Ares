@@ -37,11 +37,6 @@ and temporal modeling capabilities.
 - **Memory efficiency**: Attention mechanisms can be more memory-efficient than dense layers
 - **Expected improvement**: 25-40% better performance in high-dimensional financial datasets
 
-### 6. **Robustness to Market Volatility**
-- **Adaptive attention**: Attention weights adjust based on market volatility
-- **Noise filtering**: Better separation of signal from noise in volatile periods
-- **Regime detection**: Implicit regime detection through attention patterns
-- **Expected improvement**: 30-50% better performance during high volatility periods
 
 ## Computational Efficiency Considerations
 

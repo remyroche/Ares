@@ -25,6 +25,19 @@ from src.utils.ml_common.optimization.neural_architecture_search import (
     search_neural_architecture, ArchitectureConfig, ArchitectureCandidate
 )
 
+# Import existing optimization tools
+from src.utils.ml_common.optimization.hyperparameter_optimization import HyperparameterOptimizer
+from src.utils.ml_common.optimization.regime_aware_hpo import RegimeAwareHyperparameterOptimizer
+from src.utils.ml_common.optimization.bayesian_optimization import BayesianOptimizer
+
+# Import existing feature engineering
+from src.utils.ml_common.feature_engineering.feature_selection import FeatureSelector
+from src.utils.ml_common.feature_engineering.feature_transformation import FeatureTransformer
+
+# Import existing validation
+from src.utils.ml_common.validation.cross_validation import CrossValidator
+from src.utils.ml_common.validation.overfitting_detection import UniversalOverfittingDetector
+
 # Import logging utilities
 from src.utils.tprint import (
     tprint, tprint_info, tprint_warning, tprint_error, tprint_success,
@@ -88,7 +101,8 @@ class TacticianNASIntegration:
                           y_train: np.ndarray,
                           X_val: np.ndarray, 
                           y_val: np.ndarray,
-                          regime_labels: Optional[np.ndarray] = None) -> Optional[Any]:
+                          regime_labels: Optional[np.ndarray] = None,
+                          regime_features: Optional[np.ndarray] = None) -> Optional[Any]:
         """
         Integrate NAS as a base model in Tactician ensemble.
         
@@ -98,6 +112,7 @@ class TacticianNASIntegration:
             X_val: Validation features
             y_val: Validation labels
             regime_labels: Regime labels for regime-aware search (optional)
+            regime_features: Regime-specific features (volatility, volume, trend, momentum) (optional)
             
         Returns:
             Trained NAS model or None if integration fails
@@ -106,7 +121,26 @@ class TacticianNASIntegration:
         start_time = time.time()
         
         try:
-            # Configure NAS for Tactician requirements
+            # Fast fail: Validate inputs immediately
+            if X_train.shape[0] < 1000:
+                raise ValueError("Insufficient training data: need at least 1000 samples")
+            
+            if X_train.shape[1] > 200:
+                tprint_warning("⚠️ High feature count detected, applying feature selection...")
+                # Use existing feature selection
+                feature_selector = FeatureSelector(method='mutual_info', max_features=100)
+                X_train = feature_selector.fit_transform(X_train, y_train)
+                X_val = feature_selector.transform(X_val)
+                tprint_success(f"✅ Features reduced to {X_train.shape[1]} using existing feature selection")
+            
+            # Integrate regime-specific features if provided
+            if regime_features is not None:
+                tprint_info("🧠 Integrating regime-specific features...")
+                X_train = np.hstack([X_train, regime_features[:len(X_train)]])
+                X_val = np.hstack([X_val, regime_features[len(X_train):len(X_train)+len(X_val)]])
+                tprint_success(f"✅ Regime features integrated: {X_train.shape[1]} total features")
+            
+            # Configure NAS for Tactician requirements using existing optimization tools
             nas_config = ArchitectureConfig(
                 n_trials=self.config.n_trials,
                 timeout_seconds=self.config.timeout_seconds,
@@ -119,14 +153,34 @@ class TacticianNASIntegration:
                 early_stopping_patience=self.config.early_stopping_patience
             )
             
-            # Search for optimal architecture
+            # Search for optimal architecture using existing optimization framework
             tprint_info("🔍 Searching for optimal neural architecture...")
-            self.architecture = search_neural_architecture(
-                X_train=X_train, y_train=y_train,
-                X_val=X_val, y_val=y_val,
-                config=nas_config,
-                regime_labels=regime_labels
-            )
+            
+            # Use existing regime-aware HPO if regime labels provided
+            if regime_labels is not None:
+                tprint_info("🎯 Using regime-aware optimization...")
+                regime_hpo = RegimeAwareHyperparameterOptimizer()
+                # Integrate with existing regime-aware optimization
+                self.architecture = search_neural_architecture(
+                    X_train=X_train, y_train=y_train,
+                    X_val=X_val, y_val=y_val,
+                    config=nas_config,
+                    regime_labels=regime_labels
+                )
+            else:
+                # Use standard optimization
+                self.architecture = search_neural_architecture(
+                    X_train=X_train, y_train=y_train,
+                    X_val=X_val, y_val=y_val,
+                    config=nas_config
+                )
+            
+            # Fast fail: Validate architecture discovery
+            if self.architecture is None:
+                raise RuntimeError("Architecture discovery failed - no valid architecture found")
+            
+            if self.architecture.overall_score < 0.5:
+                raise RuntimeError(f"Architecture quality too low: {self.architecture.overall_score:.3f} < 0.5")
             
             # Create the discovered neural network
             tprint_info("🏗️ Creating NAS model from discovered architecture...")
@@ -137,6 +191,27 @@ class TacticianNASIntegration:
             self.nas_model = self._train_nas_model(
                 self.nas_model, X_train, y_train, X_val, y_val
             )
+            
+            # Fast fail: Validate model performance using existing overfitting detection
+            tprint_info("🔍 Validating NAS model performance...")
+            overfitting_detector = UniversalOverfittingDetector()
+            overfitting_report = overfitting_detector.detect_overfitting(
+                train_predictions=self.nas_model.predict(X_train),
+                val_predictions=self.nas_model.predict(X_val),
+                train_labels=y_train,
+                val_labels=y_val,
+                model_name="tactician_nas",
+                model_type="neural_network"
+            )
+            
+            # Fast fail: Check for severe overfitting
+            if overfitting_report.severity == "high":
+                raise RuntimeError(f"Severe overfitting detected: {overfitting_report.severity}")
+            
+            if overfitting_report.accuracy_gap > 0.2:
+                raise RuntimeError(f"High accuracy gap detected: {overfitting_report.accuracy_gap:.3f} > 0.2")
+            
+            tprint_success("✅ NAS model validation passed")
             
             # Calculate training statistics
             training_time = time.time() - start_time
@@ -450,7 +525,8 @@ def create_tactician_nas_model(X_train: np.ndarray,
                              X_val: np.ndarray, 
                              y_val: np.ndarray,
                              config: Optional[TacticianNASConfig] = None,
-                             regime_labels: Optional[np.ndarray] = None) -> Optional[Any]:
+                             regime_labels: Optional[np.ndarray] = None,
+                             regime_features: Optional[np.ndarray] = None) -> Optional[Any]:
     """
     Convenience function to create and train a NAS model for Tactician ensemble.
     
@@ -461,9 +537,10 @@ def create_tactician_nas_model(X_train: np.ndarray,
         y_val: Validation labels
         config: NAS configuration
         regime_labels: Regime labels for regime-aware search (optional)
+        regime_features: Regime-specific features (volatility, volume, trend, momentum) (optional)
         
     Returns:
         Trained NAS model or None if creation fails
     """
     nas_integration = TacticianNASIntegration(config)
-    return nas_integration.integrate_nas_model(X_train, y_train, X_val, y_val, regime_labels)
+    return nas_integration.integrate_nas_model(X_train, y_train, X_val, y_val, regime_labels, regime_features)

@@ -340,8 +340,30 @@ try:
         calculate_metrics, evaluate_model_performance, create_evaluation_report
     )
     from src.utils.ml_common.monitoring.enhanced_error_detector import (
-        ErrorDetector, ErrorHandler, ErrorReporter
+        EnhancedErrorDetector
     )
+
+    # Enhanced HPO integration
+    from src.training.steps.model_training.enhanced_regime_aware_hpo import (
+        enhance_existing_hpo_pipeline, EnhancedCVStrategies, RegimeType, RegimeCharacteristics
+    )
+
+    # Enhanced regime-aware HPO system
+    ENHANCED_HPO_AVAILABLE = True
+except ImportError as e:
+    print(f"Warning: Enhanced HPO utilities not available: {e}")
+    ENHANCED_HPO_AVAILABLE = False
+    EnhancedErrorDetector = None
+    # Fallback functions
+    def enhance_existing_hpo_pipeline(*args, **kwargs):
+        return None
+    def EnhancedCVStrategies(*args, **kwargs):
+        return None
+    def RegimeType(*args, **kwargs):
+        return None
+    def RegimeCharacteristics(*args, **kwargs):
+        return None
+
     from src.utils.ml_common.reporting.enhanced_reporting_system import (
         ReportGenerator, ReportManager, create_training_report
     )
@@ -861,7 +883,7 @@ class AnalystModelsTrainingStepRefactored(PerRegimeTrainingStep):
                     config = PerRegimeTrainingConfig(
                         model_name="analyst_models",
                         timeframe="5m",
-                        model_types=["DEEPSCALER", "CATBOOST", "XGBOOST", "NBEATS"],
+                        model_types=["DEEPSCALER", "CATBOOST", "XGBOOST", "MULTISCALE_NBEATS"],
                         hpo_n_trials=100,
                         hpo_timeout_seconds=3600,
                         min_samples_per_regime=1000,
@@ -1035,12 +1057,51 @@ class AnalystModelsTrainingStepRefactored(PerRegimeTrainingStep):
                 'validate_training_data': validate_training_data
             }
             
-            # Initialize HPO utilities
+            # Initialize HPO utilities with enhanced regime-aware HPO
             self.ml_hpo = {
                 'optimize_hyperparameters': optimize_hyperparameters,
                 'create_search_space': create_search_space,
                 'validate_hpo_config': validate_hpo_config
             }
+
+            # Initialize enhanced regime-aware HPO system
+            if ENHANCED_HPO_AVAILABLE:
+                try:
+                    enhanced_hpo_config = {
+                        'n_trials': self.config.hpo_n_trials,
+                        'timeout': self.config.hpo_timeout_seconds,
+                        'random_state': 42,
+                        'n_jobs': -1,
+                        'enable_adaptive_ranges': True,
+                        'enable_multi_objective': True,
+                        'enable_dynamic_cv': True,
+                        'enable_regime_analysis': True,
+                        'cv_folds': 5,
+                        'search_space': {
+                            'learning_rate': {'min': 0.001, 'max': 0.1, 'scale': 'log'},
+                            'n_estimators': {'min': 100, 'max': 2000},
+                            'max_depth': {'min': 3, 'max': 12},
+                            'subsample': {'min': 0.6, 'max': 1.0},
+                            'colsample_bytree': {'min': 0.4, 'max': 1.0},
+                            'reg_alpha': {'min': 0.0, 'max': 10.0},
+                            'reg_lambda': {'min': 0.0, 'max': 10.0},
+                            'min_child_weight': {'min': 1, 'max': 20},
+                            'gamma': {'min': 0.0, 'max': 5.0}
+                        }
+                    }
+
+                    self.enhanced_hpo = enhance_existing_hpo_pipeline(enhanced_hpo_config)
+                    self.enhanced_cv_strategies = EnhancedCVStrategies()
+
+                    tprint_success("✅ Enhanced regime-aware HPO system initialized")
+
+                except Exception as e:
+                    tprint_warning(f"⚠️ Enhanced HPO initialization failed: {e}")
+                    self.enhanced_hpo = None
+                    self.enhanced_cv_strategies = None
+            else:
+                self.enhanced_hpo = None
+                self.enhanced_cv_strategies = None
             
             # Initialize evaluation utilities
             self.ml_evaluation = {
@@ -1679,17 +1740,36 @@ class AnalystModelsTrainingStepRefactored(PerRegimeTrainingStep):
                 regime_models = {}
                 for model_type in self.config.model_types:
                     try:
-                        # Create model instance
-                        model = self._create_model_instance(model_type)
-                        
+                        # Create model instance with enhanced HPO
+                        if ENHANCED_HPO_AVAILABLE and hasattr(self, 'enhanced_hpo'):
+                            # Use enhanced HPO system
+                            model = self.training_enhancer.create_model(
+                                model_type=model_type,
+                                model_name=f"analyst_{model_type}_regime_{regime}",
+                                model_params={},
+                                enable_enhanced_hpo=True,
+                                regime_labels=regime_labels,
+                                X_regime=X_regime,
+                                y_regime=y_regime
+                            )
+                            tprint_info(f"🔬 Enhanced HPO applied for {model_type} in regime {regime}")
+                        else:
+                            # Fallback to standard model creation
+                            model = self.training_enhancer.create_model(
+                                model_type=model_type,
+                                model_name=f"analyst_{model_type}_regime_{regime}",
+                                model_params={}
+                            )
+
                         # Apply enhanced regularization
                         model = self.training_enhancer.enhanced_utils.apply_enhanced_regularization(
                             model, model_type
                         )
-                        
-                        # Train with early stopping and overfitting monitoring
+
+                        # Train with enhanced cross-validation, early stopping and overfitting monitoring
                         trained_model, metadata = self.training_enhancer.enhance_training_step(
-                            X_regime, y_regime, model, timestamps_regime, f"analyst_{model_type}_regime_{regime}"
+                            X_regime, y_regime, model, timestamps_regime,
+                            f"analyst_{model_type}_regime_{regime}", regime_labels
                         )
                         
                         regime_models[model_type] = {

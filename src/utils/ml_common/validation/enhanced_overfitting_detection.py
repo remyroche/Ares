@@ -828,8 +828,10 @@ class ModelEnhancementDetector:
             # All these model types typically benefit from parameter tuning
             if ('xgb' in model_type or 'xgboost' in model_type or
                 'lgbm' in model_type or 'lightgbm' in model_type or
+                'catboost' in model_type or
                 'randomforest' in model_type or 'neural' in model_type or
                 'torch' in model_type or 'keras' in model_type or
+                'deepscaler' in model_type or 'mamba' in model_type or
                 'linear' in model_type or 'ridge' in model_type or
                 'lasso' in model_type or 'elasticnet' in model_type):
 
@@ -904,19 +906,39 @@ class ModelEnhancementDetector:
 
         try:
             # Model-specific optimization opportunities
-            if 'neural' in model_type.lower() or 'torch' in model_type.lower() or 'keras' in model_type.lower():
+            if ('neural' in model_type.lower() or 'torch' in model_type.lower() or
+                'keras' in model_type.lower() or 'deepscaler' in model_type.lower() or
+                'mamba' in model_type.lower()):
                 opportunities.extend([
                     'learning_rate_scheduling',
                     'batch_normalization',
                     'gradient_clipping',
-                    'early_stopping_optimization'
+                    'early_stopping_optimization',
+                    'architecture_optimization',
+                    'attention_mechanism_tuning'
                 ])
 
-            elif 'xgb' in model_type.lower() or 'xgboost' in model_type.lower() or 'lgbm' in model_type.lower() or 'lightgbm' in model_type.lower():
+                # Add specific optimizations for advanced architectures
+                if 'deepscaler' in model_type.lower():
+                    opportunities.extend([
+                        'scaling_factor_optimization',
+                        'time_series_preprocessing_tuning',
+                        'multi_scale_feature_integration'
+                    ])
+                elif 'mamba' in model_type.lower():
+                    opportunities.extend([
+                        'state_space_optimization',
+                        'selective_scan_tuning',
+                        'hardware_aware_optimization'
+                    ])
+
+            elif 'xgb' in model_type.lower() or 'xgboost' in model_type.lower() or 'lgbm' in model_type.lower() or 'lightgbm' in model_type.lower() or 'catboost' in model_type.lower():
                 opportunities.extend([
                     'tree_structure_optimization',
                     'feature_interaction_constraints',
-                    'monotone_constraints'
+                    'monotone_constraints',
+                    'categorical_feature_handling',
+                    'boosting_round_optimization'
                 ])
 
             elif 'linear' in model_type.lower() or 'ridge' in model_type.lower() or 'lasso' in model_type.lower() or 'elasticnet' in model_type.lower():
@@ -1009,7 +1031,17 @@ class ModelEnhancementDetector:
             'feature_engineering': 0.10,
             'regularization_increase': 0.05,
             'learning_rate_scheduling': 0.08,
-            'tree_structure_optimization': 0.12
+            'tree_structure_optimization': 0.12,
+            'categorical_feature_handling': 0.10,
+            'boosting_round_optimization': 0.09,
+            'architecture_optimization': 0.14,
+            'attention_mechanism_tuning': 0.11,
+            'scaling_factor_optimization': 0.13,
+            'time_series_preprocessing_tuning': 0.12,
+            'multi_scale_feature_integration': 0.11,
+            'state_space_optimization': 0.15,
+            'selective_scan_tuning': 0.13,
+            'hardware_aware_optimization': 0.10
         }
 
         total_potential = 0.0
@@ -1646,10 +1678,19 @@ class UniversalMLValidationOrchestrator:
 
             # Add model-specific recommendations
             model_type_lower = model_type.lower()
-            if 'xgboost' in model_type_lower or 'lightgbm' in model_type_lower:
+            if 'xgboost' in model_type_lower or 'lightgbm' in model_type_lower or 'catboost' in model_type_lower:
                 insights['monitoring_recommendations'].append("📊 Monitor feature importance stability")
-            elif 'neural' in model_type_lower:
+                insights['monitoring_recommendations'].append("📊 Track boosting round convergence")
+            elif ('neural' in model_type_lower or 'torch' in model_type_lower or
+                  'keras' in model_type_lower or 'deepscaler' in model_type_lower or
+                  'mamba' in model_type_lower):
                 insights['monitoring_recommendations'].append("📊 Monitor gradient norms and learning curves")
+                if 'deepscaler' in model_type_lower:
+                    insights['monitoring_recommendations'].append("📊 Monitor scaling factor convergence")
+                    insights['monitoring_recommendations'].append("📊 Track multi-scale feature integration quality")
+                elif 'mamba' in model_type_lower:
+                    insights['monitoring_recommendations'].append("📊 Monitor state space dynamics")
+                    insights['monitoring_recommendations'].append("📊 Track selective scan efficiency")
             elif 'linear' in model_type_lower:
                 insights['monitoring_recommendations'].append("📊 Monitor coefficient stability and multicollinearity")
 
@@ -1683,7 +1724,10 @@ def validate_model_comprehensively(model,
 
     This provides a unified interface that integrates:
     1. Overfitting detection with financial time series indicators
-    2. Model enhancement detection with warnings (not specific parameters)
+    2. Model enhancement detection with warnings (not specific parameters) for:
+       - XGBoost, LightGBM, CatBoost, Random Forest
+       - Neural Networks, DeepScaler, Advanced Mamba Hybrid
+       - Linear models, SVM, KNN, Bayesian models
     3. Temporal validation and walk-forward analysis
     4. Performance analysis and data quality assessment
     5. Comprehensive per-model reporting with insights

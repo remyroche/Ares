@@ -22,6 +22,28 @@ This guide documents the comprehensive integration of enhanced validation compon
 - ✅ **Visual reporting** and JSON export capabilities
 - ✅ **Integration with existing ML Common framework**
 
+### **Supported Model Types**
+
+#### **🌲 Tree-Based Models**
+- **XGBoost** - Gradient boosting with regularization
+- **LightGBM** - Microsoft gradient boosting framework
+- **CatBoost** - Categorical feature handling with boosting
+- **Random Forest** - Ensemble of decision trees
+- **Extra Trees** - Extremely randomized trees
+
+#### **🧠 Neural Networks & Advanced Architectures**
+- **Neural Networks** - Standard feedforward networks
+- **DeepScaler** - Multi-scale neural architecture
+- **Advanced Mamba Hybrid** - State-space model with attention
+- **PyTorch Models** - Custom PyTorch architectures
+- **Keras/TensorFlow** - Deep learning frameworks
+
+#### **📈 Traditional ML Models**
+- **Linear Models** - Linear, Ridge, Lasso, ElasticNet regression
+- **SVM** - Support Vector Machines (classification/regression)
+- **KNN** - K-Nearest Neighbors
+- **Bayesian Models** - Naive Bayes and probabilistic models
+
 ## 📁 **File Structure**
 
 ```
@@ -47,7 +69,7 @@ from src.utils.ml_common.validation import (
     OverfittingConfig
 )
 
-# For any ML model (RandomForest, XGBoost, Neural Network, etc.)
+# For any ML model (RandomForest, XGBoost, Neural Network, CatBoost, DeepScaler, etc.)
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.neural_network import MLPClassifier
 
@@ -71,6 +93,123 @@ overfitting_report = detect_overfitting_for_model(
 print(f"Overfitting detected: {overfitting_report.is_overfitting}")
 print(f"Severity: {overfitting_report.severity}")
 print(f"Recommendations: {overfitting_report.recommendations}")
+
+### **2. CatBoost Model Validation**
+
+```python
+from catboost import CatBoostClassifier
+from src.utils.ml_common.validation.enhanced_overfitting_detection import validate_and_report_model
+
+# Train CatBoost model
+catboost_model = CatBoostClassifier(
+    iterations=1000,
+    learning_rate=0.1,
+    depth=6,
+    cat_features=categorical_feature_indices,
+    verbose=False
+)
+catboost_model.fit(X_train, y_train)
+
+# Get comprehensive validation with model-specific insights
+results = validate_and_report_model(
+    model=catboost_model,
+    X_train=X_train,
+    X_val=X_val,
+    y_train=y_train,
+    y_val=y_val,
+    model_name="CatBoost_5m",
+    model_type="catboost"
+)
+
+# Get concise summary
+summary = results['validation_summary']
+print(f"Status: {summary['status']} {summary['status_emoji']}")
+print(f"Score: {summary['overall_score']:.3f}")
+print(f"Key Issues: {summary['key_issues']}")
+print(f"Priority Actions: {summary['priority_actions']}")
+```
+
+### **3. DeepScaler Neural Network Validation**
+
+```python
+import torch
+import torch.nn as nn
+from src.utils.ml_common.validation.enhanced_overfitting_detection import validate_and_report_model
+
+# Define DeepScaler model (example architecture)
+class DeepScalerModel(nn.Module):
+    def __init__(self, input_size, hidden_size, num_layers):
+        super().__init__()
+        self.layers = nn.ModuleList()
+        for i in range(num_layers):
+            self.layers.append(nn.Linear(input_size if i == 0 else hidden_size, hidden_size))
+        self.output_layer = nn.Linear(hidden_size, 1)
+
+    def forward(self, x):
+        for layer in self.layers:
+            x = torch.relu(layer(x))
+        return self.output_layer(x)
+
+# Train DeepScaler model
+deepscaler_model = DeepScalerModel(input_size=10, hidden_size=64, num_layers=3)
+# ... training code ...
+
+# Get comprehensive validation with architecture-specific insights
+results = validate_and_report_model(
+    model=deepscaler_model,
+    X_train=X_train,
+    X_val=X_val,
+    y_train=y_train,
+    y_val=y_val,
+    model_name="DeepScaler_5m",
+    model_type="deepscaler"
+)
+
+# Access architecture-specific recommendations
+insights = results['per_model_report']['model_specific_insights']
+print(f"DeepScaler Recommendations: {insights['monitoring_recommendations']}")
+```
+
+### **4. Advanced Mamba Hybrid Validation**
+
+```python
+import torch
+import torch.nn as nn
+from src.utils.ml_common.validation.enhanced_overfitting_detection import validate_and_report_model
+
+# Define Mamba Hybrid model (example architecture)
+class MambaHybridModel(nn.Module):
+    def __init__(self, input_size, hidden_size, state_size):
+        super().__init__()
+        self.state_size = state_size
+        self.linear_layer = nn.Linear(input_size, hidden_size)
+        self.state_layer = nn.Linear(hidden_size, state_size)
+        self.output_layer = nn.Linear(state_size, 1)
+
+    def forward(self, x):
+        x = torch.relu(self.linear_layer(x))
+        state = self.state_layer(x)
+        return self.output_layer(state)
+
+# Train Mamba Hybrid model
+mamba_model = MambaHybridModel(input_size=10, hidden_size=64, state_size=32)
+# ... training code ...
+
+# Get comprehensive validation with state-space specific insights
+results = validate_and_report_model(
+    model=mamba_model,
+    X_train=X_train,
+    X_val=X_val,
+    y_train=y_train,
+    y_val=y_val,
+    model_name="MambaHybrid_5m",
+    model_type="mamba"
+)
+
+# Access state-space specific recommendations
+insights = results['per_model_report']['model_specific_insights']
+print(f"Mamba Recommendations: {insights['monitoring_recommendations']}")
+```
 ```
 
 ### **2. Temporal Validation for Time Series Models**

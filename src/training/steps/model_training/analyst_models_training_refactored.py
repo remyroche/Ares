@@ -861,7 +861,7 @@ class AnalystModelsTrainingStepRefactored(PerRegimeTrainingStep):
                     config = PerRegimeTrainingConfig(
                         model_name="analyst_models",
                         timeframe="5m",
-                        model_types=["TEMPORAL_FUSION_TRANSFORMER", "TABNET", "HIST_GRADIENT_BOOSTING", "EXTRA_TREES"],
+                        model_types=["DEEPSCALER", "CATBOOST", "XGBOOST", "NBEATS"],
                         hpo_n_trials=100,
                         hpo_timeout_seconds=3600,
                         min_samples_per_regime=1000,

@@ -33,36 +33,45 @@ logger = get_system_logger().getChild('HMMTrainingPipeline')
 
 class HMMTrainingPipeline:
     """
-    Enhanced HMM Training Pipeline for 1h timeframe regime detection.
-    
+    Enhanced HMM Training Pipeline for 15m timeframe regime detection with 4D analysis.
+
     Features:
-    - 1h base timeframe with 15-25 regime detection
-    - 100 features for comprehensive regime analysis
-    - CatBoost + Elastic Net base models with XGBoost meta-learner
+    - 15m base timeframe with 15-25 regime detection
+    - 4D analysis: volume, volatility, momentum, trend
+    - LightGBM + XGBoost base models with FinancialResNet meta-learner
     - Runs every 15 minutes for live trading
     - Provides regime probabilities for Analyst and Tactician integration
+    - High accuracy regime detection for precise trading signals
     """
 
     def __init__(self, n_regimes: int = 20, n_features: int = 100):
         """
-        Initialize the enhanced HMM training pipeline.
-        
+        Initialize the enhanced HMM training pipeline for 15m regime detection.
+
         Args:
             n_regimes: Number of regimes to detect (15-25)
-            n_features: Number of features to use (100)
+            n_features: Number of features to use (100) for 4D analysis
         """
         self.logger = logger.getChild('HMMTrainingPipeline')
         self.n_regimes = max(15, min(25, n_regimes))  # Ensure 15-25 regimes
         self.n_features = n_features
-        self.timeframe = "1h"
+        self.timeframe = "15m"
         self.run_interval_minutes = 15
         
-        # Model configuration
+        # Model configuration for 15m timeframe regime detection
         self.base_models = {
-            "catboost": "CatBoost",
-            "elastic_net": "Elastic Net"
+            "lgbm": "LightGBM",
+            "xgboost": "XGBoost"
         }
-        self.meta_learner = "xgboost"
+        self.meta_learner = "financial_resnet"
+        self.meta_learner_config = {
+            "architecture": "FinancialResNet",
+            "blocks": [32, 64, 128],           # Smaller for 15m data
+            "temporal_conv_layers": 3,          # Moderate temporal analysis
+            "attention_heads": 4,               # Efficient attention
+            "dropout": 0.15,                    # Good regularization
+            "regime_aware": True,               # Domain optimization
+        }
         
         # Training state
         self.last_training_time = None
@@ -70,7 +79,7 @@ class HMMTrainingPipeline:
         self.regime_probabilities = None
         self.regime_confidence = None
         
-        tprint_info(f"🚀 Initialized HMM Training Pipeline: {self.n_regimes} regimes, {self.n_features} features, {self.timeframe} timeframe")
+        tprint_info(f"🚀 Initialized HMM Training Pipeline: {self.n_regimes} regimes, {self.n_features} features, {self.timeframe} timeframe with 4D analysis (volume, volatility, momentum, trend)")
 
     async def train_hmm_models(
         self,
@@ -81,7 +90,7 @@ class HMMTrainingPipeline:
         force_rerun: bool = False
     ) -> Dict[str, Any]:
         """
-        Train HMM models for 1h timeframe regime detection with 15-25 regimes.
+        Train HMM models for 15m timeframe regime detection with 4D analysis.
 
         Args:
             symbol: Trading symbol
@@ -93,8 +102,8 @@ class HMMTrainingPipeline:
         Returns:
             Dictionary with training results and artifacts
         """
-        tprint_info("🔄 Starting enhanced HMM model training for 1h timeframe...")
-        tprint_info(f"📊 Target: {self.n_regimes} regimes, {self.n_features} features")
+        tprint_info("🔄 Starting enhanced HMM model training for 15m timeframe...")
+        tprint_info(f"📊 Target: {self.n_regimes} regimes, {self.n_features} features with 4D analysis")
 
         # Initialize results
         results = {

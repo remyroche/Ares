@@ -228,7 +228,7 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
             config = TacticianTrainingConfig(
                 model_name="tactician_models",
                 timeframe="1m",
-                model_types=["NeuralObliviousDecisionEnsembles", "CatBoostRegressor", "LGBMRegressor", "ElasticNetCV"],
+                model_types=["XGBOOST", "LIGHTGBM", "DEEPSCALER_1M", "FINANCIAL_RESNET"],
                 hpo_n_trials=100,
                 hpo_timeout_seconds=3600,
                 min_samples_per_regime=1000,

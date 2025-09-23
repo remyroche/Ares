@@ -511,24 +511,45 @@ class HMMTrainingPipeline:
             return {}
 
     async def _create_enhanced_regime_labels(self, X: np.ndarray, regime_data: Dict[str, Any]) -> np.ndarray:
-        """Create enhanced regime labels using advanced clustering."""
+        """Create enhanced regime labels using Markov State Model (MSM) clustering."""
         try:
-            from sklearn.cluster import KMeans
+            from src.training.steps.market_analysis.hmm_clustering.core.msm_clustering import (
+                MSMClusterer, MSMConfig
+            )
             from sklearn.preprocessing import StandardScaler
-            
+
             # Standardize features
             scaler = StandardScaler()
             X_scaled = scaler.fit_transform(X)
-            
-            # Use KMeans clustering for regime detection
-            kmeans = KMeans(n_clusters=self.n_regimes, random_state=42, n_init=10)
-            regime_labels = kmeans.fit_predict(X_scaled)
-            
-            tprint_success(f"✅ Created {self.n_regimes} regime labels using KMeans clustering")
-            return regime_labels
-            
+
+            # Configure MSM clustering
+            msm_config = {
+                'n_states': self.n_regimes,
+                'lag_time': 1,
+                'clustering_method': 'kmeans',
+                'distance_metric': 'euclidean',
+                'reversible': True,
+                'stationary_distribution_constraint': True
+            }
+
+            # Use MSM clustering for regime detection
+            msm_clusterer = MSMClusterer(msm_config)
+            clustering_result = msm_clusterer.cluster(X_scaled)
+
+            if clustering_result.success:
+                regime_labels = clustering_result.labels
+                tprint_success(f"✅ Created {self.n_regimes} regime labels using MSM clustering")
+                tprint_info(f"📊 MSM Score: {clustering_result.msm_score".3f"}")
+                return regime_labels
+            else:
+                tprint_warning(f"⚠️ MSM clustering failed, falling back to KMeans: {clustering_result.error_message}")
+                # Fallback to KMeans
+                from sklearn.cluster import KMeans
+                kmeans = KMeans(n_clusters=self.n_regimes, random_state=42, n_init=10)
+                return kmeans.fit_predict(X_scaled)
+
         except Exception as e:
-            tprint_error(f"❌ Failed to create enhanced regime labels: {e}")
+            tprint_error(f"❌ Failed to create enhanced regime labels using MSM: {e}")
             # Fallback to simple regime assignment
             return np.random.randint(0, self.n_regimes, len(X))
 

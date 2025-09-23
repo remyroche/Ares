@@ -280,29 +280,41 @@ class EnhancedModelFactory:
     @traced(span_name='create_model')
     def create_model(self, model_config: ModelConfig) -> Any:
         """Create a model instance based on configuration."""
-        
+
         self.logger.info(f"🔄 Creating model: {model_config.model_name} ({model_config.model_type.value})")
         start_time = time.time()
-        
+
         try:
             # Validate configuration
             self.logger.debug("🔍 Validating model configuration...")
             self._validate_model_config(model_config)
             self.logger.debug("✅ Model configuration validated")
-            
+
+            # Check if attention enhancement is requested
+            use_attention = model_config.model_params.get('use_attention', False)
+
             # Create model based on type
             self.logger.debug(f"🔧 Creating {model_config.model_type.value} model...")
-            
+
             if model_config.model_type in [ModelType.RANDOM_FOREST, ModelType.RANDOM_FOREST_CLASSIFIER]:
                 model = self._create_random_forest_model(model_config)
             elif model_config.model_type in [ModelType.LIGHTGBM, ModelType.LIGHTGBM_CLASSIFIER]:
-                model = self._create_lightgbm_model(model_config)
+                if use_attention and TORCH_AVAILABLE:
+                    model = self._create_attention_lightgbm_model(model_config)
+                else:
+                    model = self._create_lightgbm_model(model_config)
             elif model_config.model_type in [ModelType.HIST_GRADIENT_BOOSTING, ModelType.HIST_GRADIENT_BOOSTING_CLASSIFIER]:
                 model = self._create_hist_gradient_boosting_model(model_config)
             elif model_config.model_type in [ModelType.CATBOOST, ModelType.CATBOOST_CLASSIFIER]:
-                model = self._create_catboost_model(model_config)
+                if use_attention and TORCH_AVAILABLE:
+                    model = self._create_attention_catboost_model(model_config)
+                else:
+                    model = self._create_catboost_model(model_config)
             elif model_config.model_type in [ModelType.XGBOOST, ModelType.XGBOOST_CLASSIFIER]:
-                model = self._create_xgboost_model(model_config)
+                if use_attention and TORCH_AVAILABLE:
+                    model = self._create_attention_xgboost_model(model_config)
+                else:
+                    model = self._create_xgboost_model(model_config)
             elif model_config.model_type == ModelType.XGBOOST_CUSTOM:
                 model = self._create_xgboost_custom_model(model_config)
             elif model_config.model_type == ModelType.XGBOOST_META:
@@ -1984,6 +1996,109 @@ class EnhancedModelFactory:
 
 
     
+
+
+    def _create_attention_lightgbm_model(self, model_config: ModelConfig) -> Any:
+        """Create attention-enhanced LightGBM model."""
+        try:
+            from src.training.steps.model_training.attention_enhanced_models import (
+                create_attention_model
+            )
+
+            attention_dim = model_config.model_params.get('attention_dim', 64)
+            attention_heads = model_config.model_params.get('attention_heads', 4)
+            use_temporal_attention = model_config.model_params.get('use_temporal_attention', True)
+            dropout = model_config.model_params.get('attention_dropout', 0.1)
+
+            # Remove attention-specific parameters from model params
+            model_params = model_config.model_params.copy()
+            model_params.pop('use_attention', None)
+            model_params.pop('attention_dim', None)
+            model_params.pop('attention_heads', None)
+            model_params.pop('use_temporal_attention', None)
+            model_params.pop('attention_dropout', None)
+
+            return create_attention_model(
+                model_type='lightgbm',
+                attention_dim=attention_dim,
+                attention_heads=attention_heads,
+                model_params=model_params,
+                use_temporal_attention=use_temporal_attention,
+                dropout=dropout
+            )
+
+        except Exception as e:
+            self.logger.warning(f"⚠️ Attention-enhanced LightGBM creation failed: {e}")
+            # Fallback to standard LightGBM
+            return self._create_lightgbm_model(model_config)
+
+    def _create_attention_catboost_model(self, model_config: ModelConfig) -> Any:
+        """Create attention-enhanced CatBoost model."""
+        try:
+            from src.training.steps.model_training.attention_enhanced_models import (
+                create_attention_model
+            )
+
+            attention_dim = model_config.model_params.get('attention_dim', 64)
+            attention_heads = model_config.model_params.get('attention_heads', 4)
+            use_temporal_attention = model_config.model_params.get('use_temporal_attention', True)
+            dropout = model_config.model_params.get('attention_dropout', 0.1)
+
+            # Remove attention-specific parameters from model params
+            model_params = model_config.model_params.copy()
+            model_params.pop('use_attention', None)
+            model_params.pop('attention_dim', None)
+            model_params.pop('attention_heads', None)
+            model_params.pop('use_temporal_attention', None)
+            model_params.pop('attention_dropout', None)
+
+            return create_attention_model(
+                model_type='catboost',
+                attention_dim=attention_dim,
+                attention_heads=attention_heads,
+                model_params=model_params,
+                use_temporal_attention=use_temporal_attention,
+                dropout=dropout
+            )
+
+        except Exception as e:
+            self.logger.warning(f"⚠️ Attention-enhanced CatBoost creation failed: {e}")
+            # Fallback to standard CatBoost
+            return self._create_catboost_model(model_config)
+
+    def _create_attention_xgboost_model(self, model_config: ModelConfig) -> Any:
+        """Create attention-enhanced XGBoost model."""
+        try:
+            from src.training.steps.model_training.attention_enhanced_models import (
+                create_attention_model
+            )
+
+            attention_dim = model_config.model_params.get('attention_dim', 64)
+            attention_heads = model_config.model_params.get('attention_heads', 4)
+            use_temporal_attention = model_config.model_params.get('use_temporal_attention', True)
+            dropout = model_config.model_params.get('attention_dropout', 0.1)
+
+            # Remove attention-specific parameters from model params
+            model_params = model_config.model_params.copy()
+            model_params.pop('use_attention', None)
+            model_params.pop('attention_dim', None)
+            model_params.pop('attention_heads', None)
+            model_params.pop('use_temporal_attention', None)
+            model_params.pop('attention_dropout', None)
+
+            return create_attention_model(
+                model_type='xgboost',
+                attention_dim=attention_dim,
+                attention_heads=attention_heads,
+                model_params=model_params,
+                use_temporal_attention=use_temporal_attention,
+                dropout=dropout
+            )
+
+        except Exception as e:
+            self.logger.warning(f"⚠️ Attention-enhanced XGBoost creation failed: {e}")
+            # Fallback to standard XGBoost
+            return self._create_xgboost_model(model_config)
 
 
 def create_model_factory(config: Optional[Dict[str, Any]] = None) -> EnhancedModelFactory:

@@ -1270,30 +1270,31 @@ class TacticianLookbackOptimizer:
             if features.empty or len(analyst_signals) == 0:
                 return 0.5
             
-            # Find periods where Analyst gives green light
-            green_light_periods = analyst_signals == 1
-            
-            if not np.any(green_light_periods):
+            # Find periods where Analyst gives directional signals
+            directional_periods = (analyst_signals == 1) | (analyst_signals == -1)
+
+            if not np.any(directional_periods):
                 return 0.5
-            
-            # Calculate future returns for green light periods
+
+            # Calculate future returns for directional signal periods
             future_returns = market_data['close'].pct_change().shift(-1)
-            
-            # Focus on green light periods
-            green_light_returns = future_returns[green_light_periods]
+
+            # Focus on directional signal periods
+            directional_returns = future_returns[directional_periods]
+            directional_signals_period = analyst_signals[directional_periods]
             
             # Calculate accuracy optimized for 0.4% target movements
-            if len(green_light_returns) > 0:
+            if len(directional_returns) > 0:
                 # Weight accuracy by proximity to 0.4% target
                 target_return = 0.004  # 0.4% target movement
                 
                 # Score returns based on achieving target (0.4% or more is good)
-                target_achieved = (green_light_returns >= target_return).sum()
-                small_positive = ((green_light_returns > 0) & (green_light_returns < target_return)).sum()
-                negative = (green_light_returns < 0).sum()
+                target_achieved = (directional_returns >= target_return).sum()
+                small_positive = ((directional_returns > 0) & (directional_returns < target_return)).sum()
+                negative = (directional_returns < 0).sum()
                 
                 # Weighted scoring: full points for target achievement, partial for small positive
-                score = (target_achieved * 1.0 + small_positive * 0.5 + negative * 0.0) / len(green_light_returns)
+                score = (target_achieved * 1.0 + small_positive * 0.5 + negative * 0.0) / len(directional_returns)
                 return float(score)
             else:
                 return 0.5

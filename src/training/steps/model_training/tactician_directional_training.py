@@ -163,7 +163,7 @@ class DirectionalTacticianTrainingStep(TacticianModelsTrainingStepRefactored):
             regime_labels: Regime labels for each sample
             feature_names: Names of input features
             hmm_states: HMM cluster/regime states
-            analyst_signals: Binary signals from Analyst (green light indicators)
+            analyst_signals: Directional signals from Analyst (1=long, -1=short, 0=neutral)
             analyst_model_outputs: Analyst model predictions used as features
             hmm_regime_features: HMM regime features (probabilities, characteristics)
             all_analyst_models_outputs: All individual analyst ML model outputs

@@ -1292,39 +1292,54 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
         }
         
         try:
-            # Filter data to only include periods where Analyst gives green light
+            # Filter data to only include periods where Analyst gives directional signals
             if analyst_signals is not None:
-                green_light_mask = analyst_signals == 1
-                green_light_count = np.sum(green_light_mask)
-                green_light_rate = green_light_count / len(analyst_signals)
-                
-                preparation_metrics['green_light_filtering'] = {
+                # Directional signals: 1 (long), -1 (short), 0 (neutral)
+                directional_mask = (analyst_signals == 1) | (analyst_signals == -1)
+                directional_count = np.sum(directional_mask)
+                directional_rate = directional_count / len(analyst_signals)
+
+                # Analyze directional distribution
+                long_count = np.sum(analyst_signals == 1)
+                short_count = np.sum(analyst_signals == -1)
+                neutral_count = np.sum(analyst_signals == 0)
+
+                preparation_metrics['directional_filtering'] = {
                     'total_signals': len(analyst_signals),
-                    'green_light_count': green_light_count,
-                    'green_light_rate': green_light_rate
+                    'directional_count': directional_count,
+                    'directional_rate': directional_rate,
+                    'long_count': long_count,
+                    'short_count': short_count,
+                    'neutral_count': neutral_count,
+                    'long_ratio': long_count / len(analyst_signals),
+                    'short_ratio': short_count / len(analyst_signals),
+                    'neutral_ratio': neutral_count / len(analyst_signals)
                 }
-                
-                self.logger.info(f"📊 Filtering to {green_light_count} samples with Analyst green light signals ({green_light_rate:.2%})")
-                
-                # Validate green light filtering results
-                if green_light_count == 0:
-                    error_msg = "No samples with Analyst green light signals found"
+
+                self.logger.info(f"📊 Filtering to {directional_count} samples with Analyst directional signals ({directional_rate:.2%})")
+                self.logger.info(f"   Long signals: {long_count} ({long_count/directional_count:.1%} of directional)")
+                self.logger.info(f"   Short signals: {short_count} ({short_count/directional_count:.1%} of directional)")
+                self.logger.info(f"   Neutral signals: {neutral_count} ({neutral_count/len(analyst_signals):.1%} of total)")
+
+                # Validate directional filtering results
+                if directional_count == 0:
+                    error_msg = "No samples with Analyst directional signals found"
                     preparation_metrics['errors'].append(error_msg)
                     raise ValueError(error_msg)
-                
-                if green_light_rate < 0.01:  # Less than 1%
-                    warning_msg = f"Very low green light rate: {green_light_rate:.2%}"
+
+                if directional_rate < 0.01:  # Less than 1%
+                    warning_msg = f"Very low directional signal rate: {directional_rate:.2%}"
                     preparation_metrics['warnings'].append(warning_msg)
                     self.logger.warning(f"⚠️ {warning_msg}")
                 
                 # Apply filtering with validation
-                X_filtered = X[green_light_mask]
-                y_filtered = y[green_light_mask]
-                regime_labels_filtered = regime_labels[green_light_mask]
+                X_filtered = X[directional_mask]
+                y_filtered = y[directional_mask]
+                regime_labels_filtered = regime_labels[directional_mask]
                 
                 # Validate filtered data shapes
-                if X_filtered.shape[0] != green_light_count:
-                    error_msg = f"Filtered data shape mismatch: expected {green_light_count}, got {X_filtered.shape[0]}"
+                if X_filtered.shape[0] != directional_count:
+                    error_msg = f"Filtered data shape mismatch: expected {directional_count}, got {X_filtered.shape[0]}"
                     preparation_metrics['errors'].append(error_msg)
                     raise ValueError(error_msg)
                 

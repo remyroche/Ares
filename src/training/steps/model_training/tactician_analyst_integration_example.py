@@ -91,45 +91,53 @@ class TacticianAnalystIntegration:
             X: Base features (1m timeframe)
             y: Target values (from tactician barrier labeling)
             regime_labels: Regime labels
-            analyst_signals: Binary signals from Analyst (green light indicators)
+            analyst_signals: Directional signals from Analyst (1=long, -1=short, 0=neutral)
             analyst_model_outputs: Analyst model predictions
             all_analyst_models_outputs: All individual analyst ML model outputs
             hmm_regime_features: HMM regime features
             feature_names: Names of base features
-            
+
         Returns:
             Dictionary containing prepared data and metrics
         """
         try:
             self.logger.info("🔄 Preparing Tactician training data with Analyst integration...")
-            
-            # Step 1: Filter to green light periods
-            green_light_mask = analyst_signals == 1
-            green_light_count = np.sum(green_light_mask)
-            green_light_rate = green_light_count / len(analyst_signals)
-            
-            self.logger.info(f"📊 Analyst green light rate: {green_light_rate:.2%} ({green_light_count}/{len(analyst_signals)})")
-            
-            if green_light_count == 0:
-                raise ValueError("No analyst green light signals found")
-            
+
+            # Step 1: Filter to directional signal periods
+            directional_mask = (analyst_signals == 1) | (analyst_signals == -1)
+            directional_count = np.sum(directional_mask)
+            directional_rate = directional_count / len(analyst_signals)
+
+            # Analyze directional distribution
+            long_count = np.sum(analyst_signals == 1)
+            short_count = np.sum(analyst_signals == -1)
+            neutral_count = np.sum(analyst_signals == 0)
+
+            self.logger.info(f"📊 Analyst directional signal rate: {directional_rate:.2%} ({directional_count}/{len(analyst_signals)})")
+            self.logger.info(f"   Long signals: {long_count} ({long_count/directional_count:.1%} of directional)")
+            self.logger.info(f"   Short signals: {short_count} ({short_count/directional_count:.1%} of directional)")
+            self.logger.info(f"   Neutral signals: {neutral_count} ({neutral_count/len(analyst_signals):.1%} of total)")
+
+            if directional_count == 0:
+                raise ValueError("No analyst directional signals found")
+
             # Step 2: Apply filtering
-            X_filtered = X[green_light_mask]
-            y_filtered = y[green_light_mask]
-            regime_labels_filtered = regime_labels[green_light_mask]
+            X_filtered = X[directional_mask]
+            y_filtered = y[directional_mask]
+            regime_labels_filtered = regime_labels[directional_mask]
             
             # Filter additional data if provided
             if analyst_model_outputs is not None:
-                analyst_model_outputs = analyst_model_outputs[green_light_mask]
+                analyst_model_outputs = analyst_model_outputs[directional_mask]
             
             if all_analyst_models_outputs is not None:
                 all_analyst_models_outputs = {
-                    model_name: outputs[green_light_mask]
+                    model_name: outputs[directional_mask]
                     for model_name, outputs in all_analyst_models_outputs.items()
                 }
             
             if hmm_regime_features is not None:
-                hmm_regime_features = hmm_regime_features[green_light_mask]
+                hmm_regime_features = hmm_regime_features[directional_mask]
             
             # Step 3: Prepare combined features
             preparation_result = self._prepare_combined_features(

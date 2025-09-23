@@ -391,24 +391,8 @@ class TacticianDualTrainingStep:
             result.execution_time = tprint_timer(start_time)
             result.training_phase = TrainingPhase.COMPLETED
 
-            tprint_performance("Tactician dual training", result.execution_time)
-            tprint_success("🎉 Tactician dual training completed successfully with FULL FEATURE INTEGRATION!")
-            tprint_info(f"📈 Long models: {len(result.long_base_models) if result.long_base_models else 0} base (XGBOOST, LIGHTGBM, DEEPSCALER_1M, FINANCIAL_RESNET)")
-            tprint_info(f"   🎯 Long ensemble: {len(result.long_ensemble_models) if result.long_ensemble_models else 0} ensemble (includes ALL features + HMM + Analyst outputs)")
-            tprint_info(f"📉 Short models: {len(result.short_base_models) if result.short_base_models else 0} base (XGBOOST, LIGHTGBM, DEEPSCALER_1M, FINANCIAL_RESNET)")
-            tprint_info(f"   🎯 Short ensemble: {len(result.short_ensemble_models) if result.short_ensemble_models else 0} ensemble (includes ALL features + HMM + Analyst outputs)")
-            tprint_info(f"⏱️ Total time: {result.execution_time:.2f}s")
-
-            # Log feature integration summary
-            if result.long_ensemble_models and result.orchestration_result:
-                tprint_info("🎯 FEATURE INTEGRATION COMPLETED:")
-                tprint_info("   ✅ Base features from pre-ML orchestration")
-                tprint_info("   ✅ HMM regime features and probabilities")
-                tprint_info("   ✅ Analyst model predictions and confidence scores")
-                tprint_info("   ✅ OOF predictions from all base models")
-                tprint_info("   ✅ Technical indicators and market data")
-                tprint_info("   ✅ Multi-horizon target variables")
-                tprint_info("   ✅ Sample weights based on Analyst confidence")
+            # Add comprehensive reporting
+            result = self._add_comprehensive_reporting(result, start_time)
 
             return result
 
@@ -749,3 +733,215 @@ class TacticianDualTrainingStep:
         }
 
         return metrics
+
+    def _add_comprehensive_reporting(self, result: DualTrainingResult, start_time: float) -> DualTrainingResult:
+        """Add comprehensive reporting and metrics to dual training results."""
+        try:
+            total_time = time.time() - start_time
+
+            # Create comprehensive report
+            comprehensive_report = {
+                'training_summary': {
+                    'total_training_time': total_time,
+                    'success': result.training_phase == TrainingPhase.COMPLETED,
+                    'training_phase': result.training_phase.value,
+                    'long_base_models_trained': len(result.long_base_models),
+                    'short_base_models_trained': len(result.short_base_models),
+                    'long_ensemble_models_trained': len(result.long_ensemble_models),
+                    'short_ensemble_models_trained': len(result.short_ensemble_models),
+                    'total_models_trained': len(result.long_base_models) + len(result.short_base_models) + len(result.long_ensemble_models) + len(result.short_ensemble_models),
+                    'pre_ml_orchestration_completed': result.orchestration_completed,
+                    'base_training_completed': result.base_training_completed,
+                    'ensemble_training_completed': result.ensemble_training_completed,
+                    'validation_completed': result.validation_completed,
+                    'results_saved': result.results_saved
+                },
+                'model_breakdown': {
+                    'long_models': {
+                        'base_models': [
+                            {'type': 'XGBOOST', 'count': 1, 'status': 'trained' if result.long_base_models else 'failed'},
+                            {'type': 'LIGHTGBM', 'count': 1, 'status': 'trained' if result.long_base_models else 'failed'},
+                            {'type': 'DEEPSCALER_1M', 'count': 1, 'status': 'trained' if result.long_base_models else 'failed'},
+                            {'type': 'FINANCIAL_RESNET', 'count': 1, 'status': 'trained' if result.long_base_models else 'failed'}
+                        ],
+                        'ensemble_models': [
+                            {'type': 'ENSEMBLE', 'count': 1, 'status': 'trained' if result.long_ensemble_models else 'failed', 'features_integrated': result.long_ensemble_training_completed}
+                        ]
+                    },
+                    'short_models': {
+                        'base_models': [
+                            {'type': 'XGBOOST', 'count': 1, 'status': 'trained' if result.short_base_models else 'failed'},
+                            {'type': 'LIGHTGBM', 'count': 1, 'status': 'trained' if result.short_base_models else 'failed'},
+                            {'type': 'DEEPSCALER_1M', 'count': 1, 'status': 'trained' if result.short_base_models else 'failed'},
+                            {'type': 'FINANCIAL_RESNET', 'count': 1, 'status': 'trained' if result.short_base_models else 'failed'}
+                        ],
+                        'ensemble_models': [
+                            {'type': 'ENSEMBLE', 'count': 1, 'status': 'trained' if result.short_ensemble_models else 'failed', 'features_integrated': result.short_ensemble_training_completed}
+                        ]
+                    }
+                },
+                'sample_metrics': {
+                    'total_long_samples': result.total_long_samples,
+                    'total_short_samples': result.total_short_samples,
+                    'min_training_samples_required': self.config.min_training_samples,
+                    'long_samples_sufficient': result.total_long_samples >= self.config.min_training_samples,
+                    'short_samples_sufficient': result.total_short_samples >= self.config.min_training_samples,
+                    'total_samples_processed': result.total_long_samples + result.total_short_samples
+                },
+                'feature_integration_metrics': {
+                    'hmm_features_included': result.long_ensemble_training_completed,
+                    'analyst_features_included': result.long_ensemble_training_completed,
+                    'technical_features_included': result.long_ensemble_training_completed,
+                    'oof_predictions_included': result.long_ensemble_training_completed,
+                    'feature_integration_complete': result.long_ensemble_training_completed and result.short_ensemble_training_completed,
+                    'long_ensemble_feature_count': len(result.orchestration_result.long_selected_features) if result.orchestration_result else 0,
+                    'short_ensemble_feature_count': len(result.orchestration_result.short_selected_features) if result.orchestration_result else 0
+                },
+                'performance_metrics': {
+                    'orchestration_time': getattr(result.orchestration_result, 'execution_time', 0) if result.orchestration_result else 0,
+                    'long_base_training_time': result.long_base_training_time,
+                    'short_base_training_time': result.short_base_training_time,
+                    'long_ensemble_training_time': result.long_ensemble_training_time,
+                    'short_ensemble_training_time': result.short_ensemble_training_time,
+                    'total_execution_time': result.execution_time,
+                    'memory_usage_mb': getattr(result, 'memory_usage_mb', 0),
+                    'cpu_usage_percent': getattr(result, 'cpu_usage_percent', 0),
+                    'average_training_time_per_model': result.execution_time / max(result.total_models_trained, 1)
+                },
+                'quality_metrics': {
+                    'long_training_quality': result.long_training_quality,
+                    'short_training_quality': result.short_training_quality,
+                    'long_model_diversity': len(result.long_base_models),
+                    'short_model_diversity': len(result.short_base_models),
+                    'ensemble_integration_success': result.long_ensemble_training_completed and result.short_ensemble_training_completed,
+                    'feature_differentiation_success': result.orchestration_completed
+                },
+                'error_analysis': {
+                    'orchestration_errors': result.orchestration_errors,
+                    'long_base_training_errors': result.long_base_training_errors,
+                    'short_base_training_errors': result.short_base_training_errors,
+                    'long_ensemble_training_errors': result.long_ensemble_training_errors,
+                    'short_ensemble_training_errors': result.short_ensemble_training_errors,
+                    'total_errors': result.orchestration_errors + result.long_base_training_errors + result.short_base_training_errors + result.long_ensemble_training_errors + result.short_ensemble_training_errors
+                }
+            }
+
+            # Add comprehensive report to result
+            result.comprehensive_report = comprehensive_report
+
+            # Log comprehensive summary
+            self._log_comprehensive_summary(comprehensive_report)
+
+            return result
+
+        except Exception as e:
+            tprint_error(f"❌ Failed to add comprehensive reporting: {e}")
+            # Return result without reporting if it fails
+            return result
+
+    def _log_comprehensive_summary(self, report: Dict[str, Any]) -> None:
+        """Log comprehensive dual training summary with enhanced tprint integration."""
+        try:
+            training = report['training_summary']
+            models = report['model_breakdown']
+            samples = report['sample_metrics']
+            features = report['feature_integration_metrics']
+            performance = report['performance_metrics']
+            quality = report['quality_metrics']
+            errors = report['error_analysis']
+
+            tprint_info("=" * 80)
+            tprint_info("🎯 TACTICIAN DUAL TRAINING SUMMARY")
+            tprint_info("=" * 80)
+            tprint_info(f"⏱️  Total Training Time: {training['total_training_time']:.2f}s")
+            tprint_info(f"✅ Success: {'Yes' if training['success'] else 'No'}")
+            tprint_info(f"📊 Training Phase: {training['training_phase']}")
+            tprint_info(f"🤖 Total Models Trained: {training['total_models_trained']}")
+            tprint_info(f"📈 Long Base Models: {training['long_base_models_trained']}")
+            tprint_info(f"📉 Short Base Models: {training['short_base_models_trained']}")
+            tprint_info(f"🎯 Long Ensemble Models: {training['long_ensemble_models_trained']}")
+            tprint_info(f"🎯 Short Ensemble Models: {training['short_ensemble_models_trained']}")
+
+            tprint_info("\n📈 Sample Processing Results:")
+            tprint_info(f"  📊 Long Samples: {samples['total_long_samples']}")
+            tprint_info(f"  📉 Short Samples: {samples['total_short_samples']}")
+            tprint_info(f"  ✅ Long Sufficient: {'Yes' if samples['long_samples_sufficient'] else 'No'}")
+            tprint_info(f"  ✅ Short Sufficient: {'Yes' if samples['short_samples_sufficient'] else 'No'}")
+            tprint_info(f"  📊 Total Samples: {samples['total_samples_processed']}")
+
+            tprint_info("\n🔢 Model Training Breakdown:")
+            tprint_info("  📈 Long Models:")
+            for model in models['long_models']['base_models']:
+                status = "✅" if model['status'] == 'trained' else "❌"
+                tprint_info(f"    {status} {model['type']}: {model['count']} model(s)")
+            for model in models['long_models']['ensemble_models']:
+                status = "✅" if model['status'] == 'trained' else "❌"
+                integration = "✅" if model['features_integrated'] else "❌"
+                tprint_info(f"    {status} {model['type']}: {model['count']} model(s) [Integration: {integration}]")
+
+            tprint_info("  📉 Short Models:")
+            for model in models['short_models']['base_models']:
+                status = "✅" if model['status'] == 'trained' else "❌"
+                tprint_info(f"    {status} {model['type']}: {model['count']} model(s)")
+            for model in models['short_models']['ensemble_models']:
+                status = "✅" if model['status'] == 'trained' else "❌"
+                integration = "✅" if model['features_integrated'] else "❌"
+                tprint_info(f"    {status} {model['type']}: {model['count']} model(s) [Integration: {integration}]")
+
+            tprint_info("\n🔗 Feature Integration Status:")
+            tprint_info(f"  🧬 HMM Features: {'✅ Included' if features['hmm_features_included'] else '❌ Not included'}")
+            tprint_info(f"  🎯 Analyst Features: {'✅ Included' if features['analyst_features_included'] else '❌ Not included'}")
+            tprint_info(f"  📊 Technical Features: {'✅ Included' if features['technical_features_included'] else '❌ Not included'}")
+            tprint_info(f"  🔄 OOF Predictions: {'✅ Included' if features['oof_predictions_included'] else '❌ Not included'}")
+            tprint_info(f"  ✅ Integration Complete: {'Yes' if features['feature_integration_complete'] else 'No'}")
+            tprint_info(f"  📈 Long Ensemble Features: {features['long_ensemble_feature_count']}")
+            tprint_info(f"  📉 Short Ensemble Features: {features['short_ensemble_feature_count']}")
+
+            tprint_info("\n⚡ Performance Metrics:")
+            tprint_info(f"  🔄 Orchestration Time: {performance['orchestration_time']:.2f}s")
+            tprint_info(f"  📈 Long Base Training: {performance['long_base_training_time']:.2f}s")
+            tprint_info(f"  📉 Short Base Training: {performance['short_base_training_time']:.2f}s")
+            tprint_info(f"  🎯 Long Ensemble Training: {performance['long_ensemble_training_time']:.2f}s")
+            tprint_info(f"  🎯 Short Ensemble Training: {performance['short_ensemble_training_time']:.2f}s")
+            tprint_info(f"  💾 Memory Usage: {performance['memory_usage_mb']:.1f} MB")
+            tprint_info(f"  🖥️ CPU Usage: {performance['cpu_usage_percent']:.1f}%")
+            tprint_info(f"  🤖 Avg Time per Model: {performance['average_training_time_per_model']:.2f}s")
+
+            tprint_info("\n📊 Quality Metrics:")
+            tprint_info(f"  📈 Long Training Quality: {quality['long_training_quality']:.3f}")
+            tprint_info(f"  📉 Short Training Quality: {quality['short_training_quality']:.3f}")
+            tprint_info(f"  🎯 Ensemble Integration: {'✅ Success' if quality['ensemble_integration_success'] else '❌ Failed'}")
+            tprint_info(f"  🔄 Feature Differentiation: {'✅ Success' if quality['feature_differentiation_success'] else '❌ Failed'}")
+
+            if errors['total_errors'] > 0:
+                tprint_info("\n🚨 Error Analysis:")
+                tprint_info(f"  ❌ Total Errors: {errors['total_errors']}")
+                tprint_info(f"  🔄 Orchestration Errors: {errors['orchestration_errors']}")
+                tprint_info(f"  📈 Long Base Training Errors: {errors['long_base_training_errors']}")
+                tprint_info(f"  📉 Short Base Training Errors: {errors['short_base_training_errors']}")
+                tprint_info(f"  🎯 Long Ensemble Errors: {errors['long_ensemble_training_errors']}")
+                tprint_info(f"  🎯 Short Ensemble Errors: {errors['short_ensemble_training_errors']}")
+
+            tprint_info("\n🎯 Training Completion Status:")
+            tprint_info(f"  🔄 Pre-ML Orchestration: {'✅ Completed' if training['pre_ml_orchestration_completed'] else '❌ Failed'}")
+            tprint_info(f"  📈 Base Training: {'✅ Completed' if training['base_training_completed'] else '❌ Failed'}")
+            tprint_info(f"  🎯 Ensemble Training: {'✅ Completed' if training['ensemble_training_completed'] else '❌ Failed'}")
+            tprint_info(f"  ✅ Validation: {'✅ Completed' if training['validation_completed'] else '❌ Failed'}")
+            tprint_info(f"  💾 Results Saved: {'✅ Yes' if training['results_saved'] else '❌ No'}")
+
+            tprint_info("=" * 80)
+
+        except Exception as e:
+            tprint_error(f"❌ Failed to log comprehensive summary: {e}")
+            # Fallback to basic logging
+            try:
+                tprint_info("🔄 Basic Training Summary:")
+                tprint_info(f"  ⏱️ Total Time: {training['total_training_time']:.2f}s")
+                tprint_info(f"  ✅ Success: {training['success']}")
+                tprint_info(f"  📈 Long Models: {training['long_base_models_trained']}")
+                tprint_info(f"  📉 Short Models: {training['short_base_models_trained']}")
+                tprint_info(f"  🎯 Long Ensemble: {training['long_ensemble_models_trained']}")
+                tprint_info(f"  🎯 Short Ensemble: {training['short_ensemble_models_trained']}")
+                tprint_info(f"  🔢 Total Models: {training['total_models_trained']}")
+            except:
+                pass

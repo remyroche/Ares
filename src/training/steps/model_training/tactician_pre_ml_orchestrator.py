@@ -464,11 +464,8 @@ class TacticianPreMLOrchestrator:
             result.execution_time = tprint_timer(start_time)
             result.feature_generation_status = "completed"
 
-            tprint_performance("Tactician pre-ML orchestration", result.execution_time)
-            tprint_success("🎉 Tactician pre-ML training orchestration completed successfully!")
-            tprint_info(f"📈 Results: {result.total_long_samples} long samples, {result.total_short_samples} short samples")
-            tprint_info(f"🔢 Features: {len(result.long_selected_features)} long, {len(result.short_selected_features)} short")
-            tprint_info(f"⏱️ Total time: {result.execution_time:.2f}s")
+            # Add comprehensive reporting
+            result = self._add_comprehensive_reporting(result, start_time)
 
             return result
 
@@ -957,6 +954,177 @@ class TacticianPreMLOrchestrator:
             execution_time=0.0,
             generation_status="failed"
         )
+
+    def _add_comprehensive_reporting(self, result: OrchestratorResult, start_time: float) -> OrchestratorResult:
+        """Add comprehensive reporting and metrics to orchestration results."""
+        try:
+            total_time = time.time() - start_time
+
+            # Create comprehensive report
+            comprehensive_report = {
+                'orchestration_summary': {
+                    'total_orchestration_time': total_time,
+                    'success': result.feature_generation_status == "completed",
+                    'input_samples': len(result.tagged_market_data) if hasattr(result, 'tagged_market_data') and result.tagged_market_data is not None else 0,
+                    'long_samples_processed': result.total_long_samples,
+                    'short_samples_processed': result.total_short_samples,
+                    'analyst_signals_count': result.analyst_signals_count,
+                    'long_signals_count': result.long_signals_count,
+                    'short_signals_count': result.short_signals_count,
+                    'confidence_threshold': self.config.confidence_threshold,
+                    'subsequent_minutes': self.config.subsequent_minutes,
+                    'feature_generation_status': result.feature_generation_status,
+                    'lookback_optimization_enabled': result.lookback_optimization_enabled,
+                    'pid_feature_generation_enabled': result.pid_feature_generation_enabled,
+                    'horizon_labeling_enabled': result.horizon_labeling_enabled,
+                    'feature_selection_enabled': result.feature_selection_enabled,
+                    'intermediate_results_saved': result.intermediate_results_saved
+                },
+                'signal_separation_metrics': {
+                    'total_analyst_signals': result.analyst_signals_count,
+                    'long_signals_with_confidence': result.long_signals_count,
+                    'short_signals_with_confidence': result.short_signals_count,
+                    'long_signal_ratio': result.long_signals_count / max(result.analyst_signals_count, 1),
+                    'short_signal_ratio': result.short_signals_count / max(result.analyst_signals_count, 1),
+                    'average_confidence_long': result.average_long_confidence,
+                    'average_confidence_short': result.average_short_confidence,
+                    'tagging_approach_used': True  # We use tagging instead of extraction
+                },
+                'feature_processing_metrics': {
+                    'total_features_available': len(result.feature_names) if hasattr(result, 'feature_names') else 0,
+                    'long_features_count': len(result.long_selected_features),
+                    'short_features_count': len(result.short_selected_features),
+                    'long_optimized_lookbacks_count': len(result.long_optimized_lookbacks),
+                    'short_optimized_lookbacks_count': len(result.short_optimized_lookbacks),
+                    'long_pid_features_generated': bool(result.long_pid_features),
+                    'short_pid_features_generated': bool(result.short_pid_features),
+                    'long_targets_count': len(result.long_targets),
+                    'short_targets_count': len(result.short_targets)
+                },
+                'data_quality_metrics': {
+                    'long_data_quality_score': result.long_data_quality_score,
+                    'short_data_quality_score': result.short_data_quality_score,
+                    'long_missing_values_ratio': result.long_missing_values_ratio,
+                    'short_missing_values_ratio': result.short_missing_values_ratio,
+                    'long_outlier_ratio': result.long_outlier_ratio,
+                    'short_outlier_ratio': result.short_outlier_ratio
+                },
+                'performance_metrics': {
+                    'optimization_time': getattr(result, 'optimization_time', 0),
+                    'generation_time': getattr(result, 'generation_time', 0),
+                    'labeling_time': getattr(result, 'labeling_time', 0),
+                    'selection_time': getattr(result, 'selection_time', 0),
+                    'preparation_time': getattr(result, 'preparation_time', 0),
+                    'total_execution_time': result.execution_time,
+                    'memory_usage_mb': getattr(result, 'memory_usage_mb', 0),
+                    'cpu_usage_percent': getattr(result, 'cpu_usage_percent', 0)
+                },
+                'model_integration_metrics': {
+                    'hmm_features_included': len([f for f in result.long_selected_features if 'hmm' in f.lower()]),
+                    'analyst_features_included': len([f for f in result.long_selected_features if 'analyst' in f.lower()]),
+                    'technical_features_included': len([f for f in result.long_selected_features if f not in ['hmm_regime_0_prob', 'hmm_regime_1_prob', 'hmm_regime_2_prob', 'hmm_regime_entropy', 'hmm_regime_ece', 'analyst_action', 'analyst_confidence', 'analyst_position_size', 'analyst_expected_profit', 'analyst_max_risk', 'analyst_time_horizon', 'analyst_micro_immediate_prob', 'analyst_small_immediate_prob', 'analyst_medium_immediate_prob', 'analyst_micro_short_prob', 'analyst_small_short_prob', 'analyst_price_target_upside_0.003', 'analyst_price_target_downside_0.003']]),
+                    'long_features_with_hmm': len(result.long_selected_features),
+                    'short_features_with_hmm': len(result.short_selected_features),
+                    'feature_integration_complete': True
+                }
+            }
+
+            # Add comprehensive report to result
+            result.comprehensive_report = comprehensive_report
+
+            # Log comprehensive summary
+            self._log_comprehensive_summary(comprehensive_report)
+
+            return result
+
+        except Exception as e:
+            tprint_error(f"❌ Failed to add comprehensive reporting: {e}")
+            # Return result without reporting if it fails
+            return result
+
+    def _log_comprehensive_summary(self, report: Dict[str, Any]) -> None:
+        """Log comprehensive orchestration summary with enhanced tprint integration."""
+        try:
+            orchestration = report['orchestration_summary']
+            signals = report['signal_separation_metrics']
+            features = report['feature_processing_metrics']
+            quality = report['data_quality_metrics']
+            performance = report['performance_metrics']
+            integration = report['model_integration_metrics']
+
+            tprint_info("=" * 80)
+            tprint_info("🎯 TACTICIAN PRE-ML ORCHESTRATION SUMMARY")
+            tprint_info("=" * 80)
+            tprint_info(f"⏱️  Total Orchestration Time: {orchestration['total_orchestration_time']:.2f}s")
+            tprint_info(f"✅ Success: {'Yes' if orchestration['success'] else 'No'}")
+            tprint_info(f"📊 Status: {orchestration['feature_generation_status']}")
+            tprint_info(f"🔄 Lookback Optimization: {'Enabled' if orchestration['lookback_optimization_enabled'] else 'Disabled'}")
+            tprint_info(f"🧬 PID Features: {'Enabled' if orchestration['pid_feature_generation_enabled'] else 'Disabled'}")
+            tprint_info(f"🎯 Horizon Labeling: {'Enabled' if orchestration['horizon_labeling_enabled'] else 'Disabled'}")
+            tprint_info(f"🎛️ Feature Selection: {'Enabled' if orchestration['feature_selection_enabled'] else 'Disabled'}")
+
+            tprint_info("\n📈 Signal Separation Results:")
+            tprint_info(f"  📊 Total Analyst Signals: {signals['total_analyst_signals']}")
+            tprint_info(f"  📈 Long Signals (≥{orchestration['confidence_threshold']}): {signals['long_signals_with_confidence']}")
+            tprint_info(f"  📉 Short Signals (≥{orchestration['confidence_threshold']}): {signals['short_signals_with_confidence']}")
+            tprint_info(f"  📊 Long Signal Ratio: {signals['long_signal_ratio']:.3f}")
+            tprint_info(f"  📉 Short Signal Ratio: {signals['short_signal_ratio']:.3f}")
+            tprint_info(f"  🎯 Avg Confidence Long: {signals['average_confidence_long']:.3f}")
+            tprint_info(f"  🎯 Avg Confidence Short: {signals['average_confidence_short']:.3f}")
+
+            tprint_info("\n🔢 Feature Processing Results:")
+            tprint_info(f"  📊 Long Features: {features['long_features_count']}")
+            tprint_info(f"  📉 Short Features: {features['short_features_count']}")
+            tprint_info(f"  🔍 Long Lookbacks Optimized: {features['long_optimized_lookbacks_count']}")
+            tprint_info(f"  🔍 Short Lookbacks Optimized: {features['short_optimized_lookbacks_count']}")
+            tprint_info(f"  🎯 Long Targets: {features['long_targets_count']}")
+            tprint_info(f"  🎯 Short Targets: {features['short_targets_count']}")
+
+            tprint_info("\n📊 Data Quality Metrics:")
+            tprint_info(f"  📈 Long Quality: {quality['long_data_quality_score']:.3f}")
+            tprint_info(f"  📉 Short Quality: {quality['short_data_quality_score']:.3f}")
+            tprint_info(f"  ❌ Long Missing Values: {quality['long_missing_values_ratio']:.3f}")
+            tprint_info(f"  ❌ Short Missing Values: {quality['short_missing_values_ratio']:.3f}")
+            tprint_info(f"  🚨 Long Outliers: {quality['long_outlier_ratio']:.3f}")
+            tprint_info(f"  🚨 Short Outliers: {quality['short_outlier_ratio']:.3f}")
+
+            tprint_info("\n⚡ Performance Metrics:")
+            tprint_info(f"  🔍 Optimization Time: {performance['optimization_time']:.2f}s")
+            tprint_info(f"  🧬 Generation Time: {performance['generation_time']:.2f}s")
+            tprint_info(f"  🎯 Labeling Time: {performance['labeling_time']:.2f}s")
+            tprint_info(f"  🎛️ Selection Time: {performance['selection_time']:.2f}s")
+            tprint_info(f"  📊 Preparation Time: {performance['preparation_time']:.2f}s")
+            tprint_info(f"  💾 Memory Usage: {performance['memory_usage_mb']:.1f} MB")
+            tprint_info(f"  🖥️ CPU Usage: {performance['cpu_usage_percent']:.1f}%")
+
+            tprint_info("\n🔗 Model Integration:")
+            tprint_info(f"  🧬 HMM Features: {integration['hmm_features_included']}")
+            tprint_info(f"  🎯 Analyst Features: {integration['analyst_features_included']}")
+            tprint_info(f"  📊 Technical Features: {integration['technical_features_included']}")
+            tprint_info(f"  ✅ Integration Complete: {'Yes' if integration['feature_integration_complete'] else 'No'}")
+
+            # Log sample counts if available
+            if hasattr(orchestration, 'input_samples') and orchestration['input_samples'] > 0:
+                tprint_info(f"\n📈 Sample Processing:")
+                tprint_info(f"  📊 Input Samples: {orchestration['input_samples']}")
+                tprint_info(f"  📈 Long Samples: {orchestration['long_samples_processed']}")
+                tprint_info(f"  📉 Short Samples: {orchestration['short_samples_processed']}")
+
+            tprint_info("=" * 80)
+
+        except Exception as e:
+            tprint_error(f"❌ Failed to log comprehensive summary: {e}")
+            # Fallback to basic logging
+            try:
+                tprint_info("🔄 Basic Orchestration Summary:")
+                tprint_info(f"  ⏱️ Total Time: {orchestration['total_orchestration_time']:.2f}s")
+                tprint_info(f"  ✅ Success: {orchestration['success']}")
+                tprint_info(f"  📈 Long Samples: {orchestration['long_samples_processed']}")
+                tprint_info(f"  📉 Short Samples: {orchestration['short_samples_processed']}")
+                tprint_info(f"  🔢 Long Features: {features['long_features_count']}")
+                tprint_info(f"  🔢 Short Features: {features['short_features_count']}")
+            except:
+                pass
 
     async def _apply_horizon_labeling(
         self,

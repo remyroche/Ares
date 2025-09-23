@@ -104,7 +104,7 @@ async def test_tactician_dual_training():
         feature_names=feature_names
     )
 
-    print("✅ Dual training completed:")
+    print("✅ Dual training completed with COMPREHENSIVE REPORTING:")
     print(f"   - Training phase: {training_result.training_phase.value}")
     print(f"   - Execution time: {training_result.execution_time:.2f}s")
     print(f"   - Long base models: {len(training_result.long_base_models) if training_result.long_base_models else 0} (XGBOOST, LIGHTGBM, DEEPSCALER_1M, FINANCIAL_RESNET)")
@@ -112,6 +112,20 @@ async def test_tactician_dual_training():
     print(f"   - Long ensemble models: {len(training_result.long_ensemble_models) if training_result.long_ensemble_models else 0} (includes ALL features + HMM + Analyst outputs)")
     print(f"   - Short ensemble models: {len(training_result.short_ensemble_models) if training_result.short_ensemble_models else 0} (includes ALL features + HMM + Analyst outputs)")
     print(f"   - Total models trained: {len(training_result.long_base_models) + len(training_result.short_base_models) + len(training_result.long_ensemble_models) + len(training_result.short_ensemble_models)}")
+
+    if hasattr(training_result, 'comprehensive_report') and training_result.comprehensive_report:
+        report = training_result.comprehensive_report
+        training_summary = report.get('training_summary', {})
+        feature_integration = report.get('feature_integration_metrics', {})
+
+        print(f"\n📊 COMPREHENSIVE REPORTING SUMMARY:")
+        print(f"   - Success: {'✅ YES' if training_summary.get('success', False) else '❌ NO'}")
+        print(f"   - Total Models: {training_summary.get('total_models_trained', 0)}")
+        print(f"   - Feature Integration Complete: {'✅ YES' if feature_integration.get('feature_integration_complete', False) else '❌ NO'}")
+        print(f"   - Long Ensemble Features: {feature_integration.get('long_ensemble_feature_count', 0)}")
+        print(f"   - Short Ensemble Features: {feature_integration.get('short_ensemble_feature_count', 0)}")
+        print(f"   - Long Samples: {training_summary.get('total_long_samples', 0)}")
+        print(f"   - Short Samples: {training_summary.get('total_short_samples', 0)}")
 
     print("\n🎉 All tests completed successfully!")
     print("\n📋 Command Usage Instructions:")
@@ -121,7 +135,7 @@ async def test_tactician_dual_training():
     print("python src/launcher/ares_launcher.py --mode stage --stage model_training")
     print("python src/launcher/ares_launcher.py --mode full --start-stage model_training")
     print("\n🎯 Expected Results:")
-    print("   - tactician_dual_training trains 8 models total:")
+    print("   - tactician_dual_training trains 10 models total:")
     print("     * 4 Long Base Models (XGBOOST, LIGHTGBM, DEEPSCALER_1M, FINANCIAL_RESNET)")
     print("     * 4 Short Base Models (XGBOOST, LIGHTGBM, DEEPSCALER_1M, FINANCIAL_RESNET)")
     print("     * 1 Long Ensemble Model (includes ALL features + HMM + Analyst outputs)")
@@ -133,6 +147,13 @@ async def test_tactician_dual_training():
     print("     * OOF predictions from all base models")
     print("     * Technical indicators and market data")
     print("     * Multi-horizon target variables")
+    print("   - COMPREHENSIVE REPORTING includes:")
+    print("     * Training Summary with timing and success metrics")
+    print("     * Model Breakdown by type and status")
+    print("     * Sample Processing metrics")
+    print("     * Feature Integration status")
+    print("     * Performance metrics and quality scores")
+    print("     * Error Analysis and completion status")
 
     return True
 

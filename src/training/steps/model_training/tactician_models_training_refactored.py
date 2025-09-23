@@ -411,8 +411,8 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                 max_features='sqrt',
                 bootstrap=True,
                 max_samples=0.8,
-                horizons=[1, 2, 5, 10, 15, 30],  # 1m to 30m horizons
-                horizon_weights=[0.3, 0.25, 0.2, 0.15, 0.08, 0.02],
+                horizons=[1, 2, 5, 10],  # 1m to 10m horizons (removed 15m and 30m)
+                horizon_weights=[0.4, 0.3, 0.2, 0.1],
                 entry_timing_range=0.005,  # 0.5% range
                 expected_movement=0.01,  # 1% expected movement
                 latency_constraint=2.0,  # 2 second constraint
@@ -1997,11 +1997,25 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                             model, model_type
                         )
 
-                        # Train with early stopping, overfitting monitoring, and confidence weighting
-                        trained_model, metadata = self.training_enhancer.enhance_training_step(
-                            X_regime, y_regime, model, timestamps_regime, f"tactician_{model_type}_regime_{regime}",
-                            sample_weights=confidence_regime
-                        )
+                        # Special handling for Random Survival Forest
+                        if model_type == "RandomSurvivalForest":
+                            # Random Survival Forest has its own training method with HPO
+                            trained_model = model.fit(
+                                X_regime, y_regime, 
+                                feature_names=feature_names,
+                                analyst_signals=analyst_signals[regime_mask] if analyst_signals is not None else None,
+                                hmm_regime_probs=hmm_regime_probs[regime_mask] if hmm_regime_probs is not None else None,
+                                enable_hpo=True,
+                                hpo_trials=self.config.hpo_n_trials,
+                                cv_folds=5
+                            )
+                            metadata = {'model_type': 'RandomSurvivalForest', 'training_completed': True}
+                        else:
+                            # Train with early stopping, overfitting monitoring, and confidence weighting
+                            trained_model, metadata = self.training_enhancer.enhance_training_step(
+                                X_regime, y_regime, model, timestamps_regime, f"tactician_{model_type}_regime_{regime}",
+                                sample_weights=confidence_regime
+                            )
                         
                         regime_models[model_type] = {
                             'model': trained_model,

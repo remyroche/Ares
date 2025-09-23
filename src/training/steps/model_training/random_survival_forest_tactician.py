@@ -65,7 +65,7 @@ class SurvivalAnalysisConfig:
     max_samples: float = 0.8
     
     # Multi-horizon settings
-    horizons: List[float] = None  # Time horizons in minutes [1, 2, 5, 10, 15, 30]
+    horizons: List[float] = None  # Time horizons in minutes [1, 2, 5, 10]
     horizon_weights: List[float] = None  # Weights for each horizon
     
     # Timing optimization
@@ -81,17 +81,21 @@ class SurvivalAnalysisConfig:
     
     def __post_init__(self):
         if self.horizons is None:
-            self.horizons = [1, 2, 5, 10, 15, 30]  # 1m to 30m horizons
+            self.horizons = [1, 2, 5, 10]  # 1m to 10m horizons (removed 15m and 30m)
         if self.horizon_weights is None:
-            self.horizon_weights = [0.3, 0.25, 0.2, 0.15, 0.08, 0.02]  # Weighted towards shorter horizons
+            self.horizon_weights = [0.4, 0.3, 0.2, 0.1]  # Weighted towards shorter horizons
 
 
 class RandomSurvivalForestTactician:
     """
     Random Survival Forest implementation for tactician timing prediction.
     
-    This model predicts the probability of entry timing within different time horizons
-    using survival analysis techniques optimized for trading applications.
+    This model predicts the probability of optimal entry timing within different time horizons
+    using survival analysis techniques. The "entry" refers to the best time to enter a trade
+    for minimal loss and highest gain, based on the analyst's green light signal.
+    
+    The model is fully integrated with the ML pipeline including HPO, validation, and
+    multi-horizon framework support.
     """
     
     def __init__(self, config: Optional[SurvivalAnalysisConfig] = None):
@@ -122,7 +126,10 @@ class RandomSurvivalForestTactician:
             feature_names: Optional[List[str]] = None,
             analyst_signals: Optional[np.ndarray] = None,
             hmm_regime_probs: Optional[np.ndarray] = None,
-            multi_horizon_data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+            multi_horizon_data: Optional[Dict[str, Any]] = None,
+            enable_hpo: bool = True,
+            hpo_trials: int = 100,
+            cv_folds: int = 5) -> Dict[str, Any]:
         """
         Fit Random Survival Forest model for multi-horizon timing prediction.
         
@@ -150,7 +157,7 @@ class RandomSurvivalForestTactician:
         # Prepare survival data
         survival_data = self._prepare_survival_data(y, multi_horizon_data)
         
-        # Train horizon-specific models
+        # Train horizon-specific models with HPO if enabled
         horizon_results = {}
         for i, horizon in enumerate(self.config.horizons):
             tprint_info(f"🔄 Training model for {horizon} minute horizon...")
@@ -160,10 +167,15 @@ class RandomSurvivalForestTactician:
                 X_enhanced, survival_data, horizon
             )
             
-            # Train model for this horizon
-            horizon_model = self._train_horizon_model(
-                X_horizon, y_horizon, horizon
-            )
+            # Train model for this horizon with HPO if enabled
+            if enable_hpo:
+                horizon_model = self._train_horizon_model_with_hpo(
+                    X_horizon, y_horizon, horizon, hpo_trials, cv_folds
+                )
+            else:
+                horizon_model = self._train_horizon_model(
+                    X_horizon, y_horizon, horizon
+                )
             
             self.horizon_models[horizon] = horizon_model
             horizon_results[horizon] = self._evaluate_horizon_model(
@@ -340,6 +352,86 @@ class RandomSurvivalForestTactician:
         
         model.fit(X, y)
         return model
+    
+    def _train_horizon_model_with_hpo(self, X: np.ndarray, y: np.ndarray, horizon: float, hpo_trials: int, cv_folds: int) -> RandomSurvivalForest:
+        """Train Random Survival Forest for specific horizon with HPO."""
+        try:
+            import optuna
+            from sklearn.model_selection import TimeSeriesSplit
+            from sksurv.metrics import concordance_index_censored
+            
+            def objective(trial):
+                # Sample hyperparameters
+                n_estimators = trial.suggest_int('n_estimators', 50, 500)
+                max_depth = trial.suggest_int('max_depth', 3, 15)
+                min_samples_split = trial.suggest_int('min_samples_split', 2, 10)
+                min_samples_leaf = trial.suggest_int('min_samples_leaf', 1, 5)
+                max_features = trial.suggest_categorical('max_features', ['sqrt', 'log2', None])
+                bootstrap = trial.suggest_categorical('bootstrap', [True, False])
+                max_samples = trial.suggest_float('max_samples', 0.5, 1.0)
+                
+                # Create model with sampled parameters
+                model = RandomSurvivalForest(
+                    n_estimators=n_estimators,
+                    max_depth=max_depth,
+                    min_samples_split=min_samples_split,
+                    min_samples_leaf=min_samples_leaf,
+                    max_features=max_features,
+                    bootstrap=bootstrap,
+                    max_samples=max_samples,
+                    random_state=42
+                )
+                
+                # Time series cross-validation
+                tscv = TimeSeriesSplit(n_splits=cv_folds)
+                scores = []
+                
+                for train_idx, val_idx in tscv.split(X):
+                    X_train, X_val = X[train_idx], X[val_idx]
+                    y_train, y_val = y[train_idx], y[val_idx]
+                    
+                    # Train model
+                    model.fit(X_train, y_train)
+                    
+                    # Evaluate
+                    predictions = model.predict(X_val)
+                    c_index = concordance_index_censored(
+                        y_val['event'], y_val['time'], predictions
+                    )[0]
+                    scores.append(c_index)
+                
+                return np.mean(scores)
+            
+            # Run HPO
+            study = optuna.create_study(direction='maximize')
+            study.optimize(objective, n_trials=hpo_trials)
+            
+            # Get best parameters
+            best_params = study.best_params
+            
+            # Train final model with best parameters
+            final_model = RandomSurvivalForest(
+                n_estimators=best_params['n_estimators'],
+                max_depth=best_params['max_depth'],
+                min_samples_split=best_params['min_samples_split'],
+                min_samples_leaf=best_params['min_samples_leaf'],
+                max_features=best_params['max_features'],
+                bootstrap=best_params['bootstrap'],
+                max_samples=best_params['max_samples'],
+                random_state=42
+            )
+            
+            final_model.fit(X, y)
+            
+            tprint_success(f"✅ HPO completed for {horizon}m horizon. Best score: {study.best_value:.4f}")
+            return final_model
+            
+        except ImportError:
+            tprint_warning("⚠️ Optuna not available, using default parameters")
+            return self._train_horizon_model(X, y, horizon)
+        except Exception as e:
+            tprint_warning(f"⚠️ HPO failed: {e}, using default parameters")
+            return self._train_horizon_model(X, y, horizon)
     
     def _evaluate_horizon_model(self, model: RandomSurvivalForest, X: np.ndarray, y: np.ndarray, horizon: float) -> Dict[str, Any]:
         """Evaluate model performance for specific horizon."""

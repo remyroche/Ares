@@ -94,6 +94,15 @@ class ModelType(Enum):
     TCN = "TCN"  # Temporal Convolutional Network
     LSTM = "LSTM"
     
+    # Migrated model architectures
+    FINANCIAL_RESNET = "FinancialResNet"
+    DEEPSCALER = "DeepScaler"
+    DEEPSCALER_1M = "DeepScaler1m"
+    NBEATS = "NBEATS"
+    ADVANCED_MAMBA_HYBRID = "AdvancedMambaHybrid"
+    MOBILENET = "MobileNet"
+    EFFICIENTNET = "EfficientNet"
+    
     # Linear models
     RIDGE = "Ridge"
     RIDGE_CLASSIFIER = "RidgeClassifier"
@@ -324,6 +333,20 @@ class EnhancedModelFactory:
                 model = self._create_huber_regression_model(model_config)
             elif model_config.model_type in [ModelType.LOGISTIC_REGRESSION, ModelType.LINEAR_REGRESSION]:
                 model = self._create_linear_model(model_config)
+            elif model_config.model_type == ModelType.FINANCIAL_RESNET:
+                model = self._create_financial_resnet_model(model_config)
+            elif model_config.model_type == ModelType.DEEPSCALER:
+                model = self._create_deepscaler_model(model_config)
+            elif model_config.model_type == ModelType.DEEPSCALER_1M:
+                model = self._create_deepscaler_1m_model(model_config)
+            elif model_config.model_type == ModelType.NBEATS:
+                model = self._create_nbeats_model(model_config)
+            elif model_config.model_type == ModelType.ADVANCED_MAMBA_HYBRID:
+                model = self._create_advanced_mamba_hybrid_model(model_config)
+            elif model_config.model_type == ModelType.MOBILENET:
+                model = self._create_mobilenet_model(model_config)
+            elif model_config.model_type == ModelType.EFFICIENTNET:
+                model = self._create_efficientnet_model(model_config)
             else:
                 raise ValueError(f"Unsupported model type: {model_config.model_type}")
             
@@ -1142,6 +1165,237 @@ class EnhancedModelFactory:
         """Clear all models from the registry."""
         self.model_registry.clear()
         self.logger.info("🗑️ Cleared model registry")
+    
+    def _create_financial_resnet_model(self, model_config: ModelConfig) -> Any:
+        """Create FinancialResNet model."""
+        if not TORCH_AVAILABLE:
+            raise ImportError("PyTorch not available for FinancialResNet")
+        
+        try:
+            from .advanced_model_implementations import FinancialResNet, ModelWrapper
+            
+            # Default parameters
+            default_params = {
+                'blocks': [32, 64, 128],
+                'temporal_conv_layers': 3,
+                'attention_heads': 4,
+                'dropout': 0.15,
+                'regime_aware': True
+            }
+            
+            # Merge with user parameters
+            params = {**default_params, **model_config.model_params}
+            
+            # Create model wrapper
+            model = ModelWrapper(
+                model_class=FinancialResNet,
+                model_config=params,
+                input_dim=model_config.n_outputs,  # Will be set during training
+                output_dim=model_config.n_outputs,
+                device='cpu'  # Will be optimized by M1 optimizer if available
+            )
+            
+            return model
+            
+        except ImportError:
+            raise ImportError("Advanced model implementations not available")
+    
+    def _create_deepscaler_model(self, model_config: ModelConfig) -> Any:
+        """Create DeepScaler model."""
+        if not TORCH_AVAILABLE:
+            raise ImportError("PyTorch not available for DeepScaler")
+        
+        try:
+            from .advanced_model_implementations import DeepScaler, ModelWrapper
+            
+            # Default parameters
+            default_params = {
+                'hidden_layers': [512, 256, 128],
+                'dropout': 0.2,
+                'batch_norm': True,
+                'activation': 'relu'
+            }
+            
+            # Merge with user parameters
+            params = {**default_params, **model_config.model_params}
+            
+            # Create model wrapper
+            model = ModelWrapper(
+                model_class=DeepScaler,
+                model_config=params,
+                input_dim=model_config.n_outputs,  # Will be set during training
+                output_dim=model_config.n_outputs,
+                device='cpu'  # Will be optimized by M1 optimizer if available
+            )
+            
+            return model
+            
+        except ImportError:
+            raise ImportError("Advanced model implementations not available")
+    
+    def _create_deepscaler_1m_model(self, model_config: ModelConfig) -> Any:
+        """Create DeepScaler1m model (optimized for 1m timeframe)."""
+        if not TORCH_AVAILABLE:
+            raise ImportError("PyTorch not available for DeepScaler1m")
+        
+        try:
+            from .advanced_model_implementations import DeepScaler, ModelWrapper
+            
+            # Default parameters optimized for 1m timeframe
+            default_params = {
+                'hidden_layers': [256, 128, 64],
+                'dropout': 0.1,
+                'batch_norm': True,
+                'activation': 'relu'
+            }
+            
+            # Merge with user parameters
+            params = {**default_params, **model_config.model_params}
+            
+            # Create model wrapper
+            model = ModelWrapper(
+                model_class=DeepScaler,
+                model_config=params,
+                input_dim=model_config.n_outputs,  # Will be set during training
+                output_dim=model_config.n_outputs,
+                device='cpu'  # Will be optimized by M1 optimizer if available
+            )
+            
+            return model
+            
+        except ImportError:
+            raise ImportError("Advanced model implementations not available")
+    
+    def _create_nbeats_model(self, model_config: ModelConfig) -> Any:
+        """Create N-BEATS model."""
+        if not TORCH_AVAILABLE:
+            raise ImportError("PyTorch not available for N-BEATS")
+        
+        try:
+            from .advanced_model_implementations import NBEATS, ModelWrapper
+            
+            # Default parameters
+            default_params = {
+                'num_blocks': 10,
+                'num_layers': 4,
+                'layer_widths': [512, 512, 256, 256],
+                'dropout': 0.1,
+                'block_type': 'generic',
+                'regime_aware': True
+            }
+            
+            # Merge with user parameters
+            params = {**default_params, **model_config.model_params}
+            
+            # Create model wrapper
+            model = ModelWrapper(
+                model_class=NBEATS,
+                model_config=params,
+                input_dim=model_config.n_outputs,  # Will be set during training
+                output_dim=model_config.n_outputs,
+                device='cpu'  # Will be optimized by M1 optimizer if available
+            )
+            
+            return model
+            
+        except ImportError:
+            raise ImportError("Advanced model implementations not available")
+    
+    def _create_advanced_mamba_hybrid_model(self, model_config: ModelConfig) -> Any:
+        """Create AdvancedMambaHybrid model."""
+        if not TORCH_AVAILABLE:
+            raise ImportError("PyTorch not available for AdvancedMambaHybrid")
+        
+        try:
+            from .advanced_model_implementations import AdvancedMambaHybrid, ModelWrapper
+            
+            # Default parameters
+            default_params = {
+                'mamba_layers': 2,
+                'conv_layers': 4,
+                'attention_heads': 8,
+                'hidden_dim': 128,
+                'state_expansion': 4,
+                'multi_timeframe_fusion': True,
+                'dropout': 0.1,
+                'activation': 'GELU',
+                'execution_optimization': False,
+                'micro_timing_attention': False,
+                'latency_aware': False
+            }
+            
+            # Merge with user parameters
+            params = {**default_params, **model_config.model_params}
+            
+            # Create model wrapper
+            model = ModelWrapper(
+                model_class=AdvancedMambaHybrid,
+                model_config=params,
+                input_dim=model_config.n_outputs,  # Will be set during training
+                output_dim=model_config.n_outputs,
+                device='cpu'  # Will be optimized by M1 optimizer if available
+            )
+            
+            return model
+            
+        except ImportError:
+            raise ImportError("Advanced model implementations not available")
+    
+    def _create_mobilenet_model(self, model_config: ModelConfig) -> Any:
+        """Create MobileNet model."""
+        if not TORCH_AVAILABLE:
+            raise ImportError("PyTorch not available for MobileNet")
+        
+        try:
+            from .advanced_model_implementations import MobileNet, ModelWrapper
+            
+            # Default parameters
+            default_params = {}
+            
+            # Merge with user parameters
+            params = {**default_params, **model_config.model_params}
+            
+            # Create model wrapper
+            model = ModelWrapper(
+                model_class=MobileNet,
+                model_config=params,
+                input_dim=model_config.n_outputs,  # Will be set during training
+                output_dim=model_config.n_outputs,
+                device='cpu'  # Will be optimized by M1 optimizer if available
+            )
+            
+            return model
+            
+        except ImportError:
+            raise ImportError("Advanced model implementations not available")
+    
+    def _create_efficientnet_model(self, model_config: ModelConfig) -> Any:
+        """Create EfficientNet model."""
+        if not TORCH_AVAILABLE:
+            raise ImportError("PyTorch not available for EfficientNet")
+        
+        try:
+            from .advanced_model_implementations import EfficientNet, ModelWrapper
+            
+            # Default parameters
+            default_params = {}
+            
+            # Merge with user parameters
+            params = {**default_params, **model_config.model_params}
+            
+            # Create model wrapper
+            model = ModelWrapper(
+                model_class=EfficientNet,
+                model_config=params,
+                input_dim=model_config.n_outputs,  # Will be set during training
+                output_dim=model_config.n_outputs,
+                device='cpu'  # Will be optimized by M1 optimizer if available
+            )
+            
+            return model
+            
+        except ImportError:
+            raise ImportError("Advanced model implementations not available")
 
 
     

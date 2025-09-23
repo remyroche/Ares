@@ -1,0 +1,688 @@
+# Migrated Models Configuration
+# Comprehensive configuration for all migrated ML models across HMM, Analyst, and Tactician components
+
+# Global configuration
+global_config:
+  enable_regime_aware_training: true
+  enable_overfitting_prevention: true
+  enable_regularization: true
+  enable_early_stopping: true
+  enable_model_persistence: true
+  enable_performance_tracking: true
+  output_dir: "./migrated_models"
+  device: "auto"  # auto, cpu, cuda, mps
+
+# HMM Models Configuration (15m timeframe - Regime Detection)
+hmm_models:
+  description: "HMM models for regime detection on 15m timeframe with 4D regime characteristics"
+  timeframe: "15m"
+  role: "regime_detection"
+  
+  # Base models
+  lgbm:
+    name: "LightGBM_HMM"
+    architecture: "lightgbm"
+    model_type: "classifier"
+    parameters:
+      n_estimators: 1000
+      learning_rate: 0.05
+      max_depth: 6
+      num_leaves: 31
+      reg_alpha: 0.1
+      reg_lambda: 0.1
+      subsample: 0.8
+      colsample_bytree: 0.8
+      min_child_samples: 20
+      early_stopping_rounds: 50
+      random_state: 42
+      n_jobs: -1
+      verbosity: -1
+    
+    # Regularization and overfitting prevention
+    regularization:
+      enable_l1_regularization: true
+      enable_l2_regularization: true
+      enable_feature_sampling: true
+      enable_bagging: true
+    
+    # Validation configuration
+    validation:
+      enable_cross_validation: true
+      cv_folds: 5
+      enable_early_stopping: true
+      early_stopping_patience: 50
+      validation_metrics: ["accuracy", "f1_score", "precision", "recall"]
+  
+  xgboost:
+    name: "XGBoost_HMM"
+    architecture: "xgboost"
+    model_type: "classifier"
+    parameters:
+      n_estimators: 1000
+      learning_rate: 0.05
+      max_depth: 6
+      subsample: 0.8
+      colsample_bytree: 0.8
+      reg_alpha: 0.1
+      reg_lambda: 0.1
+      min_child_weight: 3
+      early_stopping_rounds: 50
+      random_state: 42
+      n_jobs: -1
+      verbosity: 0
+    
+    # Regularization and overfitting prevention
+    regularization:
+      enable_l1_regularization: true
+      enable_l2_regularization: true
+      enable_feature_sampling: true
+      enable_bagging: true
+    
+    # Validation configuration
+    validation:
+      enable_cross_validation: true
+      cv_folds: 5
+      enable_early_stopping: true
+      early_stopping_patience: 50
+      validation_metrics: ["accuracy", "f1_score", "precision", "recall"]
+  
+  # Meta-learner
+  financial_resnet:
+    name: "FinancialResNet_HMM"
+    architecture: "financial_resnet"
+    model_type: "classifier"
+    regime_aware: true
+    parameters:
+      blocks: [32, 64, 128]
+      temporal_conv_layers: 3
+      attention_heads: 4
+      dropout: 0.15
+      regime_aware: true
+      batch_size: 32
+      epochs: 100
+      learning_rate: 0.001
+      weight_decay: 1e-4
+      early_stopping_patience: 15
+      l2_regularization: 0.01
+    
+    # Regularization and overfitting prevention
+    regularization:
+      enable_dropout: true
+      enable_batch_norm: true
+      enable_l2_regularization: true
+      enable_attention_regularization: true
+    
+    # Validation configuration
+    validation:
+      enable_cross_validation: true
+      cv_folds: 5
+      enable_early_stopping: true
+      early_stopping_patience: 15
+      validation_metrics: ["accuracy", "f1_score", "precision", "recall"]
+    
+    # Regime-aware parameter optimization
+    regime_optimization:
+      enable_volume_adaptation: true
+      enable_volatility_adaptation: true
+      enable_momentum_adaptation: true
+      enable_trend_adaptation: true
+
+# Analyst Models Configuration (5m timeframe - Trading Opportunities)
+analyst_models:
+  description: "Analyst models for trading opportunities on 5m timeframe, fed on all features + HMM inputs"
+  timeframe: "5m"
+  role: "trading_opportunities"
+  
+  # Base models
+  deepscaler:
+    name: "DeepScaler_Analyst"
+    architecture: "deepscaler"
+    model_type: "regressor"
+    parameters:
+      hidden_layers: [512, 256, 128]
+      dropout: 0.2
+      batch_norm: true
+      activation: "relu"
+      batch_size: 64
+      epochs: 100
+      learning_rate: 0.001
+      weight_decay: 1e-4
+      early_stopping_patience: 15
+      l2_regularization: 0.01
+    
+    # Regularization and overfitting prevention
+    regularization:
+      enable_dropout: true
+      enable_batch_norm: true
+      enable_l2_regularization: true
+      enable_data_augmentation: true
+    
+    # Validation configuration
+    validation:
+      enable_cross_validation: true
+      cv_folds: 5
+      enable_early_stopping: true
+      early_stopping_patience: 15
+      validation_metrics: ["mse", "mae", "r2_score", "mape"]
+  
+  catboost:
+    name: "CatBoost_Analyst"
+    architecture: "catboost"
+    model_type: "regressor"
+    parameters:
+      iterations: 1000
+      learning_rate: 0.05
+      depth: 6
+      l2_leaf_reg: 3.0
+      bagging_temperature: 1.0
+      subsample: 0.8
+      colsample_bylevel: 0.8
+      early_stopping_rounds: 50
+      random_seed: 42
+      verbose: false
+    
+    # Regularization and overfitting prevention
+    regularization:
+      enable_l2_regularization: true
+      enable_feature_sampling: true
+      enable_bagging: true
+    
+    # Validation configuration
+    validation:
+      enable_cross_validation: true
+      cv_folds: 5
+      enable_early_stopping: true
+      early_stopping_patience: 50
+      validation_metrics: ["mse", "mae", "r2_score", "mape"]
+  
+  xgboost:
+    name: "XGBoost_Analyst"
+    architecture: "xgboost"
+    model_type: "regressor"
+    parameters:
+      n_estimators: 1000
+      learning_rate: 0.05
+      max_depth: 6
+      subsample: 0.8
+      colsample_bytree: 0.8
+      reg_alpha: 0.1
+      reg_lambda: 0.1
+      min_child_weight: 3
+      early_stopping_rounds: 50
+      random_state: 42
+      n_jobs: -1
+      verbosity: 0
+    
+    # Regularization and overfitting prevention
+    regularization:
+      enable_l1_regularization: true
+      enable_l2_regularization: true
+      enable_feature_sampling: true
+      enable_bagging: true
+    
+    # Validation configuration
+    validation:
+      enable_cross_validation: true
+      cv_folds: 5
+      enable_early_stopping: true
+      early_stopping_patience: 50
+      validation_metrics: ["mse", "mae", "r2_score", "mape"]
+  
+  # Specialized models
+  nbeats:
+    name: "NBEATS_Analyst"
+    architecture: "nbeats"
+    model_type: "regressor"
+    regime_aware: true
+    parameters:
+      num_blocks: 10
+      num_layers: 4
+      layer_widths: [512, 512, 256, 256]
+      dropout: 0.1
+      block_type: "generic"
+      regime_aware: true
+      batch_size: 32
+      epochs: 100
+      learning_rate: 0.001
+      weight_decay: 1e-4
+      early_stopping_patience: 15
+      l2_regularization: 0.01
+    
+    # Regularization and overfitting prevention
+    regularization:
+      enable_dropout: true
+      enable_l2_regularization: true
+      enable_attention_regularization: true
+    
+    # Validation configuration
+    validation:
+      enable_cross_validation: true
+      cv_folds: 5
+      enable_early_stopping: true
+      early_stopping_patience: 15
+      validation_metrics: ["mse", "mae", "r2_score", "mape"]
+    
+    # Regime-aware parameter optimization
+    regime_optimization:
+      enable_volume_adaptation: true
+      enable_volatility_adaptation: true
+      enable_momentum_adaptation: true
+      enable_trend_adaptation: true
+      
+      # Regime-specific parameter mappings
+      regime_parameter_mapping:
+        high_volume:
+          learning_rate_multiplier: 1.2
+          dropout_multiplier: 0.8
+          layer_width_multiplier: 1.1
+        high_volatility:
+          learning_rate_multiplier: 0.8
+          dropout_multiplier: 1.2
+          layer_width_multiplier: 0.9
+        high_momentum:
+          learning_rate_multiplier: 1.1
+          dropout_multiplier: 0.9
+          layer_width_multiplier: 1.05
+        strong_trend:
+          learning_rate_multiplier: 0.9
+          dropout_multiplier: 1.1
+          layer_width_multiplier: 0.95
+  
+  # Meta-learner
+  advanced_mamba_hybrid:
+    name: "AdvancedMambaHybrid_Analyst"
+    architecture: "advanced_mamba_hybrid"
+    model_type: "regressor"
+    parameters:
+      mamba_layers: 2
+      conv_layers: 4
+      attention_heads: 8
+      hidden_dim: 128
+      state_expansion: 4
+      multi_timeframe_fusion: true
+      dropout: 0.1
+      activation: "GELU"
+      batch_size: 32
+      epochs: 100
+      learning_rate: 0.001
+      weight_decay: 1e-4
+      early_stopping_patience: 15
+      l2_regularization: 0.01
+    
+    # Regularization and overfitting prevention
+    regularization:
+      enable_dropout: true
+      enable_l2_regularization: true
+      enable_attention_regularization: true
+      enable_mamba_regularization: true
+    
+    # Validation configuration
+    validation:
+      enable_cross_validation: true
+      cv_folds: 5
+      enable_early_stopping: true
+      early_stopping_patience: 15
+      validation_metrics: ["mse", "mae", "r2_score", "mape"]
+
+# Tactician Models Configuration (1m timeframe - Entry Timing)
+tactician_models:
+  description: "Tactician models for entry timing on 1m timeframe, fed on all features + HMM inputs + Analyst inputs"
+  timeframe: "1m"
+  role: "entry_timing"
+  
+  # Base models
+  xgboost:
+    name: "XGBoost_Tactician"
+    architecture: "xgboost"
+    model_type: "regressor"
+    parameters:
+      n_estimators: 1000
+      learning_rate: 0.05
+      max_depth: 6
+      subsample: 0.8
+      colsample_bytree: 0.8
+      reg_alpha: 0.1
+      reg_lambda: 0.1
+      min_child_weight: 3
+      early_stopping_rounds: 50
+      random_state: 42
+      n_jobs: -1
+      verbosity: 0
+    
+    # Regularization and overfitting prevention
+    regularization:
+      enable_l1_regularization: true
+      enable_l2_regularization: true
+      enable_feature_sampling: true
+      enable_bagging: true
+    
+    # Validation configuration
+    validation:
+      enable_cross_validation: true
+      cv_folds: 5
+      enable_early_stopping: true
+      early_stopping_patience: 50
+      validation_metrics: ["mse", "mae", "r2_score", "mape"]
+  
+  lightgbm:
+    name: "LightGBM_Tactician"
+    architecture: "lightgbm"
+    model_type: "regressor"
+    parameters:
+      n_estimators: 1000
+      learning_rate: 0.05
+      max_depth: 6
+      num_leaves: 31
+      reg_alpha: 0.1
+      reg_lambda: 0.1
+      subsample: 0.8
+      colsample_bytree: 0.8
+      min_child_samples: 20
+      early_stopping_rounds: 50
+      random_state: 42
+      n_jobs: -1
+      verbosity: -1
+    
+    # Regularization and overfitting prevention
+    regularization:
+      enable_l1_regularization: true
+      enable_l2_regularization: true
+      enable_feature_sampling: true
+      enable_bagging: true
+    
+    # Validation configuration
+    validation:
+      enable_cross_validation: true
+      cv_folds: 5
+      enable_early_stopping: true
+      early_stopping_patience: 50
+      validation_metrics: ["mse", "mae", "r2_score", "mape"]
+  
+  deepscaler_1m:
+    name: "DeepScaler1m_Tactician"
+    architecture: "deepscaler_1m"
+    model_type: "regressor"
+    parameters:
+      hidden_layers: [256, 128, 64]
+      dropout: 0.1
+      batch_norm: true
+      activation: "relu"
+      batch_size: 16
+      epochs: 50
+      learning_rate: 0.001
+      weight_decay: 1e-4
+      early_stopping_patience: 10
+      l2_regularization: 0.01
+    
+    # Regularization and overfitting prevention
+    regularization:
+      enable_dropout: true
+      enable_batch_norm: true
+      enable_l2_regularization: true
+      enable_data_augmentation: true
+    
+    # Validation configuration
+    validation:
+      enable_cross_validation: true
+      cv_folds: 3
+      enable_early_stopping: true
+      early_stopping_patience: 10
+      validation_metrics: ["mse", "mae", "r2_score", "mape"]
+  
+  financial_resnet:
+    name: "FinancialResNet_Tactician"
+    architecture: "financial_resnet"
+    model_type: "regressor"
+    regime_aware: true
+    parameters:
+      blocks: [16, 32, 64]
+      temporal_conv_layers: 2
+      attention_heads: 2
+      dropout: 0.1
+      regime_aware: true
+      batch_size: 16
+      epochs: 50
+      learning_rate: 0.001
+      weight_decay: 1e-4
+      early_stopping_patience: 10
+      l2_regularization: 0.01
+    
+    # Regularization and overfitting prevention
+    regularization:
+      enable_dropout: true
+      enable_batch_norm: true
+      enable_l2_regularization: true
+      enable_attention_regularization: true
+    
+    # Validation configuration
+    validation:
+      enable_cross_validation: true
+      cv_folds: 3
+      enable_early_stopping: true
+      early_stopping_patience: 10
+      validation_metrics: ["mse", "mae", "r2_score", "mape"]
+    
+    # Regime-aware parameter optimization
+    regime_optimization:
+      enable_volume_adaptation: true
+      enable_volatility_adaptation: true
+      enable_momentum_adaptation: true
+      enable_trend_adaptation: true
+  
+  # Meta-learner
+  advanced_mamba_hybrid:
+    name: "AdvancedMambaHybrid_Tactician"
+    architecture: "advanced_mamba_hybrid"
+    model_type: "regressor"
+    parameters:
+      mamba_layers: 3
+      conv_layers: 4
+      attention_heads: 6
+      hidden_dim: 128
+      state_expansion: 5
+      execution_optimization: true
+      micro_timing_attention: true
+      latency_aware: true
+      dropout: 0.1
+      activation: "GELU"
+      batch_size: 16
+      epochs: 50
+      learning_rate: 0.001
+      weight_decay: 1e-4
+      early_stopping_patience: 10
+      l2_regularization: 0.01
+    
+    # Regularization and overfitting prevention
+    regularization:
+      enable_dropout: true
+      enable_l2_regularization: true
+      enable_attention_regularization: true
+      enable_mamba_regularization: true
+    
+    # Validation configuration
+    validation:
+      enable_cross_validation: true
+      cv_folds: 3
+      enable_early_stopping: true
+      early_stopping_patience: 10
+      validation_metrics: ["mse", "mae", "r2_score", "mape"]
+
+# Training Configuration
+training_config:
+  # General training parameters
+  enable_hyperparameter_optimization: true
+  hpo_trials: 100
+  hpo_timeout: 3600
+  hpo_n_jobs: 4
+  
+  # Multi-timeframe coordination
+  enable_multi_timeframe_coordination: true
+  timeframe_hierarchy: ["15m", "5m", "1m"]
+  enable_cascade_training: true
+  
+  # Validation strategy
+  validation_strategy: "purged_cv"
+  enable_walk_forward_validation: true
+  enable_monte_carlo_validation: true
+  
+  # Overfitting prevention
+  overfitting_prevention:
+    enable_early_stopping: true
+    enable_validation_curves: true
+    enable_learning_curves: true
+    enable_ensemble_diversity: true
+  
+  # Regularization strategies
+  regularization_strategies:
+    enable_l1_regularization: true
+    enable_l2_regularization: true
+    enable_dropout: true
+    enable_batch_norm: true
+    enable_data_augmentation: true
+    enable_feature_noise: true
+  
+  # Performance monitoring
+  performance_monitoring:
+    enable_training_curves: true
+    enable_validation_metrics: true
+    enable_feature_importance: true
+    enable_model_explainability: true
+
+# Regime Handling Configuration
+regime_handling:
+  enable_regime_aware_training: true
+  regime_dimensions: ["volume", "volatility", "momentum", "trend"]
+  regime_clustering_method: "kmeans"
+  regime_transition_handling: true
+  
+  # Regime-specific optimizations
+  regime_optimizations:
+    enable_parameter_adaptation: true
+    enable_architecture_adaptation: true
+    enable_training_strategy_adaptation: true
+  
+  # N-BEATS regime-specific parameter optimization
+  nbeats_regime_optimization:
+    enable_volume_adaptation: true
+    enable_volatility_adaptation: true
+    enable_momentum_adaptation: true
+    enable_trend_adaptation: true
+    
+    # Parameter adjustment strategies
+    volume_strategies:
+      high_volume:
+        learning_rate_multiplier: 1.2
+        dropout_multiplier: 0.8
+        layer_width_multiplier: 1.1
+      low_volume:
+        learning_rate_multiplier: 0.8
+        dropout_multiplier: 1.2
+        layer_width_multiplier: 0.9
+    
+    volatility_strategies:
+      high_volatility:
+        learning_rate_multiplier: 0.8
+        dropout_multiplier: 1.2
+        layer_width_multiplier: 0.9
+      low_volatility:
+        learning_rate_multiplier: 1.1
+        dropout_multiplier: 0.9
+        layer_width_multiplier: 1.05
+    
+    momentum_strategies:
+      high_momentum:
+        learning_rate_multiplier: 1.1
+        dropout_multiplier: 0.9
+        layer_width_multiplier: 1.05
+      low_momentum:
+        learning_rate_multiplier: 0.9
+        dropout_multiplier: 1.1
+        layer_width_multiplier: 0.95
+    
+    trend_strategies:
+      strong_trend:
+        learning_rate_multiplier: 0.9
+        dropout_multiplier: 1.1
+        layer_width_multiplier: 0.95
+      weak_trend:
+        learning_rate_multiplier: 1.1
+        dropout_multiplier: 0.9
+        layer_width_multiplier: 1.05
+
+# MobileNet/EfficientNet Configuration (Alternative implementations)
+mobile_efficient_models:
+  description: "MobileNet and EfficientNet implementations for efficient inference"
+  
+  mobilenet:
+    name: "MobileNet_Alternative"
+    architecture: "mobilenet"
+    model_type: "regressor"
+    parameters:
+      input_channels: 1
+      output_dim: 1
+      depth_multiplier: 1.0
+      dropout: 0.1
+    
+    # Regularization and overfitting prevention
+    regularization:
+      enable_dropout: true
+      enable_depthwise_separable_conv: true
+      enable_batch_norm: true
+  
+  efficientnet:
+    name: "EfficientNet_Alternative"
+    architecture: "efficientnet"
+    model_type: "regressor"
+    parameters:
+      input_channels: 1
+      output_dim: 1
+      expansion_factor: 6
+      dropout: 0.1
+    
+    # Regularization and overfitting prevention
+    regularization:
+      enable_dropout: true
+      enable_squeeze_excitation: true
+      enable_batch_norm: true
+
+# Model Persistence Configuration
+model_persistence:
+  enable_model_saving: true
+  save_format: "pickle"  # pickle, joblib, torch
+  compression: true
+  version_control: true
+  
+  # Model registry
+  registry:
+    enable_registry: true
+    registry_path: "./model_registry"
+    max_versions_per_model: 10
+    auto_cleanup: true
+  
+  # Performance tracking
+  performance_tracking:
+    enable_performance_history: true
+    enable_model_comparison: true
+    enable_ablation_studies: true
+
+# Integration Configuration
+integration:
+  # ML Commons integration
+  ml_commons:
+    enable_enhanced_training_utils: true
+    enable_unified_validation: true
+    enable_hyperparameter_optimization: true
+  
+  # Existing pipeline integration
+  existing_pipeline:
+    enable_hmm_integration: true
+    enable_analyst_integration: true
+    enable_tactician_integration: true
+    enable_feature_engineering_integration: true
+  
+  # Hardware optimization
+  hardware_optimization:
+    enable_m1_optimization: true
+    enable_gpu_acceleration: true
+    enable_memory_optimization: true
+    enable_parallel_processing: true

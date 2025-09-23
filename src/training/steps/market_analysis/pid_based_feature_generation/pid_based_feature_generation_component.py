@@ -91,10 +91,14 @@ class PIDBasedFeatureGenerationComponent(BaseMarketAnalysisComponent):
             'source': 'unknown'
         }
         
+        # Analyst mode configuration (no long/short differentiation for 5m timeframe)
+        self.analyst_mode = self.config.timeframe == '5m'
+        
         self.logger.info("🔧 PIDBasedFeatureGenerationComponent initialized")
         self.logger.info(f"📊 Symbol: {self.config.symbol}")
         self.logger.info(f"📊 Exchange: {self.config.exchange}")
         self.logger.info(f"📊 Timeframe: {self.config.timeframe}")
+        self.logger.info(f"📊 Analyst Mode: {self.analyst_mode}")
     
     def _initialize_components(self):
         """Initialize required components."""
@@ -526,53 +530,82 @@ class PIDBasedFeatureGenerationComponent(BaseMarketAnalysisComponent):
                     self.logger.info(f"🔍 DEBUG: DataFrame shape: {labeled_data.shape}")
                     self.logger.info(f"🔍 DEBUG: Available columns: {list(labeled_data.columns)}")
                     
-                    # PRIORITY: Use bi-directional targets for PID analysis (same priority as feature optimization)
-                    # Modified to prioritize long/short differentiation
-                    target_options = [
-                        # LONG/SHORT DIFFERENTIATED: Primary targets for PID analysis
-                        'long_overall_opportunity',      # Long opportunity score - PRIMARY for long features
-                        'short_overall_opportunity',     # Short opportunity score - PRIMARY for short features
-                        'directional_confidence',        # Strength of directional bias - BEST for overall PID
-                        'opportunity_asymmetry',         # Long-short bias indicator
-                        
-                        # LEGACY: Backward compatibility targets
-                        'overall_opportunity',           # Original composite score
-                        'leverage_adjusted_score',       # Multi-horizon target (long-biased)
-                        'immediate_opportunity',         # Secondary multi-horizon target
-                        'short_term_opportunity'         # Tertiary multi-horizon target
-                    ]
+                    # Target options based on mode
+                    if self.analyst_mode:
+                        # ANALYST MODE: No long/short differentiation
+                        target_options = [
+                            'overall_opportunity',           # Primary target for analyst
+                            'immediate_opportunity',         # Secondary target
+                            'short_term_opportunity',        # Tertiary target
+                            'leverage_adjusted_score',       # Leverage-adjusted target
+                            'directional_confidence',        # Fallback target
+                            'opportunity_asymmetry'          # Fallback target
+                        ]
+                    else:
+                        # TACTICIAN MODE: Long/short differentiation
+                        target_options = [
+                            # LONG/SHORT DIFFERENTIATED: Primary targets for PID analysis
+                            'long_overall_opportunity',      # Long opportunity score - PRIMARY for long features
+                            'short_overall_opportunity',     # Short opportunity score - PRIMARY for short features
+                            'directional_confidence',        # Strength of directional bias - BEST for overall PID
+                            'opportunity_asymmetry',         # Long-short bias indicator
+                            
+                            # LEGACY: Backward compatibility targets
+                            'overall_opportunity',           # Original composite score
+                            'leverage_adjusted_score',       # Multi-horizon target (long-biased)
+                            'immediate_opportunity',         # Secondary multi-horizon target
+                            'short_term_opportunity'         # Tertiary multi-horizon target
+                        ]
                     
                     self.logger.info(f"🔍 DEBUG: Checking target options: {target_options}")
                     
-                    # Try to extract both long and short targets
+                    # Extract targets based on mode
                     targets = {}
                     
-                    # Look for long opportunity target
-                    if 'long_overall_opportunity' in labeled_data.columns:
-                        long_values = labeled_data['long_overall_opportunity'].values
-                        long_valid_mask = ~np.isnan(long_values)
-                        if np.any(long_valid_mask):
-                            targets['long'] = long_values[long_valid_mask]
-                            self.logger.info(f"🎯 LONG PID: Found long opportunity target ({np.sum(long_valid_mask)} valid samples)")
-                    
-                    # Look for short opportunity target
-                    if 'short_overall_opportunity' in labeled_data.columns:
-                        short_values = labeled_data['short_overall_opportunity'].values
-                        short_valid_mask = ~np.isnan(short_values)
-                        if np.any(short_valid_mask):
-                            targets['short'] = short_values[short_valid_mask]
-                            self.logger.info(f"🎯 SHORT PID: Found short opportunity target ({np.sum(short_valid_mask)} valid samples)")
-                    
-                    # If we have both long and short targets, return them
-                    if 'long' in targets and 'short' in targets:
-                        self.logger.info("🎯 LONG/SHORT DIFFERENTIATED PID: Using both long and short opportunity targets")
-                        self._target_source_info = {
-                            'target_used': 'long_short_opportunities',
-                            'target_type': 'long_short_differentiated',
-                            'valid_samples': {'long': len(targets['long']), 'short': len(targets['short'])},
-                            'source': 'multi_horizon_labeling'
-                        }
-                        return targets
+                    if self.analyst_mode:
+                        # ANALYST MODE: Single target approach
+                        for target_option in target_options:
+                            if target_option in labeled_data.columns:
+                                target_values = labeled_data[target_option].values
+                                valid_mask = ~np.isnan(target_values)
+                                if np.any(valid_mask):
+                                    targets['combined'] = target_values[valid_mask]
+                                    self.logger.info(f"🎯 ANALYST PID: Found target '{target_option}' ({np.sum(valid_mask)} valid samples)")
+                                    self._target_source_info = {
+                                        'target_used': target_option,
+                                        'target_type': 'analyst_mode',
+                                        'valid_samples': int(np.sum(valid_mask)),
+                                        'source': 'multi_horizon_labeling'
+                                    }
+                                    return targets
+                    else:
+                        # TACTICIAN MODE: Long/short differentiation
+                        # Look for long opportunity target
+                        if 'long_overall_opportunity' in labeled_data.columns:
+                            long_values = labeled_data['long_overall_opportunity'].values
+                            long_valid_mask = ~np.isnan(long_values)
+                            if np.any(long_valid_mask):
+                                targets['long'] = long_values[long_valid_mask]
+                                self.logger.info(f"🎯 LONG PID: Found long opportunity target ({np.sum(long_valid_mask)} valid samples)")
+                        
+                        # Look for short opportunity target
+                        if 'short_overall_opportunity' in labeled_data.columns:
+                            short_values = labeled_data['short_overall_opportunity'].values
+                            short_valid_mask = ~np.isnan(short_values)
+                            if np.any(short_valid_mask):
+                                targets['short'] = short_values[short_valid_mask]
+                                self.logger.info(f"🎯 SHORT PID: Found short opportunity target ({np.sum(short_valid_mask)} valid samples)")
+                        
+                        # If we have both long and short targets, return them
+                        if 'long' in targets and 'short' in targets:
+                            self.logger.info("🎯 LONG/SHORT DIFFERENTIATED PID: Using both long and short opportunity targets")
+                            self._target_source_info = {
+                                'target_used': 'long_short_opportunities',
+                                'target_type': 'long_short_differentiated',
+                                'valid_samples': {'long': len(targets['long']), 'short': len(targets['short'])},
+                                'source': 'multi_horizon_labeling'
+                            }
+                            return targets
                     
                     # Fallback to single target approach if we don't have both
                     for target_option in target_options:

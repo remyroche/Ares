@@ -245,6 +245,9 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
         self.start_time: Optional[float] = None
         self.metrics: Optional[OptimizationMetrics] = None
         
+        # Analyst mode configuration (no long/short differentiation for 5m timeframe)
+        self.analyst_mode = self.config.timeframe == '5m'
+        
         # Performance monitoring with memory tracking
         self.performance_monitor = {
             'memory_usage': [],

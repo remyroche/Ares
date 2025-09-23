@@ -31,6 +31,9 @@ class FinalFeatureSelectionStep:
         self.config = config or {}
         self.logger = get_logger("FinalFeatureSelectionStep")
         
+        # Analyst mode configuration (no long/short differentiation for 5m timeframe)
+        self.analyst_mode = self.config.get('timeframe', '1m') == '5m'
+        
         # Initialize feature selection configuration
         self.feature_config = FeatureSelectionConfig(
             initial_features=self.config.get('initial_features', 120),
@@ -45,6 +48,7 @@ class FinalFeatureSelectionStep:
         )
         
         self.logger.info("🚀 FinalFeatureSelectionStep initialized")
+        self.logger.info(f"📊 Analyst Mode: {self.analyst_mode}")
     
     @log_all_calls
     @handles_errors(Exception, fallback=False)

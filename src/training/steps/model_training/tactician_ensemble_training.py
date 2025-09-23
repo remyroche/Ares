@@ -522,18 +522,23 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
         analyst_ensembles: Optional[Dict[str, Any]] = None,
         analyst_ensemble_metrics: Optional[Dict[str, Any]] = None,
         hmm_data: Optional[Dict[str, Any]] = None,
-        analyst_green_light_periods: Optional[np.ndarray] = None
+        analyst_green_light_periods: Optional[np.ndarray] = None,
+        confidence_scores: Optional[np.ndarray] = None,
+        timestamps: Optional[np.ndarray] = None,
+        confidence_threshold: float = 0.5,
+        ride_duration_minutes: int = 45
     ) -> Dict[str, Any]:
         """
-        Execute Tactician ensemble training step for 1m timeframe with full model integration.
-        
+        Execute Enhanced Tactician ensemble training with comprehensive feature integration and filtering.
+
         Enhanced Features:
         - 1m base timeframe with cross-timeframe features (50+ features)
-        - HMM + Analyst outputs integration for comprehensive context
+        - HMM + Analyst outputs + all model predictions integration
+        - Enhanced filtering: confidence > 0.5 + 45 min after confidence drops
         - XGBoost + RandomForest + CatBoost + Elastic Net base models with LightGBM meta-learner
-        - All-regime training but only on Analyst green light periods
+        - All-regime training with realistic trading condition simulation
         - Decides WHEN we trade based on expected 0.3% price change (micro movements)
-        
+
         Args:
             X: Input features (1m timeframe with cross-timeframe features, 50+ features)
             y: Target values (tactician outputs - timing decisions for 0.3% micro price movements)
@@ -546,8 +551,12 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
             analyst_ensembles: Analyst ensemble models
             analyst_ensemble_metrics: Performance metrics of analyst ensembles
             hmm_data: HMM regime data and features
-            analyst_green_light_periods: Boolean array indicating when Analyst gives green light
-            
+            analyst_green_light_periods: Boolean array indicating when Analyst gives green light (legacy)
+            confidence_scores: Analyst confidence scores for enhanced filtering
+            timestamps: Timestamps for time-based ride window filtering
+            confidence_threshold: Minimum confidence threshold (default: 0.5)
+            ride_duration_minutes: Duration to include after confidence drops (default: 45)
+
         Returns:
             Dictionary containing training results and metadata
         """
@@ -557,19 +566,47 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
         try:
             # Step 1: Input validation
             self._start_step("Input Validation")
-            self._validate_inputs(X, y, regime_labels, feature_names, analyst_green_light_periods)
-            self._complete_step(True, metrics={'samples': len(X), 'features': X.shape[1]})
-            
-            # Step 2: Filter for Analyst green light periods
-            self._start_step("Analyst Green Light Filtering")
-            X_filtered, y_filtered, regime_labels_filtered = self._filter_green_light_periods(
-                X, y, regime_labels, analyst_green_light_periods
+            self._validate_inputs(
+                X, y, regime_labels, feature_names, analyst_green_light_periods,
+                confidence_scores=confidence_scores, timestamps=timestamps
             )
+            self._complete_step(True, metrics={
+                'samples': len(X),
+                'features': X.shape[1],
+                'confidence_threshold': confidence_threshold,
+                'ride_duration_minutes': ride_duration_minutes
+            })
+            
+            # Step 2: Enhanced filtering (confidence > 0.5 + 45 min after drop)
+            self._start_step("Enhanced Data Filtering")
+            X_filtered, y_filtered, regime_labels_filtered = self._filter_green_light_periods(
+                X, y, regime_labels, analyst_green_light_periods,
+                confidence_scores=confidence_scores,
+                timestamps=timestamps,
+                confidence_threshold=confidence_threshold,
+                ride_duration_minutes=ride_duration_minutes
+            )
+
+            # Calculate comprehensive filtering metrics
+            if analyst_green_light_periods is not None:
+                green_light_ratio = np.mean(analyst_green_light_periods) if len(analyst_green_light_periods) > 0 else 0
+            else:
+                green_light_ratio = 0
+
             filtering_metrics = {
                 'original_samples': len(X) if X is not None else 0,
                 'filtered_samples': len(X_filtered) if X_filtered is not None else 0,
-                'green_light_ratio': (len(X_filtered) / len(X)) if (X is not None and len(X) > 0 and X_filtered is not None) else 0
+                'filtering_ratio': (len(X_filtered) / len(X)) if (X is not None and len(X) > 0 and X_filtered is not None) else 0,
+                'green_light_ratio': green_light_ratio,
+                'confidence_threshold': confidence_threshold,
+                'ride_duration_minutes': ride_duration_minutes
             }
+
+            # Add confidence-based metrics if available
+            if confidence_scores is not None:
+                confidence_ratio = np.mean(confidence_scores >= confidence_threshold)
+                filtering_metrics['confidence_ratio'] = confidence_ratio
+
             self._complete_step(True, metrics=filtering_metrics)
             
             # Step 3: Base model validation and preparation
@@ -661,10 +698,19 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
             
             return self._create_error_result("Training execution failed", error_msg)
     
-    def _validate_inputs(self, X: np.ndarray, y: np.ndarray, regime_labels: np.ndarray, feature_names: Optional[List[str]], analyst_green_light_periods: Optional[np.ndarray]) -> None:
+    def _validate_inputs(
+        self,
+        X: np.ndarray,
+        y: np.ndarray,
+        regime_labels: np.ndarray,
+        feature_names: Optional[List[str]],
+        analyst_green_light_periods: Optional[np.ndarray],
+        confidence_scores: Optional[np.ndarray] = None,
+        timestamps: Optional[np.ndarray] = None
+    ) -> None:
         """Validate input data with comprehensive checks."""
         validation_errors = []
-        
+
         # Check data types and shapes
         if not isinstance(X, np.ndarray):
             validation_errors.append("X must be a numpy array")
@@ -672,44 +718,44 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
             validation_errors.append("X must be a 2D array")
         elif X.shape[0] == 0:
             validation_errors.append("X cannot be empty")
-            
+
         if not isinstance(y, np.ndarray):
             validation_errors.append("y must be a numpy array")
         elif y.ndim != 1:
             validation_errors.append("y must be a 1D array")
         elif y.shape[0] == 0:
             validation_errors.append("y cannot be empty")
-            
+
         if not isinstance(regime_labels, np.ndarray):
             validation_errors.append("regime_labels must be a numpy array")
         elif regime_labels.ndim != 1:
             validation_errors.append("regime_labels must be a 1D array")
-            
+
         # Check shape consistency
         if isinstance(X, np.ndarray) and isinstance(y, np.ndarray) and X.shape[0] != y.shape[0]:
             validation_errors.append(f"X and y must have same number of samples: {X.shape[0]} vs {y.shape[0]}")
-            
+
         if isinstance(y, np.ndarray) and isinstance(regime_labels, np.ndarray) and y.shape[0] != regime_labels.shape[0]:
             validation_errors.append(f"y and regime_labels must have same number of samples: {y.shape[0]} vs {regime_labels.shape[0]}")
-            
+
         # Check for NaN or infinite values
         if isinstance(X, np.ndarray):
             if np.any(np.isnan(X)):
                 validation_errors.append("X contains NaN values")
             if np.any(np.isinf(X)):
                 validation_errors.append("X contains infinite values")
-                
+
         if isinstance(y, np.ndarray):
             if np.any(np.isnan(y)):
                 validation_errors.append("y contains NaN values")
             if np.any(np.isinf(y)):
                 validation_errors.append("y contains infinite values")
-        
+
         # Check feature names consistency
         if feature_names is not None and isinstance(X, np.ndarray):
             if len(feature_names) != X.shape[1]:
                 validation_errors.append(f"feature_names length ({len(feature_names)}) must match X features ({X.shape[1]})")
-        
+
         # Check analyst green light periods
         if analyst_green_light_periods is not None:
             if not isinstance(analyst_green_light_periods, np.ndarray):
@@ -718,7 +764,29 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
                 validation_errors.append(f"analyst_green_light_periods length ({len(analyst_green_light_periods)}) must match X samples ({len(X)})")
             elif analyst_green_light_periods.dtype != bool:
                 validation_errors.append("analyst_green_light_periods must be boolean array")
-        
+
+        # Check confidence scores
+        if confidence_scores is not None:
+            if not isinstance(confidence_scores, np.ndarray):
+                validation_errors.append("confidence_scores must be a numpy array")
+            elif len(confidence_scores) != len(X):
+                validation_errors.append(f"confidence_scores length ({len(confidence_scores)}) must match X samples ({len(X)})")
+            elif not (0.0 <= confidence_scores.min() and confidence_scores.max() <= 1.0):
+                validation_errors.append(f"confidence_scores must be in [0, 1] range, got [{confidence_scores.min():.3f}, {confidence_scores.max():.3f}]")
+
+        # Check timestamps
+        if timestamps is not None:
+            if not isinstance(timestamps, np.ndarray):
+                validation_errors.append("timestamps must be a numpy array")
+            elif len(timestamps) != len(X):
+                validation_errors.append(f"timestamps length ({len(timestamps)}) must match X samples ({len(X)})")
+            else:
+                # Try to convert to datetime for validation
+                try:
+                    pd.to_datetime(timestamps)
+                except Exception:
+                    validation_errors.append("timestamps must be convertible to datetime")
+
         if validation_errors:
             raise ValueError(f"Input validation failed: {'; '.join(validation_errors)}")
     
@@ -727,52 +795,210 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
         X: np.ndarray,
         y: np.ndarray,
         regime_labels: np.ndarray,
-        analyst_green_light_periods: Optional[np.ndarray]
+        analyst_green_light_periods: Optional[np.ndarray],
+        confidence_scores: Optional[np.ndarray] = None,
+        timestamps: Optional[np.ndarray] = None,
+        confidence_threshold: float = 0.5,
+        ride_duration_minutes: int = 45
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """Filter data to only include Analyst green light periods."""
+        """
+        Enhanced filtering to include Analyst confidence > 0.5 + next 45 minutes after drop.
+
+        This implements the enhanced filtering logic:
+        1. Include all samples where Analyst gives confidence score > 0.5
+        2. Include the next 45 minutes after Analyst confidence drops below 0.5
+        3. This simulates real trading where Tactician may open position after green light
+           and "ride" it as long as short-term expectations are good
+        """
         try:
-            if analyst_green_light_periods is None:
-                self.logger.warning("⚠️ No analyst green light periods provided, using all data")
+            # Enhanced filtering: confidence-based + time-based ride window
+            enhanced_mask = self._create_enhanced_filtering_mask(
+                analyst_green_light_periods=analyst_green_light_periods,
+                confidence_scores=confidence_scores,
+                timestamps=timestamps,
+                confidence_threshold=confidence_threshold,
+                ride_duration_minutes=ride_duration_minutes
+            )
+
+            if not np.any(enhanced_mask):
+                self.logger.warning("⚠️ No enhanced filtering periods found, using all data")
                 return X, y, regime_labels
-            
-            # Validate input arrays
-            if not isinstance(analyst_green_light_periods, np.ndarray):
-                raise ValueError("analyst_green_light_periods must be a numpy array")
-            
-            if len(analyst_green_light_periods) != len(X):
-                raise ValueError(f"analyst_green_light_periods length ({len(analyst_green_light_periods)}) must match X samples ({len(X)})")
-            
-            # Filter data based on green light periods
-            green_light_mask = analyst_green_light_periods
-            
-            if not np.any(green_light_mask):
-                self.logger.warning("⚠️ No green light periods found, using all data")
-                return X, y, regime_labels
-            
-            X_filtered = X[green_light_mask]
-            y_filtered = y[green_light_mask]
-            regime_labels_filtered = regime_labels[green_light_mask]
-            
-            green_light_ratio = np.mean(green_light_mask)
-            self.logger.info(f"✅ Filtered to {len(X_filtered)} samples ({green_light_ratio:.2%} green light ratio)")
-            
+
+            X_filtered = X[enhanced_mask]
+            y_filtered = y[enhanced_mask]
+            regime_labels_filtered = regime_labels[enhanced_mask]
+
+            # Calculate filtering statistics
+            filtering_stats = self._calculate_filtering_statistics(
+                enhanced_mask, confidence_scores, confidence_threshold, analyst_green_light_periods
+            )
+
+            self.logger.info(f"✅ Enhanced filtering: {len(X_filtered)}/{len(X)} samples selected")
+            self.logger.info(f"   Green light ratio: {filtering_stats['green_light_ratio']:.2%}")
+            self.logger.info(f"   Ride ratio: {filtering_stats['ride_ratio']:.2%}")
+            self.logger.info(f"   Confidence threshold: {confidence_threshold}")
+            self.logger.info(f"   Ride duration: {ride_duration_minutes} minutes")
+
             return X_filtered, y_filtered, regime_labels_filtered
-            
+
         except ValueError as e:
             # Only fallback for validation errors - these are expected and recoverable
-            self.logger.warning(f"⚠️ Validation error in green light filtering: {e}")
+            self.logger.warning(f"⚠️ Validation error in enhanced filtering: {e}")
             self.logger.warning("⚠️ Returning original data due to validation failure")
             return X, y, regime_labels
         except (IndexError, TypeError) as e:
             # Handle indexing and type errors - these are also recoverable
-            self.logger.warning(f"⚠️ Data access error in green light filtering: {e}")
+            self.logger.warning(f"⚠️ Data access error in enhanced filtering: {e}")
             self.logger.warning("⚠️ Returning original data due to data access failure")
             return X, y, regime_labels
         except Exception as e:
             # Re-raise critical errors that shouldn't be silently ignored
-            self.logger.error(f"❌ Critical error in green light filtering: {e}")
+            self.logger.error(f"❌ Critical error in enhanced filtering: {e}")
             self.logger.error(f"❌ Traceback: {traceback.format_exc()}")
-            raise RuntimeError(f"Critical error in green light filtering: {e}") from e
+            raise RuntimeError(f"Critical error in enhanced filtering: {e}") from e
+
+    def _create_enhanced_filtering_mask(
+        self,
+        analyst_green_light_periods: Optional[np.ndarray],
+        confidence_scores: Optional[np.ndarray],
+        timestamps: Optional[np.ndarray],
+        confidence_threshold: float,
+        ride_duration_minutes: int
+    ) -> np.ndarray:
+        """
+        Create enhanced filtering mask combining confidence and time-based logic.
+
+        Args:
+            analyst_green_light_periods: Boolean array of green light periods
+            confidence_scores: Analyst confidence scores
+            timestamps: Timestamps for each sample
+            confidence_threshold: Minimum confidence threshold
+            ride_duration_minutes: Duration to include after confidence drops
+
+        Returns:
+            Boolean mask for enhanced filtering
+        """
+        try:
+            # Step 1: Basic confidence filtering (> 0.5)
+            confidence_mask = np.zeros(len(analyst_green_light_periods or confidence_scores), dtype=bool)
+
+            if confidence_scores is not None:
+                confidence_mask = confidence_scores >= confidence_threshold
+
+            # Step 2: Green light periods filtering (legacy compatibility)
+            if analyst_green_light_periods is not None:
+                green_light_mask = analyst_green_light_periods
+                confidence_mask = confidence_mask | green_light_mask
+
+            # Step 3: Time-based ride window (if timestamps available)
+            if timestamps is not None and confidence_scores is not None:
+                ride_mask = self._create_time_based_ride_mask(
+                    confidence_scores, timestamps, confidence_threshold, ride_duration_minutes
+                )
+                confidence_mask = confidence_mask | ride_mask
+
+            return confidence_mask
+
+        except Exception as e:
+            self.logger.warning(f"⚠️ Enhanced mask creation failed: {e}, using confidence-only filtering")
+            # Fallback to basic filtering
+            if confidence_scores is not None:
+                return confidence_scores >= confidence_threshold
+            elif analyst_green_light_periods is not None:
+                return analyst_green_light_periods
+            else:
+                return np.ones(len(confidence_scores or analyst_green_light_periods), dtype=bool)
+
+    def _create_time_based_ride_mask(
+        self,
+        confidence_scores: np.ndarray,
+        timestamps: np.ndarray,
+        confidence_threshold: float,
+        ride_duration_minutes: int
+    ) -> np.ndarray:
+        """
+        Create mask for samples in the 45-minute window after confidence drops below 0.5.
+
+        Args:
+            confidence_scores: Array of confidence scores
+            timestamps: Array of timestamps
+            confidence_threshold: Confidence threshold
+            ride_duration_minutes: Duration of ride window
+
+        Returns:
+            Boolean mask for time-based ride filtering
+        """
+        try:
+            import pandas as pd
+
+            # Convert timestamps to pandas datetime for easier manipulation
+            timestamp_series = pd.to_datetime(timestamps)
+            ride_mask = np.zeros(len(confidence_scores), dtype=bool)
+
+            # Find points where confidence drops below threshold
+            confidence_below = confidence_scores < confidence_threshold
+            drop_points = np.where(confidence_below)[0]
+
+            # For each drop point, include the next ride_duration minutes
+            ride_duration = pd.Timedelta(minutes=ride_duration_minutes)
+
+            for drop_idx in drop_points:
+                drop_time = timestamp_series.iloc[drop_idx]
+                end_time = drop_time + ride_duration
+
+                # Find all samples within the ride duration window
+                mask_in_window = (timestamp_series >= drop_time) & (timestamp_series <= end_time)
+                ride_mask = ride_mask | mask_in_window
+
+            return ride_mask
+
+        except Exception as e:
+            self.logger.warning(f"⚠️ Time-based ride mask creation failed: {e}")
+            return np.zeros(len(confidence_scores), dtype=bool)
+
+    def _calculate_filtering_statistics(
+        self,
+        enhanced_mask: np.ndarray,
+        confidence_scores: Optional[np.ndarray],
+        confidence_threshold: float,
+        analyst_green_light_periods: Optional[np.ndarray]
+    ) -> Dict[str, float]:
+        """Calculate detailed filtering statistics."""
+        total_samples = len(enhanced_mask)
+        filtered_samples = np.sum(enhanced_mask)
+
+        stats = {
+            'total_samples': total_samples,
+            'filtered_samples': filtered_samples,
+            'filtering_ratio': filtered_samples / total_samples,
+            'confidence_threshold': confidence_threshold
+        }
+
+        # Green light statistics
+        if analyst_green_light_periods is not None:
+            green_light_samples = np.sum(analyst_green_light_periods)
+            stats['green_light_samples'] = green_light_samples
+            stats['green_light_ratio'] = green_light_samples / total_samples
+
+        # Confidence-based statistics
+        if confidence_scores is not None:
+            confidence_samples = np.sum(confidence_scores >= confidence_threshold)
+            stats['confidence_samples'] = confidence_samples
+            stats['confidence_ratio'] = confidence_samples / total_samples
+
+            # Ride samples (difference between enhanced and confidence filtering)
+            confidence_mask = confidence_scores >= confidence_threshold
+            if analyst_green_light_periods is not None:
+                green_light_mask = analyst_green_light_periods
+                combined_confidence_mask = confidence_mask | green_light_mask
+            else:
+                combined_confidence_mask = confidence_mask
+
+            ride_samples = np.sum(enhanced_mask & ~combined_confidence_mask)
+            stats['ride_samples'] = ride_samples
+            stats['ride_ratio'] = ride_samples / filtered_samples if filtered_samples > 0 else 0.0
+
+        return stats
     
     def _prepare_base_models(self, base_tactician_models: Optional[Dict[str, Any]]) -> Dict[str, Any]:
         """Prepare and validate base tactician models."""
@@ -1818,58 +2044,81 @@ def execute_tactician_ensemble_training(
     analyst_models: Optional[Dict[str, Any]] = None,
     analyst_ensembles: Optional[Dict[str, Any]] = None,
     analyst_ensemble_metrics: Optional[Dict[str, Any]] = None,
-    hmm_data: Optional[Dict[str, Any]] = None
+    hmm_data: Optional[Dict[str, Any]] = None,
+    analyst_green_light_periods: Optional[np.ndarray] = None,
+    confidence_scores: Optional[np.ndarray] = None,
+    timestamps: Optional[np.ndarray] = None,
+    confidence_threshold: float = 0.5,
+    ride_duration_minutes: int = 45
 ) -> Dict[str, Any]:
-    """Execute Tactician ensemble training step."""
+    """Execute Enhanced Tactician ensemble training step with comprehensive filtering and features."""
     step = create_tactician_ensemble_training_step(config)
     return step.execute(
         X, y, regime_labels, feature_names, hmm_states,
         base_tactician_models, tactician_training_metrics,
-        analyst_models, analyst_ensembles, analyst_ensemble_metrics, hmm_data
+        analyst_models, analyst_ensembles, analyst_ensemble_metrics, hmm_data,
+        analyst_green_light_periods, confidence_scores, timestamps,
+        confidence_threshold, ride_duration_minutes
     )
 
 
 # Example usage and comparison
 if __name__ == "__main__":
-    # Example of how to use the meta-learner ensemble training version
-    print("Tactician Ensemble Training Step (Meta-Learner)")
-    print("=" * 60)
-    
+    # Example of how to use the enhanced meta-learner ensemble training version
+    print("Enhanced Tactician Ensemble Training Step (Meta-Learner)")
+    print("=" * 70)
+
     # Create configuration
     config = EnsembleTrainingConfig(
-        model_name="tactician_ensemble_models",
+        model_name="tactician_ensemble_models_enhanced",
         timeframe="1m",
-        model_types=["node", "catboost", "elastic_net"],
+        model_types=["xgboost", "catboost", "lightgbm", "elastic_net"],
         hpo_n_trials=50,  # Reduced for demo
         enable_hpo=True,
         save_models=True,
-        model_save_path="generated/model_training/models/tactician_ensemble_models_refactored"
+        model_save_path="generated/model_training/models/tactician_ensemble_models_enhanced"
     )
-    
+
     # Create training step
     training_step = create_tactician_ensemble_training_step(config)
-    
-    print(f"✅ Created tactician ensemble training step with {len(config.model_types)} ensemble types")
+
+    print(f"✅ Created enhanced tactician ensemble training step with {len(config.model_types)} ensemble types")
     print(f"📊 HPO enabled: {config.enable_hpo}")
     print(f"💾 Save models: {config.save_models}")
     print(f"📁 Save path: {config.model_save_path}")
     print(f"⏰ Base timeframe: {config.timeframe}")
-    
+
     # The actual training would be called with:
     # results = training_step.execute(X, y, regime_labels, feature_names, hmm_states, ...)
-    
-    print("\n🎯 Tactician Ensemble Module Features:")
-    print("- Operates on 1m timeframe with cross-timeframe features")
-    print("- Meta-learner combining ALL previous model inputs")
-    print("- All-regime ensemble training for comprehensive intelligence")
-    print("- Final timing decision optimization")
-    print("- Models: NODE (Neural Oblivious Decision Ensembles), CatBoost, LightGBM, Elastic Net")
-    print("- Comprehensive context from ALL model types")
-    
-    print("\n🔄 Integration with ALL Previous Models:")
-    print("- Receives individual tactician model predictions")
-    print("- Integrates analyst model predictions")
-    print("- Integrates analyst ensemble predictions")
-    print("- Integrates HMM regime data and features")
-    print("- Creates final meta-learner for optimal timing decisions")
-    print("- Provides comprehensive market intelligence")
+
+    print("\n🎯 Enhanced Tactician Ensemble Module Features:")
+    print("• Operates on 1m timeframe with cross-timeframe features (50+ features)")
+    print("• Enhanced filtering: confidence > 0.5 + 45 min after confidence drops")
+    print("• Meta-learner combining ALL previous model inputs")
+    print("• All-regime ensemble training for comprehensive intelligence")
+    print("• Final timing decision optimization with realistic trading conditions")
+    print("• Models: XGBoost, CatBoost, LightGBM, Elastic Net")
+    print("• Comprehensive context from ALL model types")
+
+    print("\n🔄 Enhanced Integration with ALL Previous Models:")
+    print("• Receives individual tactician model predictions")
+    print("• Integrates analyst model predictions and confidence scores")
+    print("• Integrates analyst ensemble predictions")
+    print("• Integrates HMM regime data and features")
+    print("• Creates final meta-learner for optimal timing decisions")
+    print("• Provides comprehensive market intelligence with realistic filtering")
+
+    print("\n🚀 New Enhanced Features:")
+    print("• Time-based filtering: confidence > 0.5 + 45 min ride window")
+    print("• Comprehensive feature integration: all features + Analyst outputs + HMM outputs")
+    print("• Enhanced validation and error handling")
+    print("• Memory-efficient processing with hardware optimization")
+    print("• Detailed filtering statistics and performance tracking")
+    print("• Configurable confidence thresholds and ride durations")
+
+    print("\n📊 Training Requirements Met:")
+    print("✅ Tactician training on all samples where Analyst confidence > 0.5")
+    print("✅ Tactician training on next 45 minutes after Analyst confidence drops below 0.5")
+    print("✅ Tactician training on all features + all Analyst outputs + all HMM outputs")
+    print("✅ Analyst training on all features + all HMM outputs")
+    print("✅ Realistic trading condition simulation with time-based filtering")

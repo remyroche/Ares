@@ -340,6 +340,133 @@ def get_regime_specific_feature_selection_config(regime_type: str) -> dict[str, 
     return base_config
 
 
+def get_model_specific_feature_selection_config(model_type: str) -> dict[str, Any]:
+    """Get model-specific feature selection configuration."""
+    base_config = get_default_enhanced_feature_selection_config()
+
+    if model_type == "AdvancedMambaHybrid":
+        # AdvancedMambaHybrid needs multi-timeframe and interaction features
+        base_config["feature_reduction"].update(
+            {
+                "target_features": 100,
+                "min_features_per_category": 2,
+                "max_features_per_category": 25,
+                "category_weights": {
+                    "momentum": 1.0,
+                    "volatility": 1.0,
+                    "liquidity": 0.9,
+                    "microstructure": 1.1,
+                    "wavelet": 1.0,
+                    "sr_distance": 0.8,
+                    "statistical": 0.9,
+                    "candlestick": 0.8,
+                    "interaction": 1.2,  # Higher weight for interaction features
+                    "transform": 1.0,
+                    "temporal": 1.1,     # Higher weight for temporal features
+                    "other": 0.7,
+                },
+                "enable_interaction_features": True,
+                "max_interaction_features": 50,
+                "interaction_feature_selection": "top_25_plus_category_top3",
+                "correlation_filtering_method": "hierarchical_clustering",
+                "correlation_threshold_fallback": 0.88,
+            }
+        )
+
+    elif model_type == "FinancialResNet":
+        # FinancialResNet needs regime and temporal features for classification
+        base_config["feature_reduction"].update(
+            {
+                "target_features": 120,
+                "min_features_per_category": 3,
+                "max_features_per_category": 30,
+                "category_weights": {
+                    "momentum": 0.9,
+                    "volatility": 1.1,
+                    "liquidity": 1.0,
+                    "microstructure": 1.2,  # Higher weight for microstructure
+                    "wavelet": 1.0,
+                    "sr_distance": 1.0,
+                    "statistical": 1.0,
+                    "candlestick": 0.9,
+                    "interaction": 0.8,
+                    "transform": 0.9,
+                    "temporal": 1.3,     # Higher weight for temporal features
+                    "regime": 1.4,       # Highest weight for regime features
+                    "other": 0.6,
+                },
+                "enable_regime_features": True,
+                "correlation_filtering_method": "recursive_elimination",
+                "correlation_threshold_fallback": 0.95,
+                "enable_advanced_correlation_filtering": True,
+            }
+        )
+
+    elif model_type == "DeepScaler":
+        # DeepScaler needs clean, high-quality features for precision
+        base_config["feature_reduction"].update(
+            {
+                "target_features": 80,
+                "min_features_per_category": 2,
+                "max_features_per_category": 15,
+                "category_weights": {
+                    "momentum": 1.0,
+                    "volatility": 1.1,
+                    "liquidity": 0.8,
+                    "microstructure": 0.9,
+                    "wavelet": 0.9,
+                    "sr_distance": 1.0,
+                    "statistical": 1.2,  # Higher weight for statistical features
+                    "candlestick": 0.8,
+                    "interaction": 0.7,
+                    "transform": 0.8,
+                    "temporal": 0.9,
+                    "regime": 0.8,
+                    "other": 0.6,
+                },
+                "enable_precision_filtering": True,
+                "correlation_filtering_method": "threshold_based",
+                "correlation_threshold_fallback": 0.85,
+                "enable_advanced_correlation_filtering": True,
+                "max_nan_ratio": 0.1,  # Stricter NaN ratio
+                "constant_variance_threshold": 1e-8,  # Tighter constant threshold
+            }
+        )
+
+    elif model_type == "NBEATS":
+        # N-BEATS needs temporal and trend features for time series forecasting
+        base_config["feature_reduction"].update(
+            {
+                "target_features": 70,
+                "min_features_per_category": 2,
+                "max_features_per_category": 12,
+                "category_weights": {
+                    "momentum": 0.8,
+                    "volatility": 1.0,
+                    "liquidity": 0.7,
+                    "microstructure": 0.8,
+                    "wavelet": 1.1,
+                    "sr_distance": 0.9,
+                    "statistical": 0.9,
+                    "candlestick": 0.7,
+                    "interaction": 0.6,
+                    "transform": 0.7,
+                    "temporal": 1.4,     # Highest weight for temporal features
+                    "trend": 1.3,        # High weight for trend features
+                    "seasonality": 1.3,  # High weight for seasonality features
+                    "regime": 0.8,
+                    "other": 0.5,
+                },
+                "enable_temporal_filtering": True,
+                "correlation_filtering_method": "hierarchical_clustering",
+                "correlation_threshold_fallback": 0.90,
+                "max_clusters": 30,  # Fewer clusters for temporal grouping
+            }
+        )
+
+    return base_config
+
+
 # Example usage and validation
 if __name__ == "__main__":
     # Test default configuration

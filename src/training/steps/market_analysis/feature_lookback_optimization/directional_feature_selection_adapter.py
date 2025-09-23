@@ -41,31 +41,39 @@ logger = logging.getLogger(__name__)
 @dataclass
 class DirectionalFeatureSelectionConfig:
     """Configuration for directional feature selection."""
-    
+
     # Target feature counts
     target_total_features: int = 80
     max_total_features: int = 100
     min_total_features: int = 60
-    
+
+    # Model-specific settings
+    model_type: str = 'default'
+    model_priority_categories: List[str] = field(default_factory=lambda: ['momentum', 'volatility', 'microstructure'])
+
     # Directional balance
     maintain_directional_balance: bool = True
     min_features_per_direction: int = 20
     max_imbalance_ratio: float = 0.3  # Max allowed imbalance between long/short
-    
+
     # Selection methods
     primary_selection_method: str = "mutual_info"  # "mutual_info", "mrmr", "correlation"
     secondary_selection_method: str = "correlation_filter"
     use_ensemble_selection: bool = True
-    
+
     # Quality thresholds
     min_mutual_info_score: float = 0.01
     max_correlation_threshold: float = 0.95
     min_stability_score: float = 0.5
-    
+
+    # Model-specific thresholds
+    model_correlation_threshold: float = 0.90
+    model_importance_threshold: float = 0.005
+
     # Performance weighting
     performance_weight: float = 0.6  # Weight for performance-based selection
     balance_weight: float = 0.4      # Weight for directional balance
-    
+
     # Advanced settings
     enable_cross_directional_filtering: bool = True
     enable_complementary_pair_selection: bool = True
@@ -128,7 +136,10 @@ class DirectionalFeatureSelectionAdapter:
         """Initialize the adapter."""
         self.config = config or DirectionalFeatureSelectionConfig()
         self.logger = logging.getLogger(__name__)
-        
+
+        # Set model-specific parameters
+        self._set_model_specific_parameters()
+
         # Initialize feature selection framework if available
         self.feature_selector = None
         if FEATURE_SELECTION_AVAILABLE:
@@ -137,11 +148,60 @@ class DirectionalFeatureSelectionAdapter:
                 tprint("✅ Feature selection framework initialized")
             except Exception as e:
                 tprint(f"⚠️ Failed to initialize feature selection framework: {e}")
-        
+
         # Track selection history
         self.selection_history: List[DirectionalFeatureSelectionResult] = []
-        
+
         tprint("🎯 DirectionalFeatureSelectionAdapter initialized")
+        tprint(f"📊 Model Type: {self.config.model_type}")
+        tprint(f"📈 Target Features: {self.config.target_total_features}")
+
+    def _set_model_specific_parameters(self):
+        """Set model-specific feature selection parameters."""
+        model_specific_params = {
+            'AdvancedMambaHybrid': {
+                'target_total_features': 100,
+                'max_total_features': 120,
+                'min_total_features': 80,
+                'model_correlation_threshold': 0.88,
+                'model_importance_threshold': 0.003,
+                'max_correlation_threshold': 0.90,
+                'model_priority_categories': ['momentum', 'interaction', 'microstructure', 'temporal']
+            },
+            'FinancialResNet': {
+                'target_total_features': 120,
+                'max_total_features': 150,
+                'min_total_features': 100,
+                'model_correlation_threshold': 0.95,
+                'model_importance_threshold': 0.002,
+                'max_correlation_threshold': 0.96,
+                'model_priority_categories': ['regime', 'temporal', 'volatility', 'microstructure']
+            },
+            'DeepScaler': {
+                'target_total_features': 80,
+                'max_total_features': 100,
+                'min_total_features': 60,
+                'model_correlation_threshold': 0.85,
+                'model_importance_threshold': 0.008,
+                'max_correlation_threshold': 0.88,
+                'model_priority_categories': ['statistical', 'momentum', 'volatility']
+            },
+            'NBEATS': {
+                'target_total_features': 70,
+                'max_total_features': 80,
+                'min_total_features': 50,
+                'model_correlation_threshold': 0.90,
+                'model_importance_threshold': 0.005,
+                'max_correlation_threshold': 0.92,
+                'model_priority_categories': ['temporal', 'trend', 'seasonality', 'volatility']
+            }
+        }
+
+        if self.config.model_type in model_specific_params:
+            params = model_specific_params[self.config.model_type]
+            for param, value in params.items():
+                setattr(self.config, param, value)
+            self.logger.info(f"✅ Applied {self.config.model_type} specific parameters")
     
     def select_optimal_directional_features(self,
                                           directional_result: DirectionalOptimizationResult,

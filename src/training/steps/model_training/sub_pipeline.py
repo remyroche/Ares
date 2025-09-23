@@ -1,12 +1,13 @@
 """
 Model Training Sub-Pipeline - Enhanced with Comprehensive Debugging
 
-This module provides the final model training sub-pipeline with 4 core steps:
+This module provides the final model training sub-pipeline with 5 core steps:
 
 1. analyst_models_training - Per-regime individual model training with HPO, saving, and metrics
-2. analyst_ensemble_training - Per-regime ensemble training with HPO, saving, and metrics  
-3. tactician_models_training - All-regime individual model training with HPO, saving, and metrics
-4. tactician_ensemble_training - All-regime ensemble training with HPO, saving, and metrics
+2. analyst_ensemble_training - Per-regime ensemble training with HPO, saving, and metrics
+3. tactician_pre_ml_orchestration - Pre-ML processing: separate long/short signals, optimize features, generate PID features, apply horizon labeling, select features
+4. tactician_dual_training - Train Tactician models twice (longs and shorts) with differentiated features and horizon labeling
+5. tactician_ensemble_training - All-regime ensemble training with HPO, saving, and metrics (legacy - now primarily used for combined signals)
 
 ENHANCED FEATURES:
 - Comprehensive debugging and error tracking
@@ -16,6 +17,7 @@ ENHANCED FEATURES:
 - Data quality checks throughout pipeline
 - Resource monitoring and optimization
 - Silent failure prevention with explicit error propagation
+- NEW: Tactician dual training with differentiated long/short processing
 """
 
 import asyncio
@@ -391,6 +393,8 @@ class ModelTrainingSubPipeline:
         self.sub_pipelines = {
             'analyst_model_training': self._analyst_model_training_pipeline,
             'analyst_ensemble_training': self._analyst_ensemble_training_pipeline,
+            'tactician_pre_ml_orchestration': self._tactician_pre_ml_orchestration_pipeline,
+            'tactician_dual_training': self._tactician_dual_training_pipeline,
             'tactician_lookback_optimization': self._tactician_lookback_optimization_pipeline,
             'tactician_models_training': self._tactician_models_training_pipeline,
             'tactician_ensemble_training': self._tactician_ensemble_training_pipeline,
@@ -1018,9 +1022,11 @@ class ModelTrainingSubPipeline:
             tprint(f"   🔍 Validating required artifacts for {sub_pipeline_name}...")
             required_artifacts = {
                 'analyst_model_training': ['models', 'metrics'],
-                'analyst_ensemble_training': ['models', 'metrics'],
-                'tactician_models_training': ['models', 'metrics'],
-                'tactician_ensemble_training': ['models', 'metrics']
+            'analyst_ensemble_training': ['models', 'metrics'],
+            'tactician_pre_ml_orchestration': ['orchestration_result', 'long_training_data', 'short_training_data'],
+            'tactician_dual_training': ['training_result', 'long_base_models', 'short_base_models', 'long_ensemble_models', 'short_ensemble_models', 'models', 'metrics'],
+            'tactician_models_training': ['models', 'metrics'],
+            'tactician_ensemble_training': ['models', 'metrics']
             }
             
             if sub_pipeline_name in required_artifacts:
@@ -1290,9 +1296,11 @@ class ModelTrainingSubPipeline:
             # Check 5: Check for suspiciously low model counts
             expected_model_counts = {
                 'analyst_model_training': 4,  # TEMPORAL_FUSION_TRANSFORMER, TABNET, HIST_GRADIENT_BOOSTING, EXTRA_TREES
-                'analyst_ensemble_training': 1,  # Single ensemble model
-                'tactician_models_training': 4,  # Similar to analyst
-                'tactician_ensemble_training': 1  # Single ensemble model
+        'analyst_ensemble_training': 1,  # Single ensemble model
+        'tactician_pre_ml_orchestration': 0,  # No models, just orchestration
+        'tactician_dual_training': 8,  # 4 long + 4 short models (base + ensemble)
+        'tactician_models_training': 4,  # Similar to analyst
+        'tactician_ensemble_training': 1  # Single ensemble model
             }
             
             if sub_pipeline_name in expected_model_counts:
@@ -2030,9 +2038,11 @@ class ModelTrainingSubPipeline:
         self.logger.info('📋 Steps to be executed automatically:')
         self.logger.info('   1. analyst_model_training - Per-regime individual model training with HPO, saving, and metrics')
         self.logger.info('   2. analyst_ensemble_training - Per-regime ensemble training with HPO, saving, and metrics')
-        self.logger.info('   3. tactician_lookback_optimization - Lookback optimization for tactician models')
-        self.logger.info('   4. tactician_models_training - All-regime individual model training with HPO, saving, and metrics')
-        self.logger.info('   5. tactician_ensemble_training - All-regime ensemble training with HPO, saving, and metrics')
+        self.logger.info('   3. tactician_pre_ml_orchestration - Pre-ML processing: separate long/short signals, optimize features, generate PID features, apply horizon labeling, select features')
+        self.logger.info('   4. tactician_dual_training - Train Tactician models twice (longs and shorts) with differentiated features and horizon labeling')
+        self.logger.info('   5. tactician_lookback_optimization - Lookback optimization for tactician models')
+        self.logger.info('   6. tactician_models_training - All-regime individual model training with HPO, saving, and metrics')
+        self.logger.info('   7. tactician_ensemble_training - All-regime ensemble training with HPO, saving, and metrics (legacy - now primarily used for combined signals)')
         self.logger.info('=' * 80)
         
         # Execute from the first step - this will automatically trigger all subsequent steps
@@ -2087,8 +2097,10 @@ class ModelTrainingSubPipeline:
             'analyst_model_training',
             'analyst_ensemble_training'
         ]
-        
+
         tactician_steps = [
+            'tactician_pre_ml_orchestration',
+            'tactician_dual_training',
             'tactician_lookback_optimization',
             'tactician_models_training',
             'tactician_ensemble_training'
@@ -2233,7 +2245,9 @@ async def execute_full_model_training_pipeline(
     # Define the execution order
     sub_pipelines = [
         'analyst_model_training',
-        'analyst_ensemble_training', 
+        'analyst_ensemble_training',
+        'tactician_pre_ml_orchestration',
+        'tactician_dual_training',
         'tactician_lookback_optimization',
         'tactician_models_training',
         'tactician_ensemble_training'
@@ -2249,7 +2263,7 @@ async def execute_full_model_training_pipeline(
             if result.status == SubPipelineStatus.FAILED:
                 pipeline.logger.error(f"❌ Pipeline stopped due to failure in {sub_pipeline_name}")
                 break
-                
+
         except Exception as e:
             pipeline.logger.error(f"❌ Critical failure in {sub_pipeline_name}: {e}")
             # Create a failed result
@@ -2262,5 +2276,194 @@ async def execute_full_model_training_pipeline(
             )
             results.append(failed_result)
             break
-    
+
     return results
+
+    async def _tactician_pre_ml_orchestration_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
+        """Tactician pre-ML orchestration pipeline: separate long/short signals, optimize features, generate PID features, apply horizon labeling, select features."""
+        tprint(f"   🎯 TACTICIAN PRE-ML ORCHESTRATION PIPELINE STARTED")
+        self.logger.info("🎯 Executing tactician pre-ML orchestration pipeline")
+        self.logger.info("   📊 Step 1: Separate Analyst signals into long/short with confidence filtering")
+        self.logger.info("   🔍 Step 2: Optimize feature lookback periods for each signal type")
+        self.logger.info("   🎯 Step 3: Generate PID-based features for each signal type")
+        self.logger.info("   🏷️ Step 4: Apply multi-horizon profit labeling for each signal type")
+        self.logger.info("   🎯 Step 5: Select final features for each signal type")
+        self.logger.info("   📚 Step 6: Prepare training data for dual training")
+
+        timestamp = self._generate_datetime_stamp()
+        artifacts = self._prepare_artifacts(config, "tactician_pre_ml_orchestration_report", timestamp)
+
+        try:
+            # Load analyst signals and market data
+            analyst_signals = await self._load_training_data(config)
+            if analyst_signals is None or analyst_signals.empty:
+                raise ValueError("No analyst signals data available for pre-ML orchestration")
+
+            # Load market data - assuming same format as analyst signals
+            market_data = analyst_signals.copy()  # In practice, this would load actual market data
+
+            # Get feature names from config or default
+            feature_names = config.additional_params.get('feature_names', ['close', 'volume', 'rsi', 'macd', 'bb_upper', 'bb_lower'])
+
+            tprint(f"   🔍 Initializing tactician pre-ML orchestrator...")
+            orchestrator_config = {
+                'min_analyst_confidence': config.additional_params.get('min_analyst_confidence', 0.5),
+                'subsequent_minutes': config.additional_params.get('subsequent_minutes', 45),
+                'output_directory': config.additional_params.get('output_directory', 'generated/tactician_pre_ml'),
+                'enable_feature_optimization': config.additional_params.get('enable_feature_optimization', True),
+                'enable_pid_generation': config.additional_params.get('enable_pid_generation', True),
+                'enable_horizon_labeling': config.additional_params.get('enable_horizon_labeling', True),
+                'enable_feature_selection': config.additional_params.get('enable_feature_selection', True),
+                'save_intermediate_results': True
+            }
+
+            from .tactician_pre_ml_orchestrator import TacticianPreMLOrchestrator
+            orchestrator = TacticianPreMLOrchestrator(orchestrator_config)
+
+            tprint(f"   🔍 Executing tactician pre-ML orchestration...")
+            orchestration_result = await orchestrator.orchestrate_pre_ml_training(
+                analyst_signals=analyst_signals,
+                market_data=market_data,
+                feature_names=feature_names
+            )
+
+            if orchestration_result.feature_generation_status != "completed":
+                raise ValueError(f"Pre-ML orchestration failed: {orchestration_result.feature_generation_status}")
+
+            # Prepare artifacts for pipeline result
+            artifacts.update({
+                'orchestration_result': {
+                    'total_long_samples': orchestration_result.total_long_samples,
+                    'total_short_samples': orchestration_result.total_short_samples,
+                    'long_selected_features': orchestration_result.long_selected_features,
+                    'short_selected_features': orchestration_result.short_selected_features,
+                    'execution_time': orchestration_result.execution_time,
+                    'feature_generation_status': orchestration_result.feature_generation_status
+                },
+                'long_training_data': orchestration_result.long_training_data,
+                'short_training_data': orchestration_result.short_training_data,
+                'long_signals': orchestration_result.long_signals,
+                'short_signals': orchestration_result.short_signals,
+                'models': [],
+                'metrics': {
+                    'pre_ml_orchestration': {
+                        'total_long_samples': orchestration_result.total_long_samples,
+                        'total_short_samples': orchestration_result.total_short_samples,
+                        'execution_time': orchestration_result.execution_time,
+                        'long_data_quality_score': orchestration_result.long_data_quality_score,
+                        'short_data_quality_score': orchestration_result.short_data_quality_score
+                    }
+                },
+                'performance': {
+                    'orchestration_time': orchestration_result.execution_time,
+                    'long_samples_processed': orchestration_result.total_long_samples,
+                    'short_samples_processed': orchestration_result.total_short_samples
+                }
+            })
+
+            tprint(f"   ✅ Processed {orchestration_result.total_long_samples} long samples, {orchestration_result.total_short_samples} short samples")
+            tprint(f"   🔢 Generated {len(orchestration_result.long_selected_features)} long features, {len(orchestration_result.short_selected_features)} short features")
+
+            return artifacts
+
+        except Exception as e:
+            tprint_error(f"❌ Tactician pre-ML orchestration pipeline failed: {e}")
+            self.logger.error(f"❌ Tactician pre-ML orchestration pipeline failed: {e}", exc_info=True)
+            raise
+
+    async def _tactician_dual_training_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
+        """Tactician dual training pipeline: train models twice (longs and shorts) with differentiated features and horizon labeling."""
+        tprint(f"   ⚔️ TACTICIAN DUAL TRAINING PIPELINE STARTED")
+        self.logger.info("⚔️ Executing tactician dual training pipeline")
+        self.logger.info("   📈 Step 1: Pre-ML orchestration (separate long/short signals)")
+        self.logger.info("   🔧 Step 2: Train base models for long signals")
+        self.logger.info("   🔄 Step 3: Train ensemble models for long signals")
+        self.logger.info("   🔧 Step 4: Train base models for short signals")
+        self.logger.info("   🔄 Step 5: Train ensemble models for short signals")
+
+        timestamp = self._generate_datetime_stamp()
+        artifacts = self._prepare_artifacts(config, "tactician_dual_training_report", timestamp)
+
+        try:
+            # Load analyst signals and market data
+            analyst_signals = await self._load_training_data(config)
+            if analyst_signals is None or analyst_signals.empty:
+                raise ValueError("No analyst signals data available for dual training")
+
+            # Load market data - assuming same format as analyst signals
+            market_data = analyst_signals.copy()  # In practice, this would load actual market data
+
+            # Get feature names from config or default
+            feature_names = config.additional_params.get('feature_names', ['close', 'volume', 'rsi', 'macd', 'bb_upper', 'bb_lower'])
+
+            tprint(f"   🔍 Initializing tactician dual training step...")
+            dual_training_config = {
+                'min_analyst_confidence': config.additional_params.get('min_analyst_confidence', 0.5),
+                'subsequent_minutes': config.additional_params.get('subsequent_minutes', 45),
+                'output_directory': config.additional_params.get('output_directory', 'generated/tactician_dual_training'),
+                'train_base_models': config.additional_params.get('train_base_models', True),
+                'train_ensemble_models': config.additional_params.get('train_ensemble_models', True),
+                'save_models': True,
+                'save_metrics': True
+            }
+
+            from .tactician_dual_training_step import TacticianDualTrainingStep
+            dual_trainer = TacticianDualTrainingStep(dual_training_config)
+
+            tprint(f"   🔍 Executing tactician dual training...")
+            training_result = await dual_trainer.train_dual_tactician_models(
+                analyst_signals=analyst_signals,
+                market_data=market_data,
+                feature_names=feature_names
+            )
+
+            if training_result.training_phase != training_result.training_phase.COMPLETED:
+                raise ValueError(f"Dual training failed: {training_result.training_phase}")
+
+            # Prepare artifacts for pipeline result
+            artifacts.update({
+                'training_result': {
+                    'total_long_samples': training_result.total_long_samples,
+                    'total_short_samples': training_result.total_short_samples,
+                    'execution_time': training_result.execution_time,
+                    'training_phase': training_result.training_phase.value if hasattr(training_result.training_phase, 'value') else str(training_result.training_phase),
+                    'pre_ml_orchestration_completed': training_result.pre_ml_orchestration_completed,
+                    'long_base_training_completed': training_result.long_base_training_completed,
+                    'short_base_training_completed': training_result.short_base_training_completed,
+                    'long_ensemble_training_completed': training_result.long_ensemble_training_completed,
+                    'short_ensemble_training_completed': training_result.short_ensemble_training_completed,
+                    'validation_completed': training_result.validation_completed
+                },
+                'long_base_models': training_result.long_base_models or {},
+                'short_base_models': training_result.short_base_models or {},
+                'long_ensemble_models': training_result.long_ensemble_models or {},
+                'short_ensemble_models': training_result.short_ensemble_models or {},
+                'models': [
+                    *(list(training_result.long_base_models.keys()) if training_result.long_base_models else []),
+                    *(list(training_result.short_base_models.keys()) if training_result.short_base_models else []),
+                    *(list(training_result.long_ensemble_models.keys()) if training_result.long_ensemble_models else []),
+                    *(list(training_result.short_ensemble_models.keys()) if training_result.short_ensemble_models else [])
+                ],
+                'metrics': {
+                    'long_training': training_result.long_training_metrics,
+                    'short_training': training_result.short_training_metrics,
+                    'long_ensemble': training_result.long_ensemble_metrics,
+                    'short_ensemble': training_result.short_ensemble_metrics
+                },
+                'performance': {
+                    'training_time': training_result.execution_time,
+                    'long_samples_processed': training_result.total_long_samples,
+                    'short_samples_processed': training_result.total_short_samples
+                }
+            })
+
+            tprint(f"   ✅ Dual training completed: {training_result.total_long_samples} long samples, {training_result.total_short_samples} short samples")
+            tprint(f"   🔢 Models trained: {len(training_result.long_base_models) if training_result.long_base_models else 0} long base, {len(training_result.long_ensemble_models) if training_result.long_ensemble_models else 0} long ensemble")
+            tprint(f"   🔢 Models trained: {len(training_result.short_base_models) if training_result.short_base_models else 0} short base, {len(training_result.short_ensemble_models) if training_result.short_ensemble_models else 0} short ensemble")
+
+            return artifacts
+
+        except Exception as e:
+            tprint_error(f"❌ Tactician dual training pipeline failed: {e}")
+            self.logger.error(f"❌ Tactician dual training pipeline failed: {e}", exc_info=True)
+            raise

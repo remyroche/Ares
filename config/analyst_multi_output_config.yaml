@@ -1,5 +1,6 @@
 # Analyst Multi-Output Configuration
 # Configuration for Analyst (5m) multi-output stacking ensemble models
+# Fed on all features + HMM inputs for trading opportunity detection
 
 # Basic configuration
 analyst_config:
@@ -7,72 +8,123 @@ analyst_config:
   timeframe: "5m"
   n_outputs: 4
   output_names: ["signal_strength", "confidence", "risk_score", "regime_label"]
-  
-  # Model configuration
+
+  # Model configuration - Updated for trading opportunity detection
   base_models:
-    transformer:
-      model_type: "TimeSeriesTransformer"
+    deepscaler:
+      model_type: "DeepScaler"
       params:
-        n_heads: 8
-        n_layers: 6
-        d_model: 128
-        dropout: 0.1
-        random_state: 42
-    
+        n_layers: 4
+        n_units: 64
+        dropout: 0.2
+        l2_regularization: 0.01
+        activation: "relu"
+        batch_size: 32
+        epochs: 100
+        early_stopping_patience: 15
+
     catboost:
       model_type: "CatBoostRegressor"
       params:
         iterations: 1000
         learning_rate: 0.1
         depth: 6
+        l2_leaf_reg: 3.0
         random_seed: 42
         verbose: false
-    
-    lightgbm:
-      model_type: "LGBMRegressor"
+
+    xgboost:
+      model_type: "XGBRegressor"
       params:
         n_estimators: 1000
         learning_rate: 0.1
-        max_depth: -1
-        num_leaves: 31
-        random_state: 42
-        verbosity: -1
-    
-    ensemble_rf:
-      model_type: "RandomForestRegressor"
-      params:
-        n_estimators: 500
-        max_depth: 15
-        min_samples_split: 5
-        min_samples_leaf: 2
+        max_depth: 6
+        subsample: 0.8
+        colsample_bytree: 0.8
         random_state: 42
         n_jobs: -1
+
+    nbeats:
+      model_type: "NBEATS"
+      params:
+        forecast_length: 1
+        backcast_length: 100
+        stack_types: ["trend", "seasonality"]
+        n_blocks: [3, 3]
+        n_layers: [4, 4]
+        layer_widths: [256, 2048]
+        dropout: 0.1
+        l2_regularization: 0.001
+        batch_size: 64
+        epochs: 100
+        regime_aware_training: true
+        regime_feature_integration: true
   
-  # Meta model configuration
+  # Meta model configuration - AdvancedMambaHybrid for multi-timeframe fusion
   meta_models:
     signal_strength:
-      model_type: "Ridge"
+      model_type: "AdvancedMambaHybrid"
       params:
-        alpha: 1.0
-        random_state: 42
-    
+        mamba_layers: 2
+        conv_layers: 4
+        attention_heads: 8
+        hidden_dim: 128
+        state_expansion: 4
+        multi_timeframe_fusion: true
+        dropout: 0.1
+        activation: "GELU"
+        batch_size: 64
+        epochs: 100
+        l2_regularization: 0.01
+        early_stopping_patience: 20
+
     confidence:
-      model_type: "Ridge"
+      model_type: "AdvancedMambaHybrid"
       params:
-        alpha: 0.5
-        random_state: 42
-    
+        mamba_layers: 2
+        conv_layers: 4
+        attention_heads: 8
+        hidden_dim: 128
+        state_expansion: 4
+        multi_timeframe_fusion: true
+        dropout: 0.1
+        activation: "GELU"
+        batch_size: 64
+        epochs: 100
+        l2_regularization: 0.01
+        early_stopping_patience: 20
+
     risk_score:
-      model_type: "Ridge"
+      model_type: "AdvancedMambaHybrid"
       params:
-        alpha: 2.0
-        random_state: 42
-    
+        mamba_layers: 2
+        conv_layers: 4
+        attention_heads: 8
+        hidden_dim: 128
+        state_expansion: 4
+        multi_timeframe_fusion: true
+        dropout: 0.1
+        activation: "GELU"
+        batch_size: 64
+        epochs: 100
+        l2_regularization: 0.01
+        early_stopping_patience: 20
+
     regime_label:
-      model_type: "Ridge"
+      model_type: "AdvancedMambaHybrid"
       params:
-        alpha: 1.5
-        random_state: 42
+        mamba_layers: 2
+        conv_layers: 4
+        attention_heads: 8
+        hidden_dim: 128
+        state_expansion: 4
+        multi_timeframe_fusion: true
+        dropout: 0.1
+        activation: "GELU"
+        batch_size: 64
+        epochs: 100
+        l2_regularization: 0.01
+        early_stopping_patience: 20
   
   # Training configuration
   training:

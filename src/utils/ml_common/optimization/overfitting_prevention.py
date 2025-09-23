@@ -53,6 +53,44 @@ class OverfittingPreventionConfig:
             'l2_regularization': 0.01,
             'early_stopping_patience': 15
         },
+        'DeepScaler': {
+            'dropout': 0.2,
+            'l2_regularization': 0.01,
+            'early_stopping_patience': 15,
+            'use_batch_norm': True,
+            'use_residual_connections': True
+        },
+        'NBEATS': {
+            'dropout': 0.1,
+            'l2_regularization': 0.001,
+            'early_stopping_patience': 20,
+            'regime_aware_training': True,
+            'regime_feature_integration': True
+        },
+        'FinancialResNet': {
+            'dropout': 0.15,
+            'l2_regularization': 0.01,
+            'early_stopping_patience': 25,
+            'regime_aware': True,
+            'use_batch_norm': True,
+            'use_layer_norm': True
+        },
+        'AdvancedMambaHybrid': {
+            'dropout': 0.1,
+            'l2_regularization': 0.01,
+            'early_stopping_patience': 20,
+            'multi_timeframe_fusion': True,
+            'execution_optimization': False,
+            'micro_timing_attention': False,
+            'latency_aware': False
+        },
+        'DeepScaler1m': {
+            'dropout': 0.1,
+            'l2_regularization': 0.005,
+            'early_stopping_patience': 30,
+            'precision_focused': True,
+            'micro_timing_aware': True
+        },
         'NODE': {
             'lambda_sparse': 1e-3,
             'gamma': 1.5,
@@ -72,6 +110,14 @@ class OverfittingPreventionConfig:
             'subsample': 0.8,
             'colsample_bytree': 0.8,
             'min_child_samples': 20,
+            'early_stopping_rounds': 50
+        },
+        'XGBRegressor': {
+            'reg_alpha': 0.1,
+            'reg_lambda': 0.1,
+            'subsample': 0.8,
+            'colsample_bytree': 0.8,
+            'max_depth': 6,
             'early_stopping_rounds': 50
         },
         'RandomForestRegressor': {
@@ -194,7 +240,65 @@ class OverfittingPrevention:
                 'alpha': model_config.get('alpha', 1.0),
                 'solver': model_config.get('solver', 'auto')
             })
-        
+
+        elif model_type == 'DeepScaler':
+            params.update({
+                'dropout': model_config.get('dropout', self.config.dropout_rate),
+                'l2_regularization': model_config.get('l2_regularization', self.config.l2_regularization),
+                'early_stopping_patience': model_config.get('early_stopping_patience', 15),
+                'use_batch_norm': model_config.get('use_batch_norm', True),
+                'use_residual_connections': model_config.get('use_residual_connections', True)
+            })
+
+        elif model_type == 'NBEATS':
+            params.update({
+                'dropout': model_config.get('dropout', self.config.dropout_rate),
+                'l2_regularization': model_config.get('l2_regularization', 0.001),
+                'early_stopping_patience': model_config.get('early_stopping_patience', 20),
+                'regime_aware_training': model_config.get('regime_aware_training', True),
+                'regime_feature_integration': model_config.get('regime_feature_integration', True)
+            })
+
+        elif model_type == 'FinancialResNet':
+            params.update({
+                'dropout': model_config.get('dropout', self.config.dropout_rate),
+                'l2_regularization': model_config.get('l2_regularization', self.config.l2_regularization),
+                'early_stopping_patience': model_config.get('early_stopping_patience', 25),
+                'regime_aware': model_config.get('regime_aware', True),
+                'use_batch_norm': model_config.get('use_batch_norm', True),
+                'use_layer_norm': model_config.get('use_layer_norm', True)
+            })
+
+        elif model_type == 'AdvancedMambaHybrid':
+            params.update({
+                'dropout': model_config.get('dropout', self.config.dropout_rate),
+                'l2_regularization': model_config.get('l2_regularization', self.config.l2_regularization),
+                'early_stopping_patience': model_config.get('early_stopping_patience', 20),
+                'multi_timeframe_fusion': model_config.get('multi_timeframe_fusion', True),
+                'execution_optimization': model_config.get('execution_optimization', False),
+                'micro_timing_attention': model_config.get('micro_timing_attention', False),
+                'latency_aware': model_config.get('latency_aware', False)
+            })
+
+        elif model_type == 'DeepScaler1m':
+            params.update({
+                'dropout': model_config.get('dropout', self.config.dropout_rate),
+                'l2_regularization': model_config.get('l2_regularization', 0.005),
+                'early_stopping_patience': model_config.get('early_stopping_patience', 30),
+                'precision_focused': model_config.get('precision_focused', True),
+                'micro_timing_aware': model_config.get('micro_timing_aware', True)
+            })
+
+        elif model_type == 'XGBRegressor':
+            params.update({
+                'reg_alpha': model_config.get('reg_alpha', self.config.l1_regularization),
+                'reg_lambda': model_config.get('reg_lambda', self.config.l2_regularization),
+                'subsample': model_config.get('subsample', self.config.bagging_fraction),
+                'colsample_bytree': model_config.get('colsample_bytree', 0.8),
+                'max_depth': model_config.get('max_depth', 6),
+                'early_stopping_rounds': model_config.get('early_stopping_rounds', 50)
+            })
+
         return params
     
     def setup_early_stopping(self, model: Any, model_type: str) -> Dict[str, Any]:

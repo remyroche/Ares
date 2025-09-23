@@ -30,6 +30,15 @@ class HPOOverfittingPreventionConfig:
     enable_pruning: bool = True
     pruner_type: str = "median"  # median, hyperband, successiveshalving
     sampler_type: str = "tpe"  # tpe, random, cmaes
+    
+    # Grid search + Bayesian TPE integration
+    enable_staged_hpo: bool = True
+    coarse_strategy: str = "grid"  # grid, random
+    coarse_grid_points: int = 3
+    fine_grid_points: int = 5
+    coarse_n_samples: int = 50
+    bayes_n_trials: int = 30  # Bayesian TPE trials after grid search
+    finalize_refine: bool = True
 
     # Nested cross-validation
     enable_nested_cv: bool = True
@@ -166,6 +175,9 @@ class HPOOptimizationReport:
     final_model_stability: float = 0.0
     final_model_robustness: float = 0.0
     final_overfitting_risk: str = "low"
+    
+    # Staged HPO metrics
+    staged_hpo_metrics: Dict[str, Any] = None
 
     # Recommendations
     recommendations: List[str] = None
@@ -309,6 +321,105 @@ class HPOWithOverfittingPrevention:
             report.warnings.append(f"Optimization failed: {str(e)}")
             report.optimization_quality = "failed"
             return report
+
+    def optimize_with_staged_hpo(self,
+                                model_class: Any,
+                                X: np.ndarray,
+                                y: np.ndarray,
+                                model_name: str = "model",
+                                model_type: str = "unknown",
+                                param_space: Optional[Dict[str, Any]] = None,
+                                is_classification: bool = True,
+                                random_state: int = 42) -> HPOOptimizationReport:
+        """
+        Perform staged HPO: Grid Search -> Fine Grid -> Bayesian TPE.
+        
+        Args:
+            model_class: Model class to optimize
+            X: Feature matrix
+            y: Target vector
+            model_name: Name for the model
+            model_type: Type of model
+            param_space: Parameter search space
+            is_classification: Whether it's classification
+            random_state: Random state for reproducibility
+            
+        Returns:
+            HPOOptimizationReport with optimization results
+        """
+        if not self.config.enable_staged_hpo:
+            # Fallback to regular HPO
+            return self.optimize_hyperparameters(
+                model_class, X, y, model_name, model_type, param_space, is_classification, random_state
+            )
+        
+        try:
+            from ..optimization.hpo_utils import StagedHPO
+            
+            # Initialize staged HPO
+            staged_hpo = StagedHPO()
+            
+            # Use default param space if not provided
+            if param_space is None:
+                param_space = self._create_default_param_space(model_type)
+            
+            # Create model factory
+            def model_factory(**params):
+                return model_class(**params)
+            
+            # Run staged HPO
+            staged_results = staged_hpo.staged_hpo(
+                model_factory=model_factory,
+                X=X,
+                y=y,
+                search_space=param_space,
+                coarse_strategy=self.config.coarse_strategy,
+                coarse_grid_points=self.config.coarse_grid_points,
+                fine_grid_points=self.config.fine_grid_points,
+                coarse_n_samples=self.config.coarse_n_samples,
+                bayes_n_trials=self.config.bayes_n_trials,
+                scoring='accuracy' if is_classification else 'r2',
+                cv=None,  # Will use time series split
+                pruner='hyperband',
+                finalize_refine=self.config.finalize_refine
+            )
+            
+            # Create report from staged results
+            report = HPOOptimizationReport(
+                model_type=model_type,
+                dataset_name=f"{model_name}_dataset",
+                optimization_id=f"staged_hpo_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+                best_params=staged_results.get('best_params', {}),
+                best_score=staged_results.get('best_score', 0.0),
+                total_trials=staged_results.get('total_trials', 0),
+                successful_trials=staged_results.get('successful_trials', 0),
+                failed_trials=staged_results.get('failed_trials', 0),
+                pruned_trials=staged_results.get('pruned_trials', 0),
+                optimization_time=staged_results.get('optimization_time', 0.0),
+                final_overfitting_risk=staged_results.get('overfitting_risk', 'unknown')
+            )
+            
+            # Add staged HPO specific metrics
+            report.staged_hpo_metrics = {
+                'coarse_grid_score': staged_results.get('coarse_grid_score', 0.0),
+                'fine_grid_score': staged_results.get('fine_grid_score', 0.0),
+                'bayesian_score': staged_results.get('bayesian_score', 0.0),
+                'grid_stage': staged_results.get('grid_stage', 'unknown'),
+                'final_stage': staged_results.get('final_stage', 'unknown')
+            }
+            
+            logger.info(f"✅ Staged HPO completed for {model_name}")
+            logger.info(f"📊 Best score: {report.best_score:.4f}")
+            logger.info(f"📊 Final stage: {report.staged_hpo_metrics.get('final_stage', 'unknown')}")
+            
+            return report
+            
+        except Exception as e:
+            logger.error(f"❌ Staged HPO failed: {e}")
+            # Fallback to regular HPO
+            return self.optimize_hyperparameters(
+                model_class, X, y, model_name, model_type, param_space, is_classification, random_state
+            )
 
     def _create_default_param_space(self, model_type: str) -> Dict[str, Any]:
         """Create default parameter space for common model types."""

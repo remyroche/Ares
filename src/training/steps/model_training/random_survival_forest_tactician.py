@@ -141,7 +141,9 @@ class RandomSurvivalForestTactician:
             multi_horizon_data: Optional[Dict[str, Any]] = None,
             enable_hpo: bool = True,
             hpo_trials: int = 100,
-            cv_folds: int = 5) -> Dict[str, Any]:
+            cv_folds: int = 5,
+            enable_entry_timing_optimization: bool = True,
+            entry_timing_trials: int = 50) -> Dict[str, Any]:
         """
         Fit Random Survival Forest model for multi-horizon timing prediction.
         
@@ -198,6 +200,45 @@ class RandomSurvivalForestTactician:
         ensemble_model = self._train_ensemble_model(X_enhanced, survival_data)
         self.model = ensemble_model
         
+        # Optimize entry timing parameters if enabled
+        if enable_entry_timing_optimization:
+            tprint_info("🎯 Optimizing entry timing parameters")
+            try:
+                from src.utils.ml_common.optimization.bayesian_entry_timing_optimizer import (
+                    optimize_entry_timing, EntryTimingConfig
+                )
+                
+                # Configure entry timing optimization
+                entry_config = EntryTimingConfig(
+                    n_trials=entry_timing_trials,
+                    timeout_minutes=30,
+                    random_state=42
+                )
+                
+                # Optimize entry timing parameters
+                entry_timing_result = optimize_entry_timing(
+                    model=self,  # Use self as the model
+                    X=X_enhanced,
+                    y=y,
+                    analyst_signals=analyst_signals,
+                    hmm_regime_probs=hmm_regime_probs,
+                    model_name="RandomSurvivalForestTactician",
+                    config=entry_config,
+                    optimization_method="optuna"
+                )
+                
+                # Store optimization results
+                self.entry_timing_optimization = entry_timing_result
+                tprint_success(f"✅ Entry timing optimization completed")
+                tprint_info(f"📊 Best profit: {entry_timing_result.profit:.4f}")
+                tprint_info(f"📊 Best Sharpe: {entry_timing_result.sharpe_ratio:.4f}")
+                tprint_info(f"📊 Win rate: {entry_timing_result.win_rate:.4f}")
+                
+            except ImportError as e:
+                tprint_warning(f"⚠️ Entry timing optimization not available: {e}")
+            except Exception as e:
+                tprint_warning(f"⚠️ Entry timing optimization failed: {e}")
+        
         # Calculate training metrics
         self.training_metrics = self._calculate_training_metrics(
             horizon_results, X_enhanced, survival_data
@@ -212,7 +253,8 @@ class RandomSurvivalForestTactician:
             'training_metrics': self.training_metrics,
             'feature_names': enhanced_feature_names,
             'horizons': self.config.horizons,
-            'horizon_weights': self.config.horizon_weights
+            'horizon_weights': self.config.horizon_weights,
+            'entry_timing_optimization': getattr(self, 'entry_timing_optimization', None)
         }
     
     def predict(self, 
@@ -377,7 +419,7 @@ class RandomSurvivalForestTactician:
             )
             from sksurv.metrics import concordance_index_censored
             
-            # Configure HPO with existing tools
+            # Configure HPO with existing tools and staged optimization
             hpo_config = HPOOverfittingPreventionConfig(
                 n_trials=hpo_trials,
                 timeout_minutes=30,  # 30 minutes per horizon
@@ -389,7 +431,15 @@ class RandomSurvivalForestTactician:
                 inner_cv_folds=3,
                 regularization_methods=["l2", "dropout"],
                 overfitting_detection=True,
-                temporal_validation=True
+                temporal_validation=True,
+                # Enhanced staged HPO
+                enable_staged_hpo=True,
+                coarse_strategy="grid",
+                coarse_grid_points=3,
+                fine_grid_points=5,
+                coarse_n_samples=50,
+                bayes_n_trials=30,
+                finalize_refine=True
             )
             
             # Create HPO optimizer
@@ -448,15 +498,15 @@ class RandomSurvivalForestTactician:
                 
                 return np.mean(scores)
             
-            # Run HPO optimization
-            optimization_result = hpo_optimizer.optimize_with_overfitting_prevention(
+            # Run staged HPO optimization (Grid Search + Bayesian TPE)
+            optimization_result = hpo_optimizer.optimize_with_staged_hpo(
                 model_class=RandomSurvivalForest,
                 X=X,
                 y=y,
-                is_classification=False,  # Survival analysis
+                model_name=f"RandomSurvivalForest_{horizon}m",
                 model_type="random_survival_forest",
-                custom_objective=survival_objective,
-                param_space=param_space
+                param_space=param_space,
+                is_classification=False  # Survival analysis
             )
             
             # Get best parameters

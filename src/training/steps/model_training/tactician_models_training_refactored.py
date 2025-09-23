@@ -2007,7 +2007,9 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                                 hmm_regime_probs=hmm_regime_probs[regime_mask] if hmm_regime_probs is not None else None,
                                 enable_hpo=True,
                                 hpo_trials=self.config.hpo_n_trials,
-                                cv_folds=5
+                                cv_folds=5,
+                                enable_entry_timing_optimization=True,
+                                entry_timing_trials=50
                             )
                             metadata = {'model_type': 'RandomSurvivalForest', 'training_completed': True}
                         else:

@@ -7,7 +7,7 @@ with 15-25 regimes, 100 features, and proper model integration.
 Features:
 - 1h base timeframe with 15-25 regime detection
 - 100 features for comprehensive regime analysis
-- CatBoost + Elastic Net base models with XGBoost meta-learner
+- LightGBM + CatBoost + ElasticNet_CV base models with FinancialResNet meta-learner
 - Runs every 15 minutes for live trading
 - Provides regime probabilities for Analyst and Tactician integration
 """
@@ -38,7 +38,7 @@ class HMMTrainingPipeline:
     Features:
     - 15m base timeframe with 15-25 regime detection
     - 4D analysis: volume, volatility, momentum, trend
-    - LightGBM + XGBoost base models with FinancialResNet meta-learner
+    - LightGBM + CatBoost + ElasticNet_CV base models with FinancialResNet meta-learner
     - Runs every 15 minutes for live trading
     - Provides regime probabilities for Analyst and Tactician integration
     - High accuracy regime detection for precise trading signals
@@ -61,7 +61,8 @@ class HMMTrainingPipeline:
         # Model configuration for 15m timeframe regime detection
         self.base_models = {
             "lgbm": "LightGBM",
-            "xgboost": "XGBoost"
+            "catboost": "CatBoost",
+            "elasticnet": "ElasticNet_CV"
         }
         self.meta_learner = "financial_resnet"
         self.meta_learner_config = {
@@ -539,7 +540,7 @@ class HMMTrainingPipeline:
             if clustering_result.success:
                 regime_labels = clustering_result.labels
                 tprint_success(f"✅ Created {self.n_regimes} regime labels using MSM clustering")
-                tprint_info(f"📊 MSM Score: {clustering_result.msm_score".3f"}")
+                tprint_info(f"📊 MSM Score: {clustering_result.msm_score:.3f}")
                 return regime_labels
             else:
                 # Fast fail - do not fall back to KMeans
@@ -560,7 +561,16 @@ class HMMTrainingPipeline:
     ) -> Dict[str, Any]:
         """Train a base model for regime detection."""
         try:
-            if model_name == "catboost":
+            if model_name == "lgbm":
+                from lightgbm import LGBMClassifier
+                model = LGBMClassifier(
+                    n_estimators=100,
+                    learning_rate=0.1,
+                    max_depth=6,
+                    random_state=42,
+                    verbose=-1
+                )
+            elif model_name == "catboost":
                 from catboost import CatBoostClassifier
                 model = CatBoostClassifier(
                     iterations=100,
@@ -569,7 +579,7 @@ class HMMTrainingPipeline:
                     random_state=42,
                     verbose=False
                 )
-            elif model_name == "elastic_net":
+            elif model_name == "elasticnet":
                 from sklearn.linear_model import LogisticRegression
                 model = LogisticRegression(
                     penalty='elasticnet',

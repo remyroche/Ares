@@ -26,25 +26,64 @@ from src.core.decorators import handles_errors, traced, log_execution_time, vali
 
 class FinalFeatureSelectionStep:
     """Final feature selection step for market analysis pipeline."""
-    
+
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         self.config = config or {}
         self.logger = get_logger("FinalFeatureSelectionStep")
-        
-        # Initialize feature selection configuration
+
+        # Model-specific feature count profiles
+        self.model_profiles = {
+            'AdvancedMambaHybrid': {
+                'min_features': 80, 'target_features': 100, 'max_features': 120,
+                'stage_targets': [110, 95, 85],  # Custom stage targets
+                'priority_categories': ['momentum', 'interaction', 'microstructure']
+            },
+            'FinancialResNet': {
+                'min_features': 100, 'target_features': 120, 'max_features': 150,
+                'stage_targets': [140, 115, 105],
+                'priority_categories': ['regime', 'temporal', 'volatility']
+            },
+            'DeepScaler': {
+                'min_features': 60, 'target_features': 80, 'max_features': 100,
+                'stage_targets': [95, 75, 65],
+                'priority_categories': ['statistical', 'momentum', 'volatility']
+            },
+            'NBEATS': {
+                'min_features': 50, 'target_features': 70, 'max_features': 80,
+                'stage_targets': [75, 60, 55],
+                'priority_categories': ['temporal', 'trend', 'seasonality']
+            }
+        }
+
+        # Initialize feature selection configuration with model-aware defaults
+        model_type = self.config.get('model_type', 'default')
+        profile = self.model_profiles.get(model_type, {
+            'min_features': 60, 'target_features': 80, 'max_features': 100,
+            'stage_targets': [95, 75, 65],
+            'priority_categories': ['momentum', 'volatility', 'microstructure']
+        })
+
         self.feature_config = FeatureSelectionConfig(
             initial_features=self.config.get('initial_features', 120),
-            stage_1_target=self.config.get('stage_1_target', 100),
-            stage_2_target=self.config.get('stage_2_target', 80),
-            stage_3_target=self.config.get('stage_3_target', 60),
+            stage_1_target=self.config.get('stage_1_target', profile['stage_targets'][0]),
+            stage_2_target=self.config.get('stage_2_target', profile['stage_targets'][1]),
+            stage_3_target=self.config.get('stage_3_target', profile['stage_targets'][2]),
             rf_n_estimators=self.config.get('rf_n_estimators', 100),
             cv_folds=self.config.get('cv_folds', 5),
             save_analysis=self.config.get('save_analysis', True),
             output_directory=self.config.get('output_directory', "outcomes/market_analysis"),
-            verbose=self.config.get('verbose', True)
+            verbose=self.config.get('verbose', True),
+            # Add model-specific parameters
+            model_type=model_type,
+            target_features=profile['target_features'],
+            min_features=profile['min_features'],
+            max_features=profile['max_features'],
+            priority_categories=profile['priority_categories']
         )
-        
+
         self.logger.info("🚀 FinalFeatureSelectionStep initialized")
+        self.logger.info(f"🎯 Model Type: {model_type}")
+        self.logger.info(f"📊 Target Features: {profile['target_features']} (range: {profile['min_features']}-{profile['max_features']})")
     
     @log_all_calls
     @handles_errors(Exception, fallback=False)

@@ -40,26 +40,37 @@ class FeatureSelectionConfig:
     stage_1_target: int = 100
     stage_2_target: int = 80
     stage_3_target: int = 60
-    
+
+    # Model-specific parameters
+    model_type: str = 'default'
+    target_features: int = 80
+    min_features: int = 60
+    max_features: int = 100
+    priority_categories: List[str] = field(default_factory=lambda: ['momentum', 'volatility', 'microstructure'])
+
     # RandomForest parameters
     rf_n_estimators: int = 100
     rf_max_depth: int = 10
     rf_min_samples_split: int = 5
     rf_random_state: int = 42
-    
+
     # SHAP parameters
     shap_sample_size: int = 1000
     shap_max_features: int = 200
-    
+
     # Cross-validation
     cv_folds: int = 5
     cv_scoring: str = 'neg_mean_squared_error'
-    
+
     # Quality thresholds
     min_feature_importance: float = 0.001
     min_correlation_threshold: float = 0.95
     min_variance_threshold: float = 0.01
-    
+
+    # Model-specific thresholds
+    model_correlation_threshold: float = 0.90  # Tighter for DeepScaler, looser for FinancialResNet
+    model_importance_threshold: float = 0.005  # Higher for precision-focused models
+
     # Output settings
     save_models: bool = True
     save_analysis: bool = True
@@ -103,11 +114,55 @@ class MultiStageFeatureSelector:
         self.config = config or FeatureSelectionConfig()
         self.logger = get_logger("MultiStageFeatureSelector")
         self.matrix_ops = get_unified_matrix_operations()
-        
+
         # Initialize results
         self.results = FeatureSelectionResult()
-        
+
+        # Set model-specific parameters
+        self._set_model_specific_parameters()
+
         self.logger.info("🚀 MultiStageFeatureSelector initialized")
+        self.logger.info(f"🎯 Model Type: {self.config.model_type}")
+        self.logger.info(f"📊 Feature Range: {self.config.min_features}-{self.config.max_features} (target: {self.config.target_features})")
+
+    def _set_model_specific_parameters(self):
+        """Set model-specific feature selection parameters."""
+        model_specific_params = {
+            'AdvancedMambaHybrid': {
+                'model_correlation_threshold': 0.88,  # Allow more correlated features for multi-timeframe fusion
+                'model_importance_threshold': 0.003,  # Moderate threshold for attention mechanisms
+                'min_correlation_threshold': 0.92,   # Tighter initial correlation filtering
+                'min_variance_threshold': 0.02,      # Higher variance requirement
+                'cv_scoring': 'neg_mean_squared_error'
+            },
+            'FinancialResNet': {
+                'model_correlation_threshold': 0.95,  # Tighter correlation for regime classification
+                'model_importance_threshold': 0.002,  # Lower threshold for comprehensive input
+                'min_correlation_threshold': 0.96,   # Very tight correlation filtering
+                'min_variance_threshold': 0.01,      # Standard variance requirement
+                'cv_scoring': 'accuracy'  # For regime classification
+            },
+            'DeepScaler': {
+                'model_correlation_threshold': 0.85,  # Looser correlation for precision focus
+                'model_importance_threshold': 0.008,  # Higher threshold for cleaner features
+                'min_correlation_threshold': 0.98,   # Very tight correlation filtering
+                'min_variance_threshold': 0.03,      # Higher variance requirement
+                'cv_scoring': 'neg_mean_squared_error'
+            },
+            'NBEATS': {
+                'model_correlation_threshold': 0.90,  # Moderate correlation for time series
+                'model_importance_threshold': 0.005,  # Standard threshold for temporal modeling
+                'min_correlation_threshold': 0.94,   # Tight correlation for clean time series
+                'min_variance_threshold': 0.015,     # Moderate variance requirement
+                'cv_scoring': 'neg_mean_squared_error'
+            }
+        }
+
+        if self.config.model_type in model_specific_params:
+            params = model_specific_params[self.config.model_type]
+            for param, value in params.items():
+                setattr(self.config, param, value)
+            self.logger.info(f"✅ Applied {self.config.model_type} specific parameters")
     
     def select_features(self, 
                        X: pd.DataFrame, 

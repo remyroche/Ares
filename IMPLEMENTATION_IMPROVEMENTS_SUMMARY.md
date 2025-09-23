@@ -71,13 +71,13 @@
 ## ✅ **4. Corrected Meta-Learner Optimization**
 
 **Changed from**: XGBoost, LightGBM, ElasticNet as meta-learners
-**Changed to**: **AdvancedMambaHybrid, FinancialResNet, XGBoost** as meta-learners
+**Changed to**: **AdvancedMambaHybrid, FinancialResNet** as meta-learners (fast fail if unavailable)
 
 ### Implementation Details:
 - **Meta-Learner Types**:
   - `advanced_mamba_hybrid`: Your tactician/analyst meta-learner
   - `financial_resnet`: Your HMM regime meta-learner
-  - `xgboost`: Fallback option
+  - **No fallback**: Fast fail if required meta-learners unavailable
 
 - **Parameter Spaces Optimized**:
   - **Neural Network Parameters**: Hidden units (32-256), layers (2-8), learning rate (1e-4 to 1e-2)
@@ -87,7 +87,7 @@
 - **Evaluation Method**:
   - Cross-validation scoring with stacking ensembles
   - Robust performance assessment
-  - Fallback mechanisms when advanced models unavailable
+  - **Fast fail** when required meta-learners (AdvancedMambaHybrid, FinancialResNet) are unavailable
 
 ---
 

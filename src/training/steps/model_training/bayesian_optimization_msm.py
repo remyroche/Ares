@@ -685,7 +685,7 @@ class MetaLearnerOptimizer:
         """Optimize using scikit-optimize."""
         # Define parameter space for meta-learner (using your actual meta-learners)
         dimensions = [
-            Categorical(['advanced_mamba_hybrid', 'financial_resnet', 'xgboost'], name='meta_learner_type'),
+            Categorical(['advanced_mamba_hybrid', 'financial_resnet'], name='meta_learner_type'),
             Integer(low=32, high=256, name='hidden_units'),
             Integer(low=2, high=8, name='num_layers'),
             Real(low=1e-4, high=1e-2, name='learning_rate'),
@@ -724,7 +724,7 @@ class MetaLearnerOptimizer:
 
         def objective(trial: Trial):
             params = {
-                'meta_learner_type': trial.suggest_categorical('meta_learner_type', ['advanced_mamba_hybrid', 'financial_resnet', 'xgboost']),
+                'meta_learner_type': trial.suggest_categorical('meta_learner_type', ['advanced_mamba_hybrid', 'financial_resnet']),
                 'hidden_units': trial.suggest_int('hidden_units', 32, 256),
                 'num_layers': trial.suggest_int('num_layers', 2, 8),
                 'learning_rate': trial.suggest_float('learning_rate', 1e-4, 1e-2),
@@ -767,55 +767,28 @@ class MetaLearnerOptimizer:
             # Create base estimators (simplified for efficiency)
             estimators = [(f'model_{i}', model) for i, model in enumerate(base_models)]
 
-            # Create meta-learner based on type
+            # Create meta-learner based on type - FAST FAIL if not available
             if params['meta_learner_type'] == 'advanced_mamba_hybrid':
-                # Use AdvancedMambaHybrid if available, fallback to XGBoost
+                # Use AdvancedMambaHybrid - FAST FAIL if not available
                 try:
                     from src.utils.ml_common.models.model_factory import ModelType
                     meta_learner = self._create_advanced_mamba_hybrid(params)
-                except Exception:
-                    # Fallback to XGBoost with attention-like parameters
-                    meta_learner = XGBRegressor(
-                        n_estimators=200,
-                        learning_rate=params['learning_rate'],
-                        max_depth=params['num_layers'],
-                        subsample=0.8,
-                        colsample_bytree=0.8,
-                        reg_alpha=params['weight_decay'],
-                        reg_lambda=params['weight_decay'],
-                        random_state=42,
-                        verbosity=0
-                    )
+                except Exception as e:
+                    raise RuntimeError(f"AdvancedMambaHybrid meta-learner not available. "
+                                     f"Please ensure your environment supports AdvancedMambaHybrid models. "
+                                     f"Error: {e}")
             elif params['meta_learner_type'] == 'financial_resnet':
-                # Use FinancialResNet if available, fallback to XGBoost
+                # Use FinancialResNet - FAST FAIL if not available
                 try:
                     from src.utils.ml_common.models.model_factory import ModelType
                     meta_learner = self._create_financial_resnet(params)
-                except Exception:
-                    # Fallback to XGBoost with residual-like parameters
-                    meta_learner = XGBRegressor(
-                        n_estimators=300,
-                        learning_rate=params['learning_rate'],
-                        max_depth=params['num_layers'] + 2,
-                        subsample=0.9,
-                        colsample_bytree=0.7,
-                        reg_alpha=params['weight_decay'],
-                        reg_lambda=params['weight_decay'],
-                        random_state=42,
-                        verbosity=0
-                    )
-            else:  # xgboost fallback
-                meta_learner = XGBRegressor(
-                    n_estimators=200,
-                    learning_rate=params['learning_rate'],
-                    max_depth=params['num_layers'],
-                    subsample=0.8,
-                    colsample_bytree=0.8,
-                    reg_alpha=params['weight_decay'],
-                    reg_lambda=params['weight_decay'],
-                    random_state=42,
-                    verbosity=0
-                )
+                except Exception as e:
+                    raise RuntimeError(f"FinancialResNet meta-learner not available. "
+                                     f"Please ensure your environment supports FinancialResNet models. "
+                                     f"Error: {e}")
+            else:  # xgboost - only used when explicitly requested
+                raise RuntimeError(f"Unsupported meta-learner type: {params['meta_learner_type']}. "
+                                 f"Expected: 'advanced_mamba_hybrid' or 'financial_resnet'")
 
             # Create stacking ensemble
             stacking_ensemble = StackingRegressor(

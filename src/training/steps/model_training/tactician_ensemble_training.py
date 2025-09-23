@@ -81,6 +81,19 @@ except ImportError as e:
     TrainingIntegrationConfig = None
 
 # Import common utilities - CRITICAL: Fast fail if not available
+
+# Directional signal imports
+try:
+    from .directional_signal_structure import (
+        DirectionalSignalArray, DirectionalSignal, SignalDirection
+    )
+    DIRECTIONAL_SIGNALS_AVAILABLE = True
+except ImportError as e:
+    print(f"⚠️ WARNING: Directional signals not available: {e}")
+    DirectionalSignalArray = None
+    DirectionalSignal = None
+    SignalDirection = None
+    DIRECTIONAL_SIGNALS_AVAILABLE = False
 try:
     from src.utils.common_operations import (
         get_m1_gpu_manager, get_m1_memory_optimizer, get_m1_cpu_optimizer,
@@ -523,6 +536,7 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
         analyst_ensemble_metrics: Optional[Dict[str, Any]] = None,
         hmm_data: Optional[Dict[str, Any]] = None,
         analyst_green_light_periods: Optional[np.ndarray] = None,
+        directional_signals: Optional[Dict[str, Any]] = None,
         confidence_scores: Optional[np.ndarray] = None,
         timestamps: Optional[np.ndarray] = None,
         confidence_threshold: float = 0.5,
@@ -552,6 +566,7 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
             analyst_ensemble_metrics: Performance metrics of analyst ensembles
             hmm_data: HMM regime data and features
             analyst_green_light_periods: Boolean array indicating when Analyst gives green light (legacy)
+            directional_signals: Enhanced directional signals with short/long information
             confidence_scores: Analyst confidence scores for enhanced filtering
             timestamps: Timestamps for time-based ride window filtering
             confidence_threshold: Minimum confidence threshold (default: 0.5)
@@ -579,6 +594,26 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
             
             # Step 2: Enhanced filtering (confidence > 0.5 + 45 min after drop)
             self._start_step("Enhanced Data Filtering")
+            
+            # Handle directional signals if available
+            if directional_signals is not None and DIRECTIONAL_SIGNALS_AVAILABLE:
+                try:
+                    tprint_info("🎯 Processing directional signals for enhanced ensemble training")
+                    directional_signals_obj = directional_signals.get('directional_signals')
+                    if directional_signals_obj is not None:
+                        # Use directional signals for filtering
+                        active_mask = directional_signals_obj.get_active_signals()
+                        analyst_green_light_periods = active_mask.astype(bool)
+                        
+                        # Log directional signal statistics
+                        signal_stats = directional_signals_obj.get_statistics()
+                        tprint_info(f"📊 Directional signals: {signal_stats['active_signals']} active, "
+                                   f"{signal_stats['long_signals']} long, {signal_stats['short_signals']} short")
+                        
+                except Exception as e:
+                    tprint_warning(f"⚠️ Failed to process directional signals: {e}")
+                    directional_signals = None
+            
             X_filtered, y_filtered, regime_labels_filtered = self._filter_green_light_periods(
                 X, y, regime_labels, analyst_green_light_periods,
                 confidence_scores=confidence_scores,

@@ -48,6 +48,19 @@ except ImportError as e:
     raise ImportError(f"CRITICAL: tprint is required but not available: {e}") from e
 
 # Import common utilities - CRITICAL: Fast fail if not available
+
+# Directional signal imports
+try:
+    from .directional_signal_structure import (
+        DirectionalSignalArray, DirectionalSignal, SignalDirection
+    )
+    DIRECTIONAL_SIGNALS_AVAILABLE = True
+except ImportError as e:
+    print(f"⚠️ WARNING: Directional signals not available: {e}")
+    DirectionalSignalArray = None
+    DirectionalSignal = None
+    SignalDirection = None
+    DIRECTIONAL_SIGNALS_AVAILABLE = False
 try:
     from src.utils.common_operations import (
         get_m1_gpu_manager, get_m1_memory_optimizer, get_m1_cpu_optimizer,
@@ -1050,6 +1063,7 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
         feature_names: Optional[List[str]] = None,
         hmm_states: Optional[np.ndarray] = None,
         analyst_signals: Optional[np.ndarray] = None,
+        directional_signals: Optional[Dict[str, Any]] = None,
         analyst_model_outputs: Optional[np.ndarray] = None,
         hmm_regime_features: Optional[np.ndarray] = None,
         all_analyst_models_outputs: Optional[Dict[str, np.ndarray]] = None,
@@ -1067,6 +1081,7 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
             feature_names: Names of input features
             hmm_states: HMM cluster/regime states
             analyst_signals: Binary signals from Analyst (green light indicators)
+            directional_signals: Enhanced directional signals with short/long information
             analyst_model_outputs: Analyst model predictions used as features
             hmm_regime_features: HMM regime features (probabilities, characteristics)
             all_analyst_models_outputs: All individual analyst ML model outputs
@@ -1292,6 +1307,39 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
         }
         
         try:
+            # Handle directional signals if available
+            if directional_signals is not None and DIRECTIONAL_SIGNALS_AVAILABLE:
+                try:
+                    tprint_info("🎯 Processing directional signals for enhanced trading decisions")
+                    directional_signals_obj = directional_signals.get('directional_signals')
+                    if directional_signals_obj is not None:
+                        # Use directional signals for filtering
+                        active_mask = directional_signals_obj.get_active_signals()
+                        directions = directional_signals_obj.get_directions()
+                        confidences = directional_signals_obj.get_confidences()
+                        
+                        # Log directional signal statistics
+                        signal_stats = directional_signals_obj.get_statistics()
+                        tprint_info(f"📊 Directional signals: {signal_stats['active_signals']} active, "
+                                   f"{signal_stats['long_signals']} long, {signal_stats['short_signals']} short")
+                        
+                        # Update preparation metrics with directional information
+                        preparation_metrics['directional_signals'] = {
+                            'total_signals': signal_stats['total_signals'],
+                            'active_signals': signal_stats['active_signals'],
+                            'long_signals': signal_stats['long_signals'],
+                            'short_signals': signal_stats['short_signals'],
+                            'avg_confidence': signal_stats['avg_confidence'],
+                            'avg_strength': signal_stats['avg_strength']
+                        }
+                        
+                        # Use active signals for filtering
+                        analyst_signals = active_mask.astype(int)
+                        
+                except Exception as e:
+                    tprint_warning(f"⚠️ Failed to process directional signals: {e}")
+                    directional_signals = None
+            
             # Filter data to only include periods where Analyst gives green light
             if analyst_signals is not None:
                 green_light_mask = analyst_signals == 1

@@ -54,6 +54,12 @@ from src.utils.logger import system_logger
 from src.utils.ml_common.config import PerRegimeTrainingConfig
 from src.utils.ml_common.training import PerRegimeTrainingStep
 
+# Directional signal imports
+from .directional_signal_structure import (
+    DirectionalSignalArray, DirectionalSignal, SignalDirection,
+    create_directional_signals_from_analyst_outputs, enhance_signals_with_market_data
+)
+
 # Dependency validation functions
 def validate_critical_dependencies():
     """Validate that all critical dependencies are available. Fast fail if not."""
@@ -1469,7 +1475,8 @@ class AnalystModelsTrainingStepRefactored(PerRegimeTrainingStep):
         regime_labels: np.ndarray,
         feature_names: Optional[List[str]] = None,
         hmm_states: Optional[np.ndarray] = None,
-        timestamps: Optional[np.ndarray] = None
+        timestamps: Optional[np.ndarray] = None,
+        generate_directional_signals: bool = True
     ) -> Dict[str, Any]:
         """
         Execute Enhanced Analyst models training step with comprehensive utilities integration.
@@ -1481,6 +1488,7 @@ class AnalystModelsTrainingStepRefactored(PerRegimeTrainingStep):
         - Common utilities integration for data operations
         - ML utilities integration for CV, HPO, etc.
         - Math validation and serialization utilities
+        - Enhanced directional signal generation for short/long trading decisions
         
         Args:
             X: Input features
@@ -1488,9 +1496,11 @@ class AnalystModelsTrainingStepRefactored(PerRegimeTrainingStep):
             regime_labels: Regime labels for each sample
             feature_names: Names of input features
             hmm_states: HMM cluster/regime states
+            timestamps: Timestamps for time-based analysis
+            generate_directional_signals: Whether to generate directional signals (short/long)
             
         Returns:
-            Dictionary containing training results and comprehensive metadata
+            Dictionary containing training results and comprehensive metadata with directional signals
             
         Raises:
             ValueError: If input data is invalid
@@ -1607,6 +1617,17 @@ class AnalystModelsTrainingStepRefactored(PerRegimeTrainingStep):
                 # Log final hardware status
                 final_hardware_status = self._get_hardware_status()
                 tprint_structured(final_hardware_status, LogLevel.INFO)
+                
+                # Generate directional signals if requested
+                if generate_directional_signals:
+                    try:
+                        tprint_info("🎯 Generating directional signals for short/long trading decisions")
+                        directional_signals = self._generate_directional_signals(results, X, y, timestamps)
+                        results['directional_signals'] = directional_signals
+                        tprint_success("✅ Directional signals generated successfully")
+                    except Exception as e:
+                        tprint_warning(f"⚠️ Failed to generate directional signals: {e}")
+                        results['directional_signals'] = None
                 
                 return results
                 
@@ -2453,6 +2474,87 @@ class AnalystModelsTrainingStepRefactored(PerRegimeTrainingStep):
             self.logger.warning(f"⚠️ Failed to enhance results with performance metrics: {e}")
             return results
     
+    def _generate_directional_signals(self, results: Dict[str, Any], X: np.ndarray, 
+                                     y: np.ndarray, timestamps: Optional[np.ndarray]) -> Dict[str, Any]:
+        """
+        Generate directional signals (short/long) from analyst training results.
+        
+        Args:
+            results: Training results containing model outputs
+            X: Input features
+            y: Target values
+            timestamps: Optional timestamps
+            
+        Returns:
+            Dictionary containing directional signal information
+        """
+        try:
+            # Extract model predictions and confidences from results
+            analyst_outputs = {}
+            
+            # Get predictions from trained models
+            if 'models' in results:
+                models = results['models']
+                predictions = []
+                confidences = []
+                
+                for model_name, model_data in models.items():
+                    if 'predictions' in model_data:
+                        predictions.append(model_data['predictions'])
+                    if 'confidences' in model_data:
+                        confidences.append(model_data['confidences'])
+                
+                if predictions:
+                    # Average predictions across models
+                    analyst_outputs['predictions'] = np.mean(predictions, axis=0)
+                if confidences:
+                    # Average confidences across models
+                    analyst_outputs['confidences'] = np.mean(confidences, axis=0)
+            
+            # Generate binary signals from predictions
+            if 'predictions' in analyst_outputs:
+                predictions = analyst_outputs['predictions']
+                binary_signals = (predictions > 0.5).astype(int)
+                analyst_outputs['signals'] = binary_signals
+            else:
+                # Fallback: use target values as signals
+                binary_signals = (y > 0.5).astype(int)
+                analyst_outputs['signals'] = binary_signals
+                analyst_outputs['predictions'] = y
+                analyst_outputs['confidences'] = np.ones(len(y))
+            
+            # Create directional signals
+            directional_signals = create_directional_signals_from_analyst_outputs(analyst_outputs)
+            
+            # Enhance with market data if available
+            if X is not None and X.shape[1] > 0:
+                # Assume first column is price data
+                market_data = X[:, :1]  # Take first column as price
+                directional_signals = enhance_signals_with_market_data(directional_signals, market_data)
+            
+            # Get statistics
+            signal_stats = directional_signals.get_statistics()
+            
+            return {
+                'directional_signals': directional_signals,
+                'signal_statistics': signal_stats,
+                'binary_signals': directional_signals.to_binary_signals(),
+                'directions': directional_signals.get_directions(),
+                'confidences': directional_signals.get_confidences(),
+                'strengths': directional_signals.get_strengths(),
+                'expected_returns': directional_signals.get_expected_returns(),
+                'risk_scores': directional_signals.get_risk_scores(),
+                'durations': directional_signals.get_durations(),
+                'urgencies': directional_signals.get_urgencies()
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Failed to generate directional signals: {e}")
+            return {
+                'directional_signals': None,
+                'error': str(e)
+            }
+
     def _add_analyst_specific_metadata(self, results: Dict[str, Any]) -> Dict[str, Any]:
         """
         Add analyst-specific metadata to results with enhanced analysis.

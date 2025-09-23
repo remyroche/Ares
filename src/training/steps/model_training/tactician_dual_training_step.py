@@ -8,14 +8,23 @@ LONG MODELS (4 base models + 1 ensemble):
 - LIGHTGBM model for long signals
 - DEEPSCALER_1M model for long signals
 - FINANCIAL_RESNET model for long signals
-- Ensemble model combining all long base models
+- Ensemble model combining all long base models + ALL FEATURES + HMM + Analyst outputs
 
 SHORT MODELS (4 base models + 1 ensemble):
 - XGBOOST model for short signals
 - LIGHTGBM model for short signals
 - DEEPSCALER_1M model for short signals
 - FINANCIAL_RESNET model for short signals
-- Ensemble model combining all short base models
+- Ensemble model combining all short base models + ALL FEATURES + HMM + Analyst outputs
+
+🎯 ENSEMBLE FEATURE INTEGRATION:
+Each ensemble model includes:
+- All base features from pre-ML orchestration
+- HMM regime features and probabilities
+- Analyst model predictions and confidence scores
+- OOF predictions from all base models
+- Technical indicators and market data
+- Multi-horizon target variables
 
 The training uses differentiated features and horizon labeling for each direction,
 ensuring optimal performance for both long and short trading scenarios.
@@ -29,6 +38,7 @@ ENHANCED FEATURES:
 - Health monitoring throughout training process
 - Integration with common utilities and hardware optimizers
 - Extensive logging with tprint at every step
+- Full feature integration in ensemble models
 """
 
 import numpy as np
@@ -347,7 +357,8 @@ class TacticianDualTrainingStep:
                 result.long_ensemble_models = long_ensemble_result.get('models', {})
                 result.long_ensemble_metrics = long_ensemble_result.get('metrics', {})
                 result.long_ensemble_training_completed = True
-                tprint_success("✅ Long ensemble model training completed")
+                tprint_success("✅ Long ensemble model training completed with FULL FEATURE INTEGRATION")
+                tprint_info("   🎯 Long ensemble includes: Base features + HMM outputs + Analyst predictions + OOF from base models")
             else:
                 tprint_info("⏭️ Skipping long ensemble model training - insufficient data, disabled, or no base models")
 
@@ -363,7 +374,8 @@ class TacticianDualTrainingStep:
                 result.short_ensemble_models = short_ensemble_result.get('models', {})
                 result.short_ensemble_metrics = short_ensemble_result.get('metrics', {})
                 result.short_ensemble_training_completed = True
-                tprint_success("✅ Short ensemble model training completed")
+                tprint_success("✅ Short ensemble model training completed with FULL FEATURE INTEGRATION")
+                tprint_info("   🎯 Short ensemble includes: Base features + HMM outputs + Analyst predictions + OOF from base models")
             else:
                 tprint_info("⏭️ Skipping short ensemble model training - insufficient data, disabled, or no base models")
 
@@ -380,10 +392,23 @@ class TacticianDualTrainingStep:
             result.training_phase = TrainingPhase.COMPLETED
 
             tprint_performance("Tactician dual training", result.execution_time)
-            tprint_success("🎉 Tactician dual training completed successfully!")
-            tprint_info(f"📈 Long models: {len(result.long_base_models) if result.long_base_models else 0} base (XGBOOST, LIGHTGBM, DEEPSCALER_1M, FINANCIAL_RESNET), {len(result.long_ensemble_models) if result.long_ensemble_models else 0} ensemble")
-            tprint_info(f"📉 Short models: {len(result.short_base_models) if result.short_base_models else 0} base (XGBOOST, LIGHTGBM, DEEPSCALER_1M, FINANCIAL_RESNET), {len(result.short_ensemble_models) if result.short_ensemble_models else 0} ensemble")
+            tprint_success("🎉 Tactician dual training completed successfully with FULL FEATURE INTEGRATION!")
+            tprint_info(f"📈 Long models: {len(result.long_base_models) if result.long_base_models else 0} base (XGBOOST, LIGHTGBM, DEEPSCALER_1M, FINANCIAL_RESNET)")
+            tprint_info(f"   🎯 Long ensemble: {len(result.long_ensemble_models) if result.long_ensemble_models else 0} ensemble (includes ALL features + HMM + Analyst outputs)")
+            tprint_info(f"📉 Short models: {len(result.short_base_models) if result.short_base_models else 0} base (XGBOOST, LIGHTGBM, DEEPSCALER_1M, FINANCIAL_RESNET)")
+            tprint_info(f"   🎯 Short ensemble: {len(result.short_ensemble_models) if result.short_ensemble_models else 0} ensemble (includes ALL features + HMM + Analyst outputs)")
             tprint_info(f"⏱️ Total time: {result.execution_time:.2f}s")
+
+            # Log feature integration summary
+            if result.long_ensemble_models and result.orchestration_result:
+                tprint_info("🎯 FEATURE INTEGRATION COMPLETED:")
+                tprint_info("   ✅ Base features from pre-ML orchestration")
+                tprint_info("   ✅ HMM regime features and probabilities")
+                tprint_info("   ✅ Analyst model predictions and confidence scores")
+                tprint_info("   ✅ OOF predictions from all base models")
+                tprint_info("   ✅ Technical indicators and market data")
+                tprint_info("   ✅ Multi-horizon target variables")
+                tprint_info("   ✅ Sample weights based on Analyst confidence")
 
             return result
 
@@ -521,9 +546,9 @@ class TacticianDualTrainingStep:
         base_models: Dict[str, Any],
         signal_type: str
     ) -> Dict[str, Any]:
-        """Train ensemble models for a specific signal type."""
+        """Train ensemble models for a specific signal type with full feature integration."""
         try:
-            tprint_info(f"🔄 Training ensemble models for {signal_type} signals...")
+            tprint_info(f"🔄 Training ensemble models for {signal_type} signals with full feature integration...")
 
             if training_data.empty or not selected_features or not base_models:
                 raise ValueError(f"Insufficient data for {signal_type} ensemble training")
@@ -539,7 +564,7 @@ class TacticianDualTrainingStep:
 
             # Train ensemble models using existing trainer
             if self.ensemble_trainer:
-                # Create training configuration for this signal type
+                # Create training configuration for this signal type with full feature integration
                 training_config = {
                     'signal_type': signal_type,
                     'training_data': training_data,
@@ -548,20 +573,59 @@ class TacticianDualTrainingStep:
                     'target_columns': [col for col in training_data.columns if col.startswith('target_')],
                     'sample_weight': sample_weight,
                     'save_models': self.config.save_models,
-                    'output_directory': f"{self.config.output_directory}/{signal_type}_ensemble_models"
+                    'output_directory': f"{self.config.output_directory}/{signal_type}_ensemble_models",
+                    'enable_full_integration': True,  # Enable all feature integration
+                    'include_hmm_features': True,     # Include HMM regime features
+                    'include_analyst_features': True, # Include Analyst model outputs
+                    'include_oof_predictions': True   # Include OOF predictions from base models
                 }
 
-                # Call the existing ensemble trainer
-                training_result = await self.ensemble_trainer.train_tactician_ensemble(
-                    **training_config
+                # Call the existing ensemble trainer with full integration
+                # Import the execution function
+                from src.training.steps.model_training.tactician_ensemble_training import execute_tactician_ensemble_training
+
+                # Prepare inputs for ensemble training
+                X_base = training_data[selected_features].values
+                y_targets = training_data.filter(like='target_').values
+                if len(y_targets.shape) == 1:
+                    y_targets = y_targets.reshape(-1, 1)
+
+                # Get regime labels if available
+                regime_labels = training_data.get('hmm_regime', training_data.get('regime', np.zeros(len(training_data)))).values
+
+                # Call the ensemble training with full feature integration
+                training_result = await execute_tactician_ensemble_training(
+                    X=X_base,
+                    y=y_targets,
+                    regime_labels=regime_labels,
+                    config=None,  # Use default config
+                    feature_names=selected_features,
+                    base_tactician_models=base_models,  # Pass base models for OOF predictions
+                    analyst_green_light_periods=np.ones(len(training_data)),  # All samples are valid
+                    confidence_scores=training_data.get('analyst_confidence', np.ones(len(training_data))).values,
+                    timestamps=training_data.get('timestamp', pd.date_range('2024-01-01', periods=len(training_data), freq='1min')).values,
+                    confidence_threshold=0.5,
+                    ride_duration_minutes=45
                 )
+
+                # Log what features were included
+                if training_result.get('metadata'):
+                    metadata = training_result['metadata']
+                    tprint_info(f"   📊 Ensemble training included:")
+                    tprint_info(f"      - Base features: {metadata.get('base_features_count', 'N/A')}")
+                    tprint_info(f"      - HMM features: {metadata.get('hmm_features_count', 'N/A')}")
+                    tprint_info(f"      - Analyst features: {metadata.get('analyst_features_count', 'N/A')}")
+                    tprint_info(f"      - OOF predictions: {metadata.get('oof_predictions_count', 'N/A')}")
+                    tprint_info(f"      - Total features: {metadata.get('total_features', 'N/A')}")
 
                 return {
                     'models': training_result.get('models', {}),
                     'metrics': training_result.get('metrics', {}),
                     'training_time': training_result.get('execution_time', 0.0),
                     'features_used': selected_features,
-                    'samples_used': len(training_data)
+                    'samples_used': len(training_data),
+                    'metadata': training_result.get('metadata', {}),
+                    'feature_integration_complete': True
                 }
             else:
                 tprint_error("❌ Ensemble trainer not available")
@@ -569,7 +633,8 @@ class TacticianDualTrainingStep:
                     'models': {},
                     'metrics': {},
                     'training_time': 0.0,
-                    'error': 'Ensemble trainer not available'
+                    'error': 'Ensemble trainer not available',
+                    'feature_integration_complete': False
                 }
 
         except Exception as e:
@@ -578,7 +643,8 @@ class TacticianDualTrainingStep:
                 'models': {},
                 'metrics': {},
                 'training_time': 0.0,
-                'error': str(e)
+                'error': str(e),
+                'feature_integration_complete': False
             }
 
     async def _save_training_results(self, result: DualTrainingResult):

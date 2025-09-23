@@ -279,7 +279,7 @@ class EnhancedMatrixOptimizedClusterer(BaseClusterer):
         return features[:, :n_features]
 
     def _initial_enhanced_clustering(self, features_4d: np.ndarray) -> np.ndarray:
-        """Perform initial enhanced clustering.
+        """Perform initial enhanced clustering with MSM support.
 
         Args:
             features_4d: 4D feature matrix
@@ -288,9 +288,37 @@ class EnhancedMatrixOptimizedClusterer(BaseClusterer):
             Initial cluster labels
         """
         try:
+            # Try MSM clustering first - fast fail if unsuccessful
+            try:
+                from .msm_clustering import MSMClusterer
+
+                msm_config = {
+                    'n_states': min(20, max(2, features_4d.shape[0] // 50)),
+                    'lag_time': 1,
+                    'clustering_method': 'kmeans',
+                    'distance_metric': 'euclidean',
+                    'reversible': True,
+                    'stationary_distribution_constraint': True
+                }
+
+                msm_clusterer = MSMClusterer(msm_config)
+                result = msm_clusterer.cluster(features_4d)
+
+                if result.success:
+                    self.logger.info(f"✅ Initial MSM clustering: {result.labels.shape[0]} states, MSM Score: {result.msm_score".3f"}")
+                    return result.labels
+                else:
+                    # Fast fail if MSM clustering fails
+                    raise RuntimeError(f"MSM clustering failed: {result.error_message}")
+
+            except Exception as msm_error:
+                # Fast fail - do not fall back to K-means
+                self.logger.error(f"❌ MSM clustering failed with fast fail: {msm_error}")
+                raise RuntimeError(f"MSM clustering failed: {msm_error}")
+
             # Use enhanced K-means with matrix operations
             n_clusters = min(20, max(2, features_4d.shape[0] // 50))
-            
+
             if self.matrix_ops is not None:
                 # Use GPU-accelerated K-means if available
                 if hasattr(self.matrix_ops, 'kmeans_gpu'):
@@ -301,10 +329,10 @@ class EnhancedMatrixOptimizedClusterer(BaseClusterer):
             else:
                 kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
                 labels = kmeans.fit_predict(features_4d)
-            
+
             self.logger.info(f"✅ Initial enhanced clustering: {n_clusters} clusters")
             return labels
-            
+
         except Exception as e:
             self.logger.warning(f"⚠️ Initial enhanced clustering failed: {e}")
             # Fallback to single cluster

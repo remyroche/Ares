@@ -27,6 +27,22 @@ from src.utils.ml_common.optimization.neural_architecture_search import (
     NeuralArchitectureSearch, ArchitectureConfig, ArchitectureCandidate
 )
 
+# Import advanced optimization strategies
+try:
+    import optuna
+    from optuna.samplers import TPESampler, NSGAIISampler
+    from optuna.pruners import MedianPruner, SuccessiveHalvingPruner
+    OPTUNA_AVAILABLE = True
+except ImportError:
+    OPTUNA_AVAILABLE = False
+
+try:
+    import deap
+    from deap import algorithms, base, creator, tools
+    DEAP_AVAILABLE = True
+except ImportError:
+    DEAP_AVAILABLE = False
+
 # Import matrix operations for optimized computations
 from src.utils.matrix_operations import UnifiedMatrixOperations
 
@@ -135,7 +151,7 @@ class NASClusterer:
         self.logger.info(f"🖥️ Hardware optimization: {self.hardware_manager is not None}")
         self.logger.info(f"🔢 Matrix operations: {self.matrix_ops is not None}")
 
-        # Initialize NAS components
+        # Initialize NAS components with advanced strategies
         self.nas_config = ArchitectureConfig()
         self.nas_config.min_layers = 3
         self.nas_config.max_layers = 8
@@ -145,6 +161,20 @@ class NASClusterer:
         self.nas_config.timeout_seconds = 1800  # 30 minutes
         self.nas_config.objectives = ['clustering_quality', 'efficiency', 'regime_separation']
 
+        # Advanced search strategies
+        self.search_strategy = config.get('nas_search_strategy', 'standard')  # 'standard', 'evolutionary', 'multi_objective', 'bayesian', 'multi_modal'
+        self.enable_evolutionary_search = config.get('enable_evolutionary_search', False)
+        self.enable_bayesian_optimization = config.get('enable_bayesian_optimization', False)
+        self.enable_multi_modal_nas = config.get('enable_multi_modal_nas', False)
+        self.population_size = config.get('population_size', 50)
+        self.mutation_rate = config.get('mutation_rate', 0.1)
+        self.crossover_rate = config.get('crossover_rate', 0.7)
+
+        # Multi-modal clustering settings
+        self.clustering_methods = config.get('clustering_methods', ['kmeans', 'dbscan', 'agglomerative', 'neural'])
+        self.fusion_strategy = config.get('fusion_strategy', 'ensemble')  # 'ensemble', 'stacked', 'adaptive'
+        self.ensemble_weights = config.get('ensemble_weights', 'auto')  # 'auto' or list of weights
+
         self.nas_search = NeuralArchitectureSearch(self.nas_config)
 
         # Initialize regime-aware NAS
@@ -152,7 +182,60 @@ class NASClusterer:
         self.current_best_architecture = None
         self.clustering_loss_history = []
 
+        # Initialize advanced optimizers
+        self._initialize_advanced_optimizers()
+
         self.logger.info("🧠 NAS components initialized for clustering")
+        self.logger.info(f"🔍 Search Strategy: {self.search_strategy}")
+        self.logger.info(f"🧬 Evolutionary Search: {self.enable_evolutionary_search}")
+        self.logger.info(f"📈 Bayesian Optimization: {self.enable_bayesian_optimization}")
+
+    def _initialize_advanced_optimizers(self):
+        """Initialize advanced optimization strategies."""
+        try:
+            if OPTUNA_AVAILABLE and self.enable_bayesian_optimization:
+                # Bayesian optimization study
+                self.optuna_study = optuna.create_study(
+                    direction='maximize',
+                    sampler=TPESampler(n_startup_trials=10, multivariate=True),
+                    pruner=MedianPruner(n_startup_trials=5)
+                )
+                self.logger.info("✅ Bayesian optimization initialized with Optuna")
+
+            if DEAP_AVAILABLE and self.enable_evolutionary_search:
+                # Evolutionary algorithm setup
+                self._setup_evolutionary_algorithm()
+                self.logger.info("✅ Evolutionary algorithm initialized with DEAP")
+
+        except Exception as e:
+            self.logger.warning(f"⚠️ Advanced optimizer initialization failed: {e}")
+            self.optuna_study = None
+
+    def _setup_evolutionary_algorithm(self):
+        """Setup evolutionary algorithm for architecture search."""
+        try:
+            # Create fitness and individual classes
+            creator.create("FitnessMulti", base.Fitness, weights=(1.0, 1.0, 1.0))  # Multi-objective
+            creator.create("Individual", list, fitness=creator.FitnessMulti)
+
+            # Create toolbox
+            self.toolbox = base.Toolbox()
+
+            # Register genetic operators
+            self.toolbox.register("mate", tools.cxBlend, alpha=0.5)
+            self.toolbox.register("mutate", tools.mutGaussian, mu=0, sigma=0.1, indpb=0.1)
+            self.toolbox.register("select", tools.selNSGA2)  # NSGA-II for multi-objective
+            self.toolbox.register("evaluate", self._evaluate_architecture_fitness)
+
+            # Create initial population
+            self.population = self.toolbox.population(n=self.population_size)
+
+            self.logger.info("✅ Evolutionary algorithm setup completed")
+
+        except Exception as e:
+            self.logger.error(f"❌ Evolutionary algorithm setup failed: {e}")
+            self.toolbox = None
+            self.population = None
     
     def _initialize_hardware_optimization(self):
         """Initialize hardware optimization components."""
@@ -598,25 +681,624 @@ class NASClusterer:
 
     def _search_optimal_clustering_architecture(self, features: np.ndarray,
                                                n_regimes: int) -> None:
-        """Search for optimal clustering architecture using NAS."""
+        """Search for optimal clustering architecture using advanced NAS strategies."""
         try:
-            self.logger.info("🔍 Starting NAS search for clustering architecture")
+            # Store current features and n_regimes for evaluation
+            self.current_features = features
+            self.current_n_regimes = n_regimes
 
-            # Create synthetic clustering targets for supervised NAS
+            self.logger.info(f"🔍 Starting advanced NAS search: {self.search_strategy}")
+
+            if self.search_strategy == 'evolutionary' and DEAP_AVAILABLE:
+                self._perform_evolutionary_search(features, n_regimes)
+            elif self.search_strategy == 'bayesian' and OPTUNA_AVAILABLE:
+                self._perform_bayesian_search(features, n_regimes)
+            elif self.search_strategy == 'multi_objective':
+                self._perform_multi_objective_search(features, n_regimes)
+            elif self.search_strategy == 'multi_modal' and self.enable_multi_modal_nas:
+                self._perform_multi_modal_search(features, n_regimes)
+            else:
+                # Default standard search
+                self._perform_standard_nas_search(features, n_regimes)
+
+            self.logger.info(f"✅ Advanced NAS search completed. Best architecture: {self.current_best_architecture.overall_score:.4f}" if self.current_best_architecture else "✅ Advanced NAS search completed")
+
+        except Exception as e:
+            self.logger.error(f"❌ Advanced NAS search failed: {e}")
+            # Fallback to standard search
+            self._perform_standard_nas_search(features, n_regimes)
+
+    def _perform_standard_nas_search(self, features: np.ndarray, n_regimes: int):
+        """Perform standard NAS search."""
+        try:
             clustering_targets = self._create_clustering_targets_for_nas(features, n_regimes)
-
-            # Perform NAS search
             self.current_best_architecture = self.nas_search.search(
                 X_train=features,
                 y_train=clustering_targets,
-                regime_labels=None  # Can be enhanced later
+                regime_labels=None
             )
+        except Exception as e:
+            self.logger.error(f"❌ Standard NAS search failed: {e}")
+            self.current_best_architecture = None
 
-            self.logger.info(f"✅ NAS search completed. Best architecture: {self.current_best_architecture.overall_score:.4f}")
+    def _perform_evolutionary_search(self, features: np.ndarray, n_regimes: int):
+        """Perform evolutionary architecture search."""
+        try:
+            if not DEAP_AVAILABLE:
+                self.logger.warning("⚠️ DEAP not available, falling back to standard search")
+                self._perform_standard_nas_search(features, n_regimes)
+                return
+
+            self.logger.info("🧬 Running evolutionary architecture search")
+
+            # Generate initial population of architectures
+            population = self._generate_architecture_population(features, n_regimes)
+
+            # Run evolutionary algorithm
+            n_generations = 20
+            for gen in range(n_generations):
+                # Evaluate fitness
+                fitnesses = list(map(self._evaluate_architecture_fitness, population))
+                for ind, fit in zip(population, fitnesses):
+                    ind.fitness.values = fit
+
+                # Select next generation
+                population = self.toolbox.select(population, len(population))
+
+                # Apply crossover and mutation
+                offspring = algorithms.varAnd(population, self.toolbox, cxpb=self.crossover_rate, mutpb=self.mutation_rate)
+
+                # Replace population
+                population[:] = offspring
+
+            # Find best individual
+            best_individual = tools.selBest(population, 1)[0]
+            self.current_best_architecture = self._individual_to_architecture(best_individual, features.shape[1])
+
+            self.logger.info(f"🧬 Evolutionary search completed after {n_generations} generations")
 
         except Exception as e:
-            self.logger.error(f"❌ NAS search failed: {e}")
-            self.current_best_architecture = None
+            self.logger.error(f"❌ Evolutionary search failed: {e}")
+            self._perform_standard_nas_search(features, n_regimes)
+
+    def _perform_bayesian_search(self, features: np.ndarray, n_regimes: int):
+        """Perform Bayesian optimization for architecture search."""
+        try:
+            if not OPTUNA_AVAILABLE:
+                self.logger.warning("⚠️ Optuna not available, falling back to standard search")
+                self._perform_standard_nas_search(features, n_regimes)
+                return
+
+            self.logger.info("📈 Running Bayesian architecture optimization")
+
+            def objective(trial):
+                # Define architecture parameters
+                n_layers = trial.suggest_int('n_layers', 2, 8)
+                n_units = trial.suggest_int('n_units', 32, 512)
+                dropout = trial.suggest_float('dropout', 0.0, 0.5)
+                activation = trial.suggest_categorical('activation', ['relu', 'tanh', 'swish'])
+
+                # Create architecture
+                architecture = ArchitectureCandidate(
+                    layers=[{
+                        'units': n_units,
+                        'activation': activation,
+                        'dropout': dropout
+                    } for _ in range(n_layers)],
+                    total_params=n_units * n_layers,
+                    estimated_flops=n_units * n_layers * 1000
+                )
+
+                # Evaluate architecture
+                try:
+                    clustering_targets = self._create_clustering_targets_for_nas(features, n_regimes)
+                    performance = self._evaluate_architecture_performance(architecture, features, clustering_targets)
+
+                    # Multi-objective: clustering quality, efficiency, robustness
+                    clustering_quality = performance.get('accuracy', 0.0)
+                    efficiency = 1.0 / (1.0 + architecture.total_params / 100000)
+                    robustness = performance.get('robustness_score', 0.5)
+
+                    return clustering_quality, efficiency, robustness
+
+                except Exception:
+                    return 0.0, 0.0, 0.0
+
+            # Run optimization
+            n_trials = 50
+            self.optuna_study.optimize(objective, n_trials=n_trials)
+
+            # Get best architecture
+            best_params = self.optuna_study.best_params
+            self.current_best_architecture = self._create_architecture_from_params(best_params, features.shape[1])
+
+            self.logger.info(f"📈 Bayesian optimization completed with best score: {self.optuna_study.best_value:.4f}")
+
+        except Exception as e:
+            self.logger.error(f"❌ Bayesian search failed: {e}")
+            self._perform_standard_nas_search(features, n_regimes)
+
+    def _perform_multi_objective_search(self, features: np.ndarray, n_regimes: int):
+        """Perform multi-objective architecture search."""
+        try:
+            if not OPTUNA_AVAILABLE:
+                self.logger.warning("⚠️ Optuna not available, falling back to standard search")
+                self._perform_standard_nas_search(features, n_regimes)
+                return
+
+            self.logger.info("🎯 Running multi-objective architecture search")
+
+            def multi_objective(trial):
+                # Define architecture parameters
+                n_layers = trial.suggest_int('n_layers', 2, 8)
+                n_units = trial.suggest_int('n_units', 32, 512)
+                dropout = trial.suggest_float('dropout', 0.0, 0.5)
+                activation = trial.suggest_categorical('activation', ['relu', 'tanh', 'swish'])
+
+                # Create architecture
+                architecture = ArchitectureCandidate(
+                    layers=[{
+                        'units': n_units,
+                        'activation': activation,
+                        'dropout': dropout
+                    } for _ in range(n_layers)],
+                    total_params=n_units * n_layers,
+                    estimated_flops=n_units * n_layers * 1000
+                )
+
+                # Evaluate architecture
+                clustering_targets = self._create_clustering_targets_for_nas(features, n_regimes)
+                performance = self._evaluate_architecture_performance(architecture, features, clustering_targets)
+
+                # Multi-objective optimization
+                clustering_quality = performance.get('accuracy', 0.0)
+                efficiency = 1.0 / (1.0 + architecture.total_params / 100000)
+                robustness = performance.get('robustness_score', 0.5)
+
+                return clustering_quality, efficiency, robustness
+
+            # Multi-objective study
+            study = optuna.create_study(
+                directions=['maximize', 'maximize', 'maximize'],
+                sampler=NSGAIISampler()
+            )
+
+            study.optimize(multi_objective, n_trials=50)
+
+            # Select best architecture from Pareto front
+            pareto_front = study.get_pareto_front_directions()
+            best_idx = 0  # Can be enhanced to select based on preference
+
+            if pareto_front:
+                best_trial = study.trials[best_idx]
+                self.current_best_architecture = self._create_architecture_from_trial(best_trial, features.shape[1])
+
+            self.logger.info(f"🎯 Multi-objective search completed. Pareto front size: {len(pareto_front)}")
+
+        except Exception as e:
+            self.logger.error(f"❌ Multi-objective search failed: {e}")
+            self._perform_standard_nas_search(features, n_regimes)
+
+    def _perform_multi_modal_search(self, features: np.ndarray, n_regimes: int):
+        """Perform multi-modal NAS combining different clustering approaches."""
+        try:
+            self.logger.info("🔄 Running multi-modal NAS search")
+
+            # Get embeddings from multiple clustering methods
+            clustering_results = {}
+            embeddings_dict = {}
+
+            for method in self.clustering_methods:
+                try:
+                    if method == 'neural':
+                        # Use neural network embeddings
+                        embeddings = self._get_neural_embeddings(features, n_regimes)
+                        clustering_results[method] = self._cluster_with_embeddings(embeddings, n_regimes, method)
+                    elif method == 'kmeans':
+                        # Standard K-means
+                        embeddings = features  # Use raw features
+                        clustering_results[method] = self._cluster_with_method(embeddings, n_regimes, method)
+                    elif method == 'dbscan':
+                        embeddings = features
+                        clustering_results[method] = self._cluster_with_method(embeddings, n_regimes, method)
+                    elif method == 'agglomerative':
+                        embeddings = features
+                        clustering_results[method] = self._cluster_with_method(embeddings, n_regimes, method)
+
+                    embeddings_dict[method] = embeddings
+                    self.logger.info(f"✅ {method} clustering completed")
+
+                except Exception as e:
+                    self.logger.warning(f"⚠️ {method} clustering failed: {e}")
+                    continue
+
+            if not clustering_results:
+                self.logger.error("❌ All clustering methods failed")
+                self._perform_standard_nas_search(features, n_regimes)
+                return
+
+            # Fuse results using selected strategy
+            if self.fusion_strategy == 'ensemble':
+                fused_labels = self._ensemble_fusion(clustering_results, features.shape[0])
+            elif self.fusion_strategy == 'stacked':
+                fused_labels = self._stacked_fusion(clustering_results, embeddings_dict, features, n_regimes)
+            elif self.fusion_strategy == 'adaptive':
+                fused_labels = self._adaptive_fusion(clustering_results, features, n_regimes)
+            else:
+                # Default to ensemble
+                fused_labels = self._ensemble_fusion(clustering_results, features.shape[0])
+
+            # Create synthetic architecture representing multi-modal approach
+            self.current_best_architecture = self._create_multi_modal_architecture(clustering_results)
+
+            # Calculate quality metrics for fused result
+            fused_metrics = self._calculate_fusion_quality_metrics(features, fused_labels, clustering_results)
+
+            # Store multi-modal results
+            self.multi_modal_results = {
+                'individual_results': clustering_results,
+                'fused_labels': fused_labels,
+                'fusion_strategy': self.fusion_strategy,
+                'quality_metrics': fused_metrics,
+                'method_weights': self._calculate_method_weights(clustering_results)
+            }
+
+            self.logger.info(f"🔄 Multi-modal search completed with {self.fusion_strategy} fusion")
+
+        except Exception as e:
+            self.logger.error(f"❌ Multi-modal search failed: {e}")
+            self._perform_standard_nas_search(features, n_regimes)
+
+    def _get_neural_embeddings(self, features: np.ndarray, n_regimes: int) -> np.ndarray:
+        """Get embeddings from neural network."""
+        try:
+            # Create a simple neural network for feature extraction
+            input_dim = features.shape[1]
+
+            class FeatureExtractor(nn.Module):
+                def __init__(self, input_dim, hidden_dim=128, output_dim=64):
+                    super().__init__()
+                    self.encoder = nn.Sequential(
+                        nn.Linear(input_dim, hidden_dim),
+                        nn.ReLU(),
+                        nn.Dropout(0.2),
+                        nn.Linear(hidden_dim, hidden_dim // 2),
+                        nn.ReLU(),
+                        nn.Dropout(0.1),
+                        nn.Linear(hidden_dim // 2, output_dim)
+                    )
+
+                def forward(self, x):
+                    return self.encoder(x)
+
+            # Initialize model
+            device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+            model = FeatureExtractor(input_dim).to(device)
+
+            # Convert to tensors
+            features_tensor = torch.FloatTensor(features).to(device)
+
+            # Get embeddings
+            model.eval()
+            with torch.no_grad():
+                embeddings = model(features_tensor).cpu().numpy()
+
+            return embeddings
+
+        except Exception as e:
+            self.logger.warning(f"⚠️ Neural embedding extraction failed: {e}")
+            return features  # Fallback to raw features
+
+    def _cluster_with_embeddings(self, embeddings: np.ndarray, n_regimes: int, method: str) -> Dict[str, Any]:
+        """Perform clustering using embeddings."""
+        try:
+            if method == 'neural':
+                return self._perform_true_nas_clustering(embeddings, n_regimes, use_nas=False)
+            else:
+                return self._cluster_with_method(embeddings, n_regimes, method)
+        except Exception as e:
+            self.logger.error(f"❌ Clustering with embeddings failed: {e}")
+            raise
+
+    def _cluster_with_method(self, features: np.ndarray, n_regimes: int, method: str) -> Dict[str, Any]:
+        """Perform clustering using specified method."""
+        try:
+            features_scaled = self.scaler.fit_transform(features)
+
+            if method == 'kmeans':
+                clusterer = KMeans(n_clusters=n_regimes, random_state=42, n_init=10)
+                labels = clusterer.fit_predict(features_scaled)
+                cluster_centers = clusterer.cluster_centers_
+            elif method == 'dbscan':
+                clusterer = DBSCAN(eps=0.5, min_samples=max(5, n_regimes))
+                labels = clusterer.fit_predict(features_scaled)
+                cluster_centers = self._calculate_cluster_centers(features_scaled, labels)
+            elif method == 'agglomerative':
+                clusterer = AgglomerativeClustering(n_clusters=n_regimes, linkage='ward')
+                labels = clusterer.fit_predict(features_scaled)
+                cluster_centers = self._calculate_cluster_centers(features_scaled, labels)
+            else:
+                raise ValueError(f"Unknown clustering method: {method}")
+
+            return {
+                'labels': labels,
+                'cluster_centers': cluster_centers,
+                'method': method,
+                'success': True
+            }
+
+        except Exception as e:
+            self.logger.error(f"❌ {method} clustering failed: {e}")
+            return {'labels': None, 'cluster_centers': None, 'method': method, 'success': False}
+
+    def _ensemble_fusion(self, clustering_results: Dict[str, Any], n_samples: int) -> np.ndarray:
+        """Fuse clustering results using ensemble voting."""
+        try:
+            # Get valid results
+            valid_results = {k: v for k, v in clustering_results.items() if v['success']}
+
+            if not valid_results:
+                raise ValueError("No valid clustering results to fuse")
+
+            # Calculate weights
+            if self.ensemble_weights == 'auto':
+                weights = self._calculate_method_weights(valid_results)
+            else:
+                weights = self.ensemble_weights
+
+            # Ensure weights match the number of methods
+            method_names = list(valid_results.keys())
+            if isinstance(weights, list):
+                weights = {method_names[i]: weights[i] for i in range(len(method_names))}
+            elif isinstance(weights, dict):
+                weights = {k: weights.get(k, 1.0) for k in method_names}
+            else:
+                weights = {k: 1.0 for k in method_names}
+
+            # Normalize weights
+            total_weight = sum(weights.values())
+            weights = {k: w / total_weight for k, w in weights.items()}
+
+            # Create ensemble predictions
+            ensemble_labels = np.zeros(n_samples)
+
+            for method, result in valid_results.items():
+                if result['labels'] is not None:
+                    weight = weights[method]
+                    labels = result['labels']
+
+                    # Add weighted votes
+                    for i in range(n_samples):
+                        ensemble_labels[i] += weight * labels[i]
+
+            # Round to nearest integer for final labels
+            ensemble_labels = np.round(ensemble_labels).astype(int)
+
+            # Ensure labels are non-negative
+            ensemble_labels = np.maximum(ensemble_labels, 0)
+
+            return ensemble_labels
+
+        except Exception as e:
+            self.logger.error(f"❌ Ensemble fusion failed: {e}")
+            # Fallback to first valid method
+            for result in valid_results.values():
+                if result['success'] and result['labels'] is not None:
+                    return result['labels']
+            raise ValueError("No valid clustering results available")
+
+    def _stacked_fusion(self, clustering_results: Dict[str, Any], embeddings_dict: Dict[str, np.ndarray],
+                       features: np.ndarray, n_regimes: int) -> np.ndarray:
+        """Fuse clustering results using stacked generalization."""
+        try:
+            # Create meta-features from individual clustering results
+            meta_features = []
+
+            for method, result in clustering_results.items():
+                if result['success'] and result['labels'] is not None:
+                    # Use clustering confidence or distance to centers as meta-feature
+                    if method == 'kmeans' and result['cluster_centers'] is not None:
+                        distances = self._calculate_distances_to_centers(features, result['labels'], result['cluster_centers'])
+                        meta_features.append(distances.reshape(-1, 1))
+                    else:
+                        # Use one-hot encoding of cluster labels
+                        labels_onehot = np.zeros((len(result['labels']), n_regimes))
+                        for i, label in enumerate(result['labels']):
+                            if 0 <= label < n_regimes:
+                                labels_onehot[i, label] = 1
+                        meta_features.append(labels_onehot)
+
+            if not meta_features:
+                raise ValueError("No meta-features available")
+
+            # Combine meta-features
+            meta_features_combined = np.concatenate(meta_features, axis=1)
+
+            # Use simple classifier on meta-features
+            from sklearn.ensemble import RandomForestClassifier
+            meta_classifier = RandomForestClassifier(n_estimators=100, random_state=42)
+            meta_classifier.fit(meta_features_combined, clustering_results[list(clustering_results.keys())[0]]['labels'])
+
+            # Predict final labels
+            predictions = meta_classifier.predict(meta_features_combined)
+
+            return predictions
+
+        except Exception as e:
+            self.logger.error(f"❌ Stacked fusion failed: {e}")
+            # Fallback to ensemble
+            return self._ensemble_fusion(clustering_results, features.shape[0])
+
+    def _adaptive_fusion(self, clustering_results: Dict[str, Any], features: np.ndarray, n_regimes: int) -> np.ndarray:
+        """Adaptively fuse clustering results based on data characteristics."""
+        try:
+            # Calculate quality metrics for each method
+            method_qualities = {}
+
+            for method, result in clustering_results.items():
+                if result['success'] and result['labels'] is not None:
+                    try:
+                        quality = self._calculate_clustering_quality(features, result['labels'], n_regimes)
+                        method_qualities[method] = quality
+                    except Exception:
+                        method_qualities[method] = 0.0
+
+            if not method_qualities:
+                raise ValueError("No quality metrics available")
+
+            # Weight methods by quality
+            total_quality = sum(method_qualities.values())
+            weights = {k: v / total_quality for k, v in method_qualities.items()}
+
+            # Apply adaptive weighting
+            n_samples = features.shape[0]
+            adaptive_labels = np.zeros(n_samples)
+
+            for method, result in clustering_results.items():
+                if result['success'] and result['labels'] is not None:
+                    weight = weights[method]
+                    labels = result['labels']
+
+                    for i in range(n_samples):
+                        adaptive_labels[i] += weight * labels[i]
+
+            # Round and ensure valid labels
+            adaptive_labels = np.round(adaptive_labels).astype(int)
+            adaptive_labels = np.maximum(adaptive_labels, 0)
+
+            return adaptive_labels
+
+        except Exception as e:
+            self.logger.error(f"❌ Adaptive fusion failed: {e}")
+            return self._ensemble_fusion(clustering_results, features.shape[0])
+
+    def _calculate_method_weights(self, clustering_results: Dict[str, Any]) -> Dict[str, float]:
+        """Calculate weights for different clustering methods."""
+        try:
+            # Base weights for different methods
+            base_weights = {
+                'kmeans': 1.0,
+                'dbscan': 0.9,
+                'agglomerative': 0.8,
+                'neural': 0.95
+            }
+
+            weights = {}
+            for method in clustering_results.keys():
+                weights[method] = base_weights.get(method, 0.5)
+
+            return weights
+
+        except Exception:
+            return {method: 1.0 for method in clustering_results.keys()}
+
+    def _calculate_fusion_quality_metrics(self, features: np.ndarray, fused_labels: np.ndarray,
+                                        clustering_results: Dict[str, Any]) -> Dict[str, float]:
+        """Calculate quality metrics for fused clustering results."""
+        try:
+            # Standard metrics
+            if len(np.unique(fused_labels)) < 2:
+                return {'silhouette_score': 0.0, 'fusion_quality': 0.0}
+
+            silhouette = silhouette_score(features, fused_labels)
+            calinski_harabasz = calinski_harabasz_score(features, fused_labels)
+
+            # Fusion-specific metrics
+            method_agreement = self._calculate_method_agreement(clustering_results)
+            consistency_score = self._calculate_consistency_score(clustering_results, fused_labels)
+
+            return {
+                'silhouette_score': silhouette,
+                'calinski_harabasz_score': calinski_harabasz,
+                'method_agreement': method_agreement,
+                'consistency_score': consistency_score,
+                'fusion_quality': (silhouette + calinski_harabasz + method_agreement + consistency_score) / 4.0
+            }
+
+        except Exception as e:
+            self.logger.warning(f"⚠️ Fusion quality calculation failed: {e}")
+            return {'silhouette_score': 0.0, 'fusion_quality': 0.0}
+
+    def _calculate_method_agreement(self, clustering_results: Dict[str, Any]) -> float:
+        """Calculate agreement between different clustering methods."""
+        try:
+            methods = list(clustering_results.keys())
+            if len(methods) < 2:
+                return 1.0
+
+            # Calculate pairwise agreement
+            agreements = []
+
+            for i in range(len(methods)):
+                for j in range(i + 1, len(methods)):
+                    method1 = methods[i]
+                    method2 = methods[j]
+
+                    if (clustering_results[method1]['success'] and
+                        clustering_results[method2]['success'] and
+                        clustering_results[method1]['labels'] is not None and
+                        clustering_results[method2]['labels'] is not None):
+
+                        labels1 = clustering_results[method1]['labels']
+                        labels2 = clustering_results[method2]['labels']
+
+                        # Calculate adjusted rand index (simplified)
+                        agreement = self._calculate_adjusted_rand_index(labels1, labels2)
+                        agreements.append(agreement)
+
+            return np.mean(agreements) if agreements else 0.0
+
+        except Exception:
+            return 0.0
+
+    def _calculate_adjusted_rand_index(self, labels1: np.ndarray, labels2: np.ndarray) -> float:
+        """Calculate adjusted Rand index between two labelings."""
+        try:
+            from sklearn.metrics import adjusted_rand_score
+            return adjusted_rand_score(labels1, labels2)
+        except Exception:
+            return 0.0
+
+    def _calculate_consistency_score(self, clustering_results: Dict[str, Any], fused_labels: np.ndarray) -> float:
+        """Calculate consistency between fused labels and individual methods."""
+        try:
+            consistencies = []
+
+            for method, result in clustering_results.items():
+                if result['success'] and result['labels'] is not None:
+                    consistency = self._calculate_adjusted_rand_index(result['labels'], fused_labels)
+                    consistencies.append(consistency)
+
+            return np.mean(consistencies) if consistencies else 0.0
+
+        except Exception:
+            return 0.0
+
+    def _create_multi_modal_architecture(self, clustering_results: Dict[str, Any]) -> ArchitectureCandidate:
+        """Create synthetic architecture representing multi-modal approach."""
+        try:
+            n_methods = len([r for r in clustering_results.values() if r['success']])
+            n_regimes = len(np.unique([r['labels'] for r in clustering_results.values() if r['labels'] is not None]))
+
+            # Create synthetic architecture description
+            layers = [{
+                'method': 'multi_modal_fusion',
+                'n_methods': n_methods,
+                'fusion_strategy': self.fusion_strategy,
+                'units': n_methods * 10,
+                'activation': 'ensemble',
+                'dropout': 0.0
+            }]
+
+            return ArchitectureCandidate(
+                layers=layers,
+                total_params=n_methods * 100,  # Synthetic parameter count
+                estimated_flops=n_methods * 1000
+            )
+
+        except Exception as e:
+            self.logger.error(f"❌ Multi-modal architecture creation failed: {e}")
+            return None
 
     def _create_clustering_targets_for_nas(self, features: np.ndarray,
                                          n_regimes: int) -> np.ndarray:
@@ -770,6 +1452,226 @@ class NASClusterer:
         except Exception as e:
             self.logger.error(f"❌ Traditional clustering failed: {e}")
             raise
+
+    def _generate_architecture_population(self, features: np.ndarray, n_regimes: int) -> list:
+        """Generate initial population of architectures for evolutionary search."""
+        try:
+            population = []
+            for _ in range(self.population_size):
+                # Generate random architecture
+                n_layers = np.random.randint(2, 8)
+                layers = []
+
+                for i in range(n_layers):
+                    units = np.random.randint(32, 512)
+                    activation = np.random.choice(['relu', 'tanh', 'swish'])
+                    dropout = np.random.uniform(0.0, 0.5)
+
+                    layers.append({
+                        'units': units,
+                        'activation': activation,
+                        'dropout': dropout
+                    })
+
+                # Create architecture candidate
+                architecture = ArchitectureCandidate(
+                    layers=layers,
+                    total_params=sum(layer['units'] for layer in layers),
+                    estimated_flops=sum(layer['units'] for layer in layers) * 1000
+                )
+
+                population.append(architecture)
+
+            return population
+
+        except Exception as e:
+            self.logger.error(f"❌ Population generation failed: {e}")
+            return []
+
+    def _evaluate_architecture_fitness(self, architecture: ArchitectureCandidate) -> tuple:
+        """Evaluate fitness of architecture for evolutionary algorithm."""
+        try:
+            # Convert architecture to individual representation
+            individual = self._architecture_to_individual(architecture)
+
+            # Evaluate using clustering targets
+            clustering_targets = self._create_clustering_targets_for_nas(self.current_features, self.current_n_regimes)
+            performance = self._evaluate_architecture_performance(architecture, self.current_features, clustering_targets)
+
+            # Multi-objective fitness
+            clustering_quality = performance.get('accuracy', 0.0)
+            efficiency = 1.0 / (1.0 + architecture.total_params / 100000)
+            robustness = performance.get('robustness_score', 0.5)
+
+            return clustering_quality, efficiency, robustness
+
+        except Exception as e:
+            self.logger.warning(f"⚠️ Fitness evaluation failed: {e}")
+            return 0.0, 0.0, 0.0
+
+    def _evaluate_architecture_performance(self, architecture: ArchitectureCandidate,
+                                          features: np.ndarray, targets: np.ndarray) -> Dict[str, float]:
+        """Evaluate architecture performance on clustering task."""
+        try:
+            # Create model from architecture
+            model = self._create_clustering_model_from_nas_architecture(architecture, features.shape[1])
+
+            # Simple evaluation (can be enhanced)
+            device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+            model = model.to(device)
+
+            # Convert to tensors
+            features_tensor = torch.FloatTensor(features).to(device)
+            targets_tensor = torch.FloatTensor(targets).to(device)
+
+            # Evaluate model
+            model.eval()
+            with torch.no_grad():
+                predictions = model(features_tensor)
+                loss = F.mse_loss(predictions, targets_tensor).item()
+
+            # Calculate metrics
+            accuracy = 1.0 / (1.0 + loss)  # Convert loss to accuracy-like metric
+            efficiency = 1.0 / (1.0 + architecture.total_params / 100000)
+            robustness = 0.8  # Placeholder for robustness metric
+
+            return {
+                'accuracy': accuracy,
+                'efficiency_score': efficiency,
+                'robustness_score': robustness,
+                'loss': loss
+            }
+
+        except Exception as e:
+            self.logger.warning(f"⚠️ Architecture evaluation failed: {e}")
+            return {'accuracy': 0.0, 'efficiency_score': 0.0, 'robustness_score': 0.0}
+
+    def _architecture_to_individual(self, architecture: ArchitectureCandidate) -> list:
+        """Convert architecture to individual for evolutionary algorithm."""
+        try:
+            individual = []
+
+            # Encode architecture parameters
+            for layer in architecture.layers:
+                individual.extend([
+                    layer['units'],
+                    0 if layer['activation'] == 'relu' else 1 if layer['activation'] == 'tanh' else 2,
+                    layer['dropout']
+                ])
+
+            return individual
+
+        except Exception:
+            return []
+
+    def _individual_to_architecture(self, individual: list, input_dim: int) -> ArchitectureCandidate:
+        """Convert individual back to architecture."""
+        try:
+            layers = []
+            n_layers = len(individual) // 3
+
+            for i in range(n_layers):
+                units = int(individual[i * 3])
+                activation_idx = int(individual[i * 3 + 1])
+                activation = ['relu', 'tanh', 'swish'][activation_idx]
+                dropout = individual[i * 3 + 2]
+
+                layers.append({
+                    'units': units,
+                    'activation': activation,
+                    'dropout': dropout
+                })
+
+            return ArchitectureCandidate(
+                layers=layers,
+                total_params=sum(layer['units'] for layer in layers),
+                estimated_flops=sum(layer['units'] for layer in layers) * 1000
+            )
+
+        except Exception as e:
+            self.logger.error(f"❌ Individual conversion failed: {e}")
+            return None
+
+    def _create_architecture_from_params(self, params: dict, input_dim: int) -> ArchitectureCandidate:
+        """Create architecture from optimization parameters."""
+        try:
+            n_layers = params['n_layers']
+            n_units = params['n_units']
+            dropout = params['dropout']
+            activation = params['activation']
+
+            layers = [{
+                'units': n_units,
+                'activation': activation,
+                'dropout': dropout
+            } for _ in range(n_layers)]
+
+            return ArchitectureCandidate(
+                layers=layers,
+                total_params=n_units * n_layers,
+                estimated_flops=n_units * n_layers * 1000
+            )
+
+        except Exception as e:
+            self.logger.error(f"❌ Parameter conversion failed: {e}")
+            return None
+
+    def _create_architecture_from_trial(self, trial, input_dim: int) -> ArchitectureCandidate:
+        """Create architecture from Optuna trial."""
+        try:
+            n_layers = trial.params['n_layers']
+            n_units = trial.params['n_units']
+            dropout = trial.params['dropout']
+            activation = trial.params['activation']
+
+            layers = [{
+                'units': n_units,
+                'activation': activation,
+                'dropout': dropout
+            } for _ in range(n_layers)]
+
+            return ArchitectureCandidate(
+                layers=layers,
+                total_params=n_units * n_layers,
+                estimated_flops=n_units * n_layers * 1000
+            )
+
+        except Exception as e:
+            self.logger.error(f"❌ Trial conversion failed: {e}")
+            return None
+
+    def _calculate_distances_to_centers(self, features: np.ndarray, labels: np.ndarray, cluster_centers: np.ndarray) -> np.ndarray:
+        """Calculate distances from points to their cluster centers."""
+        try:
+            distances = np.zeros(len(labels))
+
+            for i, (point, label) in enumerate(zip(features, labels)):
+                if 0 <= label < len(cluster_centers):
+                    center = cluster_centers[label]
+                    distance = np.linalg.norm(point - center)
+                    distances[i] = distance
+
+            return distances
+
+        except Exception as e:
+            self.logger.warning(f"⚠️ Distance calculation failed: {e}")
+            return np.zeros(len(labels))
+
+    def _calculate_clustering_quality(self, features: np.ndarray, labels: np.ndarray, n_regimes: int) -> float:
+        """Calculate overall clustering quality score."""
+        try:
+            if len(np.unique(labels)) < 2:
+                return 0.0
+
+            silhouette = silhouette_score(features, labels)
+            calinski_harabasz = calinski_harabasz_score(features, labels)
+
+            # Combine metrics
+            quality = (silhouette + calinski_harabasz) / 2.0
+            return min(quality, 1.0)
+
+        except Exception:
+            return 0.0
     
     def _perform_nas_clustering(self, feature_result: NASFeatureResult,
                               micro_regime_result: MicroRegimeResult,

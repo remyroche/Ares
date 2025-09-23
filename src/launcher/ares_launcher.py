@@ -246,8 +246,8 @@ class AresLauncher:
                 'next_stage': 'model_training',
                 'required_files': ['sr_levels.json', 'regime_assignments.parquet', 'labels.parquet', 'features.parquet'],
                 'required_artifacts': ['sr_clusters', 'regime_model', 'feature_metadata'],
-                'sub_pipelines': ['sr_detection', 'sr_clustering', 'hmm_clustering',
-                                'hmm_regime_discovery', 'hmm_models_training', 'hmm_ensemble_training',
+                'sub_pipelines': ['sr_detection', 'sr_clustering', 'nas_regime_discovery', 'nas_clustering',
+                                'hmm_models_training', 'hmm_ensemble_training',
                                 'feature_lookback_optimization', 'pid_based_feature_generation',
                                 'multi_horizon_profit_labeler', 'triple_barrier_labeling',
                                 'sr_feature_integration']
@@ -503,20 +503,21 @@ class AresLauncher:
         supported_params = ['symbol', 'exchange', 'timeframe', 'data_dir']
         filtered_config = {k: v for k, v in base_config.items() if k in supported_params}
 
-        # SET 15M AS DEFAULT TIMEFRAME FOR HMM-RELATED SUB-PIPELINES
-        hmm_sub_pipelines = [
-            'hmm_regime_discovery',     # Discover market regimes
-            'hmm_clustering',           # HMM-based regime clustering
-            'hmm_models_training',      # base models training, HPO, saving, metrics
-            'hmm_ensemble_training'     # meta-model, HPO, saving, metrics
+        # SET 15M AS DEFAULT TIMEFRAME FOR NAS-RELATED SUB-PIPELINES
+        nas_sub_pipelines = [
+            'nas_regime_discovery',     # Discover market regimes using NAS
+            'nas_clustering',           # NAS-based regime clustering
+            'nas_models_training',      # Train regime detection models using NAS regime labels
+            'nas_ensemble_training',    # Train ensemble regime detection models using NAS regime labels
+            'nas'                       # Combined NAS regime discovery + clustering
         ]
         
-        # Set 15m as default for HMM sub-pipelines
-        if sub_pipeline in hmm_sub_pipelines:
+        # Set 15m as default for NAS sub-pipelines
+        if sub_pipeline in nas_sub_pipelines:
             original_timeframe = filtered_config.get('timeframe', '1m')
             if original_timeframe == '1m':  # Only override if using default
                 filtered_config['timeframe'] = '15m'
-                tprint(f"🎯 [SUB_PIPELINE_CONFIG] HMM sub-pipeline detected: {sub_pipeline}")
+                tprint(f"🎯 [SUB_PIPELINE_CONFIG] NAS sub-pipeline detected: {sub_pipeline}")
                 tprint(f"🎯 [SUB_PIPELINE_CONFIG] Setting default timeframe: {original_timeframe} → 15m")
                 tprint("🎯 [SUB_PIPELINE_CONFIG] Using 15m data for better granularity and regime detection")
             else:
@@ -915,8 +916,11 @@ class AresLauncher:
             # Market Analysis (10 sub-pipelines)
             'sr_detection': "Detect Support/Resistance levels",
             'sr_clustering': "Generate SR clusters",
-            'hmm_clustering': "HMM-based regime clustering",
-            'hmm_regime_discovery': "Discover market regimes",
+            'nas_clustering': "NAS-based regime clustering",
+            'nas_regime_discovery': "Discover market regimes using NAS",
+            'nas_models_training': "Train regime detection models using NAS regime labels",
+            'nas_ensemble_training': "Train ensemble regime detection models using NAS regime labels",
+            'nas': "Combined NAS regime discovery + clustering (replaces HMM)",
             'multi_horizon_profit_labeler': "Multi-horizon profit probability labeling (replacement for triple barrier)",
             'triple_barrier_labeling': "Apply triple barrier method",
             'feature_lookback_optimization': "Optimize feature lookback periods",
@@ -967,8 +971,10 @@ class AresLauncher:
             
             # Market Analysis dependencies
             'sr_clustering': ['sr_detection'],
-            'hmm_clustering': ['sr_clustering'],
-            'hmm_regime_discovery': ['hmm_clustering'],
+            'nas_clustering': ['sr_clustering'],
+            'nas_regime_discovery': ['nas_clustering'],
+            'nas_models_training': ['nas_regime_discovery'],
+            'nas_ensemble_training': ['nas_models_training'],
             'feature_lookback_optimization': ['hmm_regime_discovery'],
             'pid_based_feature_generation': ['feature_lookback_optimization'],
             'multi_horizon_profit_labeler': ['pid_based_feature_generation'],
@@ -1019,8 +1025,10 @@ class AresLauncher:
             # Market Analysis outputs
             'sr_detection': ['sr_levels.json'],
             'sr_clustering': ['sr_clusters.json'],
-            'hmm_clustering': ['hmm_clusters.json'],
-            'hmm_regime_discovery': ['regime_assignments.parquet'],
+            'nas_clustering': ['nas_clusters.json'],
+            'nas_regime_discovery': ['nas_regime_assignments.parquet'],
+            'nas_models_training': ['nas_models_training_result.json'],
+            'nas_ensemble_training': ['nas_ensemble_training_result.json'],
             'feature_lookback_optimization': ['optimized_features.parquet'],
             'pid_based_feature_generation': ['pid_based_features.parquet'],
             'multi_horizon_profit_labeler': ['multi_horizon_labels.parquet'],
@@ -1125,7 +1133,7 @@ Examples:
   python ares_launcher.py --mode sub_pipeline --sub_pipeline sr_detection --execution-mode blank --symbol ETHUSDT
 
   # Execute specific sub-pipeline with full execution mode (730 days, 100% intensity)
-  python ares_launcher.py --mode sub_pipeline --sub_pipeline hmm_regime_discovery --execution-mode full --symbol ETHUSDT
+  python ares_launcher.py --mode sub_pipeline --sub_pipeline nas_regime_discovery --execution-mode full --symbol ETHUSDT
 
   # Execute basic backtesting (pre-optimization baseline)
   python ares_launcher.py --mode sub_pipeline --sub_pipeline basic_backtesting_pre --execution-mode full --symbol ETHUSDT
@@ -1187,7 +1195,7 @@ Examples:
     
     parser.add_argument(
         '--sub-pipeline', '--sub_pipeline',
-        help='Specific sub-pipeline to execute (for sub_pipeline mode). Available: data_download, sr_detection, hmm_regime_discovery, hmm_models_training, hmm_ensemble_training, hmm_training, analyst_model_training, analyst_ensemble_training, tactician_pre_ml_orchestration, tactician_dual_training, basic_backtesting_pre, basic_backtesting_post, walk_forward_validation, etc.'
+        help='Specific sub-pipeline to execute (for sub_pipeline mode). Available: data_download, sr_detection, nas_regime_discovery, nas_clustering, nas_models_training, nas_ensemble_training, hmm_training, analyst_model_training, analyst_ensemble_training, tactician_pre_ml_orchestration, tactician_dual_training, basic_backtesting_pre, basic_backtesting_post, walk_forward_validation, etc.'
     )
     
     parser.add_argument(

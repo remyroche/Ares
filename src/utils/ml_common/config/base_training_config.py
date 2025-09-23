@@ -147,10 +147,10 @@ class EnsembleTrainingConfig(BaseTrainingConfig):
 
     # Ensemble configuration
     base_models: List[str] = field(default_factory=lambda: [
-        "ElasticNet", "CatBoostClassifier", "XGBoostClassifier"
+        "NAS", "CatBoostClassifier", "XGBoostClassifier"
     ])
     meta_models: List[str] = field(default_factory=lambda: [
-        "XGBoostClassifier", "CatBoostClassifier", "ElasticNet"
+        "XGBoostClassifier", "CatBoostClassifier", "NAS"
     ])
     meta_model: str = "XGBoostClassifier"  # Default meta model for backward compatibility
 
@@ -174,10 +174,11 @@ class EnsembleTrainingConfig(BaseTrainingConfig):
             'learning_rate': {'type': 'float', 'low': 0.01, 'high': 0.3},
             'l2_leaf_reg': {'type': 'float', 'low': 1.0, 'high': 10.0}
         },
-        'ElasticNet': {
-            'alpha': {'type': 'float', 'low': 0.001, 'high': 10.0, 'log': True},
-            'l1_ratio': {'type': 'float', 'low': 0.1, 'high': 0.9},
-            'max_iter': {'type': 'int', 'low': 500, 'high': 2000}
+        'NAS': {
+            'learning_rate': {'type': 'float', 'low': 0.001, 'high': 0.1, 'log': True},
+            'num_epochs': {'type': 'int', 'low': 10, 'high': 100},
+            'hidden_size': {'type': 'int', 'low': 32, 'high': 256},
+            'dropout': {'type': 'float', 'low': 0.1, 'high': 0.5}
         }
     })
     

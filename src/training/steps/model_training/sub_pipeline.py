@@ -6,8 +6,11 @@ This module provides the final model training sub-pipeline with 5 core steps:
 1. analyst_models_training - Per-regime individual model training with HPO, saving, and metrics
 2. analyst_ensemble_training - Per-regime ensemble training with HPO, saving, and metrics
 3. tactician_pre_ml_orchestration - Pre-ML processing: separate long/short signals, optimize features, generate PID features, apply horizon labeling, select features
-4. tactician_dual_training - Train Tactician models twice (longs and shorts) with differentiated features and horizon labeling
-5. tactician_ensemble_training - All-regime ensemble training with HPO, saving, and metrics (legacy - now primarily used for combined signals)
+4. tactician_dual_training - Train multiple Tactician models: 4 base models + 1 ensemble for long signals, 4 base models + 1 ensemble for short signals (8 total models)
+5. regime_specific_training - Regime-specific model training (legacy)
+6. model_validation - Model validation and testing (legacy)
+7. model_persistence - Model persistence and storage (legacy)
+8. model_evaluation - Model evaluation and reporting (legacy)
 
 ENHANCED FEATURES:
 - Comprehensive debugging and error tracking
@@ -1028,11 +1031,7 @@ class ModelTrainingSubPipeline:
                 'analyst_model_training': ['models', 'metrics'],
             'analyst_ensemble_training': ['models', 'metrics'],
             'tactician_pre_ml_orchestration': ['orchestration_result', 'long_training_data', 'short_training_data', 'tagged_market_data'],
-            'tactician_dual_training': ['training_result', 'long_base_models', 'short_base_models', 'long_ensemble_models', 'short_ensemble_models', 'models', 'metrics'],
-            'tactician_models_training': ['models', 'metrics'],
-            'tactician_ensemble_training': ['models', 'metrics'],
-            'tactician_model_training': ['models', 'metrics'],
-            'tactician_ensemble_training': ['models', 'metrics']
+            'tactician_dual_training': ['training_result', 'long_base_models', 'short_base_models', 'long_ensemble_models', 'short_ensemble_models', 'models', 'metrics']
             }
             
             if sub_pipeline_name in required_artifacts:
@@ -1304,9 +1303,7 @@ class ModelTrainingSubPipeline:
                 'analyst_model_training': 4,  # TEMPORAL_FUSION_TRANSFORMER, TABNET, HIST_GRADIENT_BOOSTING, EXTRA_TREES
         'analyst_ensemble_training': 1,  # Single ensemble model
         'tactician_pre_ml_orchestration': 0,  # No models, just orchestration
-        'tactician_dual_training': 8,  # 4 long + 4 short models (base + ensemble)
-        'tactician_models_training': 4,  # Similar to analyst
-        'tactician_ensemble_training': 1  # Single ensemble model
+        'tactician_dual_training': 8  # 4 long base models + 4 short base models (XGBOOST, LIGHTGBM, DEEPSCALER_1M, FINANCIAL_RESNET) - no ensembles in count
             }
             
             if sub_pipeline_name in expected_model_counts:
@@ -2106,10 +2103,7 @@ class ModelTrainingSubPipeline:
 
         tactician_steps = [
             'tactician_pre_ml_orchestration',
-            'tactician_dual_training',
-            'tactician_lookback_optimization',
-            'tactician_models_training',
-            'tactician_ensemble_training'
+            'tactician_dual_training'
         ]
         
         # Complete execution sequence
@@ -2253,10 +2247,7 @@ async def execute_full_model_training_pipeline(
         'analyst_model_training',
         'analyst_ensemble_training',
         'tactician_pre_ml_orchestration',
-        'tactician_dual_training',
-        'tactician_lookback_optimization',
-        'tactician_models_training',
-        'tactician_ensemble_training'
+        'tactician_dual_training'
     ]
     
     results = []

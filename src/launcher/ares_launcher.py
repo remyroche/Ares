@@ -258,7 +258,6 @@ class AresLauncher:
                 'required_artifacts': ['model_metadata', 'performance_metrics', 'ensemble_models'],
                 'sub_pipelines': ['hmm_training', 'analyst_model_training', 'analyst_ensemble_training',
                                 'tactician_pre_ml_orchestration', 'tactician_dual_training',
-                                'tactician_model_training', 'tactician_ensemble_training',
                                 'regime_specific_training', 'model_validation', 'model_persistence', 'model_evaluation']
             },
             'backtesting': {
@@ -927,7 +926,7 @@ class AresLauncher:
             # Model Training (10 sub-pipelines)
             'analyst_model_training': "Train analyst-specific models",
             'tactician_pre_ml_orchestration': "Pre-ML processing: separate long/short signals, optimize features, generate PID features, apply horizon labeling, select features",
-            'tactician_dual_training': "Train Tactician models twice (longs and shorts) with differentiated features and horizon labeling",
+            'tactician_dual_training': "Train multiple Tactician models: 4 base models + 1 ensemble for long signals, 4 base models + 1 ensemble for short signals (8 total models)",
             'tactician_model_training': "Train tactician-specific models",
             'hmm_training': "HMM-based model training",
             'ensemble_training': "Ensemble model training",
@@ -982,8 +981,6 @@ class AresLauncher:
             'analyst_ensemble_training': ['analyst_model_training'],
             'tactician_pre_ml_orchestration': ['analyst_ensemble_training'],
             'tactician_dual_training': ['tactician_pre_ml_orchestration'],
-            'tactician_model_training': ['tactician_dual_training'],
-            'tactician_ensemble_training': ['tactician_model_training'],
             'regime_specific_training': ['tactician_ensemble_training'],
             'model_validation': ['regime_specific_training'],
             'model_persistence': ['model_validation'],
@@ -1036,8 +1033,6 @@ class AresLauncher:
             'analyst_ensemble_training': ['analyst_ensemble.pkl'],
             'tactician_pre_ml_orchestration': ['tactician_pre_ml_results.pkl', 'long_training_data.parquet', 'short_training_data.parquet'],
             'tactician_dual_training': ['tactician_long_model.pkl', 'tactician_short_model.pkl', 'tactician_long_ensemble.pkl', 'tactician_short_ensemble.pkl'],
-            'tactician_model_training': ['tactician_model.pkl'],
-            'tactician_ensemble_training': ['tactician_ensemble.pkl'],
             'regime_specific_training': ['regime_models.pkl'],
             'model_validation': ['validation_results.json'],
             'model_persistence': ['persisted_models.pkl'],
@@ -1192,7 +1187,7 @@ Examples:
     
     parser.add_argument(
         '--sub-pipeline', '--sub_pipeline',
-        help='Specific sub-pipeline to execute (for sub_pipeline mode). Available: data_download, sr_detection, hmm_regime_discovery, hmm_models_training, hmm_ensemble_training, hmm_training, analyst_model_training, analyst_ensemble_training, tactician_pre_ml_orchestration, tactician_dual_training, tactician_model_training, tactician_ensemble_training, basic_backtesting_pre, basic_backtesting_post, walk_forward_validation, etc.'
+        help='Specific sub-pipeline to execute (for sub_pipeline mode). Available: data_download, sr_detection, hmm_regime_discovery, hmm_models_training, hmm_ensemble_training, hmm_training, analyst_model_training, analyst_ensemble_training, tactician_pre_ml_orchestration, tactician_dual_training, basic_backtesting_pre, basic_backtesting_post, walk_forward_validation, etc.'
     )
     
     parser.add_argument(

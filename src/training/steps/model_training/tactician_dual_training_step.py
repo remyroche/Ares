@@ -1,9 +1,21 @@
 """
 Tactician Dual Training Step - Enhanced for Long/Short Differentiation
 
-This step handles training Tactician models twice:
-1. Once for Analyst's long signals
-2. Once for Analyst's short signals
+This step handles training multiple Tactician models for both long and short signals:
+
+LONG MODELS (4 base models + 1 ensemble):
+- XGBOOST model for long signals
+- LIGHTGBM model for long signals
+- DEEPSCALER_1M model for long signals
+- FINANCIAL_RESNET model for long signals
+- Ensemble model combining all long base models
+
+SHORT MODELS (4 base models + 1 ensemble):
+- XGBOOST model for short signals
+- LIGHTGBM model for short signals
+- DEEPSCALER_1M model for short signals
+- FINANCIAL_RESNET model for short signals
+- Ensemble model combining all short base models
 
 The training uses differentiated features and horizon labeling for each direction,
 ensuring optimal performance for both long and short trading scenarios.
@@ -324,7 +336,7 @@ class TacticianDualTrainingStep:
                 tprint_info("⏭️ Skipping short base model training - insufficient data or disabled")
 
             # Step 4: Train ensemble models for long signals
-            if self.config.train_ensemble_models and result.total_long_samples >= self.config.min_training_samples:
+            if self.config.train_ensemble_models and result.total_long_samples >= self.config.min_training_samples and result.long_base_models:
                 tprint_info("🔄 Step 4: Training ensemble models for long signals...")
                 long_ensemble_result = await self._train_ensemble_models(
                     orchestration_result.long_training_data,
@@ -337,10 +349,10 @@ class TacticianDualTrainingStep:
                 result.long_ensemble_training_completed = True
                 tprint_success("✅ Long ensemble model training completed")
             else:
-                tprint_info("⏭️ Skipping long ensemble model training - insufficient data or disabled")
+                tprint_info("⏭️ Skipping long ensemble model training - insufficient data, disabled, or no base models")
 
             # Step 5: Train ensemble models for short signals
-            if self.config.train_ensemble_models and result.total_short_samples >= self.config.min_training_samples:
+            if self.config.train_ensemble_models and result.total_short_samples >= self.config.min_training_samples and result.short_base_models:
                 tprint_info("🔄 Step 5: Training ensemble models for short signals...")
                 short_ensemble_result = await self._train_ensemble_models(
                     orchestration_result.short_training_data,
@@ -353,7 +365,7 @@ class TacticianDualTrainingStep:
                 result.short_ensemble_training_completed = True
                 tprint_success("✅ Short ensemble model training completed")
             else:
-                tprint_info("⏭️ Skipping short ensemble model training - insufficient data or disabled")
+                tprint_info("⏭️ Skipping short ensemble model training - insufficient data, disabled, or no base models")
 
             # Step 6: Validation and finalization
             tprint_info("✅ Step 6: Validation and finalization...")
@@ -369,8 +381,8 @@ class TacticianDualTrainingStep:
 
             tprint_performance("Tactician dual training", result.execution_time)
             tprint_success("🎉 Tactician dual training completed successfully!")
-            tprint_info(f"📈 Long models: {len(result.long_base_models) if result.long_base_models else 0} base, {len(result.long_ensemble_models) if result.long_ensemble_models else 0} ensemble")
-            tprint_info(f"📉 Short models: {len(result.short_base_models) if result.short_base_models else 0} base, {len(result.short_ensemble_models) if result.short_ensemble_models else 0} ensemble")
+            tprint_info(f"📈 Long models: {len(result.long_base_models) if result.long_base_models else 0} base (XGBOOST, LIGHTGBM, DEEPSCALER_1M, FINANCIAL_RESNET), {len(result.long_ensemble_models) if result.long_ensemble_models else 0} ensemble")
+            tprint_info(f"📉 Short models: {len(result.short_base_models) if result.short_base_models else 0} base (XGBOOST, LIGHTGBM, DEEPSCALER_1M, FINANCIAL_RESNET), {len(result.short_ensemble_models) if result.short_ensemble_models else 0} ensemble")
             tprint_info(f"⏱️ Total time: {result.execution_time:.2f}s")
 
             return result
@@ -417,7 +429,7 @@ class TacticianDualTrainingStep:
         selected_features: List[str],
         signal_type: str
     ) -> Dict[str, Any]:
-        """Train base models for a specific signal type."""
+        """Train multiple base models for a specific signal type."""
         try:
             tprint_info(f"🔧 Training base models for {signal_type} signals...")
 
@@ -433,39 +445,65 @@ class TacticianDualTrainingStep:
 
             sample_weight = training_data.get('sample_weight', np.ones(len(training_data))).values
 
-            # Train base models using existing trainer
-            if self.base_trainer:
-                # Create training configuration for this signal type
-                training_config = {
-                    'signal_type': signal_type,
-                    'training_data': training_data,
-                    'feature_columns': selected_features,
-                    'target_columns': [col for col in training_data.columns if col.startswith('target_')],
-                    'sample_weight': sample_weight,
-                    'save_models': self.config.save_models,
-                    'output_directory': f"{self.config.output_directory}/{signal_type}_base_models"
-                }
+            all_models = {}
+            all_metrics = {}
 
-                # Call the existing base trainer
-                training_result = await self.base_trainer.train_tactician_models(
-                    **training_config
-                )
+            # Define multiple base model types to train
+            base_model_types = [
+                "XGBOOST",
+                "LIGHTGBM",
+                "DEEPSCALER_1M",
+                "FINANCIAL_RESNET"
+            ]
 
-                return {
-                    'models': training_result.get('models', {}),
-                    'metrics': training_result.get('metrics', {}),
-                    'training_time': training_result.get('execution_time', 0.0),
-                    'features_used': selected_features,
-                    'samples_used': len(training_data)
-                }
-            else:
-                tprint_error("❌ Base trainer not available")
-                return {
-                    'models': {},
-                    'metrics': {},
-                    'training_time': 0.0,
-                    'error': 'Base trainer not available'
-                }
+            # Train each base model type
+            for model_type in base_model_types:
+                try:
+                    tprint_info(f"   🔧 Training {model_type} model for {signal_type} signals...")
+
+                    # Create training configuration for this specific model type
+                    training_config = {
+                        'signal_type': signal_type,
+                        'model_type': model_type,
+                        'training_data': training_data,
+                        'feature_columns': selected_features,
+                        'target_columns': [col for col in training_data.columns if col.startswith('target_')],
+                        'sample_weight': sample_weight,
+                        'save_models': self.config.save_models,
+                        'output_directory': f"{self.config.output_directory}/{signal_type}_base_models/{model_type.lower()}"
+                    }
+
+                    # Call the existing base trainer with specific model type
+                    training_result = await self.base_trainer.train_tactician_models(
+                        **training_config
+                    )
+
+                    # Store results with model type prefix
+                    if training_result.get('models'):
+                        for model_name, model in training_result['models'].items():
+                            all_models[f"{signal_type}_{model_type.lower()}_{model_name}"] = model
+
+                    if training_result.get('metrics'):
+                        all_metrics[f"{signal_type}_{model_type.lower()}"] = training_result['metrics']
+
+                    tprint_success(f"   ✅ {model_type} model trained for {signal_type} signals")
+
+                except Exception as e:
+                    tprint_warning(f"   ⚠️ Failed to train {model_type} model for {signal_type}: {e}")
+                    continue
+
+            if not all_models:
+                raise ValueError(f"Failed to train any base models for {signal_type}")
+
+            return {
+                'models': all_models,
+                'metrics': all_metrics,
+                'training_time': 0.0,  # TODO: Track total time
+                'features_used': selected_features,
+                'samples_used': len(training_data),
+                'model_types_trained': base_model_types,
+                'models_per_type': len(base_model_types)
+            }
 
         except Exception as e:
             tprint_error(f"❌ Base model training for {signal_type} failed: {e}")

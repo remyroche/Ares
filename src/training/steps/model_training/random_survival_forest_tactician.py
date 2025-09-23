@@ -96,6 +96,18 @@ class RandomSurvivalForestTactician:
     
     The model is fully integrated with the ML pipeline including HPO, validation, and
     multi-horizon framework support.
+    
+    Other ML models specifically designed for optimal entry timing:
+    1. Point Process Models (Hawkes Process, Cox Process) - Model self-exciting events
+    2. Survival Analysis Models (Cox Regression, AFT) - Model time-to-event
+    3. Reinforcement Learning (DQN, Actor-Critic) - Learn optimal timing through rewards
+    4. Sequence Models (LSTM, Transformer) - Capture temporal patterns in timing
+    5. Multi-Armed Bandits - Explore vs exploit for timing decisions
+    6. Bayesian Optimization - Optimize entry timing parameters
+    7. Gaussian Process Regression - Model timing uncertainty
+    8. Kalman Filters - Track optimal entry states
+    9. Hidden Markov Models - Model regime-dependent timing
+    10. Neural ODEs - Model continuous-time dynamics for timing
     """
     
     def __init__(self, config: Optional[SurvivalAnalysisConfig] = None):
@@ -354,38 +366,72 @@ class RandomSurvivalForestTactician:
         return model
     
     def _train_horizon_model_with_hpo(self, X: np.ndarray, y: np.ndarray, horizon: float, hpo_trials: int, cv_folds: int) -> RandomSurvivalForest:
-        """Train Random Survival Forest for specific horizon with HPO."""
+        """Train Random Survival Forest for specific horizon using existing HPO tools."""
         try:
-            import optuna
-            from sklearn.model_selection import TimeSeriesSplit
+            from src.utils.ml_common.validation.hpo_overfitting_prevention import (
+                HPOWithOverfittingPrevention, 
+                HPOOverfittingPreventionConfig
+            )
+            from src.utils.ml_common.validation.universal_temporal_validation import (
+                UniversalTimeSeriesSplit
+            )
             from sksurv.metrics import concordance_index_censored
             
-            def objective(trial):
-                # Sample hyperparameters
-                n_estimators = trial.suggest_int('n_estimators', 50, 500)
-                max_depth = trial.suggest_int('max_depth', 3, 15)
-                min_samples_split = trial.suggest_int('min_samples_split', 2, 10)
-                min_samples_leaf = trial.suggest_int('min_samples_leaf', 1, 5)
-                max_features = trial.suggest_categorical('max_features', ['sqrt', 'log2', None])
-                bootstrap = trial.suggest_categorical('bootstrap', [True, False])
-                max_samples = trial.suggest_float('max_samples', 0.5, 1.0)
+            # Configure HPO with existing tools
+            hpo_config = HPOOverfittingPreventionConfig(
+                n_trials=hpo_trials,
+                timeout_minutes=30,  # 30 minutes per horizon
+                enable_pruning=True,
+                pruner_type="median",
+                sampler_type="tpe",  # Bayesian TPE
+                enable_nested_cv=True,
+                outer_cv_folds=cv_folds,
+                inner_cv_folds=3,
+                regularization_methods=["l2", "dropout"],
+                overfitting_detection=True,
+                temporal_validation=True
+            )
+            
+            # Create HPO optimizer
+            hpo_optimizer = HPOWithOverfittingPrevention(hpo_config)
+            
+            # Define parameter space for Random Survival Forest
+            param_space = {
+                'n_estimators': {'type': 'int', 'low': 50, 'high': 500},
+                'max_depth': {'type': 'int', 'low': 3, 'high': 15},
+                'min_samples_split': {'type': 'int', 'low': 2, 'high': 10},
+                'min_samples_leaf': {'type': 'int', 'low': 1, 'high': 5},
+                'max_features': {'type': 'categorical', 'choices': ['sqrt', 'log2', None]},
+                'bootstrap': {'type': 'categorical', 'choices': [True, False]},
+                'max_samples': {'type': 'float', 'low': 0.5, 'high': 1.0}
+            }
+            
+            # Custom objective function for survival analysis
+            def survival_objective(trial, X, y):
+                # Sample parameters
+                params = {
+                    'n_estimators': trial.suggest_int('n_estimators', 50, 500),
+                    'max_depth': trial.suggest_int('max_depth', 3, 15),
+                    'min_samples_split': trial.suggest_int('min_samples_split', 2, 10),
+                    'min_samples_leaf': trial.suggest_int('min_samples_leaf', 1, 5),
+                    'max_features': trial.suggest_categorical('max_features', ['sqrt', 'log2', None]),
+                    'bootstrap': trial.suggest_categorical('bootstrap', [True, False]),
+                    'max_samples': trial.suggest_float('max_samples', 0.5, 1.0),
+                    'random_state': 42
+                }
                 
-                # Create model with sampled parameters
-                model = RandomSurvivalForest(
-                    n_estimators=n_estimators,
-                    max_depth=max_depth,
-                    min_samples_split=min_samples_split,
-                    min_samples_leaf=min_samples_leaf,
-                    max_features=max_features,
-                    bootstrap=bootstrap,
-                    max_samples=max_samples,
-                    random_state=42
+                # Create model
+                model = RandomSurvivalForest(**params)
+                
+                # Use temporal cross-validation
+                tscv = UniversalTimeSeriesSplit(
+                    n_splits=cv_folds,
+                    test_size=0.2,
+                    gap_size=1,
+                    min_train_size=0.3
                 )
                 
-                # Time series cross-validation
-                tscv = TimeSeriesSplit(n_splits=cv_folds)
                 scores = []
-                
                 for train_idx, val_idx in tscv.split(X):
                     X_train, X_val = X[train_idx], X[val_idx]
                     y_train, y_val = y[train_idx], y[val_idx]
@@ -393,7 +439,7 @@ class RandomSurvivalForestTactician:
                     # Train model
                     model.fit(X_train, y_train)
                     
-                    # Evaluate
+                    # Evaluate with concordance index
                     predictions = model.predict(X_val)
                     c_index = concordance_index_censored(
                         y_val['event'], y_val['time'], predictions
@@ -402,12 +448,19 @@ class RandomSurvivalForestTactician:
                 
                 return np.mean(scores)
             
-            # Run HPO
-            study = optuna.create_study(direction='maximize')
-            study.optimize(objective, n_trials=hpo_trials)
+            # Run HPO optimization
+            optimization_result = hpo_optimizer.optimize_with_overfitting_prevention(
+                model_class=RandomSurvivalForest,
+                X=X,
+                y=y,
+                is_classification=False,  # Survival analysis
+                model_type="random_survival_forest",
+                custom_objective=survival_objective,
+                param_space=param_space
+            )
             
             # Get best parameters
-            best_params = study.best_params
+            best_params = optimization_result.best_params
             
             # Train final model with best parameters
             final_model = RandomSurvivalForest(
@@ -423,11 +476,14 @@ class RandomSurvivalForestTactician:
             
             final_model.fit(X, y)
             
-            tprint_success(f"✅ HPO completed for {horizon}m horizon. Best score: {study.best_value:.4f}")
+            tprint_success(f"✅ HPO completed for {horizon}m horizon using existing tools")
+            tprint_info(f"📊 Best score: {optimization_result.best_score:.4f}")
+            tprint_info(f"📊 Overfitting risk: {optimization_result.final_overfitting_risk}")
+            
             return final_model
             
-        except ImportError:
-            tprint_warning("⚠️ Optuna not available, using default parameters")
+        except ImportError as e:
+            tprint_warning(f"⚠️ HPO tools not available: {e}, using default parameters")
             return self._train_horizon_model(X, y, horizon)
         except Exception as e:
             tprint_warning(f"⚠️ HPO failed: {e}, using default parameters")

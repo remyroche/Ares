@@ -1,16 +1,14 @@
 """
-Neural Architecture Search (NAS) Core Module
+Essential Neural Architecture Search (NAS) Module
 
-This module provides true Neural Architecture Search capabilities for regime detection,
-including evolutionary algorithms, reinforcement learning-based search, and architecture
-generation for financial time series analysis.
+This module provides essential Neural Architecture Search capabilities,
+focusing on core NAS components for dynamic architecture discovery.
 
 Key Features:
 - Evolutionary architecture search with genetic algorithms
-- Reinforcement learning-based architecture optimization
-- Multi-objective optimization for regime detection
-- Hardware-optimized architecture evaluation
-- Integration with existing matrix operations and hardware optimization
+- Essential search space definition
+- Multi-objective optimization
+- Architecture evaluation and validation
 """
 
 from .evolutionary_search import (
@@ -18,22 +16,8 @@ from .evolutionary_search import (
     ArchitecturePopulation,
     GeneticAlgorithm,
     ArchitectureIndividual,
-    FitnessEvaluator
-)
-
-from .reinforcement_search import (
-    ReinforcementLearningSearch,
-    ArchitectureController,
-    PolicyNetwork,
-    RewardCalculator,
-    ExperienceReplay
-)
-
-from .architecture_generator import (
-    ArchitectureGenerator,
-    LayerGenerator,
-    ConnectionGenerator,
-    ArchitectureValidator
+    FitnessEvaluator,
+    RegimeDetectionFitnessEvaluator
 )
 
 from .search_space import (
@@ -41,34 +25,28 @@ from .search_space import (
     LayerType,
     ActivationFunction,
     ConnectionType,
-    ArchitectureConstraints
+    ArchitectureConstraints,
+    LayerConfig,
+    ConnectionConfig,
+    get_default_search_space
 )
 
 __all__ = [
-    # Evolutionary search
+    # Essential evolutionary search
     'EvolutionaryArchitectureSearch',
     'ArchitecturePopulation',
     'GeneticAlgorithm',
     'ArchitectureIndividual',
     'FitnessEvaluator',
+    'RegimeDetectionFitnessEvaluator',
     
-    # Reinforcement learning search
-    'ReinforcementLearningSearch',
-    'ArchitectureController',
-    'PolicyNetwork',
-    'RewardCalculator',
-    'ExperienceReplay',
-    
-    # Architecture generation
-    'ArchitectureGenerator',
-    'LayerGenerator',
-    'ConnectionGenerator',
-    'ArchitectureValidator',
-    
-    # Search space
+    # Essential search space
     'SearchSpace',
     'LayerType',
     'ActivationFunction',
     'ConnectionType',
-    'ArchitectureConstraints'
+    'ArchitectureConstraints',
+    'LayerConfig',
+    'ConnectionConfig',
+    'get_default_search_space'
 ]

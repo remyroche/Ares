@@ -14,13 +14,7 @@ from abc import ABC, abstractmethod
 import copy
 from collections import defaultdict
 
-# Import matrix operations for optimized computations
-from src.utils.matrix_operations import UnifiedMatrixOperations
-
-# Import hardware optimization
-from src.utils.hardware.unified_hardware_manager import (
-    UnifiedHardwareManager, HardwareConfig, WorkloadType, OptimizationLevel
-)
+# Essential imports only
 
 logger = logging.getLogger(__name__)
 
@@ -260,15 +254,11 @@ class ParetoFrontier:
 
 
 class MultiObjectiveOptimizer(ABC):
-    """Abstract base class for multi-objective optimization."""
+    """Essential multi-objective optimizer."""
     
-    def __init__(self, objectives: List[ObjectiveFunction],
-                 matrix_ops: Optional[UnifiedMatrixOperations] = None,
-                 hardware_manager: Optional[UnifiedHardwareManager] = None):
+    def __init__(self, objectives: List[ObjectiveFunction]):
         """Initialize multi-objective optimizer."""
         self.objectives = objectives
-        self.matrix_ops = matrix_ops
-        self.hardware_manager = hardware_manager
         self.pareto_frontier = ParetoFrontier(objectives)
         self.logger = logging.getLogger(self.__class__.__name__)
     
@@ -305,13 +295,11 @@ class MultiObjectiveOptimizer(ABC):
 
 
 class WeightedSumOptimizer(MultiObjectiveOptimizer):
-    """Weighted sum multi-objective optimizer."""
+    """Essential weighted sum optimizer."""
     
-    def __init__(self, objectives: List[ObjectiveFunction],
-                 matrix_ops: Optional[UnifiedMatrixOperations] = None,
-                 hardware_manager: Optional[UnifiedHardwareManager] = None):
+    def __init__(self, objectives: List[ObjectiveFunction]):
         """Initialize weighted sum optimizer."""
-        super().__init__(objectives, matrix_ops, hardware_manager)
+        super().__init__(objectives)
         
         # Normalize weights
         total_weight = sum(obj.weight for obj in self.objectives)
@@ -371,14 +359,11 @@ class WeightedSumOptimizer(MultiObjectiveOptimizer):
 
 
 class NSGAIIOptimizer(MultiObjectiveOptimizer):
-    """NSGA-II multi-objective optimizer."""
+    """Essential NSGA-II optimizer."""
     
-    def __init__(self, objectives: List[ObjectiveFunction],
-                 population_size: int = 100,
-                 matrix_ops: Optional[UnifiedMatrixOperations] = None,
-                 hardware_manager: Optional[UnifiedHardwareManager] = None):
+    def __init__(self, objectives: List[ObjectiveFunction], population_size: int = 100):
         """Initialize NSGA-II optimizer."""
-        super().__init__(objectives, matrix_ops, hardware_manager)
+        super().__init__(objectives)
         self.population_size = population_size
         self.generation = 0
     
@@ -440,202 +425,27 @@ class NSGAIIOptimizer(MultiObjectiveOptimizer):
             return [sol.architecture for sol in solutions[:target_size]]
 
 
-class RegimeDetectionMultiObjective:
-    """Multi-objective optimization specifically for regime detection."""
-    
-    def __init__(self, matrix_ops: Optional[UnifiedMatrixOperations] = None,
-                 hardware_manager: Optional[UnifiedHardwareManager] = None):
-        """Initialize regime detection multi-objective optimizer."""
-        self.matrix_ops = matrix_ops
-        self.hardware_manager = hardware_manager
-        self.logger = logging.getLogger(self.__class__.__name__)
-        
-        # Define regime detection objectives
-        self.objectives = self._create_regime_objectives()
-    
-    def _create_regime_objectives(self) -> List[ObjectiveFunction]:
-        """Create objective functions for regime detection."""
-        objectives = []
-        
-        # Accuracy objective
-        objectives.append(ObjectiveFunction(
+# Essential multi-objective optimization for NAS
+def create_nas_objectives() -> List[ObjectiveFunction]:
+    """Create essential objectives for NAS."""
+    objectives = [
+        ObjectiveFunction(
             name='accuracy',
+            weight=0.5,
+            direction='maximize',
+            bounds=(0.0, 1.0)
+        ),
+        ObjectiveFunction(
+            name='efficiency',
             weight=0.3,
             direction='maximize',
-            evaluator=self._evaluate_accuracy,
             bounds=(0.0, 1.0)
-        ))
-        
-        # Economic significance objective
-        objectives.append(ObjectiveFunction(
-            name='economic_significance',
-            weight=0.25,
-            direction='maximize',
-            evaluator=self._evaluate_economic_significance,
-            bounds=(0.0, 1.0)
-        ))
-        
-        # Trading viability objective
-        objectives.append(ObjectiveFunction(
-            name='trading_viability',
+        ),
+        ObjectiveFunction(
+            name='complexity',
             weight=0.2,
-            direction='maximize',
-            evaluator=self._evaluate_trading_viability,
+            direction='minimize',
             bounds=(0.0, 1.0)
-        ))
-        
-        # Regime stability objective
-        objectives.append(ObjectiveFunction(
-            name='regime_stability',
-            weight=0.15,
-            direction='maximize',
-            evaluator=self._evaluate_regime_stability,
-            bounds=(0.0, 1.0)
-        ))
-        
-        # Efficiency objective (minimize complexity)
-        objectives.append(ObjectiveFunction(
-            name='efficiency',
-            weight=0.1,
-            direction='maximize',
-            evaluator=self._evaluate_efficiency,
-            bounds=(0.0, 1.0)
-        ))
-        
-        return objectives
-    
-    def _evaluate_accuracy(self, architecture: Any, data: np.ndarray, labels: np.ndarray) -> float:
-        """Evaluate regime detection accuracy."""
-        try:
-            # This would typically train and evaluate the architecture
-            # For now, return a simplified accuracy estimate
-            return np.random.uniform(0.6, 0.95)
-        except Exception as e:
-            self.logger.warning(f"Accuracy evaluation failed: {e}")
-            return 0.5
-    
-    def _evaluate_economic_significance(self, architecture: Any, data: np.ndarray, labels: np.ndarray) -> float:
-        """Evaluate economic significance of detected regimes."""
-        try:
-            # This would analyze the economic relevance of detected regimes
-            # For now, return a simplified estimate
-            return np.random.uniform(0.5, 0.9)
-        except Exception as e:
-            self.logger.warning(f"Economic significance evaluation failed: {e}")
-            return 0.5
-    
-    def _evaluate_trading_viability(self, architecture: Any, data: np.ndarray, labels: np.ndarray) -> float:
-        """Evaluate trading viability of detected regimes."""
-        try:
-            # This would assess how well regimes support trading decisions
-            # For now, return a simplified estimate
-            return np.random.uniform(0.4, 0.8)
-        except Exception as e:
-            self.logger.warning(f"Trading viability evaluation failed: {e}")
-            return 0.5
-    
-    def _evaluate_regime_stability(self, architecture: Any, data: np.ndarray, labels: np.ndarray) -> float:
-        """Evaluate stability of detected regimes."""
-        try:
-            # This would measure regime persistence and consistency
-            # For now, return a simplified estimate
-            return np.random.uniform(0.6, 0.9)
-        except Exception as e:
-            self.logger.warning(f"Regime stability evaluation failed: {e}")
-            return 0.5
-    
-    def _evaluate_efficiency(self, architecture: Any, data: np.ndarray, labels: np.ndarray) -> float:
-        """Evaluate architecture efficiency."""
-        try:
-            # This would measure computational efficiency
-            # For now, return a simplified estimate based on architecture complexity
-            if hasattr(architecture, 'parameters_count'):
-                param_count = architecture.parameters_count
-                if param_count < 10000:
-                    return 1.0
-                elif param_count < 100000:
-                    return 0.8
-                elif param_count < 500000:
-                    return 0.6
-                else:
-                    return 0.4
-            else:
-                return 0.7  # Default efficiency
-        except Exception as e:
-            self.logger.warning(f"Efficiency evaluation failed: {e}")
-            return 0.5
-    
-    def optimize_weighted_sum(self, architectures: List[Any], data: np.ndarray, 
-                             labels: np.ndarray, max_iterations: int = 100) -> ParetoFrontier:
-        """Perform weighted sum optimization for regime detection."""
-        try:
-            optimizer = WeightedSumOptimizer(
-                objectives=self.objectives,
-                matrix_ops=self.matrix_ops,
-                hardware_manager=self.hardware_manager
-            )
-            
-            return optimizer.optimize(architectures, data, labels, max_iterations)
-            
-        except Exception as e:
-            self.logger.error(f"Weighted sum optimization failed: {e}")
-            return ParetoFrontier(self.objectives)
-    
-    def optimize_nsga2(self, architectures: List[Any], data: np.ndarray, 
-                       labels: np.ndarray, max_iterations: int = 100) -> ParetoFrontier:
-        """Perform NSGA-II optimization for regime detection."""
-        try:
-            optimizer = NSGAIIOptimizer(
-                objectives=self.objectives,
-                population_size=min(50, len(architectures)),
-                matrix_ops=self.matrix_ops,
-                hardware_manager=self.hardware_manager
-            )
-            
-            return optimizer.optimize(architectures, data, labels, max_iterations)
-            
-        except Exception as e:
-            self.logger.error(f"NSGA-II optimization failed: {e}")
-            return ParetoFrontier(self.objectives)
-    
-    def get_optimization_summary(self, pareto_frontier: ParetoFrontier) -> Dict[str, Any]:
-        """Get summary of optimization results."""
-        try:
-            summary = pareto_frontier.get_pareto_summary()
-            
-            # Add regime-specific analysis
-            best_solutions = pareto_frontier.get_best_solutions(5)
-            
-            summary['best_solutions'] = []
-            for solution in best_solutions:
-                solution_info = {
-                    'objectives': solution.objectives,
-                    'rank': solution.rank,
-                    'crowding_distance': solution.crowding_distance
-                }
-                summary['best_solutions'].append(solution_info)
-            
-            # Compute objective correlations
-            objective_names = [obj.name for obj in self.objectives]
-            objective_matrix = []
-            for solution in pareto_frontier.solutions:
-                row = [solution.objectives.get(name, 0.0) for name in objective_names]
-                objective_matrix.append(row)
-            
-            if objective_matrix:
-                objective_matrix = np.array(objective_matrix)
-                correlations = np.corrcoef(objective_matrix.T)
-                
-                summary['objective_correlations'] = {
-                    objective_names[i]: {
-                        objective_names[j]: correlations[i, j]
-                        for j in range(len(objective_names))
-                    }
-                    for i in range(len(objective_names))
-                }
-            
-            return summary
-            
-        except Exception as e:
-            self.logger.warning(f"Optimization summary computation failed: {e}")
-            return pareto_frontier.get_pareto_summary()
+        )
+    ]
+    return objectives

@@ -15,13 +15,7 @@ import random
 from abc import ABC, abstractmethod
 import copy
 
-# Import matrix operations for optimized computations
-from src.utils.matrix_operations import UnifiedMatrixOperations
-
-# Import hardware optimization
-from src.utils.hardware.unified_hardware_manager import (
-    UnifiedHardwareManager, HardwareConfig, WorkloadType, OptimizationLevel
-)
+# Essential imports only
 
 from .search_space import (
     SearchSpace, LayerConfig, ConnectionConfig, ArchitectureConstraints,
@@ -201,27 +195,17 @@ class FitnessEvaluator(ABC):
 
 
 class RegimeDetectionFitnessEvaluator(FitnessEvaluator):
-    """Fitness evaluator for regime detection tasks."""
+    """Essential fitness evaluator for NAS."""
     
-    def __init__(self, matrix_ops: Optional[UnifiedMatrixOperations] = None,
-                 hardware_manager: Optional[UnifiedHardwareManager] = None):
+    def __init__(self):
         """Initialize fitness evaluator."""
-        self.matrix_ops = matrix_ops
-        self.hardware_manager = hardware_manager
         self.logger = logging.getLogger(self.__class__.__name__)
     
     def evaluate(self, individual: ArchitectureIndividual, 
                  data: np.ndarray, labels: np.ndarray) -> float:
-        """Evaluate fitness of an architecture for regime detection."""
+        """Evaluate fitness of an architecture for NAS."""
         try:
             start_time = time.time()
-            
-            # Start hardware optimization if available
-            if self.hardware_manager:
-                self.hardware_manager.start_optimization(
-                    workload_type=WorkloadType.ML_TRAINING,
-                    optimization_level=OptimizationLevel.BALANCED
-                )
             
             # Evaluate architecture performance
             fitness_score = self._evaluate_architecture_performance(individual, data, labels)
@@ -229,11 +213,8 @@ class RegimeDetectionFitnessEvaluator(FitnessEvaluator):
             # Add complexity penalty
             complexity_penalty = self._calculate_complexity_penalty(individual)
             
-            # Add efficiency bonus
-            efficiency_bonus = self._calculate_efficiency_bonus(individual)
-            
             # Combined fitness score
-            final_score = fitness_score - complexity_penalty + efficiency_bonus
+            final_score = fitness_score - complexity_penalty
             
             # Record evaluation time
             individual.evaluation_time = time.time() - start_time
@@ -243,37 +224,24 @@ class RegimeDetectionFitnessEvaluator(FitnessEvaluator):
         except Exception as e:
             self.logger.warning(f"Fitness evaluation failed: {e}")
             return 0.0
-        
-        finally:
-            # Stop hardware optimization
-            if self.hardware_manager:
-                self.hardware_manager.stop_optimization()
     
     def _evaluate_architecture_performance(self, individual: ArchitectureIndividual,
                                          data: np.ndarray, labels: np.ndarray) -> float:
-        """Evaluate the actual performance of the architecture."""
+        """Evaluate architecture performance based on structure."""
         try:
-            # For now, use a simplified evaluation based on architecture properties
-            # In a real implementation, this would train and evaluate the neural network
-            
             score = 0.0
             
-            # Reward temporal layers for time series
+            # Reward temporal layers
             temporal_layers = sum(1 for layer in individual.layers 
                                 if layer.layer_type in [LayerType.LSTM, LayerType.GRU, LayerType.CONV1D])
             score += temporal_layers * 0.1
-            
-            # Reward attention mechanisms
-            attention_layers = sum(1 for layer in individual.layers 
-                                 if layer.layer_type in [LayerType.ATTENTION, LayerType.MULTI_HEAD_ATTENTION])
-            score += attention_layers * 0.15
             
             # Reward appropriate depth
             layer_count = len(individual.layers)
             if 3 <= layer_count <= 6:
                 score += 0.2
             elif layer_count > 6:
-                score += 0.1  # Slightly less reward for very deep networks
+                score += 0.1
             
             # Reward skip connections
             skip_connections = sum(1 for conn in individual.connections 
@@ -283,11 +251,6 @@ class RegimeDetectionFitnessEvaluator(FitnessEvaluator):
             # Reward batch normalization
             batch_norm_layers = sum(1 for layer in individual.layers if layer.batch_norm)
             score += batch_norm_layers * 0.05
-            
-            # Reward appropriate dropout
-            dropout_layers = sum(1 for layer in individual.layers if layer.dropout_rate > 0)
-            if dropout_layers > 0:
-                score += 0.1
             
             return min(1.0, score)  # Cap at 1.0
             
@@ -321,42 +284,14 @@ class RegimeDetectionFitnessEvaluator(FitnessEvaluator):
             self.logger.warning(f"Complexity penalty calculation failed: {e}")
             return 0.0
     
-    def _calculate_efficiency_bonus(self, individual: ArchitectureIndividual) -> float:
-        """Calculate bonus for efficient architectures."""
-        try:
-            bonus = 0.0
-            
-            # Reward compact architectures
-            param_count = individual.parameters_count
-            if param_count < 100000:  # Less than 100K parameters
-                bonus += 0.1
-            
-            # Reward balanced layer distribution
-            layer_types = [layer.layer_type for layer in individual.layers]
-            type_diversity = len(set(layer_types)) / len(layer_types) if layer_types else 0
-            bonus += type_diversity * 0.05
-            
-            # Reward efficient activation functions
-            efficient_activations = [ActivationFunction.RELU, ActivationFunction.SWISH, ActivationFunction.GELU]
-            efficient_count = sum(1 for layer in individual.layers 
-                                if layer.activation in efficient_activations)
-            bonus += (efficient_count / len(individual.layers)) * 0.05
-            
-            return bonus
-            
-        except Exception as e:
-            self.logger.warning(f"Efficiency bonus calculation failed: {e}")
-            return 0.0
 
 
 class GeneticAlgorithm:
-    """Genetic algorithm for neural architecture search."""
+    """Essential genetic algorithm for neural architecture search."""
     
     def __init__(self, search_space: SearchSpace, fitness_evaluator: FitnessEvaluator,
                  population_size: int = 50, mutation_rate: float = 0.1,
-                 crossover_rate: float = 0.8, elite_size: int = 5,
-                 matrix_ops: Optional[UnifiedMatrixOperations] = None,
-                 hardware_manager: Optional[UnifiedHardwareManager] = None):
+                 crossover_rate: float = 0.8, elite_size: int = 5):
         """Initialize genetic algorithm."""
         self.search_space = search_space
         self.fitness_evaluator = fitness_evaluator
@@ -364,8 +299,6 @@ class GeneticAlgorithm:
         self.mutation_rate = mutation_rate
         self.crossover_rate = crossover_rate
         self.elite_size = elite_size
-        self.matrix_ops = matrix_ops
-        self.hardware_manager = hardware_manager
         self.logger = logging.getLogger(self.__class__.__name__)
         
         # Statistics
@@ -413,14 +346,13 @@ class GeneticAlgorithm:
                 connections.append(conn_config)
             
             # Add some random skip connections
-            if self.search_space.constraints.require_skip_connections:
-                n_skip = np.random.randint(1, min(4, n_layers))
-                for _ in range(n_skip):
-                    from_layer = np.random.randint(0, n_layers - 1)
-                    to_layer = np.random.randint(from_layer + 1, n_layers)
-                    if from_layer != to_layer - 1:  # Not sequential
-                        skip_conn = self.search_space.get_random_connection_config(from_layer, to_layer)
-                        connections.append(skip_conn)
+            n_skip = np.random.randint(0, min(2, n_layers))
+            for _ in range(n_skip):
+                from_layer = np.random.randint(0, n_layers - 1)
+                to_layer = np.random.randint(from_layer + 1, n_layers)
+                if from_layer != to_layer - 1:  # Not sequential
+                    skip_conn = self.search_space.get_random_connection_config(from_layer, to_layer)
+                    connections.append(skip_conn)
             
             return ArchitectureIndividual(
                 layers=layers,
@@ -695,27 +627,20 @@ class GeneticAlgorithm:
 
 
 class EvolutionaryArchitectureSearch:
-    """Main evolutionary architecture search class."""
+    """Essential evolutionary architecture search class."""
     
     def __init__(self, search_space: SearchSpace, 
-                 matrix_ops: Optional[UnifiedMatrixOperations] = None,
-                 hardware_manager: Optional[UnifiedHardwareManager] = None,
                  population_size: int = 50, generations: int = 100,
                  mutation_rate: float = 0.1, crossover_rate: float = 0.8):
         """Initialize evolutionary architecture search."""
         self.search_space = search_space
-        self.matrix_ops = matrix_ops
-        self.hardware_manager = hardware_manager
         self.population_size = population_size
         self.generations = generations
         self.mutation_rate = mutation_rate
         self.crossover_rate = crossover_rate
         
         # Initialize fitness evaluator
-        self.fitness_evaluator = RegimeDetectionFitnessEvaluator(
-            matrix_ops=matrix_ops,
-            hardware_manager=hardware_manager
-        )
+        self.fitness_evaluator = RegimeDetectionFitnessEvaluator()
         
         # Initialize genetic algorithm
         self.genetic_algorithm = GeneticAlgorithm(
@@ -723,9 +648,7 @@ class EvolutionaryArchitectureSearch:
             fitness_evaluator=self.fitness_evaluator,
             population_size=population_size,
             mutation_rate=mutation_rate,
-            crossover_rate=crossover_rate,
-            matrix_ops=matrix_ops,
-            hardware_manager=hardware_manager
+            crossover_rate=crossover_rate
         )
         
         self.logger = logging.getLogger(self.__class__.__name__)

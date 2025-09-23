@@ -1094,44 +1094,30 @@ class MultiHorizonProfitLabeler:
         """
         sample_labels = {}
         probability_scores = {}
-        
-        # Generate labels for each target/horizon combination - BOTH DIRECTIONS
+
+        # Generate labels for each target/horizon combination - COMBINED APPROACH (for Analyst)
         for target_name, horizon_name, target_pct, horizon_periods in self.target_horizon_combinations:
             window_end = min(index + horizon_periods + 1, len(close_prices))
-            
+
             # Extract window data as numpy arrays for vectorized operations
             window_highs = high_prices[index:window_end]
             window_lows = low_prices[index:window_end]
-            
-            # Calculate probability for LONG direction
-            long_result = self._calculate_profit_probability_vectorized(
-                window_highs, window_lows, current_price, target_pct, horizon_periods, direction='long'
+
+            # Calculate probability for COMBINED direction (for Analyst)
+            combined_result = self._calculate_profit_probability_vectorized(
+                window_highs, window_lows, current_price, target_pct, horizon_periods, direction='combined'
             )
-            
-            # Calculate probability for SHORT direction  
-            short_result = self._calculate_profit_probability_vectorized(
-                window_highs, window_lows, current_price, target_pct, horizon_periods, direction='short'
-            )
-            
-            # Store LONG results
-            long_base = f'{target_name}_{horizon_name}_long'
-            sample_labels[f'{long_base}_prob'] = long_result['probability']
-            sample_labels[f'{long_base}_time_to_hit'] = long_result['time_to_hit'] or -1
-            sample_labels[f'{long_base}_max_adverse'] = long_result['max_adverse_excursion']
-            sample_labels[f'{long_base}_net_profit'] = long_result['net_profit']
-            sample_labels[f'{long_base}_quality_score'] = long_result['quality_score']
-            
-            # Store SHORT results
-            short_base = f'{target_name}_{horizon_name}_short'
-            sample_labels[f'{short_base}_prob'] = short_result['probability']
-            sample_labels[f'{short_base}_time_to_hit'] = short_result['time_to_hit'] or -1
-            sample_labels[f'{short_base}_max_adverse'] = short_result['max_adverse_excursion']
-            sample_labels[f'{short_base}_net_profit'] = short_result['net_profit']
-            sample_labels[f'{short_base}_quality_score'] = short_result['quality_score']
-            
-            # Store for composite calculations (both directions)
-            probability_scores[f'{target_name}_{horizon_name}_long'] = long_result['probability']
-            probability_scores[f'{target_name}_{horizon_name}_short'] = short_result['probability']
+
+            # Store COMBINED results
+            combined_base = f'{target_name}_{horizon_name}'
+            sample_labels[f'{combined_base}_prob'] = combined_result['probability']
+            sample_labels[f'{combined_base}_time_to_hit'] = combined_result['time_to_hit'] or -1
+            sample_labels[f'{combined_base}_max_adverse'] = combined_result['max_adverse_excursion']
+            sample_labels[f'{combined_base}_net_profit'] = combined_result['net_profit']
+            sample_labels[f'{combined_base}_quality_score'] = combined_result['quality_score']
+
+            # Store for composite calculations (combined)
+            probability_scores[f'{target_name}_{horizon_name}'] = combined_result['probability']
         
         # Calculate composite scores
         composite_scores = self._calculate_composite_scores(probability_scores, sample_labels)
@@ -1153,31 +1139,61 @@ class MultiHorizonProfitLabeler:
                 'net_profit': 0.0,
                 'quality_score': 0.0
             }
-        
+
         # Calculate directional target prices and check hits using vectorized operations
         if direction.lower() == 'long':
             target_price = entry_price * (1 + profit_target)
             target_hit_mask = highs >= target_price
             target_hit = np.any(target_hit_mask)
-            
+
             if target_hit:
                 hit_index = np.where(target_hit_mask)[0][0]
                 # For longs, adverse move is price going down
                 max_adverse = (entry_price - np.min(lows[:hit_index+1])) / entry_price if hit_index > 0 else 0.0
             else:
                 max_adverse = (entry_price - np.min(lows)) / entry_price
-                
-        else:  # direction == 'short'
+
+        elif direction.lower() == 'short':
             target_price = entry_price * (1 - profit_target)  # Short target is below entry
             target_hit_mask = lows <= target_price
             target_hit = np.any(target_hit_mask)
-            
+
             if target_hit:
                 hit_index = np.where(target_hit_mask)[0][0]
                 # For shorts, adverse move is price going up
                 max_adverse = (np.max(highs[:hit_index+1]) - entry_price) / entry_price if hit_index > 0 else 0.0
             else:
                 max_adverse = (np.max(highs) - entry_price) / entry_price
+
+        else:  # direction == 'combined' (for Analyst - no directional differentiation)
+            # For combined approach, we consider either direction as a hit
+            long_target_price = entry_price * (1 + profit_target)
+            short_target_price = entry_price * (1 - profit_target)
+
+            long_target_hit_mask = highs >= long_target_price
+            short_target_hit_mask = lows <= short_target_price
+
+            long_target_hit = np.any(long_target_hit_mask)
+            short_target_hit = np.any(short_target_hit_mask)
+
+            # Hit if either direction hits
+            target_hit = long_target_hit or short_target_hit
+
+            if target_hit:
+                # Use the first hit (whichever comes first)
+                long_hit_index = np.where(long_target_hit_mask)[0][0] if long_target_hit else len(highs)
+                short_hit_index = np.where(short_target_hit_mask)[0][0] if short_target_hit else len(lows)
+                hit_index = min(long_hit_index, short_hit_index)
+
+                # Calculate combined adverse excursion (maximum of both directions)
+                long_adverse = (entry_price - np.min(lows[:hit_index+1])) / entry_price if hit_index > 0 else 0.0
+                short_adverse = (np.max(highs[:hit_index+1]) - entry_price) / entry_price if hit_index > 0 else 0.0
+                max_adverse = max(long_adverse, short_adverse)
+            else:
+                # No hit - use maximum adverse from both directions
+                long_adverse = (entry_price - np.min(lows)) / entry_price
+                short_adverse = (np.max(highs) - entry_price) / entry_price
+                max_adverse = max(long_adverse, short_adverse)
         
         time_to_hit = hit_index if target_hit else None
         
@@ -1209,34 +1225,24 @@ class MultiHorizonProfitLabeler:
     def _initialize_columns(self, labeled_data: pd.DataFrame):
         """Initialize all probability and metadata columns."""
         columns_to_add = []
-        
-        # Individual probability columns - BOTH DIRECTIONS
+
+        # Individual probability columns - COMBINED APPROACH (for Analyst)
         for target_name, horizon_name, _, _ in self.target_horizon_combinations:
-            # LONG columns
-            long_base = f'{target_name}_{horizon_name}_long'
+            # COMBINED columns (no directional differentiation for Analyst)
+            combined_base = f'{target_name}_{horizon_name}'
             columns_to_add.extend([
-                f'{long_base}_prob',
-                f'{long_base}_time_to_hit',
-                f'{long_base}_max_adverse',
-                f'{long_base}_net_profit',
-                f'{long_base}_quality_score'
-            ])
-            
-            # SHORT columns
-            short_base = f'{target_name}_{horizon_name}_short'
-            columns_to_add.extend([
-                f'{short_base}_prob',
-                f'{short_base}_time_to_hit',
-                f'{short_base}_max_adverse',
-                f'{short_base}_net_profit',
-                f'{short_base}_quality_score'
+                f'{combined_base}_prob',
+                f'{combined_base}_time_to_hit',
+                f'{combined_base}_max_adverse',
+                f'{combined_base}_net_profit',
+                f'{combined_base}_quality_score'
             ])
         
-        # Composite score columns (BI-DIRECTIONAL)
+        # Composite score columns (COMBINED APPROACH for Analyst)
         composite_columns = [
-            # Original composite scores (now long-biased for backward compatibility)
+            # Original composite scores (combined approach for Analyst)
             'immediate_opportunity',
-            'short_term_opportunity', 
+            'short_term_opportunity',
             'overall_opportunity',
             'leverage_adjusted_score',
             'best_target_prob',
@@ -1245,31 +1251,7 @@ class MultiHorizonProfitLabeler:
             'avg_max_adverse',
             'net_profitability_score',
             'reversal_capture_score',
-            'reassessment_frequency',
-            
-            # NEW: Directional opportunity scores
-            'long_immediate_opportunity',
-            'long_short_term_opportunity',
-            'long_overall_opportunity',
-            'short_immediate_opportunity', 
-            'short_short_term_opportunity',
-            'short_overall_opportunity',
-            
-            # NEW: Enhanced directional preference indicators
-            'directional_bias',           # 1.0 = long, -1.0 = short, 0.0 = neutral
-            'directional_confidence',     # How strong the directional bias is
-            'best_direction',            # Direction with highest opportunity (1.0/-1.0/0.0)
-            'opportunity_asymmetry',     # Difference between long and short opportunities
-            
-            # NEW: Directional consistency and strength
-            'long_directional_consistency',   # How consistent long signals are across horizons
-            'short_directional_consistency',  # How consistent short signals are across horizons
-            'long_directional_strength',      # Combined opportunity and consistency for longs
-            'short_directional_strength',     # Combined opportunity and consistency for shorts
-            
-            # NEW: Directional momentum indicators
-            'long_momentum',             # Long immediate vs short-term momentum
-            'short_momentum'             # Short immediate vs short-term momentum
+            'reassessment_frequency'
         ]
         columns_to_add.extend(composite_columns)
         
@@ -1531,74 +1513,46 @@ class MultiHorizonProfitLabeler:
         # Ensure result stays within reasonable bounds
         return max(0.15, min(1.0, adjusted_quality))
     
-    def _calculate_composite_scores(self, probability_scores: Dict[str, float], 
+    def _calculate_composite_scores(self, probability_scores: Dict[str, float],
                                   sample_labels: Dict[str, float]) -> Dict[str, float]:
-        """Calculate bi-directional composite opportunity scores."""
+        """Calculate composite opportunity scores for combined approach (Analyst)."""
         composite_scores = {}
-        
-        # Separate long and short probability scores
-        long_scores = {k: v for k, v in probability_scores.items() if '_long' in k}
-        short_scores = {k: v for k, v in probability_scores.items() if '_short' in k}
-        
-        # DEBUG: Log what we found
-        if len(probability_scores) > 0:
-            sample_keys = list(probability_scores.keys())[:3]
-            self.logger.debug(f"🔍 Sample probability_scores keys: {sample_keys}")
-            self.logger.debug(f"🔍 Found {len(long_scores)} long scores, {len(short_scores)} short scores")
-        
-        # LONG opportunity scores
+
+        # Use all probability scores (combined approach for Analyst)
+        self.logger.debug(f"🔍 Sample probability_scores keys: {list(probability_scores.keys())[:3]}")
+
+        # COMBINED opportunity scores (for Analyst)
         for horizon_name in self.config.time_horizons.keys():
-            long_horizon_probs = [prob for key, prob in long_scores.items() 
-                                if key.endswith(f'_{horizon_name}_long')]
-            if long_horizon_probs:
-                composite_scores[f'long_{horizon_name}_opportunity'] = np.mean(long_horizon_probs)
+            horizon_probs = [prob for key, prob in probability_scores.items()
+                            if key.endswith(f'_{horizon_name}')]
+            if horizon_probs:
+                composite_scores[f'{horizon_name}_opportunity'] = np.mean(horizon_probs)
+
+        if probability_scores:
+            combined_avg = np.mean(list(probability_scores.values()))
+            composite_scores['overall_opportunity'] = combined_avg
+            self.logger.info(f"✅ Created overall_opportunity (combined): {combined_avg:.4f}")
         
-        if long_scores:
-            long_avg = np.mean(list(long_scores.values()))
-            composite_scores['long_overall_opportunity'] = long_avg
-            self.logger.info(f"✅ Created long_overall_opportunity: {long_avg:.4f}")
-        
-        # SHORT opportunity scores  
-        for horizon_name in self.config.time_horizons.keys():
-            short_horizon_probs = [prob for key, prob in short_scores.items() 
-                                 if key.endswith(f'_{horizon_name}_short')]
-            if short_horizon_probs:
-                composite_scores[f'short_{horizon_name}_opportunity'] = np.mean(short_horizon_probs)
-        
-        if short_scores:
-            short_avg = np.mean(list(short_scores.values()))
-            composite_scores['short_overall_opportunity'] = short_avg
-            self.logger.info(f"✅ Created short_overall_opportunity: {short_avg:.4f}")
-        
-        # BACKWARD COMPATIBILITY: Original scores (long-biased)
-        for horizon_name in self.config.time_horizons.keys():
-            composite_scores[f'{horizon_name}_opportunity'] = composite_scores.get(f'long_{horizon_name}_opportunity', 0.0)
-        composite_scores['overall_opportunity'] = composite_scores.get('long_overall_opportunity', 0.0)
-        
-        # High-leverage adjusted score (bi-directional)
+        # High-leverage adjusted score (combined approach for Analyst)
         if self.config.leverage_aware:
             leverage_weights = {
                 'micro': 0.4, 'small': 0.3, 'medium': 0.2, 'good': 0.1
             }
-            
-            # Calculate for both directions
-            for direction, dir_scores in [('long', long_scores), ('short', short_scores)]:
-                weighted_score = 0.0
-                total_weight = 0.0
-                
-                for target_name in self.config.profit_targets.keys():
-                    weight = leverage_weights.get(target_name, 0.1)
-                    target_probs = [prob for key, prob in dir_scores.items() 
-                                   if key.startswith(f'{target_name}_')]
-                    if target_probs:
-                        weighted_score += np.mean(target_probs) * weight
-                        total_weight += weight
-                
-                if total_weight > 0:
-                    if direction == 'long':
-                        composite_scores['leverage_adjusted_score'] = weighted_score / total_weight  # Backward compatibility
-                    composite_scores[f'{direction}_leverage_adjusted_score'] = weighted_score / total_weight
-        
+
+            weighted_score = 0.0
+            total_weight = 0.0
+
+            for target_name in self.config.profit_targets.keys():
+                weight = leverage_weights.get(target_name, 0.1)
+                target_probs = [prob for key, prob in probability_scores.items()
+                               if key.startswith(f'{target_name}_')]
+                if target_probs:
+                    weighted_score += np.mean(target_probs) * weight
+                    total_weight += weight
+
+            if total_weight > 0:
+                composite_scores['leverage_adjusted_score'] = weighted_score / total_weight
+
         # Best target identification
         if probability_scores:
             best_key = max(probability_scores.keys(), key=lambda k: probability_scores[k])
@@ -1624,59 +1578,8 @@ class MultiHorizonProfitLabeler:
             time_values, probability_scores
         )
         
-        # ENHANCED: Directional analysis with improved logic
-        long_avg = composite_scores.get('long_overall_opportunity', 0.0)
-        short_avg = composite_scores.get('short_overall_opportunity', 0.0)
-        
-        # Calculate directional strength for each horizon
-        long_immediate = composite_scores.get('long_immediate_opportunity', 0.0)
-        long_short_term = composite_scores.get('long_short_opportunity', 0.0)
-        short_immediate = composite_scores.get('short_immediate_opportunity', 0.0)
-        short_short_term = composite_scores.get('short_short_opportunity', 0.0)
-        
-        # Weighted directional score (immediate gets higher weight for short-term trading)
-        long_weighted = (long_immediate * 0.7) + (long_short_term * 0.3)
-        short_weighted = (short_immediate * 0.7) + (short_short_term * 0.3)
-        
-        # Determine directional bias with adaptive threshold
-        confidence_threshold = max(0.03, min(0.10, (long_avg + short_avg) * 0.1))  # Dynamic threshold
-        
-        if long_weighted > short_weighted + confidence_threshold:
-            composite_scores['directional_bias'] = 1.0  # Long bias
-            composite_scores['best_direction'] = 1.0
-        elif short_weighted > long_weighted + confidence_threshold:
-            composite_scores['directional_bias'] = -1.0  # Short bias
-            composite_scores['best_direction'] = -1.0
-        else:
-            composite_scores['directional_bias'] = 0.0  # Neutral
-            composite_scores['best_direction'] = 0.0
-        
-        # Enhanced directional confidence and asymmetry
-        composite_scores['directional_confidence'] = abs(long_weighted - short_weighted)
-        composite_scores['opportunity_asymmetry'] = long_weighted - short_weighted  # Positive = long bias, Negative = short bias
-        
-        # NEW: Directional consistency score (how consistent the directional bias is across horizons)
-        long_consistency = 1.0 - abs(long_immediate - long_short_term) if (long_immediate + long_short_term) > 0 else 0.0
-        short_consistency = 1.0 - abs(short_immediate - short_short_term) if (short_immediate + short_short_term) > 0 else 0.0
-        composite_scores['long_directional_consistency'] = max(0.0, long_consistency)
-        composite_scores['short_directional_consistency'] = max(0.0, short_consistency)
-        
-        # NEW: Overall directional strength (combines opportunity with consistency)
-        composite_scores['long_directional_strength'] = long_weighted * composite_scores['long_directional_consistency']
-        composite_scores['short_directional_strength'] = short_weighted * composite_scores['short_directional_consistency']
-        
-        # FIXED: Directional momentum indicator with division by zero protection
-        composite_scores['long_momentum'] = safe_divide(
-            (long_immediate - long_short_term), 
-            long_short_term, 
-            0.0
-        )
-        
-        composite_scores['short_momentum'] = safe_divide(
-            (short_immediate - short_short_term), 
-            short_short_term, 
-            0.0
-        )
+        # For Analyst (combined approach), we don't calculate directional bias
+        # The overall_opportunity score already represents the combined opportunity
         
         # CRITICAL FIX: Normalize composite scores to eliminate negative values
         composite_scores = self._normalize_composite_scores(composite_scores)
@@ -1684,64 +1587,42 @@ class MultiHorizonProfitLabeler:
         return composite_scores
     
     def _log_labeling_statistics(self, labeled_data: pd.DataFrame, valid_samples: int):
-        """Log labeling statistics with enhanced directional analysis."""
-        self.logger.info('📊 Enhanced Multi-Horizon Labeling Statistics:')
-        
-        # Overall opportunity distribution (backward compatibility)
+        """Log labeling statistics for combined approach (Analyst)."""
+        self.logger.info('📊 Multi-Horizon Labeling Statistics (Combined Approach - Analyst):')
+
+        # Overall opportunity distribution
         overall_opp = labeled_data['overall_opportunity'].iloc[:valid_samples]
         self.logger.info(f'   → Overall opportunity: mean={overall_opp.mean():.3f}, std={overall_opp.std():.3f}')
-        
-        # DIRECTIONAL OPPORTUNITY ANALYSIS
-        long_opp = labeled_data['long_overall_opportunity'].iloc[:valid_samples]
-        short_opp = labeled_data['short_overall_opportunity'].iloc[:valid_samples]
-        
-        self.logger.info(f'   → Long opportunities: mean={long_opp.mean():.3f}, std={long_opp.std():.3f}')
-        self.logger.info(f'   → Short opportunities: mean={short_opp.mean():.3f}, std={short_opp.std():.3f}')
-        
-        # Directional bias analysis
-        directional_bias = labeled_data['directional_bias'].iloc[:valid_samples]
-        long_bias_count = (directional_bias > 0.5).sum()
-        short_bias_count = (directional_bias < -0.5).sum()
-        neutral_count = valid_samples - long_bias_count - short_bias_count
-        
-        self.logger.info(f'   → Directional bias distribution:')
-        self.logger.info(f'     • Long bias: {long_bias_count} ({long_bias_count/valid_samples*100:.1f}%)')
-        self.logger.info(f'     • Short bias: {short_bias_count} ({short_bias_count/valid_samples*100:.1f}%)')
-        self.logger.info(f'     • Neutral: {neutral_count} ({neutral_count/valid_samples*100:.1f}%)')
-        
-        # Directional strength analysis
-        long_strength = labeled_data['long_directional_strength'].iloc[:valid_samples]
-        short_strength = labeled_data['short_directional_strength'].iloc[:valid_samples]
-        
-        self.logger.info(f'   → Directional strength:')
-        self.logger.info(f'     • Long strength: mean={long_strength.mean():.3f}, max={long_strength.max():.3f}')
-        self.logger.info(f'     • Short strength: mean={short_strength.mean():.3f}, max={short_strength.max():.3f}')
-        
-        # High opportunity samples (enhanced)
-        high_long_count = (long_opp > 0.7).sum()
-        high_short_count = (short_opp > 0.7).sum()
-        self.logger.info(f'   → High opportunity samples (>0.7):')
-        self.logger.info(f'     • Long: {high_long_count} ({high_long_count/valid_samples*100:.1f}%)')
-        self.logger.info(f'     • Short: {high_short_count} ({high_short_count/valid_samples*100:.1f}%)')
-        
+
+        # Immediate and short-term opportunities
+        immediate_opp = labeled_data['immediate_opportunity'].iloc[:valid_samples]
+        short_term_opp = labeled_data['short_term_opportunity'].iloc[:valid_samples]
+
+        self.logger.info(f'   → Immediate opportunities: mean={immediate_opp.mean():.3f}, std={immediate_opp.std():.3f}')
+        self.logger.info(f'   → Short-term opportunities: mean={short_term_opp.mean():.3f}, std={short_term_opp.std():.3f}')
+
+        # High opportunity samples
+        high_opp_count = (overall_opp > 0.7).sum()
+        self.logger.info(f'   → High opportunity samples (>0.7): {high_opp_count} ({high_opp_count/valid_samples*100:.1f}%)')
+
         # Leverage-adjusted scores
         leverage_scores = labeled_data['leverage_adjusted_score'].iloc[:valid_samples]
         self.logger.info(f'   → Leverage-adjusted: mean={leverage_scores.mean():.3f}, std={leverage_scores.std():.3f}')
-        
+
         # Average time to targets
         avg_times = labeled_data['avg_time_to_target'].iloc[:valid_samples]
         valid_times = avg_times[avg_times >= 0]
         if len(valid_times) > 0:
             self.logger.info(f'   → Avg time to target: {valid_times.mean():.1f} periods')
-        
-        # Directional momentum analysis
-        long_momentum = labeled_data['long_momentum'].iloc[:valid_samples]
-        short_momentum = labeled_data['short_momentum'].iloc[:valid_samples]
-        self.logger.info(f'   → Momentum indicators:')
-        self.logger.info(f'     • Long momentum: mean={long_momentum.mean():.3f}')
-        self.logger.info(f'     • Short momentum: mean={short_momentum.mean():.3f}')
-        
-        self.logger.info('✅ Enhanced multi-horizon directional labeling completed successfully')
+
+        # Reversal capture and reassessment frequency
+        reversal_scores = labeled_data['reversal_capture_score'].iloc[:valid_samples]
+        reassessment_freq = labeled_data['reassessment_frequency'].iloc[:valid_samples]
+
+        self.logger.info(f'   → Reversal capture: mean={reversal_scores.mean():.3f}')
+        self.logger.info(f'   → Reassessment frequency: mean={reassessment_freq.mean():.1f} minutes')
+
+        self.logger.info('✅ Multi-horizon combined labeling completed successfully')
     
     def _calculate_reversal_capture_score(self, probability_scores: Dict[str, float], 
                                         sample_labels: Dict[str, float]) -> float:

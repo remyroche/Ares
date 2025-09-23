@@ -41,6 +41,9 @@ class NASOrchestrator:
         self.nas_config = NASConfig.create_default_config()
         if 'nas_config' in config:
             self.nas_config.update_config(config['nas_config'])
+
+        # Enable true NAS clustering by default
+        self.use_true_nas = config.get('nas_config', {}).get('use_true_nas', True)
         
         # Initialize components
         self.nas_clusterer = NASClusterer(self.nas_config.clustering_config)

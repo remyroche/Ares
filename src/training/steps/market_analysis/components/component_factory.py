@@ -617,7 +617,7 @@ class ComponentFactory:
         'sr_detection': SRDetectionComponent,
         'sr_clustering': SRClusteringComponent,
         'hmm_regime_discovery': HMMRegimeDiscoveryComponent,
-        'hmm_clustering': OptimalRegimeClusteringComponent,  # Updated to use optimal regime clustering
+        'hmm_clustering': OptimalRegimeClusteringComponent,  # Updated to use consolidated HMM clustering
         'hmm_ensemble_training': HMMEnsembleTrainingComponent,
         # 'hmm_models_training': HMMModelsTrainingComponent,  # Moved to hmm_models_training module
         # 'hmm_ensemble_training': HMMEnsembleTrainingComponent,  # Removed

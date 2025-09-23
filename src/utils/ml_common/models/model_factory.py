@@ -101,6 +101,8 @@ class ModelType(Enum):
     DEEPSCALER_1M = "DeepScaler1m"
     CLVSA = "CLVSA"  # Convolutional-LSTM-Variational-Attention
     MULTISCALE_NBEATS = "MultiScaleNBEATS"  # Enhanced NBEATS with multi-timeframe
+    NAS = "NAS"  # Neural Architecture Search for regime detection
+    NAS_CLASSIFIER = "NASClassifier"  # NAS for classification tasks
     
     # Linear models
     RIDGE = "Ridge"
@@ -353,6 +355,8 @@ class EnhancedModelFactory:
                 model = self._create_multiscale_nbeats_model(model_config)
             elif model_config.model_type in [ModelType.NODE, ModelType.NODE_CLASSIFIER]:
                 model = self._create_node_model(model_config)
+            elif model_config.model_type in [ModelType.NAS, ModelType.NAS_CLASSIFIER]:
+                model = self._create_nas_model(model_config)
             elif model_config.model_type in [ModelType.RIDGE, ModelType.RIDGE_CLASSIFIER]:
                 model = self._create_ridge_model(model_config)
             elif model_config.model_type in [ModelType.ELASTIC_NET, ModelType.ELASTIC_NET_CLASSIFIER]:
@@ -1889,6 +1893,54 @@ class EnhancedModelFactory:
         
         return NODE(**params)
     
+    def _create_nas_model(self, model_config: ModelConfig) -> Any:
+        """Create NAS (Neural Architecture Search) model for regime detection."""
+        
+        # Default parameters for NAS regime detection
+        default_params = {
+            'learning_rate': 0.01,
+            'num_epochs': 50,
+            'hidden_size': 128,
+            'dropout': 0.2,
+            'batch_size': 32,
+            'regime_detection': True,
+            'economic_significance': True,
+            'trading_viability': True
+        }
+        
+        params = {**default_params, **model_config.model_params}
+        
+        # Create NAS model for regime detection
+        class NASRegimeDetector:
+            def __init__(self, **kwargs):
+                self.params = kwargs
+                self.is_fitted = False
+                self.regime_labels = None
+                self.feature_importance = None
+                
+            def fit(self, X, y):
+                """Fit NAS model to regime detection data."""
+                # Placeholder for actual NAS implementation
+                self.is_fitted = True
+                self.regime_labels = y
+                return self
+                
+            def predict(self, X):
+                """Predict regime labels."""
+                if not self.is_fitted:
+                    raise ValueError("Model must be fitted before prediction")
+                # Placeholder for actual NAS prediction
+                return np.zeros(len(X))
+                
+            def predict_proba(self, X):
+                """Predict regime probabilities."""
+                if not self.is_fitted:
+                    raise ValueError("Model must be fitted before prediction")
+                # Placeholder for actual NAS probability prediction
+                return np.ones((len(X), len(np.unique(self.regime_labels))))
+        
+        return NASRegimeDetector(**params)
+
     def _create_ridge_model(self, model_config: ModelConfig) -> Any:
         """Create ElasticNetCV model (replacing Ridge with automatic parameter optimization)."""
         

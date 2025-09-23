@@ -1,5 +1,5 @@
 """
-Tactician-Specific Triple Barrier Configuration
+Tactician-Specific Triple Barrier Configuration - Enhanced
 
 This module provides specialized barrier configurations optimized for the Tactician model
 to find the best entry points after the Analyst gives its green light.
@@ -9,6 +9,8 @@ Key Features:
 - Tighter profit/loss barriers for precise timing
 - Entry-specific labeling logic
 - Optimized for 1m timeframe
+- Enhanced integration with confidence-based training filtering
+- Support for Analyst and HMM model outputs as features
 """
 
 from dataclasses import dataclass
@@ -60,6 +62,13 @@ class TacticianBarrierConfig(TripleBarrierConfig):
     regime_aware: bool = False              # Single model, not regime-aware
     regime_column: str = 'hmm_regime'       # Not used but kept for compatibility
     
+    # Enhanced training integration
+    enable_confidence_filtering: bool = True    # Enable confidence-based training filtering
+    confidence_threshold: float = 0.5           # Minimum Analyst confidence for training
+    post_drop_window_minutes: int = 45          # Training window extension after confidence drops
+    include_analyst_features: bool = True       # Include Analyst model outputs as features
+    include_hmm_features: bool = True           # Include HMM model outputs as features
+    
     # Performance settings
     enable_numba_acceleration: bool = True
     enable_hardware_optimizations: bool = True
@@ -97,6 +106,13 @@ class TacticianBarrierConfig(TripleBarrierConfig):
         # Validate lookahead for 1m data
         if self.max_lookahead > 60:  # More than 1 hour
             errors.append("Max lookahead too large for 1m entry optimization")
+        
+        # Validate enhanced training parameters
+        if not (0.0 <= self.confidence_threshold <= 1.0):
+            errors.append("Confidence threshold must be between 0 and 1")
+        
+        if self.post_drop_window_minutes <= 0:
+            errors.append("Post-drop window must be positive")
         
         if errors:
             raise ValueError(f"Tactician configuration validation failed: {'; '.join(errors)}")

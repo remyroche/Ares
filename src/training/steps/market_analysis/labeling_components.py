@@ -264,7 +264,7 @@ class CompositeLabeling:
             return pd.Series('unknown', index = data.index)
 
 class ComprehensiveLabeling:
-    """Comprehensive labeling orchestrator that combines all labeling strategies."""
+    """Comprehensive labeling orchestrator that combines all labeling strategies with enhanced training integration."""
     @log_important_calls
     
     def __init__(self, config: Dict[str, Any], logger: Any = None):
@@ -276,10 +276,146 @@ class ComprehensiveLabeling:
         self.meta_labeling = MetaLabeling(config, logger)
         self.composite_labeling = CompositeLabeling(config, logger)
         
+        # Enhanced training integration
+        self.tactician_filter = None
+        self.feature_engineer = None
+        self.enhanced_training_enabled = True
+        
         # Configuration
         self.auto_recalculate_hmm_barriers = bool(
             config.get('vectorized_labelling_orchestrator', {}).get('auto_recalculate_hmm_barriers', True)
         )
+        
+        # Enhanced training configuration
+        self.confidence_threshold = float(
+            config.get('enhanced_training', {}).get('tactician_confidence_threshold', 0.5)
+        )
+        self.post_drop_window_minutes = int(
+            config.get('enhanced_training', {}).get('post_drop_window_minutes', 45)
+        )
+    
+    def initialize_enhanced_training_components(self):
+        """Initialize enhanced training components."""
+        try:
+            from .tactician_training_filter import TacticianTrainingFilter, TacticianFilterConfig
+            from .enhanced_feature_engineering import EnhancedFeatureEngineer, FeatureEngineeringConfig
+            
+            # Initialize Tactician training filter
+            filter_config = TacticianFilterConfig(
+                confidence_threshold=self.confidence_threshold,
+                post_drop_window_minutes=self.post_drop_window_minutes
+            )
+            self.tactician_filter = TacticianTrainingFilter(filter_config)
+            
+            # Initialize feature engineer
+            feature_config = FeatureEngineeringConfig(
+                include_hmm_features=True,
+                include_analyst_features=True,
+                enable_feature_scaling=True
+            )
+            self.feature_engineer = EnhancedFeatureEngineer(feature_config)
+            
+            self.logger.info('✅ Enhanced training components initialized')
+            
+        except ImportError as e:
+            self.logger.warning(f'⚠️ Enhanced training components not available: {e}')
+            self.enhanced_training_enabled = False
+    
+    def generate_enhanced_training_data(self, 
+                                      data: pd.DataFrame,
+                                      analyst_confidence: Optional[pd.Series] = None) -> Dict[str, Any]:
+        """
+        Generate enhanced training data for Tactician with confidence-based filtering.
+        
+        Args:
+            data: Training data
+            analyst_confidence: Analyst confidence scores (optional)
+            
+        Returns:
+            Dictionary containing filtered training data and statistics
+        """
+        try:
+            if not self.enhanced_training_enabled or self.tactician_filter is None:
+                self.logger.warning('⚠️ Enhanced training not available')
+                return {'success': False, 'error': 'Enhanced training not available'}
+            
+            self.logger.info('🎯 Generating enhanced training data for Tactician...')
+            
+            # Generate mock confidence if not provided
+            if analyst_confidence is None:
+                analyst_confidence = pd.Series(
+                    np.random.uniform(0.3, 0.8, len(data)),
+                    index=data.index
+                )
+                self.logger.warning('⚠️ Using mock Analyst confidence for training data generation')
+            
+            # Apply Tactician training filter
+            training_mask = self.tactician_filter.create_training_mask(
+                analyst_confidence, data.index
+            )
+            
+            filtered_data = data[training_mask].copy()
+            filter_stats = self.tactician_filter.get_filter_stats()
+            
+            self.logger.info(f'✅ Enhanced training data generated: {len(filtered_data):,}/{len(data):,} samples')
+            
+            return {
+                'success': True,
+                'filtered_data': filtered_data,
+                'training_mask': training_mask,
+                'filter_stats': filter_stats,
+                'analyst_confidence': analyst_confidence
+            }
+            
+        except Exception as e:
+            self.logger.error(f'❌ Failed to generate enhanced training data: {e}')
+            return {'success': False, 'error': str(e)}
+    
+    def generate_enhanced_features(self, 
+                                 data: pd.DataFrame,
+                                 model_type: str = 'tactician',
+                                 hmm_models: Optional[Dict[str, Any]] = None,
+                                 analyst_model: Optional[Any] = None) -> pd.DataFrame:
+        """
+        Generate enhanced features for training.
+        
+        Args:
+            data: Base training data
+            model_type: 'tactician' or 'analyst'
+            hmm_models: HMM models for feature generation
+            analyst_model: Analyst model for Tactician feature generation
+            
+        Returns:
+            Enhanced feature DataFrame
+        """
+        try:
+            if not self.enhanced_training_enabled or self.feature_engineer is None:
+                self.logger.warning('⚠️ Enhanced feature engineering not available')
+                return data
+            
+            self.logger.info(f'🔧 Generating enhanced features for {model_type}...')
+            
+            # Set models in feature engineer
+            if hmm_models:
+                self.feature_engineer.set_hmm_models(hmm_models)
+            
+            if analyst_model and model_type == 'tactician':
+                self.feature_engineer.set_analyst_model(analyst_model)
+            
+            # Generate features based on model type
+            if model_type == 'tactician':
+                enhanced_features = self.feature_engineer.generate_tactician_features(data)
+            elif model_type == 'analyst':
+                enhanced_features = self.feature_engineer.generate_analyst_features(data)
+            else:
+                raise ValueError(f"Unknown model type: {model_type}")
+            
+            self.logger.info(f'✅ Generated {len(enhanced_features.columns)} enhanced features for {model_type}')
+            return enhanced_features
+            
+        except Exception as e:
+            self.logger.error(f'❌ Failed to generate enhanced features: {e}')
+            return data
     
     async def generate_comprehensive_labels(self, data: pd.DataFrame, symbol: str, exchange: str, timeframe: str) -> Optional[pd.DataFrame]:
         """Generate comprehensive labels combining multiple labeling strategies."""

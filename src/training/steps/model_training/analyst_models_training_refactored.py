@@ -1,5 +1,5 @@
 """
-Analyst Models Training Step - Enhanced and Streamlined with Comprehensive Utilities Integration
+Analyst Models Training Step - Enhanced with HMM Integration and Comprehensive Utilities
 
 This step handles per-regime training of individual Analyst models using common dependencies.
 Enhanced Features:
@@ -12,6 +12,8 @@ Enhanced Features:
 - Integration with common utilities for data operations, validation, and optimization
 - M1 GPU/CPU optimization for enhanced performance
 - Comprehensive ML utilities integration (CV, HPO, lookahead, etc.)
+- HMM model outputs integration for enhanced feature sets
+- Support for sequential training pipeline (HMM → Analyst → Tactician)
 """
 
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -475,7 +477,122 @@ class TrainingProgressTracker:
         self.memory_optimizer = get_m1_memory_optimizer()
         self.cpu_optimizer = get_m1_cpu_optimizer()
         
+        # HMM integration
+        self.hmm_models = {}
+        self.hmm_features_enabled = True
+        
         tprint_info(f"🚀 Initialized progress tracker for {total_steps} steps")
+    
+    def set_hmm_models(self, hmm_models: Dict[str, Any]):
+        """Set HMM models for enhanced feature generation."""
+        self.hmm_models = hmm_models
+        tprint_info(f"✅ Set {len(hmm_models)} HMM models for Analyst training")
+    
+    def enable_hmm_features(self, enabled: bool = True):
+        """Enable or disable HMM feature integration."""
+        self.hmm_features_enabled = enabled
+        status = "enabled" if enabled else "disabled"
+        tprint_info(f"🔧 HMM features {status} for Analyst training")
+    
+    def _generate_hmm_features(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Generate HMM model outputs as features for Analyst training."""
+        try:
+            if not self.hmm_features_enabled or not self.hmm_models:
+                return pd.DataFrame(index=data.index)
+            
+            tprint_info("🎯 Generating HMM features for Analyst training...")
+            hmm_features = pd.DataFrame(index=data.index)
+            
+            for regime_name, hmm_model in self.hmm_models.items():
+                try:
+                    # Get HMM predictions for this regime
+                    if hasattr(hmm_model, 'predict'):
+                        regime_states = hmm_model.predict(data.values)
+                        hmm_features[f'hmm_{regime_name}_state'] = regime_states
+                    
+                    # Get regime probabilities
+                    if hasattr(hmm_model, 'predict_proba'):
+                        regime_probs = hmm_model.predict_proba(data.values)
+                        if regime_probs.ndim > 1:
+                            for i in range(regime_probs.shape[1]):
+                                hmm_features[f'hmm_{regime_name}_prob_{i}'] = regime_probs[:, i]
+                        else:
+                            hmm_features[f'hmm_{regime_name}_prob'] = regime_probs
+                    
+                    # Add regime confidence
+                    hmm_features[f'hmm_{regime_name}_confidence'] = self._calculate_hmm_confidence(
+                        hmm_features, regime_name
+                    )
+                    
+                except Exception as e:
+                    tprint_warning(f"⚠️ Failed to extract HMM features for regime {regime_name}: {e}")
+                    continue
+            
+            # Add composite HMM features
+            composite_features = self._generate_composite_hmm_features(hmm_features)
+            hmm_features = pd.concat([hmm_features, composite_features], axis=1)
+            
+            tprint_success(f"✅ Generated {len(hmm_features.columns)} HMM features")
+            return hmm_features
+            
+        except Exception as e:
+            tprint_error(f"❌ Failed to generate HMM features: {e}")
+            return pd.DataFrame(index=data.index)
+    
+    def _calculate_hmm_confidence(self, hmm_features: pd.DataFrame, regime_name: str) -> pd.Series:
+        """Calculate confidence score for HMM regime."""
+        try:
+            confidence = pd.Series(0.5, index=hmm_features.index)  # Default confidence
+            
+            # Use probability-based confidence if available
+            prob_columns = [col for col in hmm_features.columns if f'hmm_{regime_name}_prob' in col]
+            if prob_columns:
+                max_prob = hmm_features[prob_columns].max(axis=1)
+                confidence = max_prob
+            
+            return confidence
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to calculate HMM confidence for {regime_name}: {e}")
+            return pd.Series(0.5, index=hmm_features.index)
+    
+    def _generate_composite_hmm_features(self, hmm_features: pd.DataFrame) -> pd.DataFrame:
+        """Generate composite HMM features."""
+        composite_features = pd.DataFrame(index=hmm_features.index)
+        
+        try:
+            # Find all regime probability columns
+            prob_columns = [col for col in hmm_features.columns if '_prob_' in col]
+            
+            if prob_columns:
+                # Calculate regime diversity (entropy)
+                regime_probs = hmm_features[prob_columns].values
+                regime_probs = np.clip(regime_probs, 1e-8, 1.0)  # Avoid log(0)
+                entropy = -np.sum(regime_probs * np.log(regime_probs), axis=1)
+                composite_features['hmm_regime_entropy'] = entropy
+                
+                # Calculate dominant regime strength
+                max_probs = np.max(regime_probs, axis=1)
+                composite_features['hmm_dominant_regime_strength'] = max_probs
+                
+                # Calculate regime stability
+                prob_var = np.var(regime_probs, axis=1)
+                composite_features['hmm_regime_stability'] = 1.0 / (1.0 + prob_var)
+            
+            # Find all confidence columns
+            confidence_columns = [col for col in hmm_features.columns if '_confidence' in col]
+            if confidence_columns:
+                avg_confidence = hmm_features[confidence_columns].mean(axis=1)
+                composite_features['hmm_avg_confidence'] = avg_confidence
+                
+                max_confidence = hmm_features[confidence_columns].max(axis=1)
+                composite_features['hmm_max_confidence'] = max_confidence
+            
+            return composite_features
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to generate composite HMM features: {e}")
+            return pd.DataFrame(index=hmm_features.index)
         
     def update_step(self, step_name: str, details: Optional[Dict] = None):
         """Update progress with step completion and comprehensive monitoring."""
@@ -831,9 +948,11 @@ class EnhancedErrorHandler:
 
 class AnalystModelsTrainingStepRefactored(PerRegimeTrainingStep):
     """
-    Enhanced Analyst Models Training Step with comprehensive utilities integration.
+    Enhanced Analyst Models Training Step with HMM integration and comprehensive utilities.
     
     This is a fully enhanced version that integrates:
+    - HMM model outputs for enhanced feature sets
+    - Sequential training pipeline support (HMM → Analyst → Tactician)
     - Common utilities for data operations and validation
     - Hardware optimization (M1 GPU/CPU/Memory)
     - ML common utilities (CV, HPO, lookahead, etc.)

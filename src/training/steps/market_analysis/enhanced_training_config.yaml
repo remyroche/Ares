@@ -1,0 +1,207 @@
+# Enhanced Tactician and Analyst Training Configuration
+# This configuration implements the new training logic:
+# 1. Tactician trains on Analyst confidence > 0.5 + next 45 minutes after confidence drops below 0.5
+# 2. Tactician uses all features + Analyst outputs + HMM outputs
+# 3. Analyst uses all features + HMM outputs
+
+# Enhanced Training Pipeline Configuration
+enhanced_training:
+  # Tactician Training Filtering
+  tactician_confidence_threshold: 0.5
+  post_drop_window_minutes: 45
+  
+  # Feature Engineering
+  include_hmm_features_for_analyst: true
+  include_analyst_features_for_tactician: true
+  include_hmm_features_for_tactician: true
+  enable_feature_scaling: true
+  enable_feature_selection: false
+  feature_selection_threshold: 0.01
+  
+  # Training Sequence Control
+  enable_hmm_training: true
+  enable_analyst_training: true
+  enable_tactician_training: true
+  
+  # Training Parameters
+  validation_split: 0.2
+  test_split: 0.1
+  random_state: 42
+  
+  # Performance Settings
+  enable_parallel_processing: true
+  max_workers: 4
+  chunk_size: 10000
+  
+  # Monitoring and Logging
+  enable_detailed_logging: true
+  save_training_artifacts: true
+  artifacts_dir: "training_artifacts"
+
+# Tactician Training Filter Configuration
+tactician_filter:
+  confidence_threshold: 0.5
+  post_drop_window_minutes: 45
+  min_confidence_duration_minutes: 1
+  max_gap_minutes: 60
+  enable_smoothing: true
+  smoothing_window: 5
+  min_samples_per_period: 10
+  max_missing_ratio: 0.1
+
+# Enhanced Feature Engineering Configuration
+feature_engineering:
+  include_base_features: true
+  include_hmm_features: true
+  include_analyst_features: false  # Only for Tactician
+  enable_feature_scaling: true
+  enable_feature_selection: false
+  feature_selection_threshold: 0.01
+  validate_feature_quality: true
+  max_missing_ratio: 0.1
+  min_feature_variance: 1e-8
+
+# HMM Training Configuration
+hmm_training:
+  n_components: 3
+  covariance_type: "full"
+  random_state: 42
+  n_iter: 100
+  tol: 1e-2
+  verbose: false
+
+# Analyst Training Configuration
+analyst_training:
+  # Base Models
+  models:
+    tcn:
+      enabled: true
+      name: "Temporal Convolutional Network"
+      params:
+        nb_filters: 64
+        kernel_size: 3
+        nb_stacks: 2
+        dilations: [1, 2, 4, 8]
+        padding: "causal"
+        use_skip_connections: true
+        dropout_rate: 0.1
+    
+    catboost:
+      enabled: true
+      name: "CatBoost Regressor"
+      params:
+        iterations: 1000
+        learning_rate: 0.1
+        depth: 6
+        l2_leaf_reg: 3
+        random_seed: 42
+        verbose: false
+    
+    lightgbm:
+      enabled: true
+      name: "LightGBM Regressor"
+      params:
+        n_estimators: 1000
+        learning_rate: 0.1
+        max_depth: 6
+        num_leaves: 31
+        random_state: 42
+        verbose: -1
+  
+  # Meta-learner
+  meta_learner:
+    elastic_net:
+      enabled: true
+      name: "Elastic Net"
+      params:
+        alpha: 0.1
+        l1_ratio: 0.5
+        max_iter: 1000
+        random_state: 42
+
+# Tactician Training Configuration
+tactician_training:
+  # Barrier Configuration
+  barrier_config:
+    profit_take_multiplier: 0.0018
+    stop_loss_multiplier: 0.0012
+    time_barrier_minutes: 12
+    entry_window_minutes: 5
+    min_entry_confidence: 0.6
+    transaction_cost: 0.0004
+    enable_dynamic_barriers: true
+  
+  # Model Configuration
+  model_config:
+    binary_classification: true
+    regime_aware: false
+    enable_numba_acceleration: true
+    enable_hardware_optimizations: true
+    memory_limit_gb: 4.0
+  
+  # Training Parameters
+  training_params:
+    validation_split: 0.2
+    test_split: 0.1
+    random_state: 42
+    batch_size: 32
+    epochs: 100
+    early_stopping_patience: 10
+
+# Vectorized Labelling Orchestrator Configuration
+vectorized_labelling_orchestrator:
+  auto_recalculate_hmm_barriers: true
+  time_barrier_minutes: 30
+  max_lookahead: 100
+  hmm_barrier_regime_column: "hmm_regime"
+  
+  # Enhanced Training Integration
+  enable_enhanced_training: true
+  enhanced_training_config:
+    confidence_threshold: 0.5
+    post_drop_window_minutes: 45
+    include_analyst_features: true
+    include_hmm_features: true
+
+# Monitoring and Logging Configuration
+monitoring:
+  enable_performance_monitoring: true
+  enable_memory_monitoring: true
+  enable_gpu_monitoring: true
+  log_level: "INFO"
+  log_file: "enhanced_training.log"
+  
+  # Metrics to track
+  metrics:
+    - "training_time"
+    - "feature_generation_time"
+    - "filtering_time"
+    - "model_performance"
+    - "memory_usage"
+    - "cpu_usage"
+
+# Data Processing Configuration
+data_processing:
+  enable_data_validation: true
+  enable_feature_validation: true
+  enable_label_validation: true
+  
+  # Data quality thresholds
+  quality_thresholds:
+    max_missing_ratio: 0.1
+    min_feature_variance: 1e-8
+    max_outlier_ratio: 0.05
+    min_data_points: 100
+
+# Hardware Optimization Configuration
+hardware_optimization:
+  enable_m1_optimization: true
+  enable_gpu_acceleration: true
+  enable_memory_optimization: true
+  enable_parallel_processing: true
+  
+  # Resource limits
+  resource_limits:
+    max_memory_gb: 8.0
+    max_cpu_cores: 8
+    max_gpu_memory_gb: 4.0

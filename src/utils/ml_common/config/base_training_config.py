@@ -195,7 +195,7 @@ class TacticianTrainingConfig(BaseTrainingConfig):
     
     # Model types to train
     model_types: List[str] = field(default_factory=lambda: [
-        "XGBoost_custom", "RandomForest", "CatBoostRegressor", "ElasticNet"
+        "XGBoost_custom", "RandomForest", "CatBoostRegressor", "ElasticNet", "RandomSurvivalForest"
     ])
     
     # Analyst integration
@@ -259,6 +259,15 @@ class TacticianTrainingConfig(BaseTrainingConfig):
             'alpha': {'type': 'float', 'low': 0.001, 'high': 10.0, 'log': True},
             'l1_ratio': {'type': 'float', 'low': 0.1, 'high': 1.0},
             'max_iter': {'type': 'int', 'low': 1000, 'high': 5000}
+        },
+        'RandomSurvivalForest': {
+            'n_estimators': {'type': 'int', 'low': 100, 'high': 1000},
+            'max_depth': {'type': 'int', 'low': 5, 'high': 20},
+            'min_samples_split': {'type': 'int', 'low': 2, 'high': 10},
+            'min_samples_leaf': {'type': 'int', 'low': 1, 'high': 4},
+            'max_features': {'type': 'categorical', 'choices': ['sqrt', 'log2', None]},
+            'bootstrap': {'type': 'categorical', 'choices': [True, False]},
+            'max_samples': {'type': 'float', 'low': 0.5, 'high': 1.0}
         }
     })
 

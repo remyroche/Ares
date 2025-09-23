@@ -307,15 +307,29 @@ class TacticianLookbackOptimizationStep(BaseTrainingStep):
                     analyst_outputs['individual_predictions'] = np.column_stack(model_predictions)
                     analyst_outputs['individual_confidences'] = np.column_stack(model_confidences)
                     
-                    # Generate combined signals (green light indicators)
+                    # Generate combined directional signals
                     combined_predictions = np.mean(model_predictions, axis=0)
                     combined_confidences = np.mean(model_confidences, axis=0)
-                    
-                    # Green light when confidence > 0.6 and prediction > 0.5
-                    analyst_signals = ((combined_confidences > 0.6) & (combined_predictions > 0.5)).astype(int)
-                    
+
+                    # Generate directional signals based on Analyst output
+                    # Use the new directional signal format: 1 (long), -1 (short), 0 (neutral)
+                    directional_signals = []
+                    for pred, conf in zip(combined_predictions, combined_confidences):
+                        if conf > 0.6:
+                            # Strong confidence - use prediction direction
+                            if pred > 0.6:
+                                directional_signals.append(1)  # Strong long
+                            elif pred < 0.4:
+                                directional_signals.append(-1)  # Strong short
+                            else:
+                                directional_signals.append(0)  # Neutral but high confidence
+                        else:
+                            directional_signals.append(0)  # Low confidence = neutral
+
+                    analyst_signals = np.array(directional_signals)
                     analyst_outputs['combined_predictions'] = combined_predictions
                     analyst_outputs['combined_confidences'] = combined_confidences
+                    analyst_outputs['directional_signals'] = analyst_signals
             
             # Generate ensemble outputs
             if analyst_ensemble:
@@ -327,9 +341,21 @@ class TacticianLookbackOptimizationStep(BaseTrainingStep):
                     
                     # Update signals if ensemble available
                     if analyst_signals is None:
-                        ensemble_signals = ((ensemble_predictions['confidences'] > 0.6) & 
-                                          (ensemble_predictions['predictions'] > 0.5)).astype(int)
-                        analyst_signals = ensemble_signals
+                        # Generate directional signals from ensemble
+                        ensemble_directional_signals = []
+                        for pred, conf in zip(ensemble_predictions['predictions'], ensemble_predictions['confidences']):
+                            if conf > 0.6:
+                                if pred > 0.6:
+                                    ensemble_directional_signals.append(1)  # Strong long
+                                elif pred < 0.4:
+                                    ensemble_directional_signals.append(-1)  # Strong short
+                                else:
+                                    ensemble_directional_signals.append(0)  # Neutral
+                            else:
+                                ensemble_directional_signals.append(0)  # Low confidence
+
+                        analyst_signals = np.array(ensemble_directional_signals)
+                        analyst_outputs['ensemble_directional_signals'] = analyst_signals
                     
                 except Exception as e:
                     tprint_warning(f"⚠️ Failed to generate ensemble predictions: {e}")
@@ -337,12 +363,23 @@ class TacticianLookbackOptimizationStep(BaseTrainingStep):
             # Fallback: create basic signals if none generated
             if analyst_signals is None:
                 tprint_warning("⚠️ No Analyst signals generated, creating fallback signals")
-                # Simple momentum-based fallback signals
+                # Simple momentum-based fallback signals with directional information
                 returns = market_data_1m['close'].pct_change()
                 momentum = returns.rolling(window=10).mean()
-                analyst_signals = (momentum > 0.001).astype(int).values
-                
-                analyst_outputs['fallback_signals'] = analyst_signals
+
+                # Generate directional fallback signals: 1 (long), -1 (short), 0 (neutral)
+                fallback_directional_signals = []
+                for mom in momentum:
+                    if mom > 0.001:  # Strong positive momentum
+                        fallback_directional_signals.append(1)  # Long
+                    elif mom < -0.001:  # Strong negative momentum
+                        fallback_directional_signals.append(-1)  # Short
+                    else:
+                        fallback_directional_signals.append(0)  # Neutral
+
+                analyst_signals = np.array(fallback_directional_signals)
+                analyst_outputs['fallback_directional_signals'] = analyst_signals
+                analyst_outputs['fallback_momentum'] = momentum.values
             
             tprint_success(f"✅ Generated Analyst outputs: {len(analyst_signals)} signals, {len(analyst_outputs)} output types")
             

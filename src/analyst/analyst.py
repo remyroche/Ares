@@ -903,19 +903,58 @@ class Analyst:
             # Determine if confidence threshold is met
             threshold_met = cumulative_upper_confidence >= self.confidence_threshold
             
-            # Green light decision logic
-            green_light = (
-                threshold_met and 
-                cumulative_upper_confidence > cumulative_lower_confidence and
-                cumulative_upper_confidence > 0.5  # At least 50% confidence
-            )
-            
+            # Directional decision logic
+            # Compare upside vs downside confidence to determine direction
+            upside_advantage = cumulative_upper_confidence - cumulative_lower_confidence
+            directional_threshold = 0.15  # Minimum advantage for directional signal
+
             # Calculate risk-reward ratio
             risk_reward_ratio = (
-                cumulative_upper_confidence / cumulative_lower_confidence 
+                cumulative_upper_confidence / cumulative_lower_confidence
                 if cumulative_lower_confidence > 0 else float('inf')
             )
-            
+
+            # Determine directional signal
+            if threshold_met and upside_advantage > directional_threshold:
+                # Strong long signal
+                directional_signal = 1  # Long
+                signal_strength = cumulative_upper_confidence
+                direction = "LONG"
+                decision_reasoning = self._get_directional_decision_reasoning(
+                    cumulative_upper_confidence,
+                    cumulative_lower_confidence,
+                    threshold_met,
+                    upside_advantage,
+                    direction,
+                    signal_strength
+                )
+            elif threshold_met and upside_advantage < -directional_threshold:
+                # Strong short signal
+                directional_signal = -1  # Short
+                signal_strength = cumulative_lower_confidence
+                direction = "SHORT"
+                decision_reasoning = self._get_directional_decision_reasoning(
+                    cumulative_upper_confidence,
+                    cumulative_lower_confidence,
+                    threshold_met,
+                    upside_advantage,
+                    direction,
+                    signal_strength
+                )
+            else:
+                # No clear directional signal
+                directional_signal = 0  # Neutral/No signal
+                signal_strength = 0.0
+                direction = "NEUTRAL"
+                decision_reasoning = self._get_directional_decision_reasoning(
+                    cumulative_upper_confidence,
+                    cumulative_lower_confidence,
+                    threshold_met,
+                    upside_advantage,
+                    direction,
+                    signal_strength
+                )
+
             return {
                 "upper_barrier_threshold": upper_barrier_pct,
                 "lower_barrier_threshold": lower_barrier_pct,
@@ -923,16 +962,15 @@ class Analyst:
                 "cumulative_upper_confidence": float(cumulative_upper_confidence),
                 "cumulative_lower_confidence": float(cumulative_lower_confidence),
                 "threshold_met": threshold_met,
-                "green_light": green_light,
+                "upside_advantage": float(upside_advantage),
+                "directional_threshold": directional_threshold,
+                "directional_signal": directional_signal,
+                "signal_strength": float(signal_strength),
+                "direction": direction,
                 "risk_reward_ratio": float(risk_reward_ratio),
                 "upper_barrier_targets": upper_barrier_targets,
                 "lower_barrier_targets": lower_barrier_targets,
-                "decision_reasoning": self._get_decision_reasoning(
-                    cumulative_upper_confidence,
-                    cumulative_lower_confidence,
-                    threshold_met,
-                    green_light
-                )
+                "decision_reasoning": decision_reasoning
             }
             
         except Exception as e:
@@ -944,12 +982,64 @@ class Analyst:
                 "cumulative_upper_confidence": 0.0,
                 "cumulative_lower_confidence": 0.0,
                 "threshold_met": False,
-                "green_light": False,
+                "upside_advantage": 0.0,
+                "directional_threshold": 0.15,
+                "directional_signal": 0,
+                "signal_strength": 0.0,
+                "direction": "NEUTRAL",
                 "risk_reward_ratio": 0.0,
                 "upper_barrier_targets": [],
                 "lower_barrier_targets": [],
                 "decision_reasoning": f"Error in calculation: {str(e)}"
             }
+
+    def _get_directional_decision_reasoning(
+        self,
+        cumulative_upper_confidence: float,
+        cumulative_lower_confidence: float,
+        threshold_met: bool,
+        upside_advantage: float,
+        direction: str,
+        signal_strength: float
+    ) -> str:
+        """
+        Generate human-readable directional decision reasoning.
+
+        Args:
+            cumulative_upper_confidence: Cumulative confidence for upper barrier
+            cumulative_lower_confidence: Cumulative confidence for lower barrier
+            threshold_met: Whether confidence threshold is met
+            upside_advantage: Difference between upside and downside confidence
+            direction: The directional signal (LONG, SHORT, NEUTRAL)
+            signal_strength: Strength of the directional signal
+
+        Returns:
+            str: Decision reasoning
+        """
+        if direction == "LONG":
+            return (
+                f"LONG SIGNAL: Strong upside confidence ({cumulative_upper_confidence:.1%}) "
+                f"exceeds threshold ({self.confidence_threshold:.1%}) with significant advantage "
+                f"({upside_advantage:.1%}) over downside risk ({cumulative_lower_confidence:.1%})"
+            )
+        elif direction == "SHORT":
+            return (
+                f"SHORT SIGNAL: Strong downside confidence ({cumulative_lower_confidence:.1%}) "
+                f"exceeds threshold ({self.confidence_threshold:.1%}) with significant advantage "
+                f"({abs(upside_advantage):.1%}) over upside potential ({cumulative_upper_confidence:.1%})"
+            )
+        else:
+            if threshold_met:
+                return (
+                    f"NEUTRAL SIGNAL: Threshold met but insufficient directional advantage "
+                    f"({upside_advantage:.1%}, need {0.15:.1%}). Upside: {cumulative_upper_confidence:.1%}, "
+                    f"Downside: {cumulative_lower_confidence:.1%}"
+                )
+            else:
+                return (
+                    f"NEUTRAL SIGNAL: Insufficient confidence. Upside: {cumulative_upper_confidence:.1%}, "
+                    f"Downside: {cumulative_lower_confidence:.1%}, need {self.confidence_threshold:.1%}"
+                )
 
     def _get_decision_reasoning(
         self,
@@ -959,34 +1049,24 @@ class Analyst:
         green_light: bool
     ) -> str:
         """
-        Generate human-readable decision reasoning.
-        
-        Args:
-            cumulative_upper_confidence: Cumulative confidence for upper barrier
-            cumulative_lower_confidence: Cumulative confidence for lower barrier
-            threshold_met: Whether confidence threshold is met
-            green_light: Whether green light decision is made
-            
-        Returns:
-            str: Decision reasoning
+        Legacy method for backward compatibility - redirects to directional reasoning.
         """
+        # Convert old binary green light to directional format
         if green_light:
-            return (
-                f"GREEN LIGHT: Upper barrier confidence ({cumulative_upper_confidence:.1%}) "
-                f"exceeds threshold ({self.confidence_threshold:.1%}) and is higher than "
-                f"lower barrier confidence ({cumulative_lower_confidence:.1%})"
-            )
-        elif threshold_met:
-            return (
-                f"THRESHOLD MET but NO GREEN LIGHT: Upper barrier confidence "
-                f"({cumulative_upper_confidence:.1%}) meets threshold but lower barrier "
-                f"confidence ({cumulative_lower_confidence:.1%}) is too high"
-            )
+            direction = "LONG"
+            upside_advantage = cumulative_upper_confidence - cumulative_lower_confidence
         else:
-            return (
-                f"NO GREEN LIGHT: Upper barrier confidence ({cumulative_upper_confidence:.1%}) "
-                f"below threshold ({self.confidence_threshold:.1%})"
-            )
+            direction = "NEUTRAL"
+            upside_advantage = 0.0
+
+        return self._get_directional_decision_reasoning(
+            cumulative_upper_confidence,
+            cumulative_lower_confidence,
+            threshold_met,
+            upside_advantage,
+            direction,
+            cumulative_upper_confidence if green_light else 0.0
+        )
 
     @handles_errors(
         exceptions=(ValueError, AttributeError),

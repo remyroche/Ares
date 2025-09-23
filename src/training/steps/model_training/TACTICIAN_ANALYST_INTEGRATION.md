@@ -15,7 +15,7 @@ The Tactician model has been enhanced to work in conjunction with the Analyst mo
 
 ### Model Hierarchy
 ```
-Analyst (5m timeframe) → Green Light Signals + Model Outputs
+Analyst (5m timeframe) → Directional Signals (Long/Short/Neutral) + Model Outputs
     ↓
 Tactician (1m timeframe) → Entry Point Optimization
 ```
@@ -29,15 +29,20 @@ Tactician (1m timeframe) → Entry Point Optimization
 
 ## Implementation Details
 
-### 1. Green Light Filtering
+### 1. Directional Signal Filtering
 
-The Tactician only trains on periods where the Analyst provides a green light signal (binary value = 1).
+The Tactician only trains on periods where the Analyst provides directional signals (1 for long, -1 for short).
 
 ```python
-# Filter data to only include green light periods
-green_light_mask = analyst_signals == 1
-X_filtered = X[green_light_mask]
-y_filtered = y[green_light_mask]
+# Filter data to only include directional signal periods
+directional_mask = (analyst_signals == 1) | (analyst_signals == -1)  # Long or Short signals
+X_filtered = X[directional_mask]
+y_filtered = y[directional_mask]
+
+# Analyst signals format:
+# 1 = Long signal (green light for long position)
+# -1 = Short signal (green light for short position)
+# 0 = Neutral signal (no clear directional opportunity)
 ```
 
 **Benefits:**
@@ -127,14 +132,16 @@ config = TacticianTrainingConfig(
 # Create integration instance
 integration = create_tactician_analyst_integration(config)
 
-# Train with analyst integration
+# Train with analyst integration and confidence-aware training
 result = integration.train_tactician_with_analyst_integration(
     X=X,  # Base features (1m timeframe)
     y=y,  # Target values
     regime_labels=regime_labels,
-    analyst_signals=analyst_signals,  # Binary green light signals
+    analyst_signals=analyst_signals,  # Directional signals (1=long, -1=short, 0=neutral)
     all_analyst_models_outputs=analyst_outputs,  # Analyst model predictions
-    hmm_regime_features=hmm_features
+    hmm_regime_features=hmm_features,
+    analyst_confidence_scores=analyst_confidence_scores,  # Confidence scores for sample weighting
+    analyst_directional_info=analyst_directional_analysis  # Additional directional analysis
 )
 ```
 
@@ -216,7 +223,7 @@ class TacticianBarrierConfig(TripleBarrierConfig):
 The new Tactician implementation integrates seamlessly with the existing training pipeline:
 
 1. **Analyst Training**: Train Analyst models first (per-regime)
-2. **Analyst Inference**: Generate green light signals and model outputs
+2. **Analyst Inference**: Generate directional signals and model outputs
 3. **Tactician Training**: Train Tactician using Analyst outputs
 4. **Tactician Inference**: Generate entry point predictions
 
@@ -260,7 +267,7 @@ def test_tactician_analyst_integration():
     # Create test data
     X = np.random.randn(1000, 50)
     y = np.random.randn(1000)
-    analyst_signals = np.random.choice([0, 1], 1000, p=[0.8, 0.2])
+    analyst_signals = np.random.choice([-1, 0, 1], 1000, p=[0.1, 0.8, 0.1])  # -1=short, 0=neutral, 1=long
     
     # Test integration
     integration = create_tactician_analyst_integration()

@@ -313,9 +313,9 @@ class MarketAnalysisSubPipeline:
         self.logger.info('   6. hmm_models_training - Base models training, HPO, saving, metrics')
         self.logger.info('   7. hmm_ensemble_training - Meta-model, HPO, saving, metrics')
         self.logger.info('   8. regime_data_splitting - Tag data by regimes')
-        self.logger.info('   9. multi_horizon_profit_labeler - Apply multi-horizon profit labeling')
-        self.logger.info('   10. feature_lookback_optimization - Optimize feature lookback periods')
-        self.logger.info('   11. pid_based_feature_generation - Cross timeframe interaction features')
+        self.logger.info('   9. feature_lookback_optimization - Optimize feature lookback periods')
+        self.logger.info('   10. pid_based_feature_generation - Cross timeframe interaction features')
+        self.logger.info('   11. multi_horizon_profit_labeler - Apply multi-horizon profit labeling')
         self.logger.info('   12. final_feature_selection - Final feature selection (120→100→80→60)')
         self.logger.info('   13. cross_timeframe_analysis - Cross timeframe analysis')
         self.logger.info('=' * 80)
@@ -576,50 +576,33 @@ class MarketAnalysisSubPipeline:
                 'regime_data': results['regime_data']
             })
             
-            # Stage 9: Multi-Horizon Labeling (via component system)
-            self.logger.info('🎯 Executing Stage 9: Multi-Horizon Labeling')
-            mh_component_result = await self.execute_sub_pipeline('multi_horizon_profit_labeler', self.config)
-            is_success, error_info = self._validate_sub_pipeline_result(mh_component_result, "Multi-Horizon Labeling")
-            if not is_success:
-                return error_info
-            # Extract data from consolidated artifact using dict-safe access
-            mh_result_dict = mh_component_result.artifacts
-            multi_horizon_data = mh_result_dict.get('multi_horizon_labeling_result', {})
-            results['labeled_data'] = multi_horizon_data.get('labeled_data', {})
-            results['labeling_metrics'] = multi_horizon_data.get('labeling_metrics', {})
-            # Update pipeline state for next components
-            self._current_pipeline_state.update({
-                'labeled_data': results['labeled_data'],
-                'multi_horizon_labeling_result': multi_horizon_data
-            })
-            
-            # Stage 10: Feature Lookback Optimization
-            self.logger.info('⚙️ Executing Stage 10: Feature Lookback Optimization')
+            # Stage 9: Feature Lookback Optimization
+            self.logger.info('⚙️ Executing Stage 9: Feature Lookback Optimization')
             feature_lookback_optimization_result = await self.execute_sub_pipeline('feature_lookback_optimization', self.config)
             is_success, error_info = self._validate_sub_pipeline_result(feature_lookback_optimization_result, "Feature Lookback Optimization")
             if not is_success:
                 return error_info
-            
+
             # Extract data from consolidated artifact
             feature_optimization_data = feature_lookback_optimization_result.artifacts.get('feature_lookback_optimization_result', {})
             results['optimized_features'] = feature_optimization_data.get('optimized_features', {})
             results['optimization_metrics'] = feature_optimization_data.get('optimization_metrics', {})
-            
+
             # Update pipeline state for next components
             self._current_pipeline_state.update({
                 'optimized_features': results['optimized_features']
             })
-            
-            # Stage 11: PID-Based Feature Generation
-            self.logger.info('🔧 Executing Stage 11: PID-Based Feature Generation')
+
+            # Stage 10: PID-Based Feature Generation
+            self.logger.info('🔧 Executing Stage 10: PID-Based Feature Generation')
             pid_based_feature_generation_result = await self.execute_sub_pipeline('pid_based_feature_generation', self.config)
             is_success, error_info = self._validate_sub_pipeline_result(pid_based_feature_generation_result, "PID-Based Feature Generation")
             if not is_success:
                 return error_info
-            
+
             # Extract data from consolidated artifact
             pid_feature_data = pid_based_feature_generation_result.artifacts.get('pid_based_feature_generation_result', {})
-            
+
             # Extract comprehensive PID-based feature generation results
             results['pid_based_features'] = {
                 'combined_features': pid_feature_data.get('combined_features', {}),
@@ -629,7 +612,7 @@ class MarketAnalysisSubPipeline:
                 'polynomial_features': pid_feature_data.get('polynomial_result', {}),
                 'cross_timeframe_features': pid_feature_data.get('cross_timeframe_result', {})
             }
-            
+
             results['pid_feature_metrics'] = {
                 'generation_summary': pid_feature_data.get('generation_summary', {}),
                 'quality_metrics': {
@@ -647,6 +630,28 @@ class MarketAnalysisSubPipeline:
                 'total_features_generated': pid_feature_data.get('total_features_generated', 0),
                 'generation_status': pid_feature_data.get('generation_status', 'unknown')
             }
+
+            # Update pipeline state with features for labeling
+            self._current_pipeline_state.update({
+                'pid_based_features': results['pid_based_features']
+            })
+
+            # Stage 11: Multi-Horizon Profit Labeler (moved here to use optimized features)
+            self.logger.info('🎯 Executing Stage 11: Multi-Horizon Profit Labeler')
+            mh_component_result = await self.execute_sub_pipeline('multi_horizon_profit_labeler', self.config)
+            is_success, error_info = self._validate_sub_pipeline_result(mh_component_result, "Multi-Horizon Profit Labeler")
+            if not is_success:
+                return error_info
+            # Extract data from consolidated artifact using dict-safe access
+            mh_result_dict = mh_component_result.artifacts
+            multi_horizon_data = mh_result_dict.get('multi_horizon_labeling_result', {})
+            results['labeled_data'] = multi_horizon_data.get('labeled_data', {})
+            results['labeling_metrics'] = multi_horizon_data.get('labeling_metrics', {})
+            # Update pipeline state for next components
+            self._current_pipeline_state.update({
+                'labeled_data': results['labeled_data'],
+                'multi_horizon_labeling_result': multi_horizon_data
+            })
 
             # ===== FINAL FEATURE SELECTION STEP =====
             self.logger.info('🎯 ===== STARTING FINAL FEATURE SELECTION =====')
@@ -934,9 +939,9 @@ class MarketAnalysisSubPipeline:
         
         data_processing_steps = [
             'regime_data_splitting',
-            'multi_horizon_profit_labeler',  # Updated from multi_horizon_labeling
             'feature_lookback_optimization',
             'pid_based_feature_generation',
+            'multi_horizon_profit_labeler',  # Moved here to use optimized features
             'final_feature_selection'
         ]
         

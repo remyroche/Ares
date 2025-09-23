@@ -248,8 +248,8 @@ class AresLauncher:
                 'required_artifacts': ['sr_clusters', 'regime_model', 'feature_metadata'],
                 'sub_pipelines': ['sr_detection', 'sr_clustering', 'hmm_clustering',
                                 'hmm_regime_discovery', 'hmm_models_training', 'hmm_ensemble_training',
-                                'multi_horizon_profit_labeler', 'triple_barrier_labeling',
                                 'feature_lookback_optimization', 'pid_based_feature_generation',
+                                'multi_horizon_profit_labeler', 'triple_barrier_labeling',
                                 'sr_feature_integration']
             },
             'model_training': {
@@ -967,11 +967,11 @@ class AresLauncher:
             'sr_clustering': ['sr_detection'],
             'hmm_clustering': ['sr_clustering'],
             'hmm_regime_discovery': ['hmm_clustering'],
-            'multi_horizon_profit_labeler': ['hmm_regime_discovery'],
-            'triple_barrier_labeling': ['hmm_regime_discovery'],
-            'feature_lookback_optimization': ['multi_horizon_profit_labeler'],
+            'feature_lookback_optimization': ['hmm_regime_discovery'],
             'pid_based_feature_generation': ['feature_lookback_optimization'],
-            'sr_feature_integration': ['pid_based_feature_generation'],
+            'multi_horizon_profit_labeler': ['pid_based_feature_generation'],
+            'triple_barrier_labeling': ['hmm_regime_discovery'],
+            'sr_feature_integration': ['multi_horizon_profit_labeler'],
             
             # Model Training dependencies
             'hmm_training': ['sr_feature_integration'],
@@ -1019,10 +1019,10 @@ class AresLauncher:
             'sr_clustering': ['sr_clusters.json'],
             'hmm_clustering': ['hmm_clusters.json'],
             'hmm_regime_discovery': ['regime_assignments.parquet'],
-            'multi_horizon_profit_labeler': ['multi_horizon_labels.parquet'],
-            'triple_barrier_labeling': ['labels.parquet'],
             'feature_lookback_optimization': ['optimized_features.parquet'],
             'pid_based_feature_generation': ['pid_based_features.parquet'],
+            'multi_horizon_profit_labeler': ['multi_horizon_labels.parquet'],
+            'triple_barrier_labeling': ['labels.parquet'],
             'sr_feature_integration': ['sr_features.json'],
             
             # Model Training outputs

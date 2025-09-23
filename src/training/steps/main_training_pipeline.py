@@ -153,8 +153,8 @@ class MainPipelineConfig:
         PipelineStage.MARKET_ANALYSIS: [
             'sr_parameter_optimization', 'sr_detection', 'sr_clustering',
             'hmm_regime_discovery', 'hmm_clustering', 'hmm_models_training', 'hmm_ensemble_training',
-            'regime_data_splitting', 'multi_horizon_profit_labeler',
-            'feature_lookback_optimization', 'pid_based_feature_generation', 'final_feature_selection'
+            'regime_data_splitting', 'feature_lookback_optimization',
+            'pid_based_feature_generation', 'multi_horizon_profit_labeler', 'final_feature_selection'
         ],
         PipelineStage.MODEL_TRAINING: [
             'analyst_model_training', 'analyst_ensemble_training',
@@ -602,7 +602,7 @@ class MainTrainingPipeline:
 
         # For MARKET_ANALYSIS, use sequential execution with automatic progression
         # Start with the first sub-pipeline and let it trigger the next ones
-        self.logger.info("🚀 Starting automatic sequential execution: sr_parameter_optimization -> sr_detection -> sr_clustering -> hmm_regime_discovery -> hmm_clustering -> regime_data_splitting -> multi_horizon_labeling -> feature_lookback_optimization -> cross_timeframe_analysis -> sr_feature_integration")
+        self.logger.info("🚀 Starting automatic sequential execution: sr_parameter_optimization -> sr_detection -> sr_clustering -> hmm_regime_discovery -> hmm_clustering -> regime_data_splitting -> feature_lookback_optimization -> pid_based_feature_generation -> multi_horizon_profit_labeler -> final_feature_selection -> cross_timeframe_analysis")
 
         results = []
         if sub_pipeline_names:
@@ -818,8 +818,8 @@ def get_full_pipeline_config(
             PipelineStage.MARKET_ANALYSIS: [
                 'sr_parameter_optimization', 'sr_detection', 'sr_clustering',
                 'hmm_regime_discovery', 'hmm_clustering', 'hmm_models_training', 'hmm_ensemble_training',
-                'regime_data_splitting', 'multi_horizon_profit_labeler',
-                'feature_lookback_optimization', 'pid_based_feature_generation', 'final_feature_selection'
+                'regime_data_splitting', 'feature_lookback_optimization',
+                'pid_based_feature_generation', 'multi_horizon_profit_labeler', 'final_feature_selection'
             ],
             PipelineStage.MODEL_TRAINING: [
                 'analyst_model_training', 'analyst_ensemble_training', 
@@ -874,7 +874,8 @@ def get_light_pipeline_config(
             PipelineStage.MARKET_ANALYSIS: [
                 'sr_parameter_optimization', 'sr_detection', 'sr_clustering',
                 'hmm_regime_discovery', 'hmm_clustering', 'hmm_models_training', 'hmm_ensemble_training',
-                'regime_data_splitting', 'multi_horizon_profit_labeler'
+                'regime_data_splitting', 'feature_lookback_optimization',
+                'pid_based_feature_generation', 'multi_horizon_profit_labeler'
             ],
             PipelineStage.MODEL_TRAINING: [
                 'analyst_model_training', 'analyst_ensemble_training', 'tactician_lookback_optimization', 'tactician_models_training', 'tactician_ensemble_training'

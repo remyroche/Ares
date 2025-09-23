@@ -669,13 +669,14 @@ class MultiHorizonSubPipelineAdapter:
                                           symbol: Optional[str] = None,
                                           exchange: Optional[str] = None,
                                           timeframe: Optional[str] = None,
-                                          mode: str = 'full') -> Dict[str, Any]:
+                                          mode: str = 'full',
+                                          features: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         Execute multi-horizon labeling step compatible with sub-pipeline.
-        
+
         This method provides the same interface as the original triple barrier
         labeling step but uses the new multi-horizon approach.
-        
+
         Args:
             data: Input OHLCV data
             regime_labels: Optional regime labels
@@ -684,13 +685,20 @@ class MultiHorizonSubPipelineAdapter:
             exchange: Exchange name
             timeframe: Data timeframe
             mode: Execution mode
-            
+            features: Optional pre-computed features to use for enhanced labeling
+
         Returns:
             Dictionary with labeling results compatible with sub-pipeline
         """
         self.logger.info(f'🎯 Executing multi-horizon labeling step for {symbol or "unknown"} on {timeframe or "unknown"}')
         self.logger.info(f'📊 Input data shape: {data.shape if data is not None else "None"}')
         self.logger.info(f'🚨 EXECUTION MODE: {mode}')
+        self.logger.info(f'🔧 Features available: {features is not None}')
+
+        if features:
+            feature_names = features.get('combined_feature_names', [])
+            self.logger.info(f'📊 Available features: {len(feature_names)} features')
+            self.logger.info(f'🔧 Enhanced labeling with optimized features enabled')
         
         # ENHANCED DATA FILTERING WITH QUALITY VALIDATION
         if data is not None and len(data) > 1000:  # Apply filtering for datasets larger than 1000 rows
@@ -738,6 +746,13 @@ class MultiHorizonSubPipelineAdapter:
                 # Create multi-horizon configuration
                 labeling_config = self._create_labeling_config(config)
                 self.logger.info(f'🔧 Created labeling config: {labeling_config.__dict__}')
+
+                # Enhanced labeling with features if available
+                if features and features.get('combined_feature_names'):
+                    self.logger.info('🔧 Enhancing labeling with feature-based analysis')
+                    # Store features for use in dynamic labeling
+                    labeling_config.features = features
+                    labeling_config.enhanced_labeling = True
                 
                 # Apply multi-horizon labeling with safe operations
                 self.logger.info('🔄 Starting multi-horizon labeling...')
@@ -759,36 +774,43 @@ class MultiHorizonSubPipelineAdapter:
                         self.logger.info('🔧 Creating labeler...')
                         labeler = MultiHorizonProfitLabeler(labeling_config)
                         self.logger.info(f'🔧 Created labeler: {labeler}')
-                        
+
                         # Test with a small subset first
                         test_data = data.head(1000).copy()
                         self.logger.info(f'🧪 Testing with small subset: {test_data.shape}')
-                        
+
                         # Implement actual dynamic labeling without decorators
                         try:
                             self.logger.info('🧪 Implementing dynamic multi-horizon labeling...')
-                            
+
                             # Create dynamic labeling without problematic decorators
-                            labeled_data = self._generate_dynamic_labels(test_data, labeling_config)
-                            
+                            # Pass features if available for enhanced labeling
+                            if hasattr(labeling_config, 'enhanced_labeling') and labeling_config.enhanced_labeling:
+                                labeled_data = self._generate_enhanced_dynamic_labels(test_data, labeling_config)
+                            else:
+                                labeled_data = self._generate_dynamic_labels(test_data, labeling_config)
+
                             self.logger.info(f'✅ Dynamic labeling successful: {labeled_data.shape}')
-                            
+
                         except Exception as direct_e:
                             self.logger.error(f'❌ Dynamic labeling failed: {direct_e}')
                             import traceback
                             self.logger.error(f'❌ Traceback: {traceback.format_exc()}')
                             labeled_data = None
-                            
+
                         self.logger.info(f'📊 Final result: {type(labeled_data)}, shape: {labeled_data.shape if labeled_data is not None else "None"}')
-                        
+
                         # If successful with small data, apply to the filtered dataset
                         if labeled_data is not None and not labeled_data.empty:
                             self.logger.info('✅ Small test successful, applying dynamic labeling to filtered data...')
-                            
+
                             # Apply dynamic labeling to the already-filtered dataset
                             self.logger.info(f'🔧 About to call _generate_dynamic_labels with data shape: {data.shape}')
-                            labeled_data = self._generate_dynamic_labels(data, labeling_config)  # 'data' is already filtered!
-                            
+                            if hasattr(labeling_config, 'enhanced_labeling') and labeling_config.enhanced_labeling:
+                                labeled_data = self._generate_enhanced_dynamic_labels(data, labeling_config)  # 'data' is already filtered!
+                            else:
+                                labeled_data = self._generate_dynamic_labels(data, labeling_config)  # 'data' is already filtered!
+
                             self.logger.info(f'📊 Filtered data dynamic labeling completed: {labeled_data.shape}')
                 except Exception as e:
                     self.logger.error(f'❌ apply_multi_horizon_labeling failed: {e}')
@@ -960,7 +982,79 @@ class MultiHorizonSubPipelineAdapter:
         
         # Calculate summary statistics
         self._log_dynamic_labeling_statistics(labeled_data, valid_samples)
-        
+
+        return labeled_data
+
+    def _generate_enhanced_dynamic_labels(self, data: pd.DataFrame, config: MultiHorizonConfig) -> pd.DataFrame:
+        """Generate enhanced dynamic multi-horizon labels using optimized features."""
+        self.logger.info(f'🔍 Generating ENHANCED dynamic multi-horizon labels for {len(data)} samples with features')
+
+        if len(data) < max(config.time_horizons.values()) + 1:
+            self.logger.warning(f'⚠️ Insufficient data for enhanced labeling (need at least {max(config.time_horizons.values()) + 1} samples)')
+            return data.copy()
+
+        labeled_data = data.copy()
+        max_horizon = max(config.time_horizons.values())
+
+        # Initialize all probability columns
+        self._initialize_probability_columns(labeled_data, config)
+
+        # Extract features for enhanced labeling
+        features = getattr(config, 'features', {})
+        feature_data = None
+        feature_names = []
+
+        if features and 'combined_features' in features:
+            self.logger.info('🔧 Using optimized features for enhanced labeling')
+            feature_data = features['combined_features']
+            feature_names = features.get('combined_feature_names', [])
+
+            # Ensure feature data is aligned with our data
+            if isinstance(feature_data, pd.DataFrame):
+                # Align feature data with our data index
+                common_index = data.index.intersection(feature_data.index)
+                if len(common_index) > 0:
+                    feature_data = feature_data.loc[common_index]
+                    labeled_data = labeled_data.loc[common_index]
+                    self.logger.info(f'📊 Aligned feature data: {len(common_index)} samples')
+                else:
+                    self.logger.warning('⚠️ No common index between data and features - falling back to standard labeling')
+                    return self._generate_dynamic_labels(data, config)
+
+        # Generate labels for each valid sample
+        valid_samples = len(data) - max_horizon
+        self.logger.info(f'📊 Processing {valid_samples} valid samples with enhanced calculations')
+
+        for i in range(min(valid_samples, len(data) - max_horizon)):
+            if i % 10000 == 0 and i > 0:
+                self.logger.info(f'   → Enhanced Progress: {i}/{valid_samples} ({i/valid_samples*100:.1f}%)')
+
+            try:
+                current_price = float(data.iloc[i]['close'])
+
+                # Use features to enhance labeling decisions if available
+                if feature_data is not None and i < len(feature_data):
+                    current_features = feature_data.iloc[i] if hasattr(feature_data, 'iloc') else None
+                    sample_labels = self._calculate_enhanced_dynamic_sample_labels(
+                        data, i, current_price, config, current_features, feature_names
+                    )
+                else:
+                    # Fallback to standard labeling
+                    sample_labels = self._calculate_dynamic_sample_labels(data, i, current_price, config)
+
+                # Store all labels for this sample
+                for col_name, value in sample_labels.items():
+                    if col_name in labeled_data.columns:
+                        labeled_data.iloc[i, labeled_data.columns.get_loc(col_name)] = value
+
+            except Exception as e:
+                if i < 10:  # Only log first few errors to avoid spam
+                    self.logger.warning(f'⚠️ Error processing enhanced sample {i}: {e}')
+                continue
+
+        # Calculate summary statistics
+        self._log_enhanced_labeling_statistics(labeled_data, valid_samples, features)
+
         return labeled_data
     
     def _initialize_probability_columns(self, labeled_data: pd.DataFrame, config: MultiHorizonConfig):
@@ -1235,6 +1329,201 @@ class MultiHorizonSubPipelineAdapter:
             self.logger.info(f'   → Leverage-adjusted: mean={leverage_scores.mean():.3f}, std={leverage_scores.std():.3f}')
         
         self.logger.info('✅ Dynamic multi-horizon labeling completed successfully')
+
+    def _calculate_enhanced_dynamic_sample_labels(self, data: pd.DataFrame, index: int,
+                                                current_price: float, config: MultiHorizonConfig,
+                                                current_features: pd.Series = None,
+                                                feature_names: List[str] = None) -> Dict[str, float]:
+        """Calculate enhanced dynamic labels for a single sample using features."""
+        sample_labels = {}
+        probability_scores = {}
+
+        # Generate labels for each target/horizon combination - BI-DIRECTIONAL
+        for target_name, target_pct in config.profit_targets.items():
+            for horizon_name, horizon_periods in config.time_horizons.items():
+                window_end = min(index + horizon_periods + 1, len(data))
+                window_data = data.iloc[index:window_end]
+
+                # Calculate actual probability for BOTH directions (enhanced with features)
+                long_prob = self._calculate_enhanced_profit_probability(
+                    window_data, current_price, target_pct, horizon_periods, config,
+                    direction='long', features=current_features, feature_names=feature_names
+                )
+                short_prob = self._calculate_enhanced_profit_probability(
+                    window_data, current_price, target_pct, horizon_periods, config,
+                    direction='short', features=current_features, feature_names=feature_names
+                )
+
+                # Store LONG results
+                long_col = f'{target_name}_{horizon_name}_long_prob'
+                sample_labels[long_col] = long_prob
+                probability_scores[f'{target_name}_{horizon_name}_long'] = long_prob
+
+                # Store SHORT results
+                short_col = f'{target_name}_{horizon_name}_short_prob'
+                sample_labels[short_col] = short_prob
+                probability_scores[f'{target_name}_{horizon_name}_short'] = short_prob
+
+                # BACKWARD COMPATIBILITY: Store original (long-biased) results
+                col_name = f'{target_name}_{horizon_name}_prob'
+                sample_labels[col_name] = long_prob  # Use long for backward compatibility
+                probability_scores[f'{target_name}_{horizon_name}'] = long_prob
+
+        # Calculate composite scores (unchanged)
+        composite_scores = self._calculate_dynamic_composite_scores(probability_scores)
+        sample_labels.update(composite_scores)
+
+        return sample_labels
+
+    def _calculate_enhanced_profit_probability(self, window_data: pd.DataFrame,
+                                             entry_price: float,
+                                             profit_target: float,
+                                             horizon_periods: int,
+                                             config: MultiHorizonConfig,
+                                             direction: str = 'long',
+                                             features: pd.Series = None,
+                                             feature_names: List[str] = None) -> float:
+        """Calculate enhanced probability using features and actual price movements."""
+        if len(window_data) < 2:
+            return 0.1  # Base uncertainty probability
+
+        try:
+            highs = window_data['high'].values
+            lows = window_data['low'].values
+
+            # Calculate directional target prices and check hits
+            if direction.lower() == 'long':
+                target_price = entry_price * (1 + profit_target)
+                target_hit = np.any(highs >= target_price)
+                if target_hit:
+                    hit_index = np.where(highs >= target_price)[0][0]
+                    # For longs, adverse move is price going down
+                    max_adverse = (entry_price - np.min(lows[:hit_index+1])) / entry_price if hit_index > 0 else 0.0
+                else:
+                    max_adverse = (entry_price - np.min(lows)) / entry_price
+
+            else:  # direction == 'short'
+                target_price = entry_price * (1 - profit_target)  # Short target is below entry
+                target_hit = np.any(lows <= target_price)
+                if target_hit:
+                    hit_index = np.where(lows <= target_price)[0][0]
+                    # For shorts, adverse move is price going up
+                    max_adverse = (np.max(highs[:hit_index+1]) - entry_price) / entry_price if hit_index > 0 else 0.0
+                else:
+                    max_adverse = (np.max(highs) - entry_price) / entry_price
+
+            # Enhanced calculation using features
+            feature_boost = 1.0
+            if features is not None and feature_names:
+                # Use feature importance to boost probability calculation
+                feature_importance = getattr(config, 'feature_importance_scores', {})
+
+                # Calculate feature-based confidence boost
+                relevant_features = [f for f in feature_names if any(keyword in f.lower()
+                                   for keyword in ['momentum', 'trend', 'volatility', 'rsi', 'macd'])]
+
+                if relevant_features:
+                    # Average of relevant feature values (normalized)
+                    feature_values = []
+                    for feature in relevant_features:
+                        if feature in features.index:
+                            val = features[feature]
+                            if pd.notna(val):
+                                # Normalize to 0-1 range
+                                normalized_val = max(0.0, min(1.0, float(val)))
+                                feature_values.append(normalized_val)
+
+                    if feature_values:
+                        feature_boost = 1.0 + (np.mean(feature_values) * 0.3)  # Up to 30% boost
+                        self.logger.debug(f'🔧 Feature boost: {feature_boost:.3f} from {len(feature_values)} features')
+
+            if target_hit:
+                time_to_hit = hit_index
+
+                # Calculate quality factors (enhanced with features)
+                speed_factor = max(0.2, 1.0 - (time_to_hit / horizon_periods))
+
+                # Risk factor (lower adverse excursion = better)
+                risk_factor = max(0.1, 1.0 - (abs(max_adverse) * 20))  # Penalize adverse moves
+
+                # Net profit factor
+                net_profit = profit_target - config.transaction_cost
+                profit_factor = max(0.2, min(1.0, net_profit * 200))
+
+                # Combined probability with quality weighting and feature boost
+                base_prob = 0.9  # High probability for actual hits
+                quality_weight = (speed_factor * config.speed_weight +
+                                risk_factor * config.risk_weight +
+                                profit_factor * config.profitability_weight)
+
+                final_prob = base_prob * quality_weight * feature_boost
+                return np.clip(final_prob, 0.0, 1.0)
+            else:
+                # Target not hit - calculate probability based on how close we got
+                max_price_reached = np.max(highs)
+                progress_to_target = (max_price_reached - entry_price) / (target_price - entry_price)
+                progress_to_target = np.clip(progress_to_target, 0.0, 1.0)
+
+                # Base probability for near-misses (enhanced with features)
+                base_prob = 0.1 + (progress_to_target * 0.3)  # 0.1 to 0.4 range
+
+                # Feature-based adjustment for near-misses
+                if features is not None:
+                    # If features suggest strong directional bias, increase probability
+                    directional_features = [f for f in feature_names if any(keyword in f.lower()
+                                          for keyword in ['momentum', 'trend', 'bias', 'direction'])]
+
+                    if directional_features:
+                        directional_values = []
+                        for feature in directional_features:
+                            if feature in features.index:
+                                val = features[feature]
+                                if pd.notna(val):
+                                    directional_values.append(float(val))
+
+                        if directional_values:
+                            # Calculate directional confidence
+                            directional_avg = np.mean(directional_values)
+                            directional_boost = 1.0 + (abs(directional_avg) * 0.2)  # Up to 20% boost
+                            base_prob *= directional_boost
+
+                return np.clip(base_prob, 0.0, 1.0)
+
+        except Exception as e:
+            # Fallback for any calculation errors
+            return 0.1
+
+    def _log_enhanced_labeling_statistics(self, labeled_data: pd.DataFrame, valid_samples: int, features: Dict[str, Any]):
+        """Log enhanced labeling statistics including feature usage."""
+        self.logger.info('📊 Enhanced Labeling Statistics:')
+
+        # Overall opportunity distribution
+        if 'overall_opportunity' in labeled_data.columns:
+            overall_opp = labeled_data['overall_opportunity'].iloc[:valid_samples]
+            self.logger.info(f'   → Overall opportunity: mean={overall_opp.mean():.3f}, std={overall_opp.std():.3f}')
+
+            # High opportunity samples
+            high_opp_count = (overall_opp > 0.7).sum()
+            self.logger.info(f'   → High opportunity samples (>0.7): {high_opp_count} ({high_opp_count/valid_samples*100:.1f}%)')
+
+        # Leverage-adjusted scores
+        if 'leverage_adjusted_score' in labeled_data.columns:
+            leverage_scores = labeled_data['leverage_adjusted_score'].iloc[:valid_samples]
+            self.logger.info(f'   → Leverage-adjusted: mean={leverage_scores.mean():.3f}, std={leverage_scores.std():.3f}')
+
+        # Feature-enhanced metrics
+        if features:
+            feature_names = features.get('combined_feature_names', [])
+            self.logger.info(f'   → Enhanced with {len(feature_names)} optimized features')
+
+            # Feature quality metrics
+            if 'feature_importance_scores' in features:
+                importance_scores = features['feature_importance_scores']
+                if importance_scores:
+                    top_features = sorted(importance_scores.items(), key=lambda x: x[1], reverse=True)[:5]
+                    self.logger.info(f'   → Top 5 features used: {top_features}')
+
+        self.logger.info('✅ Enhanced multi-horizon labeling completed successfully')
     
     def _apply_execution_mode_filtering(self, data: pd.DataFrame, mode: str) -> pd.DataFrame:
         """Apply execution mode-based data filtering."""
@@ -1299,7 +1588,8 @@ def execute_multi_horizon_labeling_step(data: pd.DataFrame,
                                        symbol: Optional[str] = None,
                                        exchange: Optional[str] = None,
                                        timeframe: Optional[str] = None,
-                                       mode: str = 'full') -> Dict[str, Any]:
+                                       mode: str = 'full',
+                                       features: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     Execute multi-horizon labeling step (sub-pipeline compatible).
     
@@ -1314,7 +1604,8 @@ def execute_multi_horizon_labeling_step(data: pd.DataFrame,
         symbol=symbol,
         exchange=exchange,
         timeframe=timeframe,
-        mode=mode
+        mode=mode,
+        features=features
     )
 
 # Test function

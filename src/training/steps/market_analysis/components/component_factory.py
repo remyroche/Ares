@@ -78,7 +78,8 @@ class MultiHorizonComponentWrapper(BaseMarketAnalysisComponent):
                 symbol=pipeline_state.get('symbol', 'UNKNOWN'),
                 exchange=pipeline_state.get('exchange', 'UNKNOWN'),
                 timeframe=pipeline_state.get('timeframe', 'UNKNOWN'),
-                mode=execution_mode
+                mode=execution_mode,
+                features=pipeline_state.get('pid_based_features')  # Pass optimized features for enhanced labeling
             )
             
             # Convert to ComponentResult

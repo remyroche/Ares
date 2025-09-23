@@ -138,6 +138,12 @@ async def test_tactician_dual_training():
             print(f"   - Short Sharpe Ratio: {evaluation.get('short_sharpe_ratio', 0):.4f}")
             print(f"   - Long Max Drawdown: {evaluation.get('long_max_drawdown', 0):.4f}")
             print(f"   - Short Max Drawdown: {evaluation.get('short_max_drawdown', 0):.4f}")
+            print(f"   - Long Total Trades: {evaluation.get('long_total_trades', 0)}")
+            print(f"   - Short Total Trades: {evaluation.get('short_total_trades', 0)}")
+            print(f"   - Long Avg Trades/Month: {evaluation.get('long_avg_trades_per_month', 0):.1f}")
+            print(f"   - Short Avg Trades/Month: {evaluation.get('short_avg_trades_per_month', 0):.1f}")
+            print(f"   - Long Total P&L: {evaluation.get('long_total_pnl', 0):.6f}")
+            print(f"   - Short Total P&L: {evaluation.get('short_total_pnl', 0):.6f}")
 
     print("\n🎉 All tests completed successfully!")
     print("\n📋 Command Usage Instructions:")
@@ -174,6 +180,12 @@ async def test_tactician_dual_training():
     print("       - Profit Factor and Win Rate")
     print("       - Regression metrics (MSE, MAE, RMSE, R²)")
     print("       - Cross-validation results")
+    print("     * TRADING PERFORMANCE METRICS:")
+    print("       - Total trades per strategy")
+    print("       - Average trades per month")
+    print("       - Total P&L per strategy")
+    print("       - Monthly P&L breakdown")
+    print("       - Monthly trade count breakdown")
 
     return True
 

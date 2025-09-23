@@ -858,6 +858,16 @@ class TacticianDualTrainingStep:
                     'short_rmse': getattr(result, 'short_rmse', 0.0),
                     'long_r2_score': getattr(result, 'long_r2_score', 0.0),
                     'short_r2_score': getattr(result, 'short_r2_score', 0.0),
+                    'long_total_trades': getattr(result, 'long_total_trades', 0),
+                    'short_total_trades': getattr(result, 'short_total_trades', 0),
+                    'long_avg_trades_per_month': getattr(result, 'long_avg_trades_per_month', 0.0),
+                    'short_avg_trades_per_month': getattr(result, 'short_avg_trades_per_month', 0.0),
+                    'long_total_pnl': getattr(result, 'long_total_pnl', 0.0),
+                    'short_total_pnl': getattr(result, 'short_total_pnl', 0.0),
+                    'long_monthly_pnl': getattr(result, 'long_monthly_pnl', {}),
+                    'short_monthly_pnl': getattr(result, 'short_monthly_pnl', {}),
+                    'long_monthly_trade_count': getattr(result, 'long_monthly_trade_count', {}),
+                    'short_monthly_trade_count': getattr(result, 'short_monthly_trade_count', {}),
                     'evaluation_completed': getattr(result, 'evaluation_completed', False),
                     'cross_validation_folds': getattr(result, 'cross_validation_folds', 5),
                     'evaluation_time': getattr(result, 'evaluation_time', 0.0)
@@ -1066,11 +1076,107 @@ class TacticianDualTrainingStep:
                 metrics[f'{signal_type}_profit_factor'] = profit_factor
                 metrics[f'{signal_type}_win_rate'] = win_rate
 
+            # Calculate trading frequency and monthly P&L metrics
+            trading_metrics = self._calculate_trading_metrics(
+                training_data, avg_predictions, y_train, signal_type
+            )
+            metrics.update(trading_metrics)
+
             return metrics
 
         except Exception as e:
             tprint_error(f"❌ Failed to calculate metrics for {signal_type}: {e}")
             return self._get_default_metrics(signal_type)
+
+    def _calculate_trading_metrics(self, training_data: pd.DataFrame, predictions: np.ndarray,
+                                 actual_returns: np.ndarray, signal_type: str) -> Dict[str, Union[float, int, Dict]]:
+        """Calculate trading frequency and monthly P&L metrics."""
+        try:
+            import numpy as np
+            from datetime import datetime
+
+            # Get timestamps for monthly grouping
+            if 'timestamp' in training_data.columns:
+                timestamps = pd.to_datetime(training_data['timestamp'].values)
+            else:
+                # Create synthetic timestamps if not available
+                timestamps = pd.date_range('2024-01-01', periods=len(training_data), freq='1min')
+
+            # Convert predictions to trading signals (long/short/neutral)
+            # For now, use a simple threshold-based approach
+            signal_threshold = 0.001  # 0.1% threshold
+            trading_signals = np.zeros_like(predictions)
+
+            # Long signals when prediction > threshold
+            long_mask = predictions > signal_threshold
+            trading_signals[long_mask] = 1
+
+            # Short signals when prediction < -threshold
+            short_mask = predictions < -signal_threshold
+            trading_signals[short_mask] = -1
+
+            # Calculate total trades
+            signal_changes = np.diff(np.concatenate([np.array([0]), trading_signals]))
+            total_trades = np.sum(np.abs(signal_changes))
+
+            # Calculate monthly trade counts
+            monthly_trades = {}
+            monthly_pnl = {}
+
+            for i in range(len(timestamps)):
+                month_key = timestamps[i].strftime('%Y-%m')
+                signal = trading_signals[i]
+
+                if month_key not in monthly_trades:
+                    monthly_trades[month_key] = 0
+                    monthly_pnl[month_key] = 0.0
+
+                # Count trade entries (signal changes)
+                if i > 0:
+                    prev_signal = trading_signals[i-1]
+                    if signal != prev_signal and signal != 0:
+                        monthly_trades[month_key] += 1
+
+                # Calculate P&L for this position
+                if signal != 0:
+                    # Simulate P&L based on actual returns
+                    if i < len(actual_returns):
+                        pnl = actual_returns[i] * signal  # Simple directional P&L
+                        monthly_pnl[month_key] += pnl
+
+            # Calculate total metrics
+            total_pnl = sum(monthly_pnl.values())
+
+            # Calculate average trades per month
+            if monthly_trades:
+                avg_trades_per_month = np.mean(list(monthly_trades.values()))
+                total_months = len(set([ts.strftime('%Y-%m') for ts in timestamps]))
+                if total_months > 0:
+                    avg_trades_per_month = total_trades / total_months
+            else:
+                avg_trades_per_month = 0.0
+
+            return {
+                f'{signal_type}_total_trades': int(total_trades),
+                f'{signal_type}_avg_trades_per_month': float(avg_trades_per_month),
+                f'{signal_type}_total_pnl': float(total_pnl),
+                f'{signal_type}_monthly_pnl': monthly_pnl,
+                f'{signal_type}_monthly_trade_count': monthly_trades
+            }
+
+        except Exception as e:
+            tprint_error(f"❌ Failed to calculate trading metrics for {signal_type}: {e}")
+            return self._get_default_trading_metrics(signal_type)
+
+    def _get_default_trading_metrics(self, signal_type: str) -> Dict[str, Union[float, int, Dict]]:
+        """Get default trading metrics for a signal type."""
+        return {
+            f'{signal_type}_total_trades': 0,
+            f'{signal_type}_avg_trades_per_month': 0.0,
+            f'{signal_type}_total_pnl': 0.0,
+            f'{signal_type}_monthly_pnl': {},
+            f'{signal_type}_monthly_trade_count': {}
+        }
 
     def _get_default_metrics(self, signal_type: str) -> Dict[str, float]:
         """Get default/zero metrics for a signal type."""
@@ -1089,7 +1195,12 @@ class TacticianDualTrainingStep:
             f'{signal_type}_mse': 0.0,
             f'{signal_type}_mae': 0.0,
             f'{signal_type}_rmse': 0.0,
-            f'{signal_type}_r2_score': 0.0
+            f'{signal_type}_r2_score': 0.0,
+            f'{signal_type}_total_trades': 0,
+            f'{signal_type}_avg_trades_per_month': 0.0,
+            f'{signal_type}_total_pnl': 0.0,
+            f'{signal_type}_monthly_pnl': {},
+            f'{signal_type}_monthly_trade_count': {}
         }
 
     def _log_comprehensive_summary(self, report: Dict[str, Any]) -> None:
@@ -1203,6 +1314,41 @@ class TacticianDualTrainingStep:
                 tprint_info(f"    📊 MAE: {evaluation['short_mae']:.6f}")
                 tprint_info(f"    📊 RMSE: {evaluation['short_rmse']:.6f}")
                 tprint_info(f"    📊 R² Score: {evaluation['short_r2_score']:.4f}")
+
+                # Financial trading metrics
+                tprint_info("  🤖 LONG TRADING METRICS:")
+                tprint_info(f"    📈 Total Trades: {evaluation['long_total_trades']}")
+                tprint_info(f"    📊 Avg Trades/Month: {evaluation['long_avg_trades_per_month']:.1f}")
+                tprint_info(f"    💵 Total P&L: {evaluation['long_total_pnl']:.6f}")
+                tprint_info("  🤖 SHORT TRADING METRICS:")
+                tprint_info(f"    📈 Total Trades: {evaluation['short_total_trades']}")
+                tprint_info(f"    📊 Avg Trades/Month: {evaluation['short_avg_trades_per_month']:.1f}")
+                tprint_info(f"    💵 Total P&L: {evaluation['short_total_pnl']:.6f}")
+
+                # Monthly breakdown (show top 5 months for each)
+                if evaluation['long_monthly_pnl']:
+                    tprint_info("  📅 LONG Monthly P&L (Top 5):")
+                    sorted_months = sorted(evaluation['long_monthly_pnl'].items(), key=lambda x: x[1], reverse=True)[:5]
+                    for month, pnl in sorted_months:
+                        tprint_info(f"    {month}: {pnl:.6f}")
+
+                if evaluation['short_monthly_pnl']:
+                    tprint_info("  📅 SHORT Monthly P&L (Top 5):")
+                    sorted_months = sorted(evaluation['short_monthly_pnl'].items(), key=lambda x: x[1], reverse=True)[:5]
+                    for month, pnl in sorted_months:
+                        tprint_info(f"    {month}: {pnl:.6f}")
+
+                if evaluation['long_monthly_trade_count']:
+                    tprint_info("  📊 LONG Monthly Trade Count (Top 5):")
+                    sorted_months = sorted(evaluation['long_monthly_trade_count'].items(), key=lambda x: x[1], reverse=True)[:5]
+                    for month, trades in sorted_months:
+                        tprint_info(f"    {month}: {trades} trades")
+
+                if evaluation['short_monthly_trade_count']:
+                    tprint_info("  📊 SHORT Monthly Trade Count (Top 5):")
+                    sorted_months = sorted(evaluation['short_monthly_trade_count'].items(), key=lambda x: x[1], reverse=True)[:5]
+                    for month, trades in sorted_months:
+                        tprint_info(f"    {month}: {trades} trades")
 
                 tprint_info(f"  📊 Cross-Validation: {evaluation['cross_validation_folds']} folds")
                 tprint_info(f"  ⏱️ Evaluation Time: {evaluation['evaluation_time']:.2f}s")

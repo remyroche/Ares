@@ -1044,6 +1044,14 @@ class TacticianPreMLOrchestrator:
                     'short_sharpe_ratio': getattr(result, 'short_sharpe_ratio', 0.0),
                     'long_max_drawdown': getattr(result, 'long_max_drawdown', 0.0),
                     'short_max_drawdown': getattr(result, 'short_max_drawdown', 0.0),
+                    'long_total_trades': getattr(result, 'long_total_trades', 0),
+                    'short_total_trades': getattr(result, 'short_total_trades', 0),
+                    'long_avg_trades_per_month': getattr(result, 'long_avg_trades_per_month', 0.0),
+                    'short_avg_trades_per_month': getattr(result, 'short_avg_trades_per_month', 0.0),
+                    'long_total_pnl': getattr(result, 'long_total_pnl', 0.0),
+                    'short_total_pnl': getattr(result, 'short_total_pnl', 0.0),
+                    'long_monthly_pnl': getattr(result, 'long_monthly_pnl', {}),
+                    'short_monthly_pnl': getattr(result, 'short_monthly_pnl', {}),
                     'evaluation_completed': getattr(result, 'evaluation_completed', False)
                 }
             }
@@ -1149,6 +1157,27 @@ class TacticianPreMLOrchestrator:
                 tprint_info(f"  💰 Short Sharpe Ratio: {evaluation['short_sharpe_ratio']:.4f}")
                 tprint_info(f"  📉 Long Max Drawdown: {evaluation['long_max_drawdown']:.4f}")
                 tprint_info(f"  📉 Short Max Drawdown: {evaluation['short_max_drawdown']:.4f}")
+
+                # Financial trading metrics
+                tprint_info(f"  🤖 Long Total Trades: {evaluation['long_total_trades']}")
+                tprint_info(f"  🤖 Short Total Trades: {evaluation['short_total_trades']}")
+                tprint_info(f"  📊 Long Avg Trades/Month: {evaluation['long_avg_trades_per_month']:.1f}")
+                tprint_info(f"  📊 Short Avg Trades/Month: {evaluation['short_avg_trades_per_month']:.1f}")
+                tprint_info(f"  💵 Long Total P&L: {evaluation['long_total_pnl']:.6f}")
+                tprint_info(f"  💵 Short Total P&L: {evaluation['short_total_pnl']:.6f}")
+
+                # Monthly P&L breakdown (show top 5 months)
+                if evaluation['long_monthly_pnl']:
+                    tprint_info("  📅 Long Monthly P&L (Top 5):")
+                    sorted_months = sorted(evaluation['long_monthly_pnl'].items(), key=lambda x: x[1], reverse=True)[:5]
+                    for month, pnl in sorted_months:
+                        tprint_info(f"    {month}: {pnl:.6f}")
+
+                if evaluation['short_monthly_pnl']:
+                    tprint_info("  📅 Short Monthly P&L (Top 5):")
+                    sorted_months = sorted(evaluation['short_monthly_pnl'].items(), key=lambda x: x[1], reverse=True)[:5]
+                    for month, pnl in sorted_months:
+                        tprint_info(f"    {month}: {pnl:.6f}")
             else:
                 tprint_info("\n📊 Evaluation Status:")
                 tprint_info(f"  ✅ Evaluation Completed: {'Yes' if evaluation.get('evaluation_completed', False) else 'No'}")

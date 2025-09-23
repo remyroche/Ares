@@ -312,12 +312,13 @@ class TrainingStepEnhancer:
         
         tprint_success("✅ Training Step Enhancer initialized")
     
-    def enhance_training_step(self, 
-                            X: np.ndarray, 
-                            y: np.ndarray, 
+    def enhance_training_step(self,
+                            X: np.ndarray,
+                            y: np.ndarray,
                             model: Any,
                             timestamps: Optional[np.ndarray] = None,
-                            model_name: str = 'model') -> Tuple[Any, Dict[str, Any]]:
+                            model_name: str = 'model',
+                            regime_labels: Optional[np.ndarray] = None) -> Tuple[Any, Dict[str, Any]]:
         """
         Enhance a single training step with all available utilities.
         
@@ -360,19 +361,47 @@ class TrainingStepEnhancer:
                 )
                 training_metadata['enhancements_applied'].append('regularization')
             
-            # Step 3: Train with early stopping if applicable
+            # Step 3: Train with enhanced cross-validation and early stopping
             if self.config.enable_early_stopping and len(X) > 200:
-                tprint_info(f"⏹️ Training {model_name} with early stopping...")
-                
-                # Create validation split
-                split_point = int(len(X) * 0.8)
-                X_train, X_val = X[:split_point], X[split_point:]
-                y_train, y_val = y[:split_point], y[split_point:]
-                
+                tprint_info(f"⏹️ Training {model_name} with enhanced cross-validation and early stopping...")
+
+                # Enhanced cross-validation strategy based on regime information
+                if regime_labels is not None and len(np.unique(regime_labels)) > 1:
+                    # Use regime-aware CV strategies
+                    try:
+                        from src.training.steps.model_training.enhanced_regime_aware_hpo import EnhancedCVStrategies
+                        cv_strategies = EnhancedCVStrategies()
+
+                        # Use regime-aware time series split
+                        splits = cv_strategies.regime_aware_time_series_split(
+                            X, regime_labels, n_splits=min(5, len(X) // 50)
+                        )
+
+                        if splits:
+                            # Use the first split for training/validation
+                            train_idx, val_idx = splits[0]
+                            X_train, X_val = X[train_idx], X[val_idx]
+                            y_train, y_val = y[train_idx], y[val_idx]
+                            training_metadata['enhancements_applied'].append('regime_aware_cv')
+                            tprint_info(f"✅ Using regime-aware cross-validation for {model_name}")
+                        else:
+                            # Fallback to standard split
+                            split_point = int(len(X) * 0.8)
+                            X_train, X_val = X[:split_point], X[split_point:]
+                            y_train, y_val = y[:split_point], y[split_point:]
+                    except Exception as e:
+                        tprint_error(f"❌ Regime-aware CV failed: {e}")
+                        raise RuntimeError(f"❌ Enhanced training requires regime-aware CV to succeed. Fix the error: {e}") from e
+                else:
+                    # Use standard time series split
+                    split_point = int(len(X) * 0.8)
+                    X_train, X_val = X[:split_point], X[split_point:]
+                    y_train, y_val = y[:split_point], y[split_point:]
+
                 model, early_stopping_info = self.enhanced_utils.apply_early_stopping(
                     model, X_train, y_train, X_val, y_val, self.config.model_type
                 )
-                
+
                 training_metadata['early_stopping'] = early_stopping_info
                 training_metadata['enhancements_applied'].append('early_stopping')
             else:
@@ -380,22 +409,49 @@ class TrainingStepEnhancer:
                 tprint_info(f"🚀 Training {model_name}...")
                 model.fit(X, y)
             
-            # Step 4: Monitor for overfitting
+            # Step 4: Monitor for overfitting with enhanced CV
             if self.config.enable_overfitting_monitoring and len(X) > 200:
-                tprint_info(f"📊 Monitoring {model_name} for overfitting...")
-                
-                # Create validation split for monitoring
-                split_point = int(len(X) * 0.8)
-                X_train, X_val = X[:split_point], X[split_point:]
-                y_train, y_val = y[:split_point], y[split_point:]
-                
+                tprint_info(f"📊 Monitoring {model_name} for overfitting with enhanced CV...")
+
+                # Enhanced validation split for overfitting monitoring
+                if regime_labels is not None and len(np.unique(regime_labels)) > 1:
+                    # Use regime-aware CV for overfitting monitoring
+                    try:
+                        from src.training.steps.model_training.enhanced_regime_aware_hpo import EnhancedCVStrategies
+                        cv_strategies = EnhancedCVStrategies()
+
+                        splits = cv_strategies.regime_aware_time_series_split(
+                            X, regime_labels, n_splits=min(3, len(X) // 100)
+                        )
+
+                        if splits:
+                            # Use the last split for overfitting monitoring (more recent data)
+                            train_idx, val_idx = splits[-1]
+                            X_train, X_val = X[train_idx], X[val_idx]
+                            y_train, y_val = y[train_idx], y[val_idx]
+                            training_metadata['enhancements_applied'].append('regime_aware_overfitting_monitoring')
+                            tprint_info(f"✅ Using regime-aware CV for overfitting monitoring")
+                        else:
+                            # Fallback to standard split
+                            split_point = int(len(X) * 0.8)
+                            X_train, X_val = X[:split_point], X[split_point:]
+                            y_train, y_val = y[:split_point], y[split_point:]
+                    except Exception as e:
+                        tprint_error(f"❌ Regime-aware overfitting monitoring failed: {e}")
+                        raise RuntimeError(f"❌ Enhanced overfitting monitoring requires regime-aware CV to succeed. Fix the error: {e}") from e
+                else:
+                    # Standard split
+                    split_point = int(len(X) * 0.8)
+                    X_train, X_val = X[:split_point], X[split_point:]
+                    y_train, y_val = y[:split_point], y[split_point:]
+
                 overfitting_results = self.enhanced_utils.monitor_overfitting(
                     model, X_train, y_train, X_val, y_val, model_name
                 )
-                
+
                 training_metadata['overfitting_monitoring'] = overfitting_results
                 training_metadata['overfitting_detected'] = overfitting_results.get('is_overfitting', False)
-                
+
                 if overfitting_results.get('is_overfitting', False):
                     tprint_warning(f"⚠️ Overfitting detected in {model_name}")
                 else:

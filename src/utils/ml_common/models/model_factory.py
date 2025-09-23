@@ -99,6 +99,8 @@ class ModelType(Enum):
     FINANCIAL_RESNET = "FinancialResNet"
     ADVANCED_MAMBA_HYBRID = "AdvancedMambaHybrid"
     DEEPSCALER_1M = "DeepScaler1m"
+    CLVSA = "CLVSA"  # Convolutional-LSTM-Variational-Attention
+    MULTISCALE_NBEATS = "MultiScaleNBEATS"  # Enhanced NBEATS with multi-timeframe
     
     # Linear models
     RIDGE = "Ridge"
@@ -345,6 +347,10 @@ class EnhancedModelFactory:
                 model = self._create_advanced_mamba_hybrid_model(model_config)
             elif model_config.model_type == ModelType.DEEPSCALER_1M:
                 model = self._create_deepscaler_1m_model(model_config)
+            elif model_config.model_type == ModelType.CLVSA:
+                model = self._create_clvsa_model(model_config)
+            elif model_config.model_type == ModelType.MULTISCALE_NBEATS:
+                model = self._create_multiscale_nbeats_model(model_config)
             elif model_config.model_type in [ModelType.NODE, ModelType.NODE_CLASSIFIER]:
                 model = self._create_node_model(model_config)
             elif model_config.model_type in [ModelType.RIDGE, ModelType.RIDGE_CLASSIFIER]:
@@ -413,9 +419,9 @@ class EnhancedModelFactory:
             if not self.dependencies.get('torch', False):
                 raise ValidationError("PyTorch not available")
 
-        if model_config.model_type in [ModelType.DEEPSCALER, ModelType.DEEPSCALER_CLASSIFIER, ModelType.NBEATS, ModelType.FINANCIAL_RESNET, ModelType.ADVANCED_MAMBA_HYBRID, ModelType.DEEPSCALER_1M]:
+        if model_config.model_type in [ModelType.DEEPSCALER, ModelType.DEEPSCALER_CLASSIFIER, ModelType.NBEATS, ModelType.FINANCIAL_RESNET, ModelType.ADVANCED_MAMBA_HYBRID, ModelType.DEEPSCALER_1M, ModelType.CLVSA, ModelType.MULTISCALE_NBEATS]:
             if not self.dependencies.get('torch', False):
-                raise ValidationError("PyTorch not available")
+                raise ValidationError("❌ PyTorch is required for this model type. Install with: pip install torch torchvision torchaudio")
 
         if model_config.model_type == ModelType.NBEATS:
             if not self.dependencies.get('nbeats_pytorch', False):
@@ -1999,106 +2005,197 @@ class EnhancedModelFactory:
 
 
     def _create_attention_lightgbm_model(self, model_config: ModelConfig) -> Any:
-        """Create attention-enhanced LightGBM model."""
+        """Create CLVSA-enhanced LightGBM model."""
         try:
-            from src.training.steps.model_training.attention_enhanced_models import (
-                create_attention_model
-            )
+            from src.utils.ml_common.models.clvsa_architecture import create_clvsa_model
 
-            attention_dim = model_config.model_params.get('attention_dim', 64)
-            attention_heads = model_config.model_params.get('attention_heads', 4)
-            use_temporal_attention = model_config.model_params.get('use_temporal_attention', True)
-            dropout = model_config.model_params.get('attention_dropout', 0.1)
+            # CLVSA configuration for tree models
+            clvsa_config = {
+                'input_dim': model_config.model_params.get('input_dim', 100),
+                'output_dim': model_config.n_outputs,
+                'seq_length': model_config.model_params.get('seq_length', 50),  # Shorter for tree models
+                'conv_channels': [16, 32],  # Smaller for tree model preprocessing
+                'conv_kernel_sizes': [3, 5],
+                'lstm_hidden_dim': 32,  # Smaller for tree models
+                'lstm_layers': 1,
+                'attention_heads': 4,
+                'attention_dim': 64,  # Smaller attention for tree models
+                'variational_dim': 16,  # Smaller variational for tree models
+                'dropout': 0.1,
+                'regime_aware': True,
+                'multi_scale': False,  # Tree models don't need multi-scale
+                'uncertainty_quantification': False  # Tree models handle uncertainty differently
+            }
 
-            # Remove attention-specific parameters from model params
-            model_params = model_config.model_params.copy()
-            model_params.pop('use_attention', None)
-            model_params.pop('attention_dim', None)
-            model_params.pop('attention_heads', None)
-            model_params.pop('use_temporal_attention', None)
-            model_params.pop('attention_dropout', None)
+            # Create base LightGBM model
+            base_model = self._create_lightgbm_model(model_config)
 
-            return create_attention_model(
-                model_type='lightgbm',
-                attention_dim=attention_dim,
-                attention_heads=attention_heads,
-                model_params=model_params,
-                use_temporal_attention=use_temporal_attention,
-                dropout=dropout
-            )
+            # Wrap with CLVSA preprocessing
+            model_config.model_params.update(clvsa_config)
+            config_dict = {
+                'clvsa_params': clvsa_config,
+                'model_params': model_config.model_params
+            }
+
+            return create_clvsa_model(config_dict)
 
         except Exception as e:
-            self.logger.warning(f"⚠️ Attention-enhanced LightGBM creation failed: {e}")
+            self.logger.warning(f"⚠️ CLVSA-enhanced LightGBM creation failed: {e}")
             # Fallback to standard LightGBM
             return self._create_lightgbm_model(model_config)
 
     def _create_attention_catboost_model(self, model_config: ModelConfig) -> Any:
-        """Create attention-enhanced CatBoost model."""
+        """Create CLVSA-enhanced CatBoost model."""
         try:
-            from src.training.steps.model_training.attention_enhanced_models import (
-                create_attention_model
-            )
+            from src.utils.ml_common.models.clvsa_architecture import create_clvsa_model
 
-            attention_dim = model_config.model_params.get('attention_dim', 64)
-            attention_heads = model_config.model_params.get('attention_heads', 4)
-            use_temporal_attention = model_config.model_params.get('use_temporal_attention', True)
-            dropout = model_config.model_params.get('attention_dropout', 0.1)
+            # CLVSA configuration for tree models
+            clvsa_config = {
+                'input_dim': model_config.model_params.get('input_dim', 100),
+                'output_dim': model_config.n_outputs,
+                'seq_length': model_config.model_params.get('seq_length', 50),
+                'conv_channels': [16, 32],
+                'conv_kernel_sizes': [3, 5],
+                'lstm_hidden_dim': 32,
+                'lstm_layers': 1,
+                'attention_heads': 4,
+                'attention_dim': 64,
+                'variational_dim': 16,
+                'dropout': 0.1,
+                'regime_aware': True,
+                'multi_scale': False,
+                'uncertainty_quantification': False
+            }
 
-            # Remove attention-specific parameters from model params
-            model_params = model_config.model_params.copy()
-            model_params.pop('use_attention', None)
-            model_params.pop('attention_dim', None)
-            model_params.pop('attention_heads', None)
-            model_params.pop('use_temporal_attention', None)
-            model_params.pop('attention_dropout', None)
+            # Create base CatBoost model
+            base_model = self._create_catboost_model(model_config)
 
-            return create_attention_model(
-                model_type='catboost',
-                attention_dim=attention_dim,
-                attention_heads=attention_heads,
-                model_params=model_params,
-                use_temporal_attention=use_temporal_attention,
-                dropout=dropout
-            )
+            # Wrap with CLVSA preprocessing
+            model_config.model_params.update(clvsa_config)
+            config_dict = {
+                'clvsa_params': clvsa_config,
+                'model_params': model_config.model_params
+            }
+
+            return create_clvsa_model(config_dict)
 
         except Exception as e:
-            self.logger.warning(f"⚠️ Attention-enhanced CatBoost creation failed: {e}")
+            self.logger.warning(f"⚠️ CLVSA-enhanced CatBoost creation failed: {e}")
             # Fallback to standard CatBoost
             return self._create_catboost_model(model_config)
 
     def _create_attention_xgboost_model(self, model_config: ModelConfig) -> Any:
-        """Create attention-enhanced XGBoost model."""
+        """Create CLVSA-enhanced XGBoost model."""
         try:
-            from src.training.steps.model_training.attention_enhanced_models import (
-                create_attention_model
-            )
+            from src.utils.ml_common.models.clvsa_architecture import create_clvsa_model
 
-            attention_dim = model_config.model_params.get('attention_dim', 64)
-            attention_heads = model_config.model_params.get('attention_heads', 4)
-            use_temporal_attention = model_config.model_params.get('use_temporal_attention', True)
-            dropout = model_config.model_params.get('attention_dropout', 0.1)
+            # CLVSA configuration for tree models
+            clvsa_config = {
+                'input_dim': model_config.model_params.get('input_dim', 100),
+                'output_dim': model_config.n_outputs,
+                'seq_length': model_config.model_params.get('seq_length', 50),
+                'conv_channels': [16, 32],
+                'conv_kernel_sizes': [3, 5],
+                'lstm_hidden_dim': 32,
+                'lstm_layers': 1,
+                'attention_heads': 4,
+                'attention_dim': 64,
+                'variational_dim': 16,
+                'dropout': 0.1,
+                'regime_aware': True,
+                'multi_scale': False,
+                'uncertainty_quantification': False
+            }
 
-            # Remove attention-specific parameters from model params
-            model_params = model_config.model_params.copy()
-            model_params.pop('use_attention', None)
-            model_params.pop('attention_dim', None)
-            model_params.pop('attention_heads', None)
-            model_params.pop('use_temporal_attention', None)
-            model_params.pop('attention_dropout', None)
+            # Create base XGBoost model
+            base_model = self._create_xgboost_model(model_config)
 
-            return create_attention_model(
-                model_type='xgboost',
-                attention_dim=attention_dim,
-                attention_heads=attention_heads,
-                model_params=model_params,
-                use_temporal_attention=use_temporal_attention,
-                dropout=dropout
-            )
+            # Wrap with CLVSA preprocessing
+            model_config.model_params.update(clvsa_config)
+            config_dict = {
+                'clvsa_params': clvsa_config,
+                'model_params': model_config.model_params
+            }
+
+            return create_clvsa_model(config_dict)
 
         except Exception as e:
-            self.logger.warning(f"⚠️ Attention-enhanced XGBoost creation failed: {e}")
+            self.logger.warning(f"⚠️ CLVSA-enhanced XGBoost creation failed: {e}")
             # Fallback to standard XGBoost
             return self._create_xgboost_model(model_config)
+
+    def _create_clvsa_model(self, model_config: ModelConfig) -> Any:
+        """Create CLVSA (Convolutional-LSTM-Variational-Attention) model."""
+        try:
+            from src.utils.ml_common.models.clvsa_architecture import get_clvsa_model
+
+            # CLVSA configuration optimized for 15m timeframe regime detection
+            clvsa_config = {
+                'input_dim': model_config.model_params.get('input_dim', 100),
+                'output_dim': model_config.n_outputs,
+                'seq_length': model_config.model_params.get('seq_length', 200),
+                'conv_channels': model_config.model_params.get('conv_channels', [32, 64, 128]),
+                'conv_kernel_sizes': model_config.model_params.get('conv_kernel_sizes', [3, 5, 7]),
+                'lstm_hidden_dim': model_config.model_params.get('lstm_hidden_dim', 128),
+                'lstm_layers': model_config.model_params.get('lstm_layers', 2),
+                'attention_heads': model_config.model_params.get('attention_heads', 8),
+                'attention_dim': model_config.model_params.get('attention_dim', 256),
+                'variational_dim': model_config.model_params.get('variational_dim', 64),
+                'dropout': model_config.model_params.get('dropout', 0.2),
+                'regime_aware': model_config.model_params.get('regime_aware', True),
+                'multi_scale': model_config.model_params.get('multi_scale', True),
+                'uncertainty_quantification': model_config.model_params.get('uncertainty', True)
+            }
+
+            # Training configuration
+            model_config.model_params.update(clvsa_config)
+            config_dict = {
+                'clvsa_params': clvsa_config,
+                'model_params': model_config.model_params
+            }
+
+            return get_clvsa_model(config_dict)
+
+        except Exception as e:
+            self.logger.error(f"❌ CLVSA creation failed: {e}")
+            raise RuntimeError(f"❌ CLVSA model creation failed - fast fail enabled: {e}") from e
+
+    def _create_multiscale_nbeats_model(self, model_config: ModelConfig) -> Any:
+        """Create MultiScaleNBEATS model for multi-timeframe prediction."""
+        try:
+            from src.utils.ml_common.models.multiscale_nbeats import get_multiscale_nbeats_model
+
+            # MultiScaleNBEATS configuration optimized for 15m timeframe regime detection
+            multiscale_config = {
+                'input_dim': model_config.model_params.get('input_dim', 100),
+                'output_dim': model_config.n_outputs,
+                'timeframes': model_config.model_params.get('timeframes', ['1m', '5m', '15m', '30m']),
+                'forecast_length': model_config.model_params.get('forecast_length', 1),
+                'backcast_length': model_config.model_params.get('backcast_length', 100),
+                'stack_types': model_config.model_params.get('stack_types', ['trend', 'seasonality']),
+                'n_blocks': model_config.model_params.get('n_blocks', [3, 3]),
+                'n_layers': model_config.model_params.get('n_layers', [4, 4]),
+                'layer_widths': model_config.model_params.get('layer_widths', [256, 2048]),
+                'regime_aware': model_config.model_params.get('regime_aware', True),
+                'multi_timeframe_fusion': model_config.model_params.get('multi_timeframe_fusion', True),
+                'uncertainty_quantification': model_config.model_params.get('uncertainty', True),
+                'ensemble_size': model_config.model_params.get('ensemble_size', 5),
+                'dropout': model_config.model_params.get('dropout', 0.1),
+                'use_batch_norm': model_config.model_params.get('use_batch_norm', True)
+            }
+
+            # Training configuration
+            model_config.model_params.update(multiscale_config)
+            config_dict = {
+                'nbeats_params': multiscale_config,
+                'model_params': model_config.model_params
+            }
+
+            return get_multiscale_nbeats_model(config_dict)
+
+        except Exception as e:
+            self.logger.error(f"❌ MultiScaleNBEATS creation failed: {e}")
+            raise RuntimeError(f"❌ MultiScaleNBEATS model creation failed - fast fail enabled: {e}") from e
 
 
 def create_model_factory(config: Optional[Dict[str, Any]] = None) -> EnhancedModelFactory:

@@ -212,15 +212,23 @@ class TrainingUtils:
         self,
         model_type: str,
         model_name: str,
-        model_params: Optional[Dict[str, Any]] = None
+        model_params: Optional[Dict[str, Any]] = None,
+        enable_enhanced_hpo: bool = True,
+        regime_labels: Optional[np.ndarray] = None,
+        X_regime: Optional[np.ndarray] = None,
+        y_regime: Optional[np.ndarray] = None
     ) -> Any:
         """
-        Create a model instance using the model factory.
+        Create a model instance using the model factory with enhanced HPO support.
 
         Args:
             model_type: Type of model to create
             model_name: Name for the model
             model_params: Optional model parameters
+            enable_enhanced_hpo: Whether to use enhanced HPO system
+            regime_labels: Regime labels for adaptive HPO
+            X_regime: Regime-specific features for HPO
+            y_regime: Regime-specific targets for HPO
 
         Returns:
             Created model instance
@@ -230,6 +238,60 @@ class TrainingUtils:
 
         # Map string model type to ModelType enum
         model_type_enum = self._map_string_to_model_type(model_type)
+
+        # Enhanced HPO integration
+        if enable_enhanced_hpo and regime_labels is not None and X_regime is not None and y_regime is not None:
+            try:
+                # Import enhanced HPO system
+                from src.training.steps.model_training.enhanced_regime_aware_hpo import (
+                    enhance_existing_hpo_pipeline, EnhancedCVStrategies
+                )
+
+                # Create enhanced HPO system
+                enhanced_hpo_config = {
+                    'n_trials': getattr(self.config, 'hpo_n_trials', 50),
+                    'timeout': getattr(self.config, 'hpo_timeout_seconds', 600),
+                    'random_state': 42,
+                    'n_jobs': -1,
+                    'enable_adaptive_ranges': True,
+                    'enable_multi_objective': True,
+                    'enable_dynamic_cv': True,
+                    'enable_regime_analysis': True,
+                    'cv_folds': 5,
+                    'search_space': {
+                        'learning_rate': {'min': 0.001, 'max': 0.1, 'scale': 'log'},
+                        'n_estimators': {'min': 100, 'max': 2000},
+                        'max_depth': {'min': 3, 'max': 12},
+                        'subsample': {'min': 0.6, 'max': 1.0},
+                        'colsample_bytree': {'min': 0.4, 'max': 1.0},
+                        'reg_alpha': {'min': 0.0, 'max': 10.0},
+                        'reg_lambda': {'min': 0.0, 'max': 10.0},
+                        'min_child_weight': {'min': 1, 'max': 20},
+                        'gamma': {'min': 0.0, 'max': 5.0}
+                    }
+                }
+
+                enhanced_hpo = enhance_existing_hpo_pipeline(enhanced_hpo_config)
+
+                # Get regime ID from model name or use default
+                regime_id = model_name.split('_regime_')[-1] if '_regime_' in model_name else 'unknown'
+
+                # Optimize hyperparameters using enhanced system
+                optimized_params = enhanced_hpo.optimize_for_regime(
+                    X=X_regime, y=y_regime,
+                    regime_labels=regime_labels,
+                    model_factory=self.model_factory,
+                    regime_id=regime_id
+                )
+
+                # Merge optimized parameters with provided parameters
+                model_params.update(optimized_params)
+
+                logger.info(f"🔬 Enhanced HPO applied for {model_type} in regime {regime_id}")
+
+            except Exception as e:
+                logger.error(f"❌ Enhanced HPO failed: {e}")
+                raise RuntimeError(f"❌ Enhanced HPO failed - fast fail enabled: {e}") from e
 
         model_config = ModelConfig(
             model_type=model_type_enum,

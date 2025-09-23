@@ -332,40 +332,85 @@ class UniversalTimeSeriesSplit(BaseCrossValidator):
     
     def split(self, X, y=None, groups=None):
         """
-        Generate train/test splits for time series.
-        
+        Generate train/test splits for time series with proper temporal ordering.
+
         Args:
             X: Input data
             y: Target data (optional)
             groups: Group data (optional)
-            
+
         Yields:
             Tuple[np.ndarray, np.ndarray]: (train_indices, test_indices)
         """
         n_samples = len(X)
-        
-        # Calculate split points
+
+        # Check if X has a temporal index
+        if hasattr(X, 'index') and hasattr(X.index, 'is_monotonic_increasing'):
+            if X.index.is_monotonic_increasing:
+                # Use time-based splitting
+                return self._temporal_split(X, n_samples)
+            else:
+                logger.warning("Index is not monotonic increasing, falling back to sequential split")
+
+        # Fallback to sequential split
+        return self._sequential_split(n_samples)
+
+    def _temporal_split(self, X, n_samples: int):
+        """Time-aware split using index timestamps."""
+        # Calculate split points based on temporal distribution
+        indices = np.arange(n_samples)
+
+        for i in range(self.n_splits):
+            # Calculate test set boundaries (moving window from the end)
+            test_size_samples = max(int(n_samples * self.test_size), int(n_samples * self.min_test_size))
+            test_start = n_samples - test_size_samples - (i * int(n_samples * 0.1))
+            test_end = n_samples - (i * int(n_samples * 0.1))
+
+            # Ensure boundaries are valid
+            test_start = max(0, test_start)
+            test_end = min(n_samples, test_end)
+
+            # Ensure minimum test size
+            if test_end - test_start < int(n_samples * self.min_test_size):
+                continue
+
+            # Calculate training set boundaries with gap
+            train_end = test_start - self.gap_size
+            train_start = max(0, int(n_samples * self.min_train_size))
+
+            # Ensure minimum train size
+            if train_end - train_start < int(n_samples * self.min_train_size):
+                continue
+
+            # Generate indices
+            train_indices = np.arange(train_start, train_end)
+            test_indices = np.arange(test_start, test_end)
+
+            yield train_indices, test_indices
+
+    def _sequential_split(self, n_samples: int):
+        """Sequential split for non-temporal data."""
         for i in range(self.n_splits):
             # Calculate test set boundaries
             test_start = int(n_samples * (1 - self.test_size - i * 0.1))
             test_end = int(n_samples * (1 - i * 0.1))
-            
+
             # Ensure minimum test size
             if test_end - test_start < int(n_samples * self.min_test_size):
                 continue
-            
+
             # Calculate training set boundaries
             train_end = test_start - self.gap_size
             train_start = max(0, int(n_samples * self.min_train_size))
-            
+
             # Ensure minimum train size
             if train_end - train_start < int(n_samples * self.min_train_size):
                 continue
-            
+
             # Generate indices
             train_indices = np.arange(train_start, train_end)
             test_indices = np.arange(test_start, test_end)
-            
+
             yield train_indices, test_indices
     
     def get_n_splits(self, X=None, y=None, groups=None):

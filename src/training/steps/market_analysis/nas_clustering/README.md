@@ -1,6 +1,6 @@
 # NAS-Driven Clustering for Short-Term Trading
 
-This module provides Neural Architecture Search (NAS) driven clustering for short-term trading regime detection (5-30m timeframe) with micro-regime detection capabilities.
+This module **replaces** the existing HMM clustering pipeline with enhanced Neural Architecture Search (NAS) driven clustering for short-term trading regime detection (5-30m timeframe) with micro-regime detection capabilities.
 
 ## 🎯 Key Features
 
@@ -9,8 +9,8 @@ This module provides Neural Architecture Search (NAS) driven clustering for shor
 - **Micro-Regime Detection**: Subtle market changes that may not be captured by standard regime detection
 - **Economic Significance**: Regime detection based on economically relevant market states
 - **Trading Viability**: Assessment of regime quality for trading decisions
-- **Full Pipeline Compatibility**: Seamless integration with existing HMM clustering pipeline
-- **LM Model Training Support**: Timestamped regime data for language model training
+- **HMM Pipeline Replacement**: Complete replacement of existing HMM clustering pipeline
+- **ML Model Training Support**: Enhanced features for DeepScale, LGBM, XGBoost, and other ML models
 
 ## 🏗️ Architecture
 
@@ -23,9 +23,9 @@ This module provides Neural Architecture Search (NAS) driven clustering for shor
 
 ### Integration Components
 
-1. **NASClusteringComponent**: Pipeline integration component
+1. **NASClusteringComponent**: HMM pipeline replacement component
 2. **NASOrchestrator**: Main orchestrator for complete NAS clustering pipeline
-3. **NASPipelineIntegration**: Seamless integration with existing pipeline
+3. **NASPipelineIntegration**: Seamless replacement of existing HMM pipeline
 
 ### Utility Components
 
@@ -95,9 +95,9 @@ clustering_result = clusterer.cluster(
 
 ## 📊 Output Format
 
-The NAS clustering module provides output in the same format as the existing HMM clustering pipeline for full compatibility:
+The NAS clustering module provides enhanced output that **replaces** the existing HMM clustering pipeline with superior capabilities:
 
-### Standard HMM-Compatible Fields
+### Enhanced HMM-Replacement Fields
 
 ```python
 {
@@ -114,7 +114,7 @@ The NAS clustering module provides output in the same format as the existing HMM
     'validation': {...},
     'metadata': {...},
     
-    # HMM-compatible fields
+    # Enhanced HMM-replacement fields
     'transition_matrix': [[0.8, 0.2], [0.3, 0.7], ...],
     'eigenvalues': [1.0, 0.8, 0.6, ...],
     'eigenvectors': [[0.7, 0.3], [0.4, 0.6], ...],
@@ -152,14 +152,20 @@ The NAS clustering module provides output in the same format as the existing HMM
     'economic_significance_scores': [0.8, 0.7, 0.9, ...],
     'trading_viability_scores': [0.6, 0.8, 0.7, ...],
     
-    # LM training data
-    'lm_training_data': {
+    # ML training data (DeepScale, LGBM, XGBoost, etc.)
+    'ml_training_data': {
         'regime_sequences': [0, 1, 2, 0, ...],
         'regime_transitions': [[0.8, 0.2], [0.3, 0.7], ...],
         'economic_significance': [0.8, 0.7, 0.9, ...],
         'trading_viability': [0.6, 0.8, 0.7, ...],
         'micro_regime_sequences': [0, 1, 0, 2, ...],
-        'micro_regime_types': ['breakout', 'consolidation', ...]
+        'micro_regime_types': ['breakout', 'consolidation', ...],
+        'regime_features': {...},
+        'transition_features': {...},
+        'economic_features': {...},
+        'trading_features': {...},
+        'micro_regime_features': {...},
+        'market_features': {...}
     }
 }
 ```
@@ -275,36 +281,40 @@ The micro-regime detector identifies subtle market changes:
 5. **Volume Spike**: Unusual volume activity
 6. **Volatility Spike**: Unusual volatility activity
 
-## 🔄 Pipeline Integration
+## 🔄 Pipeline Replacement
 
-### HMM Clustering Compatibility
+### HMM Clustering Replacement
 
-The NAS clustering module provides full compatibility with the existing HMM clustering pipeline:
+The NAS clustering module **replaces** the existing HMM clustering pipeline with enhanced capabilities:
 
 ```python
 # Replace HMM clustering with NAS clustering
 from src.training.steps.market_analysis.nas_clustering import NASClusteringComponent
 
-# Use in existing pipeline
+# Use as HMM replacement in existing pipeline
 component = NASClusteringComponent(config)
 result = await component.execute(data, pipeline_state)
 ```
 
-### LM Model Training Support
+### ML Model Training Support
 
-The module provides timestamped regime data optimized for language model training:
+The module provides enhanced features optimized for ML model training (DeepScale, LGBM, XGBoost, etc.):
 
 ```python
-# Access LM training data
-lm_training_data = result['lm_training_data']
+# Access ML training data
+ml_training_data = result['ml_training_data']
 
-# Regime sequences for training
-regime_sequences = lm_training_data['regime_sequences']
-micro_regime_sequences = lm_training_data['micro_regime_sequences']
+# Regime sequences for ML training
+regime_sequences = ml_training_data['regime_sequences']
+micro_regime_sequences = ml_training_data['micro_regime_sequences']
 
-# Economic and trading context
-economic_significance = lm_training_data['economic_significance']
-trading_viability = lm_training_data['trading_viability']
+# Enhanced features for ML models
+regime_features = ml_training_data['regime_features']
+transition_features = ml_training_data['transition_features']
+economic_features = ml_training_data['economic_features']
+trading_features = ml_training_data['trading_features']
+micro_regime_features = ml_training_data['micro_regime_features']
+market_features = ml_training_data['market_features']
 ```
 
 ## 📊 Visualization

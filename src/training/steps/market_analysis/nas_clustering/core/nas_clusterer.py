@@ -21,6 +21,7 @@ import talib
 from .nas_config import NASClusteringConfig, NASArchitectureType
 from .nas_feature_extractor import NASFeatureExtractor, NASFeatureResult
 from .micro_regime_detector import MicroRegimeDetector, MicroRegimeResult
+from .nas_regime_optimizer import NASRegimeOptimizer, RegimeOptimizationResult
 
 logger = logging.getLogger(__name__)
 
@@ -62,12 +63,26 @@ class NASClusterer:
         # Initialize components
         self.feature_extractor = NASFeatureExtractor(config.get_feature_config())
         self.micro_regime_detector = MicroRegimeDetector(config.get_micro_regime_config())
+        self.regime_optimizer = NASRegimeOptimizer({
+            'min_regimes': 5,
+            'max_regimes': 20,
+            'optimization_methods': ['silhouette', 'calinski_harabasz', 'davies_bouldin'],
+            'quality_threshold': 0.6,
+            'stability_threshold': 0.7,
+            'enable_data_analysis': True,
+            'enable_volatility_analysis': True,
+            'enable_trend_analysis': True,
+            'enable_volume_analysis': True
+        })
         
         # NAS architecture settings
         self.nas_architecture_type = config.nas_architecture_type
-        self.n_regimes = config.n_regimes
+        self.n_regimes = config.n_regimes  # Will be optimized if data_driven=True
         self.min_regime_duration = config.min_regime_duration
         self.max_regime_duration = config.max_regime_duration
+        
+        # Data-driven regime count determination
+        self.data_driven_regimes = config.get('data_driven_regimes', True)
         
         # Economic significance settings
         self.economic_significance_threshold = config.economic_significance_threshold
@@ -111,6 +126,15 @@ class NASClusterer:
             
             # Extract NAS features
             feature_result = self.feature_extractor.extract_features(data_array, timestamps)
+            
+            # Optimize regime count if data-driven
+            if self.data_driven_regimes:
+                self.logger.info("🔍 Optimizing regime count based on data characteristics")
+                regime_optimization = self.regime_optimizer.optimize_regime_count(
+                    feature_result.features, data_array, timestamps, self.n_regimes
+                )
+                self.n_regimes = regime_optimization.optimal_n_regimes
+                self.logger.info(f"📊 Optimal regime count determined: {self.n_regimes}")
             
             # Detect micro-regimes
             micro_regime_result = self.micro_regime_detector.detect_micro_regimes(

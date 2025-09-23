@@ -1,8 +1,8 @@
 """
-NAS Output Formatter for pipeline compatibility.
+NAS Output Formatter for pipeline replacement.
 
-This module provides output formatting to ensure full compatibility
-with the existing HMM clustering pipeline while adding NAS-specific features.
+This module provides output formatting to replace the existing HMM clustering
+pipeline with enhanced NAS-driven clustering capabilities.
 """
 
 import numpy as np
@@ -65,7 +65,7 @@ class NASOutputFormatter:
     
     def _format_hmm_compatible(self, nas_result: Any, 
                              feature_result: Any = None) -> Dict[str, Any]:
-        """Format result to be compatible with HMM clustering output."""
+        """Format result to replace HMM clustering output with enhanced NAS capabilities."""
         try:
             # Create HMM-compatible structure
             formatted_result = {
@@ -82,7 +82,7 @@ class NASOutputFormatter:
                 'validation': nas_result.validation,
                 'metadata': nas_result.metadata,
                 
-                # HMM-specific fields (compatible)
+                # HMM-replacement fields (enhanced NAS capabilities)
                 'transition_matrix': nas_result.regime_transitions.tolist() if nas_result.regime_transitions is not None else [],
                 'eigenvalues': self._calculate_eigenvalues(nas_result.regime_transitions),
                 'eigenvectors': self._calculate_eigenvectors(nas_result.regime_transitions),
@@ -97,9 +97,10 @@ class NASOutputFormatter:
                 'economic_significance_scores': nas_result.economic_significance_scores.tolist() if self.include_economic_significance else [],
                 'trading_viability_scores': nas_result.trading_viability_scores.tolist() if self.include_trading_viability else [],
                 
-                # Pipeline compatibility
-                'pipeline_compatible': True,
-                'hmm_compatible': True,
+                # Pipeline replacement
+                'pipeline_replacement': True,
+                'hmm_replacement': True,
+                'enhanced_nas_capabilities': True,
                 'regime_data_available': True
             }
             
@@ -168,9 +169,9 @@ class NASOutputFormatter:
                 # LM model training fields
                 'lm_training_data': self._create_lm_training_data(nas_result),
                 
-                # Pipeline compatibility
-                'pipeline_compatible': True,
-                'hmm_compatible': True,
+                # Pipeline replacement
+                'pipeline_replacement': True,
+                'hmm_replacement': True,
                 'nas_enhanced': True
             }
             

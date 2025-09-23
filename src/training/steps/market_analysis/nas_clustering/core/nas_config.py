@@ -40,9 +40,10 @@ class NASClusteringConfig:
     micro_timeframe: str = "5m"  # Micro-regime detection timeframe
     
     # Regime configuration
-    n_regimes: int = 12  # Target number of regimes (10-15 range)
+    n_regimes: int = 12  # Target number of regimes (will be optimized if data_driven=True)
     min_regime_duration: int = 15  # Minimum 15 minutes for actionable states
     max_regime_duration: int = 180  # Maximum 3 hours for short-term trading
+    data_driven_regimes: bool = True  # Enable data-driven regime count determination
     
     # NAS architecture configuration
     nas_architecture_type: NASArchitectureType = NASArchitectureType.HYBRID
@@ -104,6 +105,7 @@ class NASClusteringConfig:
             n_regimes=12,
             min_regime_duration=15,
             max_regime_duration=180,
+            data_driven_regimes=True,
             nas_architecture_type=NASArchitectureType.HYBRID,
             enable_micro_regime_detection=True,
             micro_regime_sensitivity=0.7,

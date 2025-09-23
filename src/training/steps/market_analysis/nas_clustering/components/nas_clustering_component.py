@@ -1,8 +1,8 @@
 """
-NAS Clustering Component for pipeline integration.
+NAS Clustering Component for HMM pipeline replacement.
 
-This component provides NAS-driven clustering with full compatibility
-with the existing HMM clustering pipeline interface.
+This component provides NAS-driven clustering that replaces the existing
+HMM clustering pipeline with enhanced capabilities.
 """
 
 import asyncio
@@ -26,10 +26,10 @@ logger = logging.getLogger(__name__)
 
 class NASClusteringComponent:
     """
-    NAS Clustering Component for pipeline integration.
+    NAS Clustering Component for HMM pipeline replacement.
     
-    This component provides NAS-driven clustering with full compatibility
-    with the existing HMM clustering pipeline interface.
+    This component provides NAS-driven clustering that replaces the existing
+    HMM clustering pipeline with enhanced capabilities.
     """
     
     def __init__(self, config: Dict[str, Any]):
@@ -320,8 +320,8 @@ class NASClusteringComponent:
                 'trading_viability_scores': clustering_result.trading_viability_scores.tolist(),
                 
                 # Pipeline integration fields
-                'pipeline_compatible': True,
-                'hmm_compatible': True,
+                'pipeline_replacement': True,
+                'hmm_replacement': True,
                 'regime_data_available': True,
                 'timestamped_regime_data': self._create_timestamped_regime_data(clustering_result)
             }

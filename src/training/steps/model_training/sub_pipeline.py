@@ -1,12 +1,13 @@
 """
 Model Training Sub-Pipeline - Enhanced with Comprehensive Debugging
 
-This module provides the final model training sub-pipeline with 4 core steps:
+This module provides the final model training sub-pipeline with 5 core steps:
 
 1. analyst_models_training - Per-regime individual model training with HPO, saving, and metrics
 2. analyst_ensemble_training - Per-regime ensemble training with HPO, saving, and metrics  
-3. tactician_models_training - All-regime individual model training with HPO, saving, and metrics
-4. tactician_ensemble_training - All-regime ensemble training with HPO, saving, and metrics
+3. tactician_pre_ml_training - Pre-ML training orchestrator with dual-directional feature optimization and training
+4. tactician_models_training - All-regime individual model training with HPO, saving, and metrics
+5. tactician_ensemble_training - All-regime ensemble training with HPO, saving, and metrics
 
 ENHANCED FEATURES:
 - Comprehensive debugging and error tracking
@@ -391,6 +392,7 @@ class ModelTrainingSubPipeline:
         self.sub_pipelines = {
             'analyst_model_training': self._analyst_model_training_pipeline,
             'analyst_ensemble_training': self._analyst_ensemble_training_pipeline,
+            'tactician_pre_ml_training': self._tactician_pre_ml_training_pipeline,
             'tactician_lookback_optimization': self._tactician_lookback_optimization_pipeline,
             'tactician_models_training': self._tactician_models_training_pipeline,
             'tactician_ensemble_training': self._tactician_ensemble_training_pipeline,
@@ -1019,6 +1021,7 @@ class ModelTrainingSubPipeline:
             required_artifacts = {
                 'analyst_model_training': ['models', 'metrics'],
                 'analyst_ensemble_training': ['models', 'metrics'],
+                'tactician_pre_ml_training': ['models', 'metrics', 'long_models', 'short_models'],
                 'tactician_models_training': ['models', 'metrics'],
                 'tactician_ensemble_training': ['models', 'metrics']
             }
@@ -1291,6 +1294,7 @@ class ModelTrainingSubPipeline:
             expected_model_counts = {
                 'analyst_model_training': 4,  # TEMPORAL_FUSION_TRANSFORMER, TABNET, HIST_GRADIENT_BOOSTING, EXTRA_TREES
                 'analyst_ensemble_training': 1,  # Single ensemble model
+                'tactician_pre_ml_training': 8,  # 3 base + 1 ensemble for each direction (long/short)
                 'tactician_models_training': 4,  # Similar to analyst
                 'tactician_ensemble_training': 1  # Single ensemble model
             }
@@ -1683,6 +1687,96 @@ class ModelTrainingSubPipeline:
         tprint(f"   ✅ TACTICIAN MODELS TRAINING PIPELINE COMPLETED")
         return artifacts
     
+    async def _tactician_pre_ml_training_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
+        """Tactician Pre-ML training orchestrator with dual-directional feature optimization and training."""
+        tprint(f"   🎯⚡ TACTICIAN PRE-ML TRAINING PIPELINE STARTED")
+        self.logger.info("🎯⚡ Executing tactician pre-ML training orchestrator")
+
+        timestamp = self._generate_datetime_stamp()
+        artifacts = self._prepare_artifacts(config, "tactician_pre_ml_training_report", timestamp)
+
+        try:
+            if config.mode == ExecutionMode.BLANK:
+                tprint_error("❌ BLANK mode not supported - actual pre-ML training required")
+                raise ValueError("BLANK mode is not supported. Actual tactician pre-ML training is required for production use.")
+
+            # Import and initialize the Pre-ML integration step
+            tprint(f"   🔍 Initializing tactician pre-ML training orchestrator...")
+            from .tactician_pre_ml_integration import TacticianPreMLIntegrationStep
+            
+            # Create enhanced configuration for Pre-ML training
+            pre_ml_config = {
+                'confidence_threshold': 0.5,
+                'subsequent_minutes': 45,
+                'enable_lookback_optimization': True,
+                'enable_pid_feature_generation': True,
+                'enable_horizon_labeling': True,
+                'enable_feature_selection': True,
+                'enable_base_training': True,
+                'enable_ensemble_training': True,
+                'max_samples_per_direction': 10000,
+                'save_intermediate_results': True,
+                'output_directory': f"generated/tactician_pre_ml_training/{config.symbol}_{config.timeframe}"
+            }
+            
+            # Merge with any provided configuration
+            if hasattr(config, 'pre_ml_config') and config.pre_ml_config:
+                pre_ml_config.update(config.pre_ml_config)
+            
+            tprint(f"   ✅ Pre-ML configuration prepared (confidence_threshold={pre_ml_config['confidence_threshold']}, subsequent_minutes={pre_ml_config['subsequent_minutes']})")
+
+            # Initialize Pre-ML integration step
+            integration_step = TacticianPreMLIntegrationStep(pre_ml_config)
+            tprint(f"   ✅ Pre-ML integration step initialized successfully")
+
+            # Prepare input data (this would typically come from previous pipeline steps)
+            # For now, we'll create placeholder data structures
+            input_data = {
+                'market_data': None,  # Would be loaded from previous steps
+                'analyst_outputs': None,  # Would be loaded from analyst training results
+                'symbol': config.symbol,
+                'exchange': config.exchange,
+                'timeframe': config.timeframe
+            }
+            
+            tprint(f"   🔍 Executing tactician pre-ML training orchestrator...")
+            start_time = time.time()
+            
+            # Execute the Pre-ML training
+            results = await integration_step.execute(input_data, input_data)
+            
+            training_duration = time.time() - start_time
+            tprint(f"   ✅ Tactician pre-ML training completed in {training_duration:.2f} seconds")
+
+            # Process results and create artifacts
+            tprint(f"   🔍 Processing tactician pre-ML training results...")
+            
+            if results.get('success', False):
+                # Extract models and metrics from results
+                artifacts['models'] = results.get('models', {})
+                artifacts['metrics'] = results.get('metrics', {})
+                artifacts['performance'] = results.get('performance', {})
+                artifacts['long_models'] = results.get('long_training', {}).get('base_models', {})
+                artifacts['short_models'] = results.get('short_training', {}).get('base_models', {})
+                
+                # Add signal separation results
+                artifacts['signal_separation'] = results.get('signal_separation', {})
+                
+                tprint(f"   ✅ Processed {len(artifacts['models'])} pre-ML models, {len(artifacts['metrics'])} metrics, {len(artifacts['performance'])} performance indicators")
+                self.logger.info(f"✅ Tactician pre-ML training completed with {len(artifacts['models'])} models")
+            else:
+                raise RuntimeError(f"Pre-ML training failed: {results.get('error', 'Unknown error')}")
+
+        except Exception as e:
+            error_msg = f"Tactician pre-ML training failed: {e}"
+            tprint(f"   ❌ TACTICIAN PRE-ML TRAINING FAILED: {error_msg}")
+            self.logger.error(error_msg)
+            artifacts['error'] = error_msg
+            raise RuntimeError(error_msg) from e
+
+        tprint(f"   ✅ TACTICIAN PRE-ML TRAINING PIPELINE COMPLETED")
+        return artifacts
+
     async def _tactician_ensemble_training_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
         """Tactician ensemble training with centralized helpers and configuration."""
         tprint(f"   ⚔️🎯 TACTICIAN ENSEMBLE TRAINING PIPELINE STARTED")
@@ -2025,14 +2119,15 @@ class ModelTrainingSubPipeline:
         if config is None:
             config = self.config
             
-        self.logger.info('🚀 Starting automatic execution of all 5 model training steps')
+        self.logger.info('🚀 Starting automatic execution of all 6 model training steps')
         self.logger.info('=' * 80)
         self.logger.info('📋 Steps to be executed automatically:')
         self.logger.info('   1. analyst_model_training - Per-regime individual model training with HPO, saving, and metrics')
         self.logger.info('   2. analyst_ensemble_training - Per-regime ensemble training with HPO, saving, and metrics')
-        self.logger.info('   3. tactician_lookback_optimization - Lookback optimization for tactician models')
-        self.logger.info('   4. tactician_models_training - All-regime individual model training with HPO, saving, and metrics')
-        self.logger.info('   5. tactician_ensemble_training - All-regime ensemble training with HPO, saving, and metrics')
+        self.logger.info('   3. tactician_pre_ml_training - Pre-ML training orchestrator with dual-directional feature optimization and training')
+        self.logger.info('   4. tactician_lookback_optimization - Lookback optimization for tactician models')
+        self.logger.info('   5. tactician_models_training - All-regime individual model training with HPO, saving, and metrics')
+        self.logger.info('   6. tactician_ensemble_training - All-regime ensemble training with HPO, saving, and metrics')
         self.logger.info('=' * 80)
         
         # Execute from the first step - this will automatically trigger all subsequent steps
@@ -2062,9 +2157,10 @@ class ModelTrainingSubPipeline:
         This method provides automatic sequential execution of all model training steps:
         1. analyst_model_training - Per-regime individual model training with HPO, saving, and metrics
         2. analyst_ensemble_training - Per-regime ensemble training with HPO, saving, and metrics  
-        3. tactician_lookback_optimization - Lookback optimization for tactician models
-        4. tactician_models_training - All-regime individual model training with HPO, saving, and metrics
-        5. tactician_ensemble_training - All-regime ensemble training with HPO, saving, and metrics
+        3. tactician_pre_ml_training - Pre-ML training orchestrator with dual-directional feature optimization and training
+        4. tactician_lookback_optimization - Lookback optimization for tactician models
+        5. tactician_models_training - All-regime individual model training with HPO, saving, and metrics
+        6. tactician_ensemble_training - All-regime ensemble training with HPO, saving, and metrics
         
         When one step completes successfully, it automatically triggers the next step.
         
@@ -2089,6 +2185,7 @@ class ModelTrainingSubPipeline:
         ]
         
         tactician_steps = [
+            'tactician_pre_ml_training',
             'tactician_lookback_optimization',
             'tactician_models_training',
             'tactician_ensemble_training'
@@ -2234,6 +2331,7 @@ async def execute_full_model_training_pipeline(
     sub_pipelines = [
         'analyst_model_training',
         'analyst_ensemble_training', 
+        'tactician_pre_ml_training',
         'tactician_lookback_optimization',
         'tactician_models_training',
         'tactician_ensemble_training'

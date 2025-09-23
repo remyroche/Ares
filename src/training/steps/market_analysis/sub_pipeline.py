@@ -11,11 +11,10 @@ This module provides the complete market analysis sub-pipeline with exactly 13 r
 6. nas_models_training - Base models training with NAS regime labels, HPO, saving, metrics
 7. nas_ensemble_training - Meta-model with NAS regime labels, HPO, saving, metrics
 8. regime_data_splitting - Tag data by regimes
-9. multi_horizon_labeling - Apply multi-horizon profit labeling
-10. feature_lookback_optimization - Optimize feature lookback periods
-11. pid_based_feature_generation - PID-based feature generation with interaction, polynomial, and cross-timeframe features
+9. feature_lookback_optimization - Optimize feature lookback periods
+10. pid_based_feature_generation - PID-based feature generation with interaction, polynomial, and cross-timeframe features
+11. multi_horizon_labeling - Apply multi-horizon profit labeling
 12. final_feature_selection - Final multi-stage feature selection (120→100→80→60)
-13. cross_timeframe_analysis - Cross timeframe analysis
 """
 
 from typing import Any, Dict, List, Optional, Tuple
@@ -314,10 +313,9 @@ class MarketAnalysisSubPipeline:
         self.logger.info('   7. nas_ensemble_training - Meta-model with NAS regime labels, HPO, saving, metrics')
         self.logger.info('   8. regime_data_splitting - Tag data by regimes')
         self.logger.info('   9. feature_lookback_optimization - Optimize feature lookback periods')
-        self.logger.info('   10. pid_based_feature_generation - Cross timeframe interaction features')
+        self.logger.info('   10. pid_based_feature_generation - PID-based feature generation with interaction, polynomial, and cross-timeframe features')
         self.logger.info('   11. multi_horizon_profit_labeler - Apply multi-horizon profit labeling')
         self.logger.info('   12. final_feature_selection - Final feature selection (120→100→80→60)')
-        self.logger.info('   13. cross_timeframe_analysis - Cross timeframe analysis')
         self.logger.info('=' * 80)
         
         # Execute from the first step - this will automatically trigger all subsequent steps
@@ -891,9 +889,9 @@ class MarketAnalysisSubPipeline:
         6. nas_models_training - Base models training with NAS regime labels, HPO, saving, metrics
         7. nas_ensemble_training - Meta-model with NAS regime labels, HPO, saving, metrics
         8. regime_data_splitting - Tag data by regimes
-        9. multi_horizon_profit_labeler - Apply multi-horizon profit labeling
-        10. feature_lookback_optimization - Optimize feature lookback periods
-        11. pid_based_feature_generation - Cross timeframe interaction features
+        9. feature_lookback_optimization - Optimize feature lookback periods
+        10. pid_based_feature_generation - PID-based feature generation with interaction, polynomial, and cross-timeframe features
+        11. multi_horizon_profit_labeler - Apply multi-horizon profit labeling
         12. final_feature_selection - Final feature selection (120→100→80→60)
 
         When one step completes successfully, it automatically triggers the next step.
@@ -941,13 +939,13 @@ class MarketAnalysisSubPipeline:
             'regime_data_splitting',
             'feature_lookback_optimization',
             'pid_based_feature_generation',
-            'multi_horizon_profit_labeler',  # Moved here to use optimized features
+            'multi_horizon_profit_labeler',  # Uses regime-tagged data and generated features
             'final_feature_selection'
         ]
         
         # Additional sub-pipelines that were missing
         additional_steps = [
-            'cross_timeframe_analysis'
+            # cross_timeframe_analysis removed - redundant wrapper for pid_based_feature_generation
         ]
         
         # Complete execution sequence - ALL sub-pipelines in market_analysis stage

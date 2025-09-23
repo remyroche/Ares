@@ -1055,7 +1055,9 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
         all_analyst_models_outputs: Optional[Dict[str, np.ndarray]] = None,
         hmm_model_outputs: Optional[np.ndarray] = None,
         analyst_ensemble_outputs: Optional[np.ndarray] = None,
-        timestamps: Optional[np.ndarray] = None
+        timestamps: Optional[np.ndarray] = None,
+        analyst_confidence_scores: Optional[np.ndarray] = None,
+        analyst_directional_info: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """
         Execute enhanced Tactician models training step with comprehensive error handling and utility integration.
@@ -1066,12 +1068,14 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
             regime_labels: Regime labels for each sample
             feature_names: Names of input features
             hmm_states: HMM cluster/regime states
-            analyst_signals: Binary signals from Analyst (green light indicators)
+            analyst_signals: Directional signals from Analyst (1=long, -1=short, 0=neutral)
             analyst_model_outputs: Analyst model predictions used as features
             hmm_regime_features: HMM regime features (probabilities, characteristics)
             all_analyst_models_outputs: All individual analyst ML model outputs
             hmm_model_outputs: HMM model outputs (predictions, probabilities, etc.)
             analyst_ensemble_outputs: Analyst ensemble model outputs
+            analyst_confidence_scores: Confidence scores from Analyst for sample weighting
+            analyst_directional_info: Additional directional analysis from Analyst
             
         Returns:
             Dictionary containing training results and metadata with comprehensive reporting
@@ -1172,7 +1176,10 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
             self._start_phase(TrainingPhase.MODEL_TRAINING)
             try:
                 with tprint_timer("Model Training"):
-                    results = self._execute_training_enhanced(X, y, regime_labels, feature_names, hmm_states)
+                    results = self._execute_training_enhanced(
+                        X, y, regime_labels, feature_names, hmm_states,
+                        analyst_confidence_scores, analyst_directional_info
+                    )
                 
                 models_trained = len(results.get('models', {}))
                 tprint_success(f"✅ Model training completed: {models_trained} models trained")
@@ -1252,10 +1259,15 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
         y: np.ndarray,
         regime_labels: np.ndarray,
         feature_names: Optional[List[str]],
-        hmm_states: Optional[np.ndarray]
+        hmm_states: Optional[np.ndarray],
+        analyst_confidence_scores: Optional[np.ndarray] = None,
+        analyst_directional_info: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """Enhanced training execution with comprehensive error handling and utility integration."""
-        return self._execute_training(X, y, regime_labels, feature_names, hmm_states)
+        return self._execute_training(
+            X, y, regime_labels, feature_names, hmm_states,
+            analyst_confidence_scores, analyst_directional_info
+        )
     
     def _finalize_results_enhanced(self, results: Dict[str, Any], analyst_signals: Optional[np.ndarray]) -> Dict[str, Any]:
         """Enhanced results finalization with comprehensive error handling and utility integration."""
@@ -1640,7 +1652,9 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
         y: np.ndarray,
         regime_labels: np.ndarray,
         feature_names: Optional[List[str]],
-        hmm_states: Optional[np.ndarray]
+        hmm_states: Optional[np.ndarray],
+        analyst_confidence_scores: Optional[np.ndarray] = None,
+        analyst_directional_info: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """Execute training with enhanced vectorization and comprehensive error handling."""
         training_metrics = {
@@ -1676,12 +1690,13 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                             self.logger.error("❌ Temporal data validation failed")
                             raise ValueError("Lookahead bias detected in temporal data")
                     
-                    # Use enhanced training with temporal integrity
+                    # Use enhanced training with temporal integrity and confidence weighting
                     enhanced_start_time = time.time()
                     results = self._execute_enhanced_tactician_training(
                         X, y, regime_labels, feature_names, hmm_states, timestamps,
                         analyst_signals, analyst_model_outputs, hmm_regime_features,
-                        all_analyst_models_outputs, hmm_model_outputs, analyst_ensemble_outputs
+                        all_analyst_models_outputs, hmm_model_outputs, analyst_ensemble_outputs,
+                        analyst_confidence_scores, analyst_directional_info
                     )
                     
                     enhanced_duration = time.time() - enhanced_start_time
@@ -1789,24 +1804,58 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                                            timestamps: Optional[np.ndarray], analyst_signals: Optional[np.ndarray],
                                            analyst_model_outputs: Optional[np.ndarray], hmm_regime_features: Optional[np.ndarray],
                                            all_analyst_models_outputs: Optional[Dict[str, np.ndarray]],
-                                           hmm_model_outputs: Optional[np.ndarray], analyst_ensemble_outputs: Optional[np.ndarray]) -> Dict[str, Any]:
+                                           hmm_model_outputs: Optional[np.ndarray], analyst_ensemble_outputs: Optional[np.ndarray],
+                                           analyst_confidence_scores: Optional[np.ndarray] = None,
+                                           analyst_directional_info: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Execute enhanced tactician training with overfitting prevention and lookahead bias detection."""
         try:
             self.logger.info("🚀 Executing enhanced tactician training with overfitting prevention")
             
-            # Filter for Analyst green light periods if provided
+            # Filter for Analyst directional signals with confidence weighting
             if analyst_signals is not None:
-                self.logger.info("🔍 Filtering for Analyst green light periods...")
-                green_light_mask = analyst_signals.astype(bool)
-                X_filtered = X[green_light_mask]
-                y_filtered = y[green_light_mask]
-                regime_labels_filtered = regime_labels[green_light_mask]
-                timestamps_filtered = timestamps[green_light_mask] if timestamps is not None else None
-                
-                self.logger.info(f"📊 Filtered to {len(X_filtered)} samples ({np.mean(green_light_mask):.2%} green light ratio)")
+                self.logger.info("🔍 Filtering for Analyst directional signals...")
+
+                # Directional signals: 1 (long), -1 (short), 0 (neutral)
+                directional_mask = (analyst_signals == 1) | (analyst_signals == -1)
+
+                # Apply confidence-based weighting if confidence scores are available
+                if analyst_confidence_scores is not None:
+                    # Create combined mask with confidence threshold
+                    confidence_threshold = 0.5
+                    confidence_mask = analyst_confidence_scores >= confidence_threshold
+                    combined_mask = directional_mask & confidence_mask
+
+                    self.logger.info(f"📊 Confidence filtering: {np.sum(confidence_mask)}/{len(analyst_confidence_scores)} samples above {confidence_threshold} threshold")
+
+                    # Use combined mask for filtering
+                    directional_mask = combined_mask
+
+                    # Store confidence scores for sample weighting
+                    confidence_scores_filtered = analyst_confidence_scores[combined_mask]
+                else:
+                    confidence_scores_filtered = None
+                    self.logger.warning("⚠️ No confidence scores provided - using directional signals only")
+
+                X_filtered = X[directional_mask]
+                y_filtered = y[directional_mask]
+                regime_labels_filtered = regime_labels[directional_mask]
+                timestamps_filtered = timestamps[directional_mask] if timestamps is not None else None
+
+                # Analyze directional distribution
+                long_count = np.sum(analyst_signals == 1)
+                short_count = np.sum(analyst_signals == -1)
+                neutral_count = np.sum(analyst_signals == 0)
+                directional_rate = np.mean(directional_mask)
+
+                self.logger.info(f"📊 Directional signal filtering: {directional_rate:.2%} ({np.sum(directional_mask)}/{len(analyst_signals)} samples)")
+                self.logger.info(f"   Long signals: {long_count} ({long_count/len(analyst_signals):.1%} of total)")
+                self.logger.info(f"   Short signals: {short_count} ({short_count/len(analyst_signals):.1%} of total)")
+                self.logger.info(f"   Neutral signals: {neutral_count} ({neutral_count/len(analyst_signals):.1%} of total)")
+
             else:
                 X_filtered, y_filtered, regime_labels_filtered, timestamps_filtered = X, y, regime_labels, timestamps
-                self.logger.warning("⚠️ No Analyst green light periods provided, using all data")
+                confidence_scores_filtered = None
+                self.logger.warning("⚠️ No Analyst directional signals provided, using all data")
             
             # Get unique regimes
             unique_regimes = np.unique(regime_labels_filtered)
@@ -1819,30 +1868,39 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                 'walk_forward_validation': None
             }
             
-            # Train models for each regime with enhanced utilities
+            # Train models for each regime with enhanced utilities and confidence weighting
             for regime in unique_regimes:
                 regime_mask = regime_labels_filtered == regime
                 X_regime = X_filtered[regime_mask]
                 y_regime = y_filtered[regime_mask]
                 timestamps_regime = timestamps_filtered[regime_mask] if timestamps_filtered is not None else None
-                
+
+                # Get confidence scores for this regime if available
+                confidence_regime = None
+                if confidence_scores_filtered is not None and regime_mask.sum() > 0:
+                    regime_confidence_mask = regime_mask[directional_mask] if analyst_signals is not None else regime_mask
+                    confidence_regime = confidence_scores_filtered[regime_confidence_mask] if confidence_scores_filtered is not None else None
+
                 self.logger.info(f"🎯 Training tactician models for regime {regime} ({len(X_regime)} samples)")
-                
+                if confidence_regime is not None:
+                    self.logger.info(f"📊 Using confidence scores for sample weighting (mean: {np.mean(confidence_regime):.3f}, std: {np.std(confidence_regime):.3f})")
+
                 # Train each model type for this regime
                 regime_models = {}
                 for model_type in self.config.model_types:
                     try:
                         # Create model instance
                         model = self._create_model_instance(model_type)
-                        
+
                         # Apply enhanced regularization
                         model = self.training_enhancer.enhanced_utils.apply_enhanced_regularization(
                             model, model_type
                         )
-                        
-                        # Train with early stopping and overfitting monitoring
+
+                        # Train with early stopping, overfitting monitoring, and confidence weighting
                         trained_model, metadata = self.training_enhancer.enhance_training_step(
-                            X_regime, y_regime, model, timestamps_regime, f"tactician_{model_type}_regime_{regime}"
+                            X_regime, y_regime, model, timestamps_regime, f"tactician_{model_type}_regime_{regime}",
+                            sample_weights=confidence_regime
                         )
                         
                         regime_models[model_type] = {

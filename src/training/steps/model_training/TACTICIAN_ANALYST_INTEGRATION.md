@@ -132,14 +132,16 @@ config = TacticianTrainingConfig(
 # Create integration instance
 integration = create_tactician_analyst_integration(config)
 
-# Train with analyst integration
+# Train with analyst integration and confidence-aware training
 result = integration.train_tactician_with_analyst_integration(
     X=X,  # Base features (1m timeframe)
     y=y,  # Target values
     regime_labels=regime_labels,
     analyst_signals=analyst_signals,  # Directional signals (1=long, -1=short, 0=neutral)
     all_analyst_models_outputs=analyst_outputs,  # Analyst model predictions
-    hmm_regime_features=hmm_features
+    hmm_regime_features=hmm_features,
+    analyst_confidence_scores=analyst_confidence_scores,  # Confidence scores for sample weighting
+    analyst_directional_info=analyst_directional_analysis  # Additional directional analysis
 )
 ```
 

@@ -82,7 +82,9 @@ class TacticianAnalystIntegration:
         analyst_model_outputs: Optional[np.ndarray] = None,
         all_analyst_models_outputs: Optional[Dict[str, np.ndarray]] = None,
         hmm_regime_features: Optional[np.ndarray] = None,
-        feature_names: Optional[list] = None
+        feature_names: Optional[list] = None,
+        analyst_confidence_scores: Optional[np.ndarray] = None,
+        analyst_directional_info: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """
         Prepare training data for Tactician with Analyst integration.
@@ -96,6 +98,8 @@ class TacticianAnalystIntegration:
             all_analyst_models_outputs: All individual analyst ML model outputs
             hmm_regime_features: HMM regime features
             feature_names: Names of base features
+            analyst_confidence_scores: Confidence scores from Analyst (optional)
+            analyst_directional_info: Additional directional analysis from Analyst (optional)
 
         Returns:
             Dictionary containing prepared data and metrics
@@ -103,7 +107,7 @@ class TacticianAnalystIntegration:
         try:
             self.logger.info("🔄 Preparing Tactician training data with Analyst integration...")
 
-            # Step 1: Filter to directional signal periods
+            # Step 1: Filter to directional signal periods with confidence consideration
             directional_mask = (analyst_signals == 1) | (analyst_signals == -1)
             directional_count = np.sum(directional_mask)
             directional_rate = directional_count / len(analyst_signals)
@@ -118,6 +122,22 @@ class TacticianAnalystIntegration:
             self.logger.info(f"   Short signals: {short_count} ({short_count/directional_count:.1%} of directional)")
             self.logger.info(f"   Neutral signals: {neutral_count} ({neutral_count/len(analyst_signals):.1%} of total)")
 
+            # Add confidence-based filtering if confidence scores are available
+            if analyst_confidence_scores is not None:
+                confidence_threshold = 0.5  # Minimum confidence for training
+                confidence_mask = analyst_confidence_scores >= confidence_threshold
+                combined_mask = directional_mask & confidence_mask
+                combined_count = np.sum(combined_mask)
+
+                self.logger.info(f"📊 Confidence filtering: {np.sum(confidence_mask)}/{len(analyst_signals)} samples above {confidence_threshold} threshold")
+                self.logger.info(f"📊 Combined filtering: {combined_count}/{len(analyst_signals)} samples meet both criteria")
+
+                # Use confidence-weighted directional mask
+                directional_mask = combined_mask
+                directional_count = combined_count
+            else:
+                self.logger.info("⚠️ No confidence scores provided - using directional signals only")
+
             if directional_count == 0:
                 raise ValueError("No analyst directional signals found")
 
@@ -125,24 +145,30 @@ class TacticianAnalystIntegration:
             X_filtered = X[directional_mask]
             y_filtered = y[directional_mask]
             regime_labels_filtered = regime_labels[directional_mask]
-            
+
+            # Filter confidence scores if provided
+            confidence_scores_filtered = None
+            if analyst_confidence_scores is not None:
+                confidence_scores_filtered = analyst_confidence_scores[directional_mask]
+
             # Filter additional data if provided
             if analyst_model_outputs is not None:
                 analyst_model_outputs = analyst_model_outputs[directional_mask]
-            
+
             if all_analyst_models_outputs is not None:
                 all_analyst_models_outputs = {
                     model_name: outputs[directional_mask]
                     for model_name, outputs in all_analyst_models_outputs.items()
                 }
-            
+
             if hmm_regime_features is not None:
                 hmm_regime_features = hmm_regime_features[directional_mask]
             
             # Step 3: Prepare combined features
             preparation_result = self._prepare_combined_features(
                 X_filtered, feature_names, hmm_regime_features,
-                analyst_model_outputs, all_analyst_models_outputs
+                analyst_model_outputs, all_analyst_models_outputs,
+                confidence_scores_filtered, analyst_directional_info
             )
             
             # Step 4: Compile results
@@ -151,15 +177,22 @@ class TacticianAnalystIntegration:
                 'y': y_filtered,
                 'regime_labels': regime_labels_filtered,
                 'feature_names': preparation_result['feature_names'],
+                'confidence_scores': confidence_scores_filtered,
+                'directional_info': analyst_directional_info,
                 'preparation_metrics': {
                     'original_samples': X.shape[0],
-                    'green_light_samples': green_light_count,
-                    'green_light_rate': green_light_rate,
+                    'directional_samples': directional_count,
+                    'directional_rate': directional_rate,
+                    'long_count': long_count,
+                    'short_count': short_count,
+                    'neutral_count': neutral_count,
+                    'confidence_filtered': confidence_scores is not None,
                     'final_samples': X_filtered.shape[0],
                     'base_features': X.shape[1],
                     'total_features': preparation_result['X_combined'].shape[1],
                     'analyst_features_added': preparation_result['analyst_features_added'],
-                    'hmm_features_added': preparation_result['hmm_features_added']
+                    'hmm_features_added': preparation_result['hmm_features_added'],
+                    'confidence_features_added': confidence_features_added
                 }
             }
             
@@ -177,7 +210,9 @@ class TacticianAnalystIntegration:
         feature_names: Optional[list],
         hmm_regime_features: Optional[np.ndarray],
         analyst_model_outputs: Optional[np.ndarray],
-        all_analyst_models_outputs: Optional[Dict[str, np.ndarray]]
+        all_analyst_models_outputs: Optional[Dict[str, np.ndarray]],
+        confidence_scores: Optional[np.ndarray] = None,
+        directional_info: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """Prepare combined features with standardized naming conventions."""
         try:
@@ -185,6 +220,7 @@ class TacticianAnalystIntegration:
             additional_feature_names = []
             analyst_features_added = 0
             hmm_features_added = 0
+            confidence_features_added = 0
             
             # Standardized feature naming convention
             FEATURE_PREFIX_MAP = {
@@ -192,7 +228,8 @@ class TacticianAnalystIntegration:
                 'hmm': 'hmm_regime',
                 'analyst_model': 'analyst_ml',
                 'analyst_legacy': 'analyst_legacy',
-                'ensemble': 'analyst_ensemble'
+                'ensemble': 'analyst_ensemble',
+                'confidence': 'analyst_confidence'
             }
             
             # Add HMM regime features with standardized naming
@@ -232,7 +269,17 @@ class TacticianAnalystIntegration:
                 additional_feature_names.extend(legacy_feature_names)
                 analyst_features_added += analyst_model_outputs.shape[1]
                 self.logger.info(f"📊 Added {analyst_model_outputs.shape[1]} legacy analyst features")
-            
+
+            # Add confidence scores as features with standardized naming
+            if confidence_scores is not None:
+                # Reshape confidence scores to be 2D for concatenation
+                confidence_features = confidence_scores.reshape(-1, 1)
+                additional_features.append(confidence_features)
+                confidence_feature_names = [f"{FEATURE_PREFIX_MAP['confidence']}_signal_strength"]
+                additional_feature_names.extend(confidence_feature_names)
+                confidence_features_added = 1
+                self.logger.info(f"📊 Added {confidence_features_added} analyst confidence features")
+
             # Prepare base feature names with standardized naming
             if feature_names is not None:
                 # Sanitize existing feature names
@@ -322,28 +369,36 @@ class TacticianAnalystIntegration:
         analyst_model_outputs: Optional[np.ndarray] = None,
         all_analyst_models_outputs: Optional[Dict[str, np.ndarray]] = None,
         hmm_regime_features: Optional[np.ndarray] = None,
-        feature_names: Optional[list] = None
+        feature_names: Optional[list] = None,
+        analyst_confidence_scores: Optional[np.ndarray] = None,
+        analyst_directional_info: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """
-        Train Tactician model with full Analyst integration.
-        
+        Train Tactician model with full Analyst integration including directional signals and confidence scores.
+
         This method implements all the requested adjustments:
-        1. Only trains on Analyst green light periods
-        2. Includes Analyst outputs as features
+        1. Only trains on Analyst directional signal periods (1=long, -1=short)
+        2. Includes Analyst outputs as features with confidence weighting
         3. Uses single model for all regimes
-        4. Optimized for entry point finding
+        4. Optimized for entry point finding with confidence-aware training
+        5. Incorporates Analyst confidence scores for sample weighting
+
+        Args:
+            analyst_confidence_scores: Confidence scores from Analyst (0-1 scale)
+            analyst_directional_info: Additional directional analysis from Analyst
         """
         try:
             self.logger.info("🚀 Starting Tactician training with Analyst integration...")
             
-            # Step 1: Prepare training data
+            # Step 1: Prepare training data with confidence scores
             prepared_data = self.prepare_tactician_training_data(
                 X, y, regime_labels, analyst_signals,
                 analyst_model_outputs, all_analyst_models_outputs,
-                hmm_regime_features, feature_names
+                hmm_regime_features, feature_names,
+                analyst_confidence_scores, analyst_directional_info
             )
             
-            # Step 2: Train tactician model
+            # Step 2: Train tactician model with confidence-aware training
             training_result = self.tactician_trainer.execute(
                 X=prepared_data['X'],
                 y=prepared_data['y'],
@@ -352,16 +407,23 @@ class TacticianAnalystIntegration:
                 analyst_signals=analyst_signals,
                 analyst_model_outputs=analyst_model_outputs,
                 hmm_regime_features=hmm_regime_features,
-                all_analyst_models_outputs=all_analyst_models_outputs
+                all_analyst_models_outputs=all_analyst_models_outputs,
+                analyst_confidence_scores=prepared_data['confidence_scores'],
+                analyst_directional_info=prepared_data['directional_info']
             )
             
             # Step 3: Add integration metadata
             training_result['integration_metadata'] = {
                 'analyst_integration': True,
-                'green_light_filtering': True,
+                'directional_signal_filtering': True,
                 'analyst_features_included': True,
                 'single_model_training': True,
                 'entry_point_optimization': True,
+                'confidence_aware_training': analyst_confidence_scores is not None,
+                'directional_signals_used': True,
+                'analyst_confidence_available': analyst_confidence_scores is not None,
+                'confidence_weighted_training': analyst_confidence_scores is not None,
+                'directional_analysis_included': analyst_directional_info is not None,
                 'preparation_metrics': prepared_data['preparation_metrics']
             }
             

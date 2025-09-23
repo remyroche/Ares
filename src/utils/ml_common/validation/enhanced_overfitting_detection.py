@@ -281,20 +281,25 @@ class UniversalOverfittingDetector:
             concentration = self._calculate_feature_concentration(feature_importance)
             if concentration > self.config.feature_concentration_threshold:
                 indicators.append('feature_concentration')
-        
+
+        # Time series specific indicators
+        indicators.extend(self._detect_time_series_overfitting(
+            train_predictions, val_predictions, train_labels, val_labels
+        ))
+
         return indicators
     
     def _generate_warnings(self, severity: str, indicators: List[str]) -> List[str]:
         """Generate actionable warnings."""
         warnings = []
-        
+
         if severity == 'severe':
             warnings.extend([
                 "🚨 CRITICAL: Severe overfitting detected - immediate action required",
                 "🚨 Model is likely to fail in production",
                 "🚨 Consider stopping training and redesigning approach"
             ])
-        elif severity == 'moderate':
+        elif severity == 'high':
             warnings.extend([
                 "⚠️ HIGH RISK: Significant overfitting detected",
                 "⚠️ Model performance will likely degrade in production",
@@ -306,7 +311,9 @@ class UniversalOverfittingDetector:
                 "📊 Consider regularization or early stopping",
                 "📊 Performance may be unstable"
             ])
-        
+        else:
+            warnings.append("✅ No significant overfitting detected")
+
         return warnings
     
     def _generate_recommendations(self, severity: str, indicators: List[str]) -> List[str]:
@@ -370,7 +377,79 @@ class UniversalOverfittingDetector:
         concentration = np.sum(sorted_importance[:n_top]) / np.sum(sorted_importance)
         
         return float(concentration)
-    
+
+    def _detect_time_series_overfitting(self,
+                                      train_predictions: np.ndarray,
+                                      val_predictions: np.ndarray,
+                                      train_labels: np.ndarray,
+                                      val_labels: np.ndarray) -> List[str]:
+        """Detect overfitting specific to time series models."""
+        indicators = []
+
+        try:
+            # 1. Check for regime overfitting (model memorizes specific market conditions)
+            # Calculate prediction variance within similar label ranges
+            if len(train_labels) > 10 and len(val_labels) > 10:
+                # Group by label ranges and check if predictions are too consistent
+                train_label_ranges = pd.cut(train_labels, bins=5, duplicates='drop')
+                val_label_ranges = pd.cut(val_labels, bins=5, duplicates='drop')
+
+                for range_name in train_label_ranges.unique():
+                    if pd.isna(range_name):
+                        continue
+
+                    train_mask = train_label_ranges == range_name
+                    val_mask = val_label_ranges == range_name
+
+                    if np.sum(train_mask) > 5 and np.sum(val_mask) > 5:
+                        train_preds_range = train_predictions[train_mask]
+                        val_preds_range = val_predictions[val_mask]
+
+                        # If model is overfitting, it might show very low variance in training predictions
+                        train_variance = np.var(train_preds_range)
+                        val_variance = np.var(val_preds_range)
+
+                        if train_variance < 0.01 and val_variance > 0.1:  # Very low train variance, higher val variance
+                            indicators.append('regime_memorization')
+
+            # 2. Check for temporal overfitting (model performs well only on recent data)
+            # This would be detected by the temporal validation system, but we can add additional checks
+            if len(val_predictions) > 20:
+                # Check if validation predictions are becoming more erratic over time
+                # This might indicate the model is overfitting to recent patterns
+                recent_val_preds = val_predictions[-10:]
+                early_val_preds = val_predictions[:10]
+
+                if len(recent_val_preds) >= 5 and len(early_val_preds) >= 5:
+                    recent_variance = np.var(recent_val_preds)
+                    early_variance = np.var(early_val_preds)
+
+                    # If recent predictions have much higher variance, model may be unstable
+                    variance_ratio = recent_variance / early_variance if early_variance > 0 else float('inf')
+                    if variance_ratio > 3.0:  # 3x higher variance in recent predictions
+                        indicators.append('temporal_instability')
+
+            # 3. Check for label distribution shift overfitting
+            # If train and validation have different label distributions, model may overfit to train distribution
+            if len(train_labels) > 10 and len(val_labels) > 10:
+                train_unique, train_counts = np.unique(train_labels, return_counts=True)
+                val_unique, val_counts = np.unique(val_labels, return_counts=True)
+
+                # Calculate distribution similarity (simple overlap coefficient)
+                train_dist = dict(zip(train_unique, train_counts / len(train_labels)))
+                val_dist = dict(zip(val_unique, val_counts / len(val_labels)))
+
+                all_labels = set(train_unique) | set(val_unique)
+                overlap = sum(min(train_dist.get(label, 0), val_dist.get(label, 0)) for label in all_labels)
+
+                if overlap < 0.7:  # Less than 70% distribution overlap
+                    indicators.append('distribution_shift')
+
+        except Exception as e:
+            logger.warning(f"Time series overfitting detection failed: {e}")
+
+        return indicators
+
     def _track_detection(self, report: OverfittingReport):
         """Track detection history."""
         self.detection_history.append(report)
@@ -598,10 +677,720 @@ def get_overfitting_detector(config: Optional[OverfittingConfig] = None) -> Univ
         return DEFAULT_OVERFITTING_DETECTOR
     return UniversalOverfittingDetector(config)
 
-def detect_overfitting_for_model(model, 
-                                X_train: np.ndarray, 
+class ModelEnhancementDetector:
+    """Detect models that could benefit from parameter tuning and optimization."""
+
+    def __init__(self):
+        """Initialize model enhancement detector."""
+        self.logger = logging.getLogger('ModelEnhancementDetector')
+
+    def detect_enhancement_opportunities(self,
+                                       model,
+                                       X_train: np.ndarray,
+                                       X_val: np.ndarray,
+                                       y_train: np.ndarray,
+                                       y_val: np.ndarray,
+                                       model_name: str = "unknown",
+                                       model_type: str = "unknown") -> Dict[str, Any]:
+        """
+        Detect opportunities for model enhancement and parameter tuning.
+
+        Args:
+            model: Trained ML model
+            X_train: Training features
+            X_val: Validation features
+            y_train: Training labels
+            y_val: Validation labels
+            model_name: Name of the model
+            model_type: Type of model
+
+        Returns:
+            Dict: Enhancement opportunities and recommendations
+        """
+        opportunities = {
+            'model_name': model_name,
+            'model_type': model_type,
+            'enhancement_opportunities': [],
+            'parameter_tuning_suggestions': [],
+            'performance_issues': [],
+            'data_issues': [],
+            'confidence_level': 0.0,
+            'priority': 'low',  # low, medium, high, critical
+            'estimated_improvement_potential': 0.0
+        }
+
+        try:
+            # 1. Check if model is underfitting (too simple)
+            underfitting_score = self._check_underfitting(model, X_train, X_val, y_train, y_val)
+            if underfitting_score > 0.7:
+                opportunities['enhancement_opportunities'].append('model_complexity_increase')
+                opportunities['parameter_tuning_suggestions'].append({
+                    'action': 'increase_model_complexity',
+                    'parameters': ['max_depth', 'n_estimators', 'hidden_layers'],
+                    'reason': 'Model appears to be underfitting - may be too simple'
+                })
+
+            # 2. Check for parameter sensitivity
+            sensitivity_analysis = self._analyze_parameter_sensitivity(model, X_train, y_train)
+            if sensitivity_analysis['high_sensitivity']:
+                opportunities['enhancement_opportunities'].append('parameter_tuning_needed')
+                opportunities['parameter_tuning_suggestions'].extend(sensitivity_analysis['suggestions'])
+
+            # 3. Check for feature importance imbalance
+            importance_analysis = self._analyze_feature_importance(model, X_train)
+            if importance_analysis['imbalanced']:
+                opportunities['enhancement_opportunities'].append('feature_engineering')
+                opportunities['parameter_tuning_suggestions'].append({
+                    'action': 'feature_selection_regularization',
+                    'parameters': ['feature_fraction', 'colsample_bytree', 'max_features'],
+                    'reason': 'Feature importance is heavily imbalanced'
+                })
+
+            # 4. Check for overfitting potential
+            overfitting_potential = self._check_overfitting_potential(model, X_train, X_val, y_train, y_val)
+            if overfitting_potential > 0.6:
+                opportunities['enhancement_opportunities'].append('regularization_increase')
+                opportunities['parameter_tuning_suggestions'].append({
+                    'action': 'increase_regularization',
+                    'parameters': ['reg_lambda', 'reg_alpha', 'dropout', 'l2_penalty'],
+                    'reason': 'Model shows signs of potential overfitting'
+                })
+
+            # 5. Check for optimization opportunities
+            optimization_opportunities = self._check_optimization_opportunities(model, model_type)
+            opportunities['enhancement_opportunities'].extend(optimization_opportunities)
+
+            # Calculate overall enhancement potential
+            opportunities['confidence_level'] = self._calculate_enhancement_confidence(opportunities)
+            opportunities['priority'] = self._determine_priority(opportunities)
+            opportunities['estimated_improvement_potential'] = self._estimate_improvement_potential(opportunities)
+
+            # Generate detailed recommendations
+            opportunities['detailed_recommendations'] = self._generate_detailed_recommendations(opportunities)
+
+        except Exception as e:
+            self.logger.error(f"Model enhancement detection failed: {e}")
+            opportunities['error'] = str(e)
+
+        return opportunities
+
+    def _check_underfitting(self, model, X_train, X_val, y_train, y_val) -> float:
+        """Check if model is underfitting (score from 0.0 to 1.0)."""
+        try:
+            # Get predictions
+            train_pred = model.predict(X_train)
+            val_pred = model.predict(X_val)
+
+            # Calculate metrics
+            train_mse = np.mean((y_train - train_pred) ** 2)
+            val_mse = np.mean((y_val - val_pred) ** 2)
+
+            # Normalize by target variance
+            target_var = np.var(y_train)
+            if target_var == 0:
+                return 0.0
+
+            train_normalized_error = train_mse / target_var
+            val_normalized_error = val_mse / target_var
+
+            # Underfitting score: higher when both train and val errors are high
+            underfitting_score = min(1.0, (train_normalized_error + val_normalized_error) / 2.0)
+
+            return underfitting_score
+
+        except Exception as e:
+            self.logger.warning(f"Underfitting check failed: {e}")
+            return 0.0
+
+    def _analyze_parameter_sensitivity(self, model, X_train, y_train) -> Dict[str, Any]:
+        """Analyze parameter sensitivity to determine tuning needs."""
+        analysis = {
+            'high_sensitivity': False,
+            'suggestions': []
+        }
+
+        try:
+            # Simple parameter sensitivity check based on model type
+            model_type = model.__class__.__name__.lower()
+
+            if 'xgb' in model_type or 'xgboost' in model_type:
+                analysis['suggestions'].extend([
+                    {'parameter': 'learning_rate', 'range': [0.001, 0.3], 'method': 'log_scale'},
+                    {'parameter': 'max_depth', 'range': [3, 12], 'method': 'linear'},
+                    {'parameter': 'n_estimators', 'range': [50, 1000], 'method': 'linear'},
+                    {'parameter': 'reg_lambda', 'range': [0.1, 10.0], 'method': 'log_scale'}
+                ])
+                analysis['high_sensitivity'] = True
+
+            elif 'lgbm' in model_type or 'lightgbm' in model_type:
+                analysis['suggestions'].extend([
+                    {'parameter': 'learning_rate', 'range': [0.001, 0.3], 'method': 'log_scale'},
+                    {'parameter': 'num_leaves', 'range': [10, 200], 'method': 'linear'},
+                    {'parameter': 'feature_fraction', 'range': [0.4, 1.0], 'method': 'linear'},
+                    {'parameter': 'bagging_fraction', 'range': [0.4, 1.0], 'method': 'linear'}
+                ])
+                analysis['high_sensitivity'] = True
+
+            elif 'randomforest' in model_type:
+                analysis['suggestions'].extend([
+                    {'parameter': 'n_estimators', 'range': [50, 500], 'method': 'linear'},
+                    {'parameter': 'max_depth', 'range': [5, 30], 'method': 'linear'},
+                    {'parameter': 'min_samples_split', 'range': [2, 20], 'method': 'linear'},
+                    {'parameter': 'min_samples_leaf', 'range': [1, 10], 'method': 'linear'}
+                ])
+                analysis['high_sensitivity'] = True
+
+        except Exception as e:
+            self.logger.warning(f"Parameter sensitivity analysis failed: {e}")
+
+        return analysis
+
+    def _analyze_feature_importance(self, model, X_train) -> Dict[str, Any]:
+        """Analyze feature importance distribution."""
+        analysis = {
+            'imbalanced': False,
+            'concentration_ratio': 0.0,
+            'top_features': []
+        }
+
+        try:
+            # Get feature importance
+            if hasattr(model, 'feature_importances_'):
+                importance = model.feature_importances_
+            elif hasattr(model, 'coef_'):
+                importance = np.abs(model.coef_).flatten()
+            else:
+                return analysis  # No feature importance available
+
+            # Calculate concentration
+            sorted_importance = np.sort(importance)[::-1]
+            top_10_percent = sorted_importance[:max(1, len(sorted_importance) // 10)]
+            analysis['concentration_ratio'] = np.sum(top_10_percent) / np.sum(sorted_importance)
+
+            if analysis['concentration_ratio'] > 0.8:  # 80% of importance in top 10% features
+                analysis['imbalanced'] = True
+
+            # Get top feature indices
+            top_indices = np.argsort(importance)[::-1][:10]
+            analysis['top_features'] = top_indices.tolist()
+
+        except Exception as e:
+            self.logger.warning(f"Feature importance analysis failed: {e}")
+
+        return analysis
+
+    def _check_overfitting_potential(self, model, X_train, X_val, y_train, y_val) -> float:
+        """Check potential for overfitting (score from 0.0 to 1.0)."""
+        try:
+            # Get predictions
+            train_pred = model.predict(X_train)
+            val_pred = model.predict(X_val)
+
+            # Calculate train vs validation performance gap
+            train_mse = np.mean((y_train - train_pred) ** 2)
+            val_mse = np.mean((y_val - val_pred) ** 2)
+
+            # Calculate overfitting potential
+            if train_mse == 0:
+                return 1.0  # Perfect training fit = high overfitting risk
+
+            performance_ratio = val_mse / train_mse
+            overfitting_potential = min(1.0, max(0.0, 1.0 - 1.0 / (1.0 + performance_ratio)))
+
+            return overfitting_potential
+
+        except Exception as e:
+            self.logger.warning(f"Overfitting potential check failed: {e}")
+            return 0.0
+
+    def _check_optimization_opportunities(self, model, model_type: str) -> List[str]:
+        """Check for optimization opportunities based on model type."""
+        opportunities = []
+
+        try:
+            # Model-specific optimization opportunities
+            if 'neural' in model_type.lower() or 'torch' in model_type.lower():
+                opportunities.extend([
+                    'learning_rate_scheduling',
+                    'batch_normalization',
+                    'gradient_clipping',
+                    'early_stopping_optimization'
+                ])
+
+            elif 'xgb' in model_type.lower() or 'lgbm' in model_type.lower():
+                opportunities.extend([
+                    'tree_structure_optimization',
+                    'feature_interaction_constraints',
+                    'monotone_constraints'
+                ])
+
+            elif 'linear' in model_type.lower():
+                opportunities.extend([
+                    'regularization_optimization',
+                    'feature_scaling_check',
+                    'multicollinearity_analysis'
+                ])
+
+        except Exception as e:
+            self.logger.warning(f"Optimization opportunities check failed: {e}")
+
+        return opportunities
+
+    def _calculate_enhancement_confidence(self, opportunities: Dict[str, Any]) -> float:
+        """Calculate confidence level for enhancement recommendations."""
+        confidence_factors = []
+
+        # Base confidence
+        base_confidence = 0.5
+
+        # Factor based on number of opportunities found
+        n_opportunities = len(opportunities['enhancement_opportunities'])
+        opportunity_factor = min(0.3, n_opportunities * 0.1)
+
+        # Factor based on parameter tuning suggestions
+        n_suggestions = len(opportunities['parameter_tuning_suggestions'])
+        suggestion_factor = min(0.2, n_suggestions * 0.05)
+
+        total_confidence = base_confidence + opportunity_factor + suggestion_factor
+
+        return min(1.0, total_confidence)
+
+    def _determine_priority(self, opportunities: Dict[str, Any]) -> str:
+        """Determine priority level for enhancement."""
+        n_opportunities = len(opportunities['enhancement_opportunities'])
+        confidence = opportunities['confidence_level']
+
+        if n_opportunities >= 3 and confidence > 0.8:
+            return 'critical'
+        elif n_opportunities >= 2 and confidence > 0.6:
+            return 'high'
+        elif n_opportunities >= 1 and confidence > 0.4:
+            return 'medium'
+        else:
+            return 'low'
+
+    def _estimate_improvement_potential(self, opportunities: Dict[str, Any]) -> float:
+        """Estimate potential improvement from enhancements."""
+        improvement_factors = {
+            'model_complexity_increase': 0.15,
+            'parameter_tuning_needed': 0.20,
+            'feature_engineering': 0.10,
+            'regularization_increase': 0.05,
+            'learning_rate_scheduling': 0.08,
+            'tree_structure_optimization': 0.12
+        }
+
+        total_potential = 0.0
+        for opportunity in opportunities['enhancement_opportunities']:
+            if opportunity in improvement_factors:
+                total_potential += improvement_factors[opportunity]
+
+        return min(0.5, total_potential)  # Cap at 50% potential improvement
+
+    def _generate_detailed_recommendations(self, opportunities: Dict[str, Any]) -> List[str]:
+        """Generate detailed recommendations based on analysis."""
+        recommendations = []
+
+        if opportunities['priority'] == 'critical':
+            recommendations.append("🚨 CRITICAL: Immediate model enhancement required")
+        elif opportunities['priority'] == 'high':
+            recommendations.append("⚠️ HIGH: Strong enhancement opportunities identified")
+        elif opportunities['priority'] == 'medium':
+            recommendations.append("📊 MEDIUM: Moderate enhancement opportunities available")
+        else:
+            recommendations.append("✅ LOW: Minimal enhancement opportunities found")
+
+        # Add specific recommendations based on opportunities
+        for opportunity in opportunities['enhancement_opportunities']:
+            if opportunity == 'model_complexity_increase':
+                recommendations.append("🔧 Consider increasing model complexity (deeper trees, more estimators, additional layers)")
+            elif opportunity == 'parameter_tuning_needed':
+                recommendations.append("🔧 Perform comprehensive hyperparameter optimization")
+            elif opportunity == 'feature_engineering':
+                recommendations.append("🔧 Review feature selection and consider feature engineering")
+            elif opportunity == 'regularization_increase':
+                recommendations.append("🔧 Increase regularization to prevent overfitting")
+
+        return recommendations
+
+
+class UniversalMLValidationOrchestrator:
+    """Unified validation system that orchestrates all ML validation components."""
+
+    def __init__(self):
+        """Initialize the validation orchestrator."""
+        self.logger = logging.getLogger('UniversalMLValidationOrchestrator')
+        self.overfitting_detector = UniversalOverfittingDetector()
+        self.enhancement_detector = ModelEnhancementDetector()
+
+        # Import temporal validation components
+        try:
+            from ..validation.universal_temporal_validation import UniversalTemporalValidator, UniversalTemporalCrossValidator
+            self.temporal_validator = UniversalTemporalValidator()
+            self.temporal_cv = UniversalTemporalCrossValidator()
+        except ImportError:
+            self.temporal_validator = None
+            self.temporal_cv = None
+
+    def comprehensive_model_validation(self,
+                                     model,
+                                     X_train: np.ndarray,
+                                     X_val: np.ndarray,
+                                     y_train: np.ndarray,
+                                     y_val: np.ndarray,
+                                     X_test: Optional[np.ndarray] = None,
+                                     y_test: Optional[np.ndarray] = None,
+                                     model_name: str = "unknown",
+                                     model_type: str = "unknown",
+                                     timestamps: Optional[np.ndarray] = None) -> Dict[str, Any]:
+        """
+        Perform comprehensive validation of any ML model.
+
+        Args:
+            model: Trained ML model
+            X_train: Training features
+            X_val: Validation features
+            y_train: Training labels
+            y_val: Validation labels
+            X_test: Optional test features
+            y_test: Optional test labels
+            model_name: Name of the model
+            model_type: Type of model
+            timestamps: Optional timestamps for temporal validation
+
+        Returns:
+            Dict: Comprehensive validation report
+        """
+        self.logger.info(f"🚀 Starting comprehensive validation for {model_name} ({model_type})")
+
+        validation_report = {
+            'model_name': model_name,
+            'model_type': model_type,
+            'validation_timestamp': datetime.now().isoformat(),
+            'validation_status': 'completed',
+            'overall_score': 0.0,
+            'components': {}
+        }
+
+        try:
+            # 1. Overfitting Detection
+            self.logger.info("🔍 Running overfitting detection...")
+            overfitting_report = self.overfitting_detector.detect_overfitting(
+                train_predictions=model.predict(X_train),
+                val_predictions=model.predict(X_val),
+                train_labels=y_train,
+                val_labels=y_val,
+                model_name=model_name,
+                model_type=model_type
+            )
+            validation_report['components']['overfitting'] = overfitting_report
+            self.logger.info(f"✅ Overfitting detection completed: {'DETECTED' if overfitting_report.is_overfitting else 'NOT DETECTED'}")
+
+            # 2. Model Enhancement Detection
+            self.logger.info("🔍 Running model enhancement detection...")
+            enhancement_report = self.enhancement_detector.detect_enhancement_opportunities(
+                model, X_train, X_val, y_train, y_val, model_name, model_type
+            )
+            validation_report['components']['enhancement'] = enhancement_report
+            self.logger.info(f"✅ Enhancement detection completed: {enhancement_report['priority']} priority")
+
+            # 3. Temporal Validation (if timestamps available)
+            if timestamps is not None and self.temporal_validator:
+                self.logger.info("🔍 Running temporal validation...")
+                temporal_report = self.temporal_validator.validate_temporal_split(
+                    X_train, X_val, y_train, y_val, timestamps, model_name, model_type
+                )
+                validation_report['components']['temporal'] = temporal_report
+                self.logger.info(f"✅ Temporal validation completed: {temporal_report.temporal_order_valid}")
+
+            # 4. Cross-Validation Analysis (if cross-validator available)
+            if self.temporal_cv:
+                self.logger.info("🔍 Running temporal cross-validation...")
+                try:
+                    cv_results = self.temporal_cv.cross_validate(
+                        model, X_train, y_train, timestamps, model_name=model_name, model_type=model_type
+                    )
+                    validation_report['components']['cross_validation'] = cv_results
+                    self.logger.info(f"✅ Cross-validation completed: {cv_results['mean_score']:.4f} mean score")
+                except Exception as e:
+                    self.logger.warning(f"Temporal cross-validation failed: {e}")
+
+            # 5. Performance Analysis
+            self.logger.info("🔍 Running performance analysis...")
+            performance_analysis = self._analyze_model_performance(
+                model, X_train, X_val, X_test, y_train, y_val, y_test
+            )
+            validation_report['components']['performance'] = performance_analysis
+            self.logger.info("✅ Performance analysis completed")
+
+            # 6. Data Quality Assessment
+            self.logger.info("🔍 Running data quality assessment...")
+            data_quality = self._assess_data_quality(X_train, X_val, y_train, y_val)
+            validation_report['components']['data_quality'] = data_quality
+            self.logger.info("✅ Data quality assessment completed")
+
+            # Calculate overall validation score
+            validation_report['overall_score'] = self._calculate_overall_score(validation_report)
+
+            # Generate summary and recommendations
+            validation_report['summary'] = self._generate_validation_summary(validation_report)
+            validation_report['recommendations'] = self._generate_recommendations(validation_report)
+
+            self.logger.info(f"✅ Comprehensive validation completed with overall score: {validation_report['overall_score']:.3f}")
+
+        except Exception as e:
+            self.logger.error(f"Comprehensive validation failed: {e}")
+            validation_report['validation_status'] = 'failed'
+            validation_report['error'] = str(e)
+
+        return validation_report
+
+    def _analyze_model_performance(self, model, X_train, X_val, X_test, y_train, y_val, y_test) -> Dict[str, Any]:
+        """Analyze model performance across different datasets."""
+        analysis = {
+            'train_metrics': {},
+            'validation_metrics': {},
+            'test_metrics': {},
+            'performance_stability': 0.0,
+            'generalization_score': 0.0
+        }
+
+        try:
+            # Calculate predictions for all datasets
+            train_pred = model.predict(X_train)
+            val_pred = model.predict(X_val)
+            test_pred = model.predict(X_test) if X_test is not None else None
+
+            # Calculate metrics
+            analysis['train_metrics'] = self._calculate_metrics(y_train, train_pred)
+            analysis['validation_metrics'] = self._calculate_metrics(y_val, val_pred)
+
+            if test_pred is not None and y_test is not None:
+                analysis['test_metrics'] = self._calculate_metrics(y_test, test_pred)
+
+                # Calculate performance stability
+                train_score = analysis['train_metrics'].get('accuracy', 0)
+                val_score = analysis['validation_metrics'].get('accuracy', 0)
+                test_score = analysis['test_metrics'].get('accuracy', 0)
+
+                if train_score > 0:
+                    # Performance stability: lower when train >> val > test (overfitting pattern)
+                    stability_score = 1.0 - abs(train_score - val_score) / max(train_score, 0.01)
+                    analysis['performance_stability'] = max(0.0, stability_score)
+
+                    # Generalization score: higher when validation ≈ test
+                    if val_score > 0 and test_score > 0:
+                        generalization_score = 1.0 - abs(val_score - test_score) / max(val_score, test_score)
+                        analysis['generalization_score'] = max(0.0, generalization_score)
+
+        except Exception as e:
+            self.logger.warning(f"Performance analysis failed: {e}")
+
+        return analysis
+
+    def _calculate_metrics(self, y_true: np.ndarray, y_pred: np.ndarray) -> Dict[str, float]:
+        """Calculate comprehensive metrics."""
+        try:
+            from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score, mean_squared_error, r2_score
+
+            metrics = {}
+
+            # Classification metrics
+            try:
+                metrics['accuracy'] = float(accuracy_score(y_true, y_pred))
+                metrics['f1'] = float(f1_score(y_true, y_pred, average='weighted'))
+                metrics['precision'] = float(precision_score(y_true, y_pred, average='weighted'))
+                metrics['recall'] = float(recall_score(y_true, y_pred, average='weighted'))
+            except:
+                pass
+
+            # Regression metrics
+            try:
+                metrics['mse'] = float(mean_squared_error(y_true, y_pred))
+                metrics['rmse'] = float(np.sqrt(metrics['mse']))
+                metrics['r2'] = float(r2_score(y_true, y_pred))
+            except:
+                pass
+
+            return metrics
+
+        except Exception as e:
+            return {'error': str(e)}
+
+    def _assess_data_quality(self, X_train, X_val, y_train, y_val) -> Dict[str, Any]:
+        """Assess data quality issues that might affect model performance."""
+        assessment = {
+            'train_data_issues': [],
+            'validation_data_issues': [],
+            'recommendations': []
+        }
+
+        try:
+            # Check for missing values
+            if np.isnan(X_train).any():
+                assessment['train_data_issues'].append('missing_values')
+            if np.isnan(X_val).any():
+                assessment['validation_data_issues'].append('missing_values')
+
+            # Check for infinite values
+            if np.isinf(X_train).any():
+                assessment['train_data_issues'].append('infinite_values')
+            if np.isinf(X_val).any():
+                assessment['validation_data_issues'].append('infinite_values')
+
+            # Check for data leakage potential (features with very high correlation between train/val)
+            if X_train.shape[1] > 1:
+                try:
+                    train_corr = np.abs(np.corrcoef(X_train.T))
+                    val_corr = np.abs(np.corrcoef(X_val.T))
+
+                    # Check for suspiciously high correlations
+                    high_corr_threshold = 0.95
+                    if np.any(train_corr > high_corr_threshold) or np.any(val_corr > high_corr_threshold):
+                        assessment['train_data_issues'].append('high_feature_correlation')
+                        assessment['validation_data_issues'].append('high_feature_correlation')
+                except:
+                    pass
+
+            # Check target distribution differences
+            if len(y_train) > 10 and len(y_val) > 10:
+                train_mean, train_std = np.mean(y_train), np.std(y_train)
+                val_mean, val_std = np.mean(y_val), np.std(y_val)
+
+                # Check for significant distribution differences
+                if abs(train_mean - val_mean) > train_std:
+                    assessment['validation_data_issues'].append('distribution_shift')
+
+            # Generate recommendations
+            if assessment['train_data_issues'] or assessment['validation_data_issues']:
+                assessment['recommendations'].extend([
+                    'Review data preprocessing pipeline',
+                    'Consider data imputation or outlier removal',
+                    'Verify train/validation split methodology'
+                ])
+
+        except Exception as e:
+            self.logger.warning(f"Data quality assessment failed: {e}")
+
+        return assessment
+
+    def _calculate_overall_score(self, validation_report: Dict[str, Any]) -> float:
+        """Calculate overall validation score from all components."""
+        try:
+            scores = []
+
+            # Overfitting score (higher is worse, so invert)
+            overfitting_report = validation_report['components'].get('overfitting', {})
+            if overfitting_report and 'confidence_level' in overfitting_report:
+                overfitting_score = 1.0 - overfitting_report['confidence_level']  # Invert for overall score
+                scores.append(overfitting_score)
+
+            # Enhancement score (higher priority = lower score)
+            enhancement_report = validation_report['components'].get('enhancement', {})
+            if enhancement_report and 'confidence_level' in enhancement_report:
+                priority_scores = {'low': 1.0, 'medium': 0.8, 'high': 0.5, 'critical': 0.2}
+                enhancement_score = priority_scores.get(enhancement_report['priority'], 0.5)
+                scores.append(enhancement_score)
+
+            # Temporal validation score
+            temporal_report = validation_report['components'].get('temporal', {})
+            if temporal_report and hasattr(temporal_report, 'validation_score'):
+                scores.append(temporal_report.validation_score)
+
+            # Performance stability score
+            performance_analysis = validation_report['components'].get('performance', {})
+            if performance_analysis and 'performance_stability' in performance_analysis:
+                scores.append(performance_analysis['performance_stability'])
+
+            # Calculate weighted average
+            if scores:
+                weights = [0.3, 0.25, 0.25, 0.2]  # Weights for different components
+                weights = weights[:len(scores)]  # Adjust weights to match available scores
+                overall_score = sum(s * w for s, w in zip(scores, weights)) / sum(weights)
+            else:
+                overall_score = 0.5  # Default moderate score
+
+            return min(1.0, max(0.0, overall_score))
+
+        except Exception as e:
+            self.logger.warning(f"Overall score calculation failed: {e}")
+            return 0.5
+
+    def _generate_validation_summary(self, validation_report: Dict[str, Any]) -> str:
+        """Generate a human-readable validation summary."""
+        try:
+            overall_score = validation_report['overall_score']
+
+            # Determine overall assessment
+            if overall_score >= 0.8:
+                assessment = "EXCELLENT"
+            elif overall_score >= 0.6:
+                assessment = "GOOD"
+            elif overall_score >= 0.4:
+                assessment = "MODERATE"
+            elif overall_score >= 0.2:
+                assessment = "CONCERNING"
+            else:
+                assessment = "CRITICAL"
+
+            summary = f"Model validation completed with {assessment} overall score ({overall_score:.3f}). "
+
+            # Add key findings
+            overfitting_report = validation_report['components'].get('overfitting', {})
+            if overfitting_report.get('is_overfitting'):
+                summary += f"Overfitting detected with {overfitting_report.get('severity', 'unknown')} severity. "
+
+            enhancement_report = validation_report['components'].get('enhancement', {})
+            priority = enhancement_report.get('priority', 'low')
+            if priority in ['high', 'critical']:
+                summary += f"High priority enhancement opportunities identified. "
+
+            return summary
+
+        except Exception as e:
+            return f"Validation summary generation failed: {e}"
+
+    def _generate_recommendations(self, validation_report: Dict[str, Any]) -> List[str]:
+        """Generate actionable recommendations based on validation results."""
+        recommendations = []
+
+        try:
+            # Add recommendations from individual components
+            overfitting_report = validation_report['components'].get('overfitting', {})
+            if overfitting_report.get('recommendations'):
+                recommendations.extend(overfitting_report['recommendations'])
+
+            enhancement_report = validation_report['components'].get('enhancement', {})
+            if enhancement_report.get('detailed_recommendations'):
+                recommendations.extend(enhancement_report['detailed_recommendations'])
+
+            # Add general recommendations based on overall score
+            overall_score = validation_report['overall_score']
+            if overall_score < 0.4:
+                recommendations.append("🚨 Consider comprehensive model redesign and retraining")
+            elif overall_score < 0.6:
+                recommendations.append("⚠️ Review model architecture and training procedure")
+            elif overall_score < 0.8:
+                recommendations.append("📊 Consider hyperparameter optimization and validation improvements")
+
+            # Remove duplicates while preserving order
+            seen = set()
+            unique_recommendations = []
+            for rec in recommendations:
+                if rec not in seen:
+                    seen.add(rec)
+                    unique_recommendations.append(rec)
+
+            return unique_recommendations
+
+        except Exception as e:
+            return [f"Recommendation generation failed: {e}"]
+
+
+def detect_overfitting_for_model(model,
+                                X_train: np.ndarray,
                                 X_val: np.ndarray,
-                                y_train: np.ndarray, 
+                                y_train: np.ndarray,
                                 y_val: np.ndarray,
                                 model_name: str = "unknown",
                                 model_type: str = "unknown",

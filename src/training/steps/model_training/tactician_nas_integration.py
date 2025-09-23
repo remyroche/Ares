@@ -126,12 +126,40 @@ class TacticianNASIntegration:
                 raise ValueError("Insufficient training data: need at least 1000 samples")
             
             if X_train.shape[1] > 200:
-                tprint_warning("⚠️ High feature count detected, applying feature selection...")
-                # Use existing feature selection
-                feature_selector = FeatureSelector(method='mutual_info', max_features=100)
-                X_train = feature_selector.fit_transform(X_train, y_train)
-                X_val = feature_selector.transform(X_val)
-                tprint_success(f"✅ Features reduced to {X_train.shape[1]} using existing feature selection")
+                tprint_warning("⚠️ High feature count detected, applying comprehensive feature selection pipeline...")
+                
+                # Step 1: mRMR (Minimum Redundancy Maximum Relevance)
+                tprint_info("🔍 Step 1: Applying mRMR feature selection...")
+                from src.utils.ml_common.feature_engineering.mrmr_selection import MRMRSelector
+                mrmr_selector = MRMRSelector(k=80, method='fscore')
+                X_train = mrmr_selector.fit_transform(X_train, y_train)
+                X_val = mrmr_selector.transform(X_val)
+                tprint_success(f"✅ mRMR: → {X_train.shape[1]} features")
+                
+                # Step 2: Mutual Information filtering
+                tprint_info("🔍 Step 2: Applying Mutual Information filtering...")
+                from src.utils.ml_common.feature_engineering.mutual_info_selection import MutualInfoSelector
+                mi_selector = MutualInfoSelector(k=70, method='mutual_info')
+                X_train = mi_selector.fit_transform(X_train, y_train)
+                X_val = mi_selector.transform(X_val)
+                tprint_success(f"✅ MI: → {X_train.shape[1]} features")
+                
+                # Step 3: LASSO regularization
+                tprint_info("🔍 Step 3: Applying LASSO regularization...")
+                from src.utils.ml_common.feature_engineering.lasso_selection import LassoSelector
+                lasso_selector = LassoSelector(alpha=0.01, max_features=65)
+                X_train = lasso_selector.fit_transform(X_train, y_train)
+                X_val = lasso_selector.transform(X_val)
+                tprint_success(f"✅ LASSO: → {X_train.shape[1]} features")
+                
+                # Step 4: RandomForest final selection (down to 60)
+                tprint_info("🔍 Step 4: Applying RandomForest final selection to 60 features...")
+                from src.utils.ml_common.feature_engineering.random_forest_selection import RandomForestSelector
+                rf_selector = RandomForestSelector(n_estimators=100, max_features=60, method='importance')
+                X_train = rf_selector.fit_transform(X_train, y_train)
+                X_val = rf_selector.transform(X_val)
+                tprint_success(f"✅ RandomForest: → {X_train.shape[1]} features")
+                tprint_success(f"🎯 Final feature reduction to {X_train.shape[1]} features using comprehensive pipeline")
             
             # Integrate regime-specific features if provided
             if regime_features is not None:

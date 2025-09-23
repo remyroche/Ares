@@ -50,10 +50,16 @@ class TacticianPipelineConfig:
     nas_trials: int = 30
     nas_timeout: int = 1800  # 30 minutes
     
-    # Feature selection
-    max_features: int = 70  # Optimal range for NAS
+    # Feature selection pipeline
+    max_features: int = 60  # Final target for NAS (RandomForest selection)
     min_features: int = 45  # Minimum for meaningful learning
-    feature_selection_method: str = 'mutual_info'
+    feature_selection_pipeline: List[str] = None  # ['mrmr', 'mi', 'lasso', 'rf']
+    
+    # Feature selection thresholds
+    mrmr_threshold: int = 80  # mRMR reduces to 80
+    mi_threshold: int = 70    # MI reduces to 70  
+    lasso_threshold: int = 65 # LASSO reduces to 65
+    rf_threshold: int = 60    # RandomForest final selection to 60
     
     # Regime integration
     enable_regime_features: bool = True
@@ -72,6 +78,8 @@ class TacticianPipelineConfig:
     def __post_init__(self):
         if self.regime_feature_types is None:
             self.regime_feature_types = ['volatility', 'volume', 'trend', 'momentum']
+        if self.feature_selection_pipeline is None:
+            self.feature_selection_pipeline = ['mrmr', 'mi', 'lasso', 'rf']
 
 
 class TacticianNASPipelineIntegration:
@@ -186,8 +194,8 @@ class TacticianNASPipelineIntegration:
     
     def _optimize_features(self, X_train: np.ndarray, y_train: np.ndarray, 
                          X_val: np.ndarray, y_val: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-        """Optimize features for NAS (45-70 features)."""
-        tprint_info("🎯 Optimizing features for NAS...")
+        """Optimize features for NAS using comprehensive feature selection pipeline."""
+        tprint_info("🎯 Optimizing features for NAS using advanced feature selection pipeline...")
         
         current_features = X_train.shape[1]
         
@@ -196,19 +204,47 @@ class TacticianNASPipelineIntegration:
             return X_train, X_val
         
         if current_features > 200:
-            tprint_warning(f"⚠️ High feature count: {current_features} > 200, applying feature selection...")
+            tprint_warning(f"⚠️ High feature count: {current_features} > 200, applying comprehensive feature selection...")
             
-            # Use existing feature selection
-            feature_selector = FeatureSelector(
-                method=self.config.feature_selection_method,
-                max_features=self.config.max_features
+            # Step 1: mRMR (Minimum Redundancy Maximum Relevance)
+            tprint_info("🔍 Step 1: Applying mRMR feature selection...")
+            from src.utils.ml_common.feature_engineering.mrmr_selection import MRMRSelector
+            mrmr_selector = MRMRSelector(k=min(self.config.mrmr_threshold, current_features), method='fscore')
+            X_train_mrmr = mrmr_selector.fit_transform(X_train, y_train)
+            X_val_mrmr = mrmr_selector.transform(X_val)
+            tprint_success(f"✅ mRMR: {current_features} → {X_train_mrmr.shape[1]} features")
+            
+            # Step 2: Mutual Information filtering
+            tprint_info("🔍 Step 2: Applying Mutual Information filtering...")
+            from src.utils.ml_common.feature_engineering.mutual_info_selection import MutualInfoSelector
+            mi_selector = MutualInfoSelector(k=min(self.config.mi_threshold, X_train_mrmr.shape[1]), method='mutual_info')
+            X_train_mi = mi_selector.fit_transform(X_train_mrmr, y_train)
+            X_val_mi = mi_selector.transform(X_val_mrmr)
+            tprint_success(f"✅ MI: {X_train_mrmr.shape[1]} → {X_train_mi.shape[1]} features")
+            
+            # Step 3: LASSO regularization
+            tprint_info("🔍 Step 3: Applying LASSO regularization...")
+            from src.utils.ml_common.feature_engineering.lasso_selection import LassoSelector
+            lasso_selector = LassoSelector(alpha=0.01, max_features=min(self.config.lasso_threshold, X_train_mi.shape[1]))
+            X_train_lasso = lasso_selector.fit_transform(X_train_mi, y_train)
+            X_val_lasso = lasso_selector.transform(X_val_mi)
+            tprint_success(f"✅ LASSO: {X_train_mi.shape[1]} → {X_train_lasso.shape[1]} features")
+            
+            # Step 4: RandomForest final selection (down to 60)
+            tprint_info("🔍 Step 4: Applying RandomForest final selection to 60 features...")
+            from src.utils.ml_common.feature_engineering.random_forest_selection import RandomForestSelector
+            rf_selector = RandomForestSelector(
+                n_estimators=100,
+                max_features=min(self.config.rf_threshold, X_train_lasso.shape[1]),
+                method='importance'
             )
+            X_train_final = rf_selector.fit_transform(X_train_lasso, y_train)
+            X_val_final = rf_selector.transform(X_val_lasso)
             
-            X_train_selected = feature_selector.fit_transform(X_train, y_train)
-            X_val_selected = feature_selector.transform(X_val)
+            tprint_success(f"✅ RandomForest: {X_train_lasso.shape[1]} → {X_train_final.shape[1]} features")
+            tprint_success(f"🎯 Final feature reduction: {current_features} → {X_train_final.shape[1]} features")
             
-            tprint_success(f"✅ Features reduced: {current_features} → {X_train_selected.shape[1]}")
-            return X_train_selected, X_val_selected
+            return X_train_final, X_val_final
         
         else:
             tprint_info(f"✅ Feature count acceptable: {current_features} features")

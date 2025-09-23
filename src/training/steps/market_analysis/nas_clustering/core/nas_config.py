@@ -93,11 +93,28 @@ class NASClusteringConfig:
     enable_gpu_acceleration: bool = True
     enable_mkl_optimization: bool = True
     enable_batch_processing: bool = True
-    
+
     # Hardware optimization settings
     cpu_optimization_level: str = 'balanced'  # 'minimal', 'balanced', 'aggressive'
     gpu_optimization_level: str = 'balanced'
     memory_optimization_level: str = 'balanced'
+
+    # Transitional NAS settings
+    enable_transitional_nas: bool = True  # Enable hybrid traditional + NAS approach
+    tpe_optimization: bool = True  # Use TPE optimization
+    use_grid_for_tpe: bool = True  # Use grid utilities for TPE
+    grid_coarse_points: int = 8
+    grid_fine_points: int = 5
+    pareto_optimization: bool = True  # Use Pareto analysis
+    pareto_objectives: List[str] = field(default_factory=lambda: [
+        'clustering_quality', 'efficiency', 'robustness'
+    ])
+
+    # Simplified clustering methods for transitional NAS
+    clustering_methods: List[str] = field(default_factory=lambda: [
+        'kmeans', 'neural'  # Focus on essential methods
+    ])
+    fusion_strategy: str = 'hybrid'  # 'hybrid' for transitional approach
     memory_limit_gb: float = 8.0
     enable_adaptive_optimization: bool = True
     enable_thermal_monitoring: bool = True

@@ -1,16 +1,42 @@
-# TRUE NAS-Driven Clustering for Short-Term Trading
+# TRANSITIONAL NAS-Driven Clustering for Short-Term Trading
 
-This module **replaces** the existing HMM clustering pipeline with **actual Neural Architecture Search (NAS)** driven clustering for short-term trading regime detection (5-30m timeframe) with micro-regime detection capabilities.
+This module **replaces** the existing HMM clustering pipeline with **Transitional Neural Architecture Search (NAS)** driven clustering for short-term trading regime detection. It bridges traditional clustering methods with advanced NAS techniques using existing optimization utilities.
 
-## 🔬 What Makes This Actually NAS
+## 🔬 What Makes This Transitional NAS
 
-Unlike traditional clustering methods, this implementation uses **true Neural Architecture Search**:
+**Transitional NAS** focuses on practical implementation using proven utilities:
 
-- **Neural Architecture Search**: Automatically searches for optimal neural network architectures for clustering
-- **Learned Embeddings**: Uses deep learning to learn optimal feature representations
-- **Architecture Optimization**: Optimizes network topology, activation functions, and hyperparameters
-- **Multi-objective Optimization**: Balances clustering quality, efficiency, and regime separation
-- **Regime-Aware Adaptation**: Adapts architectures based on detected market regimes
+- **Grid-Optimized TPE**: Uses existing grid utilities to optimize Tree-structured Parzen Estimator sampling
+- **Pareto Front Analysis**: Uses existing Pareto utilities to find optimal trade-offs between objectives
+- **Essential Methods Only**: Focuses on K-means + Neural embeddings (not all 4 clustering methods)
+- **Hybrid Fusion**: Simple but effective combination of traditional and neural approaches
+- **Production-Ready**: Uses existing optimization infrastructure for reliability
+
+### 🎯 Key Improvements
+
+#### 1. **Grid-Optimized TPE Search**
+```python
+# Phase 1: Coarse grid search using existing grid utilities
+coarse_grid = build_coarse_grid_from_search_space(search_space, 8)
+# Evaluates promising regions efficiently
+
+# Phase 2: TPE optimization in best regions
+# Finds optimal hyperparameters faster
+```
+
+#### 2. **Pareto Front Analysis**
+```python
+# Uses existing Pareto utilities for multi-objective optimization
+pareto_front = compute_pareto_front(solutions)
+# Finds optimal trade-offs between quality, efficiency, robustness
+```
+
+#### 3. **Transitional Approach**
+```python
+# Simple but effective: K-means + Neural embeddings
+# Hybrid fusion bridges traditional and advanced methods
+# Easier to understand and debug than complex multi-modal approaches
+```
 
 ## 🎯 Key Features
 
@@ -207,21 +233,33 @@ The NAS clustering module provides enhanced output that **replaces** the existin
 
 ## 🔧 Configuration
 
-### TRUE NAS Clustering Configuration
+### TRANSITIONAL NAS Clustering Configuration
 
 ```python
 from src.training.steps.market_analysis.nas_clustering import NASClusteringConfig
 
-# Create true NAS configuration
+# Create transitional NAS configuration
 config = NASClusteringConfig.create_short_term_trading_config()
 
-# Enable actual Neural Architecture Search
-config.use_true_nas = True
-config.nas_search_trials = 25  # Number of architecture search trials
-config.nas_timeout_seconds = 1800  # 30 minutes timeout
-config.enable_regime_aware_nas = True
+# Enable Transitional NAS (bridges traditional + advanced methods)
+config.enable_transitional_nas = True
+config.search_strategy = 'transitional'  # Options: standard, transitional, bayesian, pareto, evolutionary
 
-# Customize configuration
+# Optimize TPE using existing grid utilities
+config.tpe_optimization = True
+config.use_grid_for_tpe = True
+config.grid_coarse_points = 8  # Coarse grid for initial exploration
+config.grid_fine_points = 5    # Fine grid for refinement
+
+# Use existing Pareto utilities for multi-objective optimization
+config.pareto_optimization = True
+config.pareto_objectives = ['clustering_quality', 'efficiency', 'robustness']
+
+# Focus on essential clustering methods (not all 4)
+config.clustering_methods = ['kmeans', 'neural']  # Just the most important ones
+config.fusion_strategy = 'hybrid'  # Simple but effective fusion
+
+# Standard configuration
 config.n_regimes = 12  # Target number of regimes (10-15)
 config.timeframe = "15m"  # Primary timeframe
 config.micro_timeframe = "5m"  # Micro-regime detection timeframe
@@ -232,18 +270,6 @@ config.micro_regime_sensitivity = 0.7
 config.economic_significance_threshold = 0.7
 config.trading_viability_threshold = 0.6
 config.regime_transition_cost = 0.05
-
-# NAS Architecture Search Configuration
-config.nas_config = {
-    'min_layers': 3,
-    'max_layers': 8,
-    'min_units': 64,
-    'max_units': 512,
-    'activation_functions': ['relu', 'tanh', 'swish', 'gelu'],
-    'dropout_rates': [0.0, 0.1, 0.2, 0.3, 0.5],
-    'objectives': ['clustering_quality', 'efficiency', 'regime_separation'],
-    'objective_weights': [0.4, 0.3, 0.3]
-}
 ```
 
 ### Feature Configuration

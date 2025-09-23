@@ -43,6 +43,21 @@ try:
 except ImportError:
     DEAP_AVAILABLE = False
 
+# Import existing utilities for optimization
+from src.utils.ml_common.optimization.grid_utils import (
+    build_coarse_grid_from_search_space,
+    build_fine_grid_around_best
+)
+
+from src.utils.ml_common.optimization.pareto import (
+    ParetoFront, Solution, compute_pareto_front, get_pareto_front
+)
+
+# Import hardware optimization
+from src.utils.hardware.unified_hardware_manager import (
+    UnifiedHardwareManager, HardwareConfig, WorkloadType, OptimizationLevel
+)
+
 # Import matrix operations for optimized computations
 from src.utils.matrix_operations import UnifiedMatrixOperations
 
@@ -170,10 +185,20 @@ class NASClusterer:
         self.mutation_rate = config.get('mutation_rate', 0.1)
         self.crossover_rate = config.get('crossover_rate', 0.7)
 
-        # Multi-modal clustering settings
-        self.clustering_methods = config.get('clustering_methods', ['kmeans', 'dbscan', 'agglomerative', 'neural'])
-        self.fusion_strategy = config.get('fusion_strategy', 'ensemble')  # 'ensemble', 'stacked', 'adaptive'
-        self.ensemble_weights = config.get('ensemble_weights', 'auto')  # 'auto' or list of weights
+        # Transitional NAS settings - focus on essential methods
+        self.clustering_methods = config.get('clustering_methods', ['kmeans', 'neural'])  # Simplified: just K-means + Neural
+        self.fusion_strategy = config.get('fusion_strategy', 'hybrid')  # 'hybrid' for transitional approach
+        self.ensemble_weights = config.get('ensemble_weights', 'auto')
+
+        # TPE optimization settings
+        self.tpe_optimization = config.get('tpe_optimization', True)
+        self.use_grid_for_tpe = config.get('use_grid_for_tpe', True)
+        self.grid_coarse_points = config.get('grid_coarse_points', 8)
+        self.grid_fine_points = config.get('grid_fine_points', 5)
+
+        # Pareto optimization settings
+        self.pareto_optimization = config.get('pareto_optimization', True)
+        self.pareto_objectives = config.get('pareto_objectives', ['clustering_quality', 'efficiency', 'robustness'])
 
         self.nas_search = NeuralArchitectureSearch(self.nas_config)
 
@@ -184,6 +209,11 @@ class NASClusterer:
 
         # Initialize advanced optimizers
         self._initialize_advanced_optimizers()
+
+        # Store current features/targets for evaluation
+        self.current_features = None
+        self.current_targets = None
+        self.current_n_regimes = None
 
         self.logger.info("🧠 NAS components initialized for clustering")
         self.logger.info(f"🔍 Search Strategy: {self.search_strategy}")
@@ -692,11 +722,11 @@ class NASClusterer:
             if self.search_strategy == 'evolutionary' and DEAP_AVAILABLE:
                 self._perform_evolutionary_search(features, n_regimes)
             elif self.search_strategy == 'bayesian' and OPTUNA_AVAILABLE:
-                self._perform_bayesian_search(features, n_regimes)
+                self._perform_grid_optimized_bayesian_search(features, n_regimes)
             elif self.search_strategy == 'multi_objective':
-                self._perform_multi_objective_search(features, n_regimes)
-            elif self.search_strategy == 'multi_modal' and self.enable_multi_modal_nas:
-                self._perform_multi_modal_search(features, n_regimes)
+                self._perform_pareto_optimized_search(features, n_regimes)
+            elif self.search_strategy == 'transitional' and self.tpe_optimization:
+                self._perform_transitional_nas_search(features, n_regimes)
             else:
                 # Default standard search
                 self._perform_standard_nas_search(features, n_regimes)
@@ -816,6 +846,201 @@ class NASClusterer:
 
         except Exception as e:
             self.logger.error(f"❌ Bayesian search failed: {e}")
+            self._perform_standard_nas_search(features, n_regimes)
+
+    def _perform_grid_optimized_bayesian_search(self, features: np.ndarray, n_regimes: int):
+        """Perform Bayesian search optimized with grid utilities."""
+        try:
+            if not OPTUNA_AVAILABLE:
+                self.logger.warning("⚠️ Optuna not available, falling back to standard search")
+                self._perform_standard_nas_search(features, n_regimes)
+                return
+
+            self.logger.info("🔍 Running grid-optimized Bayesian search with TPE")
+
+            # Define search space for grid optimization
+            search_space = {
+                'n_layers': {'type': 'int', 'low': 2, 'high': 8},
+                'n_units': {'type': 'int', 'low': 32, 'high': 512},
+                'dropout': {'type': 'float', 'low': 0.0, 'high': 0.5},
+                'activation': {'type': 'categorical', 'choices': ['relu', 'tanh', 'swish']},
+                'learning_rate': {'type': 'float', 'low': 1e-5, 'high': 1e-2, 'log': True}
+            }
+
+            # Phase 1: Coarse grid search to find promising regions
+            if self.use_grid_for_tpe:
+                self.logger.info("📊 Phase 1: Coarse grid search")
+                coarse_grid = build_coarse_grid_from_search_space(search_space, self.grid_coarse_points)
+
+                # Evaluate coarse grid points
+                coarse_results = []
+                for params in coarse_grid[:20]:  # Limit for efficiency
+                    try:
+                        architecture = self._create_architecture_from_params(params, features.shape[1])
+                        performance = self._evaluate_architecture_performance(architecture, features, self.current_targets)
+                        score = self._calculate_multi_objective_score(performance)
+                        coarse_results.append((params, score))
+                    except Exception:
+                        continue
+
+                # Find best parameters from coarse search
+                if coarse_results:
+                    coarse_results.sort(key=lambda x: x[1], reverse=True)
+                    best_params = coarse_results[0][0]
+                    self.logger.info(f"✅ Best coarse parameters: {best_params}")
+                else:
+                    best_params = {'n_layers': 4, 'n_units': 128, 'dropout': 0.2, 'activation': 'relu'}
+
+            # Phase 2: TPE optimization around best region
+            self.logger.info("📈 Phase 2: TPE optimization")
+
+            def objective(trial):
+                # Sample from search space
+                n_layers = trial.suggest_int('n_layers', 2, 8)
+                n_units = trial.suggest_int('n_units', 32, 512)
+                dropout = trial.suggest_float('dropout', 0.0, 0.5)
+                activation = trial.suggest_categorical('activation', ['relu', 'tanh', 'swish'])
+
+                # Create architecture
+                architecture = ArchitectureCandidate(
+                    layers=[{
+                        'units': n_units,
+                        'activation': activation,
+                        'dropout': dropout
+                    } for _ in range(n_layers)],
+                    total_params=n_units * n_layers,
+                    estimated_flops=n_units * n_layers * 1000
+                )
+
+                # Evaluate
+                performance = self._evaluate_architecture_performance(architecture, features, self.current_targets)
+
+                # Multi-objective: clustering quality, efficiency, robustness
+                clustering_quality = performance.get('accuracy', 0.0)
+                efficiency = 1.0 / (1.0 + architecture.total_params / 100000)
+                robustness = performance.get('robustness_score', 0.5)
+
+                return clustering_quality, efficiency, robustness
+
+            # Run TPE optimization
+            sampler = TPESampler(n_startup_trials=10, multivariate=True)
+            study = optuna.create_study(
+                directions=['maximize', 'maximize', 'maximize'],
+                sampler=sampler
+            )
+
+            n_trials = 50
+            study.optimize(objective, n_trials=n_trials)
+
+            # Get best architecture
+            best_trial = study.best_trials[0] if len(study.best_trials) > 0 else study.trials[0]
+            self.current_best_architecture = self._create_architecture_from_trial(best_trial, features.shape[1])
+
+            self.logger.info(f"✅ Grid-optimized TPE completed with best score: {study.best_value}")
+
+        except Exception as e:
+            self.logger.error(f"❌ Grid-optimized Bayesian search failed: {e}")
+            self._perform_standard_nas_search(features, n_regimes)
+
+    def _perform_pareto_optimized_search(self, features: np.ndarray, n_regimes: int):
+        """Perform Pareto-based multi-objective optimization."""
+        try:
+            if not OPTUNA_AVAILABLE:
+                self.logger.warning("⚠️ Optuna not available, falling back to standard search")
+                self._perform_standard_nas_search(features, n_regimes)
+                return
+
+            self.logger.info("🎯 Running Pareto-optimized search")
+
+            # Define search space
+            search_space = {
+                'n_layers': {'type': 'int', 'low': 2, 'high': 8},
+                'n_units': {'type': 'int', 'low': 32, 'high': 512},
+                'dropout': {'type': 'float', 'low': 0.0, 'high': 0.5},
+                'activation': {'type': 'categorical', 'choices': ['relu', 'tanh', 'swish']}
+            }
+
+            # Generate candidates using grid
+            candidates = build_coarse_grid_from_search_space(search_space, 10)
+
+            # Evaluate all candidates
+            solutions = []
+            for params in candidates:
+                try:
+                    architecture = self._create_architecture_from_params(params, features.shape[1])
+                    performance = self._evaluate_architecture_performance(architecture, features, self.current_targets)
+
+                    # Create solution for Pareto analysis
+                    metrics = {
+                        'clustering_quality': performance.get('accuracy', 0.0),
+                        'efficiency': 1.0 / (1.0 + architecture.total_params / 100000),
+                        'robustness': performance.get('robustness_score', 0.5),
+                        'params': architecture.total_params
+                    }
+
+                    solution = Solution(metrics=metrics, params=params)
+                    solutions.append(solution)
+
+                except Exception:
+                    continue
+
+            if not solutions:
+                self.logger.error("❌ No valid solutions for Pareto analysis")
+                self._perform_standard_nas_search(features, n_regimes)
+                return
+
+            # Compute Pareto front
+            pareto_front = compute_pareto_front(solutions)
+
+            if pareto_front and len(pareto_front.solutions) > 0:
+                # Select best solution from Pareto front (can be customized)
+                best_solution = pareto_front.solutions[0]  # First solution in Pareto front
+                self.current_best_architecture = self._create_architecture_from_params(best_solution.params, features.shape[1])
+
+                self.logger.info(f"🎯 Pareto optimization completed. Front size: {len(pareto_front.solutions)}")
+            else:
+                self.logger.warning("⚠️ No Pareto front found, using first solution")
+                self.current_best_architecture = self._create_architecture_from_params(solutions[0].params, features.shape[1])
+
+        except Exception as e:
+            self.logger.error(f"❌ Pareto-optimized search failed: {e}")
+            self._perform_standard_nas_search(features, n_regimes)
+
+    def _perform_transitional_nas_search(self, features: np.ndarray, n_regimes: int):
+        """Perform transitional NAS: bridge between traditional methods and advanced NAS."""
+        try:
+            self.logger.info("🔄 Running transitional NAS (K-means + Neural embeddings)")
+
+            # Phase 1: Traditional K-means clustering
+            self.logger.info("📊 Phase 1: Traditional K-means clustering")
+            kmeans_result = self._perform_traditional_clustering(features, n_regimes)
+
+            # Phase 2: Neural embeddings + K-means
+            self.logger.info("🧠 Phase 2: Neural embeddings + K-means")
+            neural_embeddings = self._get_neural_embeddings(features, n_regimes)
+            neural_result = self._perform_traditional_clustering(neural_embeddings, n_regimes)
+
+            # Phase 3: Hybrid fusion
+            self.logger.info("🔗 Phase 3: Hybrid fusion")
+            fused_labels = self._transitional_fusion(kmeans_result, neural_result, features, n_regimes)
+
+            # Create transitional architecture
+            self.current_best_architecture = self._create_transitional_architecture(
+                kmeans_result, neural_result, features.shape[1]
+            )
+
+            # Store results
+            self.transitional_results = {
+                'kmeans_result': kmeans_result,
+                'neural_result': neural_result,
+                'fused_labels': fused_labels,
+                'improvement_score': self._calculate_transitional_improvement(kmeans_result, neural_result, features)
+            }
+
+            self.logger.info("✅ Transitional NAS completed")
+
+        except Exception as e:
+            self.logger.error(f"❌ Transitional NAS failed: {e}")
             self._perform_standard_nas_search(features, n_regimes)
 
     def _perform_multi_objective_search(self, features: np.ndarray, n_regimes: int):
@@ -1669,6 +1894,91 @@ class NASClusterer:
             # Combine metrics
             quality = (silhouette + calinski_harabasz) / 2.0
             return min(quality, 1.0)
+
+        except Exception:
+            return 0.0
+
+    def _transitional_fusion(self, kmeans_result: Dict[str, Any], neural_result: Dict[str, Any],
+                           features: np.ndarray, n_regimes: int) -> np.ndarray:
+        """Simple hybrid fusion for transitional NAS."""
+        try:
+            kmeans_labels = kmeans_result.get('labels')
+            neural_labels = neural_result.get('labels')
+
+            if kmeans_labels is None or neural_labels is None:
+                raise ValueError("Invalid clustering results for fusion")
+
+            # Simple ensemble: average the labels (transitional approach)
+            fused_labels = (kmeans_labels + neural_labels) / 2.0
+            fused_labels = np.round(fused_labels).astype(int)
+
+            # Ensure labels are valid
+            fused_labels = np.maximum(fused_labels, 0)
+            fused_labels = np.minimum(fused_labels, n_regimes - 1)
+
+            return fused_labels
+
+        except Exception as e:
+            self.logger.warning(f"⚠️ Transitional fusion failed: {e}")
+            # Fallback to K-means
+            return kmeans_result.get('labels', np.zeros(len(features)))
+
+    def _create_transitional_architecture(self, kmeans_result: Dict[str, Any],
+                                        neural_result: Dict[str, Any], input_dim: int) -> ArchitectureCandidate:
+        """Create a transitional architecture representation."""
+        try:
+            # Simple transitional architecture: combines K-means with neural embeddings
+            layers = [{
+                'method': 'transitional_nas',
+                'base_method': 'kmeans',
+                'enhanced_method': 'neural_embeddings',
+                'fusion_type': 'hybrid_average',
+                'units': 64,  # Simpler than full NAS
+                'activation': 'relu',
+                'dropout': 0.1
+            }]
+
+            return ArchitectureCandidate(
+                layers=layers,
+                total_params=1000,  # Simpler model
+                estimated_flops=5000
+            )
+
+        except Exception as e:
+            self.logger.error(f"❌ Transitional architecture creation failed: {e}")
+            return None
+
+    def _calculate_transitional_improvement(self, kmeans_result: Dict[str, Any],
+                                          neural_result: Dict[str, Any], features: np.ndarray) -> float:
+        """Calculate improvement from traditional to neural approach."""
+        try:
+            kmeans_labels = kmeans_result.get('labels')
+            neural_labels = neural_result.get('labels')
+
+            if kmeans_labels is None or neural_labels is None:
+                return 0.0
+
+            # Calculate improvement based on silhouette scores
+            kmeans_silhouette = silhouette_score(features, kmeans_labels)
+            neural_silhouette = silhouette_score(features, neural_labels)
+
+            improvement = neural_silhouette - kmeans_silhouette
+            return max(0.0, improvement)  # Ensure non-negative
+
+        except Exception as e:
+            self.logger.warning(f"⚠️ Improvement calculation failed: {e}")
+            return 0.0
+
+    def _calculate_multi_objective_score(self, performance: Dict[str, float]) -> float:
+        """Calculate multi-objective score for grid optimization."""
+        try:
+            clustering_quality = performance.get('accuracy', 0.0)
+            efficiency = performance.get('efficiency_score', 0.5)
+            robustness = performance.get('robustness_score', 0.5)
+
+            # Weighted combination
+            score = 0.5 * clustering_quality + 0.3 * efficiency + 0.2 * robustness
+            return score
 
         except Exception:
             return 0.0

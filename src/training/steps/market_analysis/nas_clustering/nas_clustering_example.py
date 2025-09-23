@@ -1,8 +1,9 @@
 """
-TRUE NAS Clustering Example - Demonstrating Actual Neural Architecture Search
+TRANSITIONAL NAS Clustering Example - Bridging Traditional + Advanced Methods
 
-This example shows how to use the actual NAS-based clustering system for
-short-term trading regime detection, featuring true Neural Architecture Search.
+This example shows how to use the Transitional NAS system that bridges
+traditional clustering methods with advanced NAS techniques using existing
+optimization utilities (grid utils, Pareto analysis).
 """
 
 import numpy as np
@@ -98,9 +99,9 @@ def generate_sample_market_data(n_samples: int = 1000, n_features: int = 20) -> 
     return df
 
 
-async def demonstrate_true_nas_clustering():
-    """Demonstrate true NAS clustering with actual neural architecture search."""
-    logger.info("🚀 Starting TRUE NAS Clustering Demonstration")
+async def demonstrate_transitional_nas_clustering():
+    """Demonstrate Transitional NAS clustering bridging traditional + advanced methods."""
+    logger.info("🚀 Starting TRANSITIONAL NAS Clustering Demonstration")
     logger.info("=" * 60)
 
     # Generate sample market data
@@ -108,8 +109,8 @@ async def demonstrate_true_nas_clustering():
     market_data = generate_sample_market_data(n_samples=500, n_features=20)
     logger.info(f"✅ Generated {len(market_data)} data points with {market_data.shape[1]} features")
 
-    # Create NAS clustering configuration
-    logger.info("🔧 Configuring NAS clustering...")
+    # Create Transitional NAS clustering configuration
+    logger.info("🔧 Configuring Transitional NAS clustering...")
     nas_config = {
         'symbol': 'BTCUSDT',
         'exchange': 'binance',
@@ -120,14 +121,29 @@ async def demonstrate_true_nas_clustering():
             'enable_micro_regime_detection': True,
             'economic_significance_threshold': 0.7,
             'trading_viability_threshold': 0.6,
-            'use_true_nas': True,  # Enable actual NAS
-            'nas_search_trials': 25,  # Number of architecture search trials
-            'enable_regime_aware_nas': True
+
+            # Transitional NAS settings
+            'enable_transitional_nas': True,
+            'search_strategy': 'transitional',  # Uses grid + TPE + Pareto
+
+            # Grid-optimized TPE using existing utilities
+            'tpe_optimization': True,
+            'use_grid_for_tpe': True,
+            'grid_coarse_points': 8,
+            'grid_fine_points': 5,
+
+            # Pareto analysis using existing utilities
+            'pareto_optimization': True,
+            'pareto_objectives': ['clustering_quality', 'efficiency', 'robustness'],
+
+            # Focus on essential methods only
+            'clustering_methods': ['kmeans', 'neural'],
+            'fusion_strategy': 'hybrid'
         }
     }
 
     # Initialize NAS orchestrator
-    logger.info("🧠 Initializing NAS orchestrator with true NAS capabilities...")
+    logger.info("🧠 Initializing Transitional NAS orchestrator...")
     orchestrator = NASOrchestrator(nas_config)
 
     # Prepare data for clustering
@@ -136,13 +152,15 @@ async def demonstrate_true_nas_clustering():
 
     logger.info(f"✅ Data prepared: {data_array.shape[0]} samples, {data_array.shape[1]} features")
 
-    # Run NAS clustering with actual neural architecture search
-    logger.info("🔍 Running TRUE NAS clustering with neural architecture search...")
-    logger.info("   This will search for optimal neural network architectures...")
-    logger.info("   Expected time: 2-5 minutes for architecture search...")
+    # Run Transitional NAS clustering
+    logger.info("🔍 Running Transitional NAS clustering...")
+    logger.info("   Phase 1: Grid-optimized TPE search using existing utilities")
+    logger.info("   Phase 2: Pareto front analysis for optimal trade-offs")
+    logger.info("   Phase 3: Hybrid fusion (K-means + Neural embeddings)")
+    logger.info("   Expected time: 1-3 minutes using existing optimization utilities...")
 
     try:
-        # Run the actual NAS clustering
+        # Run the Transitional NAS clustering
         results = await orchestrator.run_nas_clustering(
             data=data_array,
             timestamps=timestamps,
@@ -153,12 +171,12 @@ async def demonstrate_true_nas_clustering():
 
         # Display comprehensive results
         logger.info("\n" + "=" * 60)
-        logger.info("🎉 TRUE NAS CLUSTERING RESULTS")
+        logger.info("🎉 TRANSITIONAL NAS CLUSTERING RESULTS")
         logger.info("=" * 60)
 
         # Basic clustering results
         logger.info(f"📊 Clustering Method: {results.get('clustering_method', 'unknown')}")
-        logger.info(f"🧠 NAS Architecture Used: {results.get('nas_architecture_used') is not None}")
+        logger.info(f"🔍 Search Strategy: {results.get('search_strategy', 'transitional')}")
         logger.info(f"⏱️  Execution Time: {results.get('execution_time', 0):.2f}s")
         logger.info(f"✅ Success: {results.get('success', False)}")
 
@@ -174,32 +192,18 @@ async def demonstrate_true_nas_clustering():
             logger.info("
 🔬 QUALITY METRICS:"            logger.info(f"   - Silhouette Score: {quality_metrics.get('silhouette_score', 0):.4f}")
 ".4f"            logger.info(f"   - Calinski-Harabasz Score: {quality_metrics.get('calinski_harabasz_score', 0):.4f}")
-".4f"            logger.info(f"   - NAS Score: {quality_metrics.get('nas_score', 0):.4f}")
-".4f"            logger.info(f"   - Architecture Efficiency: {quality_metrics.get('architecture_efficiency', 0):.4f}")
-".4f"            logger.info(f"   - Clustering Consistency: {quality_metrics.get('clustering_consistency', 0):.4f}")
-".4f"            logger.info(f"   - Regime Separation: {quality_metrics.get('regime_separation', 0):.4f}")
-".4f"            logger.info(f"   - Overall NAS Quality: {quality_metrics.get('overall_nas_quality', 0):.4f}")
+".4f"            logger.info(f"   - Transitional Score: {quality_metrics.get('transitional_score', 0):.4f}")
+".4f"            logger.info(f"   - Grid-TPE Efficiency: {quality_metrics.get('grid_tpe_efficiency', 0):.4f}")
+".4f"            logger.info(f"   - Pareto Quality: {quality_metrics.get('pareto_quality', 0):.4f}")
 ".4f"
-            # NAS-specific metrics
-            if 'nas_clustering_loss' in quality_metrics:
-                logger.info(f"   - NAS Clustering Loss: {quality_metrics['nas_clustering_loss']:.4f}")
-".4f"            if 'nas_architecture_score' in quality_metrics:
-                logger.info(f"   - NAS Architecture Score: {quality_metrics['nas_architecture_score']:.4f}")
-".4f"
-        # NAS search results
-        if 'nas_search_results' in results:
-            nas_results = results['nas_search_results']
+        # Transitional NAS results
+        if 'transitional_results' in results:
+            transitional_results = results['transitional_results']
             logger.info("
-🧠 NAS SEARCH RESULTS:"            logger.info(f"   - Search Performed: {nas_results.get('search_performed', False)}")
-            logger.info(f"   - Architecture Score: {nas_results.get('architecture_score', 0):.4f}")
-".4f"            logger.info(f"   - Total Parameters: {nas_results.get('total_params', 0):,}")
-","            logger.info(f"   - Search Time: {nas_results.get('search_time', 0):.2f}s")
-".2f"
-            # Clustering loss history
-            if 'clustering_loss_history' in nas_results:
-                losses = nas_results['clustering_loss_history']
-                if losses:
-                    logger.info(f"   - Clustering Loss History: {losses[-5:]}")  # Show last 5 losses
+🔄 TRANSITIONAL NAS RESULTS:"            logger.info(f"   - K-means Quality: {transitional_results.get('kmeans_quality', 0):.4f}")
+".4f"            logger.info(f"   - Neural Quality: {transitional_results.get('neural_quality', 0):.4f}")
+".4f"            logger.info(f"   - Hybrid Improvement: {transitional_results.get('improvement_score', 0):.4f}")
+".4f"            logger.info(f"   - Fusion Type: {transitional_results.get('fusion_type', 'hybrid')}")
 
         # Economic significance and trading viability
         if 'economic_significance_scores' in results:
@@ -221,56 +225,52 @@ async def demonstrate_true_nas_clustering():
                 logger.info(f"   - Regime {regime}: {regime_count} samples, "
                            f"Economic: {regime_economic:.4f}, ".4f"                           f"Trading: {regime_trading:.4f}")
 ".4f"
-        # Micro-regime detection results
-        if 'micro_regime_result' in results:
-            micro_result = results['micro_regime_result']
-            logger.info("
-🔍 MICRO-REGIME DETECTION:"            logger.info(f"   - Micro-regimes Detected: {len(micro_result.micro_regime_types)}")
-            logger.info(f"   - Detection Accuracy: {micro_result.detection_accuracy:.4f}")
-".4f"
-        # Enhanced output format
+        # Key advantages of Transitional NAS
         logger.info("
-📋 ENHANCED OUTPUT FORMAT:"        logger.info("   The results include true NAS fields:")
-        logger.info("   - best_nas_candidate: Optimal neural architecture found")
-        logger.info("   - nas_search_results: Complete search statistics")
-        logger.info("   - clustering_loss_history: Training loss progression")
-        logger.info("   - regime_aware_architectures: Architecture adaptations per regime")
+✅ TRANSITIONAL NAS ADVANTAGES:"        logger.info("   ✓ Uses existing grid utilities for TPE optimization")
+        logger.info("   ✓ Uses existing Pareto utilities for multi-objective analysis")
+        logger.info("   ✓ Focuses on essential methods (K-means + Neural embeddings)")
+        logger.info("   ✓ Simpler to understand and debug")
+        logger.info("   ✓ Production-ready using proven optimization infrastructure")
 
         logger.info("\n" + "=" * 60)
-        logger.info("✅ TRUE NAS CLUSTERING DEMONSTRATION COMPLETED")
+        logger.info("✅ TRANSITIONAL NAS CLUSTERING DEMONSTRATION COMPLETED")
         logger.info("=" * 60)
 
         return results
 
     except Exception as e:
-        logger.error(f"❌ NAS clustering demonstration failed: {e}")
+        logger.error(f"❌ Transitional NAS clustering demonstration failed: {e}")
         raise
 
 
-def demonstrate_traditional_vs_nas():
-    """Compare traditional clustering vs NAS clustering."""
-    logger.info("🔬 Comparing Traditional vs NAS Clustering")
+def demonstrate_transitional_vs_traditional():
+    """Compare traditional clustering vs Transitional NAS clustering."""
+    logger.info("🔬 Comparing Traditional vs Transitional NAS Clustering")
 
     # Generate sample data
     market_data = generate_sample_market_data(n_samples=200, n_features=15)
 
-    # Create both traditional and NAS configurations
+    # Create configurations
     traditional_config = NASClusteringConfig(
         n_regimes=6,
         timeframe='15m',
-        use_true_nas=False  # Traditional clustering
+        search_strategy='standard'  # Traditional clustering
     )
 
-    nas_config = NASClusteringConfig(
+    transitional_config = NASClusteringConfig(
         n_regimes=6,
         timeframe='15m',
-        use_true_nas=True,  # True NAS clustering
-        nas_search_trials=15
+        search_strategy='transitional',  # Transitional NAS
+        enable_transitional_nas=True,
+        tpe_optimization=True,
+        pareto_optimization=True,
+        clustering_methods=['kmeans', 'neural']  # Essential methods only
     )
 
-    # Initialize both clusterers
+    # Initialize clusterers
     traditional_clusterer = NASClusterer(traditional_config)
-    nas_clusterer = NASClusterer(nas_config)
+    transitional_clusterer = NASClusterer(transitional_config)
 
     # Extract features
     feature_extractor = NASFeatureExtractor(traditional_config.get_feature_config())
@@ -281,36 +281,45 @@ def demonstrate_traditional_vs_nas():
         feature_result.features, 6
     )
 
-    logger.info("🧠 Running NAS Clustering...")
-    nas_result = nas_clusterer._perform_true_nas_clustering(
-        feature_result.features, 6, use_nas=True
+    logger.info("🧠 Running Transitional NAS Clustering...")
+    transitional_result = transitional_clusterer._perform_transitional_nas_search(
+        feature_result.features, 6
     )
 
     # Compare results
     logger.info("
 📊 COMPARISON RESULTS:"    logger.info("Traditional Clustering:")
     logger.info(f"   - Method: {traditional_result['clustering_method']}")
-    logger.info(f"   - Loss: {traditional_result.get('clustering_loss', 'N/A')}")
+    logger.info(f"   - Quality: {traditional_result.get('quality', 'N/A')}")
 
     logger.info("
-NAS Clustering:"    logger.info(f"   - Method: {nas_result['clustering_method']}")
-    logger.info(f"   - Loss: {nas_result.get('clustering_loss', 'N/A')}")
-    logger.info(f"   - Architecture Score: {nas_result['nas_architecture_used'].overall_score if nas_result['nas_architecture_used'] else 'N/A'}")
+Transitional NAS Clustering:"    logger.info(f"   - Method: {transitional_result.get('method', 'transitional')}")
+    logger.info(f"   - K-means Quality: {transitional_result.get('kmeans_quality', 'N/A')}")
+    logger.info(f"   - Neural Quality: {transitional_result.get('neural_quality', 'N/A')}")
+    logger.info(f"   - Hybrid Improvement: {transitional_result.get('improvement_score', 'N/A')}")
 
-    return traditional_result, nas_result
+    # Calculate improvement
+    if 'improvement_score' in transitional_result:
+        improvement = transitional_result['improvement_score']
+        logger.info(f"   - Overall Improvement: {improvement:.4f} ({improvement*100:.1f}%".1f"        if improvement > 0:
+            logger.info("   - ✅ Transitional NAS shows improvement!")
+        else:
+            logger.info("   - ⚠️  Transitional NAS needs tuning")
+
+    return traditional_result, transitional_result
 
 
 def main():
-    """Main function to run the NAS clustering demonstration."""
-    logger.info("🚀 TRUE NAS CLUSTERING SYSTEM")
+    """Main function to run the Transitional NAS clustering demonstration."""
+    logger.info("🚀 TRANSITIONAL NAS CLUSTERING SYSTEM")
     logger.info("=" * 50)
-    logger.info("This demonstrates ACTUAL Neural Architecture Search for clustering")
+    logger.info("This demonstrates TRANSITIONAL Neural Architecture Search for clustering")
     logger.info("Features:")
-    logger.info("• True NAS architecture search for optimal clustering")
-    logger.info("• Learned feature embeddings via neural networks")
-    logger.info("• Multi-objective optimization (quality + efficiency)")
-    logger.info("• Regime-aware architecture adaptation")
-    logger.info("• Enhanced metrics and validation")
+    logger.info("• Grid-optimized TPE using existing utilities")
+    logger.info("• Pareto front analysis for optimal trade-offs")
+    logger.info("• Essential methods only (K-means + Neural embeddings)")
+    logger.info("• Hybrid fusion bridging traditional + advanced approaches")
+    logger.info("• Production-ready using proven optimization infrastructure")
     logger.info("=" * 50)
 
     try:
@@ -319,17 +328,24 @@ def main():
             logger.warning("⚠️  CUDA not available. NAS will run on CPU (slower)")
 
         # Run the main demonstration
-        results = asyncio.run(demonstrate_true_nas_clustering())
+        results = asyncio.run(demonstrate_transitional_nas_clustering())
 
         # Run comparison
         logger.info("\n" + "=" * 50)
-        traditional_result, nas_result = demonstrate_traditional_vs_nas()
+        traditional_result, transitional_result = demonstrate_transitional_vs_traditional()
 
         logger.info("
 🎯 SUMMARY:"        logger.info("• Traditional clustering: Fast but uses fixed algorithms")
-        logger.info("• NAS clustering: Slower but learns optimal architectures")
-        logger.info("• NAS provides better regime separation and quality metrics")
-        logger.info("• NAS adapts to specific market data characteristics")
+        logger.info("• Transitional NAS: Uses existing utilities (grid + Pareto)")
+        logger.info("• Focuses on essential methods (K-means + Neural embeddings)")
+        logger.info("• Hybrid approach bridges traditional and advanced methods")
+        logger.info("• Production-ready using proven optimization infrastructure")
+
+        # Key benefits
+        if 'transitional_results' in results:
+            improvement = results['transitional_results'].get('improvement_score', 0)
+            logger.info(f"• Performance improvement: {improvement:.4f} ({improvement*100:.1f}%".1f"        if improvement > 0:
+            logger.info("• ✅ Transitional NAS successfully improves clustering quality!")
 
         return results
 

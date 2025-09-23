@@ -551,43 +551,6 @@ class CLVSARegressor(BaseEstimator, RegressorMixin):
             logger.error(f"❌ CLVSA prediction failed: {e}")
             raise
 
-    def predict_with_regime(self, X: np.ndarray, regime_id: int,
-                           return_uncertainty: bool = False) -> Union[np.ndarray, Tuple[np.ndarray, np.ndarray]]:
-        """Make predictions conditioned on a specific regime.
-
-        Args:
-            X: Input features
-            regime_id: Regime identifier
-            return_uncertainty: Whether to return uncertainty
-
-        Returns:
-            Regime-conditioned predictions
-        """
-        try:
-            self.model.eval()
-
-            # Prepare data
-            X_scaled = self.input_scaler.transform(X.reshape(-1, X.shape[-1])).reshape(X.shape)
-            X_tensor = torch.FloatTensor(X_scaled).to(self.device)
-
-            with torch.no_grad():
-                predictions, _, _ = self.model(X_tensor, regime_id)
-                predictions = predictions.cpu().numpy()
-
-            # Inverse transform predictions
-            predictions = self.target_scaler.inverse_transform(predictions)
-
-            if return_uncertainty:
-                # For regime-conditioned uncertainty, use the regime-specific path
-                uncertainty = np.zeros_like(predictions)  # Placeholder
-                return predictions, uncertainty
-            else:
-                return predictions
-
-        except Exception as e:
-            logger.error(f"❌ Regime-conditioned prediction failed: {e}")
-            raise
-
     def get_model_info(self) -> Dict[str, Any]:
         """Get model information and training statistics."""
         total_params = sum(p.numel() for p in self.model.parameters())
@@ -613,131 +576,6 @@ class CLVSARegressor(BaseEstimator, RegressorMixin):
         }
 
 
-class CLVSAEnsemble:
-    """Ensemble of CLVSA models for improved robustness."""
-
-    def __init__(self, base_configs: List[CLVSAConfig], ensemble_method: str = 'weighted_average'):
-        """Initialize CLVSA ensemble.
-
-        Args:
-            base_configs: List of CLVSA configurations for ensemble members
-            ensemble_method: Ensemble method ('weighted_average', 'median', 'voting')
-        """
-        self.base_configs = base_configs
-        self.ensemble_method = ensemble_method
-        self.models = []
-        self.weights = None
-
-    def fit(self, X: np.ndarray, y: np.ndarray, X_val: Optional[np.ndarray] = None,
-            y_val: Optional[np.ndarray] = None) -> 'CLVSAEnsemble':
-        """Fit the CLVSA ensemble.
-
-        Args:
-            X: Training features
-            y: Target values
-            X_val: Validation features
-            y_val: Validation targets
-
-        Returns:
-            Self for method chaining
-        """
-        logger.info(f"🚀 Training CLVSA ensemble with {len(self.base_configs)} models")
-
-        for i, config in enumerate(self.base_configs):
-            logger.info(f"Training ensemble member {i + 1}/{len(self.base_configs)}")
-
-            model = CLVSARegressor(config=config)
-            model.fit(X, y, X_val, y_val)
-            self.models.append(model)
-
-        # Calculate ensemble weights based on validation performance
-        if X_val is not None and y_val is not None:
-            self._calculate_ensemble_weights(X_val, y_val)
-
-        logger.info("✅ CLVSA ensemble training completed")
-        return self
-
-    def _calculate_ensemble_weights(self, X_val: np.ndarray, y_val: np.ndarray) -> None:
-        """Calculate weights for ensemble members based on validation performance."""
-        val_predictions = []
-
-        for model in self.models:
-            pred = model.predict(X_val)
-            val_predictions.append(pred)
-
-        # Calculate MSE for each model
-        mses = []
-        for pred in val_predictions:
-            mse = mean_squared_error(y_val, pred)
-            mses.append(mse)
-
-        # Convert MSE to weights (inverse relationship)
-        total_mse = sum(mses)
-        self.weights = [total_mse / (mse * len(mses)) for mse in mses]
-
-        logger.info(f"Ensemble weights calculated: {self.weights}")
-
-    def predict(self, X: np.ndarray, return_uncertainty: bool = False) -> Union[np.ndarray, Tuple[np.ndarray, np.ndarray]]:
-        """Make ensemble predictions.
-
-        Args:
-            X: Input features
-            return_uncertainty: Whether to return prediction uncertainty
-
-        Returns:
-            Ensemble predictions
-        """
-        if not self.models:
-            raise ValueError("Ensemble not fitted")
-
-        predictions = []
-        uncertainties = []
-
-        for model in self.models:
-            if return_uncertainty:
-                pred, unc = model.predict(X, return_uncertainty=True)
-                predictions.append(pred)
-                uncertainties.append(unc)
-            else:
-                pred = model.predict(X)
-                predictions.append(pred)
-
-        # Ensemble aggregation
-        if self.ensemble_method == 'weighted_average':
-            if self.weights is not None:
-                predictions = np.array([pred * weight for pred, weight in zip(predictions, self.weights)])
-                ensemble_pred = np.sum(predictions, axis=0)
-
-                if return_uncertainty:
-                    uncertainties = np.array([unc * weight for unc, weight in zip(uncertainties, self.weights)])
-                    ensemble_uncertainty = np.sum(uncertainties, axis=0)
-            else:
-                ensemble_pred = np.mean(predictions, axis=0)
-                if return_uncertainty:
-                    ensemble_uncertainty = np.mean(uncertainties, axis=0)
-        elif self.ensemble_method == 'median':
-            ensemble_pred = np.median(predictions, axis=0)
-            if return_uncertainty:
-                ensemble_uncertainty = np.median(uncertainties, axis=0)
-        else:
-            raise ValueError(f"Unsupported ensemble method: {self.ensemble_method}")
-
-        if return_uncertainty:
-            return ensemble_pred, ensemble_uncertainty
-        else:
-            return ensemble_pred
-
-    def get_ensemble_info(self) -> Dict[str, Any]:
-        """Get ensemble information."""
-        return {
-            'num_models': len(self.models),
-            'ensemble_method': self.ensemble_method,
-            'weights': self.weights,
-            'model_configs': [model.config.__dict__ for model in self.models],
-            'model_info': [model.get_model_info() for model in self.models]
-        }
-
-
 # Factory functions for creating CLVSA models
 def create_clvsa_model(config: Dict[str, Any]) -> CLVSARegressor:
     """Create CLVSA model from configuration."""
@@ -752,12 +590,6 @@ def create_clvsa_model(config: Dict[str, Any]) -> CLVSARegressor:
         learning_rate=model_config.get('learning_rate', 1e-3),
         early_stopping_patience=model_config.get('early_stopping_patience', 15)
     )
-
-
-def create_clvsa_ensemble(configs: List[Dict[str, Any]], ensemble_method: str = 'weighted_average') -> CLVSAEnsemble:
-    """Create CLVSA ensemble from multiple configurations."""
-    clvsa_configs = [CLVSAConfig(**config.get('clvsa_params', {})) for config in configs]
-    return CLVSAEnsemble(clvsa_configs, ensemble_method)
 
 
 # Fallback implementation for when PyTorch is not available

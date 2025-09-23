@@ -665,57 +665,6 @@ class MultiScaleNBEATSRegressor(BaseEstimator, RegressorMixin):
             logger.error(f"❌ MultiScaleNBEATS prediction failed: {e}")
             raise
 
-    def predict_with_regime(self, X: Dict[str, np.ndarray], regime_id: int,
-                           return_uncertainty: bool = False) -> Union[np.ndarray, Tuple[np.ndarray, np.ndarray]]:
-        """Make predictions conditioned on a specific regime.
-
-        Args:
-            X: Dictionary of input features for each timeframe
-            regime_id: Regime identifier
-            return_uncertainty: Whether to return uncertainty
-
-        Returns:
-            Regime-conditioned predictions
-        """
-        try:
-            self.model.eval()
-
-            # Prepare data
-            prepared_data = {}
-            for timeframe, x_data in X.items():
-                if timeframe in self.scalers:
-                    x_scaled = self.scalers[timeframe].transform(
-                        x_data.reshape(-1, x_data.shape[-1])
-                    ).reshape(x_data.shape)
-                else:
-                    x_scaled = x_data
-
-                x_tensor = torch.FloatTensor(x_scaled).to(self.device)
-                prepared_data[timeframe] = x_tensor
-
-            with torch.no_grad():
-                predictions = self.model(prepared_data, regime_id)
-
-                if 'fused' in predictions:
-                    pred_tensor = predictions['fused']
-                else:
-                    pred_tensor = torch.stack(list(predictions.values())).mean(dim=0)
-
-                predictions = pred_tensor.cpu().numpy()
-
-            # Inverse transform predictions
-            predictions = self.target_scaler.inverse_transform(predictions)
-
-            if return_uncertainty:
-                uncertainty = np.zeros_like(predictions)  # Placeholder
-                return predictions, uncertainty
-            else:
-                return predictions
-
-        except Exception as e:
-            logger.error(f"❌ Regime-conditioned prediction failed: {e}")
-            raise
-
     def get_model_info(self) -> Dict[str, Any]:
         """Get model information and training statistics."""
         total_params = sum(p.numel() for p in self.model.parameters())
@@ -782,30 +731,6 @@ def create_multiscale_nbeats_model(config: Dict[str, Any]) -> MultiScaleNBEATSRe
         learning_rate=model_config.get('learning_rate', 1e-3),
         early_stopping_patience=model_config.get('early_stopping_patience', 15)
     )
-
-
-def create_regime_optimized_nbeats(config: Dict[str, Any]) -> MultiScaleNBEATSRegressor:
-    """Create regime-optimized MultiScaleNBEATS model."""
-    # Enhanced configuration for regime-specific optimization
-    regime_config = {
-        'input_dim': config.get('input_dim', 100),
-        'output_dim': config.get('output_dim', 4),
-        'timeframes': config.get('timeframes', ['1m', '5m', '15m', '30m', '1h']),
-        'forecast_length': config.get('forecast_length', 1),
-        'backcast_length': config.get('backcast_length', 100),
-        'stack_types': config.get('stack_types', ['trend', 'seasonality', 'regime_specific']),
-        'n_blocks': config.get('n_blocks', [4, 4, 3]),  # More blocks for regime-specific
-        'n_layers': config.get('n_layers', [5, 5, 4]),  # Deeper for regime modeling
-        'layer_widths': config.get('layer_widths', [512, 2048, 1024]),  # Larger capacity
-        'regime_aware': True,
-        'multi_timeframe_fusion': True,
-        'uncertainty_quantification': True,
-        'ensemble_size': config.get('ensemble_size', 5),
-        'dropout': config.get('dropout', 0.15),
-        'use_batch_norm': True
-    }
-
-    return create_multiscale_nbeats_model({'nbeats_params': regime_config})
 
 
 # Fallback implementation for when PyTorch is not available

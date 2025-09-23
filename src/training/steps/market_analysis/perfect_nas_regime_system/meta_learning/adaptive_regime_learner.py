@@ -565,32 +565,7 @@ class AdaptiveRegimeLearner:
         except Exception:
             return {'diversity': 0.0, 'recency': 0.0, 'consistency': 0.0}
 
-# Placeholder classes for meta-learning components
-class FewShotRegimeLearner:
-    """Placeholder for few-shot regime learner."""
-    def __init__(self, config):
-        self.config = config
-    
-    def few_shot_adaptation(self, support_set, query_set, regime_type):
-        return {'maml_accuracy': 0.8, 'prototypical_accuracy': 0.7, 'uncertainty_score': 0.2}
-
-class UncertaintyEstimator:
-    """Placeholder for uncertainty estimator."""
-    def __init__(self, model, dropout_rate, num_samples):
-        self.model = model
-        self.dropout_rate = dropout_rate
-        self.num_samples = num_samples
-
-class ContinualLearningModel:
-    """Placeholder for continual learning model."""
-    def __init__(self, model, memory_size):
-        self.model = model
-        self.episodic_memory = []
-
-class MetaNAS_Optimizer:
-    """Placeholder for meta-NAS optimizer."""
-    def __init__(self, config):
-        self.config = config
-    
-    def meta_optimize_architecture(self, model, train_tasks, test_tasks):
-        return {'final_performance': 0.8, 'uncertainty_estimates': [0.2, 0.3, 0.1]}
+# Import standalone components
+from ..core.neural_architectures import (
+    FewShotRegimeLearner, UncertaintyEstimator, ContinualLearningModel, MetaNAS_Optimizer
+)

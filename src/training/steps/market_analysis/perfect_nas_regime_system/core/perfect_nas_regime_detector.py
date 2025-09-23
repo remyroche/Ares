@@ -21,21 +21,15 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-# Import from existing systems
-from ...nas_modeling.core.neural_odes import (
-    NeuralODE, NeuralODEConfig, ContinuousTimeRegimeDetector, 
-    create_continuous_regime_detector
+# Import standalone components
+from .neural_architectures import (
+    NeuralODE, ContinuousTimeRegimeDetector, TransformerRegimeDetector,
+    NeuralStateSpaceModel, FewShotRegimeLearner, UncertaintyEstimator,
+    ContinualLearningModel, MetaNAS_Optimizer
 )
-from ...nas_modeling.core.neural_state_space_nas import (
-    NeuralStateSpaceModel, NeuralSSMConfig, TransformerRegimeDetector
-)
-from ...nas_modeling.core.meta_learning import (
-    FewShotRegimeLearner, MetaLearningConfig, AdaptiveRegimeLearner
-)
-from ...nas_clustering.core.nas_clusterer import NASClusterer, NASClusteringResult
-from ...nas_clustering.core.essential_nas_clusterer import EssentialNASClusterer
-from ...nas_clustering.core.evaluation.multi_objective import (
-    ParetoFrontier, NSGAIIOptimizer, create_nas_objectives
+from .nas_search import (
+    EssentialNASClusterer, NSGAIIOptimizer, create_nas_objectives,
+    NASClusteringResult
 )
 
 # Import new components
@@ -98,10 +92,9 @@ class PerfectNASRegimeDetector:
             
             # Neural ODEs for continuous-time regime modeling
             if self.config.enable_neural_odes:
-                ode_config = NeuralODEConfig(**self.config.neural_ode_config.__dict__)
                 self.neural_architectures['neural_ode'] = ContinuousTimeRegimeDetector(
                     input_size=4,  # OHLC features
-                    state_size=ode_config.state_size,
+                    state_size=self.config.neural_ode_config.state_size,
                     num_regimes=self.config.n_regimes
                 )
                 self.logger.info("✅ Neural ODE architecture initialized")
@@ -120,13 +113,14 @@ class PerfectNASRegimeDetector:
             
             # Neural State Space Models
             if self.config.enable_state_space_models:
-                ssm_config = NeuralSSMConfig(
+                self.neural_architectures['state_space'] = NeuralStateSpaceModel(
+                    input_dim=4,  # OHLC features
                     state_dim=64,
                     hidden_dim=128,
+                    n_regimes=self.config.n_regimes,
                     transition_layers=2,
                     emission_layers=2
                 )
-                self.neural_architectures['state_space'] = NeuralStateSpaceModel(ssm_config)
                 self.logger.info("✅ Neural State Space Model initialized")
             
             # Hybrid architecture combining all components
@@ -189,14 +183,12 @@ class PerfectNASRegimeDetector:
         """Initialize meta-learning components."""
         try:
             if self.config.enable_meta_learning:
-                meta_config = MetaLearningConfig(**self.config.meta_learning_config.__dict__)
-                
                 # Few-shot regime learner
-                self.few_shot_learner = FewShotRegimeLearner(meta_config)
+                self.few_shot_learner = FewShotRegimeLearner(self.config.meta_learning_config)
                 
                 # Adaptive regime learner for continual learning
                 base_model = self._get_primary_model()
-                self.adaptive_learner = AdaptiveRegimeLearner(base_model, meta_config)
+                self.adaptive_learner = AdaptiveRegimeLearner(base_model, self.config.meta_learning_config)
                 
                 self.logger.info("✅ Meta-learning components initialized")
             else:

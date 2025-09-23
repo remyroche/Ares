@@ -15,6 +15,17 @@ from sklearn.metrics import silhouette_score, calinski_harabasz_score, davies_bo
 from sklearn.preprocessing import StandardScaler
 import time
 
+# Import matrix operations for optimized computations
+from src.utils.matrix_operations import UnifiedMatrixOperations
+
+# Import hardware optimization
+from src.utils.hardware.unified_hardware_manager import (
+    UnifiedHardwareManager, HardwareConfig, WorkloadType, OptimizationLevel
+)
+from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer
+from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer
+from src.utils.hardware.m1_gpu_utils import get_m1_gpu_manager
+
 logger = logging.getLogger(__name__)
 
 
@@ -55,7 +66,51 @@ class NASRegimeOptimizer:
         self.enable_trend_analysis = config.get('enable_trend_analysis', True)
         self.enable_volume_analysis = config.get('enable_volume_analysis', True)
         
+        # Initialize matrix operations for optimized computations
+        self.matrix_ops = UnifiedMatrixOperations()
+        self.logger.info("✅ Matrix operations initialized")
+        
+        # Initialize hardware optimization
+        self.hardware_manager = None
+        self.memory_optimizer = None
+        self.cpu_optimizer = None
+        self.gpu_manager = None
+        
+        if config.get('enable_hardware_acceleration', True):
+            self._initialize_hardware_optimization()
+        
         self.logger.info("✅ NAS Regime Optimizer initialized")
+        self.logger.info(f"🖥️ Hardware optimization: {self.hardware_manager is not None}")
+        self.logger.info(f"🔢 Matrix operations: {self.matrix_ops is not None}")
+    
+    def _initialize_hardware_optimization(self):
+        """Initialize hardware optimization components."""
+        try:
+            # Initialize unified hardware manager
+            hardware_config = HardwareConfig(
+                cpu_optimization_level=OptimizationLevel.BALANCED,
+                gpu_optimization_level=OptimizationLevel.BALANCED,
+                memory_optimization_level=OptimizationLevel.BALANCED,
+                memory_limit_gb=8.0,
+                enable_adaptive_optimization=True,
+                learning_enabled=True,
+                auto_tuning_enabled=True
+            )
+            self.hardware_manager = UnifiedHardwareManager(hardware_config)
+            
+            # Initialize M1-specific optimizers
+            self.memory_optimizer = get_m1_memory_optimizer()
+            self.cpu_optimizer = get_m1_cpu_optimizer()
+            self.gpu_manager = get_m1_gpu_manager()
+            
+            self.logger.info("✅ Hardware optimization components initialized")
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Hardware optimization initialization failed: {e}")
+            self.hardware_manager = None
+            self.memory_optimizer = None
+            self.cpu_optimizer = None
+            self.gpu_manager = None
     
     def optimize_regime_count(self, features: np.ndarray, market_data: np.ndarray,
                             timestamps: np.ndarray, 

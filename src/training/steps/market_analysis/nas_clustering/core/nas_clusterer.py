@@ -18,6 +18,17 @@ from sklearn.neural_network import MLPClassifier
 from sklearn.ensemble import RandomForestClassifier
 import talib
 
+# Import matrix operations for optimized computations
+from src.utils.matrix_operations import UnifiedMatrixOperations
+
+# Import hardware optimization
+from src.utils.hardware.unified_hardware_manager import (
+    UnifiedHardwareManager, HardwareConfig, WorkloadType, OptimizationLevel
+)
+from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer
+from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer
+from src.utils.hardware.m1_gpu_utils import get_m1_gpu_manager
+
 from .nas_config import NASClusteringConfig, NASArchitectureType
 from .nas_feature_extractor import NASFeatureExtractor, NASFeatureResult
 from .micro_regime_detector import MicroRegimeDetector, MicroRegimeResult
@@ -52,7 +63,7 @@ class NASClusterer:
     """NAS-driven clusterer for short-term trading regime detection."""
     
     def __init__(self, config: NASClusteringConfig):
-        """Initialize NAS clusterer.
+        """Initialize NAS clusterer with matrix operations and hardware optimization.
         
         Args:
             config: NAS clustering configuration
@@ -60,7 +71,20 @@ class NASClusterer:
         self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
         
-        # Initialize components
+        # Initialize matrix operations for optimized computations
+        self.matrix_ops = UnifiedMatrixOperations()
+        self.logger.info("✅ Matrix operations initialized")
+        
+        # Initialize hardware optimization
+        self.hardware_manager = None
+        self.memory_optimizer = None
+        self.cpu_optimizer = None
+        self.gpu_manager = None
+        
+        if config.enable_hardware_acceleration:
+            self._initialize_hardware_optimization()
+        
+        # Initialize components with hardware optimization
         self.feature_extractor = NASFeatureExtractor(config.get_feature_config())
         self.micro_regime_detector = MicroRegimeDetector(config.get_micro_regime_config())
         self.regime_optimizer = NASRegimeOptimizer({
@@ -93,6 +117,243 @@ class NASClusterer:
         self.nas_architectures = self._initialize_nas_architectures()
         
         self.logger.info(f"✅ NAS Clusterer initialized for {config.timeframe} timeframe with {config.n_regimes} regimes")
+        self.logger.info(f"🖥️ Hardware optimization: {self.hardware_manager is not None}")
+        self.logger.info(f"🔢 Matrix operations: {self.matrix_ops is not None}")
+    
+    def _initialize_hardware_optimization(self):
+        """Initialize hardware optimization components."""
+        try:
+            # Initialize unified hardware manager
+            hardware_config = HardwareConfig(
+                cpu_optimization_level=OptimizationLevel.BALANCED,
+                gpu_optimization_level=OptimizationLevel.BALANCED,
+                memory_optimization_level=OptimizationLevel.BALANCED,
+                memory_limit_gb=self.config.max_memory_usage * 8,  # Convert to GB
+                enable_adaptive_optimization=True,
+                learning_enabled=True,
+                auto_tuning_enabled=True
+            )
+            self.hardware_manager = UnifiedHardwareManager(hardware_config)
+            
+            # Initialize M1-specific optimizers
+            self.memory_optimizer = get_m1_memory_optimizer()
+            self.cpu_optimizer = get_m1_cpu_optimizer()
+            self.gpu_manager = get_m1_gpu_manager()
+            
+            self.logger.info("✅ Hardware optimization components initialized")
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Hardware optimization initialization failed: {e}")
+            self.hardware_manager = None
+            self.memory_optimizer = None
+            self.cpu_optimizer = None
+            self.gpu_manager = None
+    
+    def _optimize_data_array_with_matrix_ops(self, data_array: np.ndarray) -> np.ndarray:
+        """Optimize data array using matrix operations."""
+        try:
+            # Use matrix operations for data preprocessing
+            if self.matrix_ops:
+                # Normalize data using matrix operations
+                normalized_data = self.matrix_ops.matrix_normalize(data_array)
+                self.logger.info("✅ Data array optimized with matrix operations")
+                return normalized_data
+            else:
+                # Fallback to standard normalization
+                from sklearn.preprocessing import StandardScaler
+                scaler = StandardScaler()
+                return scaler.fit_transform(data_array)
+        except Exception as e:
+            self.logger.warning(f"⚠️ Matrix operations optimization failed: {e}")
+            return data_array
+    
+    def _perform_clustering_with_optimization(self, data_array: np.ndarray, 
+                                            n_regimes: int, 
+                                            optimize_parameters: bool) -> Tuple[np.ndarray, np.ndarray]:
+        """Perform clustering with hardware optimization."""
+        try:
+            # Start hardware optimization if available
+            if self.hardware_manager:
+                self.hardware_manager.start_optimization(
+                    workload_type=WorkloadType.ML_TRAINING,
+                    optimization_level=OptimizationLevel.BALANCED
+                )
+            
+            # Use matrix operations for clustering
+            if self.matrix_ops and optimize_parameters:
+                # Use matrix operations for parameter optimization
+                best_params = self._optimize_clustering_parameters_with_matrix_ops(data_array, n_regimes)
+                clustering_model = KMeans(n_clusters=n_regimes, **best_params, random_state=42)
+            else:
+                clustering_model = KMeans(n_clusters=n_regimes, random_state=42)
+            
+            # Perform clustering
+            labels = clustering_model.fit_predict(data_array)
+            cluster_centers = clustering_model.cluster_centers_
+            
+            self.logger.info(f"✅ Clustering completed with {n_regimes} regimes")
+            return labels, cluster_centers
+            
+        except Exception as e:
+            self.logger.error(f"❌ Clustering with optimization failed: {e}")
+            # Fallback to basic clustering
+            clustering_model = KMeans(n_clusters=n_regimes, random_state=42)
+            labels = clustering_model.fit_predict(data_array)
+            cluster_centers = clustering_model.cluster_centers_
+            return labels, cluster_centers
+        
+        finally:
+            # Stop hardware optimization
+            if self.hardware_manager:
+                self.hardware_manager.stop_optimization()
+    
+    def _optimize_clustering_parameters_with_matrix_ops(self, data_array: np.ndarray, 
+                                                      n_regimes: int) -> Dict[str, Any]:
+        """Optimize clustering parameters using matrix operations."""
+        try:
+            # Use matrix operations to find optimal parameters
+            best_params = {
+                'n_init': 10,
+                'max_iter': 300,
+                'tol': 1e-4
+            }
+            
+            # Test different parameter combinations using matrix operations
+            param_combinations = [
+                {'n_init': 5, 'max_iter': 100, 'tol': 1e-3},
+                {'n_init': 10, 'max_iter': 300, 'tol': 1e-4},
+                {'n_init': 20, 'max_iter': 500, 'tol': 1e-5}
+            ]
+            
+            best_score = -np.inf
+            for params in param_combinations:
+                try:
+                    model = KMeans(n_clusters=n_regimes, **params, random_state=42)
+                    labels = model.fit_predict(data_array)
+                    
+                    # Calculate silhouette score using matrix operations
+                    if self.matrix_ops:
+                        score = self.matrix_ops.calculate_silhouette_score(data_array, labels)
+                    else:
+                        from sklearn.metrics import silhouette_score
+                        score = silhouette_score(data_array, labels)
+                    
+                    if score > best_score:
+                        best_score = score
+                        best_params = params
+                        
+                except Exception:
+                    continue
+            
+            self.logger.info(f"✅ Best clustering parameters found: {best_params}")
+            return best_params
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Parameter optimization failed: {e}")
+            return {'n_init': 10, 'max_iter': 300, 'tol': 1e-4}
+    
+    def _calculate_quality_metrics_with_matrix_ops(self, data_array: np.ndarray, 
+                                                 labels: np.ndarray, 
+                                                 cluster_centers: np.ndarray) -> Dict[str, float]:
+        """Calculate quality metrics using matrix operations."""
+        try:
+            metrics = {}
+            
+            # Silhouette score using matrix operations
+            if self.matrix_ops:
+                metrics['silhouette_score'] = self.matrix_ops.calculate_silhouette_score(data_array, labels)
+                metrics['calinski_harabasz_score'] = self.matrix_ops.calculate_calinski_harabasz_score(data_array, labels)
+                metrics['davies_bouldin_score'] = self.matrix_ops.calculate_davies_bouldin_score(data_array, labels)
+            else:
+                # Fallback to sklearn
+                from sklearn.metrics import silhouette_score, calinski_harabasz_score, davies_bouldin_score
+                metrics['silhouette_score'] = silhouette_score(data_array, labels)
+                metrics['calinski_harabasz_score'] = calinski_harabasz_score(data_array, labels)
+                metrics['davies_bouldin_score'] = davies_bouldin_score(data_array, labels)
+            
+            # Regime stability using matrix operations
+            metrics['regime_stability'] = self._calculate_regime_stability_with_matrix_ops(data_array, labels)
+            
+            # Economic significance
+            metrics['economic_significance'] = self._calculate_economic_significance_with_matrix_ops(data_array, labels)
+            
+            # Trading viability
+            metrics['trading_viability'] = self._calculate_trading_viability_with_matrix_ops(data_array, labels)
+            
+            return metrics
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Quality metrics calculation failed: {e}")
+            return {'silhouette_score': 0.0, 'regime_stability': 0.0, 'economic_significance': 0.0, 'trading_viability': 0.0}
+    
+    def _calculate_regime_stability_with_matrix_ops(self, data_array: np.ndarray, labels: np.ndarray) -> float:
+        """Calculate regime stability using matrix operations."""
+        try:
+            if self.matrix_ops:
+                # Use matrix operations to calculate regime stability
+                stability = self.matrix_ops.calculate_regime_stability(data_array, labels)
+                return stability
+            else:
+                # Fallback calculation
+                unique_labels, counts = np.unique(labels, return_counts=True)
+                stability = 1.0 - (np.std(counts) / np.mean(counts))
+                return max(0.0, min(1.0, stability))
+        except Exception:
+            return 0.0
+    
+    def _calculate_economic_significance_with_matrix_ops(self, data_array: np.ndarray, labels: np.ndarray) -> float:
+        """Calculate economic significance using matrix operations."""
+        try:
+            if self.matrix_ops:
+                # Use matrix operations to calculate economic significance
+                significance = self.matrix_ops.calculate_economic_significance(data_array, labels)
+                return significance
+            else:
+                # Fallback calculation based on regime separation
+                unique_labels = np.unique(labels)
+                if len(unique_labels) < 2:
+                    return 0.0
+                
+                # Calculate separation between regimes
+                regime_centers = []
+                for label in unique_labels:
+                    regime_data = data_array[labels == label]
+                    regime_centers.append(np.mean(regime_data, axis=0))
+                
+                regime_centers = np.array(regime_centers)
+                center_distances = []
+                for i in range(len(regime_centers)):
+                    for j in range(i+1, len(regime_centers)):
+                        distance = np.linalg.norm(regime_centers[i] - regime_centers[j])
+                        center_distances.append(distance)
+                
+                if center_distances:
+                    significance = np.mean(center_distances) / (np.std(center_distances) + 1e-8)
+                    return max(0.0, min(1.0, significance))
+                else:
+                    return 0.0
+        except Exception:
+            return 0.0
+    
+    def _calculate_trading_viability_with_matrix_ops(self, data_array: np.ndarray, labels: np.ndarray) -> float:
+        """Calculate trading viability using matrix operations."""
+        try:
+            if self.matrix_ops:
+                # Use matrix operations to calculate trading viability
+                viability = self.matrix_ops.calculate_trading_viability(data_array, labels)
+                return viability
+            else:
+                # Fallback calculation based on regime duration and consistency
+                unique_labels, counts = np.unique(labels, return_counts=True)
+                
+                # Check minimum regime duration
+                min_duration = self.min_regime_duration
+                viable_regimes = np.sum(counts >= min_duration)
+                viability = viable_regimes / len(unique_labels) if len(unique_labels) > 0 else 0.0
+                
+                return max(0.0, min(1.0, viability))
+        except Exception:
+            return 0.0
     
     def cluster(self, data: Union[pd.DataFrame, np.ndarray], 
                 timestamps: Optional[np.ndarray] = None,

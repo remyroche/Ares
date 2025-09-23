@@ -14,6 +14,17 @@ from sklearn.preprocessing import StandardScaler, RobustScaler
 import talib
 from datetime import datetime, timedelta
 
+# Import matrix operations for optimized computations
+from src.utils.matrix_operations import UnifiedMatrixOperations
+
+# Import hardware optimization
+from src.utils.hardware.unified_hardware_manager import (
+    UnifiedHardwareManager, HardwareConfig, WorkloadType, OptimizationLevel
+)
+from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer
+from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer
+from src.utils.hardware.m1_gpu_utils import get_m1_gpu_manager
+
 logger = logging.getLogger(__name__)
 
 
@@ -57,11 +68,86 @@ class NASFeatureExtractor:
         self.timeframe = config.get('timeframe', '15m')
         self.micro_timeframe = config.get('micro_timeframe', '5m')
         
+        # Initialize matrix operations for optimized computations
+        self.matrix_ops = UnifiedMatrixOperations()
+        self.logger.info("✅ Matrix operations initialized")
+        
+        # Initialize hardware optimization
+        self.hardware_manager = None
+        self.memory_optimizer = None
+        self.cpu_optimizer = None
+        self.gpu_manager = None
+        
+        if config.get('enable_hardware_acceleration', True):
+            self._initialize_hardware_optimization()
+        
         self.logger.info(f"✅ NAS Feature Extractor initialized for {self.timeframe} timeframe")
+        self.logger.info(f"🖥️ Hardware optimization: {self.hardware_manager is not None}")
+        self.logger.info(f"🔢 Matrix operations: {self.matrix_ops is not None}")
+    
+    def _initialize_hardware_optimization(self):
+        """Initialize hardware optimization components."""
+        try:
+            # Initialize unified hardware manager
+            hardware_config = HardwareConfig(
+                cpu_optimization_level=OptimizationLevel.BALANCED,
+                gpu_optimization_level=OptimizationLevel.BALANCED,
+                memory_optimization_level=OptimizationLevel.BALANCED,
+                memory_limit_gb=8.0,
+                enable_adaptive_optimization=True,
+                learning_enabled=True,
+                auto_tuning_enabled=True
+            )
+            self.hardware_manager = UnifiedHardwareManager(hardware_config)
+            
+            # Initialize M1-specific optimizers
+            self.memory_optimizer = get_m1_memory_optimizer()
+            self.cpu_optimizer = get_m1_cpu_optimizer()
+            self.gpu_manager = get_m1_gpu_manager()
+            
+            self.logger.info("✅ Hardware optimization components initialized")
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Hardware optimization initialization failed: {e}")
+            self.hardware_manager = None
+            self.memory_optimizer = None
+            self.cpu_optimizer = None
+            self.gpu_manager = None
+    
+    def _optimize_data_array_with_matrix_ops(self, data_array: np.ndarray) -> np.ndarray:
+        """Optimize data array using matrix operations."""
+        try:
+            # Use matrix operations for data preprocessing
+            if self.matrix_ops:
+                # Normalize data using matrix operations
+                normalized_data = self.matrix_ops.matrix_normalize(data_array)
+                self.logger.info("✅ Data array optimized with matrix operations")
+                return normalized_data
+            else:
+                # Fallback to standard normalization
+                return self.scaler.fit_transform(data_array)
+        except Exception as e:
+            self.logger.warning(f"⚠️ Matrix operations optimization failed: {e}")
+            return data_array
+    
+    def _extract_features_with_matrix_ops(self, data_array: np.ndarray) -> np.ndarray:
+        """Extract features using matrix operations for optimization."""
+        try:
+            if self.matrix_ops:
+                # Use matrix operations for feature extraction
+                features = self.matrix_ops.extract_technical_features(data_array)
+                self.logger.info("✅ Features extracted with matrix operations")
+                return features
+            else:
+                # Fallback to standard feature extraction
+                return self._extract_base_features(data_array)
+        except Exception as e:
+            self.logger.warning(f"⚠️ Matrix operations feature extraction failed: {e}")
+            return self._extract_base_features(data_array)
     
     def extract_features(self, data: Union[pd.DataFrame, np.ndarray], 
                         timestamps: Optional[np.ndarray] = None) -> NASFeatureResult:
-        """Extract features optimized for NAS-driven clustering.
+        """Extract features optimized for NAS-driven clustering with matrix operations and hardware optimization.
         
         Args:
             data: Market data (DataFrame or numpy array)
@@ -73,8 +159,15 @@ class NASFeatureExtractor:
         import time
         start_time = time.time()
         
+        # Start hardware optimization if available
+        if self.hardware_manager:
+            self.hardware_manager.start_optimization(
+                workload_type=WorkloadType.FEATURE_ENGINEERING,
+                optimization_level=OptimizationLevel.BALANCED
+            )
+        
         try:
-            # Prepare data
+            # Prepare data with matrix operations optimization
             if isinstance(data, pd.DataFrame):
                 data_array = data.values
                 if timestamps is None and 'timestamp' in data.columns:
@@ -83,6 +176,11 @@ class NASFeatureExtractor:
                 data_array = data
                 if timestamps is None:
                     timestamps = np.arange(len(data))
+            
+            # Optimize data array using matrix operations
+            if self.matrix_ops:
+                self.logger.info("🔢 Optimizing data array with matrix operations...")
+                data_array = self._optimize_data_array_with_matrix_ops(data_array)
             
             # Extract base features
             base_features = self._extract_base_features(data_array)

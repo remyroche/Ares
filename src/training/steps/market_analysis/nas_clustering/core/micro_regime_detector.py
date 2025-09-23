@@ -16,6 +16,17 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import silhouette_score
 import talib
 
+# Import matrix operations for optimized computations
+from src.utils.matrix_operations import UnifiedMatrixOperations
+
+# Import hardware optimization
+from src.utils.hardware.unified_hardware_manager import (
+    UnifiedHardwareManager, HardwareConfig, WorkloadType, OptimizationLevel
+)
+from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer
+from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer
+from src.utils.hardware.m1_gpu_utils import get_m1_gpu_manager
+
 logger = logging.getLogger(__name__)
 
 
@@ -77,7 +88,51 @@ class MicroRegimeDetector:
         self.volume_spike_threshold = config.get('volume_spike_threshold', 2.0)  # 2x average volume
         self.volatility_spike_threshold = config.get('volatility_spike_threshold', 1.5)  # 1.5x average volatility
         
+        # Initialize matrix operations for optimized computations
+        self.matrix_ops = UnifiedMatrixOperations()
+        self.logger.info("✅ Matrix operations initialized")
+        
+        # Initialize hardware optimization
+        self.hardware_manager = None
+        self.memory_optimizer = None
+        self.cpu_optimizer = None
+        self.gpu_manager = None
+        
+        if config.get('enable_hardware_acceleration', True):
+            self._initialize_hardware_optimization()
+        
         self.logger.info(f"✅ Micro-regime detector initialized with sensitivity {self.sensitivity}")
+        self.logger.info(f"🖥️ Hardware optimization: {self.hardware_manager is not None}")
+        self.logger.info(f"🔢 Matrix operations: {self.matrix_ops is not None}")
+    
+    def _initialize_hardware_optimization(self):
+        """Initialize hardware optimization components."""
+        try:
+            # Initialize unified hardware manager
+            hardware_config = HardwareConfig(
+                cpu_optimization_level=OptimizationLevel.BALANCED,
+                gpu_optimization_level=OptimizationLevel.BALANCED,
+                memory_optimization_level=OptimizationLevel.BALANCED,
+                memory_limit_gb=8.0,
+                enable_adaptive_optimization=True,
+                learning_enabled=True,
+                auto_tuning_enabled=True
+            )
+            self.hardware_manager = UnifiedHardwareManager(hardware_config)
+            
+            # Initialize M1-specific optimizers
+            self.memory_optimizer = get_m1_memory_optimizer()
+            self.cpu_optimizer = get_m1_cpu_optimizer()
+            self.gpu_manager = get_m1_gpu_manager()
+            
+            self.logger.info("✅ Hardware optimization components initialized")
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Hardware optimization initialization failed: {e}")
+            self.hardware_manager = None
+            self.memory_optimizer = None
+            self.cpu_optimizer = None
+            self.gpu_manager = None
     
     def detect_micro_regimes(self, data: np.ndarray, timestamps: np.ndarray,
                             features: Optional[np.ndarray] = None) -> MicroRegimeResult:

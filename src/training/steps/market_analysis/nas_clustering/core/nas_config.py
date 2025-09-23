@@ -88,6 +88,21 @@ class NASClusteringConfig:
     batch_size: int = 1000
     max_memory_usage: float = 0.8
     
+    # Matrix operations settings
+    matrix_operations_backend: str = 'numpy'  # 'numpy', 'scipy', 'cupy'
+    enable_gpu_acceleration: bool = True
+    enable_mkl_optimization: bool = True
+    enable_batch_processing: bool = True
+    
+    # Hardware optimization settings
+    cpu_optimization_level: str = 'balanced'  # 'minimal', 'balanced', 'aggressive'
+    gpu_optimization_level: str = 'balanced'
+    memory_optimization_level: str = 'balanced'
+    memory_limit_gb: float = 8.0
+    enable_adaptive_optimization: bool = True
+    enable_thermal_monitoring: bool = True
+    enable_power_management: bool = True
+    
     # Validation configuration
     validation_thresholds: Dict[str, float] = field(default_factory=lambda: {
         'min_regime_stability': 0.6,

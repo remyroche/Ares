@@ -725,25 +725,29 @@ class ModelEnhancementDetector:
             if underfitting_score > 0.7:
                 opportunities['enhancement_opportunities'].append('model_complexity_increase')
                 opportunities['parameter_tuning_suggestions'].append({
-                    'action': 'increase_model_complexity',
-                    'parameters': ['max_depth', 'n_estimators', 'hidden_layers'],
-                    'reason': 'Model appears to be underfitting - may be too simple'
+                    'warning': 'Model appears to be underfitting - may be too simple for the data',
+                    'reason': 'High training and validation errors suggest insufficient model capacity',
+                    'improvement_potential': 'Investigate increasing model complexity'
                 })
 
             # 2. Check for parameter sensitivity
             sensitivity_analysis = self._analyze_parameter_sensitivity(model, X_train, y_train)
             if sensitivity_analysis['high_sensitivity']:
                 opportunities['enhancement_opportunities'].append('parameter_tuning_needed')
-                opportunities['parameter_tuning_suggestions'].extend(sensitivity_analysis['suggestions'])
+                opportunities['parameter_tuning_suggestions'].append({
+                    'warning': 'Model shows parameter sensitivity - room for improvement through tuning',
+                    'reason': f'{model_type} models typically benefit from parameter optimization',
+                    'improvement_potential': 'Consider hyperparameter optimization for better performance'
+                })
 
             # 3. Check for feature importance imbalance
             importance_analysis = self._analyze_feature_importance(model, X_train)
             if importance_analysis['imbalanced']:
                 opportunities['enhancement_opportunities'].append('feature_engineering')
                 opportunities['parameter_tuning_suggestions'].append({
-                    'action': 'feature_selection_regularization',
-                    'parameters': ['feature_fraction', 'colsample_bytree', 'max_features'],
-                    'reason': 'Feature importance is heavily imbalanced'
+                    'warning': 'Feature importance is heavily imbalanced',
+                    'reason': f'{importance_analysis["concentration_ratio"]:.2%} of importance in top 10% of features',
+                    'improvement_potential': 'Review feature selection and consider feature engineering'
                 })
 
             # 4. Check for overfitting potential
@@ -751,14 +755,22 @@ class ModelEnhancementDetector:
             if overfitting_potential > 0.6:
                 opportunities['enhancement_opportunities'].append('regularization_increase')
                 opportunities['parameter_tuning_suggestions'].append({
-                    'action': 'increase_regularization',
-                    'parameters': ['reg_lambda', 'reg_alpha', 'dropout', 'l2_penalty'],
-                    'reason': 'Model shows signs of potential overfitting'
+                    'warning': 'Model shows signs of potential overfitting',
+                    'reason': f'Overfitting potential score: {overfitting_potential:.2f}',
+                    'improvement_potential': 'Consider increasing regularization to prevent overfitting'
                 })
 
             # 5. Check for optimization opportunities
             optimization_opportunities = self._check_optimization_opportunities(model, model_type)
             opportunities['enhancement_opportunities'].extend(optimization_opportunities)
+
+            # Add warnings for optimization opportunities instead of specific recommendations
+            for opportunity in optimization_opportunities:
+                opportunities['parameter_tuning_suggestions'].append({
+                    'warning': f'Model-specific optimization opportunity detected: {opportunity.replace("_", " ")}',
+                    'reason': f'{model_type} models can benefit from {opportunity.replace("_", " ")}',
+                    'improvement_potential': f'Consider model-specific optimizations for {opportunity.replace("_", " ")}'
+                })
 
             # Calculate overall enhancement potential
             opportunities['confidence_level'] = self._calculate_enhancement_confidence(opportunities)
@@ -806,38 +818,21 @@ class ModelEnhancementDetector:
         """Analyze parameter sensitivity to determine tuning needs."""
         analysis = {
             'high_sensitivity': False,
-            'suggestions': []
+            'model_type': model.__class__.__name__.lower()
         }
 
         try:
             # Simple parameter sensitivity check based on model type
             model_type = model.__class__.__name__.lower()
 
-            if 'xgb' in model_type or 'xgboost' in model_type:
-                analysis['suggestions'].extend([
-                    {'parameter': 'learning_rate', 'range': [0.001, 0.3], 'method': 'log_scale'},
-                    {'parameter': 'max_depth', 'range': [3, 12], 'method': 'linear'},
-                    {'parameter': 'n_estimators', 'range': [50, 1000], 'method': 'linear'},
-                    {'parameter': 'reg_lambda', 'range': [0.1, 10.0], 'method': 'log_scale'}
-                ])
-                analysis['high_sensitivity'] = True
+            # All these model types typically benefit from parameter tuning
+            if ('xgb' in model_type or 'xgboost' in model_type or
+                'lgbm' in model_type or 'lightgbm' in model_type or
+                'randomforest' in model_type or 'neural' in model_type or
+                'torch' in model_type or 'keras' in model_type or
+                'linear' in model_type or 'ridge' in model_type or
+                'lasso' in model_type or 'elasticnet' in model_type):
 
-            elif 'lgbm' in model_type or 'lightgbm' in model_type:
-                analysis['suggestions'].extend([
-                    {'parameter': 'learning_rate', 'range': [0.001, 0.3], 'method': 'log_scale'},
-                    {'parameter': 'num_leaves', 'range': [10, 200], 'method': 'linear'},
-                    {'parameter': 'feature_fraction', 'range': [0.4, 1.0], 'method': 'linear'},
-                    {'parameter': 'bagging_fraction', 'range': [0.4, 1.0], 'method': 'linear'}
-                ])
-                analysis['high_sensitivity'] = True
-
-            elif 'randomforest' in model_type:
-                analysis['suggestions'].extend([
-                    {'parameter': 'n_estimators', 'range': [50, 500], 'method': 'linear'},
-                    {'parameter': 'max_depth', 'range': [5, 30], 'method': 'linear'},
-                    {'parameter': 'min_samples_split', 'range': [2, 20], 'method': 'linear'},
-                    {'parameter': 'min_samples_leaf', 'range': [1, 10], 'method': 'linear'}
-                ])
                 analysis['high_sensitivity'] = True
 
         except Exception as e:
@@ -904,12 +899,12 @@ class ModelEnhancementDetector:
             return 0.0
 
     def _check_optimization_opportunities(self, model, model_type: str) -> List[str]:
-        """Check for optimization opportunities based on model type."""
+        """Check for model-specific optimization opportunities."""
         opportunities = []
 
         try:
             # Model-specific optimization opportunities
-            if 'neural' in model_type.lower() or 'torch' in model_type.lower():
+            if 'neural' in model_type.lower() or 'torch' in model_type.lower() or 'keras' in model_type.lower():
                 opportunities.extend([
                     'learning_rate_scheduling',
                     'batch_normalization',
@@ -917,24 +912,61 @@ class ModelEnhancementDetector:
                     'early_stopping_optimization'
                 ])
 
-            elif 'xgb' in model_type.lower() or 'lgbm' in model_type.lower():
+            elif 'xgb' in model_type.lower() or 'xgboost' in model_type.lower() or 'lgbm' in model_type.lower() or 'lightgbm' in model_type.lower():
                 opportunities.extend([
                     'tree_structure_optimization',
                     'feature_interaction_constraints',
                     'monotone_constraints'
                 ])
 
-            elif 'linear' in model_type.lower():
+            elif 'linear' in model_type.lower() or 'ridge' in model_type.lower() or 'lasso' in model_type.lower() or 'elasticnet' in model_type.lower():
                 opportunities.extend([
                     'regularization_optimization',
                     'feature_scaling_check',
                     'multicollinearity_analysis'
                 ])
 
+            elif 'randomforest' in model_type.lower() or 'extratrees' in model_type.lower():
+                opportunities.extend([
+                    'ensemble_diversity_optimization',
+                    'feature_sampling_optimization',
+                    'bootstrap_optimization'
+                ])
+
+            elif 'svm' in model_type.lower() or 'svc' in model_type.lower():
+                opportunities.extend([
+                    'kernel_optimization',
+                    'gamma_parameter_tuning',
+                    'class_weight_optimization'
+                ])
+
+            elif 'knn' in model_type.lower():
+                opportunities.extend([
+                    'distance_metric_optimization',
+                    'neighbor_count_optimization',
+                    'weight_function_optimization'
+                ])
+
+            elif 'bayesian' in model_type.lower() or 'naive' in model_type.lower():
+                opportunities.extend([
+                    'prior_optimization',
+                    'smoothing_parameter_tuning',
+                    'feature_independence_assumptions'
+                ])
+
+            # Default opportunities for unknown model types
+            else:
+                opportunities.extend([
+                    'general_hyperparameter_tuning',
+                    'ensemble_methods',
+                    'cross_validation_optimization'
+                ])
+
         except Exception as e:
             self.logger.warning(f"Optimization opportunities check failed: {e}")
 
         return opportunities
+
 
     def _calculate_enhancement_confidence(self, opportunities: Dict[str, Any]) -> float:
         """Calculate confidence level for enhancement recommendations."""
@@ -1132,11 +1164,23 @@ class UniversalMLValidationOrchestrator:
             # Calculate overall validation score
             validation_report['overall_score'] = self._calculate_overall_score(validation_report)
 
+            # Generate comprehensive per-model report
+            model_specific_report = self.generate_model_specific_report(
+                model_name, model_type, validation_report
+            )
+            validation_report['model_specific_report'] = model_specific_report
+
             # Generate summary and recommendations
             validation_report['summary'] = self._generate_validation_summary(validation_report)
             validation_report['recommendations'] = self._generate_recommendations(validation_report)
 
+            # Add per-model insights to recommendations
+            model_insights = model_specific_report.get('model_specific_insights', {})
+            if model_insights.get('priority_actions'):
+                validation_report['recommendations'].extend(model_insights['priority_actions'])
+
             self.logger.info(f"✅ Comprehensive validation completed with overall score: {validation_report['overall_score']:.3f}")
+            self.logger.info(f"📊 Generated comprehensive per-model report for {model_name}")
 
         except Exception as e:
             self.logger.error(f"Comprehensive validation failed: {e}")
@@ -1385,6 +1429,583 @@ class UniversalMLValidationOrchestrator:
 
         except Exception as e:
             return [f"Recommendation generation failed: {e}"]
+
+    def generate_model_specific_report(self,
+                                     model_name: str,
+                                     model_type: str,
+                                     validation_results: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Generate comprehensive per-model validation report including all validation components.
+
+        Args:
+            model_name: Name of the model
+            model_type: Type of the model
+            validation_results: Results from comprehensive validation
+
+        Returns:
+            Dict: Comprehensive per-model report
+        """
+        try:
+            # Extract all validation components
+            overfitting_report = validation_results.get('components', {}).get('overfitting', {})
+            enhancement_report = validation_results.get('components', {}).get('enhancement', {})
+            temporal_report = validation_results.get('components', {}).get('temporal', {})
+            performance_analysis = validation_results.get('components', {}).get('performance', {})
+            data_quality = validation_results.get('components', {}).get('data_quality', {})
+
+            # Create comprehensive per-model report
+            model_report = {
+                'model_name': model_name,
+                'model_type': model_type,
+                'validation_timestamp': validation_results.get('validation_timestamp'),
+                'overall_validation_score': validation_results.get('overall_score', 0.0),
+                'validation_status': validation_results.get('validation_status', 'unknown'),
+
+                # Overfitting Analysis
+                'overfitting_analysis': {
+                    'is_overfitting': overfitting_report.get('is_overfitting', False),
+                    'severity': overfitting_report.get('severity', 'none'),
+                    'confidence_level': overfitting_report.get('confidence_level', 0.0),
+                    'accuracy_gap': overfitting_report.get('accuracy_gap', 0.0),
+                    'f1_gap': overfitting_report.get('f1_gap', 0.0),
+                    'train_accuracy': overfitting_report.get('train_accuracy', 0.0),
+                    'val_accuracy': overfitting_report.get('val_accuracy', 0.0),
+                    'indicators': overfitting_report.get('indicators', []),
+                    'warnings': overfitting_report.get('warnings', []),
+                    'recommendations': overfitting_report.get('recommendations', [])
+                },
+
+                # Enhancement Opportunities
+                'enhancement_analysis': {
+                    'enhancement_opportunities': enhancement_report.get('enhancement_opportunities', []),
+                    'priority': enhancement_report.get('priority', 'low'),
+                    'confidence_level': enhancement_report.get('confidence_level', 0.0),
+                    'estimated_improvement_potential': enhancement_report.get('estimated_improvement_potential', 0.0),
+                    'warnings': [suggestion.get('warning', '') for suggestion in enhancement_report.get('parameter_tuning_suggestions', []) if suggestion.get('warning')],
+                    'improvement_suggestions': [suggestion.get('improvement_potential', '') for suggestion in enhancement_report.get('parameter_tuning_suggestions', []) if suggestion.get('improvement_potential')],
+                    'detailed_recommendations': enhancement_report.get('detailed_recommendations', [])
+                },
+
+                # Temporal Validation (if available)
+                'temporal_validation': {
+                    'temporal_order_valid': temporal_report.get('temporal_order_valid', True) if hasattr(temporal_report, 'get') else False,
+                    'leakage_detected': temporal_report.get('leakage_detected', False) if hasattr(temporal_report, 'get') else False,
+                    'validation_score': temporal_report.get('validation_score', 0.0) if hasattr(temporal_report, 'get') else 0.0,
+                    'warnings': temporal_report.get('warnings', []) if hasattr(temporal_report, 'get') else [],
+                    'recommendations': temporal_report.get('recommendations', []) if hasattr(temporal_report, 'get') else []
+                } if temporal_report else None,
+
+                # Performance Analysis
+                'performance_analysis': {
+                    'train_metrics': performance_analysis.get('train_metrics', {}),
+                    'validation_metrics': performance_analysis.get('validation_metrics', {}),
+                    'test_metrics': performance_analysis.get('test_metrics', {}),
+                    'performance_stability': performance_analysis.get('performance_stability', 0.0),
+                    'generalization_score': performance_analysis.get('generalization_score', 0.0)
+                },
+
+                # Data Quality Assessment
+                'data_quality': {
+                    'train_data_issues': data_quality.get('train_data_issues', []),
+                    'validation_data_issues': data_quality.get('validation_data_issues', []),
+                    'recommendations': data_quality.get('recommendations', [])
+                },
+
+                # Walk-forward validation results (from cross-validation)
+                'walk_forward_validation': validation_results.get('components', {}).get('cross_validation', {}),
+
+                # Stacking-specific results (if applicable)
+                'stacking_analysis': self._extract_stacking_analysis(validation_results),
+
+                # Summary and final recommendations
+                'summary': validation_results.get('summary', ''),
+                'final_recommendations': validation_results.get('recommendations', []),
+                'validation_passed': validation_results.get('overall_score', 0.0) >= 0.6  # Threshold for passing
+            }
+
+            # Add model-specific insights
+            model_report['model_specific_insights'] = self._generate_model_specific_insights(
+                model_name, model_type, model_report
+            )
+
+            return model_report
+
+        except Exception as e:
+            self.logger.error(f"Failed to generate model-specific report for {model_name}: {e}")
+            return {
+                'model_name': model_name,
+                'model_type': model_type,
+                'error': f"Report generation failed: {str(e)}",
+                'validation_status': 'error'
+            }
+
+    def _extract_stacking_analysis(self, validation_results: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Extract stacking-specific analysis from validation results."""
+        try:
+            # Check if this is a stacking ensemble by looking for ensemble-specific data
+            components = validation_results.get('components', {})
+
+            # Look for stacking results in any of the components
+            for component_name, component_data in components.items():
+                if component_data and isinstance(component_data, dict):
+                    # Check for stacking-specific fields
+                    if any(key in component_data for key in ['base_model_count', 'meta_model_count', 'oof_predictions', 'ensemble_performance']):
+                        return {
+                            'component': component_name,
+                            'base_model_count': component_data.get('base_model_count', 0),
+                            'meta_model_count': component_data.get('meta_model_count', 0),
+                            'ensemble_performance': component_data.get('ensemble_performance', {}),
+                            'oof_scores': component_data.get('oof_scores', {}),
+                            'model_weights': component_data.get('model_weights', {}),
+                            'stacking_method': component_data.get('stacking_method', 'unknown'),
+                            'optimization_used': component_data.get('optimization_used', [])
+                        }
+
+            return None
+
+        except Exception as e:
+            self.logger.warning(f"Failed to extract stacking analysis: {e}")
+            return None
+
+    def _generate_model_specific_insights(self, model_name: str, model_type: str, model_report: Dict[str, Any]) -> Dict[str, Any]:
+        """Generate model-specific insights and recommendations."""
+        insights = {
+            'key_strengths': [],
+            'key_concerns': [],
+            'priority_actions': [],
+            'monitoring_recommendations': []
+        }
+
+        try:
+            # Analyze overfitting status
+            overfitting = model_report['overfitting_analysis']
+            if not overfitting['is_overfitting']:
+                insights['key_strengths'].append("No significant overfitting detected")
+            else:
+                severity = overfitting['severity']
+                if severity == 'severe':
+                    insights['key_concerns'].append("🚨 Severe overfitting detected - immediate action required")
+                    insights['priority_actions'].append("🔧 Implement aggressive regularization and consider model redesign")
+                elif severity == 'high':
+                    insights['key_concerns'].append("⚠️ Significant overfitting detected")
+                    insights['priority_actions'].append("🔧 Increase regularization and monitor closely")
+                else:
+                    insights['key_concerns'].append("📊 Moderate overfitting detected")
+                    insights['priority_actions'].append("📊 Monitor performance and consider regularization")
+
+            # Analyze enhancement opportunities
+            enhancement = model_report['enhancement_analysis']
+            priority = enhancement['priority']
+
+            if priority == 'critical':
+                insights['key_concerns'].append("🚨 Critical enhancement opportunities identified")
+                insights['priority_actions'].append("🔧 Immediate model enhancement required")
+            elif priority == 'high':
+                insights['key_concerns'].append("⚠️ High priority enhancement opportunities")
+                insights['priority_actions'].append("🔧 Strong enhancement opportunities identified")
+            elif priority == 'medium':
+                insights['key_concerns'].append("📊 Moderate enhancement opportunities")
+                insights['priority_actions'].append("📊 Enhancement opportunities available")
+            else:
+                insights['key_strengths'].append("✅ Minimal enhancement opportunities needed")
+
+            # Analyze performance stability
+            performance = model_report['performance_analysis']
+            stability = performance.get('performance_stability', 0.0)
+            generalization = performance.get('generalization_score', 0.0)
+
+            if stability > 0.8:
+                insights['key_strengths'].append("✅ High performance stability")
+            elif stability < 0.6:
+                insights['key_concerns'].append(f"📊 Low performance stability ({stability:.2f})")
+                insights['priority_actions'].append("🔧 Investigate performance instability")
+
+            if generalization > 0.8:
+                insights['key_strengths'].append("✅ Good generalization to unseen data")
+            elif generalization < 0.6:
+                insights['key_concerns'].append(f"📊 Poor generalization score ({generalization:.2f})")
+                insights['priority_actions'].append("🔧 Improve model generalization")
+
+            # Analyze temporal validation
+            temporal = model_report['temporal_validation']
+            if temporal:
+                if not temporal['temporal_order_valid']:
+                    insights['key_concerns'].append("🚨 Temporal order violation detected")
+                    insights['priority_actions'].append("🔧 Fix temporal data ordering")
+                if temporal['leakage_detected']:
+                    insights['key_concerns'].append("🚨 Data leakage detected")
+                    insights['priority_actions'].append("🔧 Eliminate data leakage")
+
+            # Generate monitoring recommendations
+            if overfitting['is_overfitting']:
+                insights['monitoring_recommendations'].append("📊 Monitor training curves for overfitting signs")
+            if enhancement['estimated_improvement_potential'] > 0.1:
+                insights['monitoring_recommendations'].append("📊 Track model performance improvements after enhancements")
+            if performance.get('performance_stability', 0.0) < 0.8:
+                insights['monitoring_recommendations'].append("📊 Monitor performance stability across different data splits")
+
+            # Add model-specific recommendations
+            model_type_lower = model_type.lower()
+            if 'xgboost' in model_type_lower or 'lightgbm' in model_type_lower:
+                insights['monitoring_recommendations'].append("📊 Monitor feature importance stability")
+            elif 'neural' in model_type_lower:
+                insights['monitoring_recommendations'].append("📊 Monitor gradient norms and learning curves")
+            elif 'linear' in model_type_lower:
+                insights['monitoring_recommendations'].append("📊 Monitor coefficient stability and multicollinearity")
+
+        except Exception as e:
+            self.logger.warning(f"Failed to generate model-specific insights: {e}")
+            insights['error'] = f"Insight generation failed: {str(e)}"
+
+        return insights
+
+
+# Global validation orchestrator instance
+DEFAULT_VALIDATION_ORCHESTRATOR = UniversalMLValidationOrchestrator()
+
+def get_validation_orchestrator() -> UniversalMLValidationOrchestrator:
+    """Get global validation orchestrator instance."""
+    return DEFAULT_VALIDATION_ORCHESTRATOR
+
+def validate_model_comprehensively(model,
+                                 X_train: np.ndarray,
+                                 X_val: np.ndarray,
+                                 y_train: np.ndarray,
+                                 y_val: np.ndarray,
+                                 model_name: str = "unknown",
+                                 model_type: str = "unknown",
+                                 X_test: Optional[np.ndarray] = None,
+                                 y_test: Optional[np.ndarray] = None,
+                                 timestamps: Optional[np.ndarray] = None,
+                                 include_per_model_report: bool = True) -> Dict[str, Any]:
+    """
+    Convenience function for comprehensive model validation with all components.
+
+    This provides a unified interface that integrates:
+    1. Overfitting detection with financial time series indicators
+    2. Model enhancement detection with warnings (not specific parameters)
+    3. Temporal validation and walk-forward analysis
+    4. Performance analysis and data quality assessment
+    5. Comprehensive per-model reporting with insights
+
+    Args:
+        model: Trained ML model
+        X_train: Training features
+        X_val: Validation features
+        y_train: Training labels
+        y_val: Validation labels
+        model_name: Name of the model
+        model_type: Type of model
+        X_test: Optional test features
+        y_test: Optional test labels
+        timestamps: Optional timestamps for temporal validation
+        include_per_model_report: Whether to include detailed per-model report
+
+    Returns:
+        Dict: Comprehensive validation results with per-model report
+    """
+    orchestrator = get_validation_orchestrator()
+
+    # Run comprehensive validation
+    validation_results = orchestrator.comprehensive_model_validation(
+        model=model,
+        X_train=X_train,
+        X_val=X_val,
+        y_train=y_train,
+        y_val=y_val,
+        X_test=X_test,
+        y_test=y_test,
+        model_name=model_name,
+        model_type=model_type,
+        timestamps=timestamps
+    )
+
+    # Add per-model report if requested
+    if include_per_model_report:
+        model_specific_report = orchestrator.generate_model_specific_report(
+            model_name, model_type, validation_results
+        )
+        validation_results['per_model_report'] = model_specific_report
+
+    return validation_results
+
+def get_model_validation_summary(model_name: str, model_type: str, validation_results: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Get a concise summary of model validation results.
+
+    Args:
+        model_name: Name of the model
+        model_type: Type of model
+        validation_results: Results from comprehensive validation
+
+    Returns:
+        Dict: Concise validation summary
+    """
+    try:
+        overall_score = validation_results.get('overall_score', 0.0)
+
+        # Determine status
+        if overall_score >= 0.8:
+            status = "EXCELLENT"
+            status_emoji = "✅"
+        elif overall_score >= 0.6:
+            status = "GOOD"
+            status_emoji = "✅"
+        elif overall_score >= 0.4:
+            status = "MODERATE"
+            status_emoji = "📊"
+        elif overall_score >= 0.2:
+            status = "CONCERNING"
+            status_emoji = "⚠️"
+        else:
+            status = "CRITICAL"
+            status_emoji = "🚨"
+
+        summary = {
+            'model_name': model_name,
+            'model_type': model_type,
+            'overall_score': overall_score,
+            'status': status,
+            'status_emoji': status_emoji,
+            'validation_passed': overall_score >= 0.6,
+            'summary': validation_results.get('summary', ''),
+            'key_issues': [],
+            'priority_actions': [],
+            'warnings_count': 0
+        }
+
+        # Extract key issues
+        overfitting_analysis = validation_results.get('components', {}).get('overfitting', {})
+        if overfitting_analysis.get('is_overfitting'):
+            severity = overfitting_analysis.get('severity', 'unknown')
+            summary['key_issues'].append(f"Overfitting detected ({severity} severity)")
+
+        temporal_validation = validation_results.get('components', {}).get('temporal', {})
+        if temporal_validation and not temporal_validation.get('temporal_order_valid', True):
+            summary['key_issues'].append("Temporal order violation detected")
+
+        if temporal_validation and temporal_validation.get('leakage_detected', False):
+            summary['key_issues'].append("Data leakage detected")
+
+        # Extract enhancement warnings
+        enhancement_analysis = validation_results.get('components', {}).get('enhancement', {})
+        warnings = enhancement_analysis.get('warnings', [])
+        summary['warnings_count'] = len(warnings)
+
+        if warnings:
+            summary['key_issues'].extend(warnings[:3])  # Include top 3 warnings
+
+        # Extract priority actions
+        model_insights = validation_results.get('model_specific_report', {}).get('model_specific_insights', {})
+        summary['priority_actions'] = model_insights.get('priority_actions', [])
+
+        return summary
+
+    except Exception as e:
+        logger.error(f"Failed to generate validation summary: {e}")
+        return {
+            'model_name': model_name,
+            'model_type': model_type,
+            'error': f"Summary generation failed: {str(e)}",
+            'status': 'ERROR',
+            'status_emoji': '❌'
+        }
+
+
+# Integration with existing training pipeline
+class ValidationIntegrationManager:
+    """
+    Manages integration of comprehensive validation with existing training pipeline.
+    Ensures no redundancy and proper wiring of all validation components.
+    """
+
+    def __init__(self):
+        """Initialize validation integration manager."""
+        self.logger = logging.getLogger('ValidationIntegrationManager')
+        self.orchestrator = get_validation_orchestrator()
+
+    def validate_model_with_reporting(self,
+                                    model,
+                                    X_train: np.ndarray,
+                                    X_val: np.ndarray,
+                                    y_train: np.ndarray,
+                                    y_val: np.ndarray,
+                                    model_name: str = "unknown",
+                                    model_type: str = "unknown",
+                                    X_test: Optional[np.ndarray] = None,
+                                    y_test: Optional[np.ndarray] = None,
+                                    timestamps: Optional[np.ndarray] = None) -> Dict[str, Any]:
+        """
+        Validate model with comprehensive reporting and ensure all components are included.
+
+        This is the main entry point for model validation that ensures:
+        1. All validation results are included in per-model reporting
+        2. Enhancement warnings are provided instead of specific parameter tuning
+        3. No redundancy with existing validation systems
+        4. Proper integration with existing training pipeline
+
+        Args:
+            model: Trained ML model
+            X_train: Training features
+            X_val: Validation features
+            y_train: Training labels
+            y_val: Validation labels
+            model_name: Name of the model
+            model_type: Type of model
+            X_test: Optional test features
+            y_test: Optional test labels
+            timestamps: Optional timestamps for temporal validation
+
+        Returns:
+            Dict: Complete validation report with per-model analysis
+        """
+        try:
+            self.logger.info(f"🚀 Starting comprehensive validation for {model_name} ({model_type})")
+
+            # Run comprehensive validation
+            validation_results = self.orchestrator.comprehensive_model_validation(
+                model=model,
+                X_train=X_train,
+                X_val=X_val,
+                y_train=y_train,
+                y_val=y_val,
+                X_test=X_test,
+                y_test=y_test,
+                model_name=model_name,
+                model_type=model_type,
+                timestamps=timestamps
+            )
+
+            # Generate per-model report
+            model_specific_report = self.orchestrator.generate_model_specific_report(
+                model_name, model_type, validation_results
+            )
+            validation_results['per_model_report'] = model_specific_report
+
+            # Generate concise summary
+            validation_summary = get_model_validation_summary(
+                model_name, model_type, validation_results
+            )
+            validation_results['validation_summary'] = validation_summary
+
+            # Log key findings
+            self._log_validation_findings(model_name, validation_summary, model_specific_report)
+
+            return validation_results
+
+        except Exception as e:
+            self.logger.error(f"Validation integration failed for {model_name}: {e}")
+            return {
+                'model_name': model_name,
+                'model_type': model_type,
+                'validation_status': 'error',
+                'error': str(e),
+                'validation_summary': {
+                    'model_name': model_name,
+                    'model_type': model_type,
+                    'status': 'ERROR',
+                    'status_emoji': '❌',
+                    'error': str(e)
+                }
+            }
+
+    def _log_validation_findings(self, model_name: str, validation_summary: Dict[str, Any], model_report: Dict[str, Any]):
+        """Log key validation findings."""
+        try:
+            self.logger.info(f"📊 Validation Summary for {model_name}:")
+            self.logger.info(f"   Status: {validation_summary.get('status', 'UNKNOWN')} {validation_summary.get('status_emoji', '')}")
+            self.logger.info(f"   Overall Score: {validation_summary.get('overall_score', 0.0):.3f}")
+            self.logger.info(f"   Validation Passed: {validation_summary.get('validation_passed', False)}")
+
+            key_issues = validation_summary.get('key_issues', [])
+            if key_issues:
+                self.logger.info(f"   Key Issues ({len(key_issues)}):")
+                for issue in key_issues[:3]:  # Show top 3 issues
+                    self.logger.info(f"     - {issue}")
+
+            priority_actions = validation_summary.get('priority_actions', [])
+            if priority_actions:
+                self.logger.info(f"   Priority Actions ({len(priority_actions)}):")
+                for action in priority_actions[:3]:  # Show top 3 actions
+                    self.logger.info(f"     - {action}")
+
+            # Log model-specific insights
+            model_insights = model_report.get('model_specific_insights', {})
+            key_strengths = model_insights.get('key_strengths', [])
+            key_concerns = model_insights.get('key_concerns', [])
+
+            if key_strengths:
+                self.logger.info(f"   Strengths ({len(key_strengths)}):")
+                for strength in key_strengths[:2]:  # Show top 2 strengths
+                    self.logger.info(f"     ✅ {strength}")
+
+            if key_concerns:
+                self.logger.info(f"   Concerns ({len(key_concerns)}):")
+                for concern in key_concerns[:2]:  # Show top 2 concerns
+                    self.logger.info(f"     ⚠️ {concern}")
+
+        except Exception as e:
+            self.logger.warning(f"Failed to log validation findings: {e}")
+
+    def get_validation_status(self, validation_results: Dict[str, Any]) -> Dict[str, Any]:
+        """Get concise validation status."""
+        summary = validation_results.get('validation_summary', {})
+
+        return {
+            'model_name': summary.get('model_name', 'unknown'),
+            'model_type': summary.get('model_type', 'unknown'),
+            'overall_score': summary.get('overall_score', 0.0),
+            'status': summary.get('status', 'UNKNOWN'),
+            'status_emoji': summary.get('status_emoji', '❓'),
+            'validation_passed': summary.get('validation_passed', False),
+            'warnings_count': summary.get('warnings_count', 0),
+            'key_issues': summary.get('key_issues', []),
+            'priority_actions': summary.get('priority_actions', [])
+        }
+
+# Global integration manager instance
+DEFAULT_VALIDATION_INTEGRATION_MANAGER = ValidationIntegrationManager()
+
+def get_validation_integration_manager() -> ValidationIntegrationManager:
+    """Get global validation integration manager instance."""
+    return DEFAULT_VALIDATION_INTEGRATION_MANAGER
+
+# Convenience function for easy model validation
+def validate_and_report_model(model,
+                             X_train: np.ndarray,
+                             X_val: np.ndarray,
+                             y_train: np.ndarray,
+                             y_val: np.ndarray,
+                             model_name: str = "unknown",
+                             model_type: str = "unknown",
+                             X_test: Optional[np.ndarray] = None,
+                             y_test: Optional[np.ndarray] = None,
+                             timestamps: Optional[np.ndarray] = None) -> Dict[str, Any]:
+    """
+    Convenience function to validate model and get comprehensive report.
+
+    This provides a simple interface that ensures all validation components
+    are properly integrated and all results are included in per-model reporting.
+
+    Args:
+        model: Trained ML model
+        X_train: Training features
+        X_val: Validation features
+        y_train: Training labels
+        y_val: Validation labels
+        model_name: Name of the model
+        model_type: Type of model
+        X_test: Optional test features
+        y_test: Optional test labels
+        timestamps: Optional timestamps for temporal validation
+
+    Returns:
+        Dict: Complete validation report with per-model analysis and summary
+    """
+    manager = get_validation_integration_manager()
+    return manager.validate_model_with_reporting(
+        model, X_train, X_val, y_train, y_val, model_name, model_type, X_test, y_test, timestamps
+    )
 
 
 def detect_overfitting_for_model(model,

@@ -598,6 +598,127 @@ def get_overfitting_detector(config: Optional[OverfittingConfig] = None) -> Univ
         return DEFAULT_OVERFITTING_DETECTOR
     return UniversalOverfittingDetector(config)
 
+def detect_overfitting_with_learning_curves(model: Any,
+                                          X_train: np.ndarray,
+                                          X_val: np.ndarray,
+                                          y_train: np.ndarray,
+                                          y_val: np.ndarray,
+                                          X_test: Optional[np.ndarray] = None,
+                                          y_test: Optional[np.ndarray] = None,
+                                          model_name: str = "unknown",
+                                          model_type: str = "unknown",
+                                          fold_number: Optional[int] = None,
+                                          config: Optional[OverfittingConfig] = None) -> OverfittingReport:
+    """
+    Enhanced overfitting detection with learning curve analysis.
+    
+    This function integrates learning curve analysis into the existing overfitting detection
+    to provide more comprehensive overfitting assessment.
+    """
+    try:
+        # Import learning curve analyzer
+        from ..evaluation.enhanced_learning_curve_analysis import EnhancedLearningCurveAnalyzer
+        
+        # Initialize detector
+        detector = get_overfitting_detector(config)
+        
+        # Get basic predictions
+        train_predictions = model.predict(X_train)
+        val_predictions = model.predict(X_val)
+        
+        # Get probabilities if available
+        train_probabilities = None
+        val_probabilities = None
+        if hasattr(model, 'predict_proba'):
+            try:
+                train_probabilities = model.predict_proba(X_train)
+                val_probabilities = model.predict_proba(X_val)
+            except Exception as e:
+                logger.warning(f"Could not get probabilities: {e}")
+        
+        # Get feature importance if available
+        feature_importance = None
+        if hasattr(model, 'feature_importances_'):
+            feature_importance = model.feature_importances_
+        elif hasattr(model, 'coef_'):
+            feature_importance = np.abs(model.coef_).flatten()
+        
+        # Perform basic overfitting detection
+        basic_report = detector.detect_overfitting(
+            train_predictions=train_predictions,
+            val_predictions=val_predictions,
+            train_labels=y_train,
+            val_labels=y_val,
+            train_probabilities=train_probabilities,
+            val_probabilities=val_probabilities,
+            feature_importance=feature_importance,
+            model_name=model_name,
+            model_type=model_type,
+            fold_number=fold_number
+        )
+        
+        # Perform learning curve analysis
+        try:
+            learning_curve_analyzer = EnhancedLearningCurveAnalyzer()
+            
+            # Combine train and val for learning curve analysis
+            X_combined = np.vstack([X_train, X_val])
+            y_combined = np.concatenate([y_train, y_val])
+            
+            # Determine scoring metric
+            is_classification = len(np.unique(y_combined)) <= 10
+            scoring = 'accuracy' if is_classification else 'r2'
+            
+            # Perform learning curve analysis
+            learning_curve_result = learning_curve_analyzer.analyze_learning_curve(
+                model=model,
+                X_train=X_combined,
+                y_train=y_combined,
+                X_test=X_test if X_test is not None else X_val,
+                y_test=y_test if y_test is not None else y_val,
+                scoring=scoring
+            )
+            
+            # Add learning curve indicators to the report
+            if learning_curve_result.overfitting_risk in ["high", "severe"]:
+                basic_report.indicators.append("learning_curve_overfitting")
+                basic_report.warnings.append("Learning curve analysis indicates overfitting risk")
+            
+            if learning_curve_result.convergence_stability == "poor":
+                basic_report.recommendations.append("Poor convergence stability - consider learning rate adjustment")
+            
+            if learning_curve_result.training_efficiency == "low":
+                basic_report.recommendations.append("Low training efficiency - consider model simplification")
+            
+            # Update severity based on learning curve analysis
+            if learning_curve_result.overfitting_risk == "severe":
+                if basic_report.severity == "moderate":
+                    basic_report.severity = "high"
+                elif basic_report.severity == "none":
+                    basic_report.severity = "moderate"
+            
+            logger.info(f"✅ Learning curve analysis integrated for {model_name}")
+            
+        except Exception as e:
+            logger.warning(f"Learning curve analysis failed: {e}")
+            basic_report.warnings.append("Learning curve analysis unavailable")
+        
+        return basic_report
+        
+    except Exception as e:
+        logger.error(f"Enhanced overfitting detection with learning curves failed: {e}")
+        # Fallback to basic detection
+        detector = get_overfitting_detector(config)
+        return detector.detect_overfitting(
+            train_predictions=model.predict(X_train),
+            val_predictions=model.predict(X_val),
+            train_labels=y_train,
+            val_labels=y_val,
+            model_name=model_name,
+            model_type=model_type,
+            fold_number=fold_number
+        )
+
 def detect_overfitting_for_model(model, 
                                 X_train: np.ndarray, 
                                 X_val: np.ndarray,

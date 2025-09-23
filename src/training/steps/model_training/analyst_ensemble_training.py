@@ -296,6 +296,8 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
                 'memory_optimizer': self.memory_optimizer is not None,
                 'cpu_optimizer': self.cpu_optimizer is not None
             },
+            'ensemble_diversity_metrics': {},
+            'confidence_intervals': {},
             'utilities_available': {
                 'math_validation': True,  # math_validation utilities are imported
                 'serialization': True,    # serialization utilities are imported
@@ -308,6 +310,108 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
         }
         
         tprint_success("✅ Tracking and monitoring setup completed")
+    
+    def calculate_ensemble_diversity_metrics(self, predictions: Dict[str, np.ndarray]) -> Dict[str, float]:
+        """Calculate ensemble diversity metrics for model complementarity."""
+        tprint_info("📊 Calculating ensemble diversity metrics...")
+        
+        try:
+            diversity_metrics = {}
+            
+            # Calculate pairwise diversity between models
+            model_names = list(predictions.keys())
+            if len(model_names) < 2:
+                tprint_warning("⚠️ Need at least 2 models for diversity calculation")
+                return {}
+            
+            # Calculate correlation-based diversity
+            correlations = []
+            for i, model1 in enumerate(model_names):
+                for j, model2 in enumerate(model_names[i+1:], i+1):
+                    try:
+                        pred1 = predictions[model1]
+                        pred2 = predictions[model2]
+                        
+                        if len(pred1) == len(pred2):
+                            corr = np.corrcoef(pred1, pred2)[0, 1]
+                            diversity = 1 - abs(corr)  # Higher diversity = lower correlation
+                            correlations.append(diversity)
+                            diversity_metrics[f"{model1}_vs_{model2}_diversity"] = float(diversity)
+                    except Exception as e:
+                        tprint_warning(f"⚠️ Diversity calculation failed for {model1} vs {model2}: {e}")
+                        continue
+            
+            # Calculate overall diversity
+            if correlations:
+                overall_diversity = np.mean(correlations)
+                diversity_metrics['overall_diversity'] = float(overall_diversity)
+                diversity_metrics['diversity_std'] = float(np.std(correlations))
+            
+            # Calculate prediction variance as diversity measure
+            all_predictions = np.array(list(predictions.values()))
+            if all_predictions.size > 0:
+                prediction_variance = np.var(all_predictions)
+                diversity_metrics['prediction_variance'] = float(prediction_variance)
+                
+                # Calculate coefficient of variation
+                mean_prediction = np.mean(all_predictions)
+                if mean_prediction != 0:
+                    cv = np.std(all_predictions) / abs(mean_prediction)
+                    diversity_metrics['coefficient_of_variation'] = float(cv)
+            
+            # Update training stats
+            self.training_stats['ensemble_diversity_metrics'] = diversity_metrics
+            
+            tprint_success(f"✅ Diversity metrics calculated: {len(diversity_metrics)} metrics")
+            tprint_info(f"📊 Overall diversity: {diversity_metrics.get('overall_diversity', 0):.4f}")
+            
+            return diversity_metrics
+            
+        except Exception as e:
+            tprint_error(f"❌ Diversity metrics calculation failed: {e}")
+            return {}
+    
+    def calculate_confidence_intervals(self, predictions: Dict[str, np.ndarray], confidence_level: float = 0.95) -> Dict[str, Tuple[float, float]]:
+        """Calculate confidence intervals for ensemble predictions."""
+        tprint_info("📊 Calculating confidence intervals...")
+        
+        try:
+            confidence_intervals = {}
+            
+            for model_name, preds in predictions.items():
+                if len(preds) == 0:
+                    continue
+                
+                # Bootstrap confidence intervals
+                n_bootstrap = 1000
+                bootstrap_samples = []
+                
+                for _ in range(n_bootstrap):
+                    # Bootstrap sample
+                    bootstrap_indices = np.random.choice(len(preds), size=len(preds), replace=True)
+                    bootstrap_sample = preds[bootstrap_indices]
+                    bootstrap_samples.append(np.mean(bootstrap_sample))
+                
+                # Calculate confidence intervals
+                alpha = 1 - confidence_level
+                lower_percentile = (alpha / 2) * 100
+                upper_percentile = (1 - alpha / 2) * 100
+                
+                lower_bound = np.percentile(bootstrap_samples, lower_percentile)
+                upper_bound = np.percentile(bootstrap_samples, upper_percentile)
+                
+                confidence_intervals[model_name] = (float(lower_bound), float(upper_bound))
+            
+            # Update training stats
+            self.training_stats['confidence_intervals'] = confidence_intervals
+            
+            tprint_success(f"✅ Confidence intervals calculated for {len(confidence_intervals)} models")
+            
+            return confidence_intervals
+            
+        except Exception as e:
+            tprint_error(f"❌ Confidence interval calculation failed: {e}")
+            return {}
     
     def _validate_initialization_success(self) -> None:
         """Validate initialization success with comprehensive checks."""
@@ -2247,6 +2351,9 @@ if __name__ == "__main__":
     tprint_info("🔧 UTILITY INTEGRATION FEATURES:")
     tprint_info("- ✅ Math validation utilities for safe operations")
     tprint_info("- ✅ Serialization utilities for model persistence")
+    tprint_info("- ✅ Ensemble diversity metrics for model complementarity")
+    tprint_info("- ✅ Confidence intervals for OOF predictions")
+    tprint_info("- ✅ Bootstrap-based uncertainty quantification")
     tprint_info("- ✅ Common operations utilities")
     tprint_info("- ✅ Enhanced error handling and recovery")
     

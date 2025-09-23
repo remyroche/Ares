@@ -25,17 +25,7 @@ from src.utils.ml_common.optimization.neural_architecture_search import (
     search_neural_architecture, ArchitectureConfig, ArchitectureCandidate
 )
 
-# Import existing optimization tools
-from src.utils.ml_common.optimization.hyperparameter_optimization import HyperparameterOptimizer
-from src.utils.ml_common.optimization.regime_aware_hpo import RegimeAwareHyperparameterOptimizer
-from src.utils.ml_common.optimization.bayesian_optimization import BayesianOptimizer
-
-# Import existing feature engineering
-from src.utils.ml_common.feature_engineering.feature_selection import FeatureSelector
-from src.utils.ml_common.feature_engineering.feature_transformation import FeatureTransformer
-
 # Import existing validation
-from src.utils.ml_common.validation.cross_validation import CrossValidator
 from src.utils.ml_common.validation.overfitting_detection import UniversalOverfittingDetector
 
 # Import logging utilities
@@ -133,15 +123,7 @@ class TacticianNASIntegration:
                 
                 # Configure existing pipeline for NAS optimization (60 features)
                 feature_selector = ComprehensiveFeatureSelector(
-                    target_features=60,  # Optimal for NAS
-                    enable_mrmr=True,
-                    enable_mutual_info=True,
-                    enable_lasso=True, 
-                    enable_random_forest=True,
-                    mrmr_k=80,
-                    mi_k=70,
-                    lasso_alpha=0.01,
-                    rf_n_estimators=100
+                    target_features=60  # Optimal for NAS
                 )
                 
                 # Apply existing comprehensive pipeline
@@ -175,24 +157,13 @@ class TacticianNASIntegration:
             # Search for optimal architecture using existing optimization framework
             tprint_info("🔍 Searching for optimal neural architecture...")
             
-            # Use existing regime-aware HPO if regime labels provided
-            if regime_labels is not None:
-                tprint_info("🎯 Using regime-aware optimization...")
-                regime_hpo = RegimeAwareHyperparameterOptimizer()
-                # Integrate with existing regime-aware optimization
-                self.architecture = search_neural_architecture(
-                    X_train=X_train, y_train=y_train,
-                    X_val=X_val, y_val=y_val,
-                    config=nas_config,
-                    regime_labels=regime_labels
-                )
-            else:
-                # Use standard optimization
-                self.architecture = search_neural_architecture(
-                    X_train=X_train, y_train=y_train,
-                    X_val=X_val, y_val=y_val,
-                    config=nas_config
-                )
+            # Search for optimal architecture
+            self.architecture = search_neural_architecture(
+                X_train=X_train, y_train=y_train,
+                X_val=X_val, y_val=y_val,
+                config=nas_config,
+                regime_labels=regime_labels
+            )
             
             # Fast fail: Validate architecture discovery
             if self.architecture is None:

@@ -25,10 +25,7 @@ from src.training.steps.model_training.tactician_nas_integration import (
     TacticianNASIntegration, TacticianNASConfig, create_tactician_nas_model
 )
 
-# Import existing optimization tools
-from src.utils.ml_common.optimization.hyperparameter_optimization import HyperparameterOptimizer
-from src.utils.ml_common.optimization.regime_aware_hpo import RegimeAwareHyperparameterOptimizer
-from src.utils.ml_common.feature_engineering.feature_selection import FeatureSelector
+# Import existing validation
 from src.utils.ml_common.validation.overfitting_detection import UniversalOverfittingDetector
 
 # Import logging utilities
@@ -53,17 +50,6 @@ class TacticianPipelineConfig:
     # Feature selection using existing comprehensive pipeline
     max_features: int = 60  # Final target for NAS (using existing pipeline)
     min_features: int = 45  # Minimum for meaningful learning
-    use_existing_pipeline: bool = True  # Use existing comprehensive feature selection
-    
-    # Existing pipeline configuration
-    enable_mrmr: bool = True
-    enable_mutual_info: bool = True
-    enable_lasso: bool = True
-    enable_random_forest: bool = True
-    mrmr_k: int = 80
-    mi_k: int = 70
-    lasso_alpha: float = 0.01
-    rf_n_estimators: int = 100
     
     # Regime integration
     enable_regime_features: bool = True
@@ -211,17 +197,9 @@ class TacticianNASPipelineIntegration:
             # Use existing comprehensive feature selection pipeline
             from src.utils.ml_common.feature_engineering.comprehensive_feature_selection import ComprehensiveFeatureSelector
             
-            # Configure existing pipeline for NAS optimization
+            # Configure existing pipeline for NAS optimization (60 features)
             feature_selector = ComprehensiveFeatureSelector(
-                target_features=self.config.max_features,  # 60 features for NAS
-                enable_mrmr=self.config.enable_mrmr,
-                enable_mutual_info=self.config.enable_mutual_info, 
-                enable_lasso=self.config.enable_lasso,
-                enable_random_forest=self.config.enable_random_forest,
-                mrmr_k=self.config.mrmr_k,
-                mi_k=self.config.mi_k,
-                lasso_alpha=self.config.lasso_alpha,
-                rf_n_estimators=self.config.rf_n_estimators
+                target_features=self.config.max_features  # 60 features for NAS
             )
             
             # Apply existing comprehensive pipeline

@@ -1740,21 +1740,31 @@ class AnalystModelsTrainingStepRefactored(PerRegimeTrainingStep):
                 regime_models = {}
                 for model_type in self.config.model_types:
                     try:
-                        # Create model instance with enhanced HPO
+                        # Create model instance with enhanced HPO (fast fail enabled)
                         if ENHANCED_HPO_AVAILABLE and hasattr(self, 'enhanced_hpo'):
-                            # Use enhanced HPO system
-                            model = self.training_enhancer.create_model(
-                                model_type=model_type,
-                                model_name=f"analyst_{model_type}_regime_{regime}",
-                                model_params={},
-                                enable_enhanced_hpo=True,
-                                regime_labels=regime_labels,
-                                X_regime=X_regime,
-                                y_regime=y_regime
-                            )
-                            tprint_info(f"🔬 Enhanced HPO applied for {model_type} in regime {regime}")
+                            # Use enhanced HPO system - will fail fast if issues occur
+                            try:
+                                model = self.training_enhancer.create_model(
+                                    model_type=model_type,
+                                    model_name=f"analyst_{model_type}_regime_{regime}",
+                                    model_params={},
+                                    enable_enhanced_hpo=True,
+                                    regime_labels=regime_labels,
+                                    X_regime=X_regime,
+                                    y_regime=y_regime
+                                )
+                                tprint_success(f"✅ Enhanced HPO successfully applied for {model_type} in regime {regime}")
+                            except RuntimeError as e:
+                                tprint_error(f"❌ Enhanced HPO failed for {model_type} in regime {regime}: {e}")
+                                tprint_info("🔄 Falling back to standard model creation (fast fail disabled for this instance)")
+                                # Fallback only for this specific case - create standard model
+                                model = self.training_enhancer.create_model(
+                                    model_type=model_type,
+                                    model_name=f"analyst_{model_type}_regime_{regime}_fallback",
+                                    model_params={}
+                                )
                         else:
-                            # Fallback to standard model creation
+                            # Standard model creation
                             model = self.training_enhancer.create_model(
                                 model_type=model_type,
                                 model_name=f"analyst_{model_type}_regime_{regime}",

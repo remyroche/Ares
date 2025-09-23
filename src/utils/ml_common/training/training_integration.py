@@ -390,10 +390,8 @@ class TrainingStepEnhancer:
                             X_train, X_val = X[:split_point], X[split_point:]
                             y_train, y_val = y[:split_point], y[split_point:]
                     except Exception as e:
-                        tprint_warning(f"⚠️ Regime-aware CV failed, using standard split: {e}")
-                        split_point = int(len(X) * 0.8)
-                        X_train, X_val = X[:split_point], X[split_point:]
-                        y_train, y_val = y[:split_point], y[split_point:]
+                        tprint_error(f"❌ Regime-aware CV failed: {e}")
+                        raise RuntimeError(f"❌ Enhanced training requires regime-aware CV to succeed. Fix the error: {e}") from e
                 else:
                     # Use standard time series split
                     split_point = int(len(X) * 0.8)
@@ -439,10 +437,8 @@ class TrainingStepEnhancer:
                             X_train, X_val = X[:split_point], X[split_point:]
                             y_train, y_val = y[:split_point], y[split_point:]
                     except Exception as e:
-                        tprint_warning(f"⚠️ Regime-aware overfitting monitoring failed, using standard split: {e}")
-                        split_point = int(len(X) * 0.8)
-                        X_train, X_val = X[:split_point], X[split_point:]
-                        y_train, y_val = y[:split_point], y[split_point:]
+                        tprint_error(f"❌ Regime-aware overfitting monitoring failed: {e}")
+                        raise RuntimeError(f"❌ Enhanced overfitting monitoring requires regime-aware CV to succeed. Fix the error: {e}") from e
                 else:
                     # Standard split
                     split_point = int(len(X) * 0.8)

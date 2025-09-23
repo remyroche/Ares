@@ -753,10 +753,11 @@ class FallbackMultiScaleNBEATSRegressor(BaseEstimator, RegressorMixin):
         return np.zeros((len(X[list(X.keys())[0]]), 4))
 
 
-def get_multiscale_nbeats_model(config: Dict[str, Any]) -> Union[MultiScaleNBEATSRegressor, FallbackMultiScaleNBEATSRegressor]:
-    """Get MultiScaleNBEATS model with fallback support."""
-    if TORCH_AVAILABLE:
-        return create_multiscale_nbeats_model(config)
-    else:
-        logger.warning("⚠️ PyTorch not available, using fallback MultiScaleNBEATS implementation")
-        return FallbackMultiScaleNBEATSRegressor()
+def get_multiscale_nbeats_model(config: Dict[str, Any]) -> MultiScaleNBEATSRegressor:
+    """Get MultiScaleNBEATS model with fast fail - no fallback."""
+    if not TORCH_AVAILABLE:
+        error_msg = "❌ MultiScaleNBEATS architecture requires PyTorch. Install with: pip install torch torchvision torchaudio"
+        logger.error(error_msg)
+        raise ImportError(error_msg)
+
+    return create_multiscale_nbeats_model(config)

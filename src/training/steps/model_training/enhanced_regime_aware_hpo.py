@@ -354,7 +354,7 @@ class EnhancedRegimeAwareHPO:
         self.logger = logging.getLogger(self.__class__.__name__)
 
         if not SKOPT_AVAILABLE and not OPTUNA_AVAILABLE:
-            raise ImportError("Either scikit-optimize or Optuna must be installed for enhanced HPO")
+            raise ImportError("❌ Enhanced HPO requires either scikit-optimize or Optuna. Install with: pip install scikit-optimize optuna")
 
         # Track optimization history
         self.optimization_history = []
@@ -381,8 +381,9 @@ class EnhancedRegimeAwareHPO:
             self.regime_characteristics = self.regime_analyzer.analyze_regime_characteristics(X, y, regime_labels)
 
         if regime_id not in self.regime_characteristics:
-            self.logger.warning(f"⚠️ No characteristics found for regime {regime_id}")
-            return self._get_default_parameters()
+            error_msg = f"❌ Enhanced HPO failed: No characteristics found for regime {regime_id}. Regime analysis required for enhanced HPO."
+            self.logger.error(error_msg)
+            raise ValueError(error_msg)
 
         regime_char = self.regime_characteristics[RegimeType(regime_id)]
 
@@ -445,11 +446,12 @@ class EnhancedRegimeAwareHPO:
     def _multi_objective_optimization(self, X: np.ndarray, y: np.ndarray, mask: np.ndarray,
                                     model_factory: Callable, search_space: Dict[str, Any],
                                     cv_strategy) -> Dict[str, Any]:
-        """Perform multi-objective hyperparameter optimization."""
+        """Perform multi-objective hyperparameter optimization with fast fail."""
 
         if not self.config.enable_multi_objective:
-            # Fall back to single-objective optimization
-            return self._single_objective_optimization(X, y, mask, model_factory, search_space, cv_strategy)
+            error_msg = "❌ Enhanced HPO requires multi-objective optimization to be enabled. Set enable_multi_objective=True in config."
+            self.logger.error(error_msg)
+            raise ValueError(error_msg)
 
         # Multi-objective optimization using Pareto dominance
         pareto_front = self._find_pareto_front(X, y, mask, model_factory, search_space, cv_strategy)
@@ -459,7 +461,9 @@ class EnhancedRegimeAwareHPO:
             best_solution = self._select_best_compromise(pareto_front)
             return best_solution['params']
         else:
-            return self._get_default_parameters()
+            error_msg = f"❌ Multi-objective optimization failed: No valid solutions found in Pareto front. Check data quality and search space."
+            self.logger.error(error_msg)
+            raise RuntimeError(error_msg)
 
     def _single_objective_optimization(self, X: np.ndarray, y: np.ndarray, mask: np.ndarray,
                                      model_factory: Callable, search_space: Dict[str, Any],
@@ -472,10 +476,12 @@ class EnhancedRegimeAwareHPO:
             elif OPTUNA_AVAILABLE:
                 return self._optimize_with_optuna(X, y, mask, model_factory, search_space, cv_strategy)
             else:
-                return self._get_default_parameters()
+                error_msg = f"❌ Enhanced HPO requires either scikit-optimize or Optuna. Install with: pip install scikit-optimize optuna"
+                self.logger.error(error_msg)
+                raise ImportError(error_msg)
         except Exception as e:
             self.logger.error(f"❌ Single-objective optimization failed: {e}")
-            return self._get_default_parameters()
+            raise RuntimeError(f"❌ Enhanced HPO optimization failed: {e}") from e
 
     def _optimize_with_skopt(self, X: np.ndarray, y: np.ndarray, mask: np.ndarray,
                            model_factory: Callable, search_space: Dict[str, Any],
@@ -617,8 +623,8 @@ class EnhancedRegimeAwareHPO:
             return weighted_score
 
         except Exception as e:
-            self.logger.warning(f"⚠️ Model evaluation failed: {e}")
-            return -np.inf  # Return worst possible score
+            self.logger.error(f"❌ Model evaluation failed: {e}")
+            raise RuntimeError(f"❌ Enhanced HPO model evaluation failed: {e}") from e
 
     def _calculate_efficiency_score(self, model: BaseEstimator, X: np.ndarray, y: np.ndarray) -> float:
         """Calculate model efficiency score."""

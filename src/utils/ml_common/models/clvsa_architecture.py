@@ -612,10 +612,11 @@ class FallbackCLVSARegressor(BaseEstimator, RegressorMixin):
         return np.zeros((len(X), 4))
 
 
-def get_clvsa_model(config: Dict[str, Any]) -> Union[CLVSARegressor, FallbackCLVSARegressor]:
-    """Get CLVSA model with fallback support."""
-    if TORCH_AVAILABLE:
-        return create_clvsa_model(config)
-    else:
-        logger.warning("⚠️ PyTorch not available, using fallback CLVSA implementation")
-        return FallbackCLVSARegressor()
+def get_clvsa_model(config: Dict[str, Any]) -> CLVSARegressor:
+    """Get CLVSA model with fast fail - no fallback."""
+    if not TORCH_AVAILABLE:
+        error_msg = "❌ CLVSA architecture requires PyTorch. Install with: pip install torch torchvision torchaudio"
+        logger.error(error_msg)
+        raise ImportError(error_msg)
+
+    return create_clvsa_model(config)

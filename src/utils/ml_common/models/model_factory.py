@@ -421,7 +421,7 @@ class EnhancedModelFactory:
 
         if model_config.model_type in [ModelType.DEEPSCALER, ModelType.DEEPSCALER_CLASSIFIER, ModelType.NBEATS, ModelType.FINANCIAL_RESNET, ModelType.ADVANCED_MAMBA_HYBRID, ModelType.DEEPSCALER_1M, ModelType.CLVSA, ModelType.MULTISCALE_NBEATS]:
             if not self.dependencies.get('torch', False):
-                raise ValidationError("PyTorch not available")
+                raise ValidationError("❌ PyTorch is required for this model type. Install with: pip install torch torchvision torchaudio")
 
         if model_config.model_type == ModelType.NBEATS:
             if not self.dependencies.get('nbeats_pytorch', False):
@@ -2157,8 +2157,8 @@ class EnhancedModelFactory:
             return get_clvsa_model(config_dict)
 
         except Exception as e:
-            self.logger.warning(f"⚠️ CLVSA creation failed: {e}")
-            return self._create_lstm_model(model_config)  # Fallback to LSTM
+            self.logger.error(f"❌ CLVSA creation failed: {e}")
+            raise RuntimeError(f"❌ CLVSA model creation failed - fast fail enabled: {e}") from e
 
     def _create_multiscale_nbeats_model(self, model_config: ModelConfig) -> Any:
         """Create MultiScaleNBEATS model for multi-timeframe prediction."""
@@ -2194,8 +2194,8 @@ class EnhancedModelFactory:
             return get_multiscale_nbeats_model(config_dict)
 
         except Exception as e:
-            self.logger.warning(f"⚠️ MultiScaleNBEATS creation failed: {e}")
-            return self._create_nbeats_model(model_config)  # Fallback to standard NBEATS
+            self.logger.error(f"❌ MultiScaleNBEATS creation failed: {e}")
+            raise RuntimeError(f"❌ MultiScaleNBEATS model creation failed - fast fail enabled: {e}") from e
 
 
 def create_model_factory(config: Optional[Dict[str, Any]] = None) -> EnhancedModelFactory:

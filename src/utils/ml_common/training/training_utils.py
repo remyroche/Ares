@@ -290,7 +290,8 @@ class TrainingUtils:
                 logger.info(f"🔬 Enhanced HPO applied for {model_type} in regime {regime_id}")
 
             except Exception as e:
-                logger.warning(f"⚠️ Enhanced HPO failed, using standard parameters: {e}")
+                logger.error(f"❌ Enhanced HPO failed: {e}")
+                raise RuntimeError(f"❌ Enhanced HPO failed - fast fail enabled: {e}") from e
 
         model_config = ModelConfig(
             model_type=model_type_enum,

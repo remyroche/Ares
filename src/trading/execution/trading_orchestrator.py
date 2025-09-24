@@ -215,29 +215,48 @@ class TradingOrchestrator:
             raise
 
     async def _initialize_signal_generators(self):
-        """Initialize signal generators."""
+        """Initialize signal generators with NAS/TAS enhancement."""
         try:
-            tprint_info("🔄 Initializing signal generators...")
+            tprint_info("🔄 Initializing enhanced signal generators with NAS/TAS...")
             
-            # Initialize Analyst signal generator
+            # Initialize enhanced Analyst signal generator with NAS integration
             analyst_signal_config = self.config.get('analyst_signals', {})
+            # Enable NAS enhancement by default
+            analyst_signal_config.update({
+                'enable_nas_enhancement': True,
+                'nas_confidence_threshold': 0.7,
+                'nas_timeframe': '5m',
+                'regime_timeframe': '15m'
+            })
             self.analyst_signal_generator = AnalystSignalGenerator(analyst_signal_config)
-            await self.analyst_signal_generator.initialize(self.analyst)
             
-            # Initialize Tactician signal generator
+            # Load NAS models if available
+            nas_models = self.config.get('nas_models', {})
+            await self.analyst_signal_generator.initialize(self.analyst, nas_models=nas_models)
+            
+            # Initialize enhanced Tactician signal generator with TAS integration
             tactician_signal_config = self.config.get('tactician_signals', {})
+            # Enable TAS enhancement by default
+            tactician_signal_config.update({
+                'enable_tas_enhancement': True,
+                'tas_confidence_threshold': 0.7,
+                'tas_timeframe': '1m'
+            })
             self.tactician_signal_generator = TacticianSignalGenerator(tactician_signal_config)
-            await self.tactician_signal_generator.initialize(self.tactician)
+            
+            # Load TAS models if available
+            tas_models = self.config.get('tas_models', {})
+            await self.tactician_signal_generator.initialize(self.tactician, tas_models=tas_models)
             
             # Initialize signal combiner
             signal_combiner_config = self.config.get('signal_combiner', {})
             self.signal_combiner = SignalCombiner(signal_combiner_config)
             await self.signal_combiner.initialize()
             
-            tprint_success("✅ Signal generators initialized")
+            tprint_success("✅ Enhanced signal generators with NAS/TAS initialized")
             
         except Exception as e:
-            tprint_error(f"❌ Signal generator initialization failed: {e}")
+            tprint_error(f"❌ Enhanced signal generator initialization failed: {e}")
             raise
 
     async def _initialize_data_collection(self):

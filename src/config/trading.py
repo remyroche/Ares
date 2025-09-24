@@ -26,7 +26,25 @@ def get_trading_config() -> dict[str, Any]:
         "taker_fee": 0.0004,
         "maker_fee": 0.0002,
         "state_file": "ares_state.json",
-        "lookback_years": 4,  # 4 years of historical data
+        "lookback_years": 4,  # 2 years of historical data
+        
+        # --- NAS/TAS Enhancement Configuration ---
+        "nas_tas_enabled": True,
+        "nas_config": {
+            "enable_nas_enhancement": True,
+            "nas_confidence_threshold": 0.7,
+            "nas_timeframe": "5m",
+            "regime_timeframe": "15m",
+            "nas_models_path": "models/nas/",
+            "nas_architectures_path": "models/nas/architectures/"
+        },
+        "tas_config": {
+            "enable_tas_enhancement": True,
+            "tas_confidence_threshold": 0.7,
+            "tas_timeframe": "1m",
+            "tas_models_path": "models/tas/",
+            "tas_architectures_path": "models/tas/architectures/"
+        }
         # --- Exchange Configurations ---
         "exchanges": {
             "binance": {

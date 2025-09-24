@@ -1,14 +1,15 @@
 """
-Tactician Ensemble Training Step - Enhanced for 1m Timeframe with Full Model Integration
+Tactician Ensemble Training Step - Enhanced for 1m Timeframe with Full Model and TAS Integration
 
 This step handles all-regime ensemble training of Tactician models using common dependencies.
 The Tactician Ensemble operates on 1m timeframe and combines individual tactician models
-with all previous model inputs (HMM, Analyst) to create the final meta-learner for timing decisions.
+plus TAS models with all previous model inputs (HMM, Analyst) to create the final meta-learner for timing decisions.
 
 Enhanced Features:
 - 1m base timeframe with cross-timeframe features (50+ features)
 - HMM + Analyst outputs integration for comprehensive context
-- XGBoost + RandomForest + CatBoost + Elastic Net base models with LightGBM meta-learner
+- LightGBM + Ridge + ElasticNet + RandomForest base models with TAS models
+- TAS models per-regime for enhanced timing signal generation
 - All-regime training but only on Analyst green light periods
 - Runs every 30 seconds for live trading
 - Decides WHEN we trade based on expected 0.3% price change (micro movements)
@@ -240,6 +241,10 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
         self.initialization_errors = []
         self.utility_integration_status = {}
         
+        # Initialize TAS models storage
+        self.tas_models = {}  # Per-regime TAS models
+        self.tas_architectures = {}  # Per-regime TAS architectures
+        
         # Log initialization start
         tprint_info("🚀 Starting Enhanced Tactician Ensemble Training Step initialization")
         
@@ -250,7 +255,7 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
                     config = EnsembleTrainingConfig(
                         model_name="tactician_ensemble_models_1m",
                         timeframe="1m",
-                        model_types=["xgboost", "catboost"],
+                        model_types=["lightgbm", "ridge", "elastic_net", "random_forest"],
                         hpo_n_trials=100,
                         hpo_timeout_seconds=3600,
                         min_samples_per_regime=1000,
@@ -2128,6 +2133,20 @@ def integrate_nas_in_tactician_ensemble(X_train: np.ndarray,
             "FinancialResNet": "FinancialResNet",
             "RSF": "RandomSurvivalForest"
         }
+    
+    def load_tas_models(self, tas_models: Dict[str, Any], tas_architectures: Dict[str, Any] = None):
+        """Load TAS models for ensemble integration."""
+        try:
+            self.tas_models = tas_models
+            if tas_architectures:
+                self.tas_architectures = tas_architectures
+            
+            tprint_success(f"✅ Loaded {len(tas_models)} TAS models for ensemble integration")
+            tprint_info(f"   Regimes with TAS models: {list(tas_models.keys())}")
+            
+        except Exception as e:
+            tprint_error(f"❌ Failed to load TAS models: {e}")
+            raise
 
 
 def execute_tactician_ensemble_training(
@@ -2170,7 +2189,7 @@ if __name__ == "__main__":
     config = EnsembleTrainingConfig(
         model_name="tactician_ensemble_models_enhanced",
         timeframe="1m",
-        model_types=["xgboost", "catboost", "lightgbm", "elastic_net"],
+        model_types=["lightgbm", "ridge", "elastic_net", "random_forest"],
         hpo_n_trials=50,  # Reduced for demo
         enable_hpo=True,
         save_models=True,

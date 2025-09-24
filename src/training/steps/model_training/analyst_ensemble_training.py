@@ -1,23 +1,29 @@
 """
-Analyst Ensemble Training Step - Enhanced for 5m Timeframe with HMM Integration
+Analyst Ensemble Training Step - Enhanced for 5m Timeframe with HMM and NAS Integration
 
 This step handles per-regime ensemble training of Analyst models using common dependencies.
 The Analyst Ensemble operates on 5m timeframe and combines individual analyst models
-to create robust ensemble predictions for trade decisions.
+plus NAS models to create robust ensemble predictions for trade decisions.
 
 Analyst Models Structure:
 Base Models:
     "tcn": "Temporal Convolutional Network" - Deep learning model for temporal patterns
-    "catboost": "CatBoost Regressor" - Gradient boosting with categorical features
     "lightgbm": "LightGBM Regressor" - Fast gradient boosting framework
+    "ridge": "Ridge Regression" - Linear model with L2 regularization
+    "elastic_net": "Elastic Net" - Linear model with L1+L2 regularization
+    "random_forest": "Random Forest" - Ensemble of decision trees
+
+NAS Models (Per-Regime):
+    "nas": "Neural Architecture Search" - Per-regime neural architectures for trading signals
 
 Meta-learner:
-    "elastic_net": "Elastic Net" - Linear combination of base model predictions
+    "stacking": "Stacking Ensemble" - Combines base models + NAS models
 
 Enhanced Features:
 - 5m base timeframe with cross-timeframe features (300+ features)
 - HMM regime outputs integration for comprehensive context
-- TCN + CatBoost + LightGBM base models with Elastic Net meta-learner
+- TCN + LightGBM + Ridge + ElasticNet + RandomForest base models
+- NAS models per-regime for enhanced trading signal generation
 - Per-regime training for regime-specific optimization
 - Runs every 2 minutes for live trading
 - Decides IF we trade and emits green light for Tactician
@@ -28,6 +34,7 @@ Enhanced with:
 - Integration with common utilities (math_validation, serialization, hardware optimization)
 - ML common utilities (CV, lookahead, HPO, etc.)
 - Vectorized training capabilities for improved performance
+- NAS model integration for per-regime trading signal generation
 - Fast failing for missing required ML dependencies (TensorFlow, CatBoost, LightGBM)
 """
 
@@ -138,7 +145,12 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
             tprint_info("🔍 Step 2: Validating configuration")
             self._validate_config_enhanced(config)
             
-            # Step 3: Initialize hardware optimizers
+            # Step 3: Initialize NAS models storage
+            tprint_info("🧠 Step 3: Initializing NAS models storage")
+            self.nas_models = {}  # Per-regime NAS models
+            self.nas_architectures = {}  # Per-regime NAS architectures
+            
+            # Step 4: Initialize hardware optimizers
             tprint_info("⚙️ Step 3: Initializing hardware optimizers")
             self._initialize_hardware_optimizers()
             
@@ -169,7 +181,7 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
                 config = EnsembleTrainingConfig(
                     model_name="analyst_ensemble_models_5m",
                     timeframe="5m",
-                    model_types=["tcn", "catboost", "lightgbm", "elastic_net"],
+                    model_types=["tcn", "lightgbm", "ridge", "elastic_net", "random_forest"],
                     hpo_n_trials=100,
                     hpo_timeout_seconds=3600,
                     min_samples_per_regime=1000,
@@ -815,6 +827,14 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
         execution_start_time = time.time()
         tprint_info("🚀 Starting Analyst ensemble training step execution")
         tprint_info("=" * 60)
+        
+        # Initialize NAS models if available
+        nas_models = None
+        if hasattr(self, 'nas_models') and self.nas_models:
+            nas_models = self.nas_models
+            tprint_info("🧠 NAS models available for ensemble integration")
+        else:
+            tprint_warning("⚠️ No NAS models available, using base models only")
         
         # Initialize execution tracking
         execution_stats = {
@@ -2180,6 +2200,20 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
             results['ensemble_metadata_error'] = str(e)
             return results
     
+    def load_nas_models(self, nas_models: Dict[str, Any], nas_architectures: Dict[str, Any] = None):
+        """Load NAS models for ensemble integration."""
+        try:
+            self.nas_models = nas_models
+            if nas_architectures:
+                self.nas_architectures = nas_architectures
+            
+            tprint_success(f"✅ Loaded {len(nas_models)} NAS models for ensemble integration")
+            tprint_info(f"   Regimes with NAS models: {list(nas_models.keys())}")
+            
+        except Exception as e:
+            tprint_error(f"❌ Failed to load NAS models: {e}")
+            raise
+    
     def get_training_statistics(self) -> Dict[str, Any]:
         """
         Get comprehensive training statistics.
@@ -2189,6 +2223,7 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
         """
         return {
             'training_stats': self.training_stats.copy(),
+            'nas_models_loaded': len(self.nas_models),
             'configuration': {
                 'model_name': self.config.model_name,
                 'timeframe': self.config.timeframe,
@@ -2295,7 +2330,7 @@ if __name__ == "__main__":
     config = EnsembleTrainingConfig(
         model_name="analyst_ensemble_models_enhanced",
         timeframe="5m",
-        model_types=["tcn", "catboost", "lightgbm", "elastic_net"],
+        model_types=["tcn", "lightgbm", "ridge", "elastic_net", "random_forest"],
         hpo_n_trials=50,  # Reduced for demo
         enable_hpo=True,
         save_models=True,

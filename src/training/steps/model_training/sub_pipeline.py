@@ -1,16 +1,19 @@
 """
-Model Training Sub-Pipeline - Enhanced with Comprehensive Debugging
+Model Training Sub-Pipeline - Enhanced with Comprehensive Debugging and NAS/TAS Integration
 
-This module provides the final model training sub-pipeline with 5 core steps:
+This module provides the final model training sub-pipeline with enhanced NAS/TAS integration:
 
-1. analyst_models_training - Per-regime individual model training with HPO, saving, and metrics
-2. analyst_ensemble_training - Per-regime ensemble training with HPO, saving, and metrics
-3. tactician_pre_ml_orchestration - Pre-ML processing: separate long/short signals, optimize features, generate PID features, apply horizon labeling, select features
-4. tactician_dual_training - Train multiple Tactician models: 4 base models + 1 ensemble for long signals, 4 base models + 1 ensemble for short signals (8 total models)
-5. regime_specific_training - Regime-specific model training (legacy)
-6. model_validation - Model validation and testing (legacy)
-7. model_persistence - Model persistence and storage (legacy)
-8. model_evaluation - Model evaluation and reporting (legacy)
+1. nas_training - Neural Architecture Search training per-regime on 5m timeframe
+2. tas_training - Tree Architecture Search training per-regime on 1m timeframe
+3. analyst_models_training - Per-regime individual model training with HPO, saving, and metrics
+4. analyst_ensemble_training - Per-regime ensemble training with NAS integration
+5. tactician_pre_ml_orchestration - Pre-ML processing: separate long/short signals, optimize features, generate PID features, apply horizon labeling, select features
+6. tactician_dual_training - Train multiple Tactician models: 4 base models + 1 ensemble for long signals, 4 base models + 1 ensemble for short signals (8 total models)
+7. tactician_ensemble_training - Per-regime ensemble training with TAS integration
+8. regime_specific_training - Regime-specific model training (legacy)
+9. model_validation - Model validation and testing (legacy)
+10. model_persistence - Model persistence and storage (legacy)
+11. model_evaluation - Model evaluation and reporting (legacy)
 
 ENHANCED FEATURES:
 - Comprehensive debugging and error tracking
@@ -392,8 +395,10 @@ class ModelTrainingSubPipeline:
         self.logger = logger.getChild('ModelTrainingSubPipeline')
         self.results: List[SubPipelineResult] = []
         
-        # Initialize sub-pipeline registry with core steps only
+        # Initialize sub-pipeline registry with core steps and NAS/TAS integration
         self.sub_pipelines = {
+            'nas_training': self._nas_training_pipeline,
+            'tas_training': self._tas_training_pipeline,
             'analyst_model_training': self._analyst_model_training_pipeline,
             'analyst_ensemble_training': self._analyst_ensemble_training_pipeline,
             'tactician_pre_ml_orchestration': self._tactician_pre_ml_orchestration_pipeline,
@@ -414,6 +419,97 @@ class ModelTrainingSubPipeline:
 
         # Apply logging configuration
         self._apply_logging_config(self.config.logging)
+
+    # ==========================
+    # NAS/TAS Training Pipelines
+    # ==========================
+    
+    async def _nas_training_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
+        """NAS training sub-pipeline for neural architecture search."""
+        tprint(f"   🧠 NAS TRAINING PIPELINE STARTED")
+        self.logger.info("🧠 Executing NAS training pipeline")
+        
+        try:
+            # Import NAS training step
+            from .nas_training_step import NASTrainingStep, NASTrainingConfig
+            
+            # Initialize NAS training step
+            nas_config = NASTrainingConfig()
+            nas_training_step = NASTrainingStep(nas_config)
+            
+            # Get training data (assuming it's available in the pipeline state)
+            # This would need to be passed from the main pipeline
+            training_data = getattr(self, 'training_data', {})
+            
+            if not training_data:
+                raise ValueError("Training data not available for NAS training")
+            
+            # Execute NAS training
+            results = await nas_training_step.execute(
+                X_5m=training_data.get('X_5m'),
+                y_5m=training_data.get('y_5m'),
+                regime_labels=training_data.get('regime_labels')
+            )
+            
+            tprint(f"   ✅ NAS TRAINING PIPELINE COMPLETED")
+            self.logger.info("✅ NAS training pipeline completed successfully")
+            
+            return {
+                'status': 'completed',
+                'nas_models': results.get('trained_models', {}),
+                'nas_architectures': results.get('architectures', {}),
+                'training_metrics': results.get('training_metrics', {}),
+                'timestamp': self._generate_datetime_stamp()
+            }
+            
+        except Exception as e:
+            error_msg = f"❌ NAS training pipeline failed: {str(e)}"
+            tprint_error(error_msg)
+            self.logger.error(error_msg, exc_info=True)
+            raise
+    
+    async def _tas_training_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
+        """TAS training sub-pipeline for tree architecture search."""
+        tprint(f"   🌳 TAS TRAINING PIPELINE STARTED")
+        self.logger.info("🌳 Executing TAS training pipeline")
+        
+        try:
+            # Import TAS training step
+            from .tas_training_step import TASTrainingStep, TASTrainingConfig
+            
+            # Initialize TAS training step
+            tas_config = TASTrainingConfig()
+            tas_training_step = TASTrainingStep(tas_config)
+            
+            # Get training data (assuming it's available in the pipeline state)
+            training_data = getattr(self, 'training_data', {})
+            
+            if not training_data:
+                raise ValueError("Training data not available for TAS training")
+            
+            # Execute TAS training
+            results = await tas_training_step.execute(
+                X_1m=training_data.get('X_1m'),
+                y_1m=training_data.get('y_1m'),
+                analyst_signals=training_data.get('analyst_signals')
+            )
+            
+            tprint(f"   ✅ TAS TRAINING PIPELINE COMPLETED")
+            self.logger.info("✅ TAS training pipeline completed successfully")
+            
+            return {
+                'status': 'completed',
+                'tas_models': results.get('trained_models', {}),
+                'tas_architectures': results.get('architectures', {}),
+                'training_metrics': results.get('training_metrics', {}),
+                'timestamp': self._generate_datetime_stamp()
+            }
+            
+        except Exception as e:
+            error_msg = f"❌ TAS training pipeline failed: {str(e)}"
+            tprint_error(error_msg)
+            self.logger.error(error_msg, exc_info=True)
+            raise
 
     # ==========================
     # Centralized helper methods
@@ -2242,12 +2338,15 @@ async def execute_full_model_training_pipeline(
     """Execute the complete model training pipeline in sequence."""
     pipeline = get_model_training_sub_pipeline(config)
     
-    # Define the execution order
+    # Define the execution order with NAS/TAS integration
     sub_pipelines = [
+        'nas_training',
+        'tas_training',
         'analyst_model_training',
         'analyst_ensemble_training',
         'tactician_pre_ml_orchestration',
-        'tactician_dual_training'
+        'tactician_dual_training',
+        'tactician_ensemble_training'
     ]
     
     results = []

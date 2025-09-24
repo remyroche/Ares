@@ -552,11 +552,12 @@ class PositionMonitor:
             Dict: Optimized parameters or None if not available
         """
         try:
-            # Try to load from optimization results
+            # Try to load from existing optimization framework results
             optimization_paths = [
+                "results/final_parameters_optimization.json",
+                "src/training/steps/backtesting/results/final_parameters_optimization.json",
                 "results/exit_strategy_optimization.json",
-                "config/optimized_exit_strategy.json",
-                "src/training/steps/backtesting/results/exit_strategy_optimization.json"
+                "config/optimized_exit_strategy.json"
             ]
             
             for path in optimization_paths:
@@ -564,9 +565,13 @@ class PositionMonitor:
                     with open(path, 'r') as f:
                         optimization_results = json.load(f)
                     
-                    if "best_parameters" in optimization_results:
-                        self.logger.info(f"✅ Loaded optimized parameters from: {path}")
-                        return optimization_results["best_parameters"]
+                    # Check for exit_strategy parameters in the results
+                    if "exit_strategy" in optimization_results:
+                        self.logger.info(f"✅ Loaded exit strategy parameters from: {path}")
+                        return self._convert_optimization_results(optimization_results["exit_strategy"])
+                    elif "best_parameters" in optimization_results and "exit_strategy" in optimization_results["best_parameters"]:
+                        self.logger.info(f"✅ Loaded exit strategy parameters from: {path}")
+                        return self._convert_optimization_results(optimization_results["best_parameters"]["exit_strategy"])
             
             # Fallback to default parameters
             self.logger.info("📝 Using default exit strategy parameters (no optimization found)")
@@ -575,6 +580,61 @@ class PositionMonitor:
         except Exception as e:
             self.logger.error(failed(f"❌ Error loading optimized parameters: {e}"))
             return None
+
+    def _convert_optimization_results(self, exit_strategy_params: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Convert optimization results to position monitor format.
+        
+        Args:
+            exit_strategy_params: Raw optimization parameters
+            
+        Returns:
+            Dict: Converted parameters for position monitor
+        """
+        try:
+            converted = {
+                "confidence_thresholds": {
+                    "very_low": exit_strategy_params.get("confidence_very_low", 0.2),
+                    "low": exit_strategy_params.get("confidence_low", 0.4),
+                    "medium": exit_strategy_params.get("confidence_medium", 0.6),
+                    "high": exit_strategy_params.get("confidence_high", 0.8)
+                },
+                "profit_taking": {
+                    "base_profit_target": exit_strategy_params.get("base_profit_target", 0.04),
+                    "min_confidence_for_profit": exit_strategy_params.get("min_confidence_for_profit", 0.6),
+                    "confidence_profit_multiplier": exit_strategy_params.get("confidence_profit_multiplier", 0.5),
+                    "scaling_levels": [
+                        exit_strategy_params.get("profit_tier_1", 0.25),
+                        exit_strategy_params.get("profit_tier_2", 0.5),
+                        exit_strategy_params.get("profit_tier_3", 0.75)
+                    ]
+                },
+                "stop_loss": {
+                    "base_stop_loss": exit_strategy_params.get("base_stop_loss", -0.05),
+                    "atr_multiplier": exit_strategy_params.get("atr_multiplier", 1.5),
+                    "volatility_adjustment_factor": exit_strategy_params.get("volatility_adjustment_factor", 1.0)
+                },
+                "time_based": {
+                    "max_hold_time": exit_strategy_params.get("max_hold_time", 10800),
+                    "min_hold_time": exit_strategy_params.get("min_hold_time", 300),
+                    "confidence_time_scaling_factor": exit_strategy_params.get("confidence_time_scaling_factor", 1.0)
+                },
+                "trailing_stop": {
+                    "atr_multiplier": exit_strategy_params.get("trailing_atr_multiplier", 1.5),
+                    "min_distance": exit_strategy_params.get("trailing_min_distance", 0.01),
+                    "confidence_activation": exit_strategy_params.get("trailing_confidence_activation", 0.7)
+                },
+                "regime_aware": {
+                    "transition_penalty": exit_strategy_params.get("regime_transition_penalty", 0.1),
+                    "regime_specific_scaling": exit_strategy_params.get("regime_specific_scaling", 1.0)
+                }
+            }
+            
+            return converted
+            
+        except Exception as e:
+            self.logger.error(failed(f"❌ Error converting optimization results: {e}"))
+            return {}
 
     def _get_optimized_confidence_thresholds(self) -> Dict[str, float]:
         """Get optimized confidence thresholds."""

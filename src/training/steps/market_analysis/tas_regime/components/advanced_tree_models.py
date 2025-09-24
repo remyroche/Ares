@@ -33,6 +33,15 @@ try:
 except ImportError:
     SKLEARN_AVAILABLE = False
 
+# Import CLVSA architecture for enhanced tree models
+try:
+    from src.utils.ml_common.models.clvsa_architecture import (
+        CLVSARegressor, CLVSAConfig, create_clvsa_model
+    )
+    CLVSA_AVAILABLE = True
+except ImportError:
+    CLVSA_AVAILABLE = False
+
 try:
     import xgboost as xgb
     XGBOOST_AVAILABLE = True

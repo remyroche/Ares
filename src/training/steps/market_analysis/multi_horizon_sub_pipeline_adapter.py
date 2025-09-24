@@ -568,6 +568,27 @@ from .multi_horizon_profit_labeler import (
     apply_multi_horizon_labeling
 )
 
+# Import optimization components
+try:
+    from src.research.profit_labeling.dynamic_target_optimizer import (
+        JointTargetHorizonOptimizer,
+        DynamicOptimizationConfig,
+        OptimizationMethod,
+        OptimizationObjective
+    )
+    from src.research.profit_labeling.heuristic_analyzer import (
+        HeuristicAnalyzer,
+        HeuristicAnalysisConfig
+    )
+    from src.research.profit_labeling.labeling_validator import (
+        LabelingValidator,
+        ValidationConfig
+    )
+    OPTIMIZATION_AVAILABLE = True
+except ImportError as e:
+    OPTIMIZATION_AVAILABLE = False
+    print(f"⚠️ Optimization components not available: {e}")
+
 class MultiHorizonSubPipelineAdapter:
     """
     Adapter for integrating multi-horizon labeling into existing sub-pipeline.
@@ -577,7 +598,7 @@ class MultiHorizonSubPipelineAdapter:
     """
     
     def __init__(self):
-        """Initialize the adapter with hardware optimizations."""
+        """Initialize the adapter with hardware optimizations and automatic timeframe optimization."""
         self.logger = get_logger('MultiHorizonSubPipelineAdapter')
         
         # Initialize hardware optimizers
@@ -588,12 +609,149 @@ class MultiHorizonSubPipelineAdapter:
         # Initialize data filtering manager
         self.data_filter = DataFilteringManager()
         
+        # Initialize optimization components if available
+        self.optimization_enabled = OPTIMIZATION_AVAILABLE
+        if self.optimization_enabled:
+            self._initialize_optimization_components()
+        
         # Optimize CPU for data processing
         if self.cpu_optimizer:
             self.cpu_optimizer.optimize_numpy_operations()
         
         self.logger.info('🔄 Multi-Horizon Sub-Pipeline Adapter initialized with M1 optimizations')
         self.logger.info('🔄 Data filtering manager initialized with quality validation')
+        if self.optimization_enabled:
+            self.logger.info('🎯 Automatic timeframe optimization ENABLED')
+        else:
+            self.logger.warning('⚠️ Automatic timeframe optimization DISABLED - using default timeframes')
+
+    def _initialize_optimization_components(self):
+        """Initialize optimization components for automatic timeframe discovery."""
+        try:
+            # Initialize dynamic optimizer
+            self.optimization_config = DynamicOptimizationConfig(
+                optimization_method=OptimizationMethod.BAYESIAN_OPTIMIZATION,
+                min_horizon=1,  # 5 minutes
+                max_horizon=20,  # 100 minutes
+                horizon_step=1,
+                optimization_objective=OptimizationObjective.MULTI_OBJECTIVE,
+                n_target_candidates=10,
+                target_range=(0.001, 0.020),  # 0.1% to 2.0%
+                bayesian_iterations=30
+            )
+            
+            self.optimizer = JointTargetHorizonOptimizer(self.optimization_config)
+            
+            # Initialize analysis components
+            self.heuristic_analyzer = HeuristicAnalyzer()
+            self.labeling_validator = LabelingValidator()
+            
+            self.logger.info('✅ Optimization components initialized successfully')
+            
+        except Exception as e:
+            self.logger.error(f'❌ Failed to initialize optimization components: {e}')
+            self.optimization_enabled = False
+
+    def _optimize_timeframes_automatically(self, data: pd.DataFrame) -> MultiHorizonConfig:
+        """
+        Automatically optimize timeframes based on market data characteristics.
+        
+        This method uses the research framework to discover optimal timeframes
+        for both Analyst and Tactician model training.
+        """
+        if not self.optimization_enabled:
+            self.logger.warning('⚠️ Optimization disabled - using default timeframes')
+            return MultiHorizonConfig()
+        
+        self.logger.info('🎯 Starting automatic timeframe optimization')
+        
+        try:
+            # Step 1: Run joint target-horizon optimization
+            self.logger.info('   → Running joint target-horizon optimization...')
+            optimization_result = self.optimizer.optimize_target_horizon_combinations(data)
+            
+            if optimization_result.objective_score < 0.3:
+                self.logger.warning('⚠️ Low optimization score - using default timeframes')
+                return MultiHorizonConfig()
+            
+            # Step 2: Extract optimal timeframes
+            optimal_horizons = optimization_result.optimal_horizons
+            optimal_targets = optimization_result.optimal_targets
+            
+            self.logger.info(f'   → Optimal horizons discovered: {optimal_horizons}')
+            self.logger.info(f'   → Optimal targets discovered: {optimal_targets}')
+            
+            # Step 3: Create optimized configuration
+            optimized_config = MultiHorizonConfig()
+            
+            # Map discovered horizons to configuration
+            if optimal_horizons:
+                # Find the best horizons for immediate and short-term
+                horizon_values = list(optimal_horizons.values())
+                if len(horizon_values) >= 2:
+                    optimized_config.time_horizons = {
+                        'immediate': min(horizon_values[:2]),
+                        'short': max(horizon_values[:2])
+                    }
+                else:
+                    optimized_config.time_horizons = {
+                        'immediate': horizon_values[0] if horizon_values else 2,
+                        'short': horizon_values[0] * 2 if horizon_values else 4
+                    }
+            
+            # Map discovered targets to configuration
+            if optimal_targets:
+                target_values = list(optimal_targets.values())
+                if len(target_values) >= 4:
+                    # Sort targets and map to micro, small, medium, good
+                    sorted_targets = sorted(target_values)
+                    optimized_config.profit_targets = {
+                        'micro': sorted_targets[0],
+                        'small': sorted_targets[1],
+                        'medium': sorted_targets[2],
+                        'good': sorted_targets[3]
+                    }
+            
+            # Step 4: Validate optimized configuration
+            validation_score = self._validate_optimized_config(optimized_config, data)
+            
+            if validation_score > 0.5:
+                self.logger.info(f'✅ Optimized configuration validated (score: {validation_score:.3f})')
+                return optimized_config
+            else:
+                self.logger.warning(f'⚠️ Low validation score ({validation_score:.3f}) - using default config')
+                return MultiHorizonConfig()
+                
+        except Exception as e:
+            self.logger.error(f'❌ Automatic optimization failed: {e}')
+            self.logger.info('🔄 Falling back to default configuration')
+            return MultiHorizonConfig()
+
+    def _validate_optimized_config(self, config: MultiHorizonConfig, data: pd.DataFrame) -> float:
+        """Validate the optimized configuration using heuristic analysis."""
+        try:
+            # Generate labels with optimized config
+            labeler = MultiHorizonProfitLabeler(config)
+            labeled_data = labeler.generate_labels(data.copy())
+            
+            # Analyze effectiveness
+            heuristic_results = self.heuristic_analyzer.analyze_labeling_heuristics(labeled_data)
+            
+            # Calculate overall effectiveness score
+            effectiveness_scores = []
+            for result in heuristic_results.values():
+                if hasattr(result, 'metric_value'):
+                    effectiveness_scores.append(result.metric_value)
+            
+            if effectiveness_scores:
+                avg_effectiveness = np.mean(effectiveness_scores)
+                return min(1.0, max(0.0, avg_effectiveness))
+            
+            return 0.5  # Neutral score if no results
+            
+        except Exception as e:
+            self.logger.warning(f'⚠️ Configuration validation failed: {e}')
+            return 0.3  # Low score on error
 
     def _validate_input_data(self, data: pd.DataFrame) -> bool:
         """Enhanced data validation with quality checks."""
@@ -743,8 +901,20 @@ class MultiHorizonSubPipelineAdapter:
             
             # Use memory checkpoint for large operations
             with memory_checkpoint('multi_horizon_labeling'):
-                # Create multi-horizon configuration
-                labeling_config = self._create_labeling_config(config)
+                # AUTOMATIC TIMEFRAME OPTIMIZATION
+                if self.optimization_enabled:
+                    self.logger.info('🎯 Running automatic timeframe optimization...')
+                    optimized_config = self._optimize_timeframes_automatically(data)
+                    if optimized_config.time_horizons:
+                        self.logger.info(f'✅ Using optimized timeframes: {optimized_config.time_horizons}')
+                        self.logger.info(f'✅ Using optimized targets: {optimized_config.profit_targets}')
+                    else:
+                        self.logger.info('⚠️ Optimization failed - using default configuration')
+                else:
+                    optimized_config = None
+                
+                # Create multi-horizon configuration (with optimization if available)
+                labeling_config = self._create_labeling_config(config, optimized_config)
                 self.logger.info(f'🔧 Created labeling config: {labeling_config.__dict__}')
 
                 # Enhanced labeling with features if available
@@ -865,9 +1035,15 @@ class MultiHorizonSubPipelineAdapter:
             self.logger.info(f'🔄 Returning error result: {error_result}')
             return error_result
     
-    def _create_labeling_config(self, config: Optional[Dict[str, Any]] = None) -> MultiHorizonConfig:
-        """Create multi-horizon configuration from sub-pipeline config."""
-        labeling_config = MultiHorizonConfig()
+    def _create_labeling_config(self, config: Optional[Dict[str, Any]] = None, optimized_config: Optional[MultiHorizonConfig] = None) -> MultiHorizonConfig:
+        """Create multi-horizon configuration from sub-pipeline config with optional optimization."""
+        # Start with optimized config if available, otherwise use default
+        if optimized_config and optimized_config.time_horizons:
+            labeling_config = optimized_config
+            self.logger.info('🎯 Using optimized configuration')
+        else:
+            labeling_config = MultiHorizonConfig()
+            self.logger.info('📋 Using default configuration')
         
         if config:
             # Update profit targets if specified

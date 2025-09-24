@@ -35,6 +35,12 @@ class EconomicSignificanceType(Enum):
     MICRO_REGIME = "micro_regime"
     REGIME_STABILITY = "regime_stability"
     TRANSITION_PROBABILITY = "transition_probability"
+    MOMENTUM_REGIME = "momentum_regime"
+    VOLUME_MOMENTUM = "volume_momentum"
+    PRICE_ACTION = "price_action"
+    MARKET_MICROSTRUCTURE = "market_microstructure"
+    INTER_MARKET_ANALYSIS = "inter_market_analysis"
+    SECTOR_ROTATION = "sector_rotation"
 
 
 class ClusteringAlgorithm(Enum):
@@ -51,6 +57,10 @@ class ClusteringAlgorithm(Enum):
     MEANSHIFT = "meanshift"
     ADAPTIVE = "adaptive"
     ENSEMBLE = "ensemble"
+    ECONOMIC_KMEANS = "economic_kmeans"
+    ECONOMIC_HIERARCHICAL = "economic_hierarchical"
+    ECONOMIC_GMM = "economic_gmm"
+    ECONOMIC_ADAPTIVE = "economic_adaptive"
 
 
 @dataclass
@@ -111,12 +121,26 @@ class HybridRegimeConfig:
             EconomicSignificanceType.LIQUIDITY_REGIME.value,
             EconomicSignificanceType.MICRO_REGIME.value,
             EconomicSignificanceType.REGIME_STABILITY.value,
-            EconomicSignificanceType.TRANSITION_PROBABILITY.value
+            EconomicSignificanceType.TRANSITION_PROBABILITY.value,
+            EconomicSignificanceType.MOMENTUM_REGIME.value,
+            EconomicSignificanceType.VOLUME_MOMENTUM.value,
+            EconomicSignificanceType.PRICE_ACTION.value,
+            EconomicSignificanceType.MARKET_MICROSTRUCTURE.value,
+            EconomicSignificanceType.INTER_MARKET_ANALYSIS.value,
+            EconomicSignificanceType.SECTOR_ROTATION.value
         ],
         "min_significance_score": 0.7,
         "volatility_threshold": 0.3,
         "trend_threshold": 0.5,
-        "efficiency_threshold": 0.6
+        "efficiency_threshold": 0.6,
+        "momentum_threshold": 0.7,
+        "volume_threshold": 0.6,
+        "momentum_periods": [5, 10, 20, 50],
+        "volume_analysis_window": 20,
+        "price_action_sensitivity": 0.8,
+        "market_microstructure_enabled": True,
+        "inter_market_correlation_threshold": 0.6,
+        "sector_rotation_detection": True
     })
 
     # Financial relevance parameters
@@ -130,13 +154,13 @@ class HybridRegimeConfig:
         "transition_smoothness": 0.8   # Smoothness of regime transitions
     })
 
-    # Advanced clustering parameters
+    # Advanced clustering parameters with economic integration
     clustering_config: Dict[str, Any] = field(default_factory=lambda: {
-        "primary_algorithm": ClusteringAlgorithm.ADAPTIVE,
+        "primary_algorithm": ClusteringAlgorithm.ECONOMIC_ADAPTIVE,
         "ensemble_algorithms": [
+            ClusteringAlgorithm.ECONOMIC_KMEANS,
+            ClusteringAlgorithm.ECONOMIC_HIERARCHICAL,
             ClusteringAlgorithm.KMEANS,
-            ClusteringAlgorithm.HIERARCHICAL,
-            ClusteringAlgorithm.DBSCAN,
             ClusteringAlgorithm.GMM
         ],
         "distance_metric": "euclidean",
@@ -152,7 +176,17 @@ class HybridRegimeConfig:
         "frontier_analysis": True,
         "regime_transfer_optimization": True,
         "matrix_optimization": True,
-        "hardware_acceleration": True
+        "hardware_acceleration": True,
+        "economic_clustering": True,
+        "economic_features": True,
+        "momentum_integration": True,
+        "volume_integration": True,
+        "economic_distance_metric": "economic_euclidean",
+        "momentum_threshold": 0.7,
+        "volume_threshold": 0.6,
+        "economic_significance_weight": 0.3,
+        "momentum_weight": 0.25,
+        "volume_weight": 0.25
     })
 
     # Feature engineering

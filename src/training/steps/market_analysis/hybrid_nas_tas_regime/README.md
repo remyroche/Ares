@@ -19,11 +19,34 @@ This system provides a complete replacement for HMM-based clustering with enhanc
 - **Adaptive Fusion**: Intelligent combination of TAS and NAS inputs
 - **Economic Priority**: Focus on economically significant regimes
 
-### 📊 Economic Significance
-- **Volatility Regime Analysis**: Identifies distinct volatility patterns
-- **Trend Strength Evaluation**: Measures regime trend characteristics
-- **Market Efficiency Assessment**: Evaluates information efficiency
-- **Liquidity Regime Detection**: Identifies liquidity-based regimes
+### 🔍 Economic Clustering
+- **Economic Significance Integration**: Directly incorporates economic factors into clustering
+- **Momentum Analysis**: Multi-timeframe momentum detection (5, 10, 20, 50 periods)
+- **Volume Analysis**: Volume-price correlation and volume trend analysis
+- **Advanced Economic Metrics**: Volatility, trend, efficiency, liquidity analysis
+- **Economic Distance Metrics**: Specialized distance calculations for economic clustering
+- **Economic-Aware Algorithms**: K-means, Hierarchical, GMM, and Adaptive clustering with economic awareness
+
+### 🔍 Advanced Clustering with Economic Integration
+- **Economic Distance Metrics**: Specialized distance calculations incorporating economic significance
+- **Momentum-Weighted Clustering**: Clustering that prioritizes momentum-driven market moves
+- **Volume-Adjusted Algorithms**: Clustering algorithms that account for volume patterns
+- **Economic Frontier Analysis**: 4D frontier establishment between economically significant clusters
+- **Regime Transfer Optimization**: CV similarity and size constraints with economic weighting
+- **Multi-Algorithm Ensemble**: Combines economic K-means, hierarchical, and GMM clustering
+- **Adaptive Economic Selection**: Automatically chooses best algorithm based on economic performance
+
+### 📊 Economic Significance (Enhanced with Momentum & Volume)
+- **Volatility Regime Analysis**: Identifies distinct volatility patterns with momentum/volume factors
+- **Trend Strength Evaluation**: Measures regime trend characteristics with multi-timeframe analysis
+- **Market Efficiency Assessment**: Evaluates information efficiency and autocorrelation patterns
+- **Liquidity Regime Detection**: Identifies liquidity-based regimes with spread analysis
+- **Momentum Regime Analysis**: Detects momentum patterns across multiple timeframes (5, 10, 20, 50 periods)
+- **Volume-Momentum Analysis**: Analyzes volume-price correlations and volume trends
+- **Price Action Analysis**: Evaluates candlestick patterns and price behavior
+- **Market Microstructure Analysis**: Examines bid-ask spreads, order flow, and market impact
+- **Inter-Market Analysis**: Studies cross-market relationships and lead-lag patterns
+- **Sector Rotation Analysis**: Identifies sector rotation and market regime changes
 
 ### 💰 Financial Relevance
 - **Trading Viability**: Ensures regimes are tradable
@@ -42,13 +65,15 @@ This system provides a complete replacement for HMM-based clustering with enhanc
 ```
 Hybrid NAS-TAS Regime System
 ├── Core Components
-│   ├── Hybrid Regime Detector      # Main detection engine
-│   ├── TAS Integration             # Tree-based feature extraction
-│   ├── NAS Integration             # Neural feature extraction
-│   └── Economic Evaluator          # Economic significance analysis
+│   ├── Hybrid Regime Detector      # Main detection engine with economic clustering
+│   ├── Economic Clusterer         # Economic-aware clustering algorithms
+│   ├── Coherent Regime Modeler    # Advanced economic/financial regime analysis
+│   ├── TAS Integration             # Tree-based feature extraction with momentum
+│   ├── NAS Integration             # Neural feature extraction with volume analysis
+│   └── Economic Evaluator          # Enhanced economic significance analysis
 ├── Configuration System
-│   ├── Hybrid Regime Config        # Main configuration
-│   ├── Economic Evaluation Config  # Economic analysis settings
+│   ├── Hybrid Regime Config        # Main configuration with economic clustering
+│   ├── Economic Evaluation Config  # Economic analysis settings with momentum/volume
 │   └── Financial Relevance Config  # Financial analysis settings
 ├── Integration Layer
 │   └── Hybrid Orchestrator         # Main orchestrator (replaces HMM)
@@ -96,6 +121,54 @@ results = orchestrator.detect_regimes(
 regime_predictions = results['regime_data']['predictions']
 economic_scores = results['economic_analysis']['significance_scores']
 financial_scores = results['financial_analysis']['relevance_scores']
+```
+
+#### Economic Clustering with Momentum and Volume
+
+```python
+from src.training.steps.market_analysis.hybrid_nas_tas_regime import (
+    HybridNASTASRegimeDetector,
+    HybridRegimeConfig,
+    ClusteringAlgorithm,
+    EconomicSignificanceType
+)
+
+# Create configuration for economic clustering
+config = HybridRegimeConfig(
+    n_regimes=4,
+    clustering_config={
+        "primary_algorithm": ClusteringAlgorithm.ECONOMIC_ADAPTIVE,
+        "economic_clustering": True,
+        "momentum_integration": True,
+        "volume_integration": True,
+        "momentum_threshold": 0.7,
+        "volume_threshold": 0.6
+    },
+    economic_evaluation={
+        "enabled": True,
+        "significance_types": [
+            EconomicSignificanceType.MOMENTUM_REGIME.value,
+            EconomicSignificanceType.VOLUME_MOMENTUM.value,
+            EconomicSignificanceType.VOLATILITY_REGIME.value
+        ],
+        "momentum_threshold": 0.7,
+        "volume_threshold": 0.6,
+        "momentum_periods": [5, 10, 20, 50]
+    }
+)
+
+# Create detector with economic clustering
+detector = HybridNASTASRegimeDetector(config)
+
+# Detect regimes with economic clustering
+result = detector.detect_regimes(market_data)
+
+# Access economic clustering results
+if result.success:
+    print(f"Economic significance: {result.economic_significance_scores}")
+    print(f"Momentum scores: {result.momentum_scores}")
+    print(f"Volume profiles: {result.volume_profiles}")
+    print(f"Economic clustering used: {result.metadata.get('economic_clustering_used', False)}")
 ```
 
 ### Data Tagging
@@ -183,11 +256,16 @@ for regime_id in tagged_data['regime_id'].unique():
 
 ### Advantages over HMM Clustering
 
-1. **Economic Relevance**: Regimes have clear economic interpretation
-2. **Trading Viability**: Identified regimes are actually tradable
-3. **Adaptive Learning**: System adapts to market conditions
-4. **Robust Evaluation**: Comprehensive significance testing
-5. **Unified Processing**: Single dataset approach with tagging
+1. **Economic Relevance**: Regimes have clear economic interpretation with momentum/volume analysis
+2. **Trading Viability**: Identified regimes are actually tradable with proven economic significance
+3. **Economic Clustering**: Directly integrates economic factors into the clustering process itself
+4. **Momentum Integration**: Analyzes momentum patterns across multiple timeframes (5, 10, 20, 50 periods)
+5. **Volume Analysis**: Incorporates volume-price correlations and volume trends into regime detection
+6. **Economic Distance Metrics**: Specialized distance calculations for economically meaningful clustering
+7. **Multi-Algorithm Ensemble**: Combines economic K-means, hierarchical, and GMM clustering
+8. **Adaptive Economic Selection**: Automatically chooses best algorithm based on economic performance
+9. **Advanced Economic Metrics**: Comprehensive evaluation including microstructure and inter-market analysis
+10. **Unified Processing**: Single dataset approach with tagging eliminates file management complexity
 
 ### Computational Complexity
 

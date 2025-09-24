@@ -127,6 +127,36 @@ class EconomicRegimeEvaluator:
                 liquidity_score = self._evaluate_liquidity_regime(regime_data)
                 significance_scores.append(liquidity_score)
 
+            # 7. Momentum regime significance
+            if EconomicSignificanceType.MOMENTUM_REGIME.value in self.significance_types:
+                momentum_score = self._evaluate_momentum_regime(regime_data)
+                significance_scores.append(momentum_score)
+
+            # 8. Volume-momentum regime significance
+            if EconomicSignificanceType.VOLUME_MOMENTUM.value in self.significance_types:
+                volume_momentum_score = self._evaluate_volume_momentum_regime(regime_data)
+                significance_scores.append(volume_momentum_score)
+
+            # 9. Price action regime significance
+            if EconomicSignificanceType.PRICE_ACTION.value in self.significance_types:
+                price_action_score = self._evaluate_price_action_regime(regime_data)
+                significance_scores.append(price_action_score)
+
+            # 10. Market microstructure regime significance
+            if EconomicSignificanceType.MARKET_MICROSTRUCTURE.value in self.significance_types:
+                microstructure_score = self._evaluate_market_microstructure_regime(regime_data)
+                significance_scores.append(microstructure_score)
+
+            # 11. Inter-market analysis regime significance
+            if EconomicSignificanceType.INTER_MARKET_ANALYSIS.value in self.significance_types:
+                inter_market_score = self._evaluate_inter_market_analysis_regime(regime_data)
+                significance_scores.append(inter_market_score)
+
+            # 12. Sector rotation regime significance
+            if EconomicSignificanceType.SECTOR_ROTATION.value in self.significance_types:
+                sector_rotation_score = self._evaluate_sector_rotation_regime(regime_data)
+                significance_scores.append(sector_rotation_score)
+
             # Calculate average significance
             if significance_scores:
                 avg_significance = np.mean(significance_scores)
@@ -164,21 +194,93 @@ class EconomicRegimeEvaluator:
             else:
                 relative_volatility = 1.0
 
-            # Score based on deviation from average volatility
-            if relative_volatility > self.volatility_threshold:
-                # High volatility regime
-                score = min(relative_volatility, 2.0) / 2.0  # Cap at 2x average
-            elif relative_volatility < (1.0 / self.volatility_threshold):
-                # Low volatility regime
-                score = (1.0 / relative_volatility) / 2.0  # Cap at 1/(threshold) times average
-            else:
-                # Normal volatility
-                score = 0.5
+            # Enhanced scoring with momentum and volume considerations
+            base_score = self._calculate_base_volatility_score(relative_volatility)
 
-            return score
+            # Momentum factor - high volatility with trend is more significant
+            momentum_factor = self._calculate_momentum_factor(regime_data)
+
+            # Volume factor - high volatility with high volume is more significant
+            volume_factor = self._calculate_volume_factor(regime_data)
+
+            # Combine factors
+            enhanced_score = (
+                0.5 * base_score +
+                0.3 * momentum_factor +
+                0.2 * volume_factor
+            )
+
+            return min(enhanced_score, 1.0)
 
         except Exception as e:
             self.logger.warning(f"Volatility evaluation failed: {e}")
+            return 0.5
+
+    def _calculate_base_volatility_score(self, relative_volatility: float) -> float:
+        """Calculate base volatility score."""
+        if relative_volatility > self.volatility_threshold:
+            # High volatility regime
+            score = min(relative_volatility, 2.0) / 2.0  # Cap at 2x average
+        elif relative_volatility < (1.0 / self.volatility_threshold):
+            # Low volatility regime
+            score = (1.0 / relative_volatility) / 2.0  # Cap at 1/(threshold) times average
+        else:
+            # Normal volatility
+            score = 0.5
+
+        return score
+
+    def _calculate_momentum_factor(self, regime_data: pd.DataFrame) -> float:
+        """Calculate momentum factor for volatility significance."""
+        try:
+            prices = regime_data['close'].values
+
+            if len(prices) < 20:
+                return 0.5
+
+            # Calculate momentum across different periods
+            momentum_scores = []
+
+            for period in [5, 10, 20]:
+                if len(prices) > period:
+                    # Price change over period
+                    momentum = (prices[-1] - prices[0]) / (prices[0] + 1e-8)
+                    momentum_strength = abs(np.tanh(momentum))  # Normalize to [0, 1]
+                    momentum_scores.append(momentum_strength)
+
+            # High momentum with high volatility is significant
+            avg_momentum = np.mean(momentum_scores) if momentum_scores else 0.5
+            return min(avg_momentum * 1.5, 1.0)  # Boost momentum factor
+
+        except Exception as e:
+            self.logger.warning(f"Momentum factor calculation failed: {e}")
+            return 0.5
+
+    def _calculate_volume_factor(self, regime_data: pd.DataFrame) -> float:
+        """Calculate volume factor for volatility significance."""
+        try:
+            if 'volume' not in regime_data.columns:
+                return 0.5
+
+            volume = regime_data['volume'].values
+            returns = regime_data['close'].pct_change().fillna(0).values
+
+            if len(volume) < 10:
+                return 0.5
+
+            # Volume-volatility correlation
+            volume_volatility_corr = np.corrcoef(volume[1:], np.abs(returns[1:]))[0, 1]
+
+            # Volume trend
+            volume_trend = pd.Series(volume).pct_change().fillna(0).mean()
+
+            # High volume with high volatility correlation is significant
+            volume_significance = abs(volume_volatility_corr) * 0.7 + min(abs(volume_trend) * 2, 0.3)
+
+            return min(volume_significance, 1.0)
+
+        except Exception as e:
+            self.logger.warning(f"Volume factor calculation failed: {e}")
             return 0.5
 
     def _evaluate_trend_strength(self, regime_data: pd.DataFrame) -> float:
@@ -346,6 +448,245 @@ class EconomicRegimeEvaluator:
 
         except Exception as e:
             self.logger.warning(f"Liquidity regime evaluation failed: {e}")
+            return 0.5
+
+    def _evaluate_momentum_regime(self, regime_data: pd.DataFrame) -> float:
+        """Evaluate momentum regime significance."""
+        try:
+            prices = regime_data['close'].values
+
+            if len(prices) < 20:
+                return 0.5
+
+            # Calculate momentum across different periods
+            momentum_scores = []
+
+            for period in self.config.get('momentum_periods', [5, 10, 20, 50]):
+                if len(prices) > period:
+                    # Price momentum
+                    momentum = (prices[-1] - prices[0]) / (prices[0] + 1e-8)
+                    momentum_strength = abs(np.tanh(momentum))  # Normalize to [0, 1]
+                    momentum_scores.append(momentum_strength)
+
+                    # Rate of change momentum
+                    roc = np.mean(np.diff(np.log(prices[-period:])) * 100)
+                    roc_strength = min(abs(roc) / 5.0, 1.0)  # Scale to [0, 1]
+                    momentum_scores.append(roc_strength)
+
+            if not momentum_scores:
+                return 0.5
+
+            avg_momentum = np.mean(momentum_scores)
+
+            # Momentum regimes are significant when momentum is strong and persistent
+            momentum_threshold = self.config.get('momentum_threshold', 0.7)
+
+            if avg_momentum > momentum_threshold:
+                score = min(avg_momentum * 1.2, 1.0)  # Strong momentum regime
+            elif avg_momentum > 0.4:
+                score = avg_momentum * 0.8  # Moderate momentum regime
+            else:
+                score = avg_momentum * 0.5  # Weak momentum regime
+
+            return score
+
+        except Exception as e:
+            self.logger.warning(f"Momentum regime evaluation failed: {e}")
+            return 0.5
+
+    def _evaluate_volume_momentum_regime(self, regime_data: pd.DataFrame) -> float:
+        """Evaluate volume-momentum regime significance."""
+        try:
+            if 'volume' not in regime_data.columns:
+                return 0.5
+
+            prices = regime_data['close'].values
+            volume = regime_data['volume'].values
+
+            if len(prices) < 20 or len(volume) < 20:
+                return 0.5
+
+            # Volume-price momentum correlation
+            price_returns = np.diff(prices, prepend=prices[0])
+            volume_changes = np.diff(volume, prepend=volume[0])
+
+            # Correlation between volume changes and price movements
+            correlation = np.corrcoef(volume_changes[1:], price_returns[1:])[0, 1]
+
+            # Volume momentum (trend in volume)
+            volume_momentum = np.mean(volume_changes) / (np.mean(volume) + 1e-8)
+
+            # Price momentum
+            price_momentum = (prices[-1] - prices[0]) / (prices[0] + 1e-8)
+
+            # Combined volume-momentum significance
+            correlation_factor = abs(correlation) * 0.6  # Correlation significance
+            volume_trend_factor = min(abs(volume_momentum) * 2, 0.4)  # Volume trend significance
+
+            # Volume-momentum regimes are significant when there's strong correlation
+            volume_threshold = self.config.get('volume_threshold', 0.6)
+
+            if abs(correlation) > volume_threshold:
+                score = min(correlation_factor + volume_trend_factor + 0.5, 1.0)
+            else:
+                score = correlation_factor + volume_trend_factor
+
+            return score
+
+        except Exception as e:
+            self.logger.warning(f"Volume-momentum regime evaluation failed: {e}")
+            return 0.5
+
+    def _evaluate_price_action_regime(self, regime_data: pd.DataFrame) -> float:
+        """Evaluate price action regime significance."""
+        try:
+            if len(regime_data) < 10:
+                return 0.5
+
+            # Candlestick pattern analysis
+            open_prices = regime_data['open'].values
+            high_prices = regime_data['high'].values
+            low_prices = regime_data['low'].values
+            close_prices = regime_data['close'].values
+
+            # Body size analysis
+            body_sizes = abs(close_prices - open_prices) / (high_prices - low_prices + 1e-8)
+            avg_body_size = np.mean(body_sizes)
+
+            # Shadow analysis
+            upper_shadows = (high_prices - np.maximum(open_prices, close_prices)) / (high_prices - low_prices + 1e-8)
+            lower_shadows = (np.minimum(open_prices, close_prices) - low_prices) / (high_prices - low_prices + 1e-8)
+
+            avg_upper_shadow = np.mean(upper_shadows)
+            avg_lower_shadow = np.mean(lower_shadows)
+
+            # Price action significance factors
+            body_factor = min(avg_body_size * 3, 1.0)  # Larger bodies = more decisive
+            shadow_factor = min((avg_upper_shadow + avg_lower_shadow) / 2 * 2, 1.0)  # More shadows = more indecision
+
+            # Price action regimes are significant when there's clear directional movement
+            price_action_score = 0.6 * body_factor + 0.4 * (1 - shadow_factor)
+
+            return price_action_score
+
+        except Exception as e:
+            self.logger.warning(f"Price action regime evaluation failed: {e}")
+            return 0.5
+
+    def _evaluate_market_microstructure_regime(self, regime_data: pd.DataFrame) -> float:
+        """Evaluate market microstructure regime significance."""
+        try:
+            if len(regime_data) < 20:
+                return 0.5
+
+            # Bid-ask spread estimation (using high-low as proxy)
+            spreads = (regime_data['high'] - regime_data['low']) / regime_data['close']
+            avg_spread = np.mean(spreads)
+
+            # Order flow imbalance (using volume as proxy)
+            if 'volume' in regime_data.columns:
+                volume = regime_data['volume'].values
+                price_changes = np.diff(regime_data['close'].values, prepend=regime_data['close'].values[0])
+
+                # Volume-price correlation as order flow proxy
+                order_flow_corr = np.corrcoef(volume[1:], np.abs(price_changes[1:]))[0, 1]
+
+                # Market impact estimation
+                market_impact = np.mean(np.abs(price_changes) / (volume[1:] + 1e-8))
+            else:
+                order_flow_corr = 0.5
+                market_impact = 0.01
+
+            # Microstructure significance
+            spread_factor = min(avg_spread * 20, 1.0)  # Normalize spread
+            order_flow_factor = abs(order_flow_corr) * 0.6  # Order flow significance
+            impact_factor = min(market_impact * 100, 0.4)  # Market impact significance
+
+            microstructure_score = spread_factor + order_flow_factor + impact_factor
+
+            return min(microstructure_score, 1.0)
+
+        except Exception as e:
+            self.logger.warning(f"Market microstructure regime evaluation failed: {e}")
+            return 0.5
+
+    def _evaluate_inter_market_analysis_regime(self, regime_data: pd.DataFrame) -> float:
+        """Evaluate inter-market analysis regime significance."""
+        try:
+            # This would typically involve correlation with other markets
+            # For now, we'll use internal market relationships
+
+            returns = regime_data['close'].pct_change().fillna(0).values
+
+            if len(returns) < 20:
+                return 0.5
+
+            # Calculate lead-lag relationships (simplified)
+            # Look for autocorrelation patterns that suggest inter-market influence
+            autocorrelations = []
+
+            for lag in [1, 2, 5, 10]:
+                if len(returns) > lag:
+                    autocorr = abs(pd.Series(returns).autocorr(lag=lag))
+                    autocorrelations.append(autocorr)
+
+            avg_autocorr = np.mean(autocorrelations) if autocorrelations else 0.5
+
+            # Cross-correlation with other OHLC components
+            high_returns = regime_data['high'].pct_change().fillna(0).values
+            low_returns = regime_data['low'].pct_change().fillna(0).values
+            volume_returns = regime_data.get('volume', np.ones(len(regime_data))).pct_change().fillna(0).values
+
+            # Inter-component correlations
+            inter_correlations = []
+            for other_returns in [high_returns, low_returns, volume_returns]:
+                corr = abs(np.corrcoef(returns, other_returns)[0, 1])
+                inter_correlations.append(corr)
+
+            avg_inter_corr = np.mean(inter_correlations) if inter_correlations else 0.5
+
+            # Inter-market significance score
+            inter_market_score = 0.5 * avg_autocorr + 0.5 * avg_inter_corr
+
+            return min(inter_market_score, 1.0)
+
+        except Exception as e:
+            self.logger.warning(f"Inter-market analysis regime evaluation failed: {e}")
+            return 0.5
+
+    def _evaluate_sector_rotation_regime(self, regime_data: pd.DataFrame) -> float:
+        """Evaluate sector rotation regime significance."""
+        try:
+            # This would typically involve analysis of sector movements
+            # For now, we'll analyze price level transitions and rotations
+
+            prices = regime_data['close'].values
+            returns = np.diff(prices, prepend=prices[0])
+
+            if len(returns) < 50:
+                return 0.5
+
+            # Detect rotation patterns
+            # Look for periods of high volatility followed by low volatility
+            volatility = pd.Series(np.abs(returns)).rolling(window=20, min_periods=10).std().fillna(0.01).values
+
+            # Find rotation points (significant changes in volatility)
+            volatility_changes = np.abs(np.diff(volatility, prepend=volatility[0]))
+
+            # Count significant rotation events
+            rotation_threshold = np.percentile(volatility_changes, 75)
+            rotation_events = np.sum(volatility_changes > rotation_threshold)
+
+            # Normalize by data length
+            rotation_frequency = rotation_events / len(volatility_changes)
+
+            # Sector rotation significance
+            sector_rotation_score = min(rotation_frequency * 10, 1.0)  # Scale to reasonable range
+
+            return sector_rotation_score
+
+        except Exception as e:
+            self.logger.warning(f"Sector rotation regime evaluation failed: {e}")
             return 0.5
 
 

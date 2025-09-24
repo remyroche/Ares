@@ -350,25 +350,15 @@ class NASEnhancedAnalystLive:
                     'confidence': 0.0
                 }
             
-            # Generate NAS prediction
-            nas_prediction = await self._predict_with_nas_model(
+            # Generate predictions using stacking model (NAS + TAS + other models)
+            stacking_prediction = await self._predict_with_stacking_model(
                 nas_model, features, regime_result
             )
             
-            # Generate TAS prediction if available
-            tas_prediction = await self._predict_with_tas_model(
-                features, regime_result
-            )
-            
-            # Combine NAS and TAS predictions
-            combined_prediction = await self._combine_nas_tas_predictions(
-                nas_prediction, tas_prediction
-            )
-            
-            if combined_prediction['success']:
-                signal_strength = combined_prediction['signal_strength']
-                signal_direction = combined_prediction['signal_direction']
-                confidence = combined_prediction['confidence']
+            if stacking_prediction['success']:
+                signal_strength = stacking_prediction['signal_strength']
+                signal_direction = stacking_prediction['signal_direction']
+                confidence = stacking_prediction['confidence']
                 
                 # Check if signal meets thresholds
                 if (abs(signal_strength) >= self.config.signal_threshold and 
@@ -377,21 +367,17 @@ class NASEnhancedAnalystLive:
                     self.last_signal_time = time.time()
                     self.signal_count += 1
                     
-                    self.logger.info(f"✅ Trading signal generated (NAS + TAS)")
+                    self.logger.info(f"✅ Trading signal generated (Stacking Model)")
                     self.logger.info(f"   Direction: {signal_direction}")
                     self.logger.info(f"   Strength: {signal_strength:.3f}")
                     self.logger.info(f"   Confidence: {confidence:.3f}")
-                    self.logger.info(f"   NAS contribution: {nas_prediction.get('confidence', 0):.3f}")
-                    self.logger.info(f"   TAS contribution: {tas_prediction.get('confidence', 0):.3f}")
                     
                     return {
                         'signal_generated': True,
                         'signal_strength': signal_strength,
                         'signal_direction': signal_direction,
                         'confidence': confidence,
-                        'regime_id': regime_id,
-                        'nas_contribution': nas_prediction.get('confidence', 0),
-                        'tas_contribution': tas_prediction.get('confidence', 0)
+                        'regime_id': regime_id
                     }
                 else:
                     return {
@@ -420,14 +406,15 @@ class NASEnhancedAnalystLive:
                 'confidence': 0.0
             }
     
-    async def _predict_with_nas_model(self, 
-                                    nas_model: Any, 
-                                    features: np.ndarray, 
-                                    regime_result: Dict[str, Any]) -> Dict[str, Any]:
-        """Predict using NAS model."""
+    async def _predict_with_stacking_model(self, 
+                                          stacking_model: Any, 
+                                          features: np.ndarray, 
+                                          regime_result: Dict[str, Any]) -> Dict[str, Any]:
+        """Predict using stacking model (NAS + TAS + other models)."""
         try:
-            # Simulate NAS prediction
-            # In actual implementation, this would use the trained NAS model
+            # Simulate stacking model prediction
+            # In actual implementation, this would use the trained stacking model
+            # that combines NAS, TAS, and other ensemble models
             signal_strength = np.random.uniform(-1.0, 1.0)
             signal_direction = 1 if signal_strength > 0 else -1 if signal_strength < 0 else 0
             confidence = np.random.uniform(0.5, 1.0)
@@ -437,82 +424,11 @@ class NASEnhancedAnalystLive:
                 'signal_strength': signal_strength,
                 'signal_direction': signal_direction,
                 'confidence': confidence,
-                'model_type': 'nas'
+                'model_type': 'stacking'
             }
             
         except Exception as e:
-            self.logger.error(f"❌ NAS prediction failed: {e}")
-            return {
-                'success': False,
-                'error': str(e)
-            }
-    
-    async def _predict_with_tas_model(self, 
-                                    features: np.ndarray, 
-                                    regime_result: Dict[str, Any]) -> Dict[str, Any]:
-        """Predict using TAS model."""
-        try:
-            # Simulate TAS prediction
-            # In actual implementation, this would use the trained TAS model
-            signal_strength = np.random.uniform(-1.0, 1.0)
-            signal_direction = 1 if signal_strength > 0 else -1 if signal_strength < 0 else 0
-            confidence = np.random.uniform(0.5, 1.0)
-            
-            return {
-                'success': True,
-                'signal_strength': signal_strength,
-                'signal_direction': signal_direction,
-                'confidence': confidence,
-                'model_type': 'tas'
-            }
-            
-        except Exception as e:
-            self.logger.error(f"❌ TAS prediction failed: {e}")
-            return {
-                'success': False,
-                'error': str(e)
-            }
-    
-    async def _combine_nas_tas_predictions(self, 
-                                         nas_prediction: Dict[str, Any], 
-                                         tas_prediction: Dict[str, Any]) -> Dict[str, Any]:
-        """Combine NAS and TAS predictions."""
-        try:
-            if not nas_prediction.get('success', False):
-                return {
-                    'success': False,
-                    'reason': 'NAS prediction failed'
-                }
-            
-            # Get NAS prediction
-            nas_strength = nas_prediction.get('signal_strength', 0.0)
-            nas_confidence = nas_prediction.get('confidence', 0.0)
-            
-            # Get TAS prediction (if available)
-            if tas_prediction.get('success', False):
-                tas_strength = tas_prediction.get('signal_strength', 0.0)
-                tas_confidence = tas_prediction.get('confidence', 0.0)
-                
-                # Combine predictions (weighted average)
-                combined_strength = (nas_strength * 0.6 + tas_strength * 0.4)
-                combined_confidence = (nas_confidence * 0.6 + tas_confidence * 0.4)
-            else:
-                # Use only NAS prediction
-                combined_strength = nas_strength
-                combined_confidence = nas_confidence
-            
-            # Determine signal direction
-            signal_direction = 1 if combined_strength > 0 else -1 if combined_strength < 0 else 0
-            
-            return {
-                'success': True,
-                'signal_strength': combined_strength,
-                'signal_direction': signal_direction,
-                'confidence': combined_confidence
-            }
-            
-        except Exception as e:
-            self.logger.error(f"❌ Prediction combination failed: {e}")
+            self.logger.error(f"❌ Stacking model prediction failed: {e}")
             return {
                 'success': False,
                 'error': str(e)

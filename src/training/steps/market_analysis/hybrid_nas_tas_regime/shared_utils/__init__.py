@@ -126,6 +126,22 @@ from .unified_meta_learning import (
     create_meta_learner, create_few_shot_learner, create_continual_learner
 )
 
+from .unified_ensemble_search_space import (
+    UnifiedEnsembleSearchSpace, EnsembleArchitecture, EnsembleSearchResult,
+    EnsembleMethod, EnsembleCombinationStrategy, EnsembleSearchSpaceConfig,
+    create_unified_ensemble_search_space, quick_ensemble_search
+)
+
+from .unified_architecture_compression import (
+    UnifiedArchitectureCompressor, CompressionResult, CompressionMethod, CompressionLevel, CompressionConfig,
+    create_unified_architecture_compressor, quick_compress_architecture
+)
+
+from .unified_search_space_evolution import (
+    UnifiedSearchSpaceEvolutionManager, EvolutionEvent, EvolutionResult, EvolutionTrigger, EvolutionAction,
+    UnifiedEvolutionConfig, create_unified_evolution_manager, quick_evolution_setup
+)
+
 from .unified_hardware_manager import (
     UnifiedHardwareManager, HardwareType, OptimizationLevel, WorkloadType,
     HardwareMetrics, OptimizationResult, HardwareConfig,
@@ -225,6 +241,19 @@ __all__ = [
     'MetaTask', 'AdaptationResult', 'MetaLearningConfig',
     'TASMetaModel', 'NASMetaModel', 'HybridMetaModel',
     'create_meta_learner', 'create_few_shot_learner', 'create_continual_learner',
+
+    # Unified Ensemble Search Space
+    'UnifiedEnsembleSearchSpace', 'EnsembleArchitecture', 'EnsembleSearchResult',
+    'EnsembleMethod', 'EnsembleCombinationStrategy', 'EnsembleSearchSpaceConfig',
+    'create_unified_ensemble_search_space', 'quick_ensemble_search',
+
+    # Unified Architecture Compression
+    'UnifiedArchitectureCompressor', 'CompressionResult', 'CompressionMethod', 'CompressionLevel', 'CompressionConfig',
+    'create_unified_architecture_compressor', 'quick_compress_architecture',
+
+    # Unified Search Space Evolution
+    'UnifiedSearchSpaceEvolutionManager', 'EvolutionEvent', 'EvolutionResult', 'EvolutionTrigger', 'EvolutionAction',
+    'UnifiedEvolutionConfig', 'create_unified_evolution_manager', 'quick_evolution_setup',
 
     # Unified Hardware Management
     'UnifiedHardwareManager', 'HardwareType', 'OptimizationLevel', 'WorkloadType',

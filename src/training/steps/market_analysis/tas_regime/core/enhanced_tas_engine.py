@@ -38,6 +38,19 @@ from ...hybrid_nas_tas_regime.core.multi_objective_optimizer import (
 from ...hybrid_nas_tas_regime.core.architecture_encoder import (
     UnifiedArchitectureEncoder, create_unified_architecture_encoder
 )
+from ...hybrid_nas_tas_regime.shared_utils.unified_ensemble_search_space import (
+    UnifiedEnsembleSearchSpace, EnsembleArchitecture, EnsembleSearchResult,
+    EnsembleMethod, EnsembleCombinationStrategy, EnsembleSearchSpaceConfig,
+    create_unified_ensemble_search_space
+)
+from ...hybrid_nas_tas_regime.shared_utils.unified_architecture_compression import (
+    UnifiedArchitectureCompressor, CompressionResult, CompressionMethod, CompressionLevel, CompressionConfig,
+    create_unified_architecture_compressor
+)
+from ...hybrid_nas_tas_regime.shared_utils.unified_search_space_evolution import (
+    UnifiedSearchSpaceEvolutionManager, EvolutionTrigger, EvolutionAction, UnifiedEvolutionConfig,
+    create_unified_evolution_manager
+)
 
 # Use shared logger from hybrid utilities
 logger = logging.getLogger(__name__)
@@ -78,6 +91,20 @@ class TASConfig:
     enable_constraint_validation: bool = True
     enable_performance_estimation: bool = True
     enable_architecture_encoding: bool = True
+    
+    # Ensemble search space
+    enable_ensemble_search: bool = True
+    ensemble_search_weight: float = 0.3  # Weight for ensemble vs individual architecture search
+    
+    # Architecture compression
+    enable_compression: bool = True
+    compression_method: CompressionMethod = CompressionMethod.TREE_PRUNING
+    compression_level: CompressionLevel = CompressionLevel.MODERATE
+    
+    # Search space evolution
+    enable_evolution: bool = True
+    evolution_intensity: float = 0.3
+    min_evolution_interval: int = 100
 
     # Hardware constraints and optimization
     max_memory_mb: int = 8192
@@ -207,6 +234,61 @@ class EnhancedTASEngine:
                     ObjectiveType.PROFIT_FACTOR: 0.5
                 }
             ))
+
+            # Ensemble search space
+            if self.config.enable_ensemble_search:
+                ensemble_config = EnsembleSearchSpaceConfig(
+                    max_models=5,
+                    allowed_ensemble_methods=[
+                        EnsembleMethod.WEIGHTED_VOTING,
+                        EnsembleMethod.ADAPTIVE_WEIGHTING,
+                        EnsembleMethod.UNCERTAINTY_WEIGHTING
+                    ],
+                    allowed_combination_strategies=[
+                        EnsembleCombinationStrategy.TREE_ONLY,
+                        EnsembleCombinationStrategy.PERFORMANCE_BASED
+                    ]
+                )
+                self.ensemble_search_space = create_unified_ensemble_search_space(
+                    nas_models=[],  # Will be populated during search
+                    tas_models=[],  # Will be populated during search
+                    config=ensemble_config,
+                    performance_estimator=self.performance_estimator,
+                    constraint_validator=self.constraint_validator
+                )
+                self.logger.info("✅ Ensemble search space initialized for TAS")
+            else:
+                self.ensemble_search_space = None
+
+            # Architecture compression
+            if self.config.enable_compression:
+                compression_config = CompressionConfig(
+                    compression_method=self.config.compression_method,
+                    compression_level=self.config.compression_level,
+                    max_performance_loss=0.05,
+                    min_compression_ratio=0.2
+                )
+                self.architecture_compressor = create_unified_architecture_compressor(compression_config)
+                self.logger.info("✅ Architecture compressor initialized for TAS")
+            else:
+                self.architecture_compressor = None
+
+            # Search space evolution
+            if self.config.enable_evolution:
+                evolution_config = UnifiedEvolutionConfig(
+                    enable_performance_based_evolution=True,
+                    enable_regime_based_evolution=True,
+                    evolution_intensity=self.config.evolution_intensity,
+                    min_evolution_interval=self.config.min_evolution_interval
+                )
+                self.evolution_manager = create_unified_evolution_manager(
+                    nas_search_space=None,  # TAS engine only
+                    tas_search_space=self.search_space,
+                    config=evolution_config
+                )
+                self.logger.info("✅ Search space evolution manager initialized for TAS")
+            else:
+                self.evolution_manager = None
 
             self.logger.info("✅ All shared components initialized with unified framework")
 

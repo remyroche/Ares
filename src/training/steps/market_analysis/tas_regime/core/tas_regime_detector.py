@@ -56,9 +56,12 @@ except ImportError:
 try:
     from ..shared_utils.search_strategies import SearchStrategyManager, SearchStrategyConfig
     from ..shared_utils.analysis_components import SharedClusteringUtilities, AnalysisComponentConfig
+    from ..shared_utils.position_aware_trading import PositionAwareTradingAnalyzer, PositionAwareConfig
     SHARED_UTILITIES_AVAILABLE = True
+    POSITION_AWARE_AVAILABLE = True
 except ImportError:
     SHARED_UTILITIES_AVAILABLE = False
+    POSITION_AWARE_AVAILABLE = False
 
 # Import CLVSA architecture for regime enhancement
 try:
@@ -134,6 +137,7 @@ class TASRegimeDetector:
         self._initialize_tree_components()
         self._initialize_advanced_tree_models()
         self._initialize_shared_utilities()
+        self._initialize_position_aware_analyzer()
 
         self.logger.info("✅ TAS Regime Detector initialized with full tool integration")
 
@@ -314,18 +318,43 @@ class TASRegimeDetector:
                 enable_regime_aware_optimization=True,
                 enable_hyperparameter_adaptation=True
             )
-            
+
             # Initialize advanced tree factory
             self.advanced_tree_factory = AdvancedTreeModelFactory(tree_config)
-            
+
             # Initialize regime-aware optimizer
             self.regime_optimizer = RegimeAwareTreeOptimizer(tree_config)
-            
+
             self.logger.info("✅ Advanced tree models with meta-learning initialized")
         except Exception as e:
             self.logger.warning(f"Advanced tree models initialization failed: {e}")
             self.advanced_tree_factory = None
             self.regime_optimizer = None
+
+    def _initialize_position_aware_analyzer(self):
+        """Initialize position-aware trading analyzer."""
+        if not POSITION_AWARE_AVAILABLE:
+            self.position_analyzer = None
+            return
+
+        try:
+            position_config = PositionAwareConfig(
+                minimum_profit_threshold=0.001,
+                transaction_cost=0.001,
+                position_holding_periods=[1, 5, 10, 20],
+                risk_free_rate=0.02,
+                win_rate_thresholds={
+                    'excellent': 0.7,
+                    'good': 0.6,
+                    'acceptable': 0.5,
+                    'poor': 0.4
+                }
+            )
+            self.position_analyzer = PositionAwareTradingAnalyzer(position_config)
+            self.logger.info("✅ Position-aware trading analyzer initialized")
+        except Exception as e:
+            self.logger.warning(f"Position-aware analyzer initialization failed: {e}")
+            self.position_analyzer = None
 
     def detect_regimes(self,
                       market_data: Union[pd.DataFrame, np.ndarray],
@@ -769,7 +798,47 @@ class TASRegimeDetector:
             return np.ones(len(regime_results.get('regime_predictions', np.array([])))) * 0.5
 
     def _evaluate_economic_significance(self, data: np.ndarray, regime_results: Dict[str, Any]) -> np.ndarray:
-        """Evaluate economic significance of detected regimes."""
+        """Evaluate economic significance of detected regimes using position-aware analysis."""
+        try:
+            if self.position_analyzer is None:
+                # Fallback to original method
+                return self._evaluate_economic_significance_fallback(data, regime_results)
+
+            # Use position-aware analyzer for economic significance
+            labels = regime_results['regime_predictions']
+
+            # Convert data to DataFrame for position analyzer
+            if isinstance(data, np.ndarray):
+                df_data = pd.DataFrame(data, columns=['open', 'high', 'low', 'close', 'volume'])
+            else:
+                df_data = data
+
+            # Get position-aware analysis
+            position_analysis = self.position_analyzer.analyze_regime_position_performance(
+                df_data, labels
+            )
+
+            # Extract economic significance scores per regime
+            significance_scores = np.zeros(len(labels))
+            for regime_id in np.unique(labels):
+                if f"regime_{regime_id}" in position_analysis.get('regime_analyses', {}):
+                    regime_analysis = position_analysis['regime_analyses'][f"regime_{regime_id}"]
+                    economic_significance = regime_analysis.get('economic_significance', 0.5)
+                    regime_mask = labels == regime_id
+                    significance_scores[regime_mask] = economic_significance
+
+            self.logger.info(f"✅ Position-aware economic significance evaluated")
+            self.logger.info(f"   Mean significance: {np.mean(significance_scores):.3f}")
+            self.logger.info(f"   Position-aware analysis: {POSITION_AWARE_AVAILABLE}")
+
+            return significance_scores
+
+        except Exception as e:
+            self.logger.warning(f"Position-aware economic significance evaluation failed: {e}")
+            return self._evaluate_economic_significance_fallback(data, regime_results)
+
+    def _evaluate_economic_significance_fallback(self, data: np.ndarray, regime_results: Dict[str, Any]) -> np.ndarray:
+        """Fallback economic significance evaluation for TAS system."""
         try:
             # Simple economic significance based on price movements
             labels = regime_results['regime_predictions']
@@ -792,7 +861,68 @@ class TASRegimeDetector:
             return np.ones(len(data)) * self.config.economic_significance_threshold
 
     def _evaluate_trading_viability(self, data: np.ndarray, regime_results: Dict[str, Any]) -> np.ndarray:
-        """Evaluate trading viability of detected regimes."""
+        """Evaluate trading viability of detected regimes using position-aware analysis."""
+        try:
+            if self.position_analyzer is None:
+                # Fallback to original method
+                return self._evaluate_trading_viability_fallback(data, regime_results)
+
+            # Use position-aware analyzer for trading viability
+            labels = regime_results['regime_predictions']
+
+            # Convert data to DataFrame for position analyzer
+            if isinstance(data, np.ndarray):
+                df_data = pd.DataFrame(data, columns=['open', 'high', 'low', 'close', 'volume'])
+            else:
+                df_data = data
+
+            # Get position-aware trading viability analysis
+            viability_analysis = self.position_analyzer.calculate_position_aware_trading_viability(
+                df_data, labels
+            )
+
+            # Extract overall viability scores per regime
+            viability_scores = np.zeros(len(labels))
+
+            # Use overall viability as default
+            overall_viability = viability_analysis.get('overall_viability', 0.5)
+
+            # If we have regime-specific analysis, use those scores
+            if 'position_analysis' in viability_analysis and 'regime_analyses' in viability_analysis['position_analysis']:
+                for regime_id in np.unique(labels):
+                    if f"regime_{regime_id}" in viability_analysis['position_analysis']['regime_analyses']:
+                        # Calculate regime-specific viability score
+                        regime_analysis = viability_analysis['position_analysis']['regime_analyses'][f"regime_{regime_id}"]
+                        long_win_rate = regime_analysis.get('long_win_rate', 0.5)
+                        short_win_rate = regime_analysis.get('short_win_rate', 0.5)
+                        economic_significance = regime_analysis.get('economic_significance', 0.5)
+
+                        # Weighted viability score
+                        regime_viability = (
+                            0.4 * ((long_win_rate + short_win_rate) / 2.0) +  # 40% win rate
+                            0.4 * economic_significance +                     # 40% economic significance
+                            0.2 * overall_viability                           # 20% overall viability
+                        )
+
+                        regime_mask = labels == regime_id
+                        viability_scores[regime_mask] = regime_viability
+
+            # If no regime-specific analysis, use overall viability
+            if np.all(viability_scores == 0):
+                viability_scores = np.ones(len(labels)) * overall_viability
+
+            self.logger.info(f"✅ Position-aware trading viability evaluated")
+            self.logger.info(f"   Mean viability: {np.mean(viability_scores):.3f}")
+            self.logger.info(f"   Position-aware analysis: {POSITION_AWARE_AVAILABLE}")
+
+            return viability_scores
+
+        except Exception as e:
+            self.logger.warning(f"Position-aware trading viability evaluation failed: {e}")
+            return self._evaluate_trading_viability_fallback(data, regime_results)
+
+    def _evaluate_trading_viability_fallback(self, data: np.ndarray, regime_results: Dict[str, Any]) -> np.ndarray:
+        """Fallback trading viability evaluation for TAS system."""
         try:
             # Simple trading viability based on volume and volatility
             labels = regime_results['regime_predictions']

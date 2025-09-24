@@ -40,9 +40,12 @@ from .enhanced_nas_modeling_integration import EnhancedNASModelingIntegration, N
 try:
     from src.training.steps.market_analysis.hybrid_nas_tas_regime.shared_utils.search_strategies import SearchStrategyManager, SearchStrategyConfig
     from src.training.steps.market_analysis.hybrid_nas_tas_regime.shared_utils.analysis_components import SharedClusteringUtilities
+    from src.training.steps.market_analysis.hybrid_nas_tas_regime.shared_utils.position_aware_trading import PositionAwareTradingAnalyzer, PositionAwareConfig
     SHARED_UTILITIES_AVAILABLE = True
+    POSITION_AWARE_AVAILABLE = True
 except ImportError:
     SHARED_UTILITIES_AVAILABLE = False
+    POSITION_AWARE_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -90,6 +93,7 @@ class PerfectNASRegimeDetector:
 
         # Initialize shared utilities
         self._initialize_shared_utilities()
+        self._initialize_position_aware_analyzer()
 
         self.logger.info(f"✅ Enhanced Perfect NAS Regime Detector initialized with full tool integration")
 
@@ -137,7 +141,32 @@ class PerfectNASRegimeDetector:
             self.logger.warning(f"Shared utilities initialization failed: {e}")
             self.search_strategy_manager = None
             self.shared_clustering = None
-    
+
+    def _initialize_position_aware_analyzer(self):
+        """Initialize position-aware trading analyzer."""
+        if not POSITION_AWARE_AVAILABLE:
+            self.position_analyzer = None
+            return
+
+        try:
+            position_config = PositionAwareConfig(
+                minimum_profit_threshold=0.001,
+                transaction_cost=0.001,
+                position_holding_periods=[1, 5, 10, 20],
+                risk_free_rate=0.02,
+                win_rate_thresholds={
+                    'excellent': 0.7,
+                    'good': 0.6,
+                    'acceptable': 0.5,
+                    'poor': 0.4
+                }
+            )
+            self.position_analyzer = PositionAwareTradingAnalyzer(position_config)
+            self.logger.info("✅ Position-aware trading analyzer initialized")
+        except Exception as e:
+            self.logger.warning(f"Position-aware analyzer initialization failed: {e}")
+            self.position_analyzer = None
+
     def detect_regimes(self,
                       market_data: Union[pd.DataFrame, np.ndarray],
                       timestamps: Optional[np.ndarray] = None,

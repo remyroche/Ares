@@ -52,7 +52,7 @@ class FinalParametersOptimizer:
         
         # Parameter categories for optimization (updated for new Analyst & Tactician models)
         self.categories = [
-            'confidence', 'intensity', 'position_sizing', 'leverage', 'tpsl',
+            'confidence', 'intensity', 'position_sizing', 'leverage', 'tpsl', 'exit_strategy',
             'ensemble', 'sr', 'two_tier', 'technical_indicators',
             'system_monitoring', 'training_optimization', 'regime_transitions',
             'signal_aggregation', 'turnover_cost_penalty', 'entry_timing_optimization', 
@@ -675,6 +675,40 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 'tp_long': {'type': 'float', 'min': 0.02, 'max': 0.1},
                 'sl_long': {'type': 'float', 'min': 0.01, 'max': 0.05}
             },
+            'exit_strategy': {
+                # Confidence thresholds
+                'confidence_very_low': {'type': 'float', 'min': 0.1, 'max': 0.3},
+                'confidence_low': {'type': 'float', 'min': 0.3, 'max': 0.5},
+                'confidence_medium': {'type': 'float', 'min': 0.5, 'max': 0.7},
+                'confidence_high': {'type': 'float', 'min': 0.7, 'max': 0.9},
+                
+                # Profit-taking parameters
+                'base_profit_target': {'type': 'float', 'min': 0.02, 'max': 0.08},
+                'min_confidence_for_profit': {'type': 'float', 'min': 0.5, 'max': 0.8},
+                'confidence_profit_multiplier': {'type': 'float', 'min': 0.2, 'max': 0.8},
+                'profit_tier_1': {'type': 'float', 'min': 0.2, 'max': 0.4},
+                'profit_tier_2': {'type': 'float', 'min': 0.4, 'max': 0.6},
+                'profit_tier_3': {'type': 'float', 'min': 0.6, 'max': 0.8},
+                
+                # Stop-loss parameters
+                'base_stop_loss': {'type': 'float', 'min': -0.08, 'max': -0.02},
+                'atr_multiplier': {'type': 'float', 'min': 1.0, 'max': 3.0},
+                'volatility_adjustment_factor': {'type': 'float', 'min': 0.5, 'max': 2.0},
+                
+                # Time-based parameters
+                'max_hold_time': {'type': 'int', 'min': 3600, 'max': 14400},  # 1-4 hours
+                'min_hold_time': {'type': 'int', 'min': 60, 'max': 1800},     # 1-30 minutes
+                'confidence_time_scaling_factor': {'type': 'float', 'min': 0.5, 'max': 2.0},
+                
+                # Trailing stop parameters
+                'trailing_atr_multiplier': {'type': 'float', 'min': 1.0, 'max': 3.0},
+                'trailing_min_distance': {'type': 'float', 'min': 0.005, 'max': 0.03},
+                'trailing_confidence_activation': {'type': 'float', 'min': 0.6, 'max': 0.9},
+                
+                # Regime-aware parameters
+                'regime_transition_penalty': {'type': 'float', 'min': 0.05, 'max': 0.2},
+                'regime_specific_scaling': {'type': 'float', 'min': 0.8, 'max': 1.2}
+            },
             'ensemble': {
                 'analyst_weight': {'type': 'float', 'min': 0.2, 'max': 0.5},
                 'tactician_weight': {'type': 'float', 'min': 0.2, 'max': 0.5},
@@ -1056,6 +1090,8 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 base_score = self._evaluate_leverage_params(params, calibration_results)
             elif category == 'tpsl':
                 base_score = self._evaluate_tpsl_params(params, calibration_results)
+            elif category == 'exit_strategy':
+                base_score = self._evaluate_exit_strategy_params(params, calibration_results)
             elif category == 'ensemble':
                 base_score = self._evaluate_ensemble_params(params, calibration_results)
             elif category == 'sr':
@@ -1789,6 +1825,122 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 score += 0.1
         
         return score
+    
+    def _evaluate_exit_strategy_params(self, params: Dict[str, Any], 
+                                     calibration_results: Dict[str, Any]) -> float:
+        """Evaluate exit strategy parameters."""
+        score = 0.0
+        
+        try:
+            # 1. Confidence thresholds validation (0.3 weight)
+            confidence_params = ['confidence_very_low', 'confidence_low', 'confidence_medium', 'confidence_high']
+            if all(param in params for param in confidence_params):
+                thresholds = [params[param] for param in confidence_params]
+                # Check if thresholds are in ascending order
+                if all(thresholds[i] <= thresholds[i+1] for i in range(len(thresholds)-1)):
+                    score += 0.3
+                    # Bonus for reasonable spacing
+                    if all(thresholds[i+1] - thresholds[i] >= 0.1 for i in range(len(thresholds)-1)):
+                        score += 0.1
+                else:
+                    score += 0.1  # Partial credit for having all parameters
+            
+            # 2. Profit-taking parameters validation (0.25 weight)
+            profit_params = ['base_profit_target', 'min_confidence_for_profit', 'confidence_profit_multiplier']
+            if all(param in params for param in profit_params):
+                base_target = params['base_profit_target']
+                min_conf = params['min_confidence_for_profit']
+                conf_mult = params['confidence_profit_multiplier']
+                
+                # Validate profit target is positive and reasonable
+                if 0.02 <= base_target <= 0.08:
+                    score += 0.1
+                # Validate confidence threshold is reasonable
+                if 0.5 <= min_conf <= 0.8:
+                    score += 0.1
+                # Validate confidence multiplier is reasonable
+                if 0.2 <= conf_mult <= 0.8:
+                    score += 0.05
+            
+            # 3. Stop-loss parameters validation (0.2 weight)
+            stop_params = ['base_stop_loss', 'atr_multiplier', 'volatility_adjustment_factor']
+            if all(param in params for param in stop_params):
+                stop_loss = params['base_stop_loss']
+                atr_mult = params['atr_multiplier']
+                vol_adj = params['volatility_adjustment_factor']
+                
+                # Validate stop loss is negative and reasonable
+                if -0.08 <= stop_loss <= -0.02:
+                    score += 0.1
+                # Validate ATR multiplier is reasonable
+                if 1.0 <= atr_mult <= 3.0:
+                    score += 0.05
+                # Validate volatility adjustment is reasonable
+                if 0.5 <= vol_adj <= 2.0:
+                    score += 0.05
+            
+            # 4. Time-based parameters validation (0.15 weight)
+            time_params = ['max_hold_time', 'min_hold_time', 'confidence_time_scaling_factor']
+            if all(param in params for param in time_params):
+                max_time = params['max_hold_time']
+                min_time = params['min_hold_time']
+                time_scaling = params['confidence_time_scaling_factor']
+                
+                # Validate time constraints are reasonable
+                if 3600 <= max_time <= 14400 and 60 <= min_time <= 1800 and min_time < max_time:
+                    score += 0.1
+                # Validate time scaling factor
+                if 0.5 <= time_scaling <= 2.0:
+                    score += 0.05
+            
+            # 5. Trailing stop parameters validation (0.1 weight)
+            trailing_params = ['trailing_atr_multiplier', 'trailing_min_distance', 'trailing_confidence_activation']
+            if all(param in params for param in trailing_params):
+                trailing_atr = params['trailing_atr_multiplier']
+                min_dist = params['trailing_min_distance']
+                conf_act = params['trailing_confidence_activation']
+                
+                # Validate trailing stop parameters
+                if (1.0 <= trailing_atr <= 3.0 and 
+                    0.005 <= min_dist <= 0.03 and 
+                    0.6 <= conf_act <= 0.9):
+                    score += 0.1
+            
+            # 6. Regime-aware parameters validation (0.1 weight)
+            regime_params = ['regime_transition_penalty', 'regime_specific_scaling']
+            if all(param in params for param in regime_params):
+                transition_penalty = params['regime_transition_penalty']
+                regime_scaling = params['regime_specific_scaling']
+                
+                # Validate regime parameters
+                if 0.05 <= transition_penalty <= 0.2 and 0.8 <= regime_scaling <= 1.2:
+                    score += 0.1
+            
+            # 7. Profit tier validation (bonus)
+            tier_params = ['profit_tier_1', 'profit_tier_2', 'profit_tier_3']
+            if all(param in params for param in tier_params):
+                tiers = [params[param] for param in tier_params]
+                # Check if tiers are in ascending order
+                if all(tiers[i] <= tiers[i+1] for i in range(len(tiers)-1)):
+                    score += 0.05
+            
+            # 8. Risk-reward ratio validation (bonus)
+            if 'base_profit_target' in params and 'base_stop_loss' in params:
+                profit_target = params['base_profit_target']
+                stop_loss = abs(params['base_stop_loss'])
+                risk_reward_ratio = profit_target / stop_loss
+                
+                # Bonus for good risk-reward ratio
+                if 1.5 <= risk_reward_ratio <= 3.0:
+                    score += 0.1
+                elif 1.0 <= risk_reward_ratio < 1.5:
+                    score += 0.05
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error evaluating exit strategy parameters: {e}")
+            score = 0.0
+        
+        return min(score, 1.0)  # Cap at 1.0
     
     def _evaluate_ensemble_params(self, params: Dict[str, Any], 
                                 calibration_results: Dict[str, Any]) -> float:

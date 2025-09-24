@@ -1,0 +1,55 @@
+# Enhanced Exit Strategy Configuration
+# This configuration demonstrates the improved exit strategy with confidence-based exits and profit-taking
+
+position_monitor:
+  monitoring_interval: 10  # seconds
+  
+  # Confidence-based exit thresholds
+  confidence_thresholds:
+    very_low: 0.2      # Exit immediately (emergency)
+    low: 0.4           # Scale down or exit (risk management)
+    medium: 0.6        # Hold position (normal operation)
+    high: 0.8          # Consider profit taking (opportunity)
+  
+  # PnL-based exit thresholds
+  pnl_thresholds:
+    stop_loss: -0.05   # -5% stop loss (critical exit)
+    profit_target: 0.04  # 4% base profit target
+    scaling_levels: [0.25, 0.5, 0.75]  # Tiered profit taking levels
+  
+  # Profit-taking configuration with confidence-based scaling
+  profit_taking:
+    confidence_scaling: true                    # Enable confidence-based profit scaling
+    min_confidence_for_profit: 0.6            # Minimum confidence to take profit
+    confidence_profit_multiplier: 0.5         # How much confidence affects profit taking
+    tiered_profit_taking: true                 # Enable tiered profit taking
+    trailing_stop_enabled: true               # Enable trailing stops
+    trailing_stop_atr_multiplier: 1.5         # ATR multiplier for trailing stops
+
+# Example usage scenarios:
+# 
+# Scenario 1: High Confidence (0.9) + 3% Profit
+# - Confidence scaling: 3% * (1.0 - (0.9 - 0.5) * 0.5) = 3% * 0.8 = 2.4% target
+# - Result: Take profit at 2.4% instead of 4% (hold longer for bigger gains)
+#
+# Scenario 2: Medium Confidence (0.6) + 3% Profit  
+# - Confidence scaling: 3% * (1.0 - (0.6 - 0.5) * 0.5) = 3% * 0.95 = 2.85% target
+# - Result: Take profit at 2.85% (slightly lower than base 4%)
+#
+# Scenario 3: Low Confidence (0.3) + Any Profit
+# - Result: No profit taking (confidence too low)
+#
+# Scenario 4: Very Low Confidence (0.1) + Any PnL
+# - Result: Full exit (emergency exit)
+
+# Tiered Profit Taking Example:
+# Base profit target: 4%
+# Tier 1 (25%): 1% profit -> Take 25% of position
+# Tier 2 (50%): 2% profit -> Take 50% of position  
+# Tier 3 (75%): 3% profit -> Take 75% of position
+# Full target: 4% profit -> Take 100% of position
+
+# Confidence-Based Scaling Logic:
+# Higher confidence = Lower profit targets (hold longer for bigger gains)
+# Lower confidence = Higher profit targets (take profit sooner)
+# This creates an adaptive system that balances risk and reward based on model confidence

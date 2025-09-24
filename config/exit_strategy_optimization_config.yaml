@@ -1,0 +1,223 @@
+# Exit Strategy Optimization Configuration
+# This configuration defines how exit strategy parameters are optimized through backtesting
+
+exit_strategy_optimization:
+  # Optimization settings
+  n_trials: 100                    # Number of optimization trials
+  timeout: 600                     # Timeout in seconds
+  study_name: "exit_strategy_optimization"
+  output_path: "results/exit_strategy_optimization.json"
+  
+  # Search space configuration
+  search_space:
+    # Confidence thresholds optimization ranges
+    confidence_thresholds:
+      very_low:
+        type: "float"
+        low: 0.1
+        high: 0.3
+      low:
+        type: "float" 
+        low: 0.3
+        high: 0.5
+      medium:
+        type: "float"
+        low: 0.5
+        high: 0.7
+      high:
+        type: "float"
+        low: 0.7
+        high: 0.9
+    
+    # Profit-taking parameters optimization ranges
+    profit_taking:
+      base_profit_target:
+        type: "float"
+        low: 0.02    # 2%
+        high: 0.08   # 8%
+      min_confidence_for_profit:
+        type: "float"
+        low: 0.5
+        high: 0.8
+      confidence_profit_multiplier:
+        type: "float"
+        low: 0.2
+        high: 0.8
+      scaling_levels:
+        tier_1:
+          type: "float"
+          low: 0.2
+          high: 0.4
+        tier_2:
+          type: "float"
+          low: 0.4
+          high: 0.6
+        tier_3:
+          type: "float"
+          low: 0.6
+          high: 0.8
+    
+    # Stop-loss parameters optimization ranges
+    stop_loss:
+      base_stop_loss:
+        type: "float"
+        low: -0.08   # -8%
+        high: -0.02  # -2%
+      atr_multiplier:
+        type: "float"
+        low: 1.0
+        high: 3.0
+      volatility_adjustment_factor:
+        type: "float"
+        low: 0.5
+        high: 2.0
+    
+    # Time-based parameters optimization ranges
+    time_based:
+      max_hold_time:
+        type: "int"
+        low: 3600    # 1 hour
+        high: 14400  # 4 hours
+      min_hold_time:
+        type: "int"
+        low: 60      # 1 minute
+        high: 1800   # 30 minutes
+      confidence_time_scaling_factor:
+        type: "float"
+        low: 0.5
+        high: 2.0
+    
+    # Trailing stop parameters optimization ranges
+    trailing_stop:
+      atr_multiplier:
+        type: "float"
+        low: 1.0
+        high: 3.0
+      min_distance:
+        type: "float"
+        low: 0.005   # 0.5%
+        high: 0.03   # 3%
+      confidence_activation:
+        type: "float"
+        low: 0.6
+        high: 0.9
+    
+    # Regime-aware parameters optimization ranges
+    regime_aware:
+      transition_penalty:
+        type: "float"
+        low: 0.05
+        high: 0.2
+      regime_specific_scaling:
+        type: "float"
+        low: 0.8
+        high: 1.2
+
+  # Optimization objectives and weights
+  objectives:
+    primary:
+      - "sharpe_ratio"      # Risk-adjusted returns (weight: 0.4)
+      - "profit_factor"     # Profit efficiency (weight: 0.3)
+      - "max_drawdown"       # Drawdown control (weight: 0.2)
+      - "win_rate"          # Win rate (weight: 0.1)
+    
+    secondary:
+      - "total_return"       # Absolute returns
+      - "num_trades"         # Trade frequency
+      - "avg_trade_duration" # Trade duration
+      - "consecutive_wins"   # Win streaks
+      - "consecutive_losses" # Loss streaks
+
+  # Backtesting configuration
+  backtesting:
+    # Data requirements
+    min_data_points: 1000
+    required_columns: ["timestamp", "open", "high", "low", "close", "volume"]
+    
+    # Walk-forward validation
+    walk_forward:
+      enabled: true
+      n_splits: 5
+      test_size: 0.2
+      min_train_size: 0.6
+    
+    # Monte Carlo simulation
+    monte_carlo:
+      enabled: true
+      n_simulations: 1000
+      confidence_level: 0.95
+    
+    # Statistical testing
+    statistical_tests:
+      enabled: true
+      significance_level: 0.05
+      tests: ["sharpe_ratio", "profit_factor", "win_rate"]
+
+  # Regime-specific optimization
+  regime_optimization:
+    enabled: true
+    regimes: ["trending", "ranging", "volatile"]
+    regime_specific_params: true
+    transition_analysis: true
+
+  # Performance constraints
+  constraints:
+    min_sharpe_ratio: 1.0
+    min_profit_factor: 1.2
+    max_drawdown: 0.25
+    min_win_rate: 0.45
+    max_consecutive_losses: 5
+
+  # Output configuration
+  output:
+    save_detailed_results: true
+    save_parameter_history: true
+    save_backtest_charts: true
+    save_regime_analysis: true
+    
+    # File paths
+    results_dir: "results/exit_strategy_optimization"
+    charts_dir: "results/exit_strategy_optimization/charts"
+    reports_dir: "results/exit_strategy_optimization/reports"
+
+# Integration with existing systems
+integration:
+  # Position monitor integration
+  position_monitor:
+    auto_update: true
+    update_frequency: "daily"
+    validation_required: true
+  
+  # Model calibration integration
+  model_calibration:
+    use_calibration_results: true
+    confidence_weighting: true
+    regime_aware: true
+  
+  # Risk management integration
+  risk_management:
+    portfolio_level: true
+    correlation_aware: true
+    drawdown_limits: true
+
+# Example usage scenarios:
+#
+# Scenario 1: Conservative Optimization
+# - Focus on risk management (higher Sharpe, lower drawdown)
+# - Tighter stop losses, lower profit targets
+# - Longer hold times, higher confidence thresholds
+#
+# Scenario 2: Aggressive Optimization  
+# - Focus on returns (higher profit factor, more trades)
+# - Wider stop losses, higher profit targets
+# - Shorter hold times, lower confidence thresholds
+#
+# Scenario 3: Balanced Optimization
+# - Equal weight on risk and return metrics
+# - Moderate parameter ranges
+# - Regime-aware adjustments
+#
+# Scenario 4: Regime-Specific Optimization
+# - Different parameters for different market regimes
+# - Regime transition penalties
+# - Adaptive parameter scaling
